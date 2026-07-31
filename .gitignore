@@ -1,0 +1,32 @@
+# Generated documents (rebuild with pandoc from the .md sources)
+*.docx
+*.pdf
+
+# Local Chinese drafts - the English .md files are canonical in this repo
+*.zh.md
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+.env
+.env.*
+!.env.example
+
+# Test and coverage artifacts
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Node (not used, kept as a guard)
+node_modules/
+
+# Editors and OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+desktop.ini
+*.icloud

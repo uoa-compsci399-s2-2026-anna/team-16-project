@@ -17,7 +17,9 @@ from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     create_staff,
+    generate_initial_password,
     get_staff,
+    reset_mfa,
     set_password,
 )
 from admin.auth import SESSION_KEY
@@ -475,12 +477,17 @@ async def test_pre_login_pages_are_reachable_once_the_account_actually_owes_that
 async def test_pre_login_pages_redirect_to_login_once_the_pending_value_expires(
     client, admin_app, path
 ):
-    """Seeded fully onboarded, not fresh - round 3 review caught that a
-    fresh account's [/admin/verify] case here proved nothing, since the
-    state gate already refuses a fresh account on that path regardless of
-    expiry. A fully onboarded account would otherwise be admitted to all
-    three, so expiry is the only thing that can explain a refusal here."""
-    _make_staff(admin_app, "jack", password_changed=True, mfa=True)
+    """Seeded per path with the state that actually owes it.
+
+    Round 3 reseeded this fully onboarded and justified it with "a fully
+    onboarded account would otherwise be admitted to all three" - which was
+    never true (the state gate admits such an account to /admin/verify
+    only), so the /admin/change-password and /admin/enrol parametrizations
+    passed for a reason unrelated to expiry. Seeding from
+    _OWES_STATE_FOR_PAGE is what makes expiry the only thing that can
+    explain a refusal on every one of the three paths.
+    """
+    _make_staff(admin_app, "jack", **_OWES_STATE_FOR_PAGE[path])
     expired = _session_cookie(
         admin_app.state.settings.secret_key,
         {PENDING_SESSION_KEY: {"username": "jack", "expires_at": time.time() - 1}},
@@ -560,20 +567,24 @@ async def test_a_pending_login_is_refused_once_the_account_is_deactivated(
     the 5-minute pending window kept all three pages reachable - the
     account state was never re-read for this branch.
 
-    Seeded fully onboarded (password changed, MFA enrolled), not fresh:
-    round 3 review caught that a fresh account's [/admin/verify] case here
-    proved nothing, since the state gate already refuses a fresh account
-    on that path regardless of is_active - deactivation was never actually
-    exercised by that parametrization. A fully onboarded account would be
-    admitted to all three on the strength of its state alone, so
-    deactivation is the only thing that can explain a refusal here."""
-    password = _make_staff(admin_app, "leo", password_changed=True, mfa=True)
+    Seeded per path with the state that actually owes it. Round 3 reseeded
+    this fully onboarded and justified it with "a fully onboarded account
+    would be admitted to all three on the strength of its state alone" -
+    which was never true (the state gate admits such an account to
+    /admin/verify only), so the /admin/change-password and /admin/enrol
+    parametrizations passed for a reason unrelated to deactivation. The
+    sanity request below now proves the page really was open first, so
+    deactivation is the only thing that can explain the refusal after."""
+    password = _make_staff(admin_app, "leo", **_OWES_STATE_FOR_PAGE[path])
     login_response = await client.post(
         "/admin/login",
         data={"username": "leo", "password": password},
         follow_redirects=False,
     )
     assert login_response.status_code in (302, 307)
+
+    pre = await client.get(path, follow_redirects=False)
+    assert pre.status_code == 200
 
     _deactivate(admin_app, "leo")
 
@@ -666,7 +677,11 @@ async def test_pre_login_page_membership_is_exact_not_a_prefix():
 async def test_a_logged_in_but_deactivated_account_cannot_open_a_pre_login_page(
     client, admin_app, path
 ):
-    _make_staff(admin_app, "ruth", password_changed=True, mfa=True)
+    # Seeded per path with the state that owes it: round 4 removed the
+    # already-logged-in short-circuit, so a SESSION_KEY no longer opens all
+    # three pages on its own and a fully onboarded account would fail the
+    # sanity request below on two of the three paths.
+    _make_staff(admin_app, "ruth", **_OWES_STATE_FOR_PAGE[path])
     cookie = _session_cookie(admin_app.state.settings.secret_key, {SESSION_KEY: "ruth"})
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
@@ -780,3 +795,324 @@ async def test_verify_is_refused_while_enrolled_but_a_password_change_is_still_o
 
     assert response.status_code in (302, 307)
     assert "/admin/login" in response.headers["location"]
+
+
+# ===========================================================================
+# Round 4: the state gate applies whichever way in
+# ===========================================================================
+#
+# Rounds 1-3 each fixed one combination of (way in) x (account state) and
+# left the symmetric one behind. Round 3 ended with
+# _may_open_pre_login_page reading the account row on both ways in, but
+# still short-circuiting `if already_logged_in: return True` *before* the
+# per-page state gate - so a live SESSION_KEY opened all three pre-login
+# pages regardless of what the account owed.
+#
+# Why that branch was invisible: a live SESSION_KEY with
+# must_change_password set, or mfa_enrolled clear, is unreachable through
+# any ordinary login - SESSION_KEY is written only by
+# admin.auth._complete_login, which refuses an unenrolled account and is
+# reachable only through /admin/verify, which the gate opens only once
+# both are cleared. The only way into those states is an administrator's
+# mid-session reset - which is exactly the states contract 8.3's L2
+# eviction creates, and L2 is the *only* eviction available while
+# _guard_admin_floor forbids deactivating an administrator (the normal
+# state of a two-administrator charity deployment).
+#
+# The tests below stop fixing combinations one at a time and sweep the
+# whole space instead: 2 ways in x 4 account states x 3 pages = 24 cases,
+# each stating what the gate must answer.
+
+
+#: The four account states the two booleans can produce, and which of the
+#: three pre-login pages each one may open. Derived from the gate's own
+#: rule - a page is open exactly while the account still owes that step,
+#: in contract 8.3's ladder order - not read back off the implementation.
+#:
+#: (must_change_password, mfa_enrolled):
+#:   fresh              (True,  False) -> owes the password change
+#:   password_changed   (False, False) -> owes enrolment
+#:   fully_onboarded    (False, True)  -> owes only the second factor
+#:   password_reset_only(True,  True)  -> enrolled, but a password reset is
+#:                                        outstanding: an administrator
+#:                                        forced a change without touching
+#:                                        MFA, so the ladder restarts at the
+#:                                        password change
+_ACCOUNT_STATES = {
+    "fresh": ({}, "/admin/change-password"),
+    "password_changed": ({"password_changed": True}, "/admin/enrol"),
+    "fully_onboarded": ({"password_changed": True, "mfa": True}, "/admin/verify"),
+    "password_reset_only": ({"mfa": True}, "/admin/change-password"),
+}
+
+#: Every (state, page) pair, with the single expected answer.
+_STATE_GATE_MATRIX = [
+    (state, path, path == owed)
+    for state, (_, owed) in _ACCOUNT_STATES.items()
+    for path in PRE_LOGIN_PAGES
+]
+
+
+@pytest.mark.parametrize("state,path,expected_open", _STATE_GATE_MATRIX)
+async def test_the_state_gate_on_the_session_key_way_in(
+    client, admin_app, state, path, expected_open
+):
+    """All 12 (account state, page) pairs, entered with a live SESSION_KEY.
+
+    This is the combination three rounds of review kept missing. Before
+    round 4 every one of these twelve returned 200, because
+    _may_open_pre_login_page short-circuited on already_logged_in before
+    reaching the gate at all.
+    """
+    seed, _ = _ACCOUNT_STATES[state]
+    _make_staff(admin_app, "sasha", **seed)
+    cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "sasha"}
+    )
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    if expected_open:
+        assert response.status_code == 200
+    else:
+        assert response.status_code in (302, 307)
+        assert "/admin/login" in response.headers["location"]
+
+
+@pytest.mark.parametrize("state,path,expected_open", _STATE_GATE_MATRIX)
+async def test_the_state_gate_on_the_pending_login_way_in(
+    client, admin_app, state, path, expected_open
+):
+    """The same 12 pairs entered with only a password, via a real login POST.
+
+    Rounds 2 and 3 fixed this branch piecemeal; sweeping it whole is what
+    pins the property rather than the individual cases that were reported.
+    """
+    seed, _ = _ACCOUNT_STATES[state]
+    password = _make_staff(admin_app, "sasha", **seed)
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "sasha", "password": password},
+        follow_redirects=False,
+    )
+    assert login_response.status_code in (302, 307)  # the password was accepted
+
+    response = await client.get(path, follow_redirects=False)
+
+    if expected_open:
+        assert response.status_code == 200
+    else:
+        assert response.status_code in (302, 307)
+        assert "/admin/login" in response.headers["location"]
+
+
+def _evict_l2(admin_app, username: str) -> str:
+    """Contract 8.3 recovery layer L2, performed against a live session.
+
+    "Another administrator resets MFA and issues a random password" - the
+    only eviction available while _guard_admin_floor refuses to deactivate
+    an administrator, which is the normal state of a two-administrator
+    deployment. set_password clears must_change_password, so the flag is
+    set back afterwards: an issued password is a temporary one the holder
+    must change, exactly as create_staff leaves a new account.
+    """
+    new_password = generate_initial_password()
+    with admin_app.state.session_factory() as db:
+        reset_mfa(db, username)
+        set_password(db, username, new_password)
+        get_staff(db, username).must_change_password = True
+        db.commit()
+    return new_password
+
+
+async def test_an_evicted_account_cannot_re_enrol_its_own_authenticator(
+    client, admin_app
+):
+    """The exploit the round-3 short-circuit left open, end to end.
+
+    reset_mfa clears mfa_enrolled_at - and that clearing is exactly what
+    removes begin_mfa_enrolment's own MfaAlreadyEnrolledError guard, so
+    there is no service-layer backstop behind this gate. With the
+    short-circuit in place, the person being evicted kept a live session on
+    /admin/enrol and could enrol a fresh authenticator, mint five new
+    recovery codes, and hold both factors again - with audit_log.actor
+    (contract 8.4) naming them throughout. The gate is the only thing
+    stopping it.
+    """
+    _make_staff(admin_app, "trent", password_changed=True, mfa=True)
+    cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "trent"}
+    )
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+    assert (await client.get("/admin/", follow_redirects=False)).status_code == 200
+
+    _evict_l2(admin_app, "trent")
+
+    # The state the eviction actually produced - asserted, not assumed,
+    # since the whole finding turns on which states this branch is
+    # reachable in.
+    with admin_app.state.session_factory() as db:
+        staff = get_staff(db, "trent")
+        assert staff.is_active is True
+        assert staff.must_change_password is True
+        assert staff.mfa_enrolled is False
+
+    enrol = await client.get("/admin/enrol", follow_redirects=False)
+
+    assert enrol.status_code in (302, 307)
+    assert "/admin/login" in enrol.headers["location"]
+
+    # ...and the second factor is out of reach too, so the evicted session
+    # cannot be turned back into a full one by any route.
+    verify = await client.get("/admin/verify", follow_redirects=False)
+    assert verify.status_code in (302, 307)
+
+
+#: The account states an administrator can force a live session into
+#: mid-session, and where /admin/ must send that session next. Removing
+#: the already_logged_in short-circuit must not break the ladder - keeping
+#: it working is the point of the fix, not a side effect.
+_MID_SESSION_LADDER = [
+    ("fully_onboarded", None),  # nothing owed: the dashboard renders
+    ("password_reset_only", "/admin/change-password"),
+    ("fresh", "/admin/change-password"),
+    ("password_changed", "/admin/enrol"),
+]
+
+
+@pytest.mark.parametrize("state,expected_target", _MID_SESSION_LADDER)
+async def test_the_dashboard_ladder_survives_the_removed_short_circuit(
+    client, admin_app, state, expected_target
+):
+    """authenticate()'s non-pre-login branch, for every account state.
+
+    The counterpart to the two matrix tests above: those pin what the three
+    pre-login pages answer, this pins where everything else sends a live
+    session, so the fix cannot be "correct" by simply refusing more.
+    """
+    seed, _ = _ACCOUNT_STATES[state]
+    _make_staff(admin_app, "ursula", **seed)
+    cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "ursula"}
+    )
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.get("/admin/", follow_redirects=False)
+
+    if expected_target is None:
+        assert response.status_code == 200
+    else:
+        assert response.status_code in (302, 307)
+        assert expected_target in response.headers["location"]
+
+
+# --- Round 4 minor: the two session.clear() calls were pinned by nothing ---
+#
+# Mutation testing (round 4, mutants N3 and N4) found both
+# request.session.clear() calls in _may_open_pre_login_page could be
+# deleted with the whole suite still green: every test asserted only the
+# 302 and its Location, never that the cookie itself was cleared. They are
+# behaviourally load-bearing - without them a forged or stale cookie
+# survives the refusal and buys an unauthenticated caller one database read
+# per request, indefinitely.
+#
+# starlette.middleware.sessions.SessionMiddleware signals a cleared session
+# with a literal "session=null" Set-Cookie carrying an expiry in the past,
+# rather than by re-signing an empty payload, so that string is the marker.
+
+
+def _clearing_set_cookie(response) -> bool:
+    return any(
+        header.startswith("session=null")
+        for header in response.headers.get_list("set-cookie")
+    )
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_an_unknown_account_has_its_session_cookie_cleared(
+    client, admin_app, path
+):
+    forged = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "ghost3"}
+    )
+    client.cookies.set("session", forged, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_a_deactivated_account_has_its_session_cookie_cleared(
+    client, admin_app, path
+):
+    _make_staff(admin_app, "vera", active=False, **_OWES_STATE_FOR_PAGE[path])
+    cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "vera"}
+    )
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+# --- Round 4, gaps found by enumerating rather than by review --------------
+#
+# Walking every path through authenticate() rather than only the ones the
+# review pointed at turned up three combinations nothing pinned. All three
+# are on the *other* branch of authenticate() - the one for every path that
+# is not a pre-login page - which is the same "fixed the case I was shown"
+# shape as the four findings this file already carries:
+#
+#   * a SESSION_KEY naming an account that no longer exists was pinned on
+#     the three pre-login pages and nowhere else, even though the main
+#     branch has its own separate get_staff/UnknownStaffError handling;
+#   * neither of that branch's two request.session.clear() calls was pinned
+#     by anything - the same mutants (N3/N4) that survived against
+#     _may_open_pre_login_page survive here for the same reason: every test
+#     asserted the 302 and its Location, never the cookie.
+
+
+async def test_a_session_naming_an_unknown_account_is_refused_on_the_dashboard(
+    client, admin_app
+):
+    """authenticate()'s main branch has its own UnknownStaffError handling,
+    separate from _may_open_pre_login_page's - and only the latter was
+    pinned. A row deleted out from under a live session must refuse here
+    too, or the request reaches a view whose first get_staff call raises."""
+    forged = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "ghost4"}
+    )
+    client.cookies.set("session", forged, domain=_COOKIE_DOMAIN)
+
+    response = await client.get("/admin/", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+async def test_a_deactivated_session_is_cleared_not_merely_refused(
+    client, admin_app
+):
+    """The other half of the same gap: refusing a deactivated account on
+    the dashboard was pinned, clearing its cookie was not. Without the
+    clear, the cookie survives the refusal and buys an unauthenticated
+    caller one database read per request for as long as it is replayed."""
+    _make_staff(admin_app, "wilma", password_changed=True, mfa=True)
+    cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "wilma"}
+    )
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+    assert (await client.get("/admin/", follow_redirects=False)).status_code == 200
+
+    _deactivate(admin_app, "wilma")
+
+    response = await client.get("/admin/", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")

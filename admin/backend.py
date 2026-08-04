@@ -121,47 +121,66 @@ class AdminAuth(AuthenticationBackend):
     def _may_open_pre_login_page(self, request: Request, path: str) -> bool:
         """Whether ``path`` - one of _PRE_LOGIN_PAGES - is reachable right now.
 
-        One account re-read covers both ways in, rather than two checks of
-        different rigour. Resolve the username from an established
-        SESSION_KEY or, short of that, a valid non-expired pending login;
-        read the row exactly once; refuse and clear the session for an
-        unknown or inactive account regardless of which way in was used.
-        Review found round 1's fix had dropped this re-read for the pending
-        branch; the fix for that (round 2) restored it only there and left
-        the SESSION_KEY branch short-circuiting straight to True - so an
-        account deactivated mid-session, or a SESSION_KEY naming a row that
-        no longer exists, still opened all three pages. Same bug, other
-        branch.
+        There are two ways in - an established SESSION_KEY, or a pending
+        login from the password step - and four account states the two
+        onboarding booleans can be in. Rounds 1-3 of review each found a
+        real defect of the same shape: a rule applied to one way in, or
+        one state, and not to its symmetric partner. So this function
+        deliberately has no per-way-in branch past the point the username
+        is resolved. Resolve the username from an established SESSION_KEY
+        or, short of that, a valid non-expired pending login; read the row
+        exactly once; refuse and clear the session for an unknown or
+        inactive account; then apply one state gate, the same one, however
+        the caller got here.
 
-        Only past that point do the two ways in diverge:
+        A live SESSION_KEY is NOT a reason to skip that gate, and this is
+        the least obvious thing in the file. Contract 8.3's
+        non-deactivating eviction - reset the account's MFA, issue a new
+        password - is by definition performed against a live session, and
+        it is the *only* eviction available while _guard_admin_floor
+        refuses to deactivate an administrator (the normal state of a
+        two-administrator deployment). That reset clears mfa_enrolled_at,
+        which is also what removes begin_mfa_enrolment's own
+        MfaAlreadyEnrolledError backstop - so nothing behind this gate
+        would stop the person being evicted from enrolling a fresh
+        authenticator, minting new recovery codes and setting a password
+        of their choosing, holding both factors again with audit_log.actor
+        naming the victim throughout. A live SESSION_KEY carrying
+        must_change_password, or lacking enrolment, is unreachable through
+        any ordinary login: SESSION_KEY is written only by
+        admin.auth._complete_login, which refuses an unenrolled account
+        outright, and which can only be reached through /admin/verify -
+        a page the gate below opens only once *both* are cleared. So this
+        branch is exercised *only* in the states an administrator's
+        mid-session reset creates, which is precisely why three rounds of
+        review drove the app and never saw it.
 
-        * An established SESSION_KEY admits all three unconditionally -
-          defence in depth, for an administrator forcing an
-          already-logged-in account back through one of them mid-session
-          (see the branches further down authenticate()).
-        * A bare pending login instead gates each page on the specific
-          state it exists to clear, in the ladder order contract 8.3
-          states an account must complete them:
+        Each page is open exactly while the account still owes that step,
+        in the ladder order contract 8.3 requires:
 
-          * /admin/change-password - only while must_change_password is set
-          * /admin/enrol           - only once that is cleared *and* the
-                                      account is not yet MFA-enrolled, so
-                                      the ladder order is binding on this
-                                      gate too, not just on where login()
-                                      sends a fresh password - otherwise a
-                                      brand-new account satisfies both
-                                      change-password and enrol at once
-          * /admin/verify          - only once *both* of the above are
-                                      cleared, so a half-onboarded account
-                                      cannot skip ahead to the second
-                                      factor - the mirror image of the
-                                      /admin/enrol case just above
+        * /admin/change-password - only while must_change_password is set
+        * /admin/enrol           - only once that is cleared *and* the
+                                    account is not yet MFA-enrolled, so the
+                                    ladder order binds on the gate too, not
+                                    just on where login() sends a fresh
+                                    password - otherwise a brand-new
+                                    account satisfies both change-password
+                                    and enrol at once
+        * /admin/verify          - only once *both* of the above are
+                                    cleared, so a half-onboarded account
+                                    cannot skip ahead to the second factor
+
+        The three conditions are mutually exclusive and total: every
+        account state reaches exactly the one page matching what it owes
+        next.
+
+        The one capability this costs is a fully onboarded, logged-in user
+        voluntarily opening /admin/change-password - which today *is* the
+        forced-change page. A voluntary "change my password" route belongs
+        on its own path, not on this gate.
         """
-        session_username = request.session.get(SESSION_KEY)
-        already_logged_in = bool(session_username)
-        if already_logged_in:
-            username = session_username
-        else:
+        username = request.session.get(SESSION_KEY)
+        if not username:
             pending = _pending_login_from_session(request.session)
             if pending is None or pending.is_expired(now=time.time()):
                 return False
@@ -177,9 +196,6 @@ class AdminAuth(AuthenticationBackend):
                 request.session.clear()
                 return False
 
-            if already_logged_in:
-                return True
-
             if path == "/admin/change-password":
                 return staff.must_change_password
             if path == "/admin/enrol":
@@ -187,6 +203,12 @@ class AdminAuth(AuthenticationBackend):
             if path == "/admin/verify":
                 return not staff.must_change_password and staff.mfa_enrolled
 
+        # Unreachable while _is_pre_login_page gates the only call site, and
+        # deliberately not folded into the /admin/verify branch above: a
+        # fourth entry added to _PRE_LOGIN_PAGES without a matching branch
+        # here should be refused, not silently inherit whichever rule
+        # happened to be written last. Missing exactly that kind of
+        # symmetric case is what three rounds of review found here.
         return False
 
     async def login(self, request: Request) -> Response | bool:

@@ -73,6 +73,9 @@ def verify_totp(
     Never raises: both the code and the stored secret can be malformed, and
     each case has to end as a failed verification rather than a 500.
     """
+    if not isinstance(code, str):
+        return None
+
     candidate = _normalise_code(code)
     if len(candidate) != 6 or not candidate.isdigit():
         return None

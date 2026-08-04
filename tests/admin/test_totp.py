@@ -99,6 +99,7 @@ def test_verify_rejects_malformed_input_without_raising():
     assert verify_totp(SECRET, "", now=NOW) is None
     assert verify_totp(SECRET, "abcdef", now=NOW) is None
     assert verify_totp(SECRET, "12345678901234567890", now=NOW) is None
+    assert verify_totp(SECRET, None, now=NOW) is None
 
 
 def test_qr_svg_returns_inline_svg_markup():

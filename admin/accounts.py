@@ -14,8 +14,16 @@ import string
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
-from admin.models import Staff, StaffRole, utcnow
-from admin.security import hash_password
+from admin.models import Staff, StaffRecoveryCode, StaffRole, utcnow
+from admin.security import (
+    decrypt_totp_secret,
+    encrypt_totp_secret,
+    generate_recovery_codes,
+    hash_password,
+    hash_recovery_code,
+    verify_recovery_code,
+)
+from admin.totp import generate_totp_secret, provisioning_uri, verify_totp
 
 #: Contract 8.3. With no email system, administrators are each other's
 #: recovery path, so the system refuses to fall below two.
@@ -130,3 +138,154 @@ def set_role(session: Session, username: str, role: StaffRole) -> None:
     if staff.role is StaffRole.admin and role is not StaffRole.admin:
         _guard_admin_floor(session, staff)
     staff.role = role
+
+
+# --- MFA enrolment ----------------------------------------------------------
+
+#: Contract 8.3. The panel prompts for regeneration once 2 remain.
+RECOVERY_CODE_COUNT = 5
+
+
+class MfaNotEnrolledError(RuntimeError):
+    """The account has no usable TOTP enrolment, or the code offered to
+    complete enrolment was wrong."""
+
+
+def begin_mfa_enrolment(
+    session: Session, username: str, *, secret_key: str
+) -> tuple[str, str]:
+    """Start enrolment: store a fresh encrypted secret, return it and the URI.
+
+    The secret is persisted here, already encrypted, but ``mfa_enrolled_at``
+    stays NULL — so ``mfa_enrolled`` is still False and ``require_staff``
+    still refuses the account. Enrolment completes only once the user produces
+    a correct code, which is the only evidence the authenticator really holds
+    the secret; without that step a mis-scanned QR locks someone out on their
+    next login.
+
+    Persisting it now, rather than handing it back for the caller to carry
+    between the two requests, keeps the plaintext secret out of the browser
+    entirely — off the form, out of the history, out of any request log.
+
+    Calling this again replaces an unfinished enrolment, which is what should
+    happen when someone abandons the page and starts over.
+    """
+    staff = get_staff(session, username)
+    secret = generate_totp_secret()
+    staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=secret_key)
+    staff.mfa_enrolled_at = None
+    staff.mfa_last_counter = None
+    return secret, provisioning_uri(secret, username=staff.username)
+
+
+def complete_mfa_enrolment(
+    session: Session,
+    username: str,
+    code: str,
+    *,
+    secret_key: str,
+    now: int,
+) -> list[str]:
+    """Finish enrolment and return the one-time recovery codes.
+
+    Reads the secret stored by ``begin_mfa_enrolment``. Raises
+    MfaNotEnrolledError if enrolment was never begun, or if the code does not
+    verify. Recovery codes are returned in plaintext because this is the only
+    moment they exist in readable form; only their hashes are stored.
+    """
+    staff = get_staff(session, username)
+    if staff.mfa_secret_enc is None:
+        raise MfaNotEnrolledError(
+            "Enrolment has not been started for this account."
+        )
+
+    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
+    counter = verify_totp(secret, code, now=now)
+    if counter is None:
+        raise MfaNotEnrolledError(
+            "That code did not match. Check the authenticator has the right "
+            "account and that the device clock is correct."
+        )
+
+    staff.mfa_enrolled_at = utcnow()
+    staff.mfa_last_counter = counter
+
+    codes = generate_recovery_codes(RECOVERY_CODE_COUNT)
+    for code_value in codes:
+        session.add(
+            StaffRecoveryCode(
+                staff_id=staff.id,
+                code_hash=hash_recovery_code(code_value),
+                created_at=utcnow(),
+            )
+        )
+    return codes
+
+
+def verify_staff_totp(
+    session: Session, username: str, code: str, *, secret_key: str, now: int
+) -> bool:
+    """Verify a login TOTP and advance the replay counter.
+
+    Raises MfaNotEnrolledError when the account has not enrolled: contract 8.3
+    requires that an unenrolled account cannot reach anything, so treating it
+    as a plain failed code would hide a state that has to be handled.
+    """
+    staff = get_staff(session, username)
+    if staff.mfa_secret_enc is None:
+        raise MfaNotEnrolledError(f"{username!r} has not enrolled an authenticator")
+
+    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
+    counter = verify_totp(secret, code, now=now, last_counter=staff.mfa_last_counter)
+    if counter is None:
+        return False
+
+    staff.mfa_last_counter = counter
+    return True
+
+
+def unused_recovery_code_count(session: Session, username: str) -> int:
+    staff = get_staff(session, username)
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(StaffRecoveryCode)
+            .where(
+                StaffRecoveryCode.staff_id == staff.id,
+                StaffRecoveryCode.used_at.is_(None),
+            )
+        )
+        or 0
+    )
+
+
+def consume_recovery_code(session: Session, username: str, code: str) -> bool:
+    """Spend one recovery code. Returns False if it is unknown or already used."""
+    staff = get_staff(session, username)
+    candidates = session.scalars(
+        select(StaffRecoveryCode).where(
+            StaffRecoveryCode.staff_id == staff.id,
+            StaffRecoveryCode.used_at.is_(None),
+        )
+    ).all()
+    for candidate in candidates:
+        if verify_recovery_code(code, candidate.code_hash):
+            candidate.used_at = utcnow()
+            return True
+    return False
+
+
+def reset_mfa(session: Session, username: str) -> None:
+    """Clear enrolment and every recovery code.
+
+    Contract 8.3 recovery layers L2 (another administrator) and L3 (the
+    server-side CLI) both land here. The account is forced back through
+    enrolment on its next login.
+    """
+    staff = get_staff(session, username)
+    staff.mfa_secret_enc = None
+    staff.mfa_enrolled_at = None
+    staff.mfa_last_counter = None
+    session.query(StaffRecoveryCode).filter(
+        StaffRecoveryCode.staff_id == staff.id
+    ).delete(synchronize_session=False)

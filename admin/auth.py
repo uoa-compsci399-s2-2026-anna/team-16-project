@@ -3,26 +3,69 @@
 Contract: docs/interfaces.md 8.3 and 8.4. The only module here that knows
 about HTTP requests and session cookies; everything below it takes plain
 values.
+
+A login is a two-step handshake and the two steps are joined by a value, not
+by a convention:
+
+    authenticate_password(...)  ->  PendingLogin | None
+    authenticate_totp(pending, ...)            ->  username | None
+    authenticate_recovery_code(pending, ...)   ->  username | None
+
+The second-factor calls take the ``PendingLogin`` the password step produced
+and refuse anything else, so the ordering contract 8.3 requires cannot be
+skipped by a caller who only reads the signatures. Only the username returned
+by a second-factor call belongs under ``SESSION_KEY``.
 """
+
+from collections.abc import Callable
+from dataclasses import dataclass
 
 from sqlalchemy.orm import Session
 
 from admin.accounts import (
     MfaNotEnrolledError,
     UnknownStaffError,
+    consume_recovery_code,
     get_staff,
     verify_staff_totp,
 )
-from admin.models import Staff, utcnow
+from admin.models import utcnow
 from admin.security import verify_password
 from admin.throttle import LoginThrottle
 
 #: Key under which the authenticated username is held in the session cookie.
 SESSION_KEY = "staff_username"
 
+#: How long a passed password step stays usable. Long enough to read a code
+#: off a phone, short enough that a login abandoned on a shared machine cannot
+#: be finished by whoever sits down next.
+PENDING_LOGIN_TTL_SECONDS = 300
+
 
 class StaffAuthRequired(Exception):
     """No usable staff session. The API layer maps this to UNAUTHORIZED (401)."""
+
+
+@dataclass(frozen=True)
+class PendingLogin:
+    """A password step that has passed and a second factor that has not.
+
+    This is deliberately not a username and not a session: it is the only
+    thing the second-factor calls accept, which is what makes contract 8.3's
+    ordering a property of the types rather than of whoever writes the login
+    page. It is also what authorises the forced password-change and enrolment
+    pages, which by definition are reached before any second factor exists.
+
+    Both fields are plain data so the value can be carried between the two
+    requests in the signed session cookie. ``expires_at`` is on the same clock
+    as the ``now`` passed to every function here.
+    """
+
+    username: str
+    expires_at: float
+
+    def is_expired(self, *, now: float) -> bool:
+        return now >= self.expires_at
 
 
 def authenticate_password(
@@ -32,12 +75,25 @@ def authenticate_password(
     *,
     throttle: LoginThrottle,
     now: float,
-) -> Staff | None:
+    pending_ttl_seconds: int = PENDING_LOGIN_TTL_SECONDS,
+) -> PendingLogin | None:
     """Check a username and password, honouring the throttle.
 
-    Returns the account on success, None on any failure. The caller must then
-    complete the second factor before establishing a session — a password
-    alone never grants access (contract 8.3).
+    Returns a short-lived PendingLogin on success and None on any failure. A
+    password alone never grants access (contract 8.3), so nothing here writes
+    a session, records a login time or touches the failure counter's cleared
+    state — a half-finished handshake is not a login.
+
+    In particular the counter is **not** cleared here. Clearing on a correct
+    password would let an attacker who holds the password alternate
+    password-success with wrong second-factor codes and never reach the
+    threshold, which is precisely the 10^6 search contract 8.3 names as the
+    reason for one shared counter.
+
+    ``must_change_password`` and an unfinished MFA enrolment are not checked:
+    a user has to get through the password step before they can complete
+    either. require_staff_username is what refuses those accounts everywhere
+    except the setup pages.
 
     A failure against a username that does not exist still counts towards the
     throttle. Skipping it would turn the throttle into an oracle for which
@@ -56,48 +112,128 @@ def authenticate_password(
         throttle.record_failure(username, now=now)
         return None
 
+    return PendingLogin(
+        username=staff.username, expires_at=now + pending_ttl_seconds
+    )
+
+
+def _complete_login(
+    session: Session,
+    pending: PendingLogin,
+    *,
+    throttle: LoginThrottle,
+    now: float,
+    verify: Callable[[str], bool],
+) -> str | None:
+    """Shared second-factor path: check the handshake, then the factor.
+
+    Returns the username to place under SESSION_KEY, or None. Success here is
+    what completes a login, so this is the one place that clears the shared
+    failure counter and stamps ``last_login_at``.
+
+    The account row is re-read rather than trusted from the pending value, so
+    a deactivation that lands between the two steps takes effect immediately.
+
+    An expired or malformed handshake is refused without recording a failure.
+    It is a flow error rather than a credential guess, and charging it to the
+    counter would let a user lock themselves out by walking away from the
+    second-factor page.
+    """
+    if not isinstance(pending, PendingLogin):
+        raise TypeError(
+            "The second factor requires the PendingLogin returned by "
+            "authenticate_password. A password step must have passed first "
+            "(contract 8.3)."
+        )
+    if pending.is_expired(now=now):
+        return None
+
+    username = pending.username
+    if throttle.is_locked(username, now=now):
+        return None
+
+    try:
+        staff = get_staff(session, username)
+    except UnknownStaffError:
+        throttle.record_failure(username, now=now)
+        return None
+
+    if not staff.is_active or not staff.mfa_enrolled:
+        throttle.record_failure(username, now=now)
+        return None
+
+    try:
+        accepted = verify(staff.username)
+    except (UnknownStaffError, MfaNotEnrolledError):
+        accepted = False
+
+    if not accepted:
+        throttle.record_failure(username, now=now)
+        return None
+
     throttle.clear(username)
     staff.last_login_at = utcnow()
-    return staff
+    return staff.username
 
 
 def authenticate_totp(
     session: Session,
-    username: str,
+    pending: PendingLogin,
     code: str,
     *,
     throttle: LoginThrottle,
     secret_key: str,
     now: float,
-) -> bool:
+) -> str | None:
     """Check the second factor, sharing the throttle with the password step.
+
+    Takes the PendingLogin from authenticate_password and returns the
+    authenticated username, or None. There is no username parameter: the only
+    account this can authenticate is the one the password step already passed.
 
     Contract 8.3 requires one counter across both steps. Throttling only the
     password would leave a six-digit second factor — a 10^6 search space —
     open to anyone who already holds the password, which is precisely the
     position an attacker is in by the time they reach this call.
 
-    A missing account or an unfinished enrolment is reported as an ordinary
-    failure rather than allowed to propagate, so the response cannot be used
-    to learn which accounts exist or which have finished enrolling.
+    A missing account, a deactivated one or an unfinished enrolment is
+    reported as an ordinary failure rather than allowed to propagate, so the
+    response cannot be used to learn which accounts exist or which have
+    finished enrolling.
     """
-    if throttle.is_locked(username, now=now):
-        return False
-
-    try:
-        accepted = verify_staff_totp(
+    return _complete_login(
+        session,
+        pending,
+        throttle=throttle,
+        now=now,
+        verify=lambda username: verify_staff_totp(
             session, username, code, secret_key=secret_key, now=int(now)
-        )
-    except (UnknownStaffError, MfaNotEnrolledError):
-        throttle.record_failure(username, now=now)
-        return False
+        ),
+    )
 
-    if not accepted:
-        throttle.record_failure(username, now=now)
-        return False
 
-    throttle.clear(username)
-    return True
+def authenticate_recovery_code(
+    session: Session,
+    pending: PendingLogin,
+    code: str,
+    *,
+    throttle: LoginThrottle,
+    now: float,
+) -> str | None:
+    """Redeem a recovery code in place of a TOTP: contract 8.3, layer L1.
+
+    The layer that does not need a second human being — a lost or wiped
+    authenticator, with no email system to fall back on. It stands in for the
+    second factor and is therefore held to the same rules: it needs the same
+    PendingLogin, it shares the same counter, and each code is spent once.
+    """
+    return _complete_login(
+        session,
+        pending,
+        throttle=throttle,
+        now=now,
+        verify=lambda username: consume_recovery_code(session, username, code),
+    )
 
 
 def require_staff_username(session: Session, session_data: dict) -> str:

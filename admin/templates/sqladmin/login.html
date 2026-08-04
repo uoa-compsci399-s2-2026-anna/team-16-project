@@ -3,8 +3,8 @@
 {% block content %}
   <h1>Kai Commitment</h1>
   <p class="muted">Impact calculator administration</p>
-  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
-  <form method="post" autocomplete="off">
+  {% if error %}<div class="notice notice--error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post">
     <label for="username">Username</label>
     <input type="text" id="username" name="username"
            autocomplete="username" autofocus required>

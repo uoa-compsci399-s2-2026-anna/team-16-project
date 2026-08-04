@@ -21,20 +21,16 @@ from admin.accounts import (
     set_password,
 )
 from admin.auth import SESSION_KEY
-from admin.backend import PENDING_SESSION_KEY
+from admin.backend import PENDING_SESSION_KEY, current_username
 from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
-#: Matches tests/conftest.py's admin_app fixture, which sets this exact value
-#: as SECRET_KEY before create_app() reads it.
-SECRET_KEY = "test-secret-key-not-used-anywhere-real"
-
-
-def _code_for(secret: str) -> str:
-    return pyotp.TOTP(secret, interval=TOTP_INTERVAL).now()
-
+#: The three pages reachable before SESSION_KEY exists (admin/backend.py's
+#: _PRE_LOGIN_PAGES). Declared here too so Finding 3's tests can be
+#: parametrized without importing a private module constant.
+PRE_LOGIN_PAGES = ("/admin/verify", "/admin/change-password", "/admin/enrol")
 
 #: httpx's cookie jar assigns this domain to any cookie it extracts from a
 #: Set-Cookie response header sent to http://testserver (single-label hosts
@@ -46,17 +42,22 @@ def _code_for(secret: str) -> str:
 _COOKIE_DOMAIN = "testserver.local"
 
 
+def _code_for(secret: str) -> str:
+    return pyotp.TOTP(secret, interval=TOTP_INTERVAL).now()
+
+
 def _session_cookie(secret_key: str, data: dict) -> str:
     """Build a Starlette SessionMiddleware cookie value directly.
 
-    Tests 3 and 6-9 need to drive authenticate()'s onboarding gates from
-    session states the current stub views (Tasks 5-7 build the real ones)
-    cannot yet produce end to end - there is no working /verify POST yet
-    that would carry a login from a pending value through to SESSION_KEY.
-    Signing the cookie the same way
+    Several tests below need to drive authenticate()'s onboarding gates
+    from session states the current stub views (Tasks 5-7 build the real
+    ones) cannot yet produce end to end. Signing the cookie the same way
     starlette.middleware.sessions.SessionMiddleware signs it lets the test
     drive authenticate() through a real HTTP request against the real app,
-    rather than calling the backend object directly.
+    rather than calling the backend object directly. Prefer a real login
+    flow (POST /admin/login, then reuse the client's own Set-Cookie) where
+    the state under test allows it - only reach for this where it doesn't,
+    such as an already-expired pending value.
     """
     signer = itsdangerous.TimestampSigner(secret_key)
     payload = b64encode(json.dumps(data).encode("utf-8"))
@@ -87,7 +88,13 @@ def _make_staff(
     commits. Always role=staff, never role=admin: committing an admin-role
     row here would be visible to test_bootstrap.py's admin-count
     assertions, which run against the same persistent test database.
+
+    Uses ``admin_app.state.settings.secret_key`` for MFA enrolment rather
+    than a module-level constant, so every secret-key-dependent value in
+    this file - staff enrolment and forged session cookies alike - traces
+    back to the one place the running app itself got it from.
     """
+    secret_key = admin_app.state.settings.secret_key
     with admin_app.state.session_factory() as db:
         _, password = create_staff(
             db, username=username, display_name=username.title(), role=StaffRole.staff
@@ -96,12 +103,12 @@ def _make_staff(
         if password_changed:
             set_password(db, username, password)
         if mfa:
-            secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
+            secret, _ = begin_mfa_enrolment(db, username, secret_key=secret_key)
             complete_mfa_enrolment(
                 db,
                 username,
                 _code_for(secret),
-                secret_key=SECRET_KEY,
+                secret_key=secret_key,
                 now=int(time.time()),
             )
         if not active:
@@ -136,7 +143,11 @@ def _reset_staff_table(admin_app):
 
 
 async def test_a_correct_password_alone_does_not_authenticate(client, admin_app):
-    password = _make_staff(admin_app, "wanda")
+    """A fully onboarded account: login() sends it to /admin/verify, and the
+    thing that matters is what the *session* holds, not just where the
+    redirect points - a redirect-only assertion would pass even if login()
+    accidentally set SESSION_KEY too."""
+    password = _make_staff(admin_app, "wanda", password_changed=True, mfa=True)
 
     response = await client.post(
         "/admin/login",
@@ -303,3 +314,190 @@ async def test_the_login_page_uses_the_brand_layout(client):
 
     assert response.status_code == 200
     assert "/admin/static/brand.css" in response.text
+
+
+# --- Finding 1: a fresh account has a route through onboarding -------------
+#
+# The gap the review caught: authenticate() required SESSION_KEY before
+# ever consulting the exempt list, and SESSION_KEY is only ever written by
+# the second factor - which an unenrolled account cannot pass. A brand-new
+# account (bootstrap leaves admin and admin2 in exactly this state) had a
+# redirect to /admin/verify and no way to get past it.
+
+
+async def test_login_sends_a_brand_new_account_to_the_forced_password_change(
+    client, admin_app
+):
+    password = _make_staff(admin_app, "frank")  # must_change_password, no MFA
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "frank", "password": password},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in (302, 307)
+    assert "/admin/change-password" in response.headers["location"]
+
+
+async def test_a_brand_new_account_can_actually_reach_that_page(client, admin_app):
+    """The walk itself, not just the redirect target: the Set-Cookie from
+    the login POST has to carry a pending value /admin/change-password will
+    actually accept, or the account is still stuck."""
+    password = _make_staff(admin_app, "frank")
+
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "frank", "password": password},
+        follow_redirects=False,
+    )
+    assert "/admin/change-password" in login_response.headers["location"]
+
+    response = await client.get("/admin/change-password", follow_redirects=False)
+
+    assert response.status_code == 200
+
+
+async def test_login_sends_a_password_changed_account_to_enrolment(client, admin_app):
+    password = _make_staff(admin_app, "george", password_changed=True)  # no MFA yet
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "george", "password": password},
+        follow_redirects=False,
+    )
+
+    assert response.status_code in (302, 307)
+    assert "/admin/enrol" in response.headers["location"]
+
+
+# --- Finding 2: login() clears any pre-existing session --------------------
+
+
+async def test_login_clears_a_preexisting_session_on_success(client, admin_app):
+    """Alice is logged in on a shared machine; Bob then logs in with his own
+    correct credentials. Without a clear at the start of login(), Bob's
+    request would carry Alice's SESSION_KEY into the response too, and
+    contract 8.4 writes that value straight to audit_log.actor."""
+    _make_staff(admin_app, "alice", password_changed=True, mfa=True)
+    bob_password = _make_staff(admin_app, "bob", password_changed=True, mfa=True)
+    alice_cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "alice"}
+    )
+    client.cookies.set("session", alice_cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "bob", "password": bob_password},
+        follow_redirects=False,
+    )
+
+    cookie_value = response.cookies.get("session")
+    assert cookie_value is not None
+    session_data = _decode_session_cookie(
+        admin_app.state.settings.secret_key, cookie_value
+    )
+    assert session_data.get(SESSION_KEY) is None
+    assert session_data[PENDING_SESSION_KEY]["username"] == "bob"
+
+
+async def test_a_failed_login_also_clears_a_preexisting_session(client, admin_app):
+    _make_staff(admin_app, "alice", password_changed=True, mfa=True)
+    alice_cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "alice"}
+    )
+    client.cookies.set("session", alice_cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "bob", "password": "wrong"},
+        follow_redirects=False,
+    )
+    assert response.status_code == 400
+
+    # An emptied session clears via a "session=null" Set-Cookie rather than
+    # a decodable signed value (starlette.middleware.sessions.
+    # SessionMiddleware), so the clearest proof is that the next request no
+    # longer carries Alice's access.
+    dashboard = await client.get("/admin/", follow_redirects=False)
+
+    assert dashboard.status_code in (302, 307)
+    assert "/admin/login" in dashboard.headers["location"]
+
+
+# --- Finding 3: the pre-login pages themselves, requested directly ---------
+#
+# Previously /admin/verify appeared in this file only as a substring of a
+# redirect Location header - no test ever issued a request to that path
+# itself. A mutant that deleted the branch entirely left every prior test
+# green. These request all three pre-login pages directly.
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_pre_login_pages_redirect_to_login_with_no_session_at_all(
+    client, path
+):
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_pre_login_pages_are_reachable_with_a_valid_pending_login(
+    client, admin_app, path
+):
+    password = _make_staff(admin_app, "ivy")
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "ivy", "password": password},
+        follow_redirects=False,
+    )
+    assert login_response.status_code in (302, 307)  # the password was accepted
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code == 200
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_pre_login_pages_redirect_to_login_once_the_pending_value_expires(
+    client, admin_app, path
+):
+    _make_staff(admin_app, "jack")
+    expired = _session_cookie(
+        admin_app.state.settings.secret_key,
+        {PENDING_SESSION_KEY: {"username": "jack", "expires_at": time.time() - 1}},
+    )
+    client.cookies.set("session", expired, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+# --- current_username(): the helper Tasks 5-7 import ------------------------
+
+
+async def test_current_username_prefers_an_established_session_over_a_pending_one():
+    # async def only so the module-wide pytest.mark.asyncio (needed by every
+    # other test in this file, which all drive the real app) does not warn
+    # on a plain sync function - current_username itself is pure and awaits
+    # nothing.
+    session_data = {
+        SESSION_KEY: "alice",
+        PENDING_SESSION_KEY: {"username": "bob", "expires_at": 1},
+    }
+
+    assert current_username(session_data) == "alice"
+
+
+async def test_current_username_falls_back_to_a_pending_login():
+    session_data = {PENDING_SESSION_KEY: {"username": "bob", "expires_at": 1}}
+
+    assert current_username(session_data) == "bob"
+
+
+async def test_current_username_is_none_with_no_session_state():
+    assert current_username({}) is None

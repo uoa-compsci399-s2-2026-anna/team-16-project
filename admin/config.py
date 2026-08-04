@@ -30,6 +30,13 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _bool(name: str, default: bool) -> bool:
+    raw = os.getenv(name, "").strip().lower()
+    if not raw:
+        return default
+    return raw in ("1", "true", "yes", "on")
+
+
 @dataclass(frozen=True)
 class Settings:
     secret_key: str
@@ -37,6 +44,12 @@ class Settings:
     session_max_age_minutes: int
     login_max_failures: int
     login_lockout_minutes: int
+    # Defaults True: the session cookie carries admin access, and the
+    # deployment terminates TLS upstream, which is exactly the arrangement
+    # where a missing Secure flag lets one http:// navigation on the admin
+    # subdomain hand over the session. Set SESSION_HTTPS_ONLY=false only for
+    # local development served over plain http.
+    session_https_only: bool = True
 
 
 def load_settings() -> Settings:
@@ -46,4 +59,5 @@ def load_settings() -> Settings:
         session_max_age_minutes=_int("SESSION_MAX_AGE_MINUTES", 480),
         login_max_failures=_int("LOGIN_MAX_FAILURES", 5),
         login_lockout_minutes=_int("LOGIN_LOCKOUT_MINUTES", 15),
+        session_https_only=_bool("SESSION_HTTPS_ONLY", True),
     )

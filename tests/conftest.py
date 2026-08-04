@@ -83,6 +83,13 @@ def admin_app(monkeypatch):
     """
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
     monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    # AsyncClient/ASGITransport talks to the app over plain http, and
+    # SESSION_HTTPS_ONLY defaults to true (admin/config.py) - a Secure
+    # session cookie set in response to an http:// request is one real
+    # browsers and httpx's cookie jar alike will not send back, which would
+    # break every test that relies on a session surviving more than one
+    # request.
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
     app = create_app()
     yield app
     app.state.session_factory.kw["bind"].dispose()

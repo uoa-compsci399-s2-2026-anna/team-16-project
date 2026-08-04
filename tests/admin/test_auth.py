@@ -85,6 +85,25 @@ def test_an_unknown_username_does_not_authenticate(session):
     )
 
 
+def test_the_initial_password_authenticates_before_the_forced_change(session):
+    """The first login happens with must_change_password still set — the user
+    has to get in before they can change it. authenticate_password must not
+    gate on that flag; require_staff_username is what refuses the account
+    everywhere except the change-password and enrolment pages.
+
+    This case is not covered by the enrolled() helper, which deliberately
+    completes onboarding.
+    """
+    _, password = create_staff(session, username="dave", display_name="Dave")
+    session.flush()
+    throttle = make_throttle()
+
+    staff = authenticate_password(session, "dave", password, throttle=throttle, now=NOW)
+
+    assert staff is not None
+    assert staff.must_change_password is True
+
+
 def test_a_deactivated_account_does_not_authenticate(session):
     """Deactivation has to bite at login, not only in the admin list view."""
     password, _ = enrolled(session)

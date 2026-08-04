@@ -1,4 +1,4 @@
-"""Database fixtures.
+"""Database fixtures, and the admin app/client fixtures built on top of them.
 
 These tests need a real MySQL: ENUM, VARBINARY and DATETIME all behave
 differently on SQLite, and a model that only passes against SQLite proves
@@ -10,10 +10,13 @@ Run without them:  python -m pytest -m "not db"
 """
 
 import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
 import admin.models  # noqa: F401  - registers the tables on Base.metadata
+from admin.app import create_app
 from db.base import Base
 
 ROOT_URL = "mysql+pymysql://root:devroot@127.0.0.1:3307/"
@@ -65,3 +68,28 @@ def session(engine):
         if transaction.is_active:
             transaction.rollback()
         connection.close()
+
+
+@pytest.fixture
+def admin_app(monkeypatch):
+    """A freshly built admin app, backed by its own engine.
+
+    Tasks 4-8 each build an app per test. ``create_app`` calls
+    ``create_session_factory``, which calls ``create_engine`` fresh every
+    time, and nothing disposes it on its own - harmless for the one engine
+    a real process holds for its whole lifetime, but a leak once tests are
+    doing this at volume. The teardown here disposes it; the engine is
+    reachable off the session factory as ``factory.kw["bind"]``.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    app = create_app()
+    yield app
+    app.state.session_factory.kw["bind"].dispose()
+
+
+@pytest_asyncio.fixture
+async def client(admin_app):
+    transport = ASGITransport(app=admin_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        yield c

@@ -1,42 +1,16 @@
 """admin.app - the composition root.
 
 Contract: docs/interfaces.md 8.3, 8.4.
+
+The ``admin_app`` and ``client`` fixtures live in tests/conftest.py, shared
+with every later task that builds an app and hits the database: each needs
+its own app, and each app's engine needs disposing, which a private copy of
+these fixtures per test module would either duplicate or forget.
 """
 
 import pytest
-import pytest_asyncio
-from httpx import ASGITransport, AsyncClient
-
-from admin.app import create_app
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
-
-
-@pytest.fixture
-def app(monkeypatch):
-    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
-    monkeypatch.setenv(
-        "DATABASE_URL", "mysql+pymysql://root:devroot@127.0.0.1:3307/kaicalc_test"
-    )
-    return create_app()
-
-
-# NOTE (Task 3, deviation from the brief): the brief's Step 1 gives this
-# fixture as plain `@pytest.fixture`. Under the `asyncio_mode = strict`
-# added in Step 3, pytest-asyncio ignores async fixtures that are not
-# explicitly declared with `@pytest_asyncio.fixture` (see
-# pytest_asyncio/plugin.py:pytest_fixture_setup) - the fixture setup falls
-# through to pytest's own sync machinery, which then refuses to run a
-# coroutine-returning fixture for a test at all. Verified by running the
-# brief's literal code first: it fails 4 of 5 tests with "requested an
-# async fixture 'client', with no plugin or hook that handled it." Using
-# the explicit decorator is the documented fix and changes nothing about
-# what the fixture does.
-@pytest_asyncio.fixture
-async def client(app):
-    transport = ASGITransport(app=app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
-        yield c
 
 
 async def test_the_admin_root_redirects_an_anonymous_visitor_to_the_login_page(client):
@@ -67,10 +41,19 @@ async def test_the_brand_font_is_served_as_woff2(client):
     assert response.content[:4] == b"wOF2"
 
 
-async def test_the_throttle_is_a_single_shared_instance(app):
+async def test_the_throttle_is_a_single_shared_instance(admin_app):
     """A per-request throttle counts nothing - every request would start a
-    fresh counter and the lockout would never trigger."""
-    assert app.state.throttle is app.state.throttle
+    fresh counter and the lockout would never trigger.
+
+    Pins the throttle a view would actually reach - through the inner
+    sqladmin Starlette application that ``request.app`` resolves to inside
+    a view (see admin/runtime.py) - against the one the outer app holds,
+    rather than comparing an attribute to itself.
+    """
     from admin.throttle import LoginThrottle
 
-    assert isinstance(app.state.throttle, LoginThrottle)
+    admin_mount = next(r for r in admin_app.routes if r.name == "admin")
+    inner_app = admin_mount.app
+
+    assert inner_app.state.runtime.throttle is admin_app.state.throttle
+    assert isinstance(admin_app.state.throttle, LoginThrottle)

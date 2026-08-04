@@ -10,7 +10,7 @@ from starlette.staticfiles import StaticFiles
 
 from admin.backend import AdminAuth
 from admin.config import Settings, load_settings
-from admin.runtime import Runtime, set_runtime
+from admin.runtime import Runtime
 from admin.throttle import build_throttle
 from db.session import create_session_factory
 
@@ -25,14 +25,6 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # One throttle for the process. A per-request instance would hold a fresh
     # counter every time and never lock anything.
     app.state.throttle = build_throttle(settings)
-
-    set_runtime(
-        Runtime(
-            session_factory=session_factory,
-            throttle=app.state.throttle,
-            settings=settings,
-        )
-    )
 
     # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
     # Starlette sub-application at "/admin" as the *last* line of its
@@ -55,6 +47,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         title="Kai Commitment",
         templates_dir="admin/templates",
         authentication_backend=AdminAuth(settings=settings, app=app),
+    )
+
+    # `admin.admin` is sqladmin's own mounted Starlette application - the
+    # exact object `request.app` resolves to inside a view (see
+    # admin/runtime.py). Attaching Runtime here rather than to a
+    # module-level global means each create_app() call's Runtime lives
+    # exactly as long as that call's app.
+    admin.admin.state.runtime = Runtime(
+        session_factory=session_factory,
+        throttle=app.state.throttle,
+        settings=settings,
     )
 
     from admin.views import ChangePasswordView, EnrolView, VerifyView

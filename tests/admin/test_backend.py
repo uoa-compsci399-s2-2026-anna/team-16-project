@@ -21,7 +21,7 @@ from admin.accounts import (
     set_password,
 )
 from admin.auth import SESSION_KEY
-from admin.backend import PENDING_SESSION_KEY, current_username
+from admin.backend import PENDING_SESSION_KEY, _is_pre_login_page, current_username
 from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
 
@@ -443,11 +443,22 @@ async def test_pre_login_pages_redirect_to_login_with_no_session_at_all(
     assert "/admin/login" in response.headers["location"]
 
 
+#: The account state that actually owes each page - round 2 tightened
+#: reachability from "any valid pending login" to "a pending login *and*
+#: the account still owes this specific step", so unlike round 1's version
+#: of this test, a single fresh account no longer reaches all three.
+_OWES_STATE_FOR_PAGE = {
+    "/admin/change-password": {},  # fresh: must_change_password stays True
+    "/admin/enrol": {"password_changed": True},  # mfa stays unenrolled
+    "/admin/verify": {"password_changed": True, "mfa": True},  # fully onboarded
+}
+
+
 @pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
-async def test_pre_login_pages_are_reachable_with_a_valid_pending_login(
+async def test_pre_login_pages_are_reachable_once_the_account_actually_owes_that_step(
     client, admin_app, path
 ):
-    password = _make_staff(admin_app, "ivy")
+    password = _make_staff(admin_app, "ivy", **_OWES_STATE_FOR_PAGE[path])
     login_response = await client.post(
         "/admin/login",
         data={"username": "ivy", "password": password},
@@ -501,3 +512,127 @@ async def test_current_username_falls_back_to_a_pending_login():
 
 async def test_current_username_is_none_with_no_session_state():
     assert current_username({}) is None
+
+
+# --- Round 2: a bare pending value (one factor) must not open a page the ---
+# --- account does not owe ---------------------------------------------------
+#
+# Review found round 1's fix over-corrected: any valid PendingLogin admitted
+# all three pre-login pages regardless of what the account's own row said,
+# so a password alone could open /admin/enrol on an account that had
+# already enrolled - the exact takeover MfaAlreadyEnrolledError exists to
+# prevent, reachable the moment /admin/enrol stops being a stub. These are
+# the reviewer's three live findings, reproduced directly.
+
+
+@pytest.mark.parametrize("path", ("/admin/change-password", "/admin/enrol"))
+async def test_a_fully_onboarded_account_cannot_open_a_page_it_does_not_owe(
+    client, admin_app, path
+):
+    """The reviewer's first live finding: a fully onboarded account logging
+    in with just its password could still open /admin/enrol and
+    /admin/change-password - pages that exist only to clear a state this
+    account does not have."""
+    password = _make_staff(admin_app, "kim", password_changed=True, mfa=True)
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "kim", "password": password},
+        follow_redirects=False,
+    )
+    assert "/admin/verify" in login_response.headers["location"]  # correctly routed
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_a_pending_login_is_refused_once_the_account_is_deactivated(
+    client, admin_app, path
+):
+    """The reviewer's second live finding: an account deactivated during
+    the 5-minute pending window kept all three pages reachable - the
+    account state was never re-read for this branch."""
+    password = _make_staff(admin_app, "leo")
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "leo", "password": password},
+        follow_redirects=False,
+    )
+    assert login_response.status_code in (302, 307)
+
+    _deactivate(admin_app, "leo")
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_a_pending_login_naming_an_unknown_account_is_refused(
+    client, admin_app, path
+):
+    """The reviewer's third live finding: a pending value naming an
+    account that does not exist (never existed, or was deleted since) kept
+    all three pages reachable."""
+    forged = _session_cookie(
+        admin_app.state.settings.secret_key,
+        {PENDING_SESSION_KEY: {"username": "ghost", "expires_at": time.time() + 60}},
+    )
+    client.cookies.set("session", forged, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+# --- Round 2 minor: a malformed pending value must not 500 -----------------
+
+
+async def test_a_pending_value_with_a_non_numeric_expiry_is_refused_not_500(
+    client, admin_app
+):
+    """_pending_login_from_session's docstring claimed defensiveness the
+    code did not actually provide: PendingLogin is an unchecked frozen
+    dataclass, so construction succeeded with any type and a malformed
+    expires_at only failed later, inside is_expired()'s comparison, outside
+    the try/except meant to catch it."""
+    _make_staff(admin_app, "mia")
+    malformed = _session_cookie(
+        admin_app.state.settings.secret_key,
+        {PENDING_SESSION_KEY: {"username": "mia", "expires_at": None}},
+    )
+    client.cookies.set("session", malformed, domain=_COOKIE_DOMAIN)
+
+    response = await client.get("/admin/verify", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+# --- Round 2 coverage gap: exact membership, not a prefix match ------------
+
+
+async def test_pre_login_page_membership_is_exact_not_a_prefix():
+    """A mutant changing `path in _PRE_LOGIN_PAGES` to a startswith()
+    prefix match kept the whole suite green, since nothing today is
+    registered under any of the three pre-login paths - an end-to-end HTTP
+    request to a path like /admin/enrol/anything 404s at the router before
+    authenticate() is ever consulted, regardless of this property, so the
+    property has to be pinned directly against the function that implements
+    it rather than through a live request.
+
+    async def only for the same reason as the current_username tests above
+    - the module-wide pytest.mark.asyncio would otherwise warn on a plain
+    sync function.
+    """
+    assert _is_pre_login_page("/admin/enrol") is True
+    assert _is_pre_login_page("/admin/change-password") is True
+    assert _is_pre_login_page("/admin/verify") is True
+
+    assert _is_pre_login_page("/admin/enrol/anything") is False
+    assert _is_pre_login_page("/admin/enrolment") is False
+    assert _is_pre_login_page("/admin/enrolment/list") is False

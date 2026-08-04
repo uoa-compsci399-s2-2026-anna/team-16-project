@@ -30,11 +30,32 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+_BOOL_TRUE_VALUES = ("1", "true", "yes", "on")
+_BOOL_FALSE_VALUES = ("0", "false", "no", "off")
+
+
 def _bool(name: str, default: bool) -> bool:
+    """Parse a boolean setting, refusing to guess at an unrecognised value.
+
+    ``_int`` already raises on garbage (``int("ture")`` fails on its own);
+    the first version of this function did not match that for a boolean -
+    any unrecognised value silently became False. For SESSION_HTTPS_ONLY
+    that means a typo drops the Secure flag in production without a sound,
+    which is the exact failure Finding 4 raised this setting to prevent in
+    the first place. A misconfigured deployment should refuse to start
+    rather than quietly run insecure.
+    """
     raw = os.getenv(name, "").strip().lower()
     if not raw:
         return default
-    return raw in ("1", "true", "yes", "on")
+    if raw in _BOOL_TRUE_VALUES:
+        return True
+    if raw in _BOOL_FALSE_VALUES:
+        return False
+    raise ValueError(
+        f"{name}={raw!r} is not a recognised boolean. Use one of "
+        f"{_BOOL_TRUE_VALUES + _BOOL_FALSE_VALUES}."
+    )
 
 
 @dataclass(frozen=True)

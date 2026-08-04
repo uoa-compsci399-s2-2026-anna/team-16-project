@@ -29,16 +29,31 @@ from admin.config import Settings
 PENDING_SESSION_KEY = "pending_login"
 
 #: Reachable before a session exists at all. admin.auth.PendingLogin's own
-#: docstring names the reason: "what authorises the forced password-change
-#: and enrolment pages, which by definition are reached before any second
-#: factor exists" - the second factor's own page belongs in the same set for
-#: the identical reason. authenticate() admits all three on a live
-#: SESSION_KEY too (see below), so an administrator forcing an already
-#: logged-in account back through either step mid-session does not get
-#: locked in a redirect loop. /admin/logout is deliberately absent: sqladmin
-#: registers it without login_required, so authenticate() is never consulted
-#: for it in the first place.
+#: docstring names the reason these pages must be reachable pre-session:
+#: "what authorises the forced password-change and enrolment pages, which by
+#: definition are reached before any second factor exists" - the second
+#: factor's own page belongs in the same set for the identical reason. A
+#: bare pending value is necessary but not sufficient, though - see
+#: _may_open_pre_login_page, which also re-reads the account and gates each
+#: page on the specific state it exists to clear. /admin/logout is
+#: deliberately absent: sqladmin registers it without login_required, so
+#: authenticate() is never consulted for it in the first place.
 _PRE_LOGIN_PAGES = ("/admin/verify", "/admin/change-password", "/admin/enrol")
+
+
+def _is_pre_login_page(path: str) -> bool:
+    """Exact membership, never a prefix match.
+
+    A prefix check would let any future path merely beginning with one of
+    these three strings reach the same reduced-security gate - e.g. a
+    hypothetical /admin/enrolment/list ModelView route matching a
+    startswith("/admin/enrol") check - and nothing is registered under any
+    of these three paths today to expose that through an ordinary
+    end-to-end HTTP test. Mutation testing confirmed the gap directly:
+    changing the ``in`` below to ``startswith()`` left the whole existing
+    suite green.
+    """
+    return path in _PRE_LOGIN_PAGES
 
 
 def _pending_login_from_session(session_data: dict) -> PendingLogin | None:
@@ -47,16 +62,23 @@ def _pending_login_from_session(session_data: dict) -> PendingLogin | None:
     The session cookie only ever carries plain data (it is JSON underneath
     the signature), so this is what lets authenticate() reuse
     PendingLogin.is_expired() rather than re-implementing the comparison.
-    Defensive against a missing or malformed value rather than trusting the
-    shape: the cookie is signed but still client-held.
+
+    Validates the shape explicitly rather than relying on a try/except
+    around the PendingLogin construction: PendingLogin is a plain frozen
+    dataclass with no field validation of its own, so construction succeeds
+    with a value of any type, and a malformed ``expires_at`` (missing,
+    ``None``, or a non-numeric string) would otherwise reach
+    ``is_expired()``'s comparison and raise there instead - a session is
+    signed but still client-held, so this has to be checked, not assumed.
     """
     raw = session_data.get(PENDING_SESSION_KEY)
     if not isinstance(raw, dict):
         return None
-    try:
-        return PendingLogin(username=raw["username"], expires_at=raw["expires_at"])
-    except (KeyError, TypeError):
+    username = raw.get("username")
+    expires_at = raw.get("expires_at")
+    if not isinstance(username, str) or not isinstance(expires_at, (int, float)):
         return None
+    return PendingLogin(username=username, expires_at=expires_at)
 
 
 def current_username(session_data: dict) -> str | None:
@@ -95,6 +117,58 @@ class AdminAuth(AuthenticationBackend):
 
     def _session_factory(self):
         return self._app.state.session_factory
+
+    def _may_open_pre_login_page(self, request: Request, path: str) -> bool:
+        """Whether ``path`` - one of _PRE_LOGIN_PAGES - is reachable right now.
+
+        An established SESSION_KEY always admits these three pages: the
+        defence-in-depth case, an administrator forcing an already-logged-in
+        account back through one of them mid-session (see the branches
+        further down authenticate()). Short of that, a valid, non-expired
+        pending login is necessary but was previously treated as
+        sufficient - review found that admitted a bare *password* to all
+        three regardless of what the account actually still owed, which for
+        /admin/enrol is precisely the takeover MfaAlreadyEnrolledError
+        exists to prevent once that page stops being a stub: someone
+        holding only a password could open it on an already-enrolled
+        account and enrol their own authenticator.
+
+        Each page is instead gated on the specific state it exists to
+        clear, re-read from the database on every call rather than trusted
+        from the cookie:
+
+        * /admin/change-password - only while must_change_password is set
+        * /admin/enrol           - only while the account is not yet
+                                    MFA-enrolled
+        * /admin/verify          - only once *both* of the above are
+                                    already cleared, so a half-onboarded
+                                    account cannot skip ahead to the second
+                                    factor - the mirror image of the bug
+                                    above
+        """
+        if request.session.get(SESSION_KEY):
+            return True
+
+        pending = _pending_login_from_session(request.session)
+        if pending is None or pending.is_expired(now=time.time()):
+            return False
+
+        with self._session_factory()() as db:
+            try:
+                staff = get_staff(db, pending.username)
+            except UnknownStaffError:
+                return False
+            if not staff.is_active:
+                return False
+
+            if path == "/admin/change-password":
+                return staff.must_change_password
+            if path == "/admin/enrol":
+                return not staff.mfa_enrolled
+            if path == "/admin/verify":
+                return not staff.must_change_password and staff.mfa_enrolled
+
+        return False
 
     async def login(self, request: Request) -> Response | bool:
         # First statement, unconditionally: without this, a login attempt on
@@ -158,15 +232,11 @@ class AdminAuth(AuthenticationBackend):
         # SESSION_KEY yet, so falling through to the SESSION_KEY check below
         # would bounce them all to /admin/login and no account could ever
         # finish onboarding - true of a fresh account with nowhere else to
-        # go, not just of the second factor. An established SESSION_KEY also
-        # admits them (see the defence-in-depth branches further down).
-        # Exact membership, not a prefix match: this set is exactly these
-        # three paths and nothing under them.
-        if path in _PRE_LOGIN_PAGES:
-            if request.session.get(SESSION_KEY):
-                return True
-            pending = _pending_login_from_session(request.session)
-            return pending is not None and not pending.is_expired(now=time.time())
+        # go, not just of the second factor. See _may_open_pre_login_page
+        # for what "reachable" actually requires, which since review is
+        # more than merely holding a pending value.
+        if _is_pre_login_page(path):
+            return self._may_open_pre_login_page(request, path)
 
         username = request.session.get(SESSION_KEY)
         if not username:

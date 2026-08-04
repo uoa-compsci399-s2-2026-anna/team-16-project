@@ -286,6 +286,11 @@ def reset_mfa(session: Session, username: str) -> None:
     staff.mfa_secret_enc = None
     staff.mfa_enrolled_at = None
     staff.mfa_last_counter = None
-    session.query(StaffRecoveryCode).filter(
-        StaffRecoveryCode.staff_id == staff.id
-    ).delete(synchronize_session=False)
+    # Clear through the relationship rather than a bulk delete. Staff declares
+    # cascade="all, delete-orphan", so this removes the rows AND keeps the
+    # session's view of them correct. A bulk delete with
+    # synchronize_session=False empties the table but leaves an already-loaded
+    # staff.recovery_codes reporting the deleted rows — and sqladmin renders
+    # relationships directly, so an administrator would see recovery codes
+    # that no longer exist for an account they had just reset.
+    staff.recovery_codes.clear()

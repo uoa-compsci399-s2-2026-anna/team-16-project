@@ -257,3 +257,19 @@ def test_a_reset_account_can_enrol_again(session):
     session.flush()
 
     assert get_staff(session, "alice").mfa_enrolled is True
+
+
+def test_resetting_mfa_leaves_no_stale_recovery_codes_on_the_relationship(session):
+    """The ORM's view must agree with the database, not just the database.
+    sqladmin renders relationships directly, so a stale collection would show
+    an administrator recovery codes that no longer exist for an account they
+    had just reset."""
+    enrolled_account(session)
+    staff = get_staff(session, "alice")
+    assert len(staff.recovery_codes) == RECOVERY_CODE_COUNT  # force the load
+
+    reset_mfa(session, "alice")
+    session.flush()
+
+    assert staff.recovery_codes == []
+    assert unused_recovery_code_count(session, "alice") == 0

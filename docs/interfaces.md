@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-04 (v0.4 draft)"
+date: "2026-08-04 (v0.5 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,12 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.5 — 2026-08-04 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The operational commands are subcommands of one module (`python -m admin.cli reset-mfa`) rather than three separate module entry points (`python -m admin.reset_mfa`). `--help` then lists every command in one place, and settings loading and session construction are written once. Caught during implementation review: `admin/security.py` was raising an error that told the operator to run `python -m admin.rotate_key`, a command that does not exist — and it fires precisely in the scenario where `SECRET_KEY` has been rotated and no authenticator works, which is the worst moment to hand someone an invalid instruction. | §8.3 |
 
 ### v0.4 — 2026-08-04 (raised by E, affects E only)
 
@@ -1187,7 +1193,7 @@ The project builds no email capability, so there is no reset link. Three layers,
 | --- | --- | --- |
 | L1 | 5 single-use recovery codes issued at enrolment | Lost or wiped authenticator; needs no second person |
 | L2 | Another administrator resets MFA and issues a random password | Recovery codes also lost |
-| L3 | `python -m admin.reset_mfa <username>` on the server | Every administrator locked out |
+| L3 | `python -m admin.cli reset-mfa <username>` on the server | Every administrator locked out |
 
 **At least two active `admin` accounts must exist at all times.** Deleting, deactivating or demoting an administrator is refused while the active administrator count is 2 or fewer. This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
 
@@ -1215,9 +1221,12 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 
 | Command | Purpose |
 | --- | --- |
-| `python -m admin.create_staff <username>` | Bootstrap and routine account creation |
-| `python -m admin.reset_mfa <username>` | L3 break-glass |
-| `python -m admin.rotate_key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
+| `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
+| `python -m admin.cli reset-mfa <username>` | L3 break-glass |
+| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
+| `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
+
+One module with subcommands rather than three separate module entry points: `python -m admin.cli --help` then lists every operational command in one place, which is what the handover documentation needs, and settings loading and session construction are written once rather than three times.
 
 The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without rotation the day the client changes it is the day every account loses its second factor.
 

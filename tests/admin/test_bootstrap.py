@@ -5,7 +5,12 @@ Contract: docs/interfaces.md 8.3, "Bootstrap".
 
 import pytest
 
-from admin.accounts import count_active_admins, create_staff, get_staff
+from admin.accounts import (
+    count_active_admins,
+    count_usable_admins,
+    create_staff,
+    get_staff,
+)
 from admin.bootstrap import BOOTSTRAP_USERNAMES, ensure_bootstrap_admins
 from admin.models import StaffRole
 from admin.security import verify_password
@@ -89,6 +94,25 @@ def test_bootstrap_does_nothing_when_administrators_already_exist(session):
 def test_bootstrap_is_idempotent_across_restarts(session):
     ensure_bootstrap_admins(session)
     session.flush()
+
+    assert ensure_bootstrap_admins(session) == []
+    session.flush()
+    assert count_active_admins(session) == 2
+
+
+def test_bootstrap_is_idempotent_while_no_administrator_is_usable_yet(session):
+    """Bootstrap asks whether administrator accounts exist, not whether anyone
+    can log in yet — and the difference matters at exactly this moment.
+
+    Straight after a first start both accounts carry a forced password change
+    and no MFA enrolment, so zero administrators are usable. If bootstrap
+    consulted the stricter count it would try to create `admin` and `admin2`
+    again on every restart until onboarding finished, and collide on usernames
+    that already exist.
+    """
+    ensure_bootstrap_admins(session)
+    session.flush()
+    assert count_usable_admins(session) == 0
 
     assert ensure_bootstrap_admins(session) == []
     session.flush()

@@ -26,7 +26,8 @@ from admin.security import (
 from admin.totp import generate_totp_secret, provisioning_uri, verify_totp
 
 #: Contract 8.3. With no email system, administrators are each other's
-#: recovery path, so the system refuses to fall below two.
+#: recovery path, so the system refuses to fall below two — two that exist,
+#: and two that can actually log in. See _guard_admin_floor.
 MIN_ACTIVE_ADMINS = 2
 
 #: Long enough that it is never typed from memory, and drawn from a set with
@@ -70,6 +71,15 @@ def get_staff(session: Session, username: str) -> Staff:
 
 
 def count_active_admins(session: Session) -> int:
+    """Administrator accounts that exist and have not been deactivated.
+
+    This is the *existence* count, and it is what ``ensure_bootstrap_admins``
+    asks: a freshly bootstrapped administrator cannot log in yet, so a
+    bootstrap keyed on the stricter count below would re-fire on every restart
+    until onboarding finished and collide on the usernames it had already
+    created. Use ``count_usable_admins`` for anything that asks whether there
+    is a human who can actually get in.
+    """
     return int(
         session.scalar(
             select(func.count())
@@ -80,14 +90,66 @@ def count_active_admins(session: Session) -> int:
     )
 
 
+def count_usable_admins(session: Session) -> int:
+    """Administrator accounts that can complete a login today.
+
+    Active, enrolled in MFA and past the forced password change — the three
+    conditions ``require_staff`` checks. An administrator who fails any of
+    them is not a recovery path for anyone: contract 8.3's layer L2 is another
+    administrator *logging in* and resetting your MFA, and with no email
+    system there is nothing below L2 but server shell access.
+
+    This is deliberately narrower than ``count_active_admins``. The realistic
+    failure is a small charity that onboards ``admin``, files ``admin2``'s
+    printed password away and never uses it: two active administrators, one
+    usable, and a floor counting the former would happily let the usable one
+    be deactivated.
+    """
+    return int(
+        session.scalar(
+            select(func.count())
+            .select_from(Staff)
+            .where(
+                Staff.role == StaffRole.admin,
+                Staff.is_active.is_(True),
+                Staff.mfa_enrolled_at.is_not(None),
+                Staff.must_change_password.is_(False),
+            )
+        )
+        or 0
+    )
+
+
 def _guard_admin_floor(session: Session, staff: Staff) -> None:
-    """Refuse a change that removes an active administrator when at the floor."""
+    """Refuse a change that removes an active administrator when at the floor.
+
+    Both counts have to hold, and neither implies the other:
+
+    * ``count_active_admins`` keeps the panel from being emptied of
+      administrator accounts, including during onboarding when none of them
+      can log in yet.
+    * ``count_usable_admins`` keeps it from being left to administrators who
+      cannot log in. Creating a third account and deactivating the only
+      onboarded one would otherwise pass the first check and hand the panel to
+      two accounts nobody can get into — with no email system, that is
+      recoverable only by shell access to the server.
+
+    The consequence is that no administrator can be removed until two of them
+    have finished onboarding. That is the intended reading of contract 8.3's
+    floor: an administrator who cannot log in is not a recovery path.
+    """
     if staff.role is not StaffRole.admin or not staff.is_active:
         return
     if count_active_admins(session) <= MIN_ACTIVE_ADMINS:
         raise LastAdministratorsError(
             f"At least {MIN_ACTIVE_ADMINS} active administrator accounts must "
             "exist. Promote or create another administrator first."
+        )
+    if count_usable_admins(session) <= MIN_ACTIVE_ADMINS:
+        raise LastAdministratorsError(
+            f"At least {MIN_ACTIVE_ADMINS} administrator accounts must be able "
+            "to log in — active, past the forced password change and enrolled "
+            "in MFA. Finish onboarding another administrator first."
         )
 
 

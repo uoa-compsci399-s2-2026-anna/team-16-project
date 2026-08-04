@@ -475,7 +475,12 @@ async def test_pre_login_pages_are_reachable_once_the_account_actually_owes_that
 async def test_pre_login_pages_redirect_to_login_once_the_pending_value_expires(
     client, admin_app, path
 ):
-    _make_staff(admin_app, "jack")
+    """Seeded fully onboarded, not fresh - round 3 review caught that a
+    fresh account's [/admin/verify] case here proved nothing, since the
+    state gate already refuses a fresh account on that path regardless of
+    expiry. A fully onboarded account would otherwise be admitted to all
+    three, so expiry is the only thing that can explain a refusal here."""
+    _make_staff(admin_app, "jack", password_changed=True, mfa=True)
     expired = _session_cookie(
         admin_app.state.settings.secret_key,
         {PENDING_SESSION_KEY: {"username": "jack", "expires_at": time.time() - 1}},
@@ -553,8 +558,16 @@ async def test_a_pending_login_is_refused_once_the_account_is_deactivated(
 ):
     """The reviewer's second live finding: an account deactivated during
     the 5-minute pending window kept all three pages reachable - the
-    account state was never re-read for this branch."""
-    password = _make_staff(admin_app, "leo")
+    account state was never re-read for this branch.
+
+    Seeded fully onboarded (password changed, MFA enrolled), not fresh:
+    round 3 review caught that a fresh account's [/admin/verify] case here
+    proved nothing, since the state gate already refuses a fresh account
+    on that path regardless of is_active - deactivation was never actually
+    exercised by that parametrization. A fully onboarded account would be
+    admitted to all three on the strength of its state alone, so
+    deactivation is the only thing that can explain a refusal here."""
+    password = _make_staff(admin_app, "leo", password_changed=True, mfa=True)
     login_response = await client.post(
         "/admin/login",
         data={"username": "leo", "password": password},
@@ -636,3 +649,134 @@ async def test_pre_login_page_membership_is_exact_not_a_prefix():
     assert _is_pre_login_page("/admin/enrol/anything") is False
     assert _is_pre_login_page("/admin/enrolment") is False
     assert _is_pre_login_page("/admin/enrolment/list") is False
+
+
+# --- Round 3: the SESSION_KEY branch skipped the same re-read the pending --
+# --- branch got in round 2 --------------------------------------------------
+#
+# Review found round 2 fixed the account re-read only for the pending-login
+# branch of _may_open_pre_login_page and left the SESSION_KEY branch
+# short-circuiting straight to True with no read at all - so an
+# already-logged-in, since-deactivated account, or a SESSION_KEY naming a
+# row that no longer exists, still opened all three pre-login pages. Same
+# bug as round 2, other branch in.
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_a_logged_in_but_deactivated_account_cannot_open_a_pre_login_page(
+    client, admin_app, path
+):
+    _make_staff(admin_app, "ruth", password_changed=True, mfa=True)
+    cookie = _session_cookie(admin_app.state.settings.secret_key, {SESSION_KEY: "ruth"})
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    # Sanity: reachable before deactivation - otherwise a refusal below
+    # could not be pinned on deactivation specifically.
+    pre = await client.get(path, follow_redirects=False)
+    assert pre.status_code == 200
+
+    _deactivate(admin_app, "ruth")
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_a_session_naming_an_unknown_account_cannot_open_a_pre_login_page(
+    client, admin_app, path
+):
+    forged = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "ghost2"}
+    )
+    client.cookies.set("session", forged, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+# --- Round 3 minor: /admin/enrol is reachable before the forced password ---
+# --- change ------------------------------------------------------------------
+
+
+async def test_enrol_is_refused_while_a_password_change_is_still_owed(
+    client, admin_app
+):
+    """The enrol gate checked only `not mfa_enrolled`, so a brand-new
+    account satisfied both /admin/change-password and /admin/enrol at
+    once. login() enforces the ladder order contract 8.3 states, but the
+    gate itself did not, making the redirect advisory rather than
+    binding."""
+    password = _make_staff(admin_app, "nadia")  # fresh: must_change_password stays True
+
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "nadia", "password": password},
+        follow_redirects=False,
+    )
+    assert "/admin/change-password" in login_response.headers["location"]
+
+    response = await client.get("/admin/enrol", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+# --- Round 3 minor: the /admin/verify mirror-image property was untested ---
+#
+# Round 2 self-review claimed the "both cleared" condition on /admin/verify
+# was confirmed against every account state the suite exercised; the suite
+# in fact exercised no such combination, and mutant M7 - deleting the
+# `not staff.must_change_password` half of that condition - survived all 51
+# tests. Two tests below: one pins the property the reviewer's minor asked
+# for directly (a half-onboarded account, password already changed but not
+# yet enrolled, must not reach /admin/verify); the other is the one that
+# actually distinguishes M7 - the two operands of the gate's `and` only ever
+# disagree with a mutant dropping one of them when must_change_password and
+# mfa_enrolled are BOTH true at once (enrolled, but a password reset is
+# outstanding), which the first test's state does not produce.
+
+
+async def test_verify_is_refused_for_a_half_onboarded_account_password_changed_only(
+    client, admin_app
+):
+    password = _make_staff(admin_app, "olga", password_changed=True)  # mfa not enrolled
+
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "olga", "password": password},
+        follow_redirects=False,
+    )
+    assert "/admin/enrol" in login_response.headers["location"]
+
+    response = await client.get("/admin/verify", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+async def test_verify_is_refused_while_enrolled_but_a_password_change_is_still_owed(
+    client, admin_app
+):
+    """The test that kills mutant M7: must_change_password and
+    mfa_enrolled both true at once - reachable if an administrator resets
+    a password without touching MFA - is the only state where dropping the
+    `not staff.must_change_password` half of the verify gate changes the
+    answer. mfa=True with password_changed left False (the default)
+    produces exactly that combination."""
+    password = _make_staff(admin_app, "priya", mfa=True)  # must_change_password stays True
+
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "priya", "password": password},
+        follow_redirects=False,
+    )
+    assert "/admin/change-password" in login_response.headers["location"]
+
+    response = await client.get("/admin/verify", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]

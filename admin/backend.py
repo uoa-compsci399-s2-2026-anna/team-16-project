@@ -121,50 +121,69 @@ class AdminAuth(AuthenticationBackend):
     def _may_open_pre_login_page(self, request: Request, path: str) -> bool:
         """Whether ``path`` - one of _PRE_LOGIN_PAGES - is reachable right now.
 
-        An established SESSION_KEY always admits these three pages: the
-        defence-in-depth case, an administrator forcing an already-logged-in
-        account back through one of them mid-session (see the branches
-        further down authenticate()). Short of that, a valid, non-expired
-        pending login is necessary but was previously treated as
-        sufficient - review found that admitted a bare *password* to all
-        three regardless of what the account actually still owed, which for
-        /admin/enrol is precisely the takeover MfaAlreadyEnrolledError
-        exists to prevent once that page stops being a stub: someone
-        holding only a password could open it on an already-enrolled
-        account and enrol their own authenticator.
+        One account re-read covers both ways in, rather than two checks of
+        different rigour. Resolve the username from an established
+        SESSION_KEY or, short of that, a valid non-expired pending login;
+        read the row exactly once; refuse and clear the session for an
+        unknown or inactive account regardless of which way in was used.
+        Review found round 1's fix had dropped this re-read for the pending
+        branch; the fix for that (round 2) restored it only there and left
+        the SESSION_KEY branch short-circuiting straight to True - so an
+        account deactivated mid-session, or a SESSION_KEY naming a row that
+        no longer exists, still opened all three pages. Same bug, other
+        branch.
 
-        Each page is instead gated on the specific state it exists to
-        clear, re-read from the database on every call rather than trusted
-        from the cookie:
+        Only past that point do the two ways in diverge:
 
-        * /admin/change-password - only while must_change_password is set
-        * /admin/enrol           - only while the account is not yet
-                                    MFA-enrolled
-        * /admin/verify          - only once *both* of the above are
-                                    already cleared, so a half-onboarded
-                                    account cannot skip ahead to the second
-                                    factor - the mirror image of the bug
-                                    above
+        * An established SESSION_KEY admits all three unconditionally -
+          defence in depth, for an administrator forcing an
+          already-logged-in account back through one of them mid-session
+          (see the branches further down authenticate()).
+        * A bare pending login instead gates each page on the specific
+          state it exists to clear, in the ladder order contract 8.3
+          states an account must complete them:
+
+          * /admin/change-password - only while must_change_password is set
+          * /admin/enrol           - only once that is cleared *and* the
+                                      account is not yet MFA-enrolled, so
+                                      the ladder order is binding on this
+                                      gate too, not just on where login()
+                                      sends a fresh password - otherwise a
+                                      brand-new account satisfies both
+                                      change-password and enrol at once
+          * /admin/verify          - only once *both* of the above are
+                                      cleared, so a half-onboarded account
+                                      cannot skip ahead to the second
+                                      factor - the mirror image of the
+                                      /admin/enrol case just above
         """
-        if request.session.get(SESSION_KEY):
-            return True
-
-        pending = _pending_login_from_session(request.session)
-        if pending is None or pending.is_expired(now=time.time()):
-            return False
+        session_username = request.session.get(SESSION_KEY)
+        already_logged_in = bool(session_username)
+        if already_logged_in:
+            username = session_username
+        else:
+            pending = _pending_login_from_session(request.session)
+            if pending is None or pending.is_expired(now=time.time()):
+                return False
+            username = pending.username
 
         with self._session_factory()() as db:
             try:
-                staff = get_staff(db, pending.username)
+                staff = get_staff(db, username)
             except UnknownStaffError:
+                request.session.clear()
                 return False
             if not staff.is_active:
+                request.session.clear()
                 return False
+
+            if already_logged_in:
+                return True
 
             if path == "/admin/change-password":
                 return staff.must_change_password
             if path == "/admin/enrol":
-                return not staff.mfa_enrolled
+                return not staff.must_change_password and not staff.mfa_enrolled
             if path == "/admin/verify":
                 return not staff.must_change_password and staff.mfa_enrolled
 

@@ -6,7 +6,7 @@ Contract: docs/interfaces.md 2.4.
 from datetime import datetime, timezone
 
 import pytest
-from sqlalchemy import inspect, select
+from sqlalchemy import delete, inspect, select
 from sqlalchemy.exc import IntegrityError
 
 from admin.models import Staff, StaffRecoveryCode, StaffRole, utcnow
@@ -112,6 +112,27 @@ def test_deleting_an_account_deletes_its_recovery_codes(session):
     session.flush()
 
     assert session.scalars(select(StaffRecoveryCode)).all() == []
+
+
+def test_the_database_cascade_deletes_recovery_codes_independently_of_the_orm(session):
+    """Pins the schema's ON DELETE CASCADE rather than the ORM's
+    cascade="all, delete-orphan". The ORM cascade keeps the sibling test
+    passing even if the foreign key option were removed, and a leftover
+    recovery-code hash for a deleted account is a residual credential."""
+    staff = make_staff()
+    staff.recovery_codes = [StaffRecoveryCode(code_hash="a" * 64)]
+    session.add(staff)
+    session.flush()
+    staff_id = staff.id
+    session.expunge_all()
+
+    session.execute(delete(Staff).where(Staff.id == staff_id))
+    session.flush()
+
+    remaining = session.scalars(
+        select(StaffRecoveryCode).where(StaffRecoveryCode.staff_id == staff_id)
+    ).all()
+    assert remaining == []
 
 
 def test_the_recovery_code_hash_column_is_char_not_varchar(engine):

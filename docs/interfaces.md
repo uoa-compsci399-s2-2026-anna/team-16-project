@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-04 (v0.3 draft)"
+date: "2026-08-04 (v0.4 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,12 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.4 — 2026-08-04 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The application creates two administrator accounts on first start, with per-deployment random passwords printed once to standard output. A deployment now satisfies the two-administrator rule from the moment it comes up instead of depending on the installer running the CLI twice, and a system that starts with one administrator can be locked out by a single lost phone. **No default password exists anywhere in the source** — a fixed one on a public panel is exactly how community-sector accounts get taken over. | §8.3 |
 
 ### v0.3 — 2026-08-04 (raised by E, affects B)
 
@@ -1186,6 +1192,22 @@ The project builds no email capability, so there is no reset link. Three layers,
 **At least two active `admin` accounts must exist at all times.** Deleting, deactivating or demoting an administrator is refused while the active administrator count is 2 or fewer. This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
+
+### Bootstrap
+
+**On first start, when no administrator account exists, the application creates two.** A deployment therefore satisfies the two-administrator rule from the moment it comes up, rather than depending on whoever installs it remembering to run the CLI twice — and a system that starts with one administrator is a system that can be locked out by a single lost phone.
+
+| Property | Behaviour |
+| --- | --- |
+| Trigger | Application start, only when the active administrator count is zero |
+| Accounts | `admin` and `admin2` |
+| Passwords | **Randomly generated per deployment, printed once to standard output.** There is no default password and no fixed value anywhere in the source. |
+| State | Both carry `must_change_password` and no MFA enrolment, so `require_staff()` refuses them until both steps are completed |
+| Idempotence | Runs once. A restart with administrators present creates nothing. |
+
+**A fixed default password would be the single worst defect this system could ship.** `admin`/`admin` on a public panel is exactly how community-sector accounts get taken over, and it is the reason MFA is mandatory here in the first place. The generated passwords exist only in the start-up output; they cannot be recovered afterwards, only reset via `reset-mfa` and a new password.
+
+> Deployment note for the handover documentation: the start-up output contains live credentials. Capture them, log in with both accounts, change both passwords, enrol both authenticators, then discard the output. Do not pipe first-start output into a shared log collector.
 
 > Two administrators is not sufficient on its own. A small organisation is likely to hand both accounts to the same person, or to replace phones at the same time. L1 is the layer that does not depend on a second human being available, which is why it is mandatory rather than a convenience. The panel prompts for regeneration once 2 codes remain.
 

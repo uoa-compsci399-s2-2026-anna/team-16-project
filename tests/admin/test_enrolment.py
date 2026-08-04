@@ -8,6 +8,7 @@ import pytest
 
 from admin.accounts import (
     RECOVERY_CODE_COUNT,
+    MfaAlreadyEnrolledError,
     MfaNotEnrolledError,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
@@ -103,6 +104,48 @@ def test_beginning_enrolment_again_replaces_an_unfinished_one(session):
     assert get_staff(session, "alice").mfa_enrolled is True
 
 
+def test_beginning_enrolment_again_on_an_enrolled_account_is_refused(session):
+    """The account takeover this guard exists to stop.
+
+    Contract 8.3 puts the enrolment page behind the password step only — it
+    has to be reachable by someone who has no second factor yet. If beginning
+    an enrolment could overwrite a finished one, an attacker holding just the
+    password would scan their own QR code and walk away with both factors,
+    needing nothing from the real owner. Re-enrolment is an administrator
+    action and goes through reset_mfa (layer L2) or the CLI (layer L3).
+    """
+    enrolled_account(session)
+
+    with pytest.raises(MfaAlreadyEnrolledError):
+        begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
+
+
+def test_a_refused_re_enrolment_leaves_the_existing_one_intact(session):
+    """Refusing is not enough on its own: the call must also not have written
+    a new secret or cleared mfa_enrolled_at on its way out, or the account is
+    de-enrolled and locked out even though the attempt "failed"."""
+    secret = enrolled_account(session)
+    before = get_staff(session, "alice").mfa_secret_enc
+
+    with pytest.raises(MfaAlreadyEnrolledError):
+        begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
+    session.flush()
+
+    staff = get_staff(session, "alice")
+    assert staff.mfa_enrolled is True
+    assert staff.mfa_secret_enc == before
+    assert (
+        verify_staff_totp(
+            session,
+            "alice",
+            code_for(secret, NOW // TOTP_INTERVAL + 10),
+            secret_key=SECRET_KEY,
+            now=NOW + 300,
+        )
+        is True
+    )
+
+
 def test_completing_enrolment_with_a_correct_code_enrols_the_account(session):
     enrolled_account(session)
 
@@ -182,6 +225,29 @@ def test_verifying_a_code_for_an_unenrolled_account_is_refused(session):
 
     with pytest.raises(MfaNotEnrolledError):
         verify_staff_totp(session, "bob", "123456", secret_key=SECRET_KEY, now=NOW)
+
+
+def test_a_begun_but_unfinished_enrolment_does_not_satisfy_the_login_factor(session):
+    """A stored secret is not an enrolment.
+
+    Someone opens the enrolment page and never finishes: the row now holds a
+    usable secret while mfa_enrolled_at is still NULL. Contract 8.3 grants
+    access only once enrolment has completed, so the login second factor has
+    to gate on mfa_enrolled_at and not on the presence of a secret.
+    """
+    create_staff(session, username="bob", display_name="Bob")
+    session.flush()
+    secret, _ = begin_mfa_enrolment(session, "bob", secret_key=SECRET_KEY)
+    session.flush()
+
+    with pytest.raises(MfaNotEnrolledError):
+        verify_staff_totp(
+            session,
+            "bob",
+            code_for(secret, NOW // TOTP_INTERVAL),
+            secret_key=SECRET_KEY,
+            now=NOW,
+        )
 
 
 def test_a_recovery_code_works_once(session):

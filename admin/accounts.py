@@ -151,6 +151,16 @@ class MfaNotEnrolledError(RuntimeError):
     complete enrolment was wrong."""
 
 
+class MfaAlreadyEnrolledError(RuntimeError):
+    """The account has a finished enrolment, so a new one cannot be begun.
+
+    A sibling of MfaNotEnrolledError rather than a reuse of it: the two say
+    opposite things about the account, and a login page that catches the wrong
+    one would either leak that an enrolment exists or silently swallow the
+    refusal that stops an account being taken over.
+    """
+
+
 def begin_mfa_enrolment(
     session: Session, username: str, *, secret_key: str
 ) -> tuple[str, str]:
@@ -168,9 +178,21 @@ def begin_mfa_enrolment(
     entirely — off the form, out of the history, out of any request log.
 
     Calling this again replaces an unfinished enrolment, which is what should
-    happen when someone abandons the page and starts over.
+    happen when someone abandons the page and starts over. A **finished**
+    enrolment is refused: contract 8.3 puts this page behind the password step
+    alone, since a user with no second factor has to be able to reach it, so
+    an attacker holding only the password would otherwise scan their own QR
+    code, complete the enrolment and hold both factors without ever needing
+    the real owner's authenticator. Re-enrolment is an administrator action
+    and goes through reset_mfa (layer L2) or the CLI (layer L3), both of which
+    clear the enrolment first.
     """
     staff = get_staff(session, username)
+    if staff.mfa_enrolled_at is not None:
+        raise MfaAlreadyEnrolledError(
+            f"{username!r} has already enrolled an authenticator. An "
+            "administrator must reset it before a new one can be enrolled."
+        )
     secret = generate_totp_secret()
     staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=secret_key)
     staff.mfa_enrolled_at = None
@@ -230,9 +252,16 @@ def verify_staff_totp(
     Raises MfaNotEnrolledError when the account has not enrolled: contract 8.3
     requires that an unenrolled account cannot reach anything, so treating it
     as a plain failed code would hide a state that has to be handled.
+
+    The gate is ``mfa_enrolled``, not the presence of a secret. An enrolment
+    that was begun and abandoned leaves a perfectly usable secret in the row
+    while ``mfa_enrolled_at`` is still NULL; accepting it here would let a
+    half-finished enrolment satisfy the login second factor. Completing an
+    enrolment is the separate job of complete_mfa_enrolment, which reads the
+    secret directly for exactly that reason.
     """
     staff = get_staff(session, username)
-    if staff.mfa_secret_enc is None:
+    if not staff.mfa_enrolled or staff.mfa_secret_enc is None:
         raise MfaNotEnrolledError(f"{username!r} has not enrolled an authenticator")
 
     secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)

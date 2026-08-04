@@ -19,6 +19,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from admin.accounts import create_staff, reset_mfa
+from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
 from admin.models import Staff, StaffRole
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
@@ -96,6 +97,10 @@ def _build_parser() -> argparse.ArgumentParser:
     rotate.add_argument("--old", required=True)
     rotate.add_argument("--new", required=True)
 
+    sub.add_parser(
+        "bootstrap", help="Create the initial administrator accounts if none exist"
+    )
+
     return parser
 
 
@@ -129,6 +134,21 @@ def main(argv: list[str] | None = None) -> int:
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
             print("Update SECRET_KEY in .env and restart the application.")
+        elif args.command == "bootstrap":
+            created = ensure_bootstrap_admins(db_session)
+            db_session.commit()
+            if not created:
+                print("Administrator accounts already exist. Nothing to do.")
+            else:
+                print("Created initial administrator accounts.")
+                for username, password in created:
+                    print(f"  {username}: {password}")
+                print()
+                print(
+                    "These passwords are shown once and cannot be recovered. Log in "
+                    "with both accounts now, change both passwords, and enrol both "
+                    "authenticators. Do not send them by email."
+                )
 
     return 0
 

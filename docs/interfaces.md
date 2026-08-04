@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-04 (v0.5 draft)"
+date: "2026-08-04 (v0.6 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,12 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.6 — 2026-08-04 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The administrator floor now guards on two counts, not one: active administrators, and *usable* administrators (active, MFA-enrolled, past the forced password change). Found in the final security review — bootstrap's two accounts are active but cannot log in, so the single count reported two usable administrators when a client who onboarded only one had exactly one. Deactivating the real administrator would have been permitted, leaving the panel owned by accounts nobody can access and no email path back. | §8.3 |
 
 ### v0.5 — 2026-08-04 (raised by E, affects E only)
 
@@ -1195,7 +1201,18 @@ The project builds no email capability, so there is no reset link. Three layers,
 | L2 | Another administrator resets MFA and issues a random password | Recovery codes also lost |
 | L3 | `python -m admin.cli reset-mfa <username>` on the server | Every administrator locked out |
 
-**At least two active `admin` accounts must exist at all times.** Deleting, deactivating or demoting an administrator is refused while the active administrator count is 2 or fewer. This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
+**At least two administrator accounts must exist at all times, and at least two must be able to log in.** Deleting, deactivating or demoting an administrator is refused while *either* count is 2 or fewer:
+
+| Count | Definition | Used by |
+| --- | --- | --- |
+| Active | `role = admin` and `is_active` | Bootstrap's "does this system have any administrator yet" check |
+| **Usable** | Active, **plus** MFA enrolled, **plus** past the forced password change | The removal guard |
+
+The second count exists because bootstrap creates two administrators carrying `must_change_password` and no enrolment. Counting only active accounts reports two usable administrators when there is one — so a system where the client onboarded `admin` and filed `admin2`'s printed password away would permit deactivating the only account anyone can actually log in as, and with no email system there is no way back.
+
+This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
+
+> Consequence worth knowing: while fewer than two administrators are usable, **no** administrator can be deactivated or demoted, including one that was never onboarded. Eviction is still possible without deactivation — reset the account's MFA and issue a new password — but it is indirect. This errs toward "cannot be locked out" over "can always evict", which is the correct side for a small organisation with no email recovery.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
 

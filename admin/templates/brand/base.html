@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>{% block title %}Kai Commitment{% endblock %} — Kai Commitment</title>
+  <link rel="stylesheet" href="/admin/static/brand.css">
+</head>
+<body>
+  <main class="gate">
+    <div class="gate__card">
+      <div class="gate__mark" aria-hidden="true"></div>
+      {% block content %}{% endblock %}
+    </div>
+  </main>
+</body>
+</html>

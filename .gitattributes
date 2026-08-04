@@ -8,3 +8,5 @@
 *.pdf  binary
 *.docx binary
 *.zip  binary
+*.woff2 binary
+*.woff  binary

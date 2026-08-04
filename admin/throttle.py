@@ -11,12 +11,22 @@ Two properties matter here and both are deliberate:
   storing any identifier for a submitter, and username keying is the more
   precise signal anyway: one NAT address can front an entire company.
 
-State is process-local. That is sufficient for a single-instance deployment,
-which is what this project delivers. Multiple instances would need a shared
-store; this is noted rather than built (YAGNI).
+State is process-local, and lives in the instance rather than in the module.
+That is sufficient for a single-instance deployment, which is what this
+project delivers, but it means the application must hold **one** throttle for
+its whole lifetime: build it with ``build_throttle`` at start-up and pass that
+object around. Multiple instances would need a shared store; this is noted
+rather than built (YAGNI).
 """
 
 from dataclasses import dataclass, field
+
+from admin.config import Settings
+
+#: The settings are expressed in minutes because that is the unit an operator
+#: thinks in; the throttle works in seconds because that is the unit the clock
+#: values passed to it are in.
+_SECONDS_PER_MINUTE = 60
 
 
 @dataclass
@@ -66,5 +76,46 @@ class LoginThrottle:
         return int(self.lockout_seconds - (now - entry.last_failure_at))
 
     def clear(self, username: str) -> None:
-        """Forget a username's failures. Call on successful login."""
+        """Forget a username's failures.
+
+        Call only once a login is complete — that is, once a second factor has
+        passed. Clearing on a correct password would let anyone holding the
+        password reset the counter at will and guess codes indefinitely, which
+        is the attack the shared counter exists to stop. ``admin.auth`` is the
+        only caller.
+        """
         self._attempts.pop(self._key(username), None)
+
+
+def build_throttle(settings: Settings) -> LoginThrottle:
+    """Build the application's throttle from configuration.
+
+    **The result must be a process-wide singleton.** The counters live in the
+    instance, so a throttle constructed per request starts empty every time
+    and throttles nothing at all — a failure that looks like working code and
+    shows up only as an account that never locks.
+
+    Converts ``login_lockout_minutes`` into the seconds the constructor takes.
+    That conversion is the whole reason this function exists: passing the
+    minutes straight through gives a 15-second lockout where 15 minutes was
+    configured, and nothing downstream would notice.
+
+    Non-positive values are refused here rather than tolerated. A zero
+    ``max_failures`` locks every username on sight and a zero lockout expires
+    the instant it is taken, so both produce a panel that is broken in a way
+    no test of the throttle itself would catch.
+    """
+    if settings.login_max_failures < 1:
+        raise ValueError(
+            "LOGIN_MAX_FAILURES must be at least 1; "
+            f"got {settings.login_max_failures}."
+        )
+    if settings.login_lockout_minutes < 1:
+        raise ValueError(
+            "LOGIN_LOCKOUT_MINUTES must be at least 1; "
+            f"got {settings.login_lockout_minutes}."
+        )
+    return LoginThrottle(
+        max_failures=settings.login_max_failures,
+        lockout_seconds=settings.login_lockout_minutes * _SECONDS_PER_MINUTE,
+    )

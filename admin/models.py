@@ -8,6 +8,7 @@ import enum
 from datetime import datetime, timezone
 
 from sqlalchemy import (
+    CHAR,
     BigInteger,
     Boolean,
     DateTime,
@@ -82,7 +83,9 @@ class StaffRecoveryCode(Base):
     staff_id: Mapped[int] = mapped_column(
         ForeignKey("staff.id", ondelete="CASCADE"), nullable=False
     )
-    code_hash: Mapped[str] = mapped_column(String(64), nullable=False)
+    # CHAR, not VARCHAR: contract 2.4, and a SHA-256 hex digest is always
+    # exactly 64 characters.
+    code_hash: Mapped[str] = mapped_column(CHAR(64), nullable=False)
     used_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow

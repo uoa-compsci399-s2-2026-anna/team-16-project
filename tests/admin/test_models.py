@@ -114,6 +114,16 @@ def test_deleting_an_account_deletes_its_recovery_codes(session):
     assert session.scalars(select(StaffRecoveryCode)).all() == []
 
 
+def test_the_recovery_code_hash_column_is_char_not_varchar(engine):
+    """Contract 2.4 specifies CHAR(64). A SHA-256 hex digest is always
+    exactly 64 characters, so a variable-length column stores a length
+    prefix for a length that never varies."""
+    columns = {c["name"]: c for c in inspect(engine).get_columns("staff_recovery_code")}
+
+    assert "CHAR" in str(columns["code_hash"]["type"]).upper()
+    assert "VARCHAR" not in str(columns["code_hash"]["type"]).upper()
+
+
 def test_role_is_stored_as_a_database_enum(engine):
     """So that an invalid role cannot be written by anything that bypasses the
     ORM, including a hand-run SQL statement."""

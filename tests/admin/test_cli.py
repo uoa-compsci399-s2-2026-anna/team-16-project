@@ -123,3 +123,26 @@ def test_rotating_twice_leaves_secrets_readable_with_the_newest_key(session):
         decrypt_totp_secret(get_staff(session, "alice").mfa_secret_enc, secret_key=third)
         == secret
     )
+
+
+def test_rotate_key_writes_nothing_when_one_account_of_several_fails(session):
+    """The catastrophic failure mode: a partial rotation leaves some secrets
+    readable only with the old key and some only with the new one, with no
+    single key that opens the whole table. Unrecoverable short of resetting
+    every account's MFA.
+
+    One account failing among several is the case that distinguishes
+    decrypt-all-then-write-all from a per-row decrypt-and-write loop. A test
+    where every row fails cannot tell them apart.
+    """
+    enrol(session, "alice", OLD_KEY)
+    enrol(session, "bob", "a-third-key-nobody-else-uses")
+
+    before_alice = get_staff(session, "alice").mfa_secret_enc
+    before_bob = get_staff(session, "bob").mfa_secret_enc
+
+    with pytest.raises(TotpSecretUndecryptableError):
+        cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+
+    assert get_staff(session, "alice").mfa_secret_enc == before_alice
+    assert get_staff(session, "bob").mfa_secret_enc == before_bob

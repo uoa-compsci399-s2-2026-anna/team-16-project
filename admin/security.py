@@ -29,7 +29,7 @@ class TotpSecretUndecryptableError(RuntimeError):
     """A stored TOTP secret cannot be decrypted with the current SECRET_KEY.
 
     Almost always means SECRET_KEY was changed without running
-    ``python -m admin.rotate_key``.
+    ``python -m admin.cli rotate-key``.
     """
 
 
@@ -116,7 +116,7 @@ def decrypt_totp_secret(blob: bytes, *, secret_key: str) -> str:
         raise TotpSecretUndecryptableError(
             "Stored TOTP secret cannot be decrypted with the current "
             "SECRET_KEY. If SECRET_KEY was changed, run "
-            "python -m admin.rotate_key --old <old> --new <new>."
+            "python -m admin.cli rotate-key --old <old> --new <new>."
         ) from exc
 
 

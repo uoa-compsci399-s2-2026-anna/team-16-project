@@ -15,10 +15,6 @@ CSRF_SESSION_KEY = "csrf_token"
 _TOKEN_BYTES = 32
 
 
-class CsrfError(Exception):
-    """A form arrived without a valid CSRF token."""
-
-
 def issue_token(session_data: dict) -> str:
     """Return this session's token, minting one on first use."""
     token = session_data.get(CSRF_SESSION_KEY)

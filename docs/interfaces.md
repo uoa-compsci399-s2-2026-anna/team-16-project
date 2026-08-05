@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-07-31 (v0.1 draft)"
+date: "2026-08-04 (v0.6 draft)"
 ---
 
 # 0. How to Use This Document
@@ -22,6 +22,60 @@ This document defines **what every person's code receives and what it returns.**
 | §7 Front-end modules | C, D | JavaScript module signatures |
 | §8 Admin panel | E | Staff-only interfaces |
 | §9 Error codes | B | Global and uniform |
+
+## 0.1 Change Log
+
+### v0.6 — 2026-08-04 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The administrator floor now guards on two counts, not one: active administrators, and *usable* administrators (active, MFA-enrolled, past the forced password change). Found in the final security review — bootstrap's two accounts are active but cannot log in, so the single count reported two usable administrators when a client who onboarded only one had exactly one. Deactivating the real administrator would have been permitted, leaving the panel owned by accounts nobody can access and no email path back. | §8.3 |
+
+### v0.5 — 2026-08-04 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The operational commands are subcommands of one module (`python -m admin.cli reset-mfa`) rather than three separate module entry points (`python -m admin.reset_mfa`). `--help` then lists every command in one place, and settings loading and session construction are written once. Caught during implementation review: `admin/security.py` was raising an error that told the operator to run `python -m admin.rotate_key`, a command that does not exist — and it fires precisely in the scenario where `SECRET_KEY` has been rotated and no authenticator works, which is the worst moment to hand someone an invalid instruction. | §8.3 |
+
+### v0.4 — 2026-08-04 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | The application creates two administrator accounts on first start, with per-deployment random passwords printed once to standard output. A deployment now satisfies the two-administrator rule from the moment it comes up instead of depending on the installer running the CLI twice, and a system that starts with one administrator can be locked out by a single lost phone. **No default password exists anywhere in the source** — a fixed one on a public panel is exactly how community-sector accounts get taken over. | §8.3 |
+
+### v0.3 — 2026-08-04 (raised by E, affects B)
+
+Specifies staff authentication, which v0.1 named but did not define, and makes the audit-log requirement executable.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | v0.1 §8.3 said "sqladmin built-in authentication". **There is no such thing** — `sqladmin` supplies an `AuthenticationBackend` abstract class and nothing else: no user store, no password hashing, no login page. §2.4 and §8.3 now specify all of it. | §2.4, §8.3 |
+| 2 | Added the `staff` and `staff_recovery_code` tables. Owned by E, but carried in this document so that Alembic has a single migration chain — two chains will collide. | §2.4 |
+| 3 | **MFA (TOTP) is mandatory for every account**, enrolled on first login and enforced before any other admin route is reachable. New Zealand community organisations have had credential-stuffing incidents; a public admin panel with password-only authentication is not defensible. | §8.3 |
+| 4 | Two roles, `admin` and `staff`. Publishing and rollback are available to both — `audit_log` plus one-click rollback already provide accountability and recovery, and gating them behind an administrator would stall routine work in a three-to-five person team. Account management and MFA resets are administrator-only. | §8.3 |
+| 5 | **No email system.** Account recovery is therefore three layers: recovery codes, another administrator, and a server-side CLI. At least two active administrator accounts must exist at all times, enforced in the service layer. | §8.3 |
+| 6 | v0.1 §8.1 required all writes to go through "the repository functions in §5", but §5 contains **no write function for any of the eleven taxonomy and factor tables**, so the requirement was literally unexecutable. Replaced with a requirement on the outcome — every write produces an `audit_log` entry — plus a single insertion point, `write_audit()`. | §5.5, §8.1 |
+| 7 | `write_audit()` carries a field blocklist. `audit_log` is readable by every staff member, so serialising a `staff` row into `before_json` would expose password hashes and TOTP secrets to anyone with an account — a real privilege-escalation path. | §5.5 |
+
+**Unchanged:** nothing in §3, §4, §6 or §7. The public API is untouched.
+
+### v0.2 — 2026-08-04 (raised by E, affects A and B)
+
+Adds the dry-run capability the admin panel needs, and closes two holes in v0.1.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Resolved a contradiction: §4.2 said the admin dry-run page calls the engine directly, §8.2 said it calls the HTTP API. **The HTTP path wins**; the §4.2 docstring is corrected. Two paths would drift, and the point of a dry run is that it exercises what production exercises. | §4.2, §8.2 |
+| 2 | `X-Dry-Run: true` now means exactly one thing — **do not persist** — and is enforced by staff authentication. v0.1 declared it "admin panel only" but specified no mechanism, so anyone could send it and compute without leaving a record. | §6.2 |
+| 3 | `POST /calculate` gains an optional `dry_run` object carrying either a persisted `factor_set_version` or a complete inline `bundle`. Without it a dry run could only ever exercise the published factors, which defeats its purpose. | §6.2 |
+| 4 | Defined the shape of `bundle.json`, which §10.1 named but never specified. It is now the single shape used by golden tests, `FactorBundle.from_json()` and dry-run requests. **It includes the taxonomy**, because §4.1's `has_destination()` / `has_sector()` / `standard_mix_code()` cannot be implemented without it, and because staff must be able to trial a new destination or food category before committing it. | §10.2 |
+| 5 | Added `FactorBundle.from_json()` and `FactorBundle.validate()`. | §4.1 |
+| 6 | Added error code `UNAUTHORIZED` (401); v0.1 had no authentication failure code at all. `FORMULA_ERROR` now has two presentations — opaque for the public, fully located for authenticated dry runs, because staff tuning a formula must be told where it broke. | §9 |
+| 7 | Added `require_staff()` as the sole interface between the admin authentication system (E) and the API layer (B). | §8.4 |
+| 8 | Added the pre-publish comparison view. | §8.2 |
+| 9 | `load_factor_bundle` caching must be slotted by `factor_set_id` so that loading a draft cannot contaminate the published slot. | §5.2 |
+
+**Unchanged:** the public request path (no header, no `dry_run`) behaves exactly as in v0.1 — C and D require no changes. No database table or column is added or altered. No §3 domain object changes.
 
 ---
 
@@ -270,6 +324,46 @@ UNIQUE(`submission_id`, `scenario`, `destination_id`)
 | `before_json` | JSON | NULL | |
 | `after_json` | JSON | NULL | |
 
+> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). `audit_log` is readable by every staff member, so an unfiltered dump of a `staff` row would hand out password hashes and TOTP secrets.
+
+## 2.4 Staff and Access Control
+
+Owned by E. Carried in this document so that Alembic keeps a single migration chain.
+
+### `staff`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `username` | VARCHAR(64) | UNIQUE, NOT NULL | Written to `audit_log.actor` |
+| `display_name` | VARCHAR(128) | NOT NULL | |
+| `password_hash` | VARCHAR(255) | NOT NULL | bcrypt (`passlib`) |
+| `role` | ENUM(`admin`, `staff`) | NOT NULL, DEFAULT `staff` | |
+| `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+| `must_change_password` | BOOLEAN | NOT NULL, DEFAULT TRUE | Set on creation and on an administrator reset |
+| `mfa_secret_enc` | VARBINARY(255) | NULL | TOTP secret, encrypted at rest; NULL means not yet enrolled |
+| `mfa_enrolled_at` | DATETIME | NULL | |
+| `mfa_last_counter` | BIGINT | NULL | Last accepted TOTP time step; blocks replay within the window |
+| `created_at` | DATETIME | NOT NULL | |
+| `created_by` | VARCHAR(64) | NULL | |
+| `last_login_at` | DATETIME | NULL | |
+
+### `staff_recovery_code`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `staff_id` | INT | FK → `staff.id`, NOT NULL, ON DELETE CASCADE | |
+| `code_hash` | CHAR(64) | NOT NULL | SHA-256 |
+| `used_at` | DATETIME | NULL | Single use |
+| `created_at` | DATETIME | NOT NULL | |
+
+> **Recovery codes are hashed with SHA-256, not bcrypt, and this is deliberate.** bcrypt is slow in order to resist brute force against low-entropy human-chosen passwords. A recovery code is a high-entropy string we generate ourselves, so brute force is already infeasible and a slow hash buys nothing but latency.
+
+> `mfa_secret_enc` is encrypted with a **sub-key derived from `SECRET_KEY` via HKDF-SHA256** (`info=b"totp-secret-encryption"`), not with `SECRET_KEY` itself — that key already signs session cookies, and reusing one key for two purposes is a defect waiting to happen. This protects the case where a database dump leaks on its own, which is the common one: a committed backup, a misconfigured export. It does not protect against losing the database and the key together.
+>
+> **Consequence: rotating `SECRET_KEY` invalidates every enrolled TOTP secret.** A rotation command (§8.3) must decrypt with the old key and re-encrypt with the new one. Without it, the day the client decides to rotate their key is the day nobody can log in.
+
 ---
 
 # 3. Domain Objects (owner: A)
@@ -376,7 +470,27 @@ class FactorBundle:
     def has_sector(self, code: str) -> bool: ...
     def has_food_category(self, code: str) -> bool: ...
     def standard_mix_code(self) -> str: ...
+
+    @classmethod
+    def from_json(cls, data: dict) -> "FactorBundle":
+        """Build a bundle from the bundle.json shape defined in §10.1.
+        Pure: no database, no file system, no clock. All decimals arrive as
+        strings and are converted with Decimal(); float is never used as an
+        intermediate. Raises BundleFormatError on malformed input."""
+
+    def validate(self) -> list[str]:
+        """Check internal consistency and return a list of human-readable
+        problems; an empty list means the bundle is well-formed. Does not
+        raise — the API layer decides how to present the problems.
+
+        Checks: every upstream row's sector / food_category / metric exists
+        in this bundle; every downstream row's destination / metric exists
+        and its food_category is null or exists; every destination.group
+        exists; exactly one food_category has is_standard_mix; every
+        formula.metric and every equivalence.source_metric exists."""
 ```
+
+> `from_json()` is required by the golden test suite regardless (§10.1 loads a `bundle.json` per case). Dry-run requests are simply a second caller of it. `validate()` exists because a bundle arriving over HTTP may be internally inconsistent in ways a database-loaded one cannot be; the rules are engine domain knowledge and are therefore implemented once, here, rather than duplicated in the API layer.
 
 ## 4.2 Entry Points
 
@@ -409,8 +523,7 @@ def calculate(req: CalculationRequest, bundle: FactorBundle) -> CalculationResul
 ```python
 def calculate_scenario(scenario: ScenarioInput, bundle: FactorBundle,
                        gwp_horizon: int) -> ScenarioResult:
-    """Evaluate a single scenario. Called internally by calculate(), and
-    used directly by the admin dry-run page."""
+    """Evaluate a single scenario. Called internally by calculate()."""
 ```
 
 ```python
@@ -481,6 +594,19 @@ All defined in `engine/errors.py`, deriving from `EngineError`.
 | `UnknownCodeError` | Request contains a code absent from the bundle | `UNKNOWN_CODE` (400) |
 | `UnknownConstantError` | Formula references a missing constant | `FORMULA_ERROR` (500) |
 | `FormulaError` | Expression is invalid | `FORMULA_ERROR` (500) |
+| `BundleFormatError` | `from_json()` received malformed input | `VALIDATION_ERROR` (400) |
+
+`FormulaError` carries **structured attributes**, not a pre-formatted message:
+
+```python
+class FormulaError(EngineError):
+    expression: str
+    line: int
+    column: int
+    reason: str
+```
+
+The fields must be separable because §9 gives this error two presentations: opaque for public requests (the expression is never echoed), fully located for authenticated dry runs (staff tuning a formula cannot fix what they cannot see).
 
 ---
 
@@ -517,8 +643,13 @@ def get_published_factor_set_id(session) -> int:
 
 def load_factor_bundle(session, factor_set_id: int | None = None) -> FactorBundle:
     """Loads the currently published version when factor_set_id is None.
-    The result should be cached by factor_set_id and invalidated on
-    publish or rollback."""
+
+    The result must be cached in a slot keyed by factor_set_id, and
+    invalidated on publish or rollback. A single overwrite-on-load cache is
+    not acceptable: staff repeatedly dry-running a draft would otherwise
+    either evict the published bundle continuously, or — far worse — serve
+    draft factors to a public request. Inline bundles supplied over HTTP
+    (§6.2) are never cached; they differ on every request."""
 
 def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     """Within one transaction: archive the current published set, publish the
@@ -585,6 +716,37 @@ class PublicStats:
     by_food_category: tuple[StatsBucket, ...]
 ```
 
+## 5.5 Audit
+
+```python
+REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash"}
+
+def write_audit(session, actor: str, action: str, table_name: str,
+                row_id: int | None,
+                before: dict | None, after: dict | None) -> None:
+    """The only code that inserts into audit_log.
+
+    Runs inside the caller's transaction: a change that is rolled back must
+    leave no audit record claiming it happened.
+
+    Every key in REDACTED_FIELDS is replaced with "[redacted]" before
+    serialisation. audit_log is readable by every staff member through
+    /admin/audit, so an unfiltered staff row would expose password hashes
+    and TOTP secrets to anyone holding an account.
+
+    Decimal values serialise as strings, never as float (§1.2).
+    """
+```
+
+Two callers, and no others:
+
+| Caller | Writes |
+| --- | --- |
+| `AuditedModelView` (§8.1) | Every admin CRUD operation |
+| `publish_factor_set` / `rollback_to` / `clone_factor_set` (§5.2) | Factor-set lifecycle operations |
+
+> v0.1 required that "all writes go through the repository functions in §5", but §5 defines no write function for any of the eleven taxonomy and factor tables, so nothing could satisfy it. Adding thirty-odd boilerplate CRUD functions to the repository would not help either: they would have exactly one caller (the admin panel), and `sqladmin`'s `insert_model` / `update_model` / `delete_model` would all have to be overridden to route through them. The requirement is therefore stated on the outcome — every write produces an audit entry — with a single insertion point to keep the format uniform.
+
 ---
 
 # 6. REST API (implemented by B; consumed by C and D)
@@ -645,7 +807,8 @@ Called once on page load to build every dropdown and input row.
   "alternative": [
     { "destination": "anaerobic_digestion", "qty_kg": "1200.000" },
     { "destination": "animal_feed", "qty_kg": "300.000" }
-  ]
+  ],
+  "dry_run": null
 }
 ```
 
@@ -657,6 +820,7 @@ Called once on page load to build every dropdown and input row.
 | `gwp_horizon` | int | No | 20 or 100; defaults to 100 |
 | `current` | array | Yes | At least one line |
 | `alternative` | array \| null | No | Null means no comparison is performed |
+| `dry_run` | object \| null | No | **Staff only**; see §6.2.1. Requires `X-Dry-Run: true` |
 
 **Validation rules (enforced server-side)**
 
@@ -668,18 +832,56 @@ Called once on page load to build every dropdown and input row.
 | Per scenario line count `<= 20` | `VALIDATION_ERROR` |
 | No duplicate `destination` within a scenario | `VALIDATION_ERROR` |
 | All codes exist | `UNKNOWN_CODE` |
+| `dry_run` present without `X-Dry-Run: true` | `VALIDATION_ERROR` |
+| `dry_run.factor_set_version` and `dry_run.bundle` both non-null | `VALIDATION_ERROR` |
+| `dry_run.bundle` row count across all tables `<= 5000` | `VALIDATION_ERROR` |
+| `dry_run.bundle` fails `FactorBundle.validate()` | `VALIDATION_ERROR`, one `details` entry per problem |
 
 **Request headers**
 
 | Header | Purpose |
 | --- | --- |
-| `X-Dry-Run: true` | **Admin panel only.** Calculates without persisting and returns no token. Used for staff testing so that statistics are not polluted. |
+| `X-Dry-Run: true` | **Do not persist.** No `submission` or `submission_line` row is written and no token is returned. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
+
+## 6.2.1 The `dry_run` Object
+
+`X-Dry-Run` and `dry_run` are orthogonal: the header decides **whether the result is persisted**, the object decides **which factors are used**. All four combinations are legal.
+
+| `X-Dry-Run` | `dry_run` | Scenario | Persisted |
+| --- | --- | --- | --- |
+| absent | null | Public calculation against the published set | **Yes** |
+| `true` | null | Staff verifying live behaviour | No |
+| `true` | `{ "factor_set_version": "…" }` | Comparing a persisted draft against published before publishing | No |
+| `true` | `{ "bundle": {…} }` | Trialling changes that have not been saved anywhere | No |
+
+```json
+"dry_run": {
+  "factor_set_version": "2026-Q3-draft",
+  "bundle": null
+}
+```
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `factor_set_version` | string \| null | `version_label` of a persisted set — draft, published or archived |
+| `bundle` | object \| null | A **complete** factor set snapshot in the §10.1 `bundle.json` shape |
+
+The two are mutually exclusive. When both are null the published set is used — the request is still not persisted.
+
+> **Why a complete bundle rather than a diff against a base version.** A merge routine is new, untested code sitting between the staff member and the engine: when a dry run produces a wrong number, there is no way to tell whether the formula was wrong or the merge was. Diffs also have unpleasant edge cases — how does a generic `food_category: null` row merge with a specific one, and how is "delete this row" expressed? A complete snapshot has none of these questions. The volume does not justify the risk: roughly 270 upstream rows, 600 downstream rows and 20 others, around 90 KB uncompressed, and it travels behind authentication.
+
+> **The bundle carries the taxonomy, not just the factors** (§10.1). Two reasons: §4.1's `has_destination()`, `has_sector()`, `has_food_category()` and `standard_mix_code()` cannot be implemented without it; and the client has stated that food categories, destinations and groupings will change over time, so staff must be able to trial a new destination before committing it — which is impossible if the bundle cannot carry its definition.
+
+> This does **not** change how taxonomy is normally edited. Routine create/update/delete still goes through the admin CRUD of §8.1 and writes to the database. An inline bundle is a parallel, temporary channel that exists only for the lifetime of one request.
+
+Because every dry-run request carries its own data, concurrent staff dry runs are isolated by construction. The path is stateless: no locks, no scratch tables, no TTL sweeper, and no orphan rows when someone closes the browser mid-edit.
 
 **200 response**
 
 ```json
 {
   "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true },
+  "factor_source": "published",
   "gwp_horizon": 100,
   "token": "3f2b…",
   "current": {
@@ -707,6 +909,16 @@ Called once on page load to build every dropdown and input row.
 ```
 
 When `alternative` is not supplied, both `alternative` and `net_benefit` are `null`.
+
+`factor_source` states which factors the engine actually used:
+
+| Value | Meaning |
+| --- | --- |
+| `"published"` | The published set. Public responses are always this. |
+| `"version:<label>"` | The named persisted set |
+| `"inline"` | The bundle supplied in the request body |
+
+Without this field a staff member who gets an unexpected number cannot tell whether their data failed to take effect or their formula is wrong. On a dry run `token` is `null`.
 
 > **The front end must check `factor_set.is_mock`.** When true, a placeholder-data warning banner is mandatory in the results area.
 
@@ -912,23 +1124,160 @@ Built on `sqladmin`, mounted at `/admin`, authentication required.
 
 `sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream`
 
-Requirements: list views must offer search and filtering; all writes must go through the repository functions in §5 so that `audit_log` entries are produced.
+Requirements: list views must offer search and filtering.
+
+**Every write must produce an `audit_log` entry.** Admin CRUD achieves this through an `AuditedModelView` base class that all eleven views inherit; factor-set lifecycle operations do it inline in the repository. Both call `write_audit()` (§5.5), which is the only code that inserts into `audit_log`.
+
+`AuditedModelView` captures the pre-change row in the before-write hook — the after-write hook only ever sees the new values — and hard-codes `can_create = can_edit = can_delete = False` on the `audit_log` view itself.
 
 ## 8.2 Custom Views
 
 | View | Path | Function |
 | --- | --- | --- |
 | Factor sets | `/admin/factor-sets` | Clone, publish, roll back; shows draft/published/archived state |
-| Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`**, and display the line-by-line breakdown |
+| Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
+| Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show old value, new value and change per metric. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
 | Audit log | `/admin/audit` | Read-only, filterable by actor, time and table |
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
-## 8.3 Accounts and Blocklist
+The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — differenced client-side. The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent.
 
-- Accounts: `sqladmin` built-in authentication. Staff accounts are created by an administrator; there is no self-service registration.
-- Blocklist: an `ip_blocklist(id, cidr, reason, created_at, created_by)` table plus middleware. Used to block sources of junk submissions, **never to identify ordinary users.**
+Because a dry-run request body is a `bundle` plus a scenario, the dry-run view can offer a **Save as regression case** action that writes `tests/golden/case_NN/{bundle,request,expected}.json` (§10.1) directly from a run staff considers worth keeping. Tuning factors then produces golden cases as a by-product rather than requiring them to be authored separately.
+
+## 8.3 Accounts, Authentication and Recovery
+
+`sqladmin` provides an `AuthenticationBackend` abstract class — `login()`, `logout()`, `authenticate()` — and nothing more. There is no built-in user store, password hashing or login page; all of it is specified here.
+
+### Roles
+
+| Capability | `staff` | `admin` |
+| --- | --- | --- |
+| Taxonomy, factor and formula CRUD | ✅ | ✅ |
+| Dry run, view submissions, view audit log | ✅ | ✅ |
+| Set `excluded_from_public` | ✅ | ✅ |
+| Publish, roll back | ✅ | ✅ |
+| Create, deactivate and re-role accounts | ❌ | ✅ |
+| Reset another account's MFA, issue a random password | ❌ | ✅ |
+
+Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.
+
+### Mandatory MFA
+
+Every account enrols a TOTP authenticator. There is no opt-out.
+
+```
+admin creates account  ->  random initial password, shown once,
+                           handed over out of band
+        v
+first login            ->  must_change_password = true
+        v
+forced password change
+        v
+forced TOTP enrolment  ->  QR code plus 5 single-use recovery codes,
+                           shown once; one correct TOTP required to finish
+        v
+mfa_enrolled_at set    ->  access granted
+```
+
+**While `mfa_enrolled_at IS NULL`, every route except the password-change and enrolment pages is refused, `require_staff()` included.** Without that, enrolment is advisory — a user can navigate straight past it by typing a URL.
+
+Implementation notes: `pyotp` with `valid_window=1` (±30 s clock drift); `qrcode` with the SVG factory, which avoids a Pillow dependency; initial passwords and recovery codes from `secrets`, never `random`.
+
+### Login throttling
+
+Consecutive failures lock a username for a cooling-off period. **Password failures and TOTP failures share one counter** — throttling only the password step leaves a six-digit second factor, a 10⁶ search space, open to anyone who already has the password.
+
+Counters are keyed by **username and held in memory**. They are not keyed by IP address and no IP address is stored, per Decision 3. Username keying is also the more precise signal.
+
+### Recovery, with no email system
+
+The project builds no email capability, so there is no reset link. Three layers, all required:
+
+| Layer | Mechanism | Covers |
+| --- | --- | --- |
+| L1 | 5 single-use recovery codes issued at enrolment | Lost or wiped authenticator; needs no second person |
+| L2 | Another administrator resets MFA and issues a random password | Recovery codes also lost |
+| L3 | `python -m admin.cli reset-mfa <username>` on the server | Every administrator locked out |
+
+**At least two administrator accounts must exist at all times, and at least two must be able to log in.** Deleting, deactivating or demoting an administrator is refused while *either* count is 2 or fewer:
+
+| Count | Definition | Used by |
+| --- | --- | --- |
+| Active | `role = admin` and `is_active` | Bootstrap's "does this system have any administrator yet" check |
+| **Usable** | Active, **plus** MFA enrolled, **plus** past the forced password change | The removal guard |
+
+The second count exists because bootstrap creates two administrators carrying `must_change_password` and no enrolment. Counting only active accounts reports two usable administrators when there is one — so a system where the client onboarded `admin` and filed `admin2`'s printed password away would permit deactivating the only account anyone can actually log in as, and with no email system there is no way back.
+
+This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
+
+> Consequence worth knowing: while fewer than two administrators are usable, **no** administrator can be deactivated or demoted, including one that was never onboarded. Eviction is still possible without deactivation — reset the account's MFA and issue a new password — but it is indirect. This errs toward "cannot be locked out" over "can always evict", which is the correct side for a small organisation with no email recovery.
+
+The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
+
+### Bootstrap
+
+**On first start, when no administrator account exists, the application creates two.** A deployment therefore satisfies the two-administrator rule from the moment it comes up, rather than depending on whoever installs it remembering to run the CLI twice — and a system that starts with one administrator is a system that can be locked out by a single lost phone.
+
+| Property | Behaviour |
+| --- | --- |
+| Trigger | Application start, only when the active administrator count is zero |
+| Accounts | `admin` and `admin2` |
+| Passwords | **Randomly generated per deployment, printed once to standard output.** There is no default password and no fixed value anywhere in the source. |
+| State | Both carry `must_change_password` and no MFA enrolment, so `require_staff()` refuses them until both steps are completed |
+| Idempotence | Runs once. A restart with administrators present creates nothing. |
+
+**A fixed default password would be the single worst defect this system could ship.** `admin`/`admin` on a public panel is exactly how community-sector accounts get taken over, and it is the reason MFA is mandatory here in the first place. The generated passwords exist only in the start-up output; they cannot be recovered afterwards, only reset via `reset-mfa` and a new password.
+
+> Deployment note for the handover documentation: the start-up output contains live credentials. Capture them, log in with both accounts, change both passwords, enrol both authenticators, then discard the output. Do not pipe first-start output into a shared log collector.
+
+> Two administrators is not sufficient on its own. A small organisation is likely to hand both accounts to the same person, or to replace phones at the same time. L1 is the layer that does not depend on a second human being available, which is why it is mandatory rather than a convenience. The panel prompts for regeneration once 2 codes remain.
+
+### Operational commands (owner: E, must be documented for handover)
+
+| Command | Purpose |
+| --- | --- |
+| `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
+| `python -m admin.cli reset-mfa <username>` | L3 break-glass |
+| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
+| `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
+
+One module with subcommands rather than three separate module entry points: `python -m admin.cli --help` then lists every operational command in one place, which is what the handover documentation needs, and settings loading and session construction are written once rather than three times.
+
+The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without rotation the day the client changes it is the day every account loses its second factor.
+
+### Blocklist
+
+An `ip_blocklist(id, cidr, reason, created_at, created_by)` table plus middleware, used to block sources of junk submissions, **never to identify ordinary users.** The middleware reads the connecting address and stores nothing.
+
+## 8.4 Staff Authentication Interface (owner: E, consumed by B)
+
+The only coupling between the admin authentication system and the API layer.
+
+```python
+# admin/auth.py
+
+def require_staff(request: Request) -> str:
+    """Return the authenticated staff username.
+
+    Raises StaffAuthRequired when the session is absent or expired, when the
+    account is no longer active, or when MFA enrolment is incomplete
+    (§8.3). The API layer maps that to UNAUTHORIZED (401).
+
+    The mechanism — sqladmin's AuthenticationBackend over a same-origin
+    Starlette session cookie — is E's concern and is not part of this
+    contract. B calls this and nothing else.
+    """
+```
+
+The return value is the staff username and is written directly to `audit_log.actor` (`VARCHAR(128)`).
+
+B calls it in exactly one place: the `X-Dry-Run` branch of `POST /api/v1/calculate`.
+
+> **Terminology.** `submission.token` (§2.3) is the anonymous de-duplication token — a UUID4 that expires after an hour and identifies a draft record, not a person. Staff credentials are **not** a token and are never carried in the request body; they travel as a same-origin session cookie. The admin dry-run page is served from the same origin as the API, so the browser attaches the cookie without any explicit handling.
+>
+> Should the public front end later be split onto a separate origin, only the public requests are affected (CORS); they carry no cookie, so the dry-run path is unchanged.
 
 ---
 
@@ -948,13 +1297,23 @@ Every non-2xx response uses one envelope:
 
 | HTTP | `code` | Trigger | Front-end response |
 | --- | --- | --- | --- |
-| 400 | `VALIDATION_ERROR` | Missing field, out of bounds, duplicate destination | Highlight the offending field |
+| 400 | `VALIDATION_ERROR` | Missing field, out of bounds, duplicate destination, malformed dry-run bundle | Highlight the offending field |
 | 400 | `UNKNOWN_CODE` | A code in the request does not exist | Re-fetch the taxonomy and prompt a refresh |
+| 401 | `UNAUTHORIZED` | `X-Dry-Run: true` without a valid staff session | Redirect to `/admin/login` |
 | 429 | `RATE_LIMITED` | Rate limit exceeded | Ask the user to retry later; disable the button for 60s |
-| 500 | `FORMULA_ERROR` | A staff-configured formula is invalid | Show a generic failure message; **do not** echo the expression |
+| 500 | `FORMULA_ERROR` | A staff-configured formula is invalid | See below |
 | 503 | `NO_PUBLISHED_FACTOR_SET` | No factor set has been published | Show "calculator under maintenance" |
 
 `message` is written for end users and may be displayed verbatim. `details` is for developers and form-field targeting.
+
+## 9.1 `FORMULA_ERROR` Has Two Presentations
+
+| Request | Response |
+| --- | --- |
+| Public | Generic message. The expression is **never** echoed, and no location is given. |
+| Authenticated dry run | `details` carries `expression`, `line`, `column` and `reason` from the `FormulaError` (§4.4) |
+
+Withholding the location from the public protects staff-authored configuration from disclosure. Withholding it from the staff member who is at that moment editing the formula would make the editor unusable — they cannot fix what they are not told.
 
 ---
 
@@ -980,9 +1339,71 @@ Under `tests/golden/`, three files per case:
 
 ```
 case_01_landfill_dairy/
-  bundle.json     a fixed factor set
+  bundle.json     a fixed factor set          <- shape defined in §10.2
   request.json    a fixed request
   expected.json   the expected full CalculationResult
 ```
 
 Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover.
+
+## 10.2 `bundle.json` Shape (owner: A)
+
+One shape, three consumers: the golden suite above, `FactorBundle.from_json()` (§4.1), and the `dry_run.bundle` field of `POST /calculate` (§6.2.1).
+
+It is a **complete, self-contained snapshot** — the taxonomy as well as the factors. §4.1's `has_destination()`, `has_sector()`, `has_food_category()` and `standard_mix_code()` are unimplementable otherwise, and staff must be able to trial a destination or food category that does not yet exist in the database.
+
+```json
+{
+  "version_label": "GOLDEN-case-01",
+  "is_mock": true,
+
+  "sectors": [
+    { "code": "processing", "name": "Processing / Manufacturing", "sort_order": 2 }
+  ],
+  "food_categories": [
+    { "code": "standard_mix", "name": "Standard mix", "is_standard_mix": true,  "sort_order": 0 },
+    { "code": "dairy",        "name": "Dairy",        "is_standard_mix": false, "sort_order": 6 }
+  ],
+  "destination_groups": [
+    { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 3 }
+  ],
+  "destinations": [
+    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 1 }
+  ],
+  "metrics": [
+    { "code": "co2e", "name": "Greenhouse gas", "unit": "kg CO2e",
+      "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 1 }
+  ],
+
+  "constants": [
+    { "code": "GWP_CH4_100", "value": "28.0000000000", "unit": "", "note": "" }
+  ],
+  "formulas": [
+    { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": "" }
+  ],
+  "upstream": [
+    { "sector": "processing", "food_category": "dairy",
+      "metric": "co2e", "value_per_kg": "1.9000000000" }
+  ],
+  "downstream": [
+    { "destination": "landfill", "food_category": "dairy",
+      "metric": "co2e", "value_per_kg": "0.9900000000" },
+    { "destination": "landfill", "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0650000000" }
+  ],
+  "equivalences": [
+    { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km", "sort_order": 1 }
+  ]
+}
+```
+
+| Convention | Reason |
+| --- | --- |
+| No `id` fields | §1.1 — `code` is the only cross-layer identifier |
+| No `active` fields | Anything present in a bundle is active. §4.1 already states `metrics` is "active only"; filtering happens in the repository, and the engine does not re-check. |
+| No `unit_presets` | Volume-to-kilogram conversion happens in the front end (§7.3); the engine only ever receives kilograms. |
+| Every decimal is a **string** | §1.2. `from_json()` converts with `Decimal()`; `float` is never an intermediate. |
+
+`downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.

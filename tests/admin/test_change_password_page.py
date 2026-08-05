@@ -398,3 +398,44 @@ async def test_a_password_over_the_bcrypt_byte_limit_is_refused(
     assert response.status_code == 400
     assert "72" in response.text
     assert _must_change_password(admin_app, username) is True
+
+
+async def test_a_password_short_in_characters_but_over_the_byte_limit_is_refused(
+    admin_app, client, not_onboarded
+):
+    """Behaviour 9 (added after review): the byte check and a character
+    check agree on every ASCII input, including every password used
+    elsewhere in this file - so a mutant that swaps
+    ``len(new.encode("utf-8")) > BCRYPT_MAX_BYTES`` for ``len(new) >
+    BCRYPT_MAX_BYTES`` leaves the rest of this suite green. This is not a
+    theoretical edge case for this project: macron-bearing te reo Maori
+    words and names are ordinary input for the staff who will use this
+    panel, and the error message this page shows explicitly names
+    "accented or non-Latin characters" as the reason the two counts differ.
+
+    "e"-with-acute times 40 is 40 *characters* (under MIN_PASSWORD_LENGTH's
+    floor by a mile, nowhere near a character-count limit of 72) but 80
+    *bytes* in UTF-8 (over BCRYPT_MAX_BYTES=72) - so this input is accepted
+    by a character-counting mutant and correctly refused only by the real
+    byte-counting check.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/change-password")
+
+    too_long = "é" * 40
+    assert len(too_long) == 40
+    assert len(too_long.encode("utf-8")) == 80
+
+    response = await client.post(
+        "/admin/change-password",
+        data={"password": too_long, "confirm": too_long, "csrf_token": token},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert "72" in response.text
+    # The form, not an error page: PasswordTooLongError must never reach
+    # set_password/hash_password for this input.
+    assert "Choose a new password" in response.text
+    assert _must_change_password(admin_app, username) is True

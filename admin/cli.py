@@ -79,6 +79,40 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
     return len(plaintext)
 
 
+def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
+    """Print freshly created bootstrap credentials to standard output.
+
+    Contract 8.3, "Bootstrap": the passwords are "randomly generated per
+    deployment, printed once to standard output" and cannot be recovered
+    afterwards. This is the only moment they exist in readable form, so the
+    wording has to carry that - an operator who does not realise it will
+    close the terminal.
+
+    Shared with ``admin.app``'s startup hook rather than written twice.
+    Both the CLI subcommand and application start reach the same
+    ``ensure_bootstrap_admins`` and must therefore say the same thing; two
+    copies would drift, and the copy an operator actually sees depends on
+    which of the two paths their deployment used.
+
+    Silent on an empty list. That is the ordinary case - every restart of an
+    already-bootstrapped deployment, and every test that builds an app -
+    and there is nothing to report. The CLI adds its own "nothing to do"
+    line because a subcommand run by hand owes the person an acknowledgement;
+    a start-up does not.
+    """
+    if not created:
+        return
+    print("Created initial administrator accounts.")
+    for username, password in created:
+        print(f"  {username}: {password}")
+    print()
+    print(
+        "These passwords are shown once and cannot be recovered. Log in "
+        "with both accounts now, change both passwords, and enrol both "
+        "authenticators. Do not send them by email."
+    )
+
+
 def _build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(prog="python -m admin.cli")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -139,16 +173,7 @@ def main(argv: list[str] | None = None) -> int:
             db_session.commit()
             if not created:
                 print("Administrator accounts already exist. Nothing to do.")
-            else:
-                print("Created initial administrator accounts.")
-                for username, password in created:
-                    print(f"  {username}: {password}")
-                print()
-                print(
-                    "These passwords are shown once and cannot be recovered. Log in "
-                    "with both accounts now, change both passwords, and enrol both "
-                    "authenticators. Do not send them by email."
-                )
+            report_bootstrap_result(created)
 
     return 0
 

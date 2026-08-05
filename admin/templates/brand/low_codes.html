@@ -1,0 +1,19 @@
+{% extends "brand/base.html" %}
+{% block title %}Recovery codes running low{% endblock %}
+{% block content %}
+  <h1>You are running low on recovery codes</h1>
+  <div class="notice notice--info">
+    {{ remaining }} recovery code{{ '' if remaining == 1 else 's' }} left.
+  </div>
+  <p>
+    Recovery codes are how you get back in if you lose your authenticator.
+    There is no password reset by email in this system, so when they run out
+    the only way back is another administrator, or someone with server
+    access.
+  </p>
+  <p class="muted">
+    To be issued a new set, ask an administrator to reset your authenticator.
+    You will then set it up again from scratch.
+  </p>
+  <p><a href="/admin/">Continue to the panel</a></p>
+{% endblock %}

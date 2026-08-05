@@ -142,6 +142,13 @@ def _clearing_set_cookie(response) -> bool:
     )
 
 
+def _refused_by_the_gate(response) -> bool:
+    """A gate refusal is a redirect to the login page, whoever issued it."""
+    return response.status_code in (302, 307) and "/admin/login" in response.headers.get(
+        "location", ""
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset_staff_table(admin_app):
     """Wipe committed staff rows after each test in this module.
@@ -743,7 +750,12 @@ async def test_a_logged_in_but_deactivated_account_cannot_open_a_pre_login_page(
         assert pre.status_code in (302, 307)
         assert not _clearing_set_cookie(pre)
     else:
-        assert pre.status_code == 200
+        # The gate admitted it - what the page then does is the page's own
+        # business (VerifyView sends an already-logged-in visitor to the
+        # index), so assert admission via the gate's refusal shape, not a
+        # status code. While the views were stubs, admission and 200 were
+        # the same event; they are not any more.
+        assert not _refused_by_the_gate(pre)
 
     _deactivate(admin_app, "ruth")
 
@@ -945,10 +957,14 @@ async def test_the_state_gate_on_the_session_key_way_in(
     response = await client.get(path, follow_redirects=False)
 
     if expected_open:
-        assert response.status_code == 200
+        # The gate admitted it. What the page then does is the page's own
+        # business - VerifyView sends an already-logged-in visitor to the
+        # index - so assert admission, not a status code. While the views
+        # were stubs, admission and 200 were the same event; they are not
+        # any more.
+        assert not _refused_by_the_gate(response)
     else:
-        assert response.status_code in (302, 307)
-        assert "/admin/login" in response.headers["location"]
+        assert _refused_by_the_gate(response)
 
 
 @pytest.mark.parametrize("state,path,expected_open", _STATE_GATE_MATRIX)

@@ -1,29 +1,148 @@
-"""Custom admin pages: MFA verification, forced password change, enrolment.
+"""The onboarding page views.
 
-STUB (Task 3) - Tasks 5-7 replace these bodies with the real flows from
-docs/interfaces.md 8.3 (login -> forced password change -> forced TOTP
-enrolment -> access granted). They exist here only so that ``admin.app``
-imports and so that ``url_for("admin:view-<identity>")`` already resolves
-for whichever task lands next - the ``identity`` on each view below is the
-one its real implementation must keep.
+Each is a sqladmin BaseView. Note that @expose wraps every route in
+login_required, so these pages sit behind AdminAuth.authenticate() - which is
+what admits a pending login to /admin/verify and redirects an account with
+onboarding outstanding to the other two.
 
-Every route currently returns an empty 200 and does nothing else.
+Route names are admin:view-{identity}, not admin:{identity}; sqladmin builds
+them as f"view-{view.identity}".
 """
+
+import time
+from pathlib import Path
 
 from sqladmin import BaseView, expose
 from starlette.requests import Request
-from starlette.responses import Response
+from starlette.responses import RedirectResponse, Response
+from starlette.templating import Jinja2Templates
+
+from admin.accounts import (
+    get_staff,
+    unused_recovery_code_count,
+)
+from admin.auth import (
+    SESSION_KEY,
+    authenticate_recovery_code,
+    authenticate_totp,
+)
+from admin.backend import (
+    PENDING_SESSION_KEY,
+    _pending_login_from_session,
+    current_username,
+)
+from admin.csrf import check_token, issue_token
+from admin.runtime import get_runtime
+
+templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+#: Contract 8.3 sets no policy. Twelve is comfortably above the eight NIST
+#: treats as a floor, and well under bcrypt's 72-byte ceiling.
+MIN_PASSWORD_LENGTH = 12
+
+#: Contract 8.3: "The panel prompts for regeneration once 2 codes remain."
+LOW_RECOVERY_CODE_THRESHOLD = 2
+
+
+def _redirect(request: Request, name: str) -> RedirectResponse:
+    return RedirectResponse(request.url_for(name), status_code=302)
 
 
 class VerifyView(BaseView):
-    """STUB (Task 3) - replaced by the real TOTP verification step."""
+    name = "Verification"
 
-    name = "Verify"
-    identity = "verify"
+    def is_visible(self, request: Request) -> bool:
+        return False  # a step in the login flow, not a destination
 
-    @expose("/verify", methods=["GET"], identity="verify")
+    def is_accessible(self, request: Request) -> bool:
+        return True
+
+    @expose("/verify", identity="verify", methods=["GET", "POST"])
     async def verify(self, request: Request) -> Response:
-        return Response(status_code=200)
+        runtime = get_runtime(request)
+
+        # Already logged in. authenticate() admits such a request because its
+        # job is reachability, not whether the page still has anything to do
+        # for this caller - that judgement belongs here. There is no second
+        # factor left to supply, so send them on rather than presenting a form
+        # that cannot be completed: authenticate_totp needs a PendingLogin and
+        # cannot be handed a bare username.
+        if request.session.get(SESSION_KEY):
+            return _redirect(request, "admin:index")
+
+        # Reuse Task 4's parser rather than rebuilding the value here. It
+        # validates the shape explicitly, because PendingLogin is a plain
+        # frozen dataclass with no field validation and the session, though
+        # signed, is client-held - a malformed expires_at would otherwise
+        # reach is_expired()'s comparison and raise a 500 out of the page.
+        pending = _pending_login_from_session(request.session)
+        if pending is None:
+            return _redirect(request, "admin:login")
+
+        now = time.time()
+        if pending.is_expired(now=now):
+            request.session.pop(PENDING_SESSION_KEY, None)
+            return _redirect(request, "admin:login")
+
+        context = {"csrf_token": issue_token(request.session), "error": None}
+        if request.method == "GET":
+            return templates.TemplateResponse(request, "brand/verify.html", context)
+
+        form = await request.form()
+        if not check_token(request.session, form.get("csrf_token")):
+            context["error"] = "That form expired. Please try again."
+            return templates.TemplateResponse(
+                request, "brand/verify.html", context, status_code=400
+            )
+
+        code = (form.get("code") or "").strip()
+        with runtime.session_factory() as db:
+            username = authenticate_totp(
+                db,
+                pending,
+                code,
+                throttle=runtime.throttle,
+                secret_key=runtime.settings.secret_key,
+                now=now,
+            )
+            if username is None:
+                # The same field takes a recovery code. Someone who has lost
+                # their authenticator arrives here with no other way in, and
+                # sending them to a separate page would mean finding it first.
+                username = authenticate_recovery_code(
+                    db, pending, code, throttle=runtime.throttle, now=now
+                )
+            # sqladmin.Admin.__init__ calls
+            # self.session_maker.configure(autoflush=False, autocommit=False)
+            # on construction (sqladmin/application.py) - and runtime.session_factory
+            # is that exact sessionmaker, shared app-wide, so autoflush is off for
+            # every session this view opens. Without an explicit flush here,
+            # unused_recovery_code_count's own SELECT does not see the used_at
+            # written by consume_recovery_code moments earlier in this same
+            # transaction, and reports one too many codes remaining - which
+            # would silently defeat the low-recovery-code interstitial on
+            # exactly the boundary case it exists to catch.
+            if username is not None:
+                db.flush()
+            remaining = unused_recovery_code_count(db, username) if username else 0
+            db.commit()
+
+        if username is None:
+            context["error"] = "That code was not accepted."
+            return templates.TemplateResponse(
+                request, "brand/verify.html", context, status_code=400
+            )
+
+        request.session.pop(PENDING_SESSION_KEY, None)
+        request.session[SESSION_KEY] = username
+
+        if remaining <= LOW_RECOVERY_CODE_THRESHOLD:
+            return templates.TemplateResponse(
+                request,
+                "brand/low_codes.html",
+                {"remaining": remaining},
+            )
+        return _redirect(request, "admin:index")
 
 
 class ChangePasswordView(BaseView):

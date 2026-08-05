@@ -19,6 +19,7 @@ from starlette.templating import Jinja2Templates
 
 from admin.accounts import (
     get_staff,
+    set_password,
     unused_recovery_code_count,
 )
 from admin.auth import (
@@ -33,6 +34,7 @@ from admin.backend import (
 )
 from admin.csrf import check_token, issue_token
 from admin.runtime import get_runtime
+from admin.security import BCRYPT_MAX_BYTES, verify_password
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -167,15 +169,79 @@ class VerifyView(BaseView):
         return _redirect(request, "admin:index")
 
 
+def _password_problem(new: str, confirm: str, current_hash: str) -> str | None:
+    """Return a message to display, or None when the password is acceptable."""
+    if len(new) < MIN_PASSWORD_LENGTH:
+        return f"Use at least {MIN_PASSWORD_LENGTH} characters."
+    if len(new.encode("utf-8")) > BCRYPT_MAX_BYTES:
+        return (
+            f"That password is too long. The limit is {BCRYPT_MAX_BYTES} bytes, "
+            "and accented or non-Latin characters count for more than one."
+        )
+    if new != confirm:
+        return "The two entries did not match."
+    if verify_password(new, current_hash):
+        # The issued password travelled out of band - spoken, written down,
+        # possibly still in a chat log. A change that keeps it retires nothing.
+        return "Choose a password you have not used here before."
+    return None
+
+
 class ChangePasswordView(BaseView):
-    """STUB (Task 3) - replaced by the real forced password-change step."""
-
     name = "Change password"
-    identity = "change-password"
 
-    @expose("/change-password", methods=["GET"], identity="change-password")
+    def is_visible(self, request: Request) -> bool:
+        return False
+
+    def is_accessible(self, request: Request) -> bool:
+        return True
+
+    @expose("/change-password", identity="change-password", methods=["GET", "POST"])
     async def change_password(self, request: Request) -> Response:
-        return Response(status_code=200)
+        runtime = get_runtime(request)
+        # current_username, not SESSION_KEY: these pages run before a second
+        # factor exists, so the user is identified by the pending login.
+        username = current_username(request.session)
+        if not username:
+            return _redirect(request, "admin:login")
+
+        context = {"csrf_token": issue_token(request.session), "error": None}
+        if request.method == "GET":
+            return templates.TemplateResponse(
+                request, "brand/change_password.html", context
+            )
+
+        form = await request.form()
+        if not check_token(request.session, form.get("csrf_token")):
+            context["error"] = "That form expired. Please try again."
+            return templates.TemplateResponse(
+                request, "brand/change_password.html", context, status_code=400
+            )
+
+        new = form.get("password") or ""
+        confirm = form.get("confirm") or ""
+
+        with runtime.session_factory() as db:
+            staff = get_staff(db, username)
+            problem = _password_problem(new, confirm, staff.password_hash)
+            if problem is None:
+                set_password(db, username, new)
+                enrolled = staff.mfa_enrolled
+                db.commit()
+                if not enrolled:
+                    target = "admin:view-enrol"
+                elif request.session.get(SESSION_KEY):
+                    # Already logged in and just changing a password.
+                    target = "admin:index"
+                else:
+                    # Mid-onboarding: a second factor is still owed.
+                    target = "admin:view-verify"
+                return _redirect(request, target)
+
+        context["error"] = problem
+        return templates.TemplateResponse(
+            request, "brand/change_password.html", context, status_code=400
+        )
 
 
 class EnrolView(BaseView):

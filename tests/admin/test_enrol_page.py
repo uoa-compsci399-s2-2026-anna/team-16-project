@@ -291,3 +291,32 @@ async def test_after_enrolment_and_verification_the_index_is_reachable(
 
     index = await client.get("/admin/", follow_redirects=False)
     assert index.status_code == 200
+
+
+# --- Behaviour 7 --------------------------------------------------------
+
+
+async def test_a_post_with_no_prior_get_is_refused_not_a_500(
+    admin_app, client, owes_enrolment
+):
+    """Nothing enforces the browser's GET-then-POST order: curl, a scripted
+    login, a scanner probing an auth endpoint, or a replayed request can all
+    reach POST /admin/enrol with staff.mfa_secret_enc still NULL, because
+    the GET handler - the only thing that calls begin_mfa_enrolment on the
+    happy path - never ran. Deliberately never issues a GET, unlike every
+    other test in this file, and so never obtains a CSRF token either - the
+    request is refused on that ground, but the refusal has to be a 400
+    with the form re-rendered, not decrypt_totp_secret(None, ...) raising
+    TypeError out of the handler as an unhandled 500 on the page that
+    fronts the takeover guard."""
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+
+    response = await client.post(
+        "/admin/enrol",
+        data={"code": "000000"},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    assert _mfa_enrolled(admin_app, username) is False

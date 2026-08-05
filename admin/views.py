@@ -250,14 +250,37 @@ class ChangePasswordView(BaseView):
         )
 
 
-def _enrolment_view_context(db, username: str, secret_key: str) -> dict:
+def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
     """Rebuild the QR from the secret already stored by begin_mfa_enrolment.
 
-    Used when a code is rejected. Calling begin_mfa_enrolment again would mint
-    a *new* secret and invalidate the QR the user just scanned, so a single
-    typo would leave them unable to finish at all.
+    Used when a code is rejected, or a submission is refused on CSRF
+    grounds. Calling begin_mfa_enrolment again for an account that already
+    has a secret would mint a *new* one and invalidate the QR the user just
+    scanned, so a single typo would leave them unable to finish at all.
+
+    Nothing enforces the browser's GET-then-POST order, though: curl, a
+    scripted login, a scanner, or a replayed request can all reach the POST
+    branches with staff.mfa_secret_enc still NULL, because the GET handler
+    - the only thing that calls begin_mfa_enrolment on the happy path - never
+    ran. Handing decrypt_totp_secret a None raises TypeError, an unhandled
+    500 on the page that fronts the takeover guard, so this mints a secret
+    on the caller's behalf when none exists yet; the user has to scan
+    whatever we show them regardless of which request happened to create it.
+
+    Returns None if that mint discovers the account is already fully
+    enrolled (MfaAlreadyEnrolledError) - a race, not the ordinary case: the
+    only way mfa_secret_enc can be NULL for an enrolled account is a
+    concurrent request completing enrolment between this function's own
+    get_staff read and its call to begin_mfa_enrolment. The caller redirects
+    exactly as the GET handler's own except MfaAlreadyEnrolledError does.
     """
     staff = get_staff(db, username)
+    if staff.mfa_secret_enc is None:
+        try:
+            secret, uri = begin_mfa_enrolment(db, username, secret_key=secret_key)
+        except MfaAlreadyEnrolledError:
+            return None
+        return {"qr": qr_svg(uri), "secret": secret}
     secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
     return {
         "qr": qr_svg(provisioning_uri(secret, username=staff.username)),
@@ -296,6 +319,15 @@ class EnrolView(BaseView):
                     # re-enrols only through an administrator reset. Offering
                     # it here would let anyone holding the password swap in
                     # their own authenticator.
+                    #
+                    # Not dead code duplicating authenticate()'s own gate
+                    # (admin/backend.py _may_open_pre_login_page, which checks
+                    # the identical condition before this handler runs): that
+                    # gate and this handler read the account in two separate
+                    # DB sessions, so a concurrent request can complete
+                    # enrolment in the gap between the gate's check and this
+                    # begin_mfa_enrolment call. This is what stands between
+                    # that race and an unhandled exception here.
                     return _redirect(request, "admin:index")
                 db.commit()
             return templates.TemplateResponse(
@@ -313,6 +345,20 @@ class EnrolView(BaseView):
         with runtime.session_factory() as db:
             if not check_token(request.session, form.get("csrf_token")):
                 context = _enrolment_view_context(db, username, secret_key)
+                if context is None:
+                    # The race _enrolment_view_context's own docstring
+                    # describes: a concurrent request finished enrolment
+                    # between the gate's check and here. Same refusal as the
+                    # GET handler's except MfaAlreadyEnrolledError.
+                    db.commit()
+                    return _redirect(request, "admin:index")
+                # Commits whether or not _enrolment_view_context minted a
+                # fresh secret (a POST with no prior GET); a no-op commit
+                # when it only decrypted an existing one is harmless, and
+                # leaving a freshly minted secret uncommitted would show the
+                # user a QR for a secret the next request's session never
+                # sees, making the code they scan unusable.
+                db.commit()
                 context |= {
                     "csrf_token": issue_token(request.session),
                     "error": "That form expired. Please try again.",
@@ -333,6 +379,10 @@ class EnrolView(BaseView):
             except MfaNotEnrolledError as exc:
                 db.rollback()
                 context = _enrolment_view_context(db, username, secret_key)
+                if context is None:
+                    db.commit()
+                    return _redirect(request, "admin:index")
+                db.commit()
                 context |= {
                     "csrf_token": issue_token(request.session),
                     "error": str(exc),

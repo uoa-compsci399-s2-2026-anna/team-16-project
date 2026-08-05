@@ -74,8 +74,7 @@ function App() {
     return true
   }
 
-  const clearAll = () => {
-    if (!window.confirm('Clear all calculator data and return to the introduction?')) return
+  const resetAllData = () => {
     setSupplyChainStage('')
     setFoodCategory('')
     setWasteAmount('')
@@ -85,6 +84,11 @@ function App() {
     setLastChangedDestination('')
     setErrors({})
     setCurrentStep(-1)
+  }
+
+  const clearAll = () => {
+    if (!window.confirm('Clear all calculator data and return to the introduction?')) return
+    resetAllData()
   }
 
   const updateAllocation = (destination, value) => {
@@ -131,7 +135,7 @@ function App() {
 
   return (
     <>
-      <Header onClear={clearAll} showClear={hasData} />
+      <Header onHome={resetAllData} onClear={clearAll} showClear={hasData} dark={currentStep === -1} />
       {currentStep >= 0 && <StepIndicator steps={STEPS} currentStep={currentStep} />}
       <main id="main-content" className="main-content" tabIndex="-1">{content}</main>
       <footer><p>Kai Commitment · Food Waste Impact Calculator prototype</p></footer>
@@ -142,13 +146,37 @@ function App() {
 function Introduction({ onStart }) {
   return (
     <section className="hero" aria-labelledby="page-title">
-      <p className="eyebrow">For New Zealand food businesses</p>
-      <h1 id="page-title">Food Waste Impact Calculator</h1>
-      <p className="lead">Turn your food waste measurements into a clearer view of their potential environmental and financial impact.</p>
-      <Disclaimer />
-      <div className="needs-panel"><h2>What you will need</h2><ul className="check-list"><li>Where the waste occurred in the food supply chain</li><li>The food type, if known</li><li>The total waste amount in kilograms or tonnes</li><li>How that total was distributed across waste destinations</li></ul></div>
-      <button className="button button-primary button-large" type="button" onClick={onStart}>Start calculator</button>
-      <p className="privacy-note">This prototype does not save or submit your information.</p>
+      <div className="hero-copy">
+        <p className="eyebrow">For New Zealand food businesses</p>
+        <h1 id="page-title">Food Waste Impact Calculator</h1>
+        <p className="lead">Turn your food waste measurements into a clearer view of their potential environmental and financial impact.</p>
+        <button className="button button-primary button-large" type="button" onClick={onStart}>Start calculator</button>
+        <p className="privacy-note">This prototype does not save or submit your information.</p>
+      </div>
+      <div className="hero-food-pattern" aria-hidden="true">
+        <svg className="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none">
+          <defs>
+            <mask id="food-arch-cutouts">
+              <rect width="1500" height="190" fill="white" />
+              {[150, 450, 750, 1050, 1350].flatMap((centre) => [
+                <ellipse key={`${centre}-outer`} cx={centre} cy="190" rx="205" ry="166" fill="none" stroke="black" strokeWidth="32" />,
+                <ellipse key={`${centre}-inner`} cx={centre} cy="190" rx="151" ry="120" fill="none" stroke="black" strokeWidth="28" />,
+              ])}
+              {[300, 600, 900, 1200].map((intersection) => (
+                <path
+                  key={`${intersection}-intersection`}
+                  d={`M ${intersection} 72 L ${intersection + 36} 126 L ${intersection} 181 L ${intersection - 36} 126 Z`}
+                  fill="black"
+                />
+              ))}
+            </mask>
+          </defs>
+          <rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)" />
+        </svg>
+      </div>
+      <div className="hero-support-grid">
+        <div className="needs-panel"><h2>What you will need</h2><ul className="check-list"><li>Where the waste occurred in the food supply chain</li><li>The food type, if known</li><li>The total waste amount in kilograms or tonnes</li><li>How that total was distributed across waste destinations</li></ul></div>
+      </div>
     </section>
   )
 }

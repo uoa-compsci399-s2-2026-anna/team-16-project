@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-04 (v0.6 draft)"
+date: "2026-08-05 (v0.7 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,13 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.7 — 2026-08-05 (raised by E, **affects B**)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Recorded a known limitation: **changing a compromised account's password does not terminate its sessions, at any point.** Sessions carry no generation marker. Found while building the panel and reproduced end to end. **`require_staff()` returning a username does not mean that session has not been evicted** — B should not assume otherwise. | §8.3 |
+| 2 | Recorded the gap underneath it: §8.3 names "issues a random password" as half of the eviction, but no service function performs it. `set_password` clears `must_change_password`, so an issued password leaves the account looking fully onboarded. | §8.3 |
 
 ### v0.6 — 2026-08-04 (raised by E, affects E only)
 
@@ -1216,7 +1223,17 @@ This must be enforced in the service layer, not only in the form — `sqladmin`'
 
 > ### ⚠️ Known limitation: eviction does not revoke a live session
 >
-> Found while implementing the panel, verified end to end. Sessions carry no generation marker, so nothing distinguishes a cookie issued before an eviction from one issued after. Resetting an account's MFA locks its existing cookie out only for as long as `mfa_enrolled` stays false — **the moment the rightful holder completes the re-enrolment the eviction compels, the old cookie works again.**
+> Found while implementing the panel, verified end to end. Sessions carry no generation marker, so nothing distinguishes a cookie issued before an eviction from one issued after.
+>
+> **Changing a compromised account's password does not terminate its sessions, at any point.** That is the plain statement, and it is worse than it first appears:
+>
+> | Administrator action | Effect on a stolen live session |
+> | --- | --- |
+> | Issue a new password only | **None. 200 throughout, no interruption.** This is the intuitive response to "my session may be compromised" and the one a `StaffAdmin` view will most plausibly offer. |
+> | Reset MFA, then issue a new password | Locked out **only while `mfa_enrolled` is false** — the moment the rightful holder completes the re-enrolment the reset compels, the old cookie works again |
+> | Deactivate the account | Effective immediately, but `_guard_admin_floor` forbids it for an administrator while fewer than three are usable |
+>
+> Until this is fixed, the only reliable answers are **deactivate** (where the floor permits it) or **wait out `SESSION_MAX_AGE_MINUTES`**. The handover documentation must say so.
 >
 > The window is bounded rather than rolling: Starlette re-signs the cookie only when the session is modified, so it still dies at `SESSION_MAX_AGE_MINUTES` from the original login. But eight hours is comfortably longer than "an administrator resets your authenticator, hands you a password, and you enrol".
 >

@@ -201,9 +201,20 @@ class AdminAuth(AuthenticationBackend):
           path, not on this gate.
         * a live session whose MFA was just reset is bounced to
           /admin/login rather than straight into enrolment. That is the
-          point: the holder of the newly issued password re-authenticates
-          and enrols, and whoever was merely holding the old cookie
-          cannot.
+          point: enrolling requires the newly issued password, which only
+          the rightful holder has.
+
+          Be precise about what that buys, because it is less than it
+          sounds: it stops the old cookie *enrolling*, not the old cookie
+          *working*. See contract 8.3, "Known limitation: eviction does not
+          revoke a live session" - the old cookie is locked out only while
+          mfa_enrolled is false, and the moment the rightful holder
+          completes the re-enrolment this gate compels, it works again.
+          Sessions carry no generation marker, so nothing here can tell one
+          issued before an eviction from one issued after. Do not read this
+          gate as delivering eviction; the contract names deactivation and
+          waiting out SESSION_MAX_AGE_MINUTES as the only reliable answers
+          until a session generation column exists.
         """
         username = request.session.get(SESSION_KEY)
         already_logged_in = bool(username)

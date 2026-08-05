@@ -281,45 +281,73 @@ async def test_walk3_wrong_totp_codes_lock_the_account_and_a_correct_password_ca
     """E-1's C1, expressed at the HTTP layer - "the single most valuable test
     in this plan" per the brief.
 
-    An attacker who already holds a valid password submits wrong
-    second-factor codes until the account locks. The original bug this
-    walk exists to catch let such an attacker reset the shared throttle
-    counter before every guess simply by re-submitting the correct
-    password, turning a nominally 5-attempt lock into unlimited guesses
-    against a six-digit code. So this does not stop at the eventual 400/302
-    split: it inspects the throttle's own failure count after every wrong
-    submission (not just the final refusal, which a mutant could satisfy by
-    locking correctly while still letting the count wander), confirms the
-    account is genuinely locked - a *correct* TOTP code is refused too, not
-    just wrong ones - and then, the crux of it, re-submits the real
-    password and asserts that neither the login succeeds nor the counter
-    moves.
+    C1's real shape is an *interleaving*, and a walk that only submits wrong
+    codes once and then retries the password afterwards never reaches the
+    bug: by the time such a retry happens the account is already locked, and
+    authenticate_password's own ``throttle.is_locked`` check (admin/auth.py)
+    short-circuits before the mutated line - a correct password after that
+    point is refused for a reason that has nothing to do with whether it
+    clears the counter. (An earlier version of this walk had exactly that
+    shape, and a reinstated C1 - ``throttle.clear(username)`` added to a
+    correct password step - passed it unchanged.)
+
+    The actual attack resubmits the correct password *before every batch* of
+    guesses, each batch staying under the lock threshold on its own: submit
+    the password (which, under C1, zeroes the shared counter), then
+    ``max_failures - 1`` wrong codes (never enough on their own to lock),
+    then the password again, and so on. With C1 fixed, nothing clears the
+    counter on a correct password, so the count accumulates across rounds
+    regardless of how many times the password is resubmitted, and the
+    account locks partway through - this is asserted directly by breaking
+    out of the round loop the moment ``throttle.is_locked`` goes true, then
+    failing loudly if every round ran out first. Confirmed in a sandboxed
+    reinstatement of C1 (``throttle.clear(username)`` added right before
+    ``authenticate_password`` returns its PendingLogin on success): with
+    that change present, every round's four guesses land on a freshly
+    zeroed counter, the account never locks across all ``max_failures``
+    rounds, and the ``assert locked is True`` below is the one that fails.
     """
     username, password, secret, _ = onboarded
     max_failures = admin_app.state.settings.login_max_failures
     throttle = admin_app.state.throttle
     key = username.strip().casefold()
+    # Each round's guesses stay under the threshold by themselves - only
+    # accumulation *across* rounds, which C1 defeats by zeroing the counter
+    # at the start of every round, can lock the account.
+    guesses_per_round = max_failures - 1
 
-    login_response = await _login_password_step(client, username, password)
-    assert login_response.status_code == 302
-    token = await _csrf_from(client, "/admin/verify")
-
-    for attempt in range(1, max_failures + 1):
-        response = await client.post(
-            "/admin/verify",
-            data={"code": "000000", "csrf_token": token},
-            follow_redirects=False,
+    locked = False
+    token = None
+    for round_number in range(max_failures):
+        login_response = await _login_password_step(client, username, password)
+        assert login_response.status_code == 302, (
+            f"round {round_number}: the password step was refused before "
+            "the account should have locked yet"
         )
-        assert response.status_code == 400
-        assert throttle._attempts[key].count == attempt
+        token = await _csrf_from(client, "/admin/verify")
+        for _ in range(guesses_per_round):
+            response = await client.post(
+                "/admin/verify",
+                data={"code": "000000", "csrf_token": token},
+                follow_redirects=False,
+            )
+            assert response.status_code == 400
+        if throttle.is_locked(username, now=time.time()):
+            locked = True
+            break
+
+    assert locked is True, (
+        "the account never locked across repeated password-reset-then-guess "
+        "rounds - something is resetting the shared throttle counter on a "
+        "correct password (E-1's C1)"
+    )
+    assert throttle._attempts[key].count >= max_failures
 
     now = time.time()
-    assert throttle.is_locked(username, now=now) is True
+    monkeypatch.setattr(views_time, "time", lambda: now)
 
     # A *correct* code is refused too - the lock, not the code, is what is
-    # refusing this request now, and the attempt does not add a further
-    # failure on top of the lock that already exists.
-    monkeypatch.setattr(views_time, "time", lambda: now)
+    # refusing this request now.
     correct_code_while_locked = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(int(now))
     still_locked = await client.post(
         "/admin/verify",
@@ -327,17 +355,16 @@ async def test_walk3_wrong_totp_codes_lock_the_account_and_a_correct_password_ca
         follow_redirects=False,
     )
     assert still_locked.status_code == 400
-    assert throttle._attempts[key].count == max_failures
 
     index_while_locked = await client.get("/admin/", follow_redirects=False)
     assert index_while_locked.status_code in (302, 307)
 
-    # The attack the shared counter exists to close: holding the real
-    # password does not reset it, and does not buy a fresh pending login to
-    # try more codes against.
+    # The attack the shared counter exists to close, restated once more at
+    # the fully-locked boundary: holding the real password does not unlock
+    # the account, and does not buy a fresh pending login to try more codes
+    # against.
     retry_with_correct_password = await _login_password_step(client, username, password)
     assert retry_with_correct_password.status_code == 400
-    assert throttle._attempts[key].count == max_failures
     assert throttle.is_locked(username, now=now) is True
 
 
@@ -415,8 +442,26 @@ async def test_walk5_deactivating_an_account_mid_session_refuses_its_very_next_r
     ``is_active`` itself. This also drives the specific historical defect
     this project's own record names: "a deactivated session kept all three
     onboarding pages open" - the fix lives in the SESSION_KEY branch of
-    admin/backend.py's ``_may_open_pre_login_page``, so this checks all
-    three of those pages after deactivation, not just the dashboard.
+    admin/backend.py's ``_may_open_pre_login_page``.
+
+    The three pre-login pages are probed *before* ``/admin/`` is ever
+    requested, and that ordering is load-bearing, not incidental. ``/admin/``
+    is handled by ``authenticate()``'s main branch, which independently
+    re-reads ``is_active`` and clears the session cookie on its own - a code
+    path the historical defect here never touched. An earlier version of
+    this walk checked ``/admin/`` first: that call correctly cleared the
+    session (the main branch was never broken), so by the time the three
+    pre-login pages were probed afterwards the client no longer carried a
+    session cookie at all, and each one redirected for that reason -
+    "no session" - rather than because ``_may_open_pre_login_page`` itself
+    re-checked ``is_active`` on the already-logged-in path. All five walks
+    in this file passed unchanged against a reinstated
+    ``already_logged_in`` short-circuit for exactly that reason. Probing the
+    three pages first, with the cookie ``verify_response`` established and
+    untouched since, closes that gap: confirmed in a sandboxed
+    reinstatement of the short-circuit, where ``GET /admin/change-password``
+    returned 200 for this deactivated session and the assertion on
+    ``response.status_code`` below, for that path, is the one that failed.
     """
     username, password, secret, _ = onboarded
     base = int(time.time())
@@ -440,11 +485,16 @@ async def test_walk5_deactivating_an_account_mid_session_refuses_its_very_next_r
         deactivate_staff(db, username)
         db.commit()
 
-    refused = await client.get("/admin/", follow_redirects=False)
-    assert refused.status_code in (302, 307)
-    assert "/admin/login" in refused.headers["location"]
-
+    # Probed first, on the exact cookie the login above set - before any
+    # request that would clear it as a side effect through a different code
+    # path. See the docstring above: this ordering is the fix.
     for path in ("/admin/verify", "/admin/change-password", "/admin/enrol"):
         response = await client.get(path, follow_redirects=False)
         assert response.status_code in (302, 307), path
         assert "/admin/login" in response.headers["location"], path
+
+    # The ordinary dashboard route refuses too, through its own, separate
+    # is_active re-check in authenticate()'s main branch.
+    refused = await client.get("/admin/", follow_redirects=False)
+    assert refused.status_code in (302, 307)
+    assert "/admin/login" in refused.headers["location"]

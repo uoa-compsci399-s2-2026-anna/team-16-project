@@ -125,6 +125,23 @@ def _deactivate(admin_app, username: str) -> None:
         db.commit()
 
 
+def _clearing_set_cookie(response) -> bool:
+    """Whether the response tells the browser to drop the session cookie.
+
+    starlette.middleware.sessions.SessionMiddleware signals a cleared
+    session with a literal "session=null" Set-Cookie carrying an expiry in
+    the past, rather than by re-signing an empty payload, so that string is
+    the marker. Distinguishing a refusal that clears from one that does not
+    is what separates authenticate()'s two kinds of "no": an unknown or
+    deactivated account is evicted from the cookie, while a state-gate or
+    wrong-way-in refusal leaves a still-valid session alone.
+    """
+    return any(
+        header.startswith("session=null")
+        for header in response.headers.get_list("set-cookie")
+    )
+
+
 @pytest.fixture(autouse=True)
 def _reset_staff_table(admin_app):
     """Wipe committed staff rows after each test in this module.
@@ -252,16 +269,43 @@ async def test_no_mfa_enrolment_redirects_the_dashboard_to_enrol(client, admin_a
     assert "/admin/enrol" in response.headers["location"]
 
 
-async def test_no_mfa_enrolment_does_not_redirect_its_own_page(client, admin_app):
+async def test_no_mfa_enrolment_does_not_loop_forever_on_its_own_page(
+    client, admin_app
+):
+    """The brief's requirement 7, restated for round 5's fix.
+
+    It originally asserted that a logged-in, password-changed account gets
+    200 on /admin/enrol - the property that stops /admin/ -> /admin/enrol
+    -> /admin/enrol looping forever. Round 5 closed /admin/enrol on the
+    SESSION_KEY way in (an evicted session must not re-enrol its own
+    authenticator), so that specific 200 is gone by design.
+
+    What requirement 7 actually protects - the chain terminates instead of
+    cycling - still has to hold, so it is asserted here directly rather
+    than through a proxy that no longer applies: following the redirects
+    from /admin/ lands on the login page and stops. The page's real 200,
+    through a fresh password step, is pinned by
+    test_the_state_gate_on_the_pending_login_way_in[password_changed-...]
+    and by test_a_fresh_password_step_still_reaches_enrolment_after_an_eviction.
+    """
     _make_staff(admin_app, "quinn", password_changed=True)
     cookie = _session_cookie(
         admin_app.state.settings.secret_key, {SESSION_KEY: "quinn"}
     )
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
-    response = await client.get("/admin/enrol", follow_redirects=False)
+    # follow_redirects with httpx's default max_redirects raises
+    # TooManyRedirects on a cycle, so arriving at all is the assertion.
+    response = await client.get("/admin/", follow_redirects=True)
 
     assert response.status_code == 200
+    assert response.url.path == "/admin/login"
+    # The hops actually taken, so a future change that adds a cycle short
+    # of httpx's limit still fails here rather than passing quietly.
+    assert [r.headers["location"] for r in response.history] == [
+        "http://testserver/admin/enrol",
+        "http://testserver/admin/login",
+    ]
 
 
 # --- 8: logout clears the session -------------------------------------------
@@ -685,10 +729,21 @@ async def test_a_logged_in_but_deactivated_account_cannot_open_a_pre_login_page(
     cookie = _session_cookie(admin_app.state.settings.secret_key, {SESSION_KEY: "ruth"})
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
-    # Sanity: reachable before deactivation - otherwise a refusal below
-    # could not be pinned on deactivation specifically.
+    # Sanity before deactivation, so the refusal after it can be pinned on
+    # deactivation specifically rather than on any pre-existing refusal.
     pre = await client.get(path, follow_redirects=False)
-    assert pre.status_code == 200
+    if path == "/admin/enrol":
+        # Round 5 closed this page on the SESSION_KEY way in, so it is
+        # already refused - but for the wrong-way-in reason, not for
+        # deactivation. The two refusals are still distinguishable, and in
+        # the way that matters: only the deactivation one evicts the
+        # cookie. Asserting that here keeps this parametrization pinning
+        # deactivation rather than passing on a refusal it did not cause -
+        # the vacuous-parametrization trap rounds 3 and 4 both fell into.
+        assert pre.status_code in (302, 307)
+        assert not _clearing_set_cookie(pre)
+    else:
+        assert pre.status_code == 200
 
     _deactivate(admin_app, "ruth")
 
@@ -696,6 +751,7 @@ async def test_a_logged_in_but_deactivated_account_cannot_open_a_pre_login_page(
 
     assert response.status_code in (302, 307)
     assert "/admin/login" in response.headers["location"]
+    assert _clearing_set_cookie(response)
 
 
 @pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
@@ -845,15 +901,26 @@ _ACCOUNT_STATES = {
     "password_reset_only": ({"mfa": True}, "/admin/change-password"),
 }
 
-#: Every (state, page) pair, with the single expected answer.
+#: Every (state, page) pair on the PENDING way in, with the single
+#: expected answer: the page the account still owes, and only that one.
 _STATE_GATE_MATRIX = [
     (state, path, path == owed)
     for state, (_, owed) in _ACCOUNT_STATES.items()
     for path in PRE_LOGIN_PAGES
 ]
 
+#: The same twelve pairs on the SESSION_KEY way in, where /admin/enrol is
+#: never open - see admin/backend.py's comment and round 5 below. The two
+#: matrices are built from the same source so the one deliberate
+#: difference between the ways in is visible as an expression rather than
+#: as two hand-maintained lists that could drift apart.
+_SESSION_KEY_GATE_MATRIX = [
+    (state, path, expected_open and path != "/admin/enrol")
+    for state, path, expected_open in _STATE_GATE_MATRIX
+]
 
-@pytest.mark.parametrize("state,path,expected_open", _STATE_GATE_MATRIX)
+
+@pytest.mark.parametrize("state,path,expected_open", _SESSION_KEY_GATE_MATRIX)
 async def test_the_state_gate_on_the_session_key_way_in(
     client, admin_app, state, path, expected_open
 ):
@@ -863,6 +930,10 @@ async def test_the_state_gate_on_the_session_key_way_in(
     round 4 every one of these twelve returned 200, because
     _may_open_pre_login_page short-circuited on already_logged_in before
     reaching the gate at all.
+
+    Round 5 closed /admin/enrol on this way in entirely, so only three of
+    the twelve are open here rather than four - see
+    test_an_evicted_account_cannot_re_enrol_its_own_authenticator for why.
     """
     seed, _ = _ACCOUNT_STATES[state]
     _make_staff(admin_app, "sasha", **seed)
@@ -908,20 +979,34 @@ async def test_the_state_gate_on_the_pending_login_way_in(
 
 
 def _evict_l2(admin_app, username: str) -> str:
-    """Contract 8.3 recovery layer L2, performed against a live session.
+    """Contract 8.3 recovery layer L2, using only functions that exist.
 
     "Another administrator resets MFA and issues a random password" - the
     only eviction available while _guard_admin_floor refuses to deactivate
     an administrator, which is the normal state of a two-administrator
-    deployment. set_password clears must_change_password, so the flag is
-    set back afterwards: an issued password is a temporary one the holder
-    must change, exactly as create_staff leaves a new account.
+    deployment.
+
+    Round 4's version of this helper set must_change_password back to True
+    by hand after set_password cleared it, and review caught that as a
+    fifth instance of this file's recurring failure: nothing in admin/
+    writes that flag True except create_staff (admin/accounts.py:177), and
+    set_password writes it False (:189). There is no issue_password or
+    reset_password service function. So the state round 4 defended against,
+    (must_change_password=True, mfa_enrolled=False), is one no eviction can
+    actually produce - the helper invented it, and the test passed against
+    a gate that left the real state open.
+
+    Driving it with the real functions only lands on
+    (must_change_password=False, mfa_enrolled=False) instead, which is what
+    this test now pins. The durable fix - an issue_password service
+    function that leaves the flag set - is a carry-over against the
+    protected E-1 admin/accounts.py, recorded by the coordinator; the gate
+    below has to hold regardless of whether it lands.
     """
     new_password = generate_initial_password()
     with admin_app.state.session_factory() as db:
         reset_mfa(db, username)
         set_password(db, username, new_password)
-        get_staff(db, username).must_change_password = True
         db.commit()
     return new_password
 
@@ -929,16 +1014,18 @@ def _evict_l2(admin_app, username: str) -> str:
 async def test_an_evicted_account_cannot_re_enrol_its_own_authenticator(
     client, admin_app
 ):
-    """The exploit the round-3 short-circuit left open, end to end.
+    """The exploit round 3 left open, driven with real service calls only.
 
     reset_mfa clears mfa_enrolled_at - and that clearing is exactly what
     removes begin_mfa_enrolment's own MfaAlreadyEnrolledError guard, so
-    there is no service-layer backstop behind this gate. With the
-    short-circuit in place, the person being evicted kept a live session on
-    /admin/enrol and could enrol a fresh authenticator, mint five new
-    recovery codes, and hold both factors again - with audit_log.actor
-    (contract 8.4) naming them throughout. The gate is the only thing
-    stopping it.
+    there is no service-layer backstop behind this gate. The person being
+    evicted keeps a live session; if /admin/enrol opens on it they enrol a
+    fresh authenticator, mint five new recovery codes and hold both factors
+    again - with audit_log.actor (contract 8.4) naming them throughout. The
+    gate is the only thing stopping it.
+
+    The state below is the one the real eviction produces, not the one
+    round 4's helper invented. See _evict_l2.
     """
     _make_staff(admin_app, "trent", password_changed=True, mfa=True)
     cookie = _session_cookie(
@@ -951,11 +1038,12 @@ async def test_an_evicted_account_cannot_re_enrol_its_own_authenticator(
 
     # The state the eviction actually produced - asserted, not assumed,
     # since the whole finding turns on which states this branch is
-    # reachable in.
+    # reachable in. must_change_password is False here precisely because
+    # no service function sets it back.
     with admin_app.state.session_factory() as db:
         staff = get_staff(db, "trent")
         assert staff.is_active is True
-        assert staff.must_change_password is True
+        assert staff.must_change_password is False
         assert staff.mfa_enrolled is False
 
     enrol = await client.get("/admin/enrol", follow_redirects=False)
@@ -967,6 +1055,34 @@ async def test_an_evicted_account_cannot_re_enrol_its_own_authenticator(
     # cannot be turned back into a full one by any route.
     verify = await client.get("/admin/verify", follow_redirects=False)
     assert verify.status_code in (302, 307)
+
+
+async def test_a_fresh_password_step_still_reaches_enrolment_after_an_eviction(
+    client, admin_app
+):
+    """The other half of round 5's fix, and the reason it is safe.
+
+    Closing /admin/enrol on the SESSION_KEY way in would be a lockout if it
+    also closed the legitimate route. It does not: the administrator has
+    just issued a new password to the rightful holder, so a genuine
+    re-enrolment arrives through a fresh password step, which produces a
+    pending value - the way in that still opens the page. The evicted party
+    cannot follow this route because they do not know the issued password.
+    """
+    _make_staff(admin_app, "trish", password_changed=True, mfa=True)
+    issued = _evict_l2(admin_app, "trish")
+
+    login_response = await client.post(
+        "/admin/login",
+        data={"username": "trish", "password": issued},
+        follow_redirects=False,
+    )
+    assert login_response.status_code in (302, 307)
+    assert "/admin/enrol" in login_response.headers["location"]
+
+    response = await client.get("/admin/enrol", follow_redirects=False)
+
+    assert response.status_code == 200
 
 
 #: The account states an administrator can force a live session into
@@ -1017,16 +1133,8 @@ async def test_the_dashboard_ladder_survives_the_removed_short_circuit(
 # survives the refusal and buys an unauthenticated caller one database read
 # per request, indefinitely.
 #
-# starlette.middleware.sessions.SessionMiddleware signals a cleared session
-# with a literal "session=null" Set-Cookie carrying an expiry in the past,
-# rather than by re-signing an empty payload, so that string is the marker.
-
-
-def _clearing_set_cookie(response) -> bool:
-    return any(
-        header.startswith("session=null")
-        for header in response.headers.get_list("set-cookie")
-    )
+# The marker itself is _clearing_set_cookie, defined with the other helpers
+# at the top of this file.
 
 
 @pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
@@ -1053,6 +1161,58 @@ async def test_a_deactivated_account_has_its_session_cookie_cleared(
         admin_app.state.settings.secret_key, {SESSION_KEY: "vera"}
     )
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+# --- Round 5 minor: the same two clears, driven from the PENDING way in ----
+#
+# Round 4's enumeration marked rows B5 and B7 (unknown/inactive reached via
+# a pending value) simply "pinned", while the structurally identical B4 and
+# B6 carefully split "refusal pinned, clear NOT pinned". Review caught the
+# inconsistency: both of round 4's cookie-clearing tests forge a
+# SESSION_KEY, so nothing drove either clear from the pending way in.
+#
+# There is no live gap - since round 3 there is one shared clear() per
+# branch, so a mutant deleting it dies via B4/B6 either way - but the table
+# claimed coverage that did not exist, which is the same class of defect as
+# the two false docstrings round 4 was asked to fix. Pinning it directly is
+# cheaper than arguing that the code paths coincide, and it stays true if
+# the two ways in ever stop sharing the statement.
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_an_unknown_pending_login_has_its_session_cookie_cleared(
+    client, admin_app, path
+):
+    forged = _session_cookie(
+        admin_app.state.settings.secret_key,
+        {PENDING_SESSION_KEY: {"username": "ghost5", "expires_at": time.time() + 60}},
+    )
+    client.cookies.set("session", forged, domain=_COOKIE_DOMAIN)
+
+    response = await client.get(path, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+@pytest.mark.parametrize("path", PRE_LOGIN_PAGES)
+async def test_a_deactivated_pending_login_has_its_session_cookie_cleared(
+    client, admin_app, path
+):
+    # Seeded with the state that owes this page, so the clear can only be
+    # explained by is_active - a state gate refusal happens later and does
+    # not clear anything.
+    _make_staff(admin_app, "wendy", active=False, **_OWES_STATE_FOR_PAGE[path])
+    forged = _session_cookie(
+        admin_app.state.settings.secret_key,
+        {PENDING_SESSION_KEY: {"username": "wendy", "expires_at": time.time() + 60}},
+    )
+    client.cookies.set("session", forged, domain=_COOKIE_DOMAIN)
 
     response = await client.get(path, follow_redirects=False)
 

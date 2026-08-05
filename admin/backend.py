@@ -125,13 +125,24 @@ class AdminAuth(AuthenticationBackend):
         login from the password step - and four account states the two
         onboarding booleans can be in. Rounds 1-3 of review each found a
         real defect of the same shape: a rule applied to one way in, or
-        one state, and not to its symmetric partner. So this function
-        deliberately has no per-way-in branch past the point the username
-        is resolved. Resolve the username from an established SESSION_KEY
-        or, short of that, a valid non-expired pending login; read the row
+        one state, and not to its symmetric partner. So the default here is
+        that there is no per-way-in branch past the point the username is
+        resolved. Resolve the username from an established SESSION_KEY or,
+        short of that, a valid non-expired pending login; read the row
         exactly once; refuse and clear the session for an unknown or
         inactive account; then apply one state gate, the same one, however
         the caller got here.
+
+        **/admin/enrol is the one deliberate exception, and it is not an
+        oversight - do not "simplify" it back.** That default is a
+        heuristic against a specific historical failure, not a law, and
+        enrolment is the case it does not cover. A legitimate re-enrolment
+        after an administrator resets someone's MFA always arrives through
+        a fresh password step, because the administrator has just issued a
+        new password to the rightful holder; the pending way in is
+        therefore the only one that ever needs this page. An existing
+        session is, by construction, the credential the reset was meant to
+        neutralise. See the branch below.
 
         A live SESSION_KEY is NOT a reason to skip that gate, and this is
         the least obvious thing in the file. Contract 8.3's
@@ -145,42 +156,58 @@ class AdminAuth(AuthenticationBackend):
         would stop the person being evicted from enrolling a fresh
         authenticator, minting new recovery codes and setting a password
         of their choosing, holding both factors again with audit_log.actor
-        naming the victim throughout. A live SESSION_KEY carrying
-        must_change_password, or lacking enrolment, is unreachable through
-        any ordinary login: SESSION_KEY is written only by
-        admin.auth._complete_login, which refuses an unenrolled account
-        outright, and which can only be reached through /admin/verify -
-        a page the gate below opens only once *both* are cleared. So this
-        branch is exercised *only* in the states an administrator's
-        mid-session reset creates, which is precisely why three rounds of
-        review drove the app and never saw it.
+        naming the victim throughout. A live SESSION_KEY lacking enrolment
+        is unreachable through any ordinary login - SESSION_KEY is written
+        only by admin.auth._complete_login, which refuses an unenrolled
+        account outright - so this is exercised *only* in the state an
+        administrator's mid-session reset creates, which is precisely why
+        four rounds of review drove the app and did not see it.
+
+        Note which state that is, because round 4 got it wrong and the
+        gate below is written for the corrected one. The eviction lands on
+        must_change_password=**False**, not True: set_password clears the
+        flag (admin/accounts.py:189) and nothing in admin/ sets it back -
+        create_staff (:177) is the only writer of True, and there is no
+        issue_password or reset_password service function to call. So the
+        post-eviction row is (False, False), which is indistinguishable by
+        state alone from an ordinary account midway through onboarding.
+        No state gate can separate those two, which is why the way in has
+        to carry the distinction for this one page.
 
         Each page is open exactly while the account still owes that step,
         in the ladder order contract 8.3 requires:
 
         * /admin/change-password - only while must_change_password is set
-        * /admin/enrol           - only once that is cleared *and* the
-                                    account is not yet MFA-enrolled, so the
-                                    ladder order binds on the gate too, not
-                                    just on where login() sends a fresh
+        * /admin/enrol           - only once that is cleared, the account
+                                    is not yet MFA-enrolled, *and* the
+                                    caller arrived on a pending login
+                                    rather than an established session
+                                    (the exception described above). The
+                                    first two conditions keep the ladder
+                                    order binding on the gate and not just
+                                    on where login() sends a fresh
                                     password - otherwise a brand-new
-                                    account satisfies both change-password
-                                    and enrol at once
-        * /admin/verify          - only once *both* of the above are
+                                    account satisfies both
+                                    change-password and enrol at once
+        * /admin/verify          - only once *both* onboarding flags are
                                     cleared, so a half-onboarded account
                                     cannot skip ahead to the second factor
 
-        The three conditions are mutually exclusive and total: every
-        account state reaches exactly the one page matching what it owes
-        next.
+        Two capabilities this costs, both deliberate:
 
-        The one capability this costs is a fully onboarded, logged-in user
-        voluntarily opening /admin/change-password - which today *is* the
-        forced-change page. A voluntary "change my password" route belongs
-        on its own path, not on this gate.
+        * a fully onboarded, logged-in user cannot voluntarily open
+          /admin/change-password - which today *is* the forced-change
+          page. A voluntary "change my password" route belongs on its own
+          path, not on this gate.
+        * a live session whose MFA was just reset is bounced to
+          /admin/login rather than straight into enrolment. That is the
+          point: the holder of the newly issued password re-authenticates
+          and enrols, and whoever was merely holding the old cookie
+          cannot.
         """
         username = request.session.get(SESSION_KEY)
-        if not username:
+        already_logged_in = bool(username)
+        if not already_logged_in:
             pending = _pending_login_from_session(request.session)
             if pending is None or pending.is_expired(now=time.time()):
                 return False
@@ -199,7 +226,21 @@ class AdminAuth(AuthenticationBackend):
             if path == "/admin/change-password":
                 return staff.must_change_password
             if path == "/admin/enrol":
-                return not staff.must_change_password and not staff.mfa_enrolled
+                # ``not already_logged_in`` is the one way-in distinction in
+                # this function and it is load-bearing, not tidy-up: the
+                # state an eviction leaves behind is (must_change_password
+                # False, mfa_enrolled False), the same row as an ordinary
+                # account partway through onboarding, so no condition on
+                # ``staff`` can tell the evicted party from the rightful
+                # holder. What separates them is the newly issued password,
+                # which only the rightful holder has - and presenting it is
+                # exactly what produces a pending login. Requiring one here
+                # is therefore requiring the factor the eviction reissued.
+                return (
+                    not already_logged_in
+                    and not staff.must_change_password
+                    and not staff.mfa_enrolled
+                )
             if path == "/admin/verify":
                 return not staff.must_change_password and staff.mfa_enrolled
 

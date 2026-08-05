@@ -14,6 +14,9 @@ export const state = {
   result: null,
   loading: true,
   error: null,
+  errorCode: null,
+  fieldErrors: {},
+  rateLimitedUntil: 0,
   step: -1,
   expandedSectors: [],
 }
@@ -43,6 +46,9 @@ export function resetCalculator() {
     compareAlternative: true,
     result: null,
     error: null,
+    errorCode: null,
+    fieldErrors: {},
+    rateLimitedUntil: 0,
     step: -1,
     expandedSectors: [],
   })

@@ -1,4 +1,7 @@
 const API_BASE = '/api/v1'
+const searchParams = new URLSearchParams(window.location.search)
+const MOCK_MODE = searchParams.get('mock') === '1'
+const MOCK_ERROR = searchParams.get('mockError')
 
 export class ApiError extends Error {
   constructor(code, message, details = [], status = 0) {
@@ -11,6 +14,7 @@ export class ApiError extends Error {
 }
 
 async function request(path, options = {}) {
+  if (MOCK_MODE) return mockRequest(path, options)
   let response
   try {
     response = await fetch(`${API_BASE}${path}`, {
@@ -41,6 +45,28 @@ async function request(path, options = {}) {
     )
   }
   return body
+}
+
+async function readFixture(path) {
+  const response = await fetch(`/tests/fixtures/${path}`)
+  if (!response.ok) throw new ApiError('MOCK_FIXTURE_ERROR', `Mock fixture ${path} could not be loaded.`, [], response.status)
+  return response.json()
+}
+
+async function mockRequest(path, options) {
+  if (path === '/taxonomy') return readFixture('taxonomy.json')
+  if (path.startsWith('/factors')) return readFixture('factors.json')
+  if (path === '/stats') return readFixture('stats.json')
+  if (path === '/calculate' && options.method === 'POST') {
+    if (MOCK_ERROR) {
+      const fixtureName = MOCK_ERROR.toLowerCase()
+      const body = await readFixture(`errors/${fixtureName}.json`)
+      throw new ApiError(body.error.code, body.error.message, body.error.details, body.error.code === 'RATE_LIMITED' ? 429 : 400)
+    }
+    const result = await readFixture('calculate_response.json')
+    return { ...result, token: result.token || 'mock-session-token' }
+  }
+  throw new ApiError('MOCK_FIXTURE_ERROR', `No mock fixture is mapped for ${path}.`)
 }
 
 export function getTaxonomy() {

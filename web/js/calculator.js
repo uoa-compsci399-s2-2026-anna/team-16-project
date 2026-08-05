@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator } from './state.js'
-import { kgString, massToKg } from './units.js'
+import { kgString, massToKg, toKg } from './units.js'
 import { buttonRow, escapeHtml, formatNumber, slug } from './view.js'
 import { renderResults } from './results.js'
 
@@ -9,8 +9,9 @@ const decimalPattern = /^\d+(\.\d{1,2})?$/
 
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
 const selected = (items, code) => items.find(item => item.code === code)
-const lineValue = (lines, destination) => lines.find(line => line.destination === destination)?.qtyInput || ''
-const allocated = lines => lines.reduce((sum, line) => sum + (Number(line.qtyInput) || 0), 0)
+const createLine = () => ({ id: crypto.randomUUID(), destination: '', qtyKg: '', qtyInput: '', measurement: 'kilograms', unitPreset: null, unitCount: null })
+const allocatedKg = lines => lines.reduce((sum, line) => sum + (Number(line.qtyKg) || 0), 0)
+const applicablePresets = () => sorted(state.taxonomy.unit_presets).filter(preset => !preset.food_category || preset.food_category === state.foodCategory)
 const hasData = () => Boolean(state.sector || state.foodCategory || state.totalAmount || state.current.length || state.alternative.length || state.result)
 
 function introduction() {
@@ -46,26 +47,41 @@ function amountStep() {
 
 function scenarioRows(kind) {
   const lines = state[kind]
-  return sorted(state.taxonomy.destinations).map(destination => `<div class="destination-row"><label for="${kind}-${slug(destination.code)}">${escapeHtml(destination.name)}${destination.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="${kind}-${slug(destination.code)}" data-scenario="${kind}" data-destination="${escapeHtml(destination.code)}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(lineValue(lines, destination.code))}" aria-label="${escapeHtml(destination.name)} amount for ${kind} scenario"><span>${escapeHtml(state.totalUnit)}</span></div></div>`).join('')
+  if (!lines.length) return '<p class="empty-state">No destination rows added yet.</p>'
+  const presets = applicablePresets()
+  return lines.map((line, index) => {
+    const fieldPath = `${kind}[${index}].qty_kg`
+    const invalid = Boolean(state.fieldErrors[fieldPath])
+    return `<article class="scenario-line ${invalid ? 'invalid' : ''}" data-line-id="${line.id}">
+      <div class="scenario-line-grid">
+        <div class="form-field"><label for="${kind}-${line.id}-destination">Destination <span class="required">(required)</span></label><select id="${kind}-${line.id}-destination" data-line-field="destination" data-scenario="${kind}" data-line-id="${line.id}"><option value="">Select destination</option>${sorted(state.taxonomy.destinations).map(destination => `<option value="${escapeHtml(destination.code)}" ${line.destination === destination.code ? 'selected' : ''}>${escapeHtml(destination.name)}</option>`).join('')}</select></div>
+        <div class="form-field"><label for="${kind}-${line.id}-measurement">Measurement <span class="required">(required)</span></label><select id="${kind}-${line.id}-measurement" data-line-field="measurement" data-scenario="${kind}" data-line-id="${line.id}"><option value="kilograms" ${line.measurement === 'kilograms' ? 'selected' : ''}>kilograms</option><option value="tonnes" ${line.measurement === 'tonnes' ? 'selected' : ''}>tonnes</option>${presets.map(preset => `<option value="preset:${escapeHtml(preset.code)}" ${line.measurement === `preset:${preset.code}` ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`).join('')}</select></div>
+        <div class="form-field"><label for="${kind}-${line.id}-amount">${line.measurement.startsWith('preset:') ? 'Number of units' : 'Waste amount'} <span class="required">(required)</span></label><input id="${kind}-${line.id}-amount" data-line-field="amount" data-scenario="${kind}" data-line-id="${line.id}" type="number" inputmode="decimal" min="0" step="any" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''}><p class="field-hint">${line.qtyKg ? `${escapeHtml(line.qtyKg)} kg will be sent to the API.` : 'Enter a non-negative amount.'}</p></div>
+      </div>
+      ${invalid ? `<p class="field-error" role="alert">${escapeHtml(state.fieldErrors[fieldPath])}</p>` : ''}
+      <button class="text-button danger" type="button" data-action="remove-line" data-scenario="${kind}" data-line-id="${line.id}">Remove destination row</button>
+    </article>`
+  }).join('')
 }
 
 function destinationStep() {
-  const total = Number(state.totalAmount) || 0
-  const currentAllocated = allocated(state.current)
-  const alternativeAllocated = allocated(state.alternative)
-  const summary = (kind, value) => `<div class="allocation-summary" id="${kind}-summary" aria-live="polite"><div><span>Total waste</span><strong>${total.toFixed(2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Allocated</span><strong data-summary="allocated">${value.toFixed(2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Remaining</span><strong data-summary="remaining">${(total - value).toFixed(2)} ${escapeHtml(state.totalUnit)}</strong></div></div>`
+  const total = massToKg(state.totalAmount, state.totalUnit) || 0
+  const currentAllocated = allocatedKg(state.current)
+  const alternativeAllocated = allocatedKg(state.alternative)
+  const summary = (kind, value) => `<div class="allocation-summary ${value > total ? 'invalid' : ''}" id="${kind}-summary" aria-live="polite"><div><span>Total waste</span><strong>${total.toFixed(3)} kg</strong></div><div><span>Allocated</span><strong data-summary="allocated">${value.toFixed(3)} kg</strong></div><div><span>Remaining</span><strong data-summary="remaining">${(total - value).toFixed(3)} kg</strong></div></div>`
   return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">Step 4</p><h1 id="destination-title">Where did the food waste go?</h1><p class="section-intro">Allocate the full total for the current scenario. You can also compare an alternative destination scenario.</p>
-    <section aria-labelledby="current-title"><h2 id="current-title">Current scenario</h2>${summary('current', currentAllocated)}<div class="destination-list">${scenarioRows('current')}</div></section>
+    <section aria-labelledby="current-title"><h2 id="current-title">Current scenario</h2>${summary('current', currentAllocated)}<div class="scenario-line-list">${scenarioRows('current')}</div><button class="button button-add" type="button" data-action="add-line" data-scenario="current">+ Add destination row</button></section>
     <label class="comparison-toggle"><input id="compare-alternative" type="checkbox" ${state.compareAlternative ? 'checked' : ''}> Compare with an alternative scenario</label>
-    ${state.compareAlternative ? `<section aria-labelledby="alternative-title"><h2 id="alternative-title">Alternative scenario</h2><p class="field-hint">Use prevention when the alternative represents food waste avoided.</p>${summary('alternative', alternativeAllocated)}<div class="destination-list">${scenarioRows('alternative')}</div></section>` : ''}
+    ${state.compareAlternative ? `<section aria-labelledby="alternative-title"><h2 id="alternative-title">Alternative scenario</h2><p class="field-hint">Use prevention when the alternative represents food waste avoided.</p>${summary('alternative', alternativeAllocated)}<div class="scenario-line-list">${scenarioRows('alternative')}</div><button class="button button-add" type="button" data-action="add-line" data-scenario="alternative">+ Add destination row</button></section>` : ''}
     <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${buttonRow(2, 'Continue', false, 'continue')}</section>`
 }
 
 function reviewLines(kind) {
-  const lines = state[kind].filter(line => Number(line.qtyInput) > 0)
+  const lines = state[kind].filter(line => Number(line.qtyKg) > 0)
   return `<dl class="review-destinations">${lines.map(line => {
     const destination = selected(state.taxonomy.destinations, line.destination)
-    return `<div><dt>${escapeHtml(destination?.name || line.destination)}</dt><dd>${formatNumber(line.qtyInput, 2)} ${escapeHtml(state.totalUnit)}</dd></div>`
+    const inputLabel = line.unitPreset ? `${formatNumber(line.unitCount, 2)} × ${escapeHtml(selected(state.taxonomy.unit_presets, line.unitPreset)?.label || line.unitPreset)}` : `${formatNumber(line.qtyInput, 2)} ${escapeHtml(line.measurement)}`
+    return `<div><dt>${escapeHtml(destination?.name || line.destination)}<small>${inputLabel}</small></dt><dd>${formatNumber(line.qtyKg, 3)} kg</dd></div>`
   }).join('')}</dl>`
 }
 
@@ -80,7 +96,7 @@ function reviewStep() {
     <article class="review-block"><div class="section-heading-row"><h2>Current scenario</h2><button class="text-button" type="button" data-action="go-step" data-step="3">Edit</button></div>${reviewLines('current')}</article>
     ${state.compareAlternative ? `<article class="review-block"><div class="section-heading-row"><h2>Alternative scenario</h2><button class="text-button" type="button" data-action="go-step" data-step="3">Edit</button></div>${reviewLines('alternative')}</article>` : ''}
     <aside class="disclaimer compact"><span class="info-icon" aria-hidden="true">i</span><div><strong>Anonymous submission</strong><p>One calculation equals one anonymous submission. No identifying information about you or your business is requested.</p></div></aside>
-    ${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}${buttonRow(3, state.loading ? 'Calculating…' : 'Calculate impact', state.loading, 'calculate')}</section>`
+    ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${buttonRow(3, state.loading ? 'Calculating…' : Date.now() < state.rateLimitedUntil ? 'Try again shortly' : 'Calculate impact', state.loading || Date.now() < state.rateLimitedUntil, 'calculate')}</section>`
 }
 
 function validateCurrentStep() {
@@ -90,22 +106,43 @@ function validateCurrentStep() {
     if (!decimalPattern.test(state.totalAmount)) return 'Enter no more than two decimal places.'
   }
   if (state.step === 3) {
-    const total = Number(state.totalAmount)
+    const total = massToKg(state.totalAmount, state.totalUnit)
     const scenarios = state.compareAlternative ? ['current', 'alternative'] : ['current']
     for (const kind of scenarios) {
-      const values = state[kind].map(line => line.qtyInput).filter(value => value !== '')
-      if (values.some(value => Number(value) < 0)) return `${kind === 'current' ? 'Current' : 'Alternative'} destination amounts must be zero or greater.`
-      if (values.some(value => !decimalPattern.test(value))) return `Enter ${kind} destination amounts to no more than two decimal places.`
-      const sum = allocated(state[kind])
-      if (sum > total) return `Allocated ${kind} waste exceeds total waste by ${(sum - total).toFixed(2)} ${state.totalUnit}.`
-      if (Math.abs(sum - total) > 0.000001) return `Allocate the full ${total.toFixed(2)} ${state.totalUnit} for the ${kind} scenario. ${(total - sum).toFixed(2)} ${state.totalUnit} remains.`
+      const lines = state[kind]
+      if (!lines.length) return `Add at least one destination row to the ${kind} scenario.`
+      if (lines.length > 20) return `The ${kind} scenario cannot contain more than 20 destination rows.`
+      if (lines.some(line => !line.destination)) return `Select a destination for every ${kind} scenario row.`
+      if (new Set(lines.map(line => line.destination)).size !== lines.length) return `Each destination can appear only once in the ${kind} scenario.`
+      if (lines.some(line => line.qtyInput === '' || Number(line.qtyInput) < 0 || !Number.isFinite(Number(line.qtyInput)))) return `${kind === 'current' ? 'Current' : 'Alternative'} destination amounts must be valid non-negative numbers.`
+      const sum = allocatedKg(lines)
+      if (sum > total) return `Allocated ${kind} waste exceeds total waste by ${(sum - total).toFixed(3)} kg.`
+      if (Math.abs(sum - total) > 0.0005) return `Allocate the full ${total.toFixed(3)} kg for the ${kind} scenario. ${(total - sum).toFixed(3)} kg remains.`
     }
   }
   return ''
 }
 
 function buildLines(kind) {
-  return state[kind].filter(line => Number(line.qtyInput) > 0).map(line => ({ destination: line.destination, qty_kg: line.qtyKg }))
+  return state[kind].filter(line => Number(line.qtyKg) >= 0).map(line => ({ destination: line.destination, qty_kg: line.qtyKg }))
+}
+
+let reloadTaxonomy = null
+
+function publicError(error) {
+  switch (error.code) {
+    case 'VALIDATION_ERROR': return error.message || 'Check the highlighted fields and try again.'
+    case 'UNKNOWN_CODE': return 'Calculator options have changed. The latest options are being loaded; please review your selections and try again.'
+    case 'RATE_LIMITED': return 'Too many calculations have been requested. Please wait 60 seconds and try again.'
+    case 'FORMULA_ERROR': return 'The calculator could not produce a result because its calculation configuration needs attention. Please try again later.'
+    case 'NO_PUBLISHED_FACTOR_SET': return 'The calculator is currently under maintenance because no factor set is available.'
+    default: return error.message || 'The calculation could not be completed.'
+  }
+}
+
+function fieldErrorMap(error) {
+  if (error.code !== 'VALIDATION_ERROR') return {}
+  return Object.fromEntries((error.details || []).filter(detail => detail.field).map(detail => [detail.field, error.message || 'Check this value.']))
 }
 
 async function submitCalculation() {
@@ -117,28 +154,42 @@ async function submitCalculation() {
     current: buildLines('current'),
     alternative: state.compareAlternative ? buildLines('alternative') : null,
   }
-  setState({ loading: true, error: null })
+  if (Date.now() < state.rateLimitedUntil) return
+  setState({ loading: true, error: null, errorCode: null, fieldErrors: {} })
   try {
     const result = await calculate(payload)
     if (result.token) sessionStorage.setItem('kaiCalculatorToken', result.token)
-    setState({ result, token: result.token || state.token, loading: false, step: 5 })
+    setState({ result, token: result.token || state.token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {} })
   } catch (error) {
-    setState({ loading: false, error: error.message || 'The calculation could not be completed.' })
+    const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
+    if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
+    const errorStep = error.code === 'VALIDATION_ERROR' ? 3 : error.code === 'UNKNOWN_CODE' ? 0 : state.step
+    setState({ loading: false, error: publicError(error), errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep })
+    if (error.code === 'RATE_LIMITED') setTimeout(() => setState({ rateLimitedUntil: 0 }), 60000)
   }
 }
 
-function updateDestination(input) {
-  const kind = input.dataset.scenario
-  const destination = input.dataset.destination
-  const existing = state[kind].filter(line => line.destination !== destination)
-  state[kind] = input.value === '' ? existing : [...existing, { destination, qtyInput: input.value, qtyKg: kgString(input.value, state.totalUnit) }]
-  const total = Number(state.totalAmount) || 0
-  const sum = allocated(state[kind])
+function convertLine(line) {
+  if (line.qtyInput === '' || !Number.isFinite(Number(line.qtyInput))) return { ...line, qtyKg: '' }
+  if (line.measurement.startsWith('preset:')) {
+    const presetCode = line.measurement.slice(7)
+    return { ...line, qtyKg: toKg(line.qtyInput, presetCode, state.taxonomy.unit_presets), unitPreset: presetCode, unitCount: line.qtyInput }
+  }
+  return { ...line, qtyKg: kgString(line.qtyInput, line.measurement), unitPreset: null, unitCount: null }
+}
+
+function updateLine(control) {
+  const kind = control.dataset.scenario
+  const lineId = control.dataset.lineId
+  const field = control.dataset.lineField
+  state[kind] = state[kind].map(line => line.id === lineId ? convertLine({ ...line, [field === 'amount' ? 'qtyInput' : field]: control.value }) : line)
+  const total = massToKg(state.totalAmount, state.totalUnit) || 0
+  const sum = allocatedKg(state[kind])
   const summary = document.getElementById(`${kind}-summary`)
   summary?.classList.toggle('invalid', sum > total)
   if (summary) {
-    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${state.totalUnit}`
-    summary.querySelector('[data-summary="remaining"]').textContent = `${(total - sum).toFixed(2)} ${state.totalUnit}`
+    summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(3)} kg`
+    summary.querySelector('[data-summary="remaining"]').textContent = `${(total - sum).toFixed(3)} kg`
   }
   const error = validateCurrentStep()
   document.getElementById('allocation-error').textContent = error
@@ -172,6 +223,7 @@ export function renderChrome() {
 }
 
 export function bindCalculator(main, retryTaxonomy) {
+  reloadTaxonomy = retryTaxonomy
   main.addEventListener('click', event => {
     const control = event.target.closest('[data-action]')
     if (!control) return
@@ -185,13 +237,25 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'clear-food') setState({ foodCategory: null })
     if (action === 'continue') {
       const error = validateCurrentStep()
-      setState(error ? { error } : { step: state.step + 1, error: null })
+      if (error) setState({ error })
+      else if (state.step === 2) setState({ step: 3, error: null, current: state.current.length ? state.current : [createLine()], alternative: state.alternative.length ? state.alternative : [createLine()] })
+      else setState({ step: state.step + 1, error: null })
+    }
+    if (action === 'add-line') {
+      const kind = control.dataset.scenario
+      if (state[kind].length < 20) setState({ [kind]: [...state[kind], createLine()], error: null })
+    }
+    if (action === 'remove-line') {
+      const kind = control.dataset.scenario
+      setState({ [kind]: state[kind].filter(line => line.id !== control.dataset.lineId), error: null, fieldErrors: {} })
     }
     if (action === 'calculate') submitCalculation()
     if (action === 'start-over') resetCalculator()
     if (action === 'retry') retryTaxonomy()
     if (action === 'view-methodology') window.location.href = './methodology.html'
-    window.scrollTo({ top: 0, behavior: 'smooth' })
+    if (['start', 'go-step', 'continue', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
+      window.scrollTo({ top: 0, behavior: 'smooth' })
+    }
   })
 
   main.addEventListener('change', event => {
@@ -199,7 +263,11 @@ export function bindCalculator(main, retryTaxonomy) {
     if (target.name === 'sector') setState({ sector: target.value, error: null })
     if (target.name === 'food-category') setState({ foodCategory: target.value })
     if (target.id === 'total-unit') setState({ totalUnit: target.value, error: null, current: [], alternative: [] })
-    if (target.id === 'compare-alternative') setState({ compareAlternative: target.checked, alternative: target.checked ? state.alternative : [], error: null })
+    if (target.id === 'compare-alternative') setState({ compareAlternative: target.checked, alternative: target.checked ? (state.alternative.length ? state.alternative : [createLine()]) : [], error: null })
+    if (target.matches('[data-line-field="destination"], [data-line-field="measurement"]')) {
+      updateLine(target)
+      setState({ [target.dataset.scenario]: state[target.dataset.scenario], error: null, fieldErrors: {} })
+    }
   })
 
   main.addEventListener('input', event => {
@@ -208,6 +276,6 @@ export function bindCalculator(main, retryTaxonomy) {
       state.totalAmount = target.value
       state.error = null
     }
-    if (target.matches('[data-scenario][data-destination]')) updateDestination(target)
+    if (target.matches('[data-line-field="amount"]')) updateLine(target)
   })
 }

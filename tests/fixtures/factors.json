@@ -1,0 +1,8 @@
+{
+  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true, "published_at": "2026-08-05T02:00:00Z", "notes": "Placeholder contract fixture; not an approved source." },
+  "constants": [],
+  "formulas": [],
+  "upstream": [],
+  "downstream": [],
+  "equivalences": []
+}

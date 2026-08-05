@@ -36,6 +36,30 @@ Once the backend application is available, configure it to serve the `web/` dire
 
 A static file server by itself can display the application shell, but the calculator will intentionally show an unavailable state until `GET /api/v1/taxonomy` is reachable.
 
+### Run against contract fixtures (backend not available)
+
+From the repository root:
+
+```bash
+python3 -m http.server 8000
+```
+
+Open:
+
+```text
+http://127.0.0.1:8000/web/index.html?mock=1
+```
+
+Mock mode is opt-in and reads the JSON files in `tests/fixtures/`; production URLs continue to use `/api/v1`. Error states can be checked by adding one of these query parameters:
+
+```text
+&mockError=validation_error
+&mockError=unknown_code
+&mockError=rate_limited
+&mockError=formula_error
+&mockError=no_published_factor_set
+```
+
 ## Front-end constraints
 
 - Taxonomy options come from the API and are not hard-coded in UI components.

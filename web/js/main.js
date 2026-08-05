@@ -6,13 +6,13 @@ const main = document.getElementById('main-content')
 const homeButton = document.getElementById('home-button')
 const clearButton = document.getElementById('clear-button')
 
-async function loadTaxonomy() {
-  setState({ loading: true, error: null })
+async function loadTaxonomy({ preserveError = false } = {}) {
+  setState({ loading: true, ...(preserveError ? {} : { error: null, errorCode: null }) })
   try {
     const taxonomy = await getTaxonomy()
-    setState({ taxonomy, loading: false })
+    setState({ taxonomy, loading: false, ...(preserveError ? {} : { error: null, errorCode: null }) })
   } catch (error) {
-    setState({ taxonomy: null, loading: false, error: error.message })
+    setState({ taxonomy: null, loading: false, error: error.message, errorCode: error.code || 'NETWORK_ERROR' })
   }
 }
 

@@ -139,20 +139,6 @@ p { line-height: 1.65; }
 }
 .lead, .section-intro { max-width: 680px; color: var(--muted); font-size: 1.12rem; }
 .hero .lead { font-size: clamp(1.15rem, 3vw, 1.4rem); }
-.hero { position: relative; isolation: isolate; }
-.hero::after {
-  content: '';
-  position: absolute;
-  z-index: -1;
-  top: -18px;
-  right: -90px;
-  width: 180px;
-  height: 90px;
-  border: 2px solid rgba(40, 200, 130, 0.45);
-  border-bottom: 0;
-  border-radius: 180px 180px 0 0;
-  transform: rotate(-90deg);
-}
 
 .disclaimer {
   display: flex;
@@ -512,7 +498,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .prototype-label { display: none; }
   .header-inner { min-height: 74px; }
   .main-content { padding-top: 34px; }
-  .hero::after { display: none; }
   .needs-panel, .form-panel, .review-block, .breakdowns, .methodology-content { padding: 19px; }
   .waste-card-heading { flex-direction: column; }
   .card-actions { align-self: flex-start; }

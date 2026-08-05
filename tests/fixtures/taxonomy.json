@@ -1,16 +1,24 @@
 {
   "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true },
   "sectors": [
-    { "code": "primary_production", "name": "Primary production", "description": "Growing, farming, fishing or harvesting food.", "sort_order": 1 },
-    { "code": "processing", "name": "Processing / Manufacturing", "description": "Producing, preparing, processing or packaging food.", "sort_order": 2 },
-    { "code": "wholesale_retail", "name": "Wholesale and retail", "description": "Storing, distributing or selling food.", "sort_order": 3 },
-    { "code": "consumer_hospitality", "name": "Hospitality and food service", "description": "Preparing or serving food outside the home.", "sort_order": 4 }
+    { "code": "primary_production", "name": "Primary production", "description": "Growing, farming, fishing or harvesting food.", "details": "This includes farms, orchards, vineyards, fisheries and other activities where food is grown, raised or harvested. Examples include crops left unharvested, rejected produce and food lost during initial handling.", "sort_order": 1 },
+    { "code": "processing", "name": "Manufacturing and processing", "description": "Producing, preparing, processing or packaging food.", "details": "This includes factories, bakeries, packhouses and processing facilities. Examples include trimming losses, damaged products, production errors, rejected batches and food lost during packaging.", "sort_order": 2 },
+    { "code": "distribution_wholesale", "name": "Distribution and wholesale", "description": "Storing or moving food between producers and sellers.", "details": "This includes distributors, wholesalers, warehouses and logistics operations. Examples include storage losses, transport damage and products that cannot be distributed.", "sort_order": 3 },
+    { "code": "retail", "name": "Retail", "description": "Selling food directly to customers.", "details": "This includes supermarkets, grocery stores, markets and other food retailers. Examples include expired stock, damaged products, unsold food and produce removed from display.", "sort_order": 4 },
+    { "code": "hospitality_food_service", "name": "Hospitality and food service", "description": "Preparing or serving food outside the home.", "details": "This includes restaurants, cafés, hotels, catering businesses and commercial kitchens. Examples include preparation waste, overproduction, buffet waste and customer plate waste.", "sort_order": 5 },
+    { "code": "institutions", "name": "Institutions", "description": "Preparing or serving food in public or community organisations.", "details": "This includes schools, universities, hospitals, aged-care facilities, prisons and workplace cafeterias. Examples include kitchen preparation waste, overproduction and uneaten meals.", "sort_order": 6 }
   ],
   "food_categories": [
-    { "code": "standard_mix", "name": "Standard mix (composition unknown)", "is_standard_mix": true, "sort_order": 0 },
+    { "code": "standard_mix", "name": "General food waste — type unknown", "is_standard_mix": true, "sort_order": 0 },
     { "code": "fruit", "name": "Fruit", "is_standard_mix": false, "sort_order": 1 },
     { "code": "vegetables", "name": "Vegetables", "is_standard_mix": false, "sort_order": 2 },
-    { "code": "dairy", "name": "Dairy and eggs", "is_standard_mix": false, "sort_order": 3 }
+    { "code": "bakery", "name": "Bakery products", "is_standard_mix": false, "sort_order": 3 },
+    { "code": "dairy", "name": "Dairy and eggs", "is_standard_mix": false, "sort_order": 4 },
+    { "code": "meat", "name": "Meat", "is_standard_mix": false, "sort_order": 5 },
+    { "code": "seafood", "name": "Seafood", "is_standard_mix": false, "sort_order": 6 },
+    { "code": "beverages", "name": "Beverages", "is_standard_mix": false, "sort_order": 7 },
+    { "code": "mixed_food", "name": "Mixed food", "is_standard_mix": false, "sort_order": 8 },
+    { "code": "other", "name": "Other", "is_standard_mix": false, "sort_order": 9 }
   ],
   "destination_groups": [
     { "code": "reuse", "name": "Reuse", "is_waste": false, "sort_order": 1 },
@@ -18,11 +26,15 @@
     { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 3 }
   ],
   "destinations": [
-    { "code": "prevention", "name": "Prevention", "group": "reuse", "description": "Food waste avoided in the alternative scenario.", "sort_order": 1 },
-    { "code": "animal_feed", "name": "Animal feed", "group": "reuse", "description": "Food redirected for animal feed.", "sort_order": 2 },
-    { "code": "compost", "name": "Compost", "group": "recycle_recovery", "description": "Food sent to composting.", "sort_order": 3 },
-    { "code": "anaerobic_digestion", "name": "Anaerobic digestion", "group": "recycle_recovery", "description": "Food processed through anaerobic digestion.", "sort_order": 4 },
-    { "code": "landfill", "name": "Landfill", "group": "disposal", "description": "Food sent to landfill.", "sort_order": 5 }
+    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 1 },
+    { "code": "sewer", "name": "Sewer", "group": "disposal", "sort_order": 2 },
+    { "code": "compost_aerobic_digestion", "name": "Compost / Aerobic digestion", "group": "recycle_recovery", "sort_order": 3 },
+    { "code": "anaerobic_digestion", "name": "Anaerobic digestion", "group": "recycle_recovery", "sort_order": 4 },
+    { "code": "land_application", "name": "Land application", "group": "recycle_recovery", "sort_order": 5 },
+    { "code": "controlled_combustion", "name": "Controlled combustion", "group": "disposal", "sort_order": 6 },
+    { "code": "bio_based_processing", "name": "Bio-based material / biochemical processing", "group": "recycle_recovery", "sort_order": 7 },
+    { "code": "refuse_discards", "name": "Refuse / discards", "group": "disposal", "sort_order": 8 },
+    { "code": "not_harvested", "name": "Not harvested / ploughed-in", "group": "disposal", "description": "Primarily relevant to agriculture", "sort_order": 9 }
   ],
   "metrics": [
     { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "kg", "display_precision": 1, "sort_order": 1 },

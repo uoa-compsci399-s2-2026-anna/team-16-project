@@ -63,7 +63,26 @@ async function mockRequest(path, options) {
       const body = await readFixture(`errors/${fixtureName}.json`)
       throw new ApiError(body.error.code, body.error.message, body.error.details, body.error.code === 'RATE_LIMITED' ? 429 : 400)
     }
-    const result = await readFixture('calculate_response.json')
+    const fixture = await readFixture('calculate_response.json')
+    const payload = JSON.parse(options.body || '{}')
+    const currentRows = payload.current || []
+    const currentTotal = currentRows.reduce((sum, row) => sum + (Number(row.qty_kg) || 0), 0).toFixed(3)
+    const result = structuredClone(fixture)
+    result.current.total_kg = currentTotal
+    if (result.current.metrics?.mass) {
+      result.current.metrics.mass.total = Number(currentTotal).toFixed(10)
+      result.current.metrics.mass.by_destination = currentRows.map(row => ({
+        destination: row.destination,
+        qty_kg: row.qty_kg,
+        upstream: '1.0000000000',
+        downstream: '0.0000000000',
+        value: Number(row.qty_kg).toFixed(10),
+      }))
+    }
+    if (!payload.alternative) {
+      result.alternative = null
+      result.net_benefit = null
+    }
     return { ...result, token: result.token || 'mock-session-token' }
   }
   throw new ApiError('MOCK_FIXTURE_ERROR', `No mock fixture is mapped for ${path}.`)

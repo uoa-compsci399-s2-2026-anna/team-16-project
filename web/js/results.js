@@ -1,84 +1,137 @@
 import { escapeHtml, formatNumber } from './view.js'
 
-function metricCards(scenario, taxonomy, label) {
-  const metricDefinitions = taxonomy.metrics || []
-  const metricEntries = Object.entries(scenario?.metrics || {})
-  const cards = metricEntries.map(([code, metric]) => {
-    const definition = metricDefinitions.find(item => item.code === code)
+const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
+const TAB_LABELS = { stage: 'By supply-chain stage', destination: 'By waste destination', food: 'By food type' }
+const number = value => Number(value) || 0
+const findByCode = (items, code) => (items || []).find(item => item.code === code)
+
+function aggregateResults(entryResults) {
+  const metrics = {}
+  let totalKg = 0
+  for (const { entry, response } of entryResults) {
+    const scenario = response.current || {}
+    totalKg += number(entry.totalAmount) * (entry.totalUnit === 'tonnes' ? 1000 : 1)
+    for (const [code, metric] of Object.entries(scenario.metrics || {})) {
+      if (!metrics[code]) metrics[code] = { ...metric, total: 0 }
+      metrics[code].total += number(metric.total)
+    }
+  }
+  return { totalKg, metrics }
+}
+
+function summaryCards(combined, taxonomy) {
+  const impactCards = Object.entries(combined.metrics).filter(([code]) => code !== 'mass').map(([code, metric]) => {
+    const definition = findByCode(taxonomy.metrics, code)
     const precision = Number(metric.display_precision ?? definition?.display_precision ?? 2)
     const unit = metric.unit || definition?.display_unit || definition?.unit || ''
-    return `<article class="result-card">
-      <p class="result-label">${escapeHtml(definition?.name || code)}</p>
-      <p class="result-value">${formatNumber(metric.total, precision)} ${escapeHtml(unit)}</p>
-    </article>`
+    return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value">${formatNumber(metric.total, precision)} ${escapeHtml(unit)}</p>${combined.metrics[code] ? '' : `<p class="result-note">${DEMONSTRATION_NOTICE}</p>`}</article>`
   }).join('')
-
-  return `<article class="result-card primary-result">
-      <p class="result-label">${escapeHtml(label)} total food waste</p>
-      <p class="result-value">${formatNumber(scenario?.total_kg, 3)} kg</p>
-      <p class="result-note">${formatNumber(Number(scenario?.total_kg || 0) / 1000, 3)} tonnes</p>
-    </article>${cards}`
+  return `<article class="result-card primary-result"><p class="result-label">Total food waste</p><p class="result-value">${formatNumber(combined.totalKg, 2)} kg</p><p class="result-note">${formatNumber(combined.totalKg / 1000, 3)} tonnes</p></article>${impactCards}<article class="result-card"><p class="result-label">Percentage waste</p><p class="result-value">Not available</p><p class="result-note">Total food handled data is required.</p></article>`
 }
 
-function equivalences(result) {
-  const sections = [['Current', result.current], ['Alternative', result.alternative]].filter(([, scenario]) => scenario)
-  if (!sections.some(([, scenario]) => scenario.equivalences?.length)) return '<p class="empty-state">Available once approved conversion factors are supplied.</p>'
-  return sections.map(([label, scenario]) => `<section class="equivalence-scenario"><h3>${label} scenario</h3><div class="equivalent-grid">${(scenario.equivalences || []).map(row => `<article class="placeholder-panel"><strong>${escapeHtml(row.label)}</strong><span>${formatNumber(row.value, 2)}</span></article>`).join('') || '<p class="empty-state">No equivalences returned.</p>'}</div></section>`).join('')
+function equivalences(entryResults) {
+  const values = new Map()
+  entryResults.flatMap(({ response }) => response.current?.equivalences || []).forEach(row => values.set(row.code, { label: row.label, value: (values.get(row.code)?.value || 0) + number(row.value) }))
+  const cards = [
+    ['km_driven', 'Kilometres driven'],
+    ['meals', 'Meal equivalents'],
+    ['showers', 'Shower equivalents'],
+  ]
+  return `<div class="equivalent-grid">${cards.map(([code, label]) => {
+    const result = values.get(code)
+    return `<article><span aria-hidden="true">${result ? '' : '—'}</span><h3>${escapeHtml(label)}</h3>${result ? `<p><strong>${formatNumber(result.value, 2)}</strong></p>` : '<p>Available once approved conversion factors are supplied.</p>'}</article>`
+  }).join('')}</div>`
 }
 
-function comparison(result, taxonomy) {
-  if (!result.alternative || !result.net_benefit) return '<p class="empty-state">No alternative scenario was submitted.</p>'
-  return `<div class="table-scroll" tabindex="0"><table>
-    <caption>Current and alternative scenario results</caption>
-    <thead><tr><th scope="col">Metric</th><th scope="col">Current</th><th scope="col">Alternative</th><th scope="col">Net benefit</th></tr></thead>
-    <tbody>${Object.entries(result.current.metrics || {}).map(([code, currentMetric]) => {
-      const definition = (taxonomy.metrics || []).find(item => item.code === code)
-      const alternativeMetric = result.alternative.metrics?.[code]
-      const precision = Number(currentMetric.display_precision ?? definition?.display_precision ?? 2)
-      const unit = currentMetric.unit || definition?.display_unit || ''
-      const netValue = Number(result.net_benefit[code])
-      const valueClass = netValue > 0 ? 'value-positive' : netValue < 0 ? 'value-negative' : 'value-zero'
-      const valueLabel = netValue > 0 ? 'positive' : netValue < 0 ? 'negative' : 'zero'
-      return `<tr><th scope="row">${escapeHtml(definition?.name || code)}</th><td>${formatNumber(currentMetric.total, precision)} ${escapeHtml(unit)}</td><td>${formatNumber(alternativeMetric?.total, precision)} ${escapeHtml(unit)}</td><td class="${valueClass}" aria-label="${valueLabel} net benefit: ${formatNumber(result.net_benefit[code], precision)} ${escapeHtml(unit)}">${formatNumber(result.net_benefit[code], precision)} ${escapeHtml(unit)}</td></tr>`
-    }).join('')}</tbody>
-  </table></div>`
+function addBreakdownRow(map, label, kilograms, metrics = {}) {
+  const row = map.get(label) || { label, kilograms: 0, metrics: {} }
+  row.kilograms += kilograms
+  for (const [code, value] of Object.entries(metrics)) row.metrics[code] = (row.metrics[code] || 0) + number(value)
+  map.set(label, row)
 }
 
-function destinationBreakdown(result, taxonomy) {
-  const scenarioSections = [['Current', result.current], ['Alternative', result.alternative]].filter(([, scenario]) => scenario)
-  const hasRows = scenarioSections.some(([, scenario]) => Object.values(scenario.metrics || {}).some(metric => metric.by_destination?.length))
-  if (!hasRows) return '<p class="empty-state">A destination breakdown was not returned by the calculation service.</p>'
-  return scenarioSections.map(([scenarioLabel, scenario]) => {
-    const metricsWithRows = Object.entries(scenario.metrics || {}).filter(([, metric]) => metric.by_destination?.length)
-    return `<section class="breakdown-scenario"><h3>${scenarioLabel} scenario</h3>${metricsWithRows.map(([code, metric]) => {
-    const definition = (taxonomy.metrics || []).find(item => item.code === code)
-    const precision = Number(metric.display_precision ?? definition?.display_precision ?? 2)
-    const unit = metric.unit || definition?.display_unit || definition?.unit || ''
-    return `<div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(scenarioLabel)} scenario — ${escapeHtml(definition?.name || code)} by destination</caption><thead><tr><th scope="col">Destination</th><th scope="col">Waste amount</th><th scope="col">Metric contribution</th><th scope="col">Upstream / kg</th><th scope="col">Downstream / kg</th></tr></thead><tbody>${(metric.by_destination || []).map(row => {
-      const destination = (taxonomy.destinations || []).find(item => item.code === row.destination)
-      const contribution = Number(row.value)
-      const contributionClass = contribution > 0 ? 'value-positive' : contribution < 0 ? 'value-negative' : 'value-zero'
-      return `<tr><th scope="row">${escapeHtml(destination?.name || row.destination)}</th><td>${formatNumber(row.qty_kg, 3)} kg</td><td class="${contributionClass}">${formatNumber(row.value, precision)} ${escapeHtml(unit)}</td><td>${formatNumber(row.upstream, precision)}</td><td>${formatNumber(row.downstream, precision)}</td></tr>`
-    }).join('')}</tbody></table></div>`
-    }).join('') || '<p class="empty-state">No destination-level metric rows were returned for this scenario.</p>'}</section>`
-  }).join('')
+function breakdowns(entryResults, taxonomy) {
+  const stage = new Map()
+  const destination = new Map()
+  const food = new Map()
+  for (const { entry, response } of entryResults) {
+    const scenario = response.current || {}
+    const metricTotals = Object.fromEntries(Object.entries(scenario.metrics || {}).map(([code, metric]) => [code, metric.total]))
+    const entryKilograms = number(entry.totalAmount) * (entry.totalUnit === 'tonnes' ? 1000 : 1)
+    const sector = findByCode(taxonomy.sectors, entry.sector)
+    addBreakdownRow(stage, sector?.name || entry.sector, entryKilograms, metricTotals)
+    const foodDefinition = findByCode(taxonomy.food_categories, entry.foodCategory)
+    if (entry.foodCategory && !foodDefinition?.is_standard_mix) addBreakdownRow(food, foodDefinition?.name || entry.foodCategory, entryKilograms, metricTotals)
+    for (const line of entry.current.filter(item => Number(item.qtyInput) > 0)) {
+      const destinationDefinition = findByCode(taxonomy.destinations, line.destination)
+      const kilograms = number(line.qtyInput) * (entry.totalUnit === 'tonnes' ? 1000 : 1)
+      const destinationMetrics = {}
+      for (const [code, metric] of Object.entries(scenario.metrics || {})) {
+        const matching = (metric.by_destination || []).find(row => row.destination === line.destination)
+        if (matching) destinationMetrics[code] = matching.value
+      }
+      addBreakdownRow(destination, destinationDefinition?.name || line.destination, kilograms, destinationMetrics)
+    }
+  }
+  return {
+    stage: { rows: [...stage.values()] },
+    destination: destination.size ? { rows: [...destination.values()] } : { unavailable: 'Waste-destination breakdown is not available because no destination data was provided.' },
+    food: food.size ? { rows: [...food.values()] } : { unavailable: 'Food-type breakdown is not available because no food category data was provided.' },
+  }
+}
+
+function metricCell(row, code, taxonomy) {
+  if (!(code in row.metrics)) return 'Not available'
+  const definition = findByCode(taxonomy.metrics, code)
+  return `${formatNumber(row.metrics[code], Number(definition?.display_precision ?? 2))} ${escapeHtml(definition?.display_unit || definition?.unit || '')}`
+}
+
+function breakdownSection(state, entryResults, totalKg) {
+  const allBreakdowns = breakdowns(entryResults, state.taxonomy)
+  const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
+  const current = allBreakdowns[active]
+  const panel = current.unavailable ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>` : `<div class="bar-list" aria-hidden="true">${current.rows.map(row => {
+    const percentage = totalKg ? row.kilograms / totalKg * 100 : 0
+    return `<div class="bar-row"><div><strong>${escapeHtml(row.label)}</strong><span>${percentage.toFixed(1)}%</span></div><div class="bar-track"><span style="width:${Math.min(percentage, 100)}%"></span></div></div>`
+  }).join('')}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(TAB_LABELS[active])} data</caption><thead><tr><th scope="col">Category</th><th scope="col">Waste amount</th><th scope="col">Percentage</th><th scope="col">CO₂e</th><th scope="col">Cost</th><th scope="col">Water</th></tr></thead><tbody>${current.rows.map(row => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${formatNumber(row.kilograms, 2)} kg</td><td>${(totalKg ? row.kilograms / totalKg * 100 : 0).toFixed(1)}%</td><td>${metricCell(row, 'co2e', state.taxonomy)}</td><td>${metricCell(row, 'cost', state.taxonomy)}</td><td>${metricCell(row, 'water', state.taxonomy)}</td></tr>`).join('')}</tbody></table></div>`
+  return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">Breakdown by category</h2><p>Explore how the recorded waste is distributed.</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="Waste breakdown">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${label}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
+}
+
+function downloadButton() {
+  return '<button class="button button-primary" type="button" data-action="download-results">Download results</button>'
+}
+
+export function downloadResults(state) {
+  const entryResults = state.result?.entry_results || []
+  const combined = aggregateResults(entryResults)
+  const entryLines = entryResults.flatMap(({ entry }, index) => {
+    const sector = findByCode(state.taxonomy.sectors, entry.sector)
+    const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)
+    const destinations = entry.current.filter(line => Number(line.qtyInput) > 0).map(line => `  - ${findByCode(state.taxonomy.destinations, line.destination)?.name || line.destination}: ${Number(line.qtyInput).toFixed(2)} ${entry.totalUnit}`)
+    return [`Entry ${index + 1}: ${sector?.name || entry.sector}`, `Food type: ${food?.name || 'Not provided'}`, `Waste amount: ${Number(entry.totalAmount).toFixed(2)} ${entry.totalUnit}`, 'Destinations:', ...destinations, '']
+  })
+  const report = ['Food Waste Impact Calculator — Results', '', `Total food waste: ${formatNumber(combined.totalKg, 2)} kg`, `Total food waste: ${formatNumber(combined.totalKg / 1000, 3)} tonnes`, '', ...entryLines, DEMONSTRATION_NOTICE, 'Percentage waste is not available because total food handled data is required.'].join('\n')
+  const url = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }))
+  const link = document.createElement('a')
+  link.href = url
+  link.download = 'food-waste-impact-results.txt'
+  link.click()
+  URL.revokeObjectURL(url)
 }
 
 export function renderResults(state) {
-  const { result, taxonomy } = state
-  if (!result) return '<section class="content-section"><h1>Results unavailable</h1><p>No calculation result has been returned.</p></section>'
-  const mockWarning = result.factor_set?.is_mock
-    ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>Placeholder data</strong><p>This result uses mock factors (${escapeHtml(result.factor_set.version_label)}). It must not be treated as a verified impact result.</p></div></aside>`
-    : ''
-
-  return `<section class="content-section wide results-page" aria-labelledby="results-title">
-    <p class="eyebrow">Calculation complete</p><h1 id="results-title">Your food waste impact</h1>
-    ${mockWarning}
-    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">Impact summary</h2><p>Values returned by the calculation service.</p></div></div><h3>Current scenario</h3><div class="results-grid">${metricCards(result.current, taxonomy, 'Current')}</div>${result.alternative ? `<h3 class="scenario-result-heading">Alternative scenario</h3><div class="results-grid">${metricCards(result.alternative, taxonomy, 'Alternative')}</div>` : ''}</section>
-    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">Tangible equivalents</h2><p>Equivalent values are supplied by the published factor set.</p></div></div>${equivalences(result)}</section>
-    <section class="results-section" aria-labelledby="comparison-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="comparison-title">Scenario comparison</h2><p>Net benefit is current impact minus alternative impact.</p></div></div>${comparison(result, taxonomy)}</section>
-    <section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">04</span><div><h2 id="breakdown-title">Breakdown by destination</h2><p>Metric contributions returned for each scenario and destination.</p></div></div>${destinationBreakdown(result, taxonomy)}</section>
-    <section class="results-section methodology-section" aria-labelledby="method-title"><h2 id="method-title">Methodology &amp; limitations</h2><p>Results are estimates produced by the currently published factor set. Factors and formulas are maintained by Kai Commitment.</p><p><strong>Factor version:</strong> ${escapeHtml(result.factor_set?.version_label || 'Not supplied')}</p><button class="text-button" type="button" data-action="view-methodology">View methodology</button></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="go-step" data-step="4">Edit your data</button><button class="button button-primary" type="button" data-action="start-over">Start a new calculation</button></div>
+  const entryResults = state.result?.entry_results || []
+  if (!entryResults.length) return '<section class="content-section"><h1>Results unavailable</h1><p>No calculation result has been returned.</p></section>'
+  const combined = aggregateResults(entryResults)
+  const factorSets = entryResults.map(item => item.response.factor_set).filter(Boolean)
+  const mock = factorSets.some(factor => factor.is_mock)
+  const warning = mock ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>Placeholder data</strong><p>${DEMONSTRATION_NOTICE}</p></div></aside>` : ''
+  const versions = [...new Set(factorSets.map(factor => factor.version_label).filter(Boolean))].join(', ') || 'Not supplied'
+  return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">Step 6</p><h1 id="results-title">Your estimated impact</h1><p class="section-intro">Results returned by the calculation service for ${entryResults.length} supply-chain ${entryResults.length === 1 ? 'entry' : 'entries'}.</p>${warning}
+    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">Impact summary</h2><p>A high-level view of the recorded food waste.</p></div></div><div class="results-grid">${summaryCards(combined, state.taxonomy)}</div></section>
+    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">Tangible equivalents</h2><p>Plain-language comparisons appear when supplied by the calculation service.</p></div></div>${equivalences(entryResults)}</section>
+    ${breakdownSection(state, entryResults, combined.totalKg)}
+    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">Methodology &amp; Limitations</h2><p>Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.</p><p>Factor version: ${escapeHtml(versions)}.</p><details><summary>View methodology</summary><div><p>Data sources and calculation factors are maintained and approved by Kai Commitment.</p><p>Percentage waste remains unavailable until total food handled data is supplied.</p></div></details></section>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="go-step" data-step="4">Edit your data</button><button class="button button-secondary" type="button" data-action="start-over">Start a new calculation</button>${downloadButton()}</div>
   </section>`
 }

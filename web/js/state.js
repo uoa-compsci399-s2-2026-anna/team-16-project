@@ -10,7 +10,8 @@ export const state = {
   totalUnit: 'kilograms',
   current: [],
   alternative: [],
-  compareAlternative: true,
+  compareAlternative: false,
+  entries: [],
   result: null,
   loading: true,
   error: null,
@@ -19,6 +20,8 @@ export const state = {
   rateLimitedUntil: 0,
   step: -1,
   expandedSectors: [],
+  resultBreakdownTab: 'stage',
+  lastChangedDestination: null,
 }
 
 const subscribers = new Set()
@@ -43,7 +46,8 @@ export function resetCalculator() {
     totalUnit: 'kilograms',
     current: [],
     alternative: [],
-    compareAlternative: true,
+    compareAlternative: false,
+    entries: [],
     result: null,
     error: null,
     errorCode: null,
@@ -51,5 +55,7 @@ export function resetCalculator() {
     rateLimitedUntil: 0,
     step: -1,
     expandedSectors: [],
+    resultBreakdownTab: 'stage',
+    lastChangedDestination: null,
   })
 }

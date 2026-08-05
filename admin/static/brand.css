@@ -1,0 +1,117 @@
+/* Kai Commitment brand tokens.
+   Source: Kai Commitment_Brand Guidelines_v1-Oct25.pdf
+   Blueberry: the guidelines misprint RGB as 0/90/130; hex #005AE6 is
+   authoritative and matches the printed swatch. */
+:root {
+  --white:     #FFFFFF;
+  --kale:      #003223;  /* primary */
+  --orange:    #FF5032;
+  --pea:       #28C882;
+  --blueberry: #005AE6;
+  --beetroot:  #87005A;
+  --banana:    #FFD76E;
+  --lavender:  #E6BEFF;
+
+  --ink:      var(--kale);
+  --danger:   var(--orange);
+  --ok:       var(--pea);
+  --radius:   4px;
+  --measure:  32rem;
+}
+
+@font-face {
+  font-family: 'Geologica';
+  src: url('/admin/static/fonts/geologica-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Kumbh Sans';
+  src: url('/admin/static/fonts/kumbh-sans-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+*, *::before, *::after { box-sizing: border-box; }
+
+body {
+  margin: 0;
+  font-family: 'Kumbh Sans', Helvetica, Arial, sans-serif;
+  color: var(--ink);
+  background: var(--white);
+  line-height: 1.55;
+}
+
+h1, h2, h3 {
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  font-weight: 700;
+  line-height: 1.2;
+  margin: 0 0 0.5rem;
+}
+
+/* Centred single-column layout for every gate in the login gauntlet. */
+.gate {
+  min-height: 100vh;
+  display: grid;
+  place-items: center;
+  padding: 2rem 1rem;
+  background: var(--kale);
+}
+.gate__card {
+  width: 100%;
+  max-width: var(--measure);
+  background: var(--white);
+  border-radius: var(--radius);
+  padding: 2rem;
+}
+
+/* The half-circle is the brand's primary supporting graphic, taken from the
+   logo. Used singly at large scale, per the guidelines. */
+.gate__mark {
+  width: 4rem; height: 2rem;
+  border-radius: 4rem 4rem 0 0;
+  background: var(--pea);
+  margin-bottom: 1.25rem;
+}
+
+label { display: block; font-weight: 700; margin-bottom: 0.25rem; }
+input[type="text"], input[type="password"] {
+  width: 100%;
+  padding: 0.6rem 0.7rem;
+  margin-bottom: 1rem;
+  border: 2px solid var(--kale);
+  border-radius: var(--radius);
+  font: inherit;
+}
+input:focus-visible { outline: 3px solid var(--blueberry); outline-offset: 1px; }
+
+button {
+  font: inherit;
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  background: var(--kale);
+  color: var(--white);
+  border: 0;
+  border-radius: var(--radius);
+  padding: 0.65rem 1.4rem;
+  cursor: pointer;
+}
+button:hover { background: var(--blueberry); }
+
+.notice        { padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; }
+.notice--error { background: var(--orange); color: var(--white); }
+.notice--info  { background: var(--banana); color: var(--kale); }
+
+/* One-time secrets: initial passwords, recovery codes. */
+.secrets {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  background: var(--lavender);
+  color: var(--kale);
+  padding: 1rem;
+  border-radius: var(--radius);
+  letter-spacing: 0.08em;
+}
+.secrets li { margin: 0.25rem 0; }
+
+.muted { font-size: 0.9rem; opacity: 0.75; }

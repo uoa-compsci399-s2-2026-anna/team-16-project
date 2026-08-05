@@ -1,0 +1,35 @@
+# Local development database.
+# Production targets MySQL 8, so development uses MySQL 8: ENUM, VARBINARY,
+# DECIMAL precision and collation ordering all behave differently on SQLite,
+# and finding that out at deployment time is a real risk.
+#
+#   docker compose up -d
+#   docker compose down          # keeps data
+#   docker compose down -v       # drops data
+
+services:
+  db:
+    image: mysql:8.0
+    container_name: kaicalc-db
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: devroot
+      MYSQL_DATABASE: kaicalc
+      MYSQL_USER: kaicalc
+      MYSQL_PASSWORD: devpass
+    # 3307 on the host so this cannot collide with a locally installed MySQL
+    ports:
+      - "3307:3306"
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - mysql_data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-pdevroot"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+
+volumes:
+  mysql_data:

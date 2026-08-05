@@ -1,0 +1,20 @@
+{% extends "brand/base.html" %}
+{% block title %}Set up your authenticator{% endblock %}
+{% block content %}
+  <h1>Set up two-step verification</h1>
+  <p class="muted">
+    Scan this with an authenticator app — Google Authenticator, Authy, 1Password
+    or similar — then enter the six-digit code it shows.
+  </p>
+  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
+  <div>{{ qr | safe }}</div>
+  <p class="muted">
+    Cannot scan? Enter this key by hand: <code>{{ secret }}</code>
+  </p>
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="code">Code from your app</label>
+    <input type="text" id="code" name="code" autocomplete="one-time-code" required>
+    <button type="submit">Confirm</button>
+  </form>
+{% endblock %}

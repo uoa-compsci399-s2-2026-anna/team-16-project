@@ -1,0 +1,114 @@
+"""The composition root: settings, engine, throttle, sqladmin, views.
+
+Nothing below this module knows about the others; this is the only place
+they are wired together.
+"""
+
+from contextlib import asynccontextmanager
+
+from fastapi import FastAPI
+from sqladmin import Admin
+from starlette.staticfiles import StaticFiles
+
+from admin.backend import AdminAuth
+from admin.bootstrap import ensure_bootstrap_admins
+from admin.cli import report_bootstrap_result
+from admin.config import Settings, load_settings
+from admin.runtime import Runtime
+from admin.throttle import build_throttle
+from db.session import create_session_factory
+
+
+def create_app(settings: Settings | None = None) -> FastAPI:
+    settings = settings or load_settings()
+
+    session_factory = create_session_factory(settings.database_url)
+
+    @asynccontextmanager
+    async def lifespan(_app: FastAPI):
+        """Contract 8.3, "Bootstrap": trigger is application start.
+
+        Wired here and not left to the operator because the alternative the
+        contract names is "depending on whoever installs it remembering to
+        run the CLI twice" - and a deployment where that is forgotten comes
+        up as a panel nobody can enter, with no email system to recover
+        through and only shell access left.
+
+        A session of its own, committed here: nothing else exists yet to own
+        a transaction, and ``ensure_bootstrap_admins`` flushes but never
+        commits (admin/accounts.py's convention - the caller owns the
+        transaction).
+
+        Deliberately unguarded. A database that cannot be reached raises out
+        of here and the process fails to start, which is the loud failure;
+        swallowing it would produce a panel that serves a login page and
+        refuses every credential, the hardest state to diagnose from
+        outside. ``ensure_bootstrap_admins`` is itself idempotent - it
+        returns [] whenever an active administrator exists - so a restart
+        creates nothing and, via report_bootstrap_result, prints nothing.
+
+        Note that this runs only under a real ASGI server: nothing in
+        ``create_app()`` triggers it, and httpx's ASGITransport (what the
+        test suite drives apps with) never speaks the lifespan protocol. A
+        test that switched to Starlette's TestClient *would* run it, and
+        against the empty database the schema fixture leaves behind it would
+        print live credentials into the test output.
+        """
+        with session_factory() as db:
+            created = ensure_bootstrap_admins(db)
+            db.commit()
+        report_bootstrap_result(created)
+        yield
+
+    app = FastAPI(title="Kai Commitment Admin", lifespan=lifespan)
+
+    app.state.session_factory = session_factory
+    app.state.settings = settings
+    # One throttle for the process. A per-request instance would hold a fresh
+    # counter every time and never lock anything.
+    app.state.throttle = build_throttle(settings)
+
+    # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
+    # Starlette sub-application at "/admin" as the *last* line of its
+    # __init__ (a Mount whose path_regex matches any "/admin/..." prefix).
+    # Starlette's router tries routes in registration order and stops at
+    # the first match, so if that mount is registered before this one,
+    # every "/admin/static/..." request is swallowed by sqladmin's own
+    # sub-app (which has no route for it) and 404s before our StaticFiles
+    # mount is ever reached. Verified by running the brief's literal
+    # ordering first: both static-file tests failed with 404. Mounting the
+    # static files before constructing Admin() fixes it.
+    app.mount(
+        "/admin/static", StaticFiles(directory="admin/static"), name="brand-static"
+    )
+
+    admin = Admin(
+        app,
+        session_maker=session_factory,
+        base_url="/admin",
+        title="Kai Commitment",
+        templates_dir="admin/templates",
+        authentication_backend=AdminAuth(settings=settings, app=app),
+    )
+
+    # `admin.admin` is sqladmin's own mounted Starlette application - the
+    # exact object `request.app` resolves to inside a view (see
+    # admin/runtime.py). Attaching Runtime here rather than to a
+    # module-level global means each create_app() call's Runtime lives
+    # exactly as long as that call's app.
+    admin.admin.state.runtime = Runtime(
+        session_factory=session_factory,
+        throttle=app.state.throttle,
+        settings=settings,
+    )
+
+    from admin.views import ChangePasswordView, EnrolView, VerifyView
+
+    admin.add_base_view(VerifyView)
+    admin.add_base_view(ChangePasswordView)
+    admin.add_base_view(EnrolView)
+
+    # No ModelViews yet: the eleven taxonomy and factor tables are blocked on
+    # B delivering db/models.py. They mount here when they arrive.
+
+    return app

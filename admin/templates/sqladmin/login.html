@@ -1,0 +1,19 @@
+{% extends "brand/base.html" %}
+{% block title %}Sign in{% endblock %}
+{% block content %}
+  <h1>Kai Commitment</h1>
+  <p class="muted">Impact calculator administration</p>
+  {% if error %}<div class="notice notice--error" role="alert">{{ error }}</div>{% endif %}
+  <form method="post">
+    <label for="username">Username</label>
+    <input type="text" id="username" name="username"
+           autocomplete="username" autofocus required>
+    <label for="password">Password</label>
+    <input type="password" id="password" name="password"
+           autocomplete="current-password" required>
+    <button type="submit">Continue</button>
+  </form>
+  <p class="muted">
+    You will be asked for a code from your authenticator next.
+  </p>
+{% endblock %}

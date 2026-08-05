@@ -1,0 +1,17 @@
+{% extends "brand/base.html" %}
+{% block title %}Verification{% endblock %}
+{% block content %}
+  <h1>Two-step verification</h1>
+  <p class="muted">
+    Enter the six-digit code from your authenticator app. If you no longer
+    have it, enter one of your recovery codes instead.
+  </p>
+  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    <label for="code">Code</label>
+    <input type="text" id="code" name="code" autocomplete="one-time-code"
+           autofocus required>
+    <button type="submit">Verify</button>
+  </form>
+{% endblock %}

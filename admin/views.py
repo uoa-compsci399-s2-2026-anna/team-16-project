@@ -205,8 +205,15 @@ class ChangePasswordView(BaseView):
     @expose("/change-password", identity="change-password", methods=["GET", "POST"])
     async def change_password(self, request: Request) -> Response:
         runtime = get_runtime(request)
-        # current_username, not SESSION_KEY: these pages run before a second
-        # factor exists, so the user is identified by the pending login.
+        # current_username, not SESSION_KEY, and its own docstring states the
+        # rule correctly: this is "the account a request is acting on, before
+        # or after the second factor". Usually there is no second factor yet
+        # and the pending login is what identifies the user - but an
+        # administrator can force an already-logged-in account back through
+        # this page, and current_username prefers the established SESSION_KEY
+        # precisely for that case. Saying these pages "run before a second
+        # factor exists" would describe only the common half and contradict
+        # the branch below.
         username = current_username(request.session)
         if not username:
             return _redirect(request, "admin:login")
@@ -238,6 +245,22 @@ class ChangePasswordView(BaseView):
                     target = "admin:view-enrol"
                 elif request.session.get(SESSION_KEY):
                     # Already logged in and just changing a password.
+                    #
+                    # Kept deliberately, unlike EnrolView's mirror image of
+                    # it, which was removed. Nothing can reach this today:
+                    # the gate opens this page only while
+                    # must_change_password is set, and once an account holds
+                    # a SESSION_KEY the only writer of that flag back to True
+                    # is create_staff, which by definition has already run.
+                    # But this is unreachable for want of a *caller*, not
+                    # because the security model forbids the state - contract
+                    # 8.3's Known limitation names the missing caller
+                    # outright ("admin/accounts.py needs an issue_password()
+                    # that sets a random password **and**
+                    # must_change_password = True"), so this branch is what
+                    # that function will land on. EnrolView's branch was the
+                    # opposite case: there the state itself is forbidden, and
+                    # supporting it was the risk.
                     target = "admin:index"
                 else:
                     # Mid-onboarding: a second factor is still owed.
@@ -251,30 +274,46 @@ class ChangePasswordView(BaseView):
 
 
 def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
-    """Rebuild the QR from the secret already stored by begin_mfa_enrolment.
+    """The QR and secret this page should show, for every one of its paths.
 
-    Used when a code is rejected, or a submission is refused on CSRF
-    grounds. Calling begin_mfa_enrolment again for an account that already
-    has a secret would mint a *new* one and invalidate the QR the user just
-    scanned, so a single typo would leave them unable to finish at all.
+    Every branch of EnrolView goes through here - the initial GET, a
+    rejected code, a CSRF refusal - because the property they all need is
+    the same one: **an unfinished enrolment is reused, never re-minted.**
+    Minting a second secret invalidates the QR the user already scanned on
+    their phone, and complete_mfa_enrolment then rejects their perfectly
+    good code with "Check the authenticator has the right account and that
+    the device clock is correct", which sends them to look for a fault on
+    their own device. A refresh, a second tab, or Back/Forward after
+    scanning is enough to trigger it, so this is the ordinary case and not
+    an edge one.
 
-    Nothing enforces the browser's GET-then-POST order, though: curl, a
-    scripted login, a scanner, or a replayed request can all reach the POST
-    branches with staff.mfa_secret_enc still NULL, because the GET handler
-    - the only thing that calls begin_mfa_enrolment on the happy path - never
-    ran. Handing decrypt_totp_secret a None raises TypeError, an unhandled
-    500 on the page that fronts the takeover guard, so this mints a secret
-    on the caller's behalf when none exists yet; the user has to scan
-    whatever we show them regardless of which request happened to create it.
+    Only a genuinely absent secret mints. reset_mfa is what clears
+    mfa_secret_enc, so "start over with a fresh secret" remains available
+    and remains an administrator action, which is where contract 8.3 puts
+    it. An abandoned enrolment resumed later resumes on its original
+    secret; nothing has seen that secret but the account holder.
 
-    Returns None if that mint discovers the account is already fully
-    enrolled (MfaAlreadyEnrolledError) - a race, not the ordinary case: the
-    only way mfa_secret_enc can be NULL for an enrolled account is a
-    concurrent request completing enrolment between this function's own
-    get_staff read and its call to begin_mfa_enrolment. The caller redirects
-    exactly as the GET handler's own except MfaAlreadyEnrolledError does.
+    Minting here rather than only in the GET handler is also what keeps a
+    POST with no prior GET off the 500 path: nothing enforces the browser's
+    GET-then-POST order, and curl, a scripted login, a scanner, or a
+    replayed request can all arrive with mfa_secret_enc still NULL. Handing
+    decrypt_totp_secret a None raises TypeError, an unhandled 500 on the
+    page that fronts the takeover guard.
+
+    Returns None when the account is already fully enrolled, which the
+    caller turns into a redirect. That is E-1's account-takeover guard
+    surfacing at the page: contract 8.3 puts enrolment behind the password
+    step alone, so an attacker holding only the password would otherwise
+    scan their own QR and hold both factors. begin_mfa_enrolment refuses it
+    too (MfaAlreadyEnrolledError, caught below), but only when the secret is
+    NULL - a finished enrolment keeps its secret, so without the explicit
+    check the decrypt path below would happily re-display it. Both are kept:
+    the check covers the ordinary case, the except covers a concurrent
+    request completing enrolment between the two statements.
     """
     staff = get_staff(db, username)
+    if staff.mfa_enrolled:
+        return None
     if staff.mfa_secret_enc is None:
         try:
             secret, uri = begin_mfa_enrolment(db, username, secret_key=secret_key)
@@ -300,8 +339,30 @@ class EnrolView(BaseView):
     @expose("/enrol", identity="enrol", methods=["GET", "POST"])
     async def enrol(self, request: Request) -> Response:
         runtime = get_runtime(request)
-        # current_username, not SESSION_KEY: these pages run before a second
-        # factor exists, so the user is identified by the pending login.
+
+        # Refused outright, mirroring VerifyView's own first statement, and
+        # for a sharper reason than VerifyView's. AdminAuth's gate
+        # (admin/backend.py _may_open_pre_login_page) already makes an
+        # established SESSION_KEY unreachable on this path by construction -
+        # that is Task 4 round 5's fix, and it is the whole of what stands
+        # between an administrator's mid-session MFA reset and the evicted
+        # party re-enrolling their own authenticator under the very cookie
+        # the reset was meant to neutralise. Holding that property in the
+        # gate alone leaves it one relaxation away from being lost, and
+        # "bounced to /admin/login" is the confusing part of the flow and so
+        # the part most likely to be relaxed. Enrolment is not something an
+        # established session can ever legitimately begin: a re-enrolment
+        # always arrives through a fresh password step, because the
+        # administrator has just issued a new password to the rightful
+        # holder.
+        if request.session.get(SESSION_KEY):
+            return _redirect(request, "admin:index")
+
+        # current_username, not SESSION_KEY, for the same reason
+        # current_username's own docstring gives: authenticate() has already
+        # decided reachability, and this only extracts *which* account. On
+        # this page that is always the pending login, given the refusal
+        # above.
         username = current_username(request.session)
         if not username:
             return _redirect(request, "admin:login")
@@ -310,35 +371,25 @@ class EnrolView(BaseView):
 
         if request.method == "GET":
             with runtime.session_factory() as db:
-                try:
-                    secret, uri = begin_mfa_enrolment(
-                        db, username, secret_key=secret_key
-                    )
-                except MfaAlreadyEnrolledError:
-                    # Contract 8.3 / E-1's takeover guard: an enrolled account
-                    # re-enrols only through an administrator reset. Offering
-                    # it here would let anyone holding the password swap in
-                    # their own authenticator.
-                    #
-                    # Not dead code duplicating authenticate()'s own gate
-                    # (admin/backend.py _may_open_pre_login_page, which checks
-                    # the identical condition before this handler runs): that
-                    # gate and this handler read the account in two separate
-                    # DB sessions, so a concurrent request can complete
-                    # enrolment in the gap between the gate's check and this
-                    # begin_mfa_enrolment call. This is what stands between
-                    # that race and an unhandled exception here.
-                    return _redirect(request, "admin:index")
+                # The same helper the POST paths use, so a refresh, a second
+                # tab, or Back/Forward after scanning reuses the secret the
+                # user already has on their phone rather than silently
+                # invalidating it. Only a genuinely absent secret mints one.
+                context = _enrolment_view_context(db, username, secret_key)
+                # Commits whether or not a secret was minted: a no-op commit
+                # costs nothing, and leaving a freshly minted secret
+                # uncommitted would show a QR the next request never sees.
                 db.commit()
+            if context is None:
+                # Contract 8.3 / E-1's takeover guard: an enrolled account
+                # re-enrols only through an administrator reset. Offering it
+                # here would let anyone holding the password swap in their
+                # own authenticator.
+                return _redirect(request, "admin:index")
             return templates.TemplateResponse(
                 request,
                 "brand/enrol.html",
-                {
-                    "csrf_token": issue_token(request.session),
-                    "qr": qr_svg(uri),
-                    "secret": secret,
-                    "error": None,
-                },
+                context | {"csrf_token": issue_token(request.session), "error": None},
             )
 
         form = await request.form()
@@ -392,11 +443,15 @@ class EnrolView(BaseView):
                 )
             db.commit()
 
-        # An account enrolling for the first time still owes a second factor
-        # before it holds a session; one already logged in does not.
-        next_url = (
-            "/admin/" if request.session.get(SESSION_KEY) else "/admin/verify"
-        )
+        # Always the second factor: an account that has just enrolled has by
+        # definition not yet supplied one, and the SESSION_KEY refusal at the
+        # top of this handler means no established session ever reaches here.
+        # This used to branch on SESSION_KEY and send an established session
+        # to the index instead - a branch that encoded the negation of the
+        # gate's rule, and would have quietly restored the takeover path's
+        # happy ending had that rule ever been relaxed.
         return templates.TemplateResponse(
-            request, "brand/enrol_done.html", {"codes": codes, "next_url": next_url}
+            request,
+            "brand/enrol_done.html",
+            {"codes": codes, "next_url": "/admin/verify"},
         )

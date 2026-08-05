@@ -293,6 +293,109 @@ async def test_after_enrolment_and_verification_the_index_is_reachable(
     assert index.status_code == 200
 
 
+# --- Behaviour 8 --------------------------------------------------------
+
+
+async def test_a_second_get_reuses_the_secret_the_first_one_minted(
+    admin_app, client, owes_enrolment
+):
+    """Behaviour 3's property, on the GET path this time.
+
+    Any refresh, second tab, or Back/Forward after scanning is a second GET.
+    While that re-minted, the enrolment the user had just completed on their
+    phone was silently invalidated, and the code from the first QR was then
+    rejected with "That code did not match. Check the authenticator has the
+    right account and that the device clock is correct." - a message that
+    sends them to look at their phone's clock for a fault that is ours.
+
+    The second half of this test is the part that matters: not merely that
+    the two pages agree, but that a code generated from the *first* QR still
+    finishes enrolment after the second GET has been served.
+    """
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+
+    first = await client.get("/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+    assert first.status_code == 200
+    assert secret in first.text
+
+    second = await client.get("/admin/enrol")
+
+    assert second.status_code == 200
+    assert _stored_secret(admin_app, username) == secret
+    assert secret in second.text
+
+    match = re.search(r'name="csrf_token" value="([^"]+)"', second.text)
+    assert match
+    code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(int(time.time()))
+    response = await client.post(
+        "/admin/enrol",
+        data={"code": code, "csrf_token": match.group(1)},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 200
+    assert _mfa_enrolled(admin_app, username) is True
+
+
+# --- Behaviour 9 --------------------------------------------------------
+
+
+async def test_the_handler_refuses_an_established_session_even_if_the_gate_admits_one(
+    admin_app, client, onboarded, monkeypatch
+):
+    """The takeover path stays closed if a future maintainer relaxes the gate.
+
+    Today ``_may_open_pre_login_page`` makes an established SESSION_KEY
+    unreachable inside EnrolView by construction - that is Task 4 round 5's
+    fix, and the whole of what stands between an administrator's mid-session
+    MFA reset and the evicted party re-enrolling their own authenticator
+    under the cookie the reset was meant to neutralise. "Bounced to
+    /admin/login" is also the confusing part of that flow and therefore the
+    part most likely to be relaxed later, and VerifyView already defends
+    itself at the top of its own handler while this one did not.
+
+    So the gate is patched open here, exactly as a well-meaning relaxation
+    would leave it, and the handler alone has to refuse. The strong
+    assertion is the last one: no fresh secret is minted, because minting
+    one under an evicted cookie *is* the takeover.
+    """
+    from admin.accounts import reset_mfa
+    from admin.backend import AdminAuth
+
+    username, password, _secret, codes = onboarded
+
+    # A full login, second factor included, so SESSION_KEY is genuinely
+    # established. A recovery code rather than a TOTP code: enrolment
+    # recorded its own counter as mfa_last_counter and verify_totp refuses
+    # that counter again, which a fast test suite hits routinely.
+    await _login_password_step(client, username, password)
+    verify_token = await _csrf_from(client, "/admin/verify")
+    verified = await client.post(
+        "/admin/verify",
+        data={"code": codes[0], "csrf_token": verify_token},
+        follow_redirects=False,
+    )
+    assert verified.status_code == 302
+
+    # The eviction: an administrator resets this account's MFA mid-session.
+    with admin_app.state.session_factory() as db:
+        reset_mfa(db, username)
+        db.commit()
+
+    monkeypatch.setattr(
+        AdminAuth, "_may_open_pre_login_page", lambda self, request, path: True
+    )
+
+    response = await client.get("/admin/enrol", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert not response.headers["location"].rstrip("/").endswith("/admin/enrol")
+    with admin_app.state.session_factory() as db:
+        assert get_staff(db, username).mfa_secret_enc is None
+
+
 # --- Behaviour 7 --------------------------------------------------------
 
 

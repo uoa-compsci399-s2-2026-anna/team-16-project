@@ -48,6 +48,22 @@ def _redirect(request: Request, name: str) -> RedirectResponse:
     return RedirectResponse(request.url_for(name), status_code=302)
 
 
+def _looks_like_a_totp_code(raw: str) -> bool:
+    """Shape test used to route a submission to exactly one of
+    authenticate_totp / authenticate_recovery_code.
+
+    A TOTP code is exactly six digits; a recovery code is twelve characters
+    (three groups of four, dashes stripped) from a 31-character alphabet.
+    The two shapes cannot collide - a recovery code's normalised length is
+    always twelve, never six, regardless of which characters happen to land
+    in it - so trying one and falling through to the other on failure is
+    unnecessary, and each spurious fall-through cost the shared login
+    throttle a second recorded failure for a single wrong submission.
+    """
+    candidate = raw.replace(" ", "").replace("-", "")
+    return len(candidate) == 6 and candidate.isdigit()
+
+
 class VerifyView(BaseView):
     name = "Verification"
 
@@ -97,18 +113,24 @@ class VerifyView(BaseView):
 
         code = (form.get("code") or "").strip()
         with runtime.session_factory() as db:
-            username = authenticate_totp(
-                db,
-                pending,
-                code,
-                throttle=runtime.throttle,
-                secret_key=runtime.settings.secret_key,
-                now=now,
-            )
-            if username is None:
-                # The same field takes a recovery code. Someone who has lost
-                # their authenticator arrives here with no other way in, and
-                # sending them to a separate page would mean finding it first.
+            # The same field takes either a TOTP code or a recovery code -
+            # someone who has lost their authenticator arrives here with no
+            # other way in, and sending them to a separate page would mean
+            # finding it first. Route on shape rather than trying one and
+            # falling through to the other on failure: both calls share the
+            # login throttle counter, so a fall-through on a genuinely wrong
+            # submission recorded two failures instead of one, locking an
+            # account out at roughly half the configured allowance.
+            if _looks_like_a_totp_code(code):
+                username = authenticate_totp(
+                    db,
+                    pending,
+                    code,
+                    throttle=runtime.throttle,
+                    secret_key=runtime.settings.secret_key,
+                    now=now,
+                )
+            else:
                 username = authenticate_recovery_code(
                     db, pending, code, throttle=runtime.throttle, now=now
                 )

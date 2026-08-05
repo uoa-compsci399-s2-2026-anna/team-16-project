@@ -168,6 +168,80 @@ async def test_a_recovery_code_completes_the_login_and_is_then_spent(
         assert unused_recovery_code_count(db, username) == len(codes) - 1
 
 
+async def test_one_wrong_submission_records_exactly_one_throttle_failure(
+    admin_app, client, onboarded
+):
+    """The routing fix's own regression test.
+
+    Before routing on shape, a submission that was neither a valid TOTP nor
+    a valid recovery code went through both authenticate_totp and
+    authenticate_recovery_code - both share the login throttle counter
+    (contract 8.3: password and TOTP failures share one counter), so a
+    single wrong submission recorded two failures instead of one. With
+    LOGIN_MAX_FAILURES=5 and no email-based password reset, that locks a
+    fumbling staff member out at roughly half the configured allowance.
+    Asserted directly off the throttle's own state, not through observed
+    lockout behaviour - nothing else in this suite inspects the throttle."""
+    username, password, _, _ = onboarded
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/verify")
+
+    response = await client.post(
+        "/admin/verify",
+        data={"code": "999999", "csrf_token": token},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    key = username.strip().casefold()
+    assert admin_app.state.throttle._attempts[key].count == 1
+
+
+async def test_a_valid_recovery_code_still_completes_the_login_via_the_router(
+    admin_app, client, onboarded
+):
+    """Routing on shape must not break the path that exists for someone
+    with no authenticator left - a twelve-character recovery code must still
+    reach authenticate_recovery_code, not be misrouted to authenticate_totp
+    and rejected on shape alone."""
+    username, password, _, codes = onboarded
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/verify")
+
+    response = await client.post(
+        "/admin/verify",
+        data={"code": codes[0], "csrf_token": token},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    index = await client.get("/admin/", follow_redirects=False)
+    assert index.status_code == 200
+
+
+async def test_a_valid_totp_still_completes_the_login_via_the_router(
+    client, onboarded
+):
+    """The other half of the router's happy path: a six-digit code must
+    still reach authenticate_totp."""
+    username, password, secret, _ = onboarded
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/verify")
+
+    response = await client.post(
+        "/admin/verify",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(int(time.time())),
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    index = await client.get("/admin/", follow_redirects=False)
+    assert index.status_code == 200
+
+
 async def test_an_already_logged_in_visitor_is_sent_on_not_shown_the_form(
     client, onboarded
 ):

@@ -1214,6 +1214,18 @@ This must be enforced in the service layer, not only in the form — `sqladmin`'
 
 > Consequence worth knowing: while fewer than two administrators are usable, **no** administrator can be deactivated or demoted, including one that was never onboarded. Eviction is still possible without deactivation — reset the account's MFA and issue a new password — but it is indirect. This errs toward "cannot be locked out" over "can always evict", which is the correct side for a small organisation with no email recovery.
 
+> ### ⚠️ Known limitation: eviction does not revoke a live session
+>
+> Found while implementing the panel, verified end to end. Sessions carry no generation marker, so nothing distinguishes a cookie issued before an eviction from one issued after. Resetting an account's MFA locks its existing cookie out only for as long as `mfa_enrolled` stays false — **the moment the rightful holder completes the re-enrolment the eviction compels, the old cookie works again.**
+>
+> The window is bounded rather than rolling: Starlette re-signs the cookie only when the session is modified, so it still dies at `SESSION_MAX_AGE_MINUTES` from the original login. But eight hours is comfortably longer than "an administrator resets your authenticator, hands you a password, and you enrol".
+>
+> **This affects `require_staff()` (§8.4) and therefore the API layer, not only the admin panel.** B should know that a `require_staff()` success does not currently mean "this session has not been evicted".
+>
+> The fix is a session generation column on `staff`, incremented by `reset_mfa` and by any future `issue_password`, stamped into the session at login and compared on every `require_staff()` call. It is deferred rather than done because it changes an E-1 table and an E-1 function that are otherwise complete and reviewed.
+>
+> Related gap, same root: §8.3 names "issues a random password" as half of the eviction, but no service function performs it. `set_password` **clears** `must_change_password`, so an issued password leaves the account looking fully onboarded. `admin/accounts.py` needs an `issue_password()` that sets a random password **and** `must_change_password = True` — an administrator-issued password is in the same position as a bootstrap one and deserves the same forced change.
+
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
 
 ### Bootstrap

@@ -18,6 +18,11 @@ from starlette.responses import RedirectResponse, Response
 from starlette.templating import Jinja2Templates
 
 from admin.accounts import (
+    MfaAlreadyEnrolledError,
+    MfaNotEnrolledError,
+    RECOVERY_CODE_COUNT,
+    begin_mfa_enrolment,
+    complete_mfa_enrolment,
     get_staff,
     set_password,
     unused_recovery_code_count,
@@ -34,7 +39,8 @@ from admin.backend import (
 )
 from admin.csrf import check_token, issue_token
 from admin.runtime import get_runtime
-from admin.security import BCRYPT_MAX_BYTES, verify_password
+from admin.security import BCRYPT_MAX_BYTES, decrypt_totp_secret, verify_password
+from admin.totp import provisioning_uri, qr_svg
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -244,13 +250,103 @@ class ChangePasswordView(BaseView):
         )
 
 
+def _enrolment_view_context(db, username: str, secret_key: str) -> dict:
+    """Rebuild the QR from the secret already stored by begin_mfa_enrolment.
+
+    Used when a code is rejected. Calling begin_mfa_enrolment again would mint
+    a *new* secret and invalidate the QR the user just scanned, so a single
+    typo would leave them unable to finish at all.
+    """
+    staff = get_staff(db, username)
+    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
+    return {
+        "qr": qr_svg(provisioning_uri(secret, username=staff.username)),
+        "secret": secret,
+    }
+
+
 class EnrolView(BaseView):
-    """STUB (Task 3) - replaced by the real MFA enrolment step (QR code,
-    recovery codes)."""
+    name = "Set up authenticator"
 
-    name = "Enrol"
-    identity = "enrol"
+    def is_visible(self, request: Request) -> bool:
+        return False
 
-    @expose("/enrol", methods=["GET"], identity="enrol")
+    def is_accessible(self, request: Request) -> bool:
+        return True
+
+    @expose("/enrol", identity="enrol", methods=["GET", "POST"])
     async def enrol(self, request: Request) -> Response:
-        return Response(status_code=200)
+        runtime = get_runtime(request)
+        # current_username, not SESSION_KEY: these pages run before a second
+        # factor exists, so the user is identified by the pending login.
+        username = current_username(request.session)
+        if not username:
+            return _redirect(request, "admin:login")
+
+        secret_key = runtime.settings.secret_key
+
+        if request.method == "GET":
+            with runtime.session_factory() as db:
+                try:
+                    secret, uri = begin_mfa_enrolment(
+                        db, username, secret_key=secret_key
+                    )
+                except MfaAlreadyEnrolledError:
+                    # Contract 8.3 / E-1's takeover guard: an enrolled account
+                    # re-enrols only through an administrator reset. Offering
+                    # it here would let anyone holding the password swap in
+                    # their own authenticator.
+                    return _redirect(request, "admin:index")
+                db.commit()
+            return templates.TemplateResponse(
+                request,
+                "brand/enrol.html",
+                {
+                    "csrf_token": issue_token(request.session),
+                    "qr": qr_svg(uri),
+                    "secret": secret,
+                    "error": None,
+                },
+            )
+
+        form = await request.form()
+        with runtime.session_factory() as db:
+            if not check_token(request.session, form.get("csrf_token")):
+                context = _enrolment_view_context(db, username, secret_key)
+                context |= {
+                    "csrf_token": issue_token(request.session),
+                    "error": "That form expired. Please try again.",
+                }
+                return templates.TemplateResponse(
+                    request, "brand/enrol.html", context, status_code=400
+                )
+
+            code = (form.get("code") or "").strip()
+            try:
+                codes = complete_mfa_enrolment(
+                    db,
+                    username,
+                    code,
+                    secret_key=secret_key,
+                    now=int(time.time()),
+                )
+            except MfaNotEnrolledError as exc:
+                db.rollback()
+                context = _enrolment_view_context(db, username, secret_key)
+                context |= {
+                    "csrf_token": issue_token(request.session),
+                    "error": str(exc),
+                }
+                return templates.TemplateResponse(
+                    request, "brand/enrol.html", context, status_code=400
+                )
+            db.commit()
+
+        # An account enrolling for the first time still owes a second factor
+        # before it holds a session; one already logged in does not.
+        next_url = (
+            "/admin/" if request.session.get(SESSION_KEY) else "/admin/verify"
+        )
+        return templates.TemplateResponse(
+            request, "brand/enrol_done.html", {"codes": codes, "next_url": next_url}
+        )

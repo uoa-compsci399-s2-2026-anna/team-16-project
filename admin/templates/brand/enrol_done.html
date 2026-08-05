@@ -1,0 +1,21 @@
+{% extends "brand/base.html" %}
+{% block title %}Save your recovery codes{% endblock %}
+{% block content %}
+  <h1>Save your recovery codes</h1>
+  <div class="notice notice--info">
+    <strong>These are shown once and cannot be recovered.</strong>
+  </div>
+  <ul class="secrets">
+    {% for code in codes %}<li>{{ code }}</li>{% endfor %}
+  </ul>
+  <p>
+    Print them and keep them somewhere safe, or store them in a password
+    manager. Each one works once.
+  </p>
+  <p>
+    This system sends no email, so there is no "forgot password" link. If you
+    lose your phone, these codes are the only way back in that does not need
+    another administrator to be available.
+  </p>
+  <p><a href="{{ next_url }}">I have saved them — continue</a></p>
+{% endblock %}

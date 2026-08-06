@@ -28,6 +28,7 @@ from admin.accounts import (
     unused_recovery_code_count,
 )
 from admin.auth import (
+    PENDING_LOGIN_TTL_SECONDS,
     SESSION_KEY,
     authenticate_recovery_code,
     authenticate_totp,
@@ -38,6 +39,7 @@ from admin.backend import (
     current_username,
 )
 from admin.csrf import check_token, issue_token
+from admin.models import utcnow
 from admin.runtime import get_runtime
 from admin.security import BCRYPT_MAX_BYTES, decrypt_totp_secret, verify_password
 from admin.totp import provisioning_uri, qr_svg
@@ -54,6 +56,17 @@ LOW_RECOVERY_CODE_THRESHOLD = 2
 
 def _redirect(request: Request, name: str) -> RedirectResponse:
     return RedirectResponse(request.url_for(name), status_code=302)
+
+
+def _grouped(secret: str, size: int = 4) -> str:
+    """Break a base32 secret into groups for transcription.
+
+    An unbroken 32-character string is read off a screen and typed into a
+    phone; groups of four are how authenticator apps present setup keys, and
+    how the recovery codes on the next page are already formatted. Display
+    only - the value scanned or posted is unchanged.
+    """
+    return " ".join(secret[i : i + size] for i in range(0, len(secret), size))
 
 
 def _looks_like_a_totp_code(raw: str) -> bool:
@@ -158,7 +171,15 @@ class VerifyView(BaseView):
             db.commit()
 
         if username is None:
-            context["error"] = "That code was not accepted."
+            # Deliberately covers both causes without naming the device
+            # clock. A code that is correct but already spent is refused by
+            # the replay counter, and telling that user to check their clock
+            # sends them to fix something that is not broken.
+            context["error"] = (
+                "That code was not accepted. If you have just used this code, "
+                "wait for your authenticator to show the next one - each code "
+                "works only once."
+            )
             return templates.TemplateResponse(
                 request, "brand/verify.html", context, status_code=400
             )
@@ -265,6 +286,20 @@ class ChangePasswordView(BaseView):
                 else:
                     # Mid-onboarding: a second factor is still owed.
                     target = "admin:view-verify"
+
+                # Refresh the handshake now that a step is behind them.
+                # Choosing a password and then scanning a QR routinely
+                # outlasts the five-minute pending login, and its expiry
+                # lands the user back at /admin/login holding a correct new
+                # password and a working authenticator, with nothing on
+                # screen explaining why. Refreshed on a *completed step*
+                # rather than on every page view: a pending login is a
+                # one-factor credential, so idling still expires it.
+                stored = request.session.get(PENDING_SESSION_KEY)
+                if isinstance(stored, dict):
+                    stored["expires_at"] = time.time() + PENDING_LOGIN_TTL_SECONDS
+                    request.session[PENDING_SESSION_KEY] = stored
+
                 return _redirect(request, target)
 
         context["error"] = problem
@@ -319,11 +354,13 @@ def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
             secret, uri = begin_mfa_enrolment(db, username, secret_key=secret_key)
         except MfaAlreadyEnrolledError:
             return None
-        return {"qr": qr_svg(uri), "secret": secret}
+        return {"qr": qr_svg(uri), "secret": secret,
+                "secret_grouped": _grouped(secret)}
     secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
     return {
         "qr": qr_svg(provisioning_uri(secret, username=staff.username)),
         "secret": secret,
+        "secret_grouped": _grouped(secret),
     }
 
 
@@ -441,17 +478,42 @@ class EnrolView(BaseView):
                 return templates.TemplateResponse(
                     request, "brand/enrol.html", context, status_code=400
                 )
+            # Establish the session here rather than sending the user on to
+            # the second-factor page. Both factors are already proven by this
+            # point: the gate admitted this request on a valid pending login,
+            # which is the password step, and complete_mfa_enrolment has just
+            # verified a genuine TOTP code.
+            #
+            # Asking again was not extra security - it was the same evidence
+            # requested twice, and it could not succeed. Enrolment records its
+            # accepted time step in mfa_last_counter, so the code still on the
+            # user's authenticator is refused as a replay, while the page
+            # tells them to check their device clock. Users hit that, waited
+            # out the window, and often exhausted the five-minute pending
+            # login in the process, landing back at a login page with a
+            # correct new password and a working authenticator.
+            #
+            # The account is re-read rather than trusted from the pending
+            # value, for the same reason _complete_login re-reads it: a
+            # deactivation landing between the two steps must take effect.
+            staff = get_staff(db, username)
+            established = staff.is_active and staff.mfa_enrolled
+            if established:
+                # _complete_login is the only other place that stamps this,
+                # so a login completed here is indistinguishable from one
+                # completed at /admin/verify.
+                staff.last_login_at = utcnow()
             db.commit()
 
-        # Always the second factor: an account that has just enrolled has by
-        # definition not yet supplied one, and the SESSION_KEY refusal at the
-        # top of this handler means no established session ever reaches here.
-        # This used to branch on SESSION_KEY and send an established session
-        # to the index instead - a branch that encoded the negation of the
-        # gate's rule, and would have quietly restored the takeover path's
-        # happy ending had that rule ever been relaxed.
+        if not established:
+            return _redirect(request, "admin:login")
+
+        runtime.throttle.clear(username)
+        request.session.pop(PENDING_SESSION_KEY, None)
+        request.session[SESSION_KEY] = username
+
         return templates.TemplateResponse(
             request,
             "brand/enrol_done.html",
-            {"codes": codes, "next_url": "/admin/verify"},
+            {"codes": codes, "next_url": "/admin/"},
         )

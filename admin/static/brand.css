@@ -15,7 +15,8 @@
   --ink:      var(--kale);
   --danger:   var(--orange);
   --ok:       var(--pea);
-  --radius:   4px;
+  --radius:       8px;   /* inputs, buttons, notices */
+  --radius-card: 18px;   /* the card itself, so it reads as a card */
   --measure:  32rem;
 }
 
@@ -63,8 +64,23 @@ h1, h2, h3 {
   width: 100%;
   max-width: var(--measure);
   background: var(--white);
-  border-radius: var(--radius);
+  border-radius: var(--radius-card);
   padding: 2rem;
+}
+
+/* The hand-entered TOTP key. The view groups it in fours; this gives the
+   groups room to read as groups rather than one 32-character run. */
+code.key {
+  font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;
+  font-size: 1.05rem;
+  letter-spacing: 0.06em;
+  word-spacing: 0.4em;
+  display: inline-block;
+  margin-top: 0.35rem;
+  padding: 0.4rem 0.65rem;
+  background: var(--lavender);
+  color: var(--kale);
+  border-radius: var(--radius);
 }
 
 /* The half-circle is the brand's primary supporting graphic, taken from the

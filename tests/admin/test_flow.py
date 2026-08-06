@@ -196,19 +196,19 @@ async def test_walk1_bootstrap_login_change_password_enrol_index(
     )
     assert enrol_response.status_code == 200
 
-    verify_token = await _csrf_from(client, "/admin/verify")
-    later = base + 2 * TOTP_INTERVAL
-    monkeypatch.setattr(views_time, "time", lambda: later)
-    verify_code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(later)
-    verify_response = await client.post(
-        "/admin/verify",
-        data={"code": verify_code, "csrf_token": verify_token},
-        follow_redirects=False,
-    )
-    assert verify_response.status_code == 302
-
+    # Enrolment establishes the session, so the walk ends here rather than at
+    # a further /admin/verify challenge. It is one hop shorter than it was and
+    # still proves the same thing: a bootstrapped account, driven only through
+    # HTTP with the password the CLI printed, reaches the panel.
     index = await client.get("/admin/", follow_redirects=False)
-    assert index.status_code == 200
+    assert index.status_code == 200, (
+        "a bootstrapped account should reach the panel once it has changed "
+        "its password and enrolled"
+    )
+    assert "/admin/verify" not in enrol_response.text, (
+        "the recovery-codes page should not send the user to a challenge the "
+        "replay counter would refuse"
+    )
 
 
 # --- Walk 2: log out, log back in with password + TOTP, reach the index ----

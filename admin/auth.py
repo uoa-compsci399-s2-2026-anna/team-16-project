@@ -29,12 +29,17 @@ from admin.accounts import (
     get_staff,
     verify_staff_totp,
 )
-from admin.models import utcnow
+from admin.models import Staff, utcnow
 from admin.security import verify_password
 from admin.throttle import LoginThrottle
 
 #: Key under which the authenticated username is held in the session cookie.
 SESSION_KEY = "staff_username"
+
+#: Key under which the generation the session was minted under is held.
+#: Compared against Staff.session_generation on every request so that a
+#: credential change ends the sessions that predate it. See stamp_session.
+SESSION_GENERATION_KEY = "staff_generation"
 
 #: How long a passed password step stays usable. Long enough to read a code
 #: off a phone, short enough that a login abandoned on a shared machine cannot
@@ -236,6 +241,17 @@ def authenticate_recovery_code(
     )
 
 
+def stamp_session(session_data: dict, staff: Staff) -> None:
+    """Write both halves of the session identity.
+
+    Callers must never set SESSION_KEY on its own — a session with no
+    generation is refused by require_staff_username, so a half-stamped
+    session is a login that silently does not work.
+    """
+    session_data[SESSION_KEY] = staff.username
+    session_data[SESSION_GENERATION_KEY] = staff.session_generation
+
+
 def require_staff_username(session: Session, session_data: dict) -> str:
     """Return the authenticated username, or raise StaffAuthRequired.
 
@@ -264,6 +280,8 @@ def require_staff_username(session: Session, session_data: dict) -> str:
         raise StaffAuthRequired("Password change is outstanding")
     if not staff.mfa_enrolled:
         raise StaffAuthRequired("Authenticator enrolment is outstanding")
+    if session_data.get(SESSION_GENERATION_KEY) != staff.session_generation:
+        raise StaffAuthRequired("Credentials changed since this session began")
 
     return staff.username
 

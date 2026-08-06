@@ -182,17 +182,32 @@ def create_staff(
     return staff, password
 
 
+def bump_session_generation(session: Session, username: str) -> int:
+    """End every session that predates this moment. Returns the new value."""
+    staff = get_staff(session, username)
+    staff.session_generation += 1
+    return staff.session_generation
+
+
 def set_password(session: Session, username: str, new_password: str) -> None:
-    """Set a password and clear the forced-change flag."""
+    """Set a password and clear the forced-change flag.
+
+    Bumps the session generation: contract §8.3 treats a password change as
+    an eviction, and leaving the old sessions live would make it cosmetic.
+    The caller that is changing its *own* password must re-stamp its session
+    afterwards — see ChangePasswordView.
+    """
     staff = get_staff(session, username)
     staff.password_hash = hash_password(new_password)
     staff.must_change_password = False
+    staff.session_generation += 1
 
 
 def deactivate_staff(session: Session, username: str) -> None:
     staff = get_staff(session, username)
     _guard_admin_floor(session, staff)
     staff.is_active = False
+    staff.session_generation += 1
 
 
 def set_role(session: Session, username: str, role: StaffRole) -> None:
@@ -377,6 +392,7 @@ def reset_mfa(session: Session, username: str) -> None:
     staff.mfa_secret_enc = None
     staff.mfa_enrolled_at = None
     staff.mfa_last_counter = None
+    staff.session_generation += 1
     # Clear through the relationship rather than a bulk delete. Staff declares
     # cascade="all, delete-orphan", so this removes the rows AND keeps the
     # session's view of them correct. A bulk delete with

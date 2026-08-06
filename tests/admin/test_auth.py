@@ -23,6 +23,7 @@ from admin.auth import (
     authenticate_recovery_code,
     authenticate_totp,
     require_staff_username,
+    stamp_session,
 )
 from admin.throttle import LoginThrottle
 from admin.totp import TOTP_INTERVAL
@@ -607,8 +608,10 @@ def test_a_recovery_code_is_refused_for_a_deactivated_account(session):
 
 def test_require_staff_returns_the_username_for_a_good_session(session):
     enrolled(session)
+    session_data = {}
+    stamp_session(session_data, get_staff(session, "alice"))
 
-    assert require_staff_username(session, {SESSION_KEY: "alice"}) == "alice"
+    assert require_staff_username(session, session_data) == "alice"
 
 
 def test_require_staff_rejects_an_empty_session(session):

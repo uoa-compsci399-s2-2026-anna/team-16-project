@@ -32,6 +32,7 @@ from admin.auth import (
     SESSION_KEY,
     authenticate_recovery_code,
     authenticate_totp,
+    stamp_session,
 )
 from admin.backend import (
     PENDING_SESSION_KEY,
@@ -168,6 +169,10 @@ class VerifyView(BaseView):
             if username is not None:
                 db.flush()
             remaining = unused_recovery_code_count(db, username) if username else 0
+            # Fetched here, inside the still-open session, so stamp_session
+            # below has a Staff whose session_generation was just read from
+            # the row rather than trusted from the stale pending value.
+            staff = get_staff(db, username) if username is not None else None
             db.commit()
 
         if username is None:
@@ -185,7 +190,7 @@ class VerifyView(BaseView):
             )
 
         request.session.pop(PENDING_SESSION_KEY, None)
-        request.session[SESSION_KEY] = username
+        stamp_session(request.session, staff)
 
         if remaining <= LOW_RECOVERY_CODE_THRESHOLD:
             return templates.TemplateResponse(
@@ -299,6 +304,14 @@ class ChangePasswordView(BaseView):
                 if isinstance(stored, dict):
                     stored["expires_at"] = time.time() + PENDING_LOGIN_TTL_SECONDS
                     request.session[PENDING_SESSION_KEY] = stored
+
+                # set_password bumped the generation, which just invalidated
+                # the session this request arrived on. Re-stamp it: this user
+                # changed their own password deliberately, so they are not
+                # the session being evicted.
+                staff = get_staff(db, username)
+                if request.session.get(SESSION_KEY):
+                    stamp_session(request.session, staff)
 
                 return _redirect(request, target)
 
@@ -510,7 +523,7 @@ class EnrolView(BaseView):
 
         runtime.throttle.clear(username)
         request.session.pop(PENDING_SESSION_KEY, None)
-        request.session[SESSION_KEY] = username
+        stamp_session(request.session, staff)
 
         return templates.TemplateResponse(
             request,

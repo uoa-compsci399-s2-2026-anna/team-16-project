@@ -15,6 +15,7 @@ from sqlalchemy import (
     DateTime,
     Enum,
     ForeignKey,
+    Integer,
     LargeBinary,
     String,
 )
@@ -67,6 +68,14 @@ class Staff(Base):
     )
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    #: Bumped by every credential change. The signed session cookie carries
+    #: the value it was minted under; require_staff_username refuses a
+    #: mismatch. This is what makes a password change end the old sessions
+    #: without introducing server-side session storage.
+    session_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
 
     recovery_codes: Mapped[list["StaffRecoveryCode"]] = relationship(
         back_populates="staff", cascade="all, delete-orphan"

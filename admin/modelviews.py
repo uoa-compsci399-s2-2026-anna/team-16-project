@@ -59,8 +59,20 @@ _actor_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 def _row_to_dict(row: Any) -> dict:
     """Every mapped column of one row, by name.
 
-    Relationships are excluded: they are other rows, and each of those has
-    its own audit entry when it changes.
+    Relationships are excluded from the dict itself — a relationship is
+    other rows, not a column of this one. That does not mean each of those
+    rows gets its own audit entry when *this* write touches them: the
+    ``before_commit`` listener below filters ``session.new`` / ``.dirty`` /
+    ``.deleted`` with ``isinstance(obj, model)``, so only rows of the model
+    this particular ``AuditedModelView`` was constructed for are ever
+    considered. An ORM cascade — a ``factor_set`` delete taking its
+    ``factor_upstream`` rows with it via ``cascade="all, delete-orphan"``,
+    for instance — deletes those child rows in the same flush without this
+    listener ever seeing them, and writes no audit entry for them at all.
+    Nothing on this branch exercises that: both views defined here set
+    ``can_delete = False``. A future view that allows delete and owns a
+    cascading relationship needs its own handling for the children, or they
+    vanish untracked.
     """
     return {
         column.key: getattr(row, column.key)
@@ -193,10 +205,39 @@ def _audited_session_maker(
 
 
 class AuditedModelView(ModelView):
-    """Base for every CRUD view. Contract §8.1."""
+    """Base for every CRUD view. Contract §8.1.
 
-    #: Overridable for a view whose model name differs from the audited table.
-    audit_table_name: str | None = None
+    The eleven taxonomy and factor views of contract §8.1 subclass this in
+    later stages and will not read this module's own docstring or
+    ``admin/accounts_view.py``'s, so three facts that shape every subclass
+    of this one belong here, not just wherever they were first discovered:
+
+    1. **A custom ``@action`` route is neither audited nor access-checked
+       by inheriting from this class.** ``_actor_var`` is set only inside
+       ``insert_model``/``update_model``/``delete_model`` below, so the
+       ``before_commit`` listener installed by ``_audited_session_maker``
+       returns early (``actor is None``) for a ``session.commit()`` an
+       ``@action`` method calls itself — that write is silently unaudited
+       unless the action routes its mutation through a service function
+       that writes its own audit entry (as ``admin/accounts.py``'s
+       ``issue_password`` does) or calls ``write_audit`` directly (as
+       ``admin/accounts_view.py``'s ``reset_mfa_action`` and
+       ``deactivate_action`` do). Separately, sqladmin registers
+       ``@action`` routes with ``login_required`` only — never
+       ``is_accessible`` — so every action method needs its own explicit
+       permission check at the top; see ``admin/accounts_view.py``'s
+       ``_require_admin`` for the pattern.
+    2. **``column_details_list`` and ``column_export_list`` both default to
+       every mapped column**, independently of ``column_list`` narrowing
+       the list page. This produced a live defect on this branch: without
+       setting them explicitly, the staff details page rendered the full
+       bcrypt password hash and the Fernet-encrypted TOTP secret in the
+       clear, one click away from the list this same view correctly
+       redacted. Any subclass with a sensitive column has to repeat that
+       narrowing itself.
+    3. See ``_row_to_dict``'s docstring below for what the audit trail does
+       and does not capture from an ORM cascade.
+    """
 
     def __init__(self) -> None:
         super().__init__()
@@ -207,11 +248,8 @@ class AuditedModelView(ModelView):
         # listener see every write this view makes without ever touching
         # that shared object - see its docstring for the full argument.
         self.session_maker = _audited_session_maker(
-            self.session_maker, self.model, self._table_name()
+            self.session_maker, self.model, self.model.__tablename__
         )
-
-    def _table_name(self) -> str:
-        return self.audit_table_name or self.model.__tablename__
 
     def _actor(self, request) -> str:
         """The acting username, from the session only.

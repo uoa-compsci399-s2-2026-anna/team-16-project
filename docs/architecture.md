@@ -298,6 +298,12 @@ Every contract change requires all three of: update the document, notify the who
 
 Audit logging and rollback in Stage 3 must not be dropped.
 
+## 9.1 Deployment
+
+**`alembic upgrade head` must be run before the admin panel is started against a new or upgraded database.** `admin/app.py`'s `lifespan` bootstraps administrator accounts on start-up, but it does not migrate the schema — and `tests/conftest.py` builds the test database with `create_all()`, which also never runs a migration. `tests/test_migrations.py` catches the schema *drifting* out of sync with the models, but nothing in the suite catches a database that a migration was simply never applied to. The failure mode is a runtime `1054 Unknown column` against live traffic while the entire test suite stays green — this has already happened once against the development database during this branch.
+
+`alembic/env.py` calls `load_settings()` to resolve the database URL, so `SECRET_KEY` (and every other setting `load_settings()` requires) must already be set in the environment for `alembic upgrade head` to run at all — a migration cannot be the step that first establishes the environment.
+
 ---
 
 # 10. Open Items

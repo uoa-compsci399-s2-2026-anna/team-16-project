@@ -207,38 +207,48 @@ class AdminAuth(AuthenticationBackend):
           This used to be the only thing standing between an evicted
           cookie and the panel, and only for the MFA-reset case - a
           password-only change touches neither onboarding flag, so this
-          gate alone could not tell an evicted cookie from a live one. That
-          gap is closed now, but not here: ``staff.session_generation``
-          (contract 8.3/8.4, added alongside this comment) is checked in
-          ``authenticate()``'s main branch below, which is what every
-          ordinary panel URL - including ``/admin/`` - passes through.
-          This function does **not** duplicate that check for the
-          already-logged-in way in, and that is a considered choice, not an
-          oversight:
+          gate alone could not tell an evicted cookie from a live one.
+          ``staff.session_generation`` (contract 8.3/8.4) closes the
+          ordinary case in ``authenticate()``'s main branch below, which is
+          what every ordinary panel URL - including ``/admin/`` - passes
+          through. It is not enough on its own, though: the state gates
+          just below are evaluated on ``staff`` alone, and
+          ``staff.must_change_password`` set by a future
+          ``issue_password()`` (contract 8.3's still-open known
+          limitation - "sets a random password **and**
+          ``must_change_password = True``") would satisfy
+          /admin/change-password's own gate for *any* session naming this
+          account, stale or not, the moment that function lands. That
+          page's own password check (``_password_problem``,
+          admin/views.py) verifies length, confirmation and non-reuse of
+          the issued password; it does not verify which session is
+          presenting it. Left unguarded here, an evicted attacker's
+          stolen-but-still-signed cookie could walk straight through
+          /admin/change-password, set a password of its own choosing, and
+          be re-stamped with the fresh generation on the way out
+          (``ChangePasswordView`` re-stamps on every completed change) -
+          the eviction undone by the very page meant to complete it. The
+          hazard is a new *state* ``issue_password()`` introduces, not a
+          new page, so the "only three pages exist" defence this docstring
+          used to rely on does not cover it.
 
-          - the pending-login way in (``not already_logged_in``) never
-            carries a generation at all - ``login()`` mints a fresh
-            ``PendingLogin`` off the current row on every password step
-            (see ``authenticate_password``), so there is nothing stale to
-            compare there by construction.
-          - the already-logged-in way in can reach only one of these three
-            pages with a stale generation: /admin/change-password requires
-            ``must_change_password`` (cleared by ``set_password``, so a
-            password-only eviction never satisfies it) and /admin/enrol
-            refuses this way in outright regardless of state. Only
-            /admin/verify's state gate can be satisfied - but
-            ``VerifyView.verify()``'s own first statement redirects an
-            established ``SESSION_KEY`` straight to ``admin:index`` before
-            looking at anything else, and that follow-up request is exactly
-            an ordinary panel URL: ``authenticate()``'s generation check
-            catches it there. So a stale-generation cookie can open
-            /admin/verify and immediately bounce off it - it is never shown
-            a form, never allowed to submit a code, and never reaches the
-            index it is redirected toward.
+          So: a session that carries a generation **at all** must carry
+          the right one, on every way into this function - not only the
+          already-logged-in one. Absence is not the same as mismatch and
+          stays admissible: a genuine first-login user arrives on a
+          PendingLogin with no ``SESSION_KEY`` and no generation
+          whatsoever (``login()`` never stamps one; ``stamp_session`` only
+          ever runs after a second factor completes), and that path has to
+          keep working regardless of what any row's ``session_generation``
+          happens to be. What gets refused is narrower and deliberate: an
+          already-logged-in cookie that WAS stamped, at a generation the
+          account has since moved past. See the comparison just below the
+          account-state checks.
 
-          If a fourth already-logged-in-reachable page is ever added here,
-          re-examine this reasoning: it holds only because none of the
-          three today can be used for anything with a stale generation.
+          This duplicates the comparison ``authenticate()``'s main branch
+          makes rather than sharing it, for the reason given there - and
+          the two having already drifted once (this fix, and the gate fix
+          before it) is exactly why each names the other in comment form.
         """
         username = request.session.get(SESSION_KEY)
         already_logged_in = bool(username)
@@ -255,6 +265,16 @@ class AdminAuth(AuthenticationBackend):
                 request.session.clear()
                 return False
             if not staff.is_active:
+                request.session.clear()
+                return False
+
+            # A generation that is present but wrong is refused; a generation
+            # that is absent is not - see the docstring's "so:" paragraph for
+            # why the two are not the same case here. request.session.get
+            # returns None for a pending-login-only session (no SESSION_KEY,
+            # no generation at all), which must fall through unrefused.
+            generation = request.session.get(SESSION_GENERATION_KEY)
+            if generation is not None and generation != staff.session_generation:
                 request.session.clear()
                 return False
 

@@ -549,18 +549,16 @@ async def test_walk6_a_password_change_mid_session_refuses_its_very_next_request
         set_password(db, username, "a-different-freshly-chosen-password")
         db.commit()
 
-    # The stale cookie can still open /admin/verify - _may_open_pre_login_page
-    # does not compare generation on the already-logged-in way in, by design
-    # (see its docstring) - but VerifyView.verify()'s own first statement
-    # redirects an established SESSION_KEY straight to admin:index without
-    # rendering a form or accepting a code. It is that redirect target,
-    # an ordinary panel URL, that is actually refused.
+    # The stale cookie cannot open /admin/verify either: _may_open_pre_login_page
+    # compares generation on the already-logged-in way in too (a later fix,
+    # prompted by review - see its docstring's "so:" paragraph), so this is
+    # refused directly rather than admitted and bounced by VerifyView itself.
     verify_probe = await client.get("/admin/verify", follow_redirects=False)
-    assert verify_probe.status_code == 302
-    assert verify_probe.headers["location"].endswith("/admin/")
+    assert verify_probe.status_code in (302, 307)
+    assert "/admin/login" in verify_probe.headers["location"]
 
-    # The dashboard route refuses: authenticate()'s main branch compares the
-    # session's stamped generation against the row's current one, finds a
+    # The dashboard route refuses too: authenticate()'s main branch compares
+    # the session's stamped generation against the row's current one, finds a
     # mismatch, clears the session and refuses - exactly what the missing
     # check let through before this task.
     refused = await client.get("/admin/", follow_redirects=False)

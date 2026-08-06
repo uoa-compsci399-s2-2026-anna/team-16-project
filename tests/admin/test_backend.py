@@ -248,6 +248,38 @@ async def test_a_fully_onboarded_account_reaches_the_dashboard(client, admin_app
     assert response.status_code == 200
 
 
+async def test_a_session_with_no_generation_at_all_is_refused_on_the_dashboard(
+    client, admin_app
+):
+    """Every cookie in flight the moment this feature deploys is exactly this
+    shape: SESSION_KEY with no SESSION_GENERATION_KEY at all, since the field
+    did not exist before it. authenticate()'s main branch has to refuse that
+    outright, not merely a *mismatched* value.
+
+    Every other cookie this file builds for a real account goes through
+    _established_cookie, which always stamps the row's actual generation -
+    so nothing else here would catch a regression from
+    ``request.session.get(SESSION_GENERATION_KEY) != staff.session_generation``
+    to ``request.session.get(SESSION_GENERATION_KEY, staff.session_generation)
+    != staff.session_generation``: defaulting absence to the row's own
+    current value makes an absent generation trivially equal to itself, and
+    the whole suite - this file, test_flow.py's walk 6, everything - stays
+    green. This is deliberately the one place in this file that still forges
+    a bare ``{SESSION_KEY: "olive"}``, the way most of this file used to.
+    """
+    _make_staff(admin_app, "olive", password_changed=True, mfa=True)
+    cookie = _session_cookie(
+        admin_app.state.settings.secret_key, {SESSION_KEY: "olive"}
+    )
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.get("/admin/", follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
 # --- 4/5: forced password-change gate --------------------------------------
 
 

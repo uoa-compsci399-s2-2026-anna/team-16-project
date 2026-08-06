@@ -264,6 +264,13 @@ def require_staff_username(session: Session, session_data: dict) -> str:
     enrolment is refused here too. Contract 8.3 requires those steps to be
     unavoidable, and a check that lives only in the enrolment page's own
     routing can be walked past by typing a URL.
+
+    admin/backend.py's AdminAuth.authenticate() duplicates the generation
+    comparison below inline rather than calling this function - it is not
+    reachable from a live request yet, per require_staff's own docstring.
+    The two have already drifted once (a generation check landing here
+    without landing there), so a change to either belongs alongside a look
+    at the other.
     """
     username = session_data.get(SESSION_KEY)
     if not username:

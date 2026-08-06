@@ -23,7 +23,7 @@ from starlette.requests import Request
 from starlette.responses import RedirectResponse, Response
 
 from admin.accounts import UnknownStaffError, get_staff
-from admin.auth import SESSION_KEY, PendingLogin, authenticate_password
+from admin.auth import SESSION_GENERATION_KEY, SESSION_KEY, PendingLogin, authenticate_password
 from admin.config import Settings
 
 PENDING_SESSION_KEY = "pending_login"
@@ -204,17 +204,41 @@ class AdminAuth(AuthenticationBackend):
           point: enrolling requires the newly issued password, which only
           the rightful holder has.
 
-          Be precise about what that buys, because it is less than it
-          sounds: it stops the old cookie *enrolling*, not the old cookie
-          *working*. See contract 8.3, "Known limitation: eviction does not
-          revoke a live session" - the old cookie is locked out only while
-          mfa_enrolled is false, and the moment the rightful holder
-          completes the re-enrolment this gate compels, it works again.
-          Sessions carry no generation marker, so nothing here can tell one
-          issued before an eviction from one issued after. Do not read this
-          gate as delivering eviction; the contract names deactivation and
-          waiting out SESSION_MAX_AGE_MINUTES as the only reliable answers
-          until a session generation column exists.
+          This used to be the only thing standing between an evicted
+          cookie and the panel, and only for the MFA-reset case - a
+          password-only change touches neither onboarding flag, so this
+          gate alone could not tell an evicted cookie from a live one. That
+          gap is closed now, but not here: ``staff.session_generation``
+          (contract 8.3/8.4, added alongside this comment) is checked in
+          ``authenticate()``'s main branch below, which is what every
+          ordinary panel URL - including ``/admin/`` - passes through.
+          This function does **not** duplicate that check for the
+          already-logged-in way in, and that is a considered choice, not an
+          oversight:
+
+          - the pending-login way in (``not already_logged_in``) never
+            carries a generation at all - ``login()`` mints a fresh
+            ``PendingLogin`` off the current row on every password step
+            (see ``authenticate_password``), so there is nothing stale to
+            compare there by construction.
+          - the already-logged-in way in can reach only one of these three
+            pages with a stale generation: /admin/change-password requires
+            ``must_change_password`` (cleared by ``set_password``, so a
+            password-only eviction never satisfies it) and /admin/enrol
+            refuses this way in outright regardless of state. Only
+            /admin/verify's state gate can be satisfied - but
+            ``VerifyView.verify()``'s own first statement redirects an
+            established ``SESSION_KEY`` straight to ``admin:index`` before
+            looking at anything else, and that follow-up request is exactly
+            an ordinary panel URL: ``authenticate()``'s generation check
+            catches it there. So a stale-generation cookie can open
+            /admin/verify and immediately bounce off it - it is never shown
+            a form, never allowed to submit a code, and never reaches the
+            index it is redirected toward.
+
+          If a fourth already-logged-in-reachable page is ever added here,
+          re-examine this reasoning: it holds only because none of the
+          three today can be used for anything with a stale generation.
         """
         username = request.session.get(SESSION_KEY)
         already_logged_in = bool(username)
@@ -345,6 +369,24 @@ class AdminAuth(AuthenticationBackend):
             # Re-read on every request: the cookie is signed but client-held,
             # so there is no server-side session to invalidate.
             if not staff.is_active:
+                request.session.clear()
+                return False
+
+            # Same semantics as require_staff_username (admin/auth.py): a
+            # session carrying no generation at all, or one naming a
+            # generation this account has since moved past, is refused
+            # outright here - not redirected to onboarding, which the
+            # branches below do for must_change_password/mfa_enrolled. A
+            # stale SESSION_KEY does not necessarily owe onboarding: a
+            # password-only change bumps the generation but clears
+            # must_change_password and leaves mfa_enrolled untouched, so
+            # neither of those branches would catch it. This duplicates
+            # require_staff_username's comparison rather than calling it -
+            # that function is not reachable from a live request yet (see
+            # its own docstring) - so a future change to either check
+            # belongs alongside a look at the other; they have already
+            # drifted once, which is how this gate shipped without it.
+            if request.session.get(SESSION_GENERATION_KEY) != staff.session_generation:
                 request.session.clear()
                 return False
 

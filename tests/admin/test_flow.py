@@ -498,3 +498,71 @@ async def test_walk5_deactivating_an_account_mid_session_refuses_its_very_next_r
     refused = await client.get("/admin/", follow_redirects=False)
     assert refused.status_code in (302, 307)
     assert "/admin/login" in refused.headers["location"]
+
+
+# --- Walk 6: a password change mid-session refuses the very next request ---
+
+
+async def test_walk6_a_password_change_mid_session_refuses_its_very_next_request(
+    admin_app, client, onboarded, monkeypatch
+):
+    """A fully onboarded account, logged in for real through both steps, has
+    its password changed by another administrator mid-session via the one
+    real service function that performs it (``set_password``) - and the very
+    next request, not merely a fresh login attempt, is refused.
+
+    This is the walk docs/interfaces.md's v0.8 contract text ("ends that
+    account's live sessions immediately") has to survive, and the reason a
+    session-dict test cannot stand in for it: a password-only change clears
+    neither ``must_change_password`` (``set_password`` itself clears it, so
+    it was already False) nor ``mfa_enrolled`` (untouched), so nothing about
+    this account's *onboarding state* changes. Before ``session_generation``
+    existed - the v0.7 known limitation this task's contract edit replaces -
+    this exact session kept working without interruption: "Issue a new
+    password only: None. 200 throughout, no interruption." It is the
+    generation comparison in ``AdminAuth.authenticate()`` that closes this,
+    not either onboarding flag, which is why the walk changes only the
+    password and asserts the dashboard - not an onboarding page - refuses.
+    """
+    username, password, secret, _ = onboarded
+    base = int(time.time())
+    monkeypatch.setattr(views_time, "time", lambda: base)
+
+    login_response = await _login_password_step(client, username, password)
+    assert login_response.status_code == 302
+    token = await _csrf_from(client, "/admin/verify")
+    code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(base)
+    verify_response = await client.post(
+        "/admin/verify",
+        data={"code": code, "csrf_token": token},
+        follow_redirects=False,
+    )
+    assert verify_response.status_code == 302
+
+    established = await client.get("/admin/", follow_redirects=False)
+    assert established.status_code == 200
+
+    # Out of band, as another administrator resetting a compromised
+    # colleague's account would: the one real service function, not a
+    # hand-edited row.
+    with admin_app.state.session_factory() as db:
+        set_password(db, username, "a-different-freshly-chosen-password")
+        db.commit()
+
+    # The stale cookie can still open /admin/verify - _may_open_pre_login_page
+    # does not compare generation on the already-logged-in way in, by design
+    # (see its docstring) - but VerifyView.verify()'s own first statement
+    # redirects an established SESSION_KEY straight to admin:index without
+    # rendering a form or accepting a code. It is that redirect target,
+    # an ordinary panel URL, that is actually refused.
+    verify_probe = await client.get("/admin/verify", follow_redirects=False)
+    assert verify_probe.status_code == 302
+    assert verify_probe.headers["location"].endswith("/admin/")
+
+    # The dashboard route refuses: authenticate()'s main branch compares the
+    # session's stamped generation against the row's current one, finds a
+    # mismatch, clears the session and refuses - exactly what the missing
+    # check let through before this task.
+    refused = await client.get("/admin/", follow_redirects=False)
+    assert refused.status_code in (302, 307)
+    assert "/admin/login" in refused.headers["location"]

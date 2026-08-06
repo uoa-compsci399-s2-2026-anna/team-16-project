@@ -108,7 +108,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     admin.add_base_view(ChangePasswordView)
     admin.add_base_view(EnrolView)
 
-    # No ModelViews yet: the eleven taxonomy and factor tables are blocked on
-    # B delivering db/models.py. They mount here when they arrive.
+    from admin.modelviews import AuditLogAdmin
+
+    admin.add_view(AuditLogAdmin)
+
+    # The eleven taxonomy and factor views of contract §8.1 mount here in E-4
+    # and E-5. They inherit AuditedModelView, so each arrives already audited.
 
     return app

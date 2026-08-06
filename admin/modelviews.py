@@ -55,6 +55,14 @@ _actor_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "kai_admin_audit_actor", default=None
 )
 
+#: The view whose write is in flight, so the before_commit listener can call
+#: back into its validate_before_commit. Set alongside _actor_var and for the
+#: same reason: the listener runs deep inside sqladmin's own machinery, with
+#: no reference to the view that started the call.
+_view_var: contextvars.ContextVar["AuditedModelView | None"] = contextvars.ContextVar(
+    "kai_admin_audit_view", default=None
+)
+
 
 def _row_to_dict(row: Any) -> dict:
     """Every mapped column of one row, by name.
@@ -177,6 +185,14 @@ def _audited_session_maker(
             id(obj): _snapshot_before(obj) for obj in (*updated, *deleted)
         }
 
+        # Runs before the flush and before any audit row is added: a refused
+        # change must leave neither the row nor an entry claiming it
+        # happened. Raising here propagates out of before_commit, which
+        # SQLAlchemy turns into a rollback of the whole transaction.
+        view = _view_var.get()
+        if view is not None:
+            view.validate_before_commit(session)
+
         # Assigns primary keys to `created` rows so row_id/after below are
         # real values, not None. This is a flush, not a commit — it happens
         # inside the transaction that is about to commit, not a new one.
@@ -262,26 +278,51 @@ class AuditedModelView(ModelView):
         """
         return request.session.get(SESSION_KEY) or "unknown"
 
+    def validate_before_commit(self, session) -> None:
+        """Refuse a change that would break an invariant, by raising.
+
+        Called from inside the transaction that is about to commit, before
+        the audit entries are written. Raising rolls the whole thing back —
+        the row change and its audit entry together — so a refused edit
+        leaves no trace claiming it happened.
+
+        This is the only enforcement point a form cannot walk past.
+        sqladmin's generic edit path is Query.update -> setattr -> commit and
+        goes nowhere near a service function, which is how an earlier stage
+        of this project shipped an administrator-floor guard that the edit
+        form bypassed. Overriding this hook, rather than checking in
+        insert_model, is what makes an invariant hold on every path.
+
+        The default is deliberately a no-op: most views have no cross-row
+        invariant, and inheriting one they do not need would be worse.
+        """
+
     async def insert_model(self, request, data: dict):
-        token = _actor_var.set(self._actor(request))
+        actor_token = _actor_var.set(self._actor(request))
+        view_token = _view_var.set(self)
         try:
             return await super().insert_model(request, data)
         finally:
-            _actor_var.reset(token)
+            _actor_var.reset(actor_token)
+            _view_var.reset(view_token)
 
     async def update_model(self, request, pk: str, data: dict):
-        token = _actor_var.set(self._actor(request))
+        actor_token = _actor_var.set(self._actor(request))
+        view_token = _view_var.set(self)
         try:
             return await super().update_model(request, pk, data)
         finally:
-            _actor_var.reset(token)
+            _actor_var.reset(actor_token)
+            _view_var.reset(view_token)
 
     async def delete_model(self, request, pk: str):
-        token = _actor_var.set(self._actor(request))
+        actor_token = _actor_var.set(self._actor(request))
+        view_token = _view_var.set(self)
         try:
             return await super().delete_model(request, pk)
         finally:
-            _actor_var.reset(token)
+            _actor_var.reset(actor_token)
+            _view_var.reset(view_token)
 
 
 class AuditLogAdmin(ModelView, model=AuditLog):

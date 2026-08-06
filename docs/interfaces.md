@@ -187,6 +187,16 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
+> **Where the taxonomy invariants are enforced.** "Exactly one row must be
+> TRUE" and the existence of `prevention` are statements about a table, not a
+> column, so neither is a database constraint. Both are checked in
+> `admin/taxonomy_rules.py`, called from `AuditedModelView`'s
+> `validate_before_commit` hook — inside the transaction that is about to
+> commit, before the audit entries are written. A refused change rolls back
+> the row and its audit entry together. This placement is deliberate:
+> `sqladmin`'s generic edit path never calls a service function, so a check
+> that lives only in one is bypassed by the edit form.
+
 ### `metric`
 
 | Column | Type | Constraints | Notes |

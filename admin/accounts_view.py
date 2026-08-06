@@ -79,6 +79,17 @@ class StaffAdmin(AuditedModelView, model=Staff):
         Staff.username, Staff.display_name, Staff.role, Staff.is_active,
         Staff.must_change_password, Staff.mfa_enrolled_at, Staff.last_login_at,
     ]
+    # column_list only narrows the *list* page. sqladmin's get_details_columns
+    # (sqladmin/models.py) falls back to every mapped column
+    # (self._prop_names) when column_details_list is unset, regardless of
+    # column_list - so without this line, /admin/staff/details/{pk} rendered
+    # the bcrypt hash, the encrypted TOTP secret and the replay counter in
+    # full, one click away from every row on the list this same view
+    # correctly redacts. Reusing column_list here (rather than a second,
+    # independently-maintained column_details_exclude_list) is deliberate:
+    # the two pages should never drift out of sync on which fields are safe
+    # to show.
+    column_details_list = column_list
     column_searchable_list = [Staff.username, Staff.display_name]
     # Raw mapped columns here raise AttributeError the first time /list
     # renders on sqladmin 0.30 - the same fix AuditLogAdmin's column_filters

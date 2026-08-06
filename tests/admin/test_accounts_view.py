@@ -32,6 +32,7 @@ from admin.accounts import (
     set_password,
 )
 from admin.models import AuditLog, StaffRole
+from admin.security import verify_password
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
 
@@ -46,9 +47,13 @@ SECRET_KEY = "test-secret-key-not-used-anywhere-real"
 # every other file under tests/admin/ - these are file-local.
 
 
-async def _provision_and_login(admin_app, client, monkeypatch, *, role):
-    """Create a fully onboarded account of the given role and log it in for
-    real, through /admin/login and /admin/verify. Returns the Staff row.
+def _create_onboarded_account(admin_app, *, role):
+    """Create and commit a fully onboarded account of the given role.
+
+    Split out of what used to be a single `_provision_and_login` so that a
+    failure in the login step below (see `_login`) can be told apart from a
+    failure here - the fixtures that call both need to clean up a row that
+    was successfully committed even when the *login* half raises.
     """
     username = f"u{uuid.uuid4().hex[:10]}"
     password = "a-long-enough-password"
@@ -68,7 +73,11 @@ async def _provision_and_login(admin_app, client, monkeypatch, *, role):
         )
         db.commit()
         staff = get_staff(db, username)
+    return staff, password, secret
 
+
+async def _login(client, monkeypatch, *, username, password, secret):
+    """Drive the real HTTP login flow for an already-created, onboarded account."""
     now = int(time.time())
     monkeypatch.setattr(views_time, "time", lambda: now)
 
@@ -89,8 +98,6 @@ async def _provision_and_login(admin_app, client, monkeypatch, *, role):
         follow_redirects=False,
     )
     assert verify.status_code == 302, "TOTP step should have completed the login"
-
-    return staff
 
 
 def _cleanup_staff(admin_app, *staff_rows):
@@ -145,8 +152,25 @@ async def admin_client(admin_app, client, monkeypatch):
     - httpx's AsyncClient takes arbitrary attributes - so fixtures built on
     top of this one (``two_admins``) can identify exactly which account is
     acting, rather than guessing from a fresh query.
+
+    Cleanup is registered before the login is attempted, not after: the
+    account row is already committed at that point (`_create_onboarded_account`
+    commits), so a failure in `_login` - a broken CSRF scrape, a rejected
+    TOTP code - must not leave a committed, active administrator row behind
+    for a later test's `two_admins` fixture to silently count. An earlier
+    version of this fixture called both steps as one function and only
+    registered cleanup after both succeeded; a failure partway through
+    would raise out of the fixture before `yield`, and teardown code after
+    a `yield` never runs if the fixture never reaches it - exactly the kind
+    of leak `_cleanup_staff`'s own docstring already describes for a
+    different cause.
     """
-    staff = await _provision_and_login(admin_app, client, monkeypatch, role=StaffRole.admin)
+    staff, password, secret = _create_onboarded_account(admin_app, role=StaffRole.admin)
+    try:
+        await _login(client, monkeypatch, username=staff.username, password=password, secret=secret)
+    except BaseException:
+        _cleanup_staff(admin_app, staff)
+        raise
     client.staff = staff
     yield client
     _cleanup_staff(admin_app, staff)
@@ -154,8 +178,17 @@ async def admin_client(admin_app, client, monkeypatch):
 
 @pytest_asyncio.fixture
 async def staff_client(admin_app, client, monkeypatch):
-    """A client logged in as a fully onboarded, plain (non-admin) staff member."""
-    staff = await _provision_and_login(admin_app, client, monkeypatch, role=StaffRole.staff)
+    """A client logged in as a fully onboarded, plain (non-admin) staff member.
+
+    See admin_client's docstring for why cleanup is registered before login
+    is attempted rather than after.
+    """
+    staff, password, secret = _create_onboarded_account(admin_app, role=StaffRole.staff)
+    try:
+        await _login(client, monkeypatch, username=staff.username, password=password, secret=secret)
+    except BaseException:
+        _cleanup_staff(admin_app, staff)
+        raise
     client.staff = staff
     yield client
     _cleanup_staff(admin_app, staff)
@@ -298,6 +331,40 @@ async def test_the_list_never_renders_a_password_hash(admin_client, enrolled_sta
     assert enrolled_staff.password_hash not in response.text
 
 
+async def test_the_details_view_never_renders_a_password_hash(admin_client, enrolled_staff):
+    """sqladmin's own default for column_details_list is "every mapped
+    column" (get_details_columns falls back to self._prop_names) unless a
+    view sets it explicitly. column_list narrowing the *list* page's columns
+    says nothing about the details page - a details button sits on every
+    list row, so an unset column_details_list is a one-click path to the
+    hash and the encrypted TOTP secret this same account correctly hides
+    from the list.
+    """
+    response = await admin_client.get(f"/admin/staff/details/{enrolled_staff.id}")
+
+    assert response.status_code == 200
+    assert "password_hash" not in response.text
+    assert "mfa_secret_enc" not in response.text
+    assert "mfa_last_counter" not in response.text
+    assert enrolled_staff.password_hash not in response.text
+
+
+async def test_the_csv_export_never_renders_a_password_hash(admin_client, enrolled_staff):
+    """column_export_list falls back to the *list* columns (get_export_columns's
+    default is self._list_prop_names, not self._prop_names) so this is
+    already safe without column_list narrowing it separately - covered here
+    anyway, since export is a second unfiltered-by-default render path and
+    the reasoning that made the details page unsafe doesn't obviously not
+    apply to it too.
+    """
+    response = await admin_client.get("/admin/staff/export/csv")
+
+    assert response.status_code == 200
+    assert "password_hash" not in response.text
+    assert "mfa_secret_enc" not in response.text
+    assert enrolled_staff.password_hash not in response.text
+
+
 async def test_issuing_a_password_shows_it_once_and_forces_a_change(
     admin_client, db_session, enrolled_staff
 ):
@@ -306,7 +373,18 @@ async def test_issuing_a_password_shows_it_once_and_forces_a_change(
     )
 
     assert response.status_code == 200
-    assert get_staff(db_session, enrolled_staff.username).must_change_password is True
+    match = re.search(r'<code class="key">([^<]+)</code>', response.text)
+    assert match, "no issued password rendered in the response body"
+    issued_password = match.group(1)
+
+    staff = get_staff(db_session, enrolled_staff.username)
+    assert staff.must_change_password is True
+    # Not just "some text landed in the <code> tag" - the exact password the
+    # account can now log in with. A template whose context key silently
+    # didn't match (e.g. `password` vs. the view's `issued` tuple) would
+    # still satisfy an emptiness-blind assertion; this project has shipped
+    # that defect once already, on a different page.
+    assert verify_password(issued_password, staff.password_hash)
 
 
 async def test_resetting_mfa_sends_the_account_back_through_enrolment(

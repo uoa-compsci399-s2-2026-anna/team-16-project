@@ -15,6 +15,7 @@ from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     create_staff,
+    deactivate_staff,
     get_staff,
     set_password,
 )
@@ -46,6 +47,28 @@ def enrolled_staff(session) -> Staff:
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)
     code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(NOW)
     complete_mfa_enrolment(session, username, code, secret_key=SECRET_KEY, now=NOW)
+    session.flush()
+    return get_staff(session, username)
+
+
+@pytest.fixture
+def deactivated_staff(session) -> Staff:
+    """A fully onboarded account, then deactivated - a real, reachable state
+    (admin/accounts.py's deactivate_staff), distinct from "unknown username".
+
+    A plain staff account (create_staff's default role): deactivate_staff
+    refuses to drop the active-administrator count below MIN_ACTIVE_ADMINS,
+    a guard that only applies to StaffRole.admin, so it does not apply here.
+    """
+    username = "dana"
+    _, password = create_staff(session, username=username, display_name="Dana")
+    session.flush()
+    set_password(session, username, "a-strong-initial-password")
+    secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)
+    code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(NOW)
+    complete_mfa_enrolment(session, username, code, secret_key=SECRET_KEY, now=NOW)
+    session.flush()
+    deactivate_staff(session, username)
     session.flush()
     return get_staff(session, username)
 
@@ -87,12 +110,45 @@ def test_an_unknown_username_still_costs_a_password_verification(
     assert len(calls) == 1, "the unknown-username path skipped the verification"
 
 
-def test_the_two_paths_take_comparable_time(session, enrolled_staff, settings):
+def test_a_deactivated_account_still_costs_a_password_verification(
+    session, deactivated_staff, settings, monkeypatch
+):
+    """The second behavioural gate, for the state the review found missing.
+
+    `not staff.is_active or not verify_password(...)` short-circuits on a
+    deactivated account and never calls verify_password - a fast response
+    that, after the unknown-username fix, becomes a clean signal for "this
+    username's account exists and is deactivated". Guards against that
+    condition being written as a short circuit ever again.
+    """
+    calls = []
+    real = auth.verify_password
+    monkeypatch.setattr(
+        auth, "verify_password",
+        lambda pw, h: calls.append(h) or real(pw, h),
+    )
+
+    authenticate_password(
+        session, deactivated_staff.username, "any-password",
+        throttle=build_throttle(settings), now=time.monotonic(),
+    )
+
+    assert len(calls) == 1, "the deactivated-account path skipped the verification"
+
+
+def test_the_three_paths_take_comparable_time(
+    session, enrolled_staff, deactivated_staff, settings
+):
     """The statistical backstop, with a deliberately loose bound.
 
-    bcrypt at the project's cost factor dominates both paths once the dummy
-    verification is in place, so the ratio should sit near 1.0. The bound is
-    4x because CI machines stall; the defect this catches was 56x.
+    bcrypt at the project's cost factor dominates all three paths once every
+    found-or-not account pays for one verify_password call, so the ratio
+    should sit near 1.0. The bound is 4x because CI machines stall; the
+    defects this catches were 56x (unknown username) and would be similar
+    for a deactivated account skipping verification. This bound is only
+    meaningful because tests run against bcrypt's real, configured cost
+    factor - a reduced test-only cost factor would make it flaky, so don't
+    introduce one without revisiting the bound.
     """
     throttle = build_throttle(settings)
 
@@ -104,8 +160,16 @@ def test_the_two_paths_take_comparable_time(session, enrolled_staff, settings):
         )
         return time.perf_counter() - start
 
-    known = min(elapsed(enrolled_staff.username) for _ in range(3))
-    unknown = min(elapsed(f"no-such-account-{i}") for i in range(3))
+    times = {
+        "unknown": min(elapsed(f"no-such-account-{i}") for i in range(3)),
+        "deactivated": min(elapsed(deactivated_staff.username) for _ in range(3)),
+        "active-wrong-password": min(
+            elapsed(enrolled_staff.username) for _ in range(3)
+        ),
+    }
 
-    ratio = max(known, unknown) / min(known, unknown)
-    assert ratio < 4.0, f"timing differs by {ratio:.1f}x — usernames are enumerable"
+    ratio = max(times.values()) / min(times.values())
+    assert ratio < 4.0, (
+        f"timing differs by {ratio:.1f}x across {times} - "
+        "usernames or account state are enumerable"
+    )

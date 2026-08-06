@@ -125,7 +125,16 @@ def authenticate_password(
         throttle.record_failure(username, now=now)
         return None
 
-    if not staff.is_active or not verify_password(password, staff.password_hash):
+    # Evaluated unconditionally, before the branch, rather than written as
+    # `not staff.is_active or not verify_password(...)`. That form short-
+    # circuits on a deactivated account and skips verify_password entirely,
+    # which reopens exactly the timing oracle _DUMMY_HASH exists to close —
+    # only now against "is this real username's account deactivated?"
+    # instead of "does this username exist?". Every found account, active or
+    # not, must pay for one verify_password call so the clock cannot tell
+    # the two apart. Do not "simplify" this back into a short circuit.
+    password_ok = verify_password(password, staff.password_hash)
+    if not staff.is_active or not password_ok:
         throttle.record_failure(username, now=now)
         return None
 

@@ -3,31 +3,57 @@
 The eleven taxonomy and factor views of §8.1 inherit AuditedModelView in E-4
 and E-5, so the auditing lives here once rather than in each of them.
 
-Transaction-boundary note (see the report for the full account): sqladmin's
-own ``Query.insert``/``update``/``delete`` (sqladmin/_queries.py) open their
-own session via ``self.session_maker(...)`` and commit it *before* control
-returns to ``insert_model``/``update_model``/``delete_model`` here. That
-commit has already happened by the time this class's overrides run, so the
-audit entry written below is unavoidably a second, later transaction against
-a fresh session — the row change and its audit entry cannot be made to share
-one atomic commit while going through these three hooks. A process that dies
-between the two leaves the row change persisted with no audit entry for it.
-Closing that gap fully would mean moving the audit write into sqladmin's
-``on_model_change``/``after_model_change`` hooks and reusing sqladmin's own
-session object, but ``on_model_change`` runs before attributes are copied
-onto the model (no "after" state yet) and ``after_model_change`` runs after
-sqladmin's own commit (same problem, one step later) — so even that path
-only narrows the window, it does not close it in the general case.
+Atomicity. sqladmin's own ``Query._insert_sync``/``_update_sync``/
+``_delete_sync`` (sqladmin/_queries.py) open a session via
+``self.model_view.session_maker(...)`` and call ``session.commit()``
+themselves, inside ``super().insert_model()`` etc. — control does not return
+to this module until after that commit has already happened. Writing the
+audit entry in a *second* session afterwards (an earlier version of this file
+did exactly that) means the row change and its audit entry are two separate
+transactions: a crash between them loses the entry, and contract §5.5's "a
+change that is rolled back must leave no audit record claiming it happened"
+is only true in one direction.
+
+The fix used here: ``AuditedModelView.__init__`` replaces ``self.session_maker``
+(an *instance* attribute, shadowing the class attribute sqladmin assigned) with
+a second sessionmaker bound to the same engine, carrying a SQLAlchemy
+``before_commit`` event listener. ``before_commit`` fires inside the same
+transaction as whatever else the session is about to commit — the listener's
+own ``session.add(AuditLog(...))`` becomes part of that same commit, and a
+failed commit (the whole point of the exercise) rolls the audit entry back
+along with the row change, because they were never two commits to begin with.
+See ``_audited_session_maker`` for how this is kept from ever touching a
+session this class did not create.
 """
 
+import contextvars
 from typing import Any
 
 from sqladmin import ModelView
 from sqladmin.filters import OperationColumnFilter
+from sqlalchemy import event
+from sqlalchemy import inspect as sa_inspect
+from sqlalchemy.orm import Session, sessionmaker
 
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY
 from admin.models import AuditLog
+
+#: The acting username for whichever AuditedModelView write is in flight on
+#: the current asyncio task. Set by insert_model/update_model/delete_model
+#: before calling super(), read by the before_commit listener installed by
+#: _audited_session_maker. anyio.to_thread.run_sync (what sqladmin's sync
+#: Query path uses to run the actual commit) propagates the calling task's
+#: context into the worker thread, so the listener sees the value set by the
+#: request that is actually in flight — verified directly: a ContextVar set
+#: before an anyio.to_thread.run_sync call is visible inside it.
+#:
+#: None outside of those three methods, which is also the listener's signal
+#: to do nothing (see its docstring) — nothing here should ever write an
+#: audit row for a commit this class did not originate.
+_actor_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
+    "kai_admin_audit_actor", default=None
+)
 
 
 def _row_to_dict(row: Any) -> dict:
@@ -42,17 +68,127 @@ def _row_to_dict(row: Any) -> dict:
     }
 
 
-class AuditedModelView(ModelView):
-    """Base for every CRUD view. Contract §8.1.
+def _snapshot_before(row: Any) -> dict:
+    """Every column's value as it stood before whatever is pending on ``row``.
 
-    The pre-change row is read in the before-write hook. sqladmin's
-    after-write hook receives the already-mutated object, so reading there
-    would record the new values as both "before" and "after" — an audit trail
-    in which no update ever changed anything.
+    Reads SQLAlchemy's own attribute history rather than the row's current
+    (already-mutated) values — this is what makes a genuine "before" snapshot
+    possible from inside a listener that only ever sees the row mid-flush,
+    never a copy fetched earlier. An attribute with no history at all (never
+    loaded, e.g. deferred) falls back to its current value; there is nothing
+    else available.
     """
+    state = sa_inspect(row)
+    result = {}
+    for attr in state.mapper.column_attrs:
+        history = state.attrs[attr.key].history
+        if history.deleted:
+            result[attr.key] = history.deleted[0]
+        elif history.unchanged:
+            result[attr.key] = history.unchanged[0]
+        else:
+            result[attr.key] = getattr(row, attr.key)
+    return result
+
+
+def _audited_session_maker(
+    bind: Any, model: type, table_name: str
+) -> sessionmaker[Session]:
+    """A sessionmaker, bound to ``bind``, whose sessions audit their own writes.
+
+    A brand new sessionmaker object — never the one sqladmin assigned to this
+    view's class attribute, and never touched via that object's own
+    ``.configure()`` or a listener registered on the ``Session`` class
+    globally. Either of those would fire this listener on every commit
+    anywhere in the app that happens to share the engine: the bootstrap step,
+    the API layer, another view's session, all indistinguishable from a
+    genuine audited write.
+
+    SQLAlchemy's event system scopes a listener registered on one
+    ``sessionmaker`` *instance* to sessions produced by calling that
+    instance — confirmed directly (two sessionmakers bound to the same
+    engine, a listener attached to only one, committing through the other
+    never fires it). ``AuditedModelView.__init__`` assigns the sessionmaker
+    this function returns to ``self.session_maker`` as an *instance*
+    attribute (shadowing the class attribute sqladmin's ``Admin.add_model_view``
+    set moments earlier), and each ``AuditedModelView`` subclass gets exactly
+    one instance for the lifetime of the app (sqladmin constructs it once, at
+    registration) — so the listener this function installs can only ever
+    fire for sessions this one view instance opened.
+    """
+    audited = sessionmaker(bind=bind, future=True, expire_on_commit=False)
+
+    @event.listens_for(audited, "before_commit")
+    def _write_audit_entries(session: Session) -> None:
+        actor = _actor_var.get()
+        if actor is None:
+            # Not a call AuditedModelView originated - e.g. a read-only
+            # session this view opened for something else entirely, should
+            # sqladmin ever grow one that calls commit(). Writing an audit
+            # row with no real actor behind it would be worse than writing
+            # none at all.
+            return
+
+        created = [obj for obj in session.new if isinstance(obj, model)]
+        updated = [
+            obj for obj in session.dirty
+            if isinstance(obj, model) and session.is_modified(obj)
+        ]
+        deleted = [obj for obj in session.deleted if isinstance(obj, model)]
+        if not (created or updated or deleted):
+            return
+
+        # Before-snapshots have to be taken before the flush below: flush
+        # moves `created` rows out of session.new and can affect what
+        # attribute history is still available.
+        before_by_id = {
+            id(obj): _snapshot_before(obj) for obj in (*updated, *deleted)
+        }
+
+        # Assigns primary keys to `created` rows so row_id/after below are
+        # real values, not None. This is a flush, not a commit — it happens
+        # inside the transaction that is about to commit, not a new one.
+        session.flush()
+
+        for obj in created:
+            write_audit(
+                session, actor=actor, action="create", table_name=table_name,
+                row_id=getattr(obj, "id", None), before=None,
+                after=_row_to_dict(obj),
+            )
+        for obj in updated:
+            write_audit(
+                session, actor=actor, action="update", table_name=table_name,
+                row_id=getattr(obj, "id", None), before=before_by_id[id(obj)],
+                after=_row_to_dict(obj),
+            )
+        for obj in deleted:
+            write_audit(
+                session, actor=actor, action="delete", table_name=table_name,
+                row_id=getattr(obj, "id", None), before=before_by_id[id(obj)],
+                after=None,
+            )
+
+    return audited
+
+
+class AuditedModelView(ModelView):
+    """Base for every CRUD view. Contract §8.1."""
 
     #: Overridable for a view whose model name differs from the audited table.
     audit_table_name: str | None = None
+
+    def __init__(self) -> None:
+        super().__init__()
+        # sqladmin's Admin.add_model_view sets the *class* attribute
+        # `session_maker` to the app's one shared sessionmaker just before
+        # constructing this instance (sqladmin/application.py). Replacing it
+        # here, on the instance, is what lets _audited_session_maker's
+        # listener see every write this view makes without ever touching
+        # that shared object - see its docstring for the full argument.
+        self.session_maker = _audited_session_maker(
+            self.session_maker.kw["bind"], self.model, self._table_name()
+        )
 
     def _table_name(self) -> str:
         return self.audit_table_name or self.model.__tablename__
@@ -68,48 +204,25 @@ class AuditedModelView(ModelView):
         return request.session.get(SESSION_KEY) or "unknown"
 
     async def insert_model(self, request, data: dict):
-        model = await super().insert_model(request, data)
-        with self.session_maker() as session:
-            write_audit(
-                session, actor=self._actor(request), action="create",
-                table_name=self._table_name(), row_id=getattr(model, "id", None),
-                before=None, after=_row_to_dict(model),
-            )
-            session.commit()
-        return model
+        token = _actor_var.set(self._actor(request))
+        try:
+            return await super().insert_model(request, data)
+        finally:
+            _actor_var.reset(token)
 
     async def update_model(self, request, pk: str, data: dict):
-        with self.session_maker() as session:
-            existing = session.get(self.model, pk)
-            before = _row_to_dict(existing) if existing else None
-
-        model = await super().update_model(request, pk, data)
-
-        with self.session_maker() as session:
-            write_audit(
-                session, actor=self._actor(request), action="update",
-                table_name=self._table_name(), row_id=getattr(model, "id", None),
-                before=before, after=_row_to_dict(model),
-            )
-            session.commit()
-        return model
+        token = _actor_var.set(self._actor(request))
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _actor_var.reset(token)
 
     async def delete_model(self, request, pk: str):
-        with self.session_maker() as session:
-            existing = session.get(self.model, pk)
-            before = _row_to_dict(existing) if existing else None
-            row_id = getattr(existing, "id", None) if existing else None
-
-        result = await super().delete_model(request, pk)
-
-        with self.session_maker() as session:
-            write_audit(
-                session, actor=self._actor(request), action="delete",
-                table_name=self._table_name(), row_id=row_id,
-                before=before, after=None,
-            )
-            session.commit()
-        return result
+        token = _actor_var.set(self._actor(request))
+        try:
+            return await super().delete_model(request, pk)
+        finally:
+            _actor_var.reset(token)
 
 
 class AuditLogAdmin(ModelView, model=AuditLog):
@@ -134,10 +247,10 @@ class AuditLogAdmin(ModelView, model=AuditLog):
     column_default_sort = ("at", True)
     column_searchable_list = [AuditLog.actor, AuditLog.table_name]
     # sqladmin 0.30 requires Filter instances here, not raw mapped columns -
-    # the brief's literal `[AuditLog.actor, ...]` raises AttributeError
-    # ("... has no attribute 'parameter_name'") the first time /list is
-    # rendered, since get_filters() returns column_filters unchanged and the
-    # template reads .parameter_name straight off each entry.
+    # a literal `[AuditLog.actor, ...]` raises AttributeError ("... has no
+    # attribute 'parameter_name'") the first time /list is rendered, since
+    # get_filters() returns column_filters unchanged and the template reads
+    # .parameter_name straight off each entry.
     # OperationColumnFilter supplies contains/equals/starts-with for the three
     # string columns and equals/greater-than/less-than for the datetime one.
     column_filters = [

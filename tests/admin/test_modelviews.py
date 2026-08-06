@@ -6,6 +6,8 @@ from types import SimpleNamespace
 
 import pytest
 from sqlalchemy import select
+from sqlalchemy.exc import IntegrityError
+from sqlalchemy.orm import sessionmaker
 
 from admin.accounts import create_staff
 from admin.auth import SESSION_KEY
@@ -45,14 +47,31 @@ def request_of():
 
 @pytest.fixture()
 def audited_view(session):
-    """An AuditedModelView over Staff, bound to the test session."""
+    """An AuditedModelView over Staff, sharing `session`'s connection.
+
+    A genuine sessionmaker, not a fake - AuditedModelView.__init__ reads
+    `.kw["bind"]` off whatever sqladmin assigned to build its own
+    listener-carrying sessionmaker (see admin/modelviews.py), and needs a
+    real bind to attach to. Bound to `session.get_bind()` - the same
+    Connection `session` itself uses - so that the audited write (via
+    SQLAlchemy's default `conditional_savepoint` join mode) becomes a nested
+    SAVEPOINT inside the fixture's own outer transaction: visible to
+    `session`'s own queries in the tests below, and undone along with
+    everything else when that outer transaction rolls back at teardown.
+
+    The class attribute is assigned before construction, mirroring
+    sqladmin's own registration order (Admin.add_model_view sets
+    `session_maker` on the class, then constructs the one instance) - that
+    ordering is exactly what AuditedModelView.__init__ relies on.
+    """
 
     class StaffTestView(AuditedModelView, model=Staff):
         pass
 
-    view = StaffTestView()
-    view.session_maker = lambda *args, **kwargs: session
-    return view
+    StaffTestView.session_maker = sessionmaker(
+        bind=session.get_bind(), future=True, expire_on_commit=False
+    )
+    return StaffTestView()
 
 
 @pytest.fixture()
@@ -135,3 +154,24 @@ def test_the_actor_comes_from_the_session_not_the_form(
     session.flush()
 
     assert session.scalar(select(AuditLog)).actor == "kim"
+
+
+def test_a_failed_write_leaves_no_audit_row(session, audited_view, request_of):
+    """Contract §5.5, verbatim: "a change that is rolled back must leave no
+    audit record claiming it happened."
+
+    Staff.username and Staff.password_hash are NOT NULL with no default, so
+    omitting both makes the underlying INSERT fail - a real IntegrityError
+    from MySQL, not a mocked failure. Now that the audit entry is written by
+    a before_commit listener sharing the write's own transaction (see
+    admin/modelviews.py's module docstring), this is the test that would
+    catch a listener that fired anyway, or fired against a session that
+    survived the failed commit - the four tests above only ever exercise the
+    success path and would not notice either bug.
+    """
+    with pytest.raises(IntegrityError):
+        run(audited_view.insert_model(
+            request_of(actor="kim"), {"display_name": "Never Persisted"},
+        ))
+
+    assert session.scalar(select(AuditLog)) is None

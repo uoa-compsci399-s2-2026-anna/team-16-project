@@ -8,7 +8,6 @@ import pytest
 
 from admin.accounts import (
     begin_mfa_enrolment,
-    bump_session_generation,
     complete_mfa_enrolment,
     create_staff,
     get_staff,
@@ -104,11 +103,3 @@ def test_a_forged_generation_is_refused(session, enrolled_staff):
 
     with pytest.raises(StaffAuthRequired):
         require_staff_username(session, session_data)
-
-
-def test_bump_returns_the_new_value(session, enrolled_staff):
-    before = enrolled_staff.session_generation
-    after = bump_session_generation(session, enrolled_staff.username)
-
-    assert after == before + 1
-    assert get_staff(session, enrolled_staff.username).session_generation == after

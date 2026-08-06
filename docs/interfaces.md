@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-06 (v0.8 draft)"
+date: "2026-08-07 (v0.9 draft)"
 ---
 
 # 0. How to Use This Document
@@ -1243,6 +1243,16 @@ live sessions immediately, without server-side session storage.
 
 Note for B: this is enforced inside `require_staff()`, so the API layer
 inherits it with no change on your side.
+
+For E: `require_staff_username()` is not the only implementation of this
+comparison. The admin panel is not routed through it — it is gated by
+`AdminAuth.authenticate()` in `admin/backend.py`, which carries its own,
+deliberately duplicated `session_generation` comparison rather than calling
+`require_staff_username()`. The two are documented as needing to change
+together (each names the other in its own comment), but nothing enforces
+that beyond the comment — they have already drifted out of sync once during
+this branch. E-4 through E-6 read this section: if either comparison
+changes, check the other.
 
 `admin.accounts.issue_password(session, username, *, actor) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned once, to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
 

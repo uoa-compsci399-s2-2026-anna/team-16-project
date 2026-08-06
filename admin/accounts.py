@@ -183,13 +183,6 @@ def create_staff(
     return staff, password
 
 
-def bump_session_generation(session: Session, username: str) -> int:
-    """End every session that predates this moment. Returns the new value."""
-    staff = get_staff(session, username)
-    staff.session_generation += 1
-    return staff.session_generation
-
-
 def set_password(session: Session, username: str, new_password: str) -> None:
     """Set a password and clear the forced-change flag.
 
@@ -215,8 +208,10 @@ def issue_password(session: Session, username: str, *, actor: str) -> str:
     Distinct from set_password, which clears must_change_password because the
     user chose that password themselves. An issued password is a temporary
     credential; the account is forced through the change page on next login.
-    Also bumps session_generation inline (rather than calling
-    bump_session_generation) since the row is already loaded here.
+    Also bumps session_generation inline, along with every other credential
+    change in this module (set_password, deactivate_staff, reset_mfa) -
+    there is no shared helper for it; each site increments the column
+    directly since the row is already loaded at that point.
     """
     staff = get_staff(session, username)
     password = generate_initial_password()

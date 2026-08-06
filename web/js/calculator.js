@@ -3,6 +3,7 @@ import { state, setState, resetCalculator } from './state.js'
 import { massToKg } from './units.js'
 import { buttonRow, escapeHtml, formatNumber, slug } from './view.js'
 import { downloadResults, renderResults } from './results.js'
+import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 
 const STEPS = ['Supply-chain stage', 'Food type', 'Waste amount', 'Destinations', 'Review', 'Results']
 const decimalPattern = /^\d+(\.\d{1,2})?$/
@@ -271,6 +272,10 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'start-over' && window.confirm('Clear all calculator data and return to the introduction?')) resetCalculator()
     if (action === 'download-results') downloadResults(state)
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
+    if (action === 'explore-improvements') openImprovement(state)
+    if (action === 'reset-improvement') resetImprovement(state)
+    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementResult: null, improvementError: null })
+    if (action === 'compare-improvement') compareImprovement(state)
     if (action === 'retry') retryTaxonomy()
     if (action === 'view-methodology') window.location.href = './methodology.html'
     if (['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
@@ -292,6 +297,7 @@ export function bindCalculator(main, retryTaxonomy) {
       state.error = null
     }
     if (target.matches('[data-line-field="amount"]')) updateLine(target)
+    if (target.matches('[data-improvement-code]')) updateImprovementInput(target, state)
   })
 
   main.addEventListener('keydown', event => {

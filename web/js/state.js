@@ -22,6 +22,11 @@ export const state = {
   expandedSectors: [],
   resultBreakdownTab: 'stage',
   lastChangedDestination: null,
+  improvementOpen: false,
+  improvedAllocations: {},
+  improvementResult: null,
+  improvementLoading: false,
+  improvementError: null,
 }
 
 const subscribers = new Set()
@@ -57,5 +62,10 @@ export function resetCalculator() {
     expandedSectors: [],
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,
+    improvementOpen: false,
+    improvedAllocations: {},
+    improvementResult: null,
+    improvementLoading: false,
+    improvementError: null,
   })
 }

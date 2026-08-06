@@ -82,6 +82,14 @@ async function mockRequest(path, options) {
     if (!payload.alternative) {
       result.alternative = null
       result.net_benefit = null
+    } else {
+      const alternativeRows = payload.alternative || []
+      const alternativeTotal = alternativeRows.reduce((sum, row) => sum + (Number(row.qty_kg) || 0), 0).toFixed(3)
+      result.alternative.total_kg = alternativeTotal
+      if (result.alternative.metrics?.mass) {
+        result.alternative.metrics.mass.total = Number(alternativeTotal).toFixed(10)
+        result.alternative.metrics.mass.by_destination = alternativeRows.map(row => ({ destination: row.destination, qty_kg: row.qty_kg, upstream: '1.0000000000', downstream: '0.0000000000', value: Number(row.qty_kg).toFixed(10) }))
+      }
     }
     return { ...result, token: result.token || 'mock-session-token' }
   }

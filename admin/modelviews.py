@@ -227,14 +227,15 @@ class AuditedModelView(ModelView):
        ``is_accessible`` — so every action method needs its own explicit
        permission check at the top; see ``admin/accounts_view.py``'s
        ``_require_admin`` for the pattern.
-    2. **``column_details_list`` and ``column_export_list`` both default to
-       every mapped column**, independently of ``column_list`` narrowing
-       the list page. This produced a live defect on this branch: without
-       setting them explicitly, the staff details page rendered the full
-       bcrypt password hash and the Fernet-encrypted TOTP secret in the
-       clear, one click away from the list this same view correctly
-       redacted. Any subclass with a sensitive column has to repeat that
-       narrowing itself.
+    2. **``column_details_list`` defaults to every mapped column**,
+       independently of ``column_list`` narrowing the list page.
+       ``column_export_list`` does not — it falls back to ``column_list`` —
+       but the details page is one click from every list row. This produced
+       a live defect on this branch: without setting it explicitly, the
+       staff details page rendered the full bcrypt password hash and the
+       Fernet-encrypted TOTP secret in the clear, from a list this same
+       view correctly redacted. Any subclass with a sensitive column has to
+       repeat that narrowing itself.
     3. See ``_row_to_dict``'s docstring below for what the audit trail does
        and does not capture from an ORM cascade.
     """

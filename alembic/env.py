@@ -11,6 +11,7 @@ from alembic import context
 from sqlalchemy import engine_from_config, pool
 
 import admin.models  # noqa: F401  - registers staff, staff_recovery_code, audit_log
+import admin.taxonomy_models  # noqa: F401  - registers the six taxonomy tables
 from admin.config import load_settings
 from db.base import Base
 

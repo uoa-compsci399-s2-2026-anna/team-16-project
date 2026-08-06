@@ -196,6 +196,12 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 > the row and its audit entry together. This placement is deliberate:
 > `sqladmin`'s generic edit path never calls a service function, so a check
 > that lives only in one is bypassed by the edit form.
+>
+> **"Exactly one row must be TRUE" means exactly one *active* row.** The
+> check counts `is_standard_mix = TRUE AND active = TRUE`; a deactivated
+> standard mix does not count towards the one, because it is as unusable to
+> the engine as a missing one. Two rows may hold `is_standard_mix = TRUE` at
+> once as long as only one of them is `active`.
 
 ### `metric`
 

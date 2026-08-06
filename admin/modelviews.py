@@ -185,18 +185,24 @@ def _audited_session_maker(
             id(obj): _snapshot_before(obj) for obj in (*updated, *deleted)
         }
 
-        # Runs before the flush and before any audit row is added: a refused
-        # change must leave neither the row nor an entry claiming it
-        # happened. Raising here propagates out of before_commit, which
-        # SQLAlchemy turns into a rollback of the whole transaction.
-        view = _view_var.get()
-        if view is not None:
-            view.validate_before_commit(session)
-
         # Assigns primary keys to `created` rows so row_id/after below are
         # real values, not None. This is a flush, not a commit — it happens
         # inside the transaction that is about to commit, not a new one.
         session.flush()
+
+        # Must run *after* the flush above: this session carries
+        # autoflush=False (see _audited_session_maker's own docstring), so a
+        # query inside validate_before_commit would not see this write's own
+        # pending changes if it ran first - a staff member unticking the
+        # only is_standard_mix row would pass the guard against the
+        # database's pre-write state and commit anyway. Still runs before
+        # any audit row is added: raising here propagates out of
+        # before_commit, which SQLAlchemy turns into a rollback of the
+        # whole transaction - flush included - so a refused change leaves
+        # neither the row nor an entry claiming it happened.
+        view = _view_var.get()
+        if view is not None:
+            view.validate_before_commit(session)
 
         for obj in created:
             write_audit(
@@ -281,10 +287,15 @@ class AuditedModelView(ModelView):
     def validate_before_commit(self, session) -> None:
         """Refuse a change that would break an invariant, by raising.
 
-        Called from inside the transaction that is about to commit, before
-        the audit entries are written. Raising rolls the whole thing back —
-        the row change and its audit entry together — so a refused edit
-        leaves no trace claiming it happened.
+        Called from inside the transaction that is about to commit, after
+        this write has been flushed but before the audit entries are
+        written. The flush matters: this session carries autoflush=False,
+        so a query issued before it would not see this write's own pending
+        change and could pass a check against stale, pre-write data — the
+        exact bypass a rule checked too early is meant to close. Raising
+        rolls the whole thing back — the row change (flush included) and
+        its audit entry together — so a refused edit leaves no trace
+        claiming it happened.
 
         This is the only enforcement point a form cannot walk past.
         sqladmin's generic edit path is Query.update -> setattr -> commit and

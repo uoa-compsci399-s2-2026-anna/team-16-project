@@ -87,8 +87,35 @@ def test_the_details_page_shows_no_more_than_the_list(view):
     """column_details_list defaults to every mapped column, which leaked a
     password hash one stage earlier in this project. None of these tables
     holds a secret, but the habit is what keeps that true for E-5's factor
-    views, which are added by the same hand."""
-    assert view.column_details_list is not None
+    views, which are added by the same hand.
+
+    sqladmin's own unset default is `[]` (sqladmin/models.py), not `None` -
+    ModelView.get_details_columns() falls back to every mapped column
+    (`self._prop_names`) precisely when the list is falsy. `is not None` is
+    therefore a tautology: it passes for a view that never set the attribute
+    at all, which is the exact state that rendered a bcrypt hash and a
+    Fernet-encrypted TOTP secret on a details page one click from a list
+    that correctly redacted them. A real guard has to assert the list is
+    non-empty *and* that everything in it is actually a column or
+    relationship this model declares - not just "some list-like object
+    exists here", which `[]` already satisfies.
+    """
+    details = view.column_details_list
+    assert details, (
+        "column_details_list must not fall back to sqladmin's empty "
+        "default - an empty list renders every mapped column"
+    )
+
+    mapper = view.model.__mapper__
+    declared = {attr.key for attr in mapper.column_attrs} | {
+        rel.key for rel in mapper.relationships
+    }
+    shown = {col.key if hasattr(col, "key") else col for col in details}
+    assert shown <= declared, (
+        f"{view.__name__}.column_details_list names {shown - declared}, "
+        f"which {view.model.__name__} does not declare as a column or "
+        "relationship"
+    )
 
 
 # --- Fixtures ---------------------------------------------------------

@@ -112,6 +112,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(AuditLogAdmin)
 
+    from admin.accounts_view import StaffAdmin
+
+    admin.add_view(StaffAdmin)
+
     # The eleven taxonomy and factor views of contract §8.1 mount here in E-4
     # and E-5. They inherit AuditedModelView, so each arrives already audited.
 

@@ -71,6 +71,24 @@ class StaffAdmin(AuditedModelView, model=Staff):
     # deliberately out of scope here, see the task's "Carried Forward" note.
     can_create = False
     can_delete = False
+    # Contract §8.3: "This must be enforced in the service layer, not only
+    # in the form — sqladmin's form validation can be bypassed." The
+    # guarded actions below (issue_password_action, reset_mfa_action,
+    # deactivate_action) all route through admin.accounts, which runs
+    # _guard_admin_floor and bumps session_generation on every credential
+    # change. sqladmin's own generic edit form reaches display_name, role
+    # and is_active through a completely different path — Query.update ->
+    # plain setattr -> commit (sqladmin/_queries.py) — where none of that
+    # runs: an administrator could untick is_active on the second-to-last
+    # administrator through /admin/staff/edit/{pk} and the floor in
+    # accounts.py would never see it. Verified live: with two active
+    # administrators, that request succeeded (302, is_active=False,
+    # session_generation unchanged) before this line existed. Editing
+    # display_name through the form is not worth reopening that path — the
+    # alternative (overriding update_model to route through
+    # deactivate_staff/set_role and translate LastAdministratorsError) is
+    # more code for a field nobody needs to edit here.
+    can_edit = False
 
     # password_hash, mfa_secret_enc and mfa_last_counter are absent by
     # design. They are in write_audit's REDACTED_FIELDS for the trail; the
@@ -99,7 +117,9 @@ class StaffAdmin(AuditedModelView, model=Staff):
         OperationColumnFilter(Staff.role),
         OperationColumnFilter(Staff.is_active),
     ]
-    form_columns = [Staff.display_name, Staff.role, Staff.is_active]
+    # No form_columns: can_create and can_edit are both False above, so
+    # sqladmin never scaffolds a form for this view — every mutation goes
+    # through a guarded @action instead.
     column_default_sort = ("username", False)
 
     def is_visible(self, request) -> bool:

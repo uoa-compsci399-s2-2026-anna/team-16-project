@@ -312,7 +312,7 @@ async def test_a_staff_member_cannot_reach_the_account_screen(staff_client):
     administrators would hold administrator power by another route."""
     response = await staff_client.get("/admin/staff/list")
 
-    assert response.status_code in (302, 403)
+    assert response.status_code == 403
 
 
 async def test_an_administrator_can_reach_it(admin_client):
@@ -394,7 +394,7 @@ async def test_resetting_mfa_sends_the_account_back_through_enrolment(
         "/admin/staff/action/reset-mfa", params={"pks": enrolled_staff.id}
     )
 
-    assert response.status_code in (200, 302)
+    assert response.status_code == 302
     staff = get_staff(db_session, enrolled_staff.username)
     assert staff.mfa_enrolled is False
     assert staff.recovery_codes == []
@@ -414,7 +414,7 @@ async def test_deactivating_the_second_to_last_administrator_is_refused(
         "/admin/staff/action/deactivate", params={"pks": second.id}
     )
 
-    assert response.status_code in (200, 400)
+    assert response.status_code == 400
     assert "administrator" in response.text.lower()
     assert get_staff(db_session, second.username).is_active is True
 
@@ -444,3 +444,33 @@ async def test_a_staff_member_cannot_issue_a_password_via_the_action_url(
     )
 
     assert response.status_code == 403
+
+
+async def test_the_generic_edit_form_cannot_bypass_the_admin_floor(
+    admin_client, db_session, two_admins
+):
+    """Contract §8.3: "This must be enforced in the service layer, not only
+    in the form — sqladmin's form validation can be bypassed." The guarded
+    actions (deactivate_action, set_role) honour that by routing through
+    admin.accounts, which runs _guard_admin_floor. sqladmin's own generic
+    edit form reaches the very same two fields (role, is_active) through a
+    completely different path — Query.update -> plain setattr -> commit —
+    where _guard_admin_floor never runs at all.
+
+    is_active is rendered as an unchecked-means-False checkbox (a
+    non-nullable Boolean column, per sqladmin's forms.py conv_boolean), so
+    simply omitting it from the POST body is what an administrator
+    unticking the box in the browser sends. This drives that request
+    directly, with exactly two active administrators, and asserts the
+    second cannot be deactivated through it.
+    """
+    first, second = two_admins
+
+    response = await admin_client.post(
+        f"/admin/staff/edit/{second.id}",
+        data={"display_name": second.display_name, "role": second.role.value},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 403
+    assert get_staff(db_session, second.username).is_active is True

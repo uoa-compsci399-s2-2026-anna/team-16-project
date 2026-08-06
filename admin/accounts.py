@@ -14,6 +14,7 @@ import string
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from admin.audit import write_audit
 from admin.models import Staff, StaffRecoveryCode, StaffRole, utcnow
 from admin.security import (
     decrypt_totp_secret,
@@ -201,6 +202,41 @@ def set_password(session: Session, username: str, new_password: str) -> None:
     staff.password_hash = hash_password(new_password)
     staff.must_change_password = False
     staff.session_generation += 1
+
+
+def issue_password(session: Session, username: str, *, actor: str) -> str:
+    """Replace an account's password with a random one it must then change.
+
+    Contract §8.3, recovery layer L2: this is half of what an administrator
+    does to a compromised or locked-out colleague (reset_mfa is the other
+    half). The plaintext is returned to be read out once and handed over out
+    of band - there is no email system, deliberately.
+
+    Distinct from set_password, which clears must_change_password because the
+    user chose that password themselves. An issued password is a temporary
+    credential; the account is forced through the change page on next login.
+    Also bumps session_generation inline (rather than calling
+    bump_session_generation) since the row is already loaded here.
+    """
+    staff = get_staff(session, username)
+    password = generate_initial_password()
+    staff.password_hash = hash_password(password)
+    staff.must_change_password = True
+    staff.session_generation += 1
+    write_audit(
+        session,
+        actor=actor,
+        action="update",
+        table_name="staff",
+        row_id=staff.id,
+        before=None,
+        after={
+            "username": staff.username,
+            "must_change_password": True,
+            "password_hash": staff.password_hash,
+        },
+    )
+    return password
 
 
 def deactivate_staff(session: Session, username: str) -> None:

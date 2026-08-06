@@ -14,7 +14,7 @@ from admin.accounts import (
     create_staff,
     get_staff,
 )
-from admin.cli import cmd_create_staff, cmd_reset_mfa, cmd_rotate_key
+from admin.cli import cmd_create_staff, cmd_issue_password, cmd_reset_mfa, cmd_rotate_key
 from admin.models import StaffRole
 from admin.security import (
     TotpSecretUndecryptableError,
@@ -70,6 +70,18 @@ def test_reset_mfa_command_clears_the_enrolment(session):
     session.flush()
 
     assert get_staff(session, "alice").mfa_enrolled is False
+
+
+def test_issue_password_command_returns_a_working_password(session):
+    create_staff(session, username="alice", display_name="Alice")
+    session.flush()
+
+    password = cmd_issue_password(session, "alice")
+    session.flush()
+
+    staff = get_staff(session, "alice")
+    assert verify_password(password, staff.password_hash)
+    assert staff.must_change_password is True
 
 
 def test_rotate_key_reencrypts_every_enrolled_secret(session):

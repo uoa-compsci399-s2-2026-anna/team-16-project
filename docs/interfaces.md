@@ -25,6 +25,12 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v0.9 — 2026-08-07 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Added `issue_password()`. §8.3 named "issues a random password" as half of an eviction; no function performed it. | §8.3 |
+
 ### v0.8 — 2026-08-06 (raised by E, **affects B**)
 
 | # | Change | Section |
@@ -1238,9 +1244,7 @@ live sessions immediately, without server-side session storage.
 Note for B: this is enforced inside `require_staff()`, so the API layer
 inherits it with no change on your side.
 
-> ### ⚠️ Known limitation: no `issue_password()` for an administrator-issued reset
->
-> §8.3 names "issues a random password" as half of the L2 recovery path, but no service function performs it yet. `set_password` clears `must_change_password`, so a password an administrator hands to someone else leaves the account looking fully onboarded rather than forcing a change. `admin/accounts.py` needs an `issue_password()` that sets a random password **and** `must_change_password = True` — an administrator-issued password is in the same position as a bootstrap one and deserves the same forced change.
+`admin.accounts.issue_password(session, username, *, actor) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned once, to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
 
@@ -1268,6 +1272,7 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | --- | --- |
 | `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
+| `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
 | `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 

@@ -16,6 +16,7 @@ from decimal import Decimal
 from sqlalchemy import (
     DECIMAL, Boolean, ForeignKey, Integer, SmallInteger, String, Text,
 )
+from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import Base
@@ -126,8 +127,15 @@ class Metric(Base):
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     unit: Mapped[str] = mapped_column(String(32), nullable=False)
     display_unit: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    # Contract §2.1 specifies TINYINT: display_precision only ever holds a
+    # small decimal-places count (0-6). SmallInteger elsewhere in this
+    # module so the type stays portable; here it is pinned to MySQL's
+    # TINYINT via with_variant, the same shape admin/models.py uses for
+    # mfa_secret_enc's VARBINARY, so the model stays declarative about its
+    # MySQL type rather than hoping a generic type maps to the right one.
     display_precision: Mapped[int] = mapped_column(
-        SmallInteger, nullable=False, default=2, server_default="2"
+        SmallInteger().with_variant(mysql.TINYINT(), "mysql"),
+        nullable=False, default=2, server_default="2",
     )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
                                             server_default="0")

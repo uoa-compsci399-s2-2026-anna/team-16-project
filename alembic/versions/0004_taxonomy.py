@@ -2,14 +2,14 @@
 
 Revision ID: 0004
 Revises: 0003
-Create Date: 2026-08-07 07:32:31.498305
+Create Date: 2026-08-07 07:42:06.768207
 
 """
 from typing import Sequence, Union
 
 from alembic import op
 import sqlalchemy as sa
-
+from sqlalchemy.dialects import mysql
 
 # revision identifiers, used by Alembic.
 revision: str = '0004'
@@ -47,7 +47,7 @@ def upgrade() -> None:
     sa.Column('name', sa.String(length=128), nullable=False),
     sa.Column('unit', sa.String(length=32), nullable=False),
     sa.Column('display_unit', sa.String(length=32), nullable=True),
-    sa.Column('display_precision', sa.SmallInteger(), server_default='2', nullable=False),
+    sa.Column('display_precision', sa.SmallInteger().with_variant(mysql.TINYINT(), 'mysql'), server_default='2', nullable=False),
     sa.Column('sort_order', sa.Integer(), server_default='0', nullable=False),
     sa.Column('active', sa.Boolean(), server_default='1', nullable=False),
     sa.PrimaryKeyConstraint('id'),

@@ -9,6 +9,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     CHAR,
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
@@ -92,3 +93,18 @@ class StaffRecoveryCode(Base):
     )
 
     staff: Mapped[Staff] = relationship(back_populates="recovery_codes")
+
+
+class AuditLog(Base):
+    """Contract §2.3. Written only by admin/audit.py's write_audit()."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    before_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

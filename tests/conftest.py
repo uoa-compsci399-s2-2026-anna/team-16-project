@@ -25,6 +25,19 @@ TEST_URL = f"mysql+pymysql://root:devroot@127.0.0.1:3307/{TEST_DB}"
 
 
 @pytest.fixture(scope="session")
+def database_url_root() -> str:
+    """The configured database URL, used to create and drop a scratch database.
+
+    Read from settings rather than hardcoded so this follows whatever the
+    developer's .env points at — the migration test creates its own database
+    beside it and drops it again, so it never touches the real one.
+    """
+    from admin.config import load_settings
+
+    return load_settings().database_url
+
+
+@pytest.fixture(scope="session")
 def engine():
     root = create_engine(ROOT_URL, future=True, isolation_level="AUTOCOMMIT")
     with root.connect() as conn:

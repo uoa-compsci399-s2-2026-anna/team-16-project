@@ -26,15 +26,17 @@ TEST_URL = f"mysql+pymysql://root:devroot@127.0.0.1:3307/{TEST_DB}"
 
 @pytest.fixture(scope="session")
 def database_url_root() -> str:
-    """The configured database URL, used to create and drop a scratch database.
+    """The root database URL, used to create and drop a scratch database.
 
-    Read from settings rather than hardcoded so this follows whatever the
-    developer's .env points at — the migration test creates its own database
-    beside it and drops it again, so it never touches the real one.
+    Reuses the same root credentials as the `engine` fixture below rather
+    than reading the application's DATABASE_URL: the `kaicalc` MySQL user
+    that setting resolves to is only granted privileges on the `kaicalc`
+    database (MYSQL_USER/MYSQL_DATABASE in docker-compose.yml), not on an
+    arbitrary scratch database. A fixture that tried to CREATE/DROP one as
+    that user would fail with Access denied on a fresh `docker compose up
+    -d`, before ever reaching Alembic.
     """
-    from admin.config import load_settings
-
-    return load_settings().database_url
+    return ROOT_URL
 
 
 @pytest.fixture(scope="session")

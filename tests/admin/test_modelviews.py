@@ -11,7 +11,7 @@ from sqlalchemy.orm import sessionmaker
 
 from admin.accounts import create_staff
 from admin.auth import SESSION_KEY
-from admin.models import AuditLog, Staff
+from admin.models import AuditLog, Staff, StaffRecoveryCode
 from admin.modelviews import AuditLogAdmin, AuditedModelView
 
 pytestmark = pytest.mark.db
@@ -49,15 +49,22 @@ def request_of():
 def audited_view(session):
     """An AuditedModelView over Staff, sharing `session`'s connection.
 
-    A genuine sessionmaker, not a fake - AuditedModelView.__init__ reads
-    `.kw["bind"]` off whatever sqladmin assigned to build its own
-    listener-carrying sessionmaker (see admin/modelviews.py), and needs a
-    real bind to attach to. Bound to `session.get_bind()` - the same
-    Connection `session` itself uses - so that the audited write (via
-    SQLAlchemy's default `conditional_savepoint` join mode) becomes a nested
-    SAVEPOINT inside the fixture's own outer transaction: visible to
-    `session`'s own queries in the tests below, and undone along with
-    everything else when that outer transaction rolls back at teardown.
+    A genuine sessionmaker, not a fake - AuditedModelView.__init__ reads the
+    whole `.kw` of whatever sqladmin assigned to build its own
+    listener-carrying sessionmaker (see admin/modelviews.py's
+    _audited_session_maker), and needs a real sessionmaker to copy from.
+    Bound to `session.get_bind()` - the same Connection `session` itself
+    uses - so that the audited write (via SQLAlchemy's default
+    `conditional_savepoint` join mode) becomes a nested SAVEPOINT inside the
+    fixture's own outer transaction: visible to `session`'s own queries in
+    the tests below, and undone along with everything else when that outer
+    transaction rolls back at teardown.
+
+    `autoflush=False` mirrors production: sqladmin's own `Admin.__init__`
+    (sqladmin/application.py) configures the app's real, shared sessionmaker
+    with it, and `_audited_session_maker` is specifically relied on to carry
+    that setting into the wrapped one it builds - a fixture that left
+    autoflush at SQLAlchemy's default would not exercise that at all.
 
     The class attribute is assigned before construction, mirroring
     sqladmin's own registration order (Admin.add_model_view sets
@@ -69,7 +76,8 @@ def audited_view(session):
         pass
 
     StaffTestView.session_maker = sessionmaker(
-        bind=session.get_bind(), future=True, expire_on_commit=False
+        bind=session.get_bind(), future=True, expire_on_commit=False,
+        autoflush=False,
     )
     return StaffTestView()
 
@@ -81,6 +89,24 @@ def existing_row(session):
     )
     session.flush()
     return staff
+
+
+@pytest.fixture()
+def existing_row_with_recovery_code(session):
+    """A Staff row plus one already-flushed StaffRecoveryCode belonging to it.
+
+    Lets a test submit a real ONETOMANY relationship field (recovery_codes)
+    the way sqladmin's own attribute-setting code handles one - see
+    test_a_relation_touching_update_still_writes_an_audit_row.
+    """
+    staff, _ = create_staff(
+        session, username="withcode", display_name="Original", actor="setup"
+    )
+    session.flush()
+    code = StaffRecoveryCode(staff_id=staff.id, code_hash="a" * 64)
+    session.add(code)
+    session.flush()
+    return staff, code
 
 
 def test_the_audit_log_view_permits_no_writes():
@@ -175,3 +201,40 @@ def test_a_failed_write_leaves_no_audit_row(session, audited_view, request_of):
         ))
 
     assert session.scalar(select(AuditLog)) is None
+
+
+def test_a_relation_touching_update_still_writes_an_audit_row(
+    session, audited_view, existing_row_with_recovery_code, request_of
+):
+    """Regression test: autoflush must stay off on the audited sessionmaker.
+
+    sqladmin's own attribute-setting code (`_set_attributes_sync` in
+    sqladmin/_queries.py) issues a `session.execute(select(...))` for every
+    relationship field a submitted form touches - here, `recovery_codes`, a
+    real ONETOMANY relationship on Staff. `display_name` is set first in
+    `data` below, exactly as it would be from a real edit form whose fields
+    happen to be declared in this order.
+
+    If the audited sessionmaker's autoflush is left at SQLAlchemy's default
+    (True) rather than carried over from the real one, that `SELECT` for
+    `recovery_codes` silently flushes the pending `display_name` change
+    first - before the before_commit listener ever runs. Once flushed, the
+    object is no longer "dirty" and its attribute history is gone, so the
+    listener's `session.dirty` scan finds nothing for Staff and writes no
+    audit row at all - not a wrong one, none. This is what caught it: the
+    tests above never touch a relationship field, so they cannot see this
+    failure mode.
+    """
+    staff, code = existing_row_with_recovery_code
+
+    run(audited_view.update_model(
+        request_of(actor="kim"),
+        pk=staff.id,
+        data={"display_name": "Renamed", "recovery_codes": [code.id]},
+    ))
+    session.flush()
+
+    entry = session.scalar(select(AuditLog).where(AuditLog.action == "update"))
+    assert entry is not None, "a relation-touching update must still be audited"
+    assert entry.before_json["display_name"] == "Original"
+    assert entry.after_json["display_name"] == "Renamed"

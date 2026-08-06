@@ -92,31 +92,51 @@ def _snapshot_before(row: Any) -> dict:
 
 
 def _audited_session_maker(
-    bind: Any, model: type, table_name: str
+    real_maker: sessionmaker, model: type, table_name: str
 ) -> sessionmaker[Session]:
-    """A sessionmaker, bound to ``bind``, whose sessions audit their own writes.
+    """A sessionmaker, configured like ``real_maker``, whose sessions audit
+    their own writes.
 
-    A brand new sessionmaker object — never the one sqladmin assigned to this
-    view's class attribute, and never touched via that object's own
-    ``.configure()`` or a listener registered on the ``Session`` class
-    globally. Either of those would fire this listener on every commit
-    anywhere in the app that happens to share the engine: the bootstrap step,
-    the API layer, another view's session, all indistinguishable from a
-    genuine audited write.
+    A brand new sessionmaker object — never ``real_maker`` itself, and never
+    touched via its own ``.configure()`` or a listener registered on the
+    ``Session`` class globally. Either of those would fire this listener on
+    every commit anywhere in the app that happens to share the engine: the
+    bootstrap step, the API layer, another view's session, all
+    indistinguishable from a genuine audited write.
+
+    Built from ``real_maker.kw`` — every option it was constructed or later
+    ``.configure()``'d with, not just ``bind`` — so nothing sqladmin or this
+    project's own composition root set on it is silently dropped. This is
+    what carries over ``autoflush=False``: ``Admin.__init__``
+    (sqladmin/application.py) configures the app's shared sessionmaker with
+    it deliberately, and sqladmin's own ``_set_attributes_sync`` executes a
+    ``SELECT`` for every relationship field a form submits. With autoflush
+    left at SQLAlchemy's default (True), that ``SELECT`` silently flushes
+    whatever was already ``setattr``'d earlier in the same call *before*
+    ``before_commit`` ever runs — the object is clean and its attribute
+    history is gone by the time the listener below looks at it, so a
+    relation-touching update writes no audit row at all. Rebuilding this
+    sessionmaker from one hardcoded attribute rather than the full ``.kw``
+    reintroduces that bug the moment either sessionmaker's configuration
+    changes out from under it.
 
     SQLAlchemy's event system scopes a listener registered on one
     ``sessionmaker`` *instance* to sessions produced by calling that
     instance — confirmed directly (two sessionmakers bound to the same
     engine, a listener attached to only one, committing through the other
-    never fires it). ``AuditedModelView.__init__`` assigns the sessionmaker
-    this function returns to ``self.session_maker`` as an *instance*
-    attribute (shadowing the class attribute sqladmin's ``Admin.add_model_view``
-    set moments earlier), and each ``AuditedModelView`` subclass gets exactly
-    one instance for the lifetime of the app (sqladmin constructs it once, at
-    registration) — so the listener this function installs can only ever
-    fire for sessions this one view instance opened.
+    never fires it) and confirmed against SQLAlchemy's own source:
+    ``sessionmaker.__init__`` builds a private, anonymous ``Session``
+    subclass per instance specifically so events can bind to one instance's
+    sessions without touching another's. ``AuditedModelView.__init__``
+    assigns the sessionmaker this function returns to ``self.session_maker``
+    as an *instance* attribute (shadowing the class attribute sqladmin's
+    ``Admin.add_model_view`` set moments earlier), and each
+    ``AuditedModelView`` subclass gets exactly one instance for the lifetime
+    of the app (sqladmin constructs it once, at registration) — so the
+    listener this function installs can only ever fire for sessions this one
+    view instance opened.
     """
-    audited = sessionmaker(bind=bind, future=True, expire_on_commit=False)
+    audited = sessionmaker(**real_maker.kw)
 
     @event.listens_for(audited, "before_commit")
     def _write_audit_entries(session: Session) -> None:
@@ -187,7 +207,7 @@ class AuditedModelView(ModelView):
         # listener see every write this view makes without ever touching
         # that shared object - see its docstring for the full argument.
         self.session_maker = _audited_session_maker(
-            self.session_maker.kw["bind"], self.model, self._table_name()
+            self.session_maker, self.model, self._table_name()
         )
 
     def _table_name(self) -> str:

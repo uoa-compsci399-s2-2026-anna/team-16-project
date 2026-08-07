@@ -12,6 +12,7 @@ from starlette.staticfiles import StaticFiles
 
 from admin.backend import AdminAuth
 from admin.bootstrap import ensure_bootstrap_admins
+from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
 from admin.runtime import Runtime
@@ -100,6 +101,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_factory=session_factory,
         throttle=app.state.throttle,
         settings=settings,
+        calc_client=HttpCalculateClient(base_url=settings.api_base_url),
     )
 
     from admin.views import ChangePasswordView, EnrolView, VerifyView

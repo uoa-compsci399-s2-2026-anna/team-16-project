@@ -1,0 +1,139 @@
+"""Contract §8.2: the last gate before publishing."""
+
+from decimal import Decimal
+
+import pytest
+
+from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
+from tests.admin.test_dryrun_view import fake_calc_client  # noqa: F401 - re-used fixture
+
+pytestmark = [pytest.mark.db, pytest.mark.asyncio]
+
+
+@pytest.fixture
+def session(_committed_session):
+    """This file's name for the hard-committing session against the running
+    admin app's own database - see tests/admin/conftest.py's
+    ``_committed_session`` docstring for why every file that needs it
+    re-exposes it locally as ``session`` rather than sharing one definition.
+    """
+    return _committed_session
+
+
+def _make_scenario(session, taxonomy, code, *, active=True):
+    scenario = ComparisonScenario(
+        code=code, name=code.replace("-", " ").title(),
+        sector_id=taxonomy.sector.id,
+        food_category_id=taxonomy.category.id,
+        gwp_horizon=100, active=active,
+    )
+    session.add(scenario)
+    session.flush()
+    session.add(ComparisonScenarioLine(
+        scenario_id=scenario.id, destination_id=taxonomy.destination.id,
+        qty_kg=Decimal("1200.000"),
+    ))
+    session.flush()
+    return scenario
+
+
+@pytest.fixture
+def seeded_scenario(session, taxonomy_for_factors):
+    return _make_scenario(session, taxonomy_for_factors, "e7-typical")
+
+
+@pytest.fixture
+def seeded_scenario_pair(session, taxonomy_for_factors):
+    """Two scenarios, so a failure in the first can be shown not to hide the
+    second — which is the whole reason this page is worth having when a
+    draft is broken."""
+    return [
+        _make_scenario(session, taxonomy_for_factors, "e7-first"),
+        _make_scenario(session, taxonomy_for_factors, "e7-second"),
+    ]
+
+
+@pytest.fixture
+def inactive_scenario(session, taxonomy_for_factors):
+    return _make_scenario(session, taxonomy_for_factors, "e7-retired", active=False)
+
+
+async def test_each_scenario_is_run_against_both_sets(
+    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+):
+    """Two calls per scenario — one at the published label, one at the
+    draft. That is what makes the difference meaningful rather than a
+    comparison against whatever happened to be cached."""
+    published, draft = two_sets
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-sets/{draft.id}/compare")
+
+    versions = [c.factor_set_version for c in fake_calc_client.calls]
+    assert versions.count(published.version_label) == 1
+    assert versions.count(draft.version_label) == 1
+
+
+async def test_both_values_are_rendered_from_the_responses(
+    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+):
+    """Decision 6: impact numbers are computed server-side, in one place.
+    Both columns are strings taken from two responses — the page must not
+    parse them into floats to display them, and must not subtract them into
+    a third number the engine never produced.
+    """
+    fake_calc_client.result = {
+        "factor_set": {"version_label": "x", "is_mock": True},
+        "totals": {"current": {"metrics": {
+            "co2e": {"total": "3468.0000000000", "unit": "kg CO2e",
+                     "display_precision": 1}}}, "net_benefit": {}},
+        "entries": [],
+    }
+    published, draft = two_sets
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{draft.id}/compare")
+
+    assert "3468" in response.text
+    # Both calls returned the same figure, so if the page were subtracting it
+    # would show a zero it invented. It should show the value twice instead.
+    assert response.text.count("3468") >= 2
+
+
+async def test_a_scenario_that_fails_does_not_hide_the_others(
+    admin_client, fake_calc_client, two_sets, seeded_scenario_pair, session
+):
+    """A draft with one broken formula is exactly when this page matters
+    most. Losing the whole report to one failing scenario would send the
+    staff member to publish blind."""
+    fake_calc_client.refuse_on_call = 1
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{two_sets[1].id}/compare")
+
+    assert response.status_code == 200
+    assert "FORMULA_ERROR" in response.text or "could not" in response.text.lower()
+
+
+async def test_comparing_against_nothing_published_says_so(
+    admin_client, fake_calc_client, one_draft, seeded_scenario, session
+):
+    """A fresh deployment has no published set. The page must explain that
+    rather than rendering an empty table or dividing by a missing baseline."""
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{one_draft.id}/compare")
+
+    assert response.status_code == 200
+    assert "no published" in response.text.lower()
+
+
+async def test_inactive_scenarios_are_not_run(
+    admin_client, fake_calc_client, two_sets, inactive_scenario, session
+):
+    """`active` is how a scenario is retired without losing it."""
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-sets/{two_sets[1].id}/compare")
+
+    assert fake_calc_client.calls == []

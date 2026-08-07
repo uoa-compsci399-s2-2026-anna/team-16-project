@@ -886,3 +886,26 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
                 return await self._refused(request, str(exc))
             session.commit()
         return RedirectResponse(self._list_url(request), status_code=302)
+
+    @action(
+        name="compare",
+        label="Compare with published",
+    )
+    async def compare_action(self, request):
+        """Contract §8.2: the last gate before publishing. Redirects to
+        `CompareView.compare` (admin/dryrun_views.py) for the selected row -
+        a staff member about to publish should not have to type that URL by
+        hand.
+
+        No `confirmation_message`, unlike the four actions above: this is a
+        read-only report, not a lifecycle action, and writes nothing for a
+        confirmation step to protect against.
+        """
+        self._require_accessible(request)
+        try:
+            pk = self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+        return RedirectResponse(
+            request.url_for("view-compare", factor_set_id=pk), status_code=302
+        )

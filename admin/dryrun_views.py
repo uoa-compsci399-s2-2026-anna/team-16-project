@@ -12,6 +12,17 @@ given their own message on the result page. B's endpoint is not deployed for
 most of this project's life, and the two failure modes must never be shown
 to staff as if they were the same thing: one says the engine looked at the
 formula and objected, the other says nothing looked at it at all.
+
+``CompareView`` (``/admin/factor-sets/{factor_set_id}/compare``, contract
+§8.2) lives in this same module because it is built the same way: it never
+calculates anything itself, only asks ``runtime.calc_client`` twice per
+scenario - once at the published set's ``version_label``, once at the
+target draft's - and renders whatever came back. Same v1.1 request shape as
+``_request_body`` above, same two exception types, same reason for both.
+See ``CompareView``'s own docstring for what is different about it: several
+scenarios instead of one, and the question of what "the change" means when
+there are two separate calls instead of one current-versus-alternative
+request.
 """
 
 from pathlib import Path
@@ -23,6 +34,7 @@ from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
 from admin.calc_client import CalculateRefused, CalculateUnavailable
+from admin.comparison_models import ComparisonScenario
 from admin.factor_models import FactorSet, FactorSetStatus
 from admin.runtime import get_runtime
 from admin.taxonomy_models import Destination, FoodCategory, Sector
@@ -162,5 +174,238 @@ class DryRunView(BaseView):
                 "code": None,
                 "message": None,
                 "details": None,
+            },
+        )
+
+
+def _scenario_request_body(scenario: ComparisonScenario) -> dict:
+    """One contract v1.1 ``entries`` request built from a saved
+    ``ComparisonScenario``, the same shape ``_request_body`` above builds by
+    hand from a submitted form.
+
+    Every line the scenario carries becomes one ``current`` line within a
+    single entry - a scenario is a saved *request*, not a saved single line
+    the way ``/admin/try``'s form is (see ``admin.comparison_models
+    .ComparisonScenario``'s own docstring on why it carries no
+    current/alternative split of its own).
+    """
+    return {
+        "token": None,
+        "gwp_horizon": scenario.gwp_horizon,
+        "entries": [
+            {
+                "sector": scenario.sector.code,
+                "food_category": (
+                    scenario.food_category.code if scenario.food_category else None
+                ),
+                "current": [
+                    {"destination": line.destination.code, "qty_kg": str(line.qty_kg)}
+                    for line in scenario.lines
+                ],
+                "alternative": None,
+            }
+        ],
+    }
+
+
+def _metrics_of(result: dict | None) -> dict:
+    """The ``totals.current.metrics`` map out of one ``/calculate``
+    response, or ``{}`` for any shape that does not carry one - including
+    ``None``, which is what a refused call leaves this function looking at.
+    """
+    if not result:
+        return {}
+    totals = result.get("totals") or {}
+    current = totals.get("current") or {}
+    return current.get("metrics") or {}
+
+
+def _run_call(calc_client, body: dict, cookies: dict, factor_set_version: str) -> tuple:
+    """Run one dry run; turn a refusal into data for that call's own row.
+
+    ``CalculateRefused`` is caught here because it is a per-row condition -
+    the engine looked at *this* factor set's formulas against *this*
+    scenario and objected, which says nothing about the other call for the
+    same scenario or about any other scenario.
+
+    ``CalculateUnavailable`` is deliberately **not** caught here - see this
+    module's own docstring and ``CompareView``'s below. An absent service
+    is page-level, not per-row: it is left to propagate out of the whole
+    scenario loop in ``CompareView.compare``, so one outage reads as one
+    message rather than as the same "refused" line repeated for every
+    scenario the loop never got to before the connection failed.
+    """
+    try:
+        result = calc_client.dry_run(
+            body, cookies=cookies, factor_set_version=factor_set_version
+        )
+        return result, None
+    except CalculateRefused as exc:
+        return None, {"code": exc.code, "message": exc.message, "details": exc.details}
+
+
+def _metric_rows(published_result: dict | None, draft_result: dict | None) -> list[dict]:
+    """Both totals, side by side, per metric present in either response.
+
+    No subtraction happens here or in the template that renders this -
+    see ``CompareView``'s own docstring for why. A metric absent from one
+    side (typically because that side's call was refused, so
+    ``published_result``/``draft_result`` is ``None``) renders as ``None``
+    on that side rather than as a zero this function invented.
+    """
+    published_metrics = _metrics_of(published_result)
+    draft_metrics = _metrics_of(draft_result)
+    codes = sorted(set(published_metrics) | set(draft_metrics))
+    rows = []
+    for code in codes:
+        published = published_metrics.get(code)
+        draft = draft_metrics.get(code)
+        rows.append({
+            "code": code,
+            "published_total": published["total"] if published else None,
+            "published_unit": published["unit"] if published else None,
+            "draft_total": draft["total"] if draft else None,
+            "draft_unit": draft["unit"] if draft else None,
+        })
+    return rows
+
+
+class CompareView(BaseView):
+    """``/admin/factor-sets/{factor_set_id}/compare`` - contract §8.2's
+    "last gate before publishing": every active ``ComparisonScenario`` run
+    against both the published factor set and the one at ``factor_set_id``,
+    published value and draft value shown side by side.
+
+    **Does not compute a difference.** Decision 6 puts every impact number
+    server-side, in exactly one place - the engine, behind ``POST
+    /api/v1/calculate``. That endpoint returns ``net_benefit`` for a
+    current-versus-alternative comparison *within one call*; it has no
+    concept of a difference between two separate calls made at two
+    different ``factor_set_version``s, which is what this page would need.
+    Subtracting the two response strings here would put a number in front
+    of staff that no server-side calculation ever produced - exactly what
+    Decision 6 forbids. So the table shows both values, plainly labelled,
+    and the page says in words that no difference is shown. Whether B's
+    endpoint should grow a two-version diff is a contract question for B
+    and the project owner (raised in this task's own report), not
+    something to settle with a ``-`` in this template.
+
+    **One scenario's refusal does not hide the rest.** ``_run_call`` above
+    catches ``CalculateRefused`` per call and turns it into that row's own
+    error; the loop below keeps going. A draft with one bad formula is
+    exactly when a staff member needs to see every *other* scenario still
+    compute cleanly before deciding whether to publish anyway.
+
+    **An unreachable service is a page-level message, not a per-row one.**
+    ``CalculateUnavailable`` is left to propagate out of ``_run_call`` and
+    out of the scenario loop below, caught once here - the same distinction
+    ``DryRunView.try_scenario`` draws between "the engine looked at this
+    and objected" and "nothing looked at it at all", extended to a page
+    that makes several calls instead of one.
+
+    **No published factor set is not an error.** Checked before any
+    scenario runs, and rendered as its own outcome rather than an empty
+    table or a comparison against a missing baseline - contract §9's
+    NO_PUBLISHED_FACTOR_SET (503) is the API's own version of the same
+    designed response to a fresh deployment.
+
+    Not in the top-level menu (``is_visible`` below) - the route needs a
+    ``factor_set_id`` a bare menu entry cannot supply. Reached instead from
+    ``FactorSetAdmin``'s own ``compare`` row action (admin/factor_views.py).
+    """
+
+    name = "Compare with published"
+    icon = "fa-solid fa-code-compare"
+
+    def is_visible(self, request: Request) -> bool:
+        return False
+
+    @expose("/factor-sets/{factor_set_id:int}/compare", methods=["GET"])
+    async def compare(self, request: Request) -> Response:
+        runtime = get_runtime(request)
+        factor_set_id = request.path_params["factor_set_id"]
+
+        with runtime.session_factory() as db:
+            target = db.get(FactorSet, factor_set_id)
+            if target is None:
+                return templates.TemplateResponse(
+                    request,
+                    "brand/compare.html",
+                    {
+                        "outcome": "missing_target",
+                        "factor_set_id": factor_set_id,
+                        "target": None,
+                        "published": None,
+                        "rows": [],
+                    },
+                    status_code=404,
+                )
+
+            published = db.execute(
+                select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
+            ).scalars().first()
+
+            if published is None:
+                return templates.TemplateResponse(
+                    request,
+                    "brand/compare.html",
+                    {
+                        "outcome": "no_published",
+                        "target": target,
+                        "published": None,
+                        "rows": [],
+                    },
+                )
+
+            scenarios = db.execute(
+                select(ComparisonScenario)
+                .where(ComparisonScenario.active.is_(True))
+                .order_by(ComparisonScenario.sort_order)
+            ).scalars().all()
+
+            # Built while the session is still open: each scenario's
+            # sector/food_category/line/destination relationships are
+            # touched here, not after the `with` block closes it.
+            bodies = [
+                (scenario, _scenario_request_body(scenario)) for scenario in scenarios
+            ]
+
+        cookies = dict(request.cookies)
+        rows = []
+        try:
+            for scenario, body in bodies:
+                published_result, published_error = _run_call(
+                    runtime.calc_client, body, cookies, published.version_label
+                )
+                draft_result, draft_error = _run_call(
+                    runtime.calc_client, body, cookies, target.version_label
+                )
+                rows.append({
+                    "scenario": scenario,
+                    "published_error": published_error,
+                    "draft_error": draft_error,
+                    "metrics": _metric_rows(published_result, draft_result),
+                })
+        except CalculateUnavailable as exc:
+            return templates.TemplateResponse(
+                request,
+                "brand/compare.html",
+                {
+                    "outcome": "unavailable",
+                    "message": str(exc),
+                    "target": target,
+                    "published": published,
+                    "rows": [],
+                },
+            )
+
+        return templates.TemplateResponse(
+            request,
+            "brand/compare.html",
+            {
+                "outcome": "ok",
+                "target": target,
+                "published": published,
+                "rows": rows,
             },
         )

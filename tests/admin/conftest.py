@@ -265,6 +265,14 @@ def _committed_session(admin_app):
         yield db
     finally:
         db.close()
+        # e7- rows first: `comparison_scenario_line` holds foreign keys into
+        # the taxonomy rows (`destination`, `sector`, `food_category`) that
+        # `taxonomy_for_factors` commits with the "e6_"-prefixed codes
+        # `_cleanup_e6_rows` deletes below - deleting those out from under a
+        # still-referencing comparison_scenario_line fails with a foreign
+        # key constraint error, the same way it would for any other child
+        # row still pointing at a taxonomy id about to disappear.
+        _cleanup_e7_rows(admin_app)
         _cleanup_e6_rows(admin_app)
 
 
@@ -346,6 +354,46 @@ def _cleanup_e6_rows(admin_app) -> None:
                 text("DELETE FROM destination_group WHERE id IN :ids")
                 .bindparams(sa_bindparam("ids", expanding=True)),
                 {"ids": group_ids},
+            )
+        db.commit()
+
+
+def _cleanup_e7_rows(admin_app) -> None:
+    """Remove every `comparison_scenario` (and, by `ondelete="CASCADE"`,
+    every `comparison_scenario_line`) row a test in this directory
+    hard-committed with an "e7-"-prefixed `code` - `seeded_scenario`,
+    `seeded_scenario_pair` and `inactive_scenario` in
+    tests/admin/test_compare_view.py.
+
+    Same reasoning as `_cleanup_e6_rows` just above: folded into
+    `_committed_session`'s own teardown so every consumer of `two_sets` /
+    `one_draft` gets this for free, rather than each new file that adds an
+    "e7-..." scenario needing to remember its own cleanup. Matched by
+    prefix, not a fixed list, for the same reason - a fixed list is exactly
+    the kind of thing a second consumer forgets to extend.
+    """
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        scenario_ids = db.execute(
+            text("SELECT id FROM comparison_scenario WHERE code LIKE 'e7-%'")
+        ).scalars().all()
+        if scenario_ids:
+            db.execute(
+                text("DELETE FROM audit_log WHERE table_name = 'comparison_scenario_line' "
+                     "AND row_id IN (SELECT id FROM comparison_scenario_line "
+                     "WHERE scenario_id IN :ids)")
+                .bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": scenario_ids},
+            )
+            db.execute(
+                text("DELETE FROM audit_log WHERE table_name = 'comparison_scenario' "
+                     "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": scenario_ids},
+            )
+            db.execute(
+                text("DELETE FROM comparison_scenario WHERE id IN :ids")
+                .bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": scenario_ids},
             )
         db.commit()
 

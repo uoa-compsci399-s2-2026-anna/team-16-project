@@ -1,0 +1,99 @@
+{% extends "brand/base.html" %}
+{% block title %}Compare with published{% endblock %}
+{% block content %}
+  <h1>Compare with published</h1>
+
+  {% if outcome == "missing_target" %}
+    <div class="notice notice--error">
+      <strong>No such factor set.</strong> There is nothing at id
+      {{ factor_set_id }} to compare.
+    </div>
+  {% elif outcome == "no_published" %}
+    <div class="notice notice--error">
+      <strong>No published factor set exists.</strong> This is a fresh
+      deployment's normal state, not a fault — there is nothing yet to
+      compare <code>{{ target.version_label }}</code> against. Publish a
+      first set before this page has anything to show.
+    </div>
+  {% elif outcome == "unavailable" %}
+    <div class="notice notice--error">
+      <strong>The calculation service is not reachable.</strong> This is
+      not a problem with either factor set — the endpoint is absent or
+      broken. Try again once it is back.
+    </div>
+    <p class="muted">{{ message }}</p>
+  {% else %}
+    <p class="muted">
+      Comparing <strong>{{ target.version_label }}</strong> (this draft)
+      against <strong>{{ published.version_label }}</strong> (published),
+      one standard scenario at a time.
+    </p>
+    <div class="notice notice--warning">
+      Both columns below are shown exactly as the calculation service
+      returned them. <strong>This page does not compute a difference
+      between the two.</strong> The API returns <code>net_benefit</code>
+      only for a current-versus-alternative comparison made within one
+      call — it does not currently return a difference between two
+      factor-set versions. Compare the published and draft values
+      yourself.
+    </div>
+
+    {% if not rows %}
+      <p class="muted">No active comparison scenarios are configured.</p>
+    {% endif %}
+
+    {% for row in rows %}
+      <h2>{{ row.scenario.name }} <span class="muted">({{ row.scenario.code }})</span></h2>
+
+      {% if row.published_error %}
+        <div class="notice notice--error">
+          Published run refused — <strong>{{ row.published_error.code }}</strong>:
+          {{ row.published_error.message }}
+        </div>
+      {% endif %}
+      {% if row.draft_error %}
+        <div class="notice notice--error">
+          Draft run refused — <strong>{{ row.draft_error.code }}</strong>:
+          {{ row.draft_error.message }}
+        </div>
+      {% endif %}
+
+      {% if row.metrics %}
+        <table>
+          <thead>
+            <tr>
+              <th>Metric</th>
+              <th>Published ({{ published.version_label }})</th>
+              <th>Draft ({{ target.version_label }})</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for metric in row.metrics %}
+              <tr>
+                <td>{{ metric.code }}</td>
+                <td>
+                  {% if metric.published_total is not none %}
+                    {{ metric.published_total }} {{ metric.published_unit }}
+                  {% else %}
+                    could not be computed
+                  {% endif %}
+                </td>
+                <td>
+                  {% if metric.draft_total is not none %}
+                    {{ metric.draft_total }} {{ metric.draft_unit }}
+                  {% else %}
+                    could not be computed
+                  {% endif %}
+                </td>
+              </tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      {% elif not row.published_error and not row.draft_error %}
+        <p class="muted">Neither run returned any metrics.</p>
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+
+  <p><a href="/admin/try">Try a single scenario</a></p>
+{% endblock %}

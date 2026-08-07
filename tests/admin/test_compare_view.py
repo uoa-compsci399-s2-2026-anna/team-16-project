@@ -185,6 +185,25 @@ async def test_a_mock_factor_set_shows_the_placeholder_banner(
     assert "Placeholder data" in response.text
 
 
+async def test_a_malformed_metrics_shape_does_not_500(
+    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+):
+    """§8.2's endpoint is not deployed and its exact response shape is
+    unconfirmed - `metrics` coming back as a scalar, or a per-metric entry
+    coming back as something other than a dict, must read as "could not be
+    computed" rather than crash `_metric_rows`/`_metrics_of` with a
+    TypeError/AttributeError that turns into a 500."""
+    fake_calc_client.result = {
+        "totals": {"current": {"metrics": "not-a-mapping"}}, "net_benefit": {},
+        "entries": [],
+    }
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{two_sets[1].id}/compare")
+
+    assert response.status_code == 200
+
+
 async def test_comparing_against_nothing_published_says_so(
     admin_client, fake_calc_client, one_draft, seeded_scenario, session
 ):

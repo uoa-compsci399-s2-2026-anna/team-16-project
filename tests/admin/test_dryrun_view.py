@@ -194,6 +194,32 @@ async def test_the_result_page_shows_what_the_api_returned(
     assert "3468" in response.text
 
 
+async def test_a_malformed_metrics_shape_does_not_500(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """B's endpoint is not deployed and its exact response shape is
+    unconfirmed - `totals.current.metrics` coming back as a scalar (or an
+    explicit `null` one level up) must read as no metrics rather than crash
+    the template's `.items()` call with a 500."""
+    fake_calc_client.result = {
+        "factor_set": {"version_label": "e6-only-draft", "is_mock": True},
+        "totals": {"current": {"metrics": "not-a-mapping"}}, "net_benefit": {},
+        "entries": [],
+    }
+    session.commit()
+
+    response = await admin_client.post("/admin/try", data={
+        "factor_set": one_draft.version_label,
+        "sector": "e6_processing",
+        "food_category": "e6_dairy",
+        "gwp_horizon": "100",
+        "destination": "e6_landfill",
+        "qty_kg": "1200.000",
+    })
+
+    assert response.status_code == 200
+
+
 async def test_a_formula_error_is_shown_with_its_details(
     admin_client, fake_calc_client, one_draft, session
 ):

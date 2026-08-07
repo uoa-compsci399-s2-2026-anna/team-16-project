@@ -219,13 +219,23 @@ def _scenario_request_body(scenario: ComparisonScenario) -> dict:
 def _metrics_of(result: dict | None) -> dict:
     """The ``totals.current.metrics`` map out of one ``/calculate``
     response, or ``{}`` for any shape that does not carry one - including
-    ``None``, which is what a refused call leaves this function looking at.
+    ``None``, which is what a refused call leaves this function looking at,
+    and a scalar or explicit ``null`` at any level, which B's endpoint is
+    not deployed to rule out yet. Checked with ``isinstance`` rather than
+    ``or {}`` throughout: ``or {}`` only catches a *falsy* wrong shape
+    (``None``, ``""``, ``0``) and lets a truthy one (a string, a list) pass
+    through to a caller that assumes a dict.
     """
-    if not result:
+    if not isinstance(result, dict):
         return {}
-    totals = result.get("totals") or {}
-    current = totals.get("current") or {}
-    return current.get("metrics") or {}
+    totals = result.get("totals")
+    if not isinstance(totals, dict):
+        return {}
+    current = totals.get("current")
+    if not isinstance(current, dict):
+        return {}
+    metrics = current.get("metrics")
+    return metrics if isinstance(metrics, dict) else {}
 
 
 def _run_call(calc_client, body: dict, cookies: dict, factor_set_version: str) -> tuple:
@@ -268,12 +278,18 @@ def _metric_rows(published_result: dict | None, draft_result: dict | None) -> li
     for code in codes:
         published = published_metrics.get(code)
         draft = draft_metrics.get(code)
+        # A per-metric entry that is not itself a dict (B's endpoint is not
+        # deployed, so its exact shape is unconfirmed) reads as "could not
+        # be computed" for that side, the same as an absent one - not a
+        # TypeError from indexing a string or a list.
+        published = published if isinstance(published, dict) else None
+        draft = draft if isinstance(draft, dict) else None
         rows.append({
             "code": code,
-            "published_total": published["total"] if published else None,
-            "published_unit": published["unit"] if published else None,
-            "draft_total": draft["total"] if draft else None,
-            "draft_unit": draft["unit"] if draft else None,
+            "published_total": published.get("total") if published else None,
+            "published_unit": published.get("unit") if published else None,
+            "draft_total": draft.get("total") if draft else None,
+            "draft_unit": draft.get("unit") if draft else None,
         })
     return rows
 

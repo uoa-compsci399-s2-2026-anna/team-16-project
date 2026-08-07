@@ -7,7 +7,9 @@ from admin.seed import seed_taxonomy
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
-from admin.taxonomy_rules import check_prevention_intact, check_single_standard_mix
+from admin.taxonomy_rules import (
+    TaxonomyInvariantError, check_prevention_intact, check_single_standard_mix,
+)
 
 pytestmark = pytest.mark.db
 
@@ -21,6 +23,29 @@ def test_seeding_satisfies_the_invariants(session):
 
     check_single_standard_mix(session)
     check_prevention_intact(session)
+
+
+def test_seed_refuses_to_commit_a_taxonomy_it_would_leave_broken(session):
+    """A staff member can rename `standard_mix`'s *code* through the panel -
+    `code` is in FoodCategoryAdmin.form_columns, so this is a supported edit,
+    not a misuse of the tool. Re-running the seed afterwards does not see the
+    renamed row as "standard_mix" any more, so it creates a fresh one - and
+    without this check, that fresh row and the renamed one both still carry
+    is_standard_mix=True, giving two active standard mixes with nothing to
+    refuse the commit. The seed has to catch what it just did to itself,
+    inside the same transaction the CLI is about to commit, or a taxonomy no
+    view would ever accept gets written anyway - seed_taxonomy is not called
+    through AuditedModelView and its validate_before_commit hook at all."""
+    seed_taxonomy(session)
+    session.flush()
+    renamed = session.scalar(
+        select(FoodCategory).where(FoodCategory.code == "standard_mix")
+    )
+    renamed.code = "mixed"
+    session.flush()
+
+    with pytest.raises(TaxonomyInvariantError):
+        seed_taxonomy(session)
 
 
 def test_seeding_twice_creates_nothing_the_second_time(session):
@@ -89,6 +114,24 @@ def test_every_sector_the_contract_names_is_present(session):
     assert codes == {
         "primary_production", "processing", "wholesale_retail",
         "consumer_household", "consumer_hospitality", "consumer_institution",
+    }
+
+
+def test_every_food_category_the_contract_names_is_present(session):
+    """Pinned deliberately, unlike the sector and metric sets above: this is
+    the one code set actually in dispute. Contract §2.1's prose says "the
+    eight Otago baseline categories", but the client's own source list has
+    nine substantive entries, and O-5 (docs/architecture.md §10) seeds all
+    nine pending the client's ruling. When that ruling lands, the change to
+    FOOD_CATEGORIES has to fail this test rather than pass silently - a
+    diff nobody wrote a test to catch is a diff nobody notices."""
+    seed_taxonomy(session)
+    session.flush()
+
+    codes = {c.code for c in session.scalars(select(FoodCategory)).all()}
+    assert codes == {
+        "standard_mix", "fruit", "vegetables", "nuts_seeds", "meat",
+        "seafood", "dairy", "bakery_grains", "staples", "beverages",
     }
 
 

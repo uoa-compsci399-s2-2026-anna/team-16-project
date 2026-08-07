@@ -30,6 +30,7 @@ from sqlalchemy.orm import Session
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
+from admin.taxonomy_rules import check_prevention_intact, check_single_standard_mix
 
 DESTINATION_GROUPS = [
     # (code, name, is_waste, sort_order)
@@ -117,7 +118,20 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
     """Load the NZ taxonomy. Returns table name to rows created.
 
     Never commits - the caller owns the transaction, matching the convention
-    the rest of admin/ follows.
+    the rest of admin/ follows. That leaves this function, not the caller,
+    responsible for refusing to leave a broken taxonomy staged for that
+    commit: it goes nowhere near AuditedModelView, so neither
+    check_single_standard_mix nor check_prevention_intact would otherwise
+    ever run against what it writes. A staff member who has renamed
+    `standard_mix`'s *code* through the panel (a supported edit -
+    FoodCategoryAdmin.form_columns includes `code`) makes this a live case,
+    not a hypothetical one: re-running the seed no longer recognises the
+    renamed row as `standard_mix`, creates a fresh one, and without the
+    checks below would commit two active standard mixes with nothing to
+    refuse it. Raising here propagates out to the caller - admin.cli's
+    seed-taxonomy command never reaches its own `db_session.commit()`, and
+    closing the session on the way out rolls back everything this call
+    flushed.
     """
     created = {
         "destination_group": 0, "destination": 0, "sector": 0,
@@ -163,5 +177,12 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
             session, UnitPreset, code, label=label, kg_per_unit=kg_per_unit,
             food_category_id=None, source_note=_PLACEHOLDER,
         )
+
+    # Flush so the checks below see every row this call just staged, then
+    # refuse to hand back a taxonomy the panel itself would not accept - see
+    # this function's own docstring for why nothing else stands guard here.
+    session.flush()
+    check_single_standard_mix(session)
+    check_prevention_intact(session)
 
     return created

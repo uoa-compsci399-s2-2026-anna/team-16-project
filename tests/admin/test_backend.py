@@ -22,7 +22,7 @@ from admin.accounts import (
     reset_mfa,
     set_password,
 )
-from admin.auth import SESSION_KEY
+from admin.auth import SESSION_GENERATION_KEY, SESSION_KEY
 from admin.backend import PENDING_SESSION_KEY, _is_pre_login_page, current_username
 from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
@@ -70,6 +70,28 @@ def _decode_session_cookie(secret_key: str, cookie_value: str) -> dict:
     signer = itsdangerous.TimestampSigner(secret_key)
     data = signer.unsign(cookie_value.encode("utf-8"), max_age=None)
     return json.loads(b64decode(data))
+
+
+def _established_cookie(admin_app, username: str) -> str:
+    """A signed cookie for an already-logged-in account, generation included.
+
+    Mirrors admin.auth.stamp_session rather than admin.auth.SESSION_KEY
+    alone: AdminAuth.authenticate() now refuses a SESSION_KEY whose
+    generation does not match the row's current session_generation, with
+    the same semantics require_staff_username uses (missing or mismatched,
+    both refused). A cookie forged with only SESSION_KEY, the way most of
+    this file used to build one, is exactly the "session with no
+    generation" case and is refused before ever reaching the checks a given
+    test exists to pin. The value is read fresh off the row rather than
+    assumed to be 0, since password_changed=True (via _make_staff) already
+    bumps it once through set_password.
+    """
+    with admin_app.state.session_factory() as db:
+        generation = get_staff(db, username).session_generation
+    return _session_cookie(
+        admin_app.state.settings.secret_key,
+        {SESSION_KEY: username, SESSION_GENERATION_KEY: generation},
+    )
 
 
 def _make_staff(
@@ -218,6 +240,34 @@ async def test_a_wrong_password_re_renders_the_login_page_with_an_error(
 
 async def test_a_fully_onboarded_account_reaches_the_dashboard(client, admin_app):
     _make_staff(admin_app, "olive", password_changed=True, mfa=True)
+    cookie = _established_cookie(admin_app, "olive")
+    client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
+
+    response = await client.get("/admin/", follow_redirects=False)
+
+    assert response.status_code == 200
+
+
+async def test_a_session_with_no_generation_at_all_is_refused_on_the_dashboard(
+    client, admin_app
+):
+    """Every cookie in flight the moment this feature deploys is exactly this
+    shape: SESSION_KEY with no SESSION_GENERATION_KEY at all, since the field
+    did not exist before it. authenticate()'s main branch has to refuse that
+    outright, not merely a *mismatched* value.
+
+    Every other cookie this file builds for a real account goes through
+    _established_cookie, which always stamps the row's actual generation -
+    so nothing else here would catch a regression from
+    ``request.session.get(SESSION_GENERATION_KEY) != staff.session_generation``
+    to ``request.session.get(SESSION_GENERATION_KEY, staff.session_generation)
+    != staff.session_generation``: defaulting absence to the row's own
+    current value makes an absent generation trivially equal to itself, and
+    the whole suite - this file, test_flow.py's walk 6, everything - stays
+    green. This is deliberately the one place in this file that still forges
+    a bare ``{SESSION_KEY: "olive"}``, the way most of this file used to.
+    """
+    _make_staff(admin_app, "olive", password_changed=True, mfa=True)
     cookie = _session_cookie(
         admin_app.state.settings.secret_key, {SESSION_KEY: "olive"}
     )
@@ -225,7 +275,9 @@ async def test_a_fully_onboarded_account_reaches_the_dashboard(client, admin_app
 
     response = await client.get("/admin/", follow_redirects=False)
 
-    assert response.status_code == 200
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+    assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
 
 
 # --- 4/5: forced password-change gate --------------------------------------
@@ -235,9 +287,7 @@ async def test_must_change_password_redirects_the_dashboard_to_change_password(
     client, admin_app
 ):
     _make_staff(admin_app, "penny")  # must_change_password stays True
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "penny"}
-    )
+    cookie = _established_cookie(admin_app, "penny")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.get("/admin/", follow_redirects=False)
@@ -250,9 +300,7 @@ async def test_must_change_password_does_not_redirect_its_own_page(
     client, admin_app
 ):
     _make_staff(admin_app, "penny")
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "penny"}
-    )
+    cookie = _established_cookie(admin_app, "penny")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.get("/admin/change-password", follow_redirects=False)
@@ -265,9 +313,7 @@ async def test_must_change_password_does_not_redirect_its_own_page(
 
 async def test_no_mfa_enrolment_redirects_the_dashboard_to_enrol(client, admin_app):
     _make_staff(admin_app, "quinn", password_changed=True)  # mfa stays unenrolled
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "quinn"}
-    )
+    cookie = _established_cookie(admin_app, "quinn")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.get("/admin/", follow_redirects=False)
@@ -296,9 +342,7 @@ async def test_no_mfa_enrolment_does_not_loop_forever_on_its_own_page(
     and by test_a_fresh_password_step_still_reaches_enrolment_after_an_eviction.
     """
     _make_staff(admin_app, "quinn", password_changed=True)
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "quinn"}
-    )
+    cookie = _established_cookie(admin_app, "quinn")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     # follow_redirects with httpx's default max_redirects raises
@@ -320,7 +364,7 @@ async def test_no_mfa_enrolment_does_not_loop_forever_on_its_own_page(
 
 async def test_logout_clears_the_session(client, admin_app):
     _make_staff(admin_app, "gina", password_changed=True, mfa=True)
-    cookie = _session_cookie(admin_app.state.settings.secret_key, {SESSION_KEY: "gina"})
+    cookie = _established_cookie(admin_app, "gina")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     pre = await client.get("/admin/", follow_redirects=False)
@@ -342,7 +386,7 @@ async def test_a_deactivated_accounts_session_is_refused_on_its_next_request(
     client, admin_app
 ):
     _make_staff(admin_app, "hank", password_changed=True, mfa=True)
-    cookie = _session_cookie(admin_app.state.settings.secret_key, {SESSION_KEY: "hank"})
+    cookie = _established_cookie(admin_app, "hank")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     pre = await client.get("/admin/", follow_redirects=False)
@@ -434,9 +478,7 @@ async def test_login_clears_a_preexisting_session_on_success(client, admin_app):
     contract 8.4 writes that value straight to audit_log.actor."""
     _make_staff(admin_app, "alice", password_changed=True, mfa=True)
     bob_password = _make_staff(admin_app, "bob", password_changed=True, mfa=True)
-    alice_cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "alice"}
-    )
+    alice_cookie = _established_cookie(admin_app, "alice")
     client.cookies.set("session", alice_cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.post(
@@ -456,9 +498,7 @@ async def test_login_clears_a_preexisting_session_on_success(client, admin_app):
 
 async def test_a_failed_login_also_clears_a_preexisting_session(client, admin_app):
     _make_staff(admin_app, "alice", password_changed=True, mfa=True)
-    alice_cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "alice"}
-    )
+    alice_cookie = _established_cookie(admin_app, "alice")
     client.cookies.set("session", alice_cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.post(
@@ -733,7 +773,7 @@ async def test_a_logged_in_but_deactivated_account_cannot_open_a_pre_login_page(
     # three pages on its own and a fully onboarded account would fail the
     # sanity request below on two of the three paths.
     _make_staff(admin_app, "ruth", **_OWES_STATE_FOR_PAGE[path])
-    cookie = _session_cookie(admin_app.state.settings.secret_key, {SESSION_KEY: "ruth"})
+    cookie = _established_cookie(admin_app, "ruth")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     # Sanity before deactivation, so the refusal after it can be pinned on
@@ -949,9 +989,7 @@ async def test_the_state_gate_on_the_session_key_way_in(
     """
     seed, _ = _ACCOUNT_STATES[state]
     _make_staff(admin_app, "sasha", **seed)
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "sasha"}
-    )
+    cookie = _established_cookie(admin_app, "sasha")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.get(path, follow_redirects=False)
@@ -1044,9 +1082,7 @@ async def test_an_evicted_account_cannot_re_enrol_its_own_authenticator(
     round 4's helper invented. See _evict_l2.
     """
     _make_staff(admin_app, "trent", password_changed=True, mfa=True)
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "trent"}
-    )
+    cookie = _established_cookie(admin_app, "trent")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
     assert (await client.get("/admin/", follow_redirects=False)).status_code == 200
 
@@ -1125,9 +1161,7 @@ async def test_the_dashboard_ladder_survives_the_removed_short_circuit(
     """
     seed, _ = _ACCOUNT_STATES[state]
     _make_staff(admin_app, "ursula", **seed)
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "ursula"}
-    )
+    cookie = _established_cookie(admin_app, "ursula")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.get("/admin/", follow_redirects=False)
@@ -1173,9 +1207,7 @@ async def test_a_deactivated_account_has_its_session_cookie_cleared(
     client, admin_app, path
 ):
     _make_staff(admin_app, "vera", active=False, **_OWES_STATE_FOR_PAGE[path])
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "vera"}
-    )
+    cookie = _established_cookie(admin_app, "vera")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
 
     response = await client.get(path, follow_redirects=False)
@@ -1280,9 +1312,7 @@ async def test_a_deactivated_session_is_cleared_not_merely_refused(
     clear, the cookie survives the refusal and buys an unauthenticated
     caller one database read per request for as long as it is replayed."""
     _make_staff(admin_app, "wilma", password_changed=True, mfa=True)
-    cookie = _session_cookie(
-        admin_app.state.settings.secret_key, {SESSION_KEY: "wilma"}
-    )
+    cookie = _established_cookie(admin_app, "wilma")
     client.cookies.set("session", cookie, domain=_COOKIE_DOMAIN)
     assert (await client.get("/admin/", follow_redirects=False)).status_code == 200
 

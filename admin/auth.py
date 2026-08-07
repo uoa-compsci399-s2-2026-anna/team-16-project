@@ -17,6 +17,7 @@ skipped by a caller who only reads the signatures. Only the username returned
 by a second-factor call belongs under ``SESSION_KEY``.
 """
 
+import secrets
 from collections.abc import Callable
 from dataclasses import dataclass
 
@@ -29,17 +30,28 @@ from admin.accounts import (
     get_staff,
     verify_staff_totp,
 )
-from admin.models import utcnow
-from admin.security import verify_password
+from admin.models import Staff, utcnow
+from admin.security import hash_password, verify_password
 from admin.throttle import LoginThrottle
 
 #: Key under which the authenticated username is held in the session cookie.
 SESSION_KEY = "staff_username"
 
+#: Key under which the generation the session was minted under is held.
+#: Compared against Staff.session_generation on every request so that a
+#: credential change ends the sessions that predate it. See stamp_session.
+SESSION_GENERATION_KEY = "staff_generation"
+
 #: How long a passed password step stays usable. Long enough to read a code
 #: off a phone, short enough that a login abandoned on a shared machine cannot
 #: be finished by whoever sits down next.
 PENDING_LOGIN_TTL_SECONDS = 300
+
+#: A real bcrypt hash of a value nothing can supply, verified against when the
+#: username does not exist so that both paths cost the same. Computed once at
+#: import: hashing per request would itself be a measurable difference, and a
+#: hardcoded constant would drift from the project's cost factor.
+_DUMMY_HASH = hash_password(secrets.token_urlsafe(32))
 
 
 class StaffAuthRequired(Exception):
@@ -105,10 +117,24 @@ def authenticate_password(
     try:
         staff = get_staff(session, username)
     except UnknownStaffError:
+        # Verify against a dummy hash rather than returning here. The throttle
+        # already refuses to reveal which usernames exist; an early return
+        # would reveal it through the clock instead — measured at 3.1 ms
+        # against 173.8 ms before this line existed.
+        verify_password(password, _DUMMY_HASH)
         throttle.record_failure(username, now=now)
         return None
 
-    if not staff.is_active or not verify_password(password, staff.password_hash):
+    # Evaluated unconditionally, before the branch, rather than written as
+    # `not staff.is_active or not verify_password(...)`. That form short-
+    # circuits on a deactivated account and skips verify_password entirely,
+    # which reopens exactly the timing oracle _DUMMY_HASH exists to close —
+    # only now against "is this real username's account deactivated?"
+    # instead of "does this username exist?". Every found account, active or
+    # not, must pay for one verify_password call so the clock cannot tell
+    # the two apart. Do not "simplify" this back into a short circuit.
+    password_ok = verify_password(password, staff.password_hash)
+    if not staff.is_active or not password_ok:
         throttle.record_failure(username, now=now)
         return None
 
@@ -236,6 +262,17 @@ def authenticate_recovery_code(
     )
 
 
+def stamp_session(session_data: dict, staff: Staff) -> None:
+    """Write both halves of the session identity.
+
+    Callers must never set SESSION_KEY on its own — a session with no
+    generation is refused by require_staff_username, so a half-stamped
+    session is a login that silently does not work.
+    """
+    session_data[SESSION_KEY] = staff.username
+    session_data[SESSION_GENERATION_KEY] = staff.session_generation
+
+
 def require_staff_username(session: Session, session_data: dict) -> str:
     """Return the authenticated username, or raise StaffAuthRequired.
 
@@ -248,6 +285,13 @@ def require_staff_username(session: Session, session_data: dict) -> str:
     enrolment is refused here too. Contract 8.3 requires those steps to be
     unavoidable, and a check that lives only in the enrolment page's own
     routing can be walked past by typing a URL.
+
+    admin/backend.py's AdminAuth.authenticate() duplicates the generation
+    comparison below inline rather than calling this function - it is not
+    reachable from a live request yet, per require_staff's own docstring.
+    The two have already drifted once (a generation check landing here
+    without landing there), so a change to either belongs alongside a look
+    at the other.
     """
     username = session_data.get(SESSION_KEY)
     if not username:
@@ -264,6 +308,8 @@ def require_staff_username(session: Session, session_data: dict) -> str:
         raise StaffAuthRequired("Password change is outstanding")
     if not staff.mfa_enrolled:
         raise StaffAuthRequired("Authenticator enrolment is outstanding")
+    if session_data.get(SESSION_GENERATION_KEY) != staff.session_generation:
+        raise StaffAuthRequired("Credentials changed since this session began")
 
     return staff.username
 

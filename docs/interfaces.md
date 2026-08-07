@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-05 (v0.7 draft)"
+date: "2026-08-07 (v0.9 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,18 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.9 — 2026-08-07 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Added `issue_password()`. §8.3 named "issues a random password" as half of an eviction; no function performed it. | §8.3 |
+
+### v0.8 — 2026-08-06 (raised by E, **affects B**)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Added `staff.session_generation`. Removes the v0.7 known limitation: a credential change now ends the sessions that predate it. | §2.4, §8.3, §8.4 |
 
 ### v0.7 — 2026-08-05 (raised by E, **affects B**)
 
@@ -354,6 +366,7 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 | `created_at` | DATETIME | NOT NULL | |
 | `created_by` | VARCHAR(64) | NULL | |
 | `last_login_at` | DATETIME | NULL | |
+| `session_generation` | INT | NOT NULL, DEFAULT 0 | Bumped by every credential change; the session cookie carries the value it was minted under |
 
 ### `staff_recovery_code`
 
@@ -1221,27 +1234,27 @@ This must be enforced in the service layer, not only in the form — `sqladmin`'
 
 > Consequence worth knowing: while fewer than two administrators are usable, **no** administrator can be deactivated or demoted, including one that was never onboarded. Eviction is still possible without deactivation — reset the account's MFA and issue a new password — but it is indirect. This errs toward "cannot be locked out" over "can always evict", which is the correct side for a small organisation with no email recovery.
 
-> ### ⚠️ Known limitation: eviction does not revoke a live session
->
-> Found while implementing the panel, verified end to end. Sessions carry no generation marker, so nothing distinguishes a cookie issued before an eviction from one issued after.
->
-> **Changing a compromised account's password does not terminate its sessions, at any point.** That is the plain statement, and it is worse than it first appears:
->
-> | Administrator action | Effect on a stolen live session |
-> | --- | --- |
-> | Issue a new password only | **None. 200 throughout, no interruption.** This is the intuitive response to "my session may be compromised" and the one a `StaffAdmin` view will most plausibly offer. |
-> | Reset MFA, then issue a new password | Locked out **only while `mfa_enrolled` is false** — the moment the rightful holder completes the re-enrolment the reset compels, the old cookie works again |
-> | Deactivate the account | Effective immediately, but `_guard_admin_floor` forbids it for an administrator while fewer than three are usable |
->
-> Until this is fixed, the only reliable answers are **deactivate** (where the floor permits it) or **wait out `SESSION_MAX_AGE_MINUTES`**. The handover documentation must say so.
->
-> The window is bounded rather than rolling: Starlette re-signs the cookie only when the session is modified, so it still dies at `SESSION_MAX_AGE_MINUTES` from the original login. But eight hours is comfortably longer than "an administrator resets your authenticator, hands you a password, and you enrol".
->
-> **This affects `require_staff()` (§8.4) and therefore the API layer, not only the admin panel.** B should know that a `require_staff()` success does not currently mean "this session has not been evicted".
->
-> The fix is a session generation column on `staff`, incremented by `reset_mfa` and by any future `issue_password`, stamped into the session at login and compared on every `require_staff()` call. It is deferred rather than done because it changes an E-1 table and an E-1 function that are otherwise complete and reviewed.
->
-> Related gap, same root: §8.3 names "issues a random password" as half of the eviction, but no service function performs it. `set_password` **clears** `must_change_password`, so an issued password leaves the account looking fully onboarded. `admin/accounts.py` needs an `issue_password()` that sets a random password **and** `must_change_password = True` — an administrator-issued password is in the same position as a bootstrap one and deserves the same forced change.
+**Session invalidation.** Every credential change — password change, MFA
+reset, deactivation — increments `staff.session_generation`. The signed
+session cookie carries the generation it was minted under, and
+`require_staff_username()` (§8.4) refuses any mismatch. An administrator
+resetting a compromised colleague's account therefore ends that account's
+live sessions immediately, without server-side session storage.
+
+Note for B: this is enforced inside `require_staff()`, so the API layer
+inherits it with no change on your side.
+
+For E: `require_staff_username()` is not the only implementation of this
+comparison. The admin panel is not routed through it — it is gated by
+`AdminAuth.authenticate()` in `admin/backend.py`, which carries its own,
+deliberately duplicated `session_generation` comparison rather than calling
+`require_staff_username()`. The two are documented as needing to change
+together (each names the other in its own comment), but nothing enforces
+that beyond the comment — they have already drifted out of sync once during
+this branch. E-4 through E-6 read this section: if either comparison
+changes, check the other.
+
+`admin.accounts.issue_password(session, username, *, actor) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned once, to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
 
@@ -1269,6 +1282,7 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | --- | --- |
 | `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
+| `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
 | `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 

@@ -9,7 +9,7 @@
   {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
   <div>{{ qr | safe }}</div>
   <p class="muted">
-    Cannot scan? Enter this key by hand: <code>{{ secret }}</code>
+    Cannot scan? Enter this key by hand: <code class="key">{{ secret_grouped }}</code>
   </p>
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">

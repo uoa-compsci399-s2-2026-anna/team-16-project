@@ -9,11 +9,13 @@ from datetime import datetime, timezone
 
 from sqlalchemy import (
     CHAR,
+    JSON,
     BigInteger,
     Boolean,
     DateTime,
     Enum,
     ForeignKey,
+    Integer,
     LargeBinary,
     String,
 )
@@ -67,6 +69,14 @@ class Staff(Base):
     created_by: Mapped[str | None] = mapped_column(String(64), nullable=True)
     last_login_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
 
+    #: Bumped by every credential change. The signed session cookie carries
+    #: the value it was minted under; require_staff_username refuses a
+    #: mismatch. This is what makes a password change end the old sessions
+    #: without introducing server-side session storage.
+    session_generation: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0, server_default="0"
+    )
+
     recovery_codes: Mapped[list["StaffRecoveryCode"]] = relationship(
         back_populates="staff", cascade="all, delete-orphan"
     )
@@ -92,3 +102,18 @@ class StaffRecoveryCode(Base):
     )
 
     staff: Mapped[Staff] = relationship(back_populates="recovery_codes")
+
+
+class AuditLog(Base):
+    """Contract §2.3. Written only by admin/audit.py's write_audit()."""
+
+    __tablename__ = "audit_log"
+
+    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    actor: Mapped[str] = mapped_column(String(128), nullable=False)
+    action: Mapped[str] = mapped_column(String(32), nullable=False)
+    table_name: Mapped[str] = mapped_column(String(64), nullable=False)
+    row_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    before_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+    after_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)

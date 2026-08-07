@@ -25,6 +25,7 @@ from admin.accounts import (
 )
 from admin.security import decrypt_totp_secret
 from admin.totp import TOTP_INTERVAL
+from admin.views import _grouped
 from admin.views import time as views_time
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
@@ -134,7 +135,7 @@ async def test_get_renders_the_qr_and_secret_and_leaves_the_account_unenrolled(
     assert response.status_code == 200
     assert "<svg" in response.text
     secret = _stored_secret(admin_app, username)
-    assert secret in response.text
+    assert _grouped(secret) in response.text  # grouped for transcription
     assert _mfa_enrolled(admin_app, username) is False
 
 
@@ -192,7 +193,7 @@ async def test_a_wrong_code_re_renders_with_an_error_and_keeps_the_same_secret(
     # The re-rendered QR/secret must correspond to that same, unchanged
     # secret - not merely leave storage untouched while showing something
     # else.
-    assert secret_before in response.text
+    assert _grouped(secret_before) in response.text
 
 
 # --- Behaviour 4 --------------------------------------------------------
@@ -248,49 +249,12 @@ async def test_a_submission_without_a_csrf_token_is_refused(
 # --- Behaviour 6 --------------------------------------------------------
 
 
-async def test_after_enrolment_and_verification_the_index_is_reachable(
-    admin_app, client, owes_enrolment, monkeypatch
-):
-    """The full gauntlet, end to end: change-password (done by the
-    fixture) -> enrol -> verify -> /admin/. Enrolling alone does not
-    establish a session - the account still owes the second-factor
-    challenge at /admin/verify - so this exercises both steps.
-
-    complete_mfa_enrolment records the counter it accepted as
-    mfa_last_counter, and verify_totp then refuses that same counter on the
-    very next login - so the login code has to come from a later time step
-    than the enrolment code, not the same one. admin.views reads the clock
-    through the shared `time` module, so patching `time.time` there moves
-    both calls without needing a real 30-second sleep.
-    """
-    username, password = owes_enrolment
-    await _login_password_step(client, username, password)
-    token = await _csrf_from(client, "/admin/enrol")
-    secret = _stored_secret(admin_app, username)
-
-    base = int(time.time())
-    monkeypatch.setattr(views_time, "time", lambda: base)
-    enrol_code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(base)
-    enrol_response = await client.post(
-        "/admin/enrol",
-        data={"code": enrol_code, "csrf_token": token},
-        follow_redirects=False,
-    )
-    assert enrol_response.status_code == 200
-
-    verify_token = await _csrf_from(client, "/admin/verify")
-    later = base + 2 * TOTP_INTERVAL
-    monkeypatch.setattr(views_time, "time", lambda: later)
-    verify_code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(later)
-    verify_response = await client.post(
-        "/admin/verify",
-        data={"code": verify_code, "csrf_token": verify_token},
-        follow_redirects=False,
-    )
-    assert verify_response.status_code == 302
-
-    index = await client.get("/admin/", follow_redirects=False)
-    assert index.status_code == 200
+# Behaviour 6 used to be test_after_enrolment_and_verification_the_index_is
+# _reachable, which walked enrol -> verify -> /admin/ and needed a two-step
+# clock patch to get past the replay counter. That second challenge is gone -
+# enrolment establishes the session - and the property it protected is now
+# asserted by test_enrolment_establishes_the_session_without_a_second_challenge
+# further down this file, which additionally pins that no challenge appears.
 
 
 # --- Behaviour 8 --------------------------------------------------------
@@ -318,13 +282,13 @@ async def test_a_second_get_reuses_the_secret_the_first_one_minted(
     first = await client.get("/admin/enrol")
     secret = _stored_secret(admin_app, username)
     assert first.status_code == 200
-    assert secret in first.text
+    assert _grouped(secret) in first.text
 
     second = await client.get("/admin/enrol")
 
     assert second.status_code == 200
     assert _stored_secret(admin_app, username) == secret
-    assert secret in second.text
+    assert _grouped(secret) in second.text
 
     match = re.search(r'name="csrf_token" value="([^"]+)"', second.text)
     assert match
@@ -423,3 +387,93 @@ async def test_a_post_with_no_prior_get_is_refused_not_a_500(
 
     assert response.status_code == 400
     assert _mfa_enrolled(admin_app, username) is False
+
+
+# --- Onboarding lands the user in the panel ------------------------------
+
+
+async def test_enrolment_establishes_the_session_without_a_second_challenge(
+    admin_app, client, owes_enrolment
+):
+    """Completing enrolment logs the user in.
+
+    Both factors are proven by the time this returns: the gate admitted the
+    request on a valid pending login, which is the password step, and
+    complete_mfa_enrolment has just verified a genuine TOTP code. Sending the
+    user on to /admin/verify asked for the same evidence a second time - and
+    could not succeed, because enrolment records its accepted time step in
+    mfa_last_counter, so the code still showing on their authenticator is
+    refused as a replay while the page blames their device clock.
+    """
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+
+    done = await client.post(
+        "/admin/enrol",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(
+                int(views_time.time())
+            ),
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert done.status_code == 200
+    index = await client.get("/admin/", follow_redirects=False)
+    assert index.status_code == 200, (
+        "enrolment should have established the session; the user was sent "
+        "back to a second-factor challenge instead"
+    )
+
+
+async def test_the_recovery_codes_page_continues_into_the_panel(
+    admin_app, client, owes_enrolment
+):
+    """The link under the recovery codes goes to the panel, not to a further
+    challenge the replay counter would refuse."""
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+
+    done = await client.post(
+        "/admin/enrol",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(
+                int(views_time.time())
+            ),
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert 'href="/admin/"' in done.text
+    assert "/admin/verify" not in done.text
+
+
+async def test_enrolment_stamps_the_login_time(
+    admin_app, client, owes_enrolment
+):
+    """A login established here must be indistinguishable from one completed
+    at /admin/verify, which is the one place that stamps last_login_at."""
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+
+    await client.post(
+        "/admin/enrol",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(
+                int(views_time.time())
+            ),
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    with admin_app.state.session_factory() as db:
+        assert get_staff(db, username).last_login_at is not None

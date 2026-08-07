@@ -9,15 +9,27 @@ these fixtures per test module would either duplicate or forget.
 """
 
 import re
+import time
+import uuid
 
+import pyotp
 import pytest
+import pytest_asyncio
 from sqlalchemy import create_engine, text
 from sqlalchemy.exc import OperationalError
 
-from admin.accounts import count_active_admins
+from admin.accounts import (
+    begin_mfa_enrolment,
+    complete_mfa_enrolment,
+    count_active_admins,
+    create_staff,
+    set_password,
+)
 from admin.app import create_app
 from admin.bootstrap import BOOTSTRAP_USERNAMES
 from admin.config import Settings
+from admin.totp import TOTP_INTERVAL
+from admin.views import time as views_time
 from db.session import create_session_factory
 from tests.conftest import ROOT_URL
 
@@ -25,6 +37,11 @@ pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 BOOTSTRAP_DB = "kaicalc_bootstrap_test"
 BOOTSTRAP_URL = f"mysql+pymysql://root:devroot@127.0.0.1:3307/{BOOTSTRAP_DB}"
+
+# Matches the value tests/conftest.py's admin_app fixture sets via
+# monkeypatch.setenv("SECRET_KEY", ...) - the same convention
+# tests/admin/test_flow.py and test_verify_page.py use.
+SECRET_KEY = "test-secret-key-not-used-anywhere-real"
 
 
 def _settings(database_url: str) -> Settings:
@@ -223,3 +240,67 @@ async def test_startup_fails_loudly_when_the_database_is_unreachable():
 
     with pytest.raises(OperationalError):
         await _run_startup(unreachable)
+
+
+# --- Task 6: the audit log view is actually mounted -------------------------
+
+
+@pytest_asyncio.fixture
+async def logged_in_client(admin_app, client, monkeypatch):
+    """A client holding a real, fully-authenticated staff session.
+
+    Built by driving the real HTTP login flow with a real account - the same
+    approach tests/admin/test_flow.py's walks use - rather than forging a
+    session dict, so this proves a route is reachable through
+    AuthenticationBackend as a real staff member would reach it, not just
+    that the view class exists.
+    """
+    username = f"u{uuid.uuid4().hex[:10]}"
+    password = "a-long-enough-password"
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        create_staff(db, username=username, display_name="Route Check")
+        db.flush()
+        set_password(db, username, password)
+        secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
+        # Backdated so the login step below, which mints a fresh TOTP code
+        # for "now", cannot collide with the counter enrolment just spent -
+        # see test_flow.py's `onboarded` fixture for the same reasoning.
+        enrol_now = int(time.time()) - 4 * TOTP_INTERVAL
+        complete_mfa_enrolment(
+            db,
+            username,
+            pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(enrol_now),
+            secret_key=SECRET_KEY,
+            now=enrol_now,
+        )
+        db.commit()
+
+    now = int(time.time())
+    monkeypatch.setattr(views_time, "time", lambda: now)
+
+    login = await client.post(
+        "/admin/login",
+        data={"username": username, "password": password},
+        follow_redirects=False,
+    )
+    assert login.status_code == 302, "password step should have succeeded"
+
+    verify_page = await client.get("/admin/verify")
+    match = re.search(r'name="csrf_token" value="([^"]+)"', verify_page.text)
+    assert match, "no CSRF token rendered on /admin/verify"
+    code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now)
+    verify = await client.post(
+        "/admin/verify",
+        data={"code": code, "csrf_token": match.group(1)},
+        follow_redirects=False,
+    )
+    assert verify.status_code == 302, "TOTP step should have completed the login"
+
+    yield client
+
+
+async def test_the_audit_log_view_is_reachable(logged_in_client):
+    response = await logged_in_client.get("/admin/audit-log/list")
+
+    assert response.status_code == 200

@@ -4,6 +4,7 @@ Contract: docs/interfaces.md 8.3, "Operational commands".
 
     python -m admin.cli create-staff <username> "<display name>" [--admin]
     python -m admin.cli reset-mfa <username>
+    python -m admin.cli issue-password <username>
     python -m admin.cli rotate-key --old <key> --new <key>
 
 These are the break-glass paths that outlive the project team: bootstrapping
@@ -18,7 +19,7 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from admin.accounts import create_staff, reset_mfa
+from admin.accounts import UnknownStaffError, create_staff, issue_password, reset_mfa
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
 from admin.models import Staff, StaffRole
@@ -53,6 +54,12 @@ def cmd_create_staff(
 def cmd_reset_mfa(db_session: Session, username: str) -> None:
     """Recovery layer L3: clear an enrolment from the server."""
     reset_mfa(db_session, username)
+
+
+def cmd_issue_password(db_session: Session, username: str) -> str:
+    """Recovery layer L3: issue a password from the server when no
+    administrator can. Returns the plaintext, shown once."""
+    return issue_password(db_session, username, actor="cli")
 
 
 def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
@@ -127,6 +134,11 @@ def _build_parser() -> argparse.ArgumentParser:
     reset = sub.add_parser("reset-mfa", help="Clear an account's MFA enrolment")
     reset.add_argument("username")
 
+    issue = sub.add_parser(
+        "issue-password", help="Issue a random password and force a change at next login"
+    )
+    issue.add_argument("username")
+
     rotate = sub.add_parser("rotate-key", help="Re-encrypt TOTP secrets")
     rotate.add_argument("--old", required=True)
     rotate.add_argument("--new", required=True)
@@ -163,6 +175,16 @@ def main(argv: list[str] | None = None) -> int:
                 f"Cleared MFA for {args.username}. They will be asked to enrol "
                 "again on their next login."
             )
+        elif args.command == "issue-password":
+            try:
+                password = cmd_issue_password(db_session, args.username)
+            except UnknownStaffError:
+                print(f"No such account: {args.username}")
+                return 1
+            db_session.commit()
+            print(f"Issued a new password for {args.username}.")
+            print(f"  Password: {password}")
+            print("  They must change it at their next login. Hand it over in person.")
         elif args.command == "rotate-key":
             count = cmd_rotate_key(db_session, old_key=args.old, new_key=args.new)
             db_session.commit()

@@ -3,7 +3,11 @@
 A scenario is a saved `POST /calculate` request minus the factor set: a
 sector, a food category, a horizon and a set of destination lines. The
 comparison view runs each one twice — against the published set and against
-the draft — and shows the difference.
+the draft — and shows both totals side by side. It does not compute a
+difference between them: Decision 6 puts every impact number server-side,
+in exactly one place, and the engine has no concept of a difference between
+two separate calls made at two different factor-set versions (see
+`admin.dryrun_views.CompareView`'s own docstring).
 
 They are rows rather than a constant in this module because §8.2 says so,
 and the reason is worth repeating: hard-coding them reintroduces "change the
@@ -29,10 +33,11 @@ class ComparisonScenario(Base):
 
     Carries no current/alternative discriminator, even though §6.2's
     `POST /calculate` request has two line arrays. Judged acceptable under
-    YAGNI rather than a gap: the comparison view is already differencing two
-    runs of the same scenario (published vs. draft), and any destination
-    reachable through `alternative` is reachable as a `current` line in a
-    second, separate scenario. Do not "fix" this by adding a scenario column
+    YAGNI rather than a gap: the comparison view's two runs of the same
+    scenario (published vs. draft) already put every `current` line's
+    published and draft totals side by side, and any destination reachable
+    through `alternative` is reachable as a `current` line in a second,
+    separate scenario. Do not "fix" this by adding a scenario column
     without a concrete need for it.
     """
 

@@ -273,3 +273,46 @@ def test_the_hook_actually_stops_a_commit(session, standard_mix_guarded_view):
     assert session.scalar(select(AuditLog)) is None, (
         "a refused change must leave no audit entry claiming it happened"
     )
+
+
+def test_one_published_set_is_accepted(session):
+    from admin.factor_models import FactorSet, FactorSetStatus
+    from admin.taxonomy_rules import check_single_published_set
+
+    session.add(FactorSet(version_label="live", status=FactorSetStatus.published,
+                          is_mock=False))
+    session.add(FactorSet(version_label="next", status=FactorSetStatus.draft,
+                          is_mock=True))
+    session.flush()
+
+    check_single_published_set(session)  # does not raise
+
+
+def test_two_published_sets_are_refused(session):
+    """Contract §2.2. Which numbers the public calculator uses would become
+    a matter of which row the query happened to return first."""
+    from admin.factor_models import FactorSet, FactorSetStatus
+    from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
+
+    session.add(FactorSet(version_label="a", status=FactorSetStatus.published,
+                          is_mock=False))
+    session.add(FactorSet(version_label="b", status=FactorSetStatus.published,
+                          is_mock=False))
+    session.flush()
+
+    with pytest.raises(TaxonomyInvariantError):
+        check_single_published_set(session)
+
+
+def test_no_published_set_is_accepted(session):
+    """A fresh deployment has none, and §9's NO_PUBLISHED_FACTOR_SET (503,
+    "calculator under maintenance") is the designed response to that. Zero is
+    a legitimate state; two is not."""
+    from admin.factor_models import FactorSet, FactorSetStatus
+    from admin.taxonomy_rules import check_single_published_set
+
+    session.add(FactorSet(version_label="draft-only", status=FactorSetStatus.draft,
+                          is_mock=True))
+    session.flush()
+
+    check_single_published_set(session)  # does not raise

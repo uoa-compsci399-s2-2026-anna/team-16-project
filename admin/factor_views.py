@@ -22,16 +22,7 @@ from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
 )
 from admin.modelviews import AuditedModelView
-from admin.taxonomy_rules import TaxonomyInvariantError
-
-# NOTE (deviation from task-3-brief.md's Step 3 listing): the brief's import
-# block also names `FactorSetStatus` from admin.factor_models and
-# `check_single_published_set` from admin.taxonomy_rules. Neither is used by
-# any view in this file - there is no FactorSetAdmin here, only the five
-# views this task's brief itself lists as this module's product - and
-# `check_single_published_set` is not defined anywhere in
-# admin/taxonomy_rules.py, so importing it verbatim raises ImportError before
-# a single test in this file can even collect. Both names are left out.
+from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
 
 _CATEGORY = "Factors"
 
@@ -221,3 +212,35 @@ class FormulaAdmin(AuditedModelView, model=Formula):
                 raise TaxonomyInvariantError(
                     f"Line {exc.line}, column {exc.column}: {exc.message}"
                 ) from exc
+
+
+class FactorSetAdmin(AuditedModelView, model=FactorSet):
+    """Contract §8.2. Clone, publish and roll back arrive in the next stage;
+    this shows the versions and holds the one-published invariant."""
+
+    name = "Factor set"
+    name_plural = "Factor sets"
+    category = _CATEGORY
+    icon = "fa-solid fa-layer-group"
+
+    # Every submission stamps the set it was calculated against, so a
+    # deleted set strands every historical result naming it. Archiving is
+    # how a version leaves service.
+    can_delete = False
+
+    column_list = [FactorSet.version_label, FactorSet.status, FactorSet.is_mock,
+                   FactorSet.published_at, FactorSet.published_by]
+    column_details_list = [FactorSet.version_label, FactorSet.status,
+                           FactorSet.is_mock, FactorSet.effective_from,
+                           FactorSet.published_at, FactorSet.published_by,
+                           FactorSet.notes]
+    # published_at/published_by are absent deliberately: they are stamped by
+    # the publish action in E-6, and a staff member typing them by hand would
+    # make the audit trail disagree with itself.
+    form_columns = [FactorSet.version_label, FactorSet.status, FactorSet.is_mock,
+                    FactorSet.effective_from, FactorSet.notes]
+    column_default_sort = ("id", True)
+
+    def validate_before_commit(self, session) -> None:
+        """At most one published set. Contract §2.2."""
+        check_single_published_set(session)

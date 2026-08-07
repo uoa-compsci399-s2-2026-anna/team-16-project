@@ -116,10 +116,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(StaffAdmin)
 
-    # The six taxonomy views of contract §8.1 landed in E-4 (this block). Five
-    # of E-5's factor views - factor_upstream, factor_downstream, constant,
-    # formula, equivalence - are registered just below. factor_set itself and
-    # a read-only submission view are still to come. All inherit
+    # The six taxonomy views of contract §8.1 landed in E-4 (this block). All
+    # six of E-5's factor views - factor_set, factor_upstream,
+    # factor_downstream, constant, formula, equivalence - are registered just
+    # below; a read-only submission view is still to come. All inherit
     # AuditedModelView, so each arrives already audited.
     from admin.taxonomy_views import (
         DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
@@ -132,11 +132,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     from admin.factor_views import (
         ConstantAdmin, EquivalenceAdmin, FactorDownstreamAdmin,
-        FactorUpstreamAdmin, FormulaAdmin,
+        FactorSetAdmin, FactorUpstreamAdmin, FormulaAdmin,
     )
 
-    for view in (FactorUpstreamAdmin, FactorDownstreamAdmin, ConstantAdmin,
-                 FormulaAdmin, EquivalenceAdmin):
+    for view in (FactorSetAdmin, FactorUpstreamAdmin, FactorDownstreamAdmin,
+                 ConstantAdmin, FormulaAdmin, EquivalenceAdmin):
         admin.add_view(view)
 
     return app

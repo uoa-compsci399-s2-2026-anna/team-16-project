@@ -12,6 +12,7 @@ them.
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
+from admin.factor_models import FactorSet, FactorSetStatus
 from admin.taxonomy_models import Destination, FoodCategory
 
 #: The destination expressing "this waste did not happen". The engine looks
@@ -104,3 +105,25 @@ def check_prevention_intact(session: Session) -> None:
             "'prevention' itself, and without it the calculator cannot "
             "express an improved scenario. Reactivate the group before saving."
         )
+
+
+def check_single_published_set(session: Session) -> None:
+    """Contract §2.2: at most one factor_set row may be published.
+
+    Zero is legitimate — a fresh deployment has none, and §9's
+    NO_PUBLISHED_FACTOR_SET (503, "calculator under maintenance") is the
+    designed response. Two is not: which numbers the public calculator uses
+    would come down to which row the query happened to return first, and the
+    two versions exist precisely because they disagree.
+    """
+    published = session.scalars(
+        select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
+    ).all()
+    if len(published) <= 1:
+        return
+    labels = ", ".join(sorted(fs.version_label for fs in published))
+    raise TaxonomyInvariantError(
+        f"{len(published)} factor sets are marked as published ({labels}). "
+        "Exactly one may be published at a time — the calculator has no way "
+        "to choose between them. Archive all but one."
+    )

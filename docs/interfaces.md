@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-07 (v0.9 draft)"
+date: "2026-08-08 (v0.10 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,12 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.10 — 2026-08-08 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Added `comparison_scenario` and `comparison_scenario_line`. §8.2 named the pre-publish comparison view's standard scenarios as staff-editable but never defined where they live; these two tables are it, with their own CRUD screens under a new "Comparison" category. | §2.2a, §8.2 |
 
 ### v0.9 — 2026-08-07 (raised by E, affects E only)
 
@@ -322,6 +328,34 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `label_template` | VARCHAR(255) | NOT NULL | `Equivalent to driving {value} km` |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+## 2.2a Comparison Scenarios
+
+The standard test scenarios §8.2's pre-publish comparison view runs. A scenario is a saved `POST /calculate` request minus the factor set: a sector, a food category, a horizon and a set of destination lines. Rows, not a constant, per §8.2 — hard-coding them would reintroduce "change the code to change the configuration."
+
+### `comparison_scenario`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `code` | VARCHAR(64) | UNIQUE, NOT NULL | |
+| `name` | VARCHAR(128) | NOT NULL | |
+| `sector_id` | INT | FK, NOT NULL | |
+| `food_category_id` | INT | FK, NULL | Null means the standard mix — the same reading §6.2 gives the field |
+| `gwp_horizon` | SMALLINT | NOT NULL, DEFAULT 100 | `20` or `100`, per §6.2 |
+| `sort_order` | INT | NOT NULL, DEFAULT 0 | |
+| `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+### `comparison_scenario_line`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `scenario_id` | INT | FK → `comparison_scenario.id`, NOT NULL, ON DELETE CASCADE | |
+| `destination_id` | INT | FK, NOT NULL | |
+| `qty_kg` | DECIMAL(16,3) | NOT NULL | |
+
+> Unlike the taxonomy tables, a scenario may be deleted through the panel: it is a staff member's own saved test case, referenced by nothing else in the schema, so deleting one strands no historical result.
 
 ## 2.3 Submissions
 
@@ -1194,7 +1228,7 @@ Requirements: list views must offer search and filtering.
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
-The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — differenced client-side. The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent.
+The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — differenced client-side. The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent. They live in `comparison_scenario` / `comparison_scenario_line` (§2.2a), edited through their own CRUD screens like every other §8.1 table.
 
 Because a dry-run request body is a `bundle` plus a scenario, the dry-run view can offer a **Save as regression case** action that writes `tests/golden/case_NN/{bundle,request,expected}.json` (§10.1) directly from a run staff considers worth keeping. Tuning factors then produces golden cases as a by-product rather than requiring them to be authored separately.
 

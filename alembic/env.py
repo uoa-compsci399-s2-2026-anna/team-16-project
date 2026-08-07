@@ -10,6 +10,7 @@ from logging.config import fileConfig
 from alembic import context
 from sqlalchemy import engine_from_config, pool
 
+import admin.comparison_models  # noqa: F401  - registers the comparison tables
 import admin.factor_models  # noqa: F401  - registers the six factor tables
 import admin.models  # noqa: F401  - registers staff, staff_recovery_code, audit_log
 import admin.taxonomy_models  # noqa: F401  - registers the six taxonomy tables

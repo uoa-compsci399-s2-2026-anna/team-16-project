@@ -139,4 +139,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                  ConstantAdmin, FormulaAdmin, EquivalenceAdmin):
         admin.add_view(view)
 
+    from admin.comparison_views import ComparisonScenarioAdmin, ComparisonScenarioLineAdmin
+
+    for view in (ComparisonScenarioAdmin, ComparisonScenarioLineAdmin):
+        admin.add_view(view)
+
     return app

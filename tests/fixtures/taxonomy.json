@@ -1,0 +1,9 @@
+{
+  "factor_set": {"version_label": "MOCK-v0", "is_mock": true},
+  "sectors": [{"code": "processing", "name": "Processing", "description": null, "sort_order": 0}],
+  "food_categories": [{"code": "standard_mix", "name": "Standard mix", "is_standard_mix": true, "sort_order": 0}],
+  "destination_groups": [{"code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 0}],
+  "destinations": [{"code": "landfill", "name": "Landfill", "group": "disposal", "description": null, "sort_order": 0}],
+  "metrics": [{"code": "co2e", "name": "Greenhouse gas", "unit": "kg CO2e", "display_unit": null, "display_precision": 1, "sort_order": 0}],
+  "unit_presets": []
+}

@@ -1,0 +1,8 @@
+{
+  "factor_set": {"version_label": "MOCK-v0", "is_mock": true, "published_at": null, "notes": ""},
+  "constants": [{"code": "GWP_CH4_100", "value": "28.0000000000", "unit": "", "note": ""}],
+  "formulas": [{"metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": ""}],
+  "upstream": [{"sector": "processing", "food_category": "dairy", "metric": "co2e", "value_per_kg": "1.9000000000"}],
+  "downstream": [{"destination": "landfill", "food_category": "dairy", "metric": "co2e", "value_per_kg": "0.9900000000"}],
+  "equivalences": []
+}

@@ -4,6 +4,18 @@ Nothing else in the suite runs migrations: tests/conftest.py builds the
 schema with create_all() because it is faster and the tests care about
 behaviour, not DDL. That leaves one hole — a model change that nobody wrote
 a migration for passes every test and then fails on deploy. This closes it.
+
+**Known blind spot:** on this SQLAlchemy/MySQL combination, `compare_metadata`
+sees a missing `UNIQUE` constraint but not a missing `CHECK` constraint —
+confirmed by stripping each in turn from a migration and re-running
+`test_the_migration_chain_matches_the_models` below: the UNIQUE removal
+failed the test, the CHECK removal did not. A CHECK constraint declared on a
+model (e.g. `comparison_scenario`'s `gwp_horizon IN (20, 100)`, see
+`admin/comparison_models.py`) still needs its own `op.execute` proven by a
+live-flush behavioural test
+(`tests/admin/test_comparison_models.py::
+test_the_gwp_horizon_is_one_of_the_two_the_contract_allows`) — this module's
+drift gate does not guard it.
 """
 
 import pytest

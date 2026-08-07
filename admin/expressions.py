@@ -17,6 +17,7 @@ browser submitted.
 """
 
 import ast
+import math
 from collections.abc import Iterable
 
 #: Contract §4.3. Available on every line, whatever the factor set contains.
@@ -31,7 +32,7 @@ PERMITTED_FUNCTIONS = frozenset({"min", "max", "abs", "round"})
 _PERMITTED_NODES = (
     ast.Expression, ast.Constant, ast.Name, ast.Load, ast.Call,
     ast.BinOp, ast.UnaryOp,
-    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.USub, ast.UAdd,
+    ast.Add, ast.Sub, ast.Mult, ast.Div, ast.USub,
 )
 
 
@@ -63,7 +64,9 @@ def validate_expression(expression: str, *, constant_codes: Iterable[str]) -> No
         tree = ast.parse(expression, mode="eval")
     except SyntaxError as exc:
         raise ExpressionError(
-            f"Syntax error: {exc.msg}", line=exc.lineno or 1, column=exc.offset or 0
+            f"Syntax error: {exc.msg}",
+            line=exc.lineno or 1,
+            column=max((exc.offset or 1) - 1, 0),
         ) from exc
 
     permitted_names = set(BASE_VARIABLES) | {
@@ -81,7 +84,7 @@ def validate_expression(expression: str, *, constant_codes: Iterable[str]) -> No
 
     for node in ast.walk(tree):
         if isinstance(node, ast.Call):
-            _check_call(node, permitted_names)
+            _check_call(node)
             continue
         if not isinstance(node, _PERMITTED_NODES):
             raise ExpressionError(
@@ -89,6 +92,8 @@ def validate_expression(expression: str, *, constant_codes: Iterable[str]) -> No
                 line=getattr(node, "lineno", 1),
                 column=getattr(node, "col_offset", 0),
             )
+        if isinstance(node, ast.Constant):
+            _check_constant(node)
         if isinstance(node, ast.Name) and id(node) not in call_function_name_ids:
             if node.id not in permitted_names:
                 raise ExpressionError(
@@ -98,7 +103,30 @@ def validate_expression(expression: str, *, constant_codes: Iterable[str]) -> No
                 )
 
 
-def _check_call(node: ast.Call, permitted_names: set[str]) -> None:
+def _check_constant(node: ast.Constant) -> None:
+    """§4.3 permits only decimal-number literals.
+
+    ast.Constant covers every Python literal — strings, bytes, None,
+    complex, Ellipsis and bool as well as int/float. bool is an int
+    subclass, so it must be excluded explicitly. A non-finite float
+    (inf/nan, reachable via a literal like 1e999) parses and evaluates
+    fine but only fails later at Decimal conversion or JSON
+    serialisation, after the number has been computed — so it is
+    refused here instead.
+    """
+    value = node.value
+    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+        raise ExpressionError(
+            f"{_describe_value(value)} is not a decimal number a formula can use.",
+            line=node.lineno, column=node.col_offset,
+        )
+
+
+def _describe_value(value: object) -> str:
+    return f"{value!r} ({type(value).__name__})"
+
+
+def _check_call(node: ast.Call) -> None:
     """A call is permitted only to one of the four named functions."""
     if not isinstance(node.func, ast.Name):
         raise ExpressionError(

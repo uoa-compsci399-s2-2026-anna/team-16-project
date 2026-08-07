@@ -29,6 +29,7 @@ def bad(expression):
     "round(qty_kg * upstream, 2)",
     "qty_kg * const_LEVY_NZD_PER_T / 1000",
     "1.5 * qty_kg",
+    "qty_kg - downstream",
 ])
 def test_the_contract_default_formulas_and_their_neighbours_are_accepted(expression):
     """§4.3's five defaults plus every construct the table permits."""
@@ -103,10 +104,54 @@ def test_an_unpermitted_function_is_refused():
     assert "sum" in str(error)
 
 
+def test_a_keyword_argument_is_refused():
+    """§4.3 lists no keyword-argument syntax; round(qty_kg, ndigits=2) must
+    be refused even though round(qty_kg, 2) is fine."""
+    bad("round(qty_kg, ndigits=2)")
+
+
+@pytest.mark.parametrize("expression", [
+    "+qty_kg",
+    "qty_kg * +upstream",
+])
+def test_unary_plus_is_refused(expression):
+    """§4.3 permits unary minus only. ast.UAdd was never in the contract, and
+    an extra whitelist entry nobody asked for is exactly the drift this
+    design exists to prevent."""
+    bad(expression)
+
+
+@pytest.mark.parametrize("expression", [
+    '"os" * qty_kg',
+    "qty_kg * True",
+    "qty_kg + None",
+    "qty_kg * b'x'",
+    "qty_kg * 1j",
+    "qty_kg * ...",
+    "qty_kg * 1e999",
+])
+def test_non_decimal_literals_are_refused(expression):
+    """ast.Constant covers every Python literal, not just decimal numbers.
+    The engine binds qty_kg/upstream/downstream as Decimal, so a string,
+    bool, None, bytes, complex, Ellipsis or non-finite float reaches the
+    public as a TypeError (or an inf that only fails at serialisation) —
+    the exact FORMULA_ERROR 500 this module exists to prevent."""
+    bad(expression)
+
+
 def test_an_error_carries_a_position():
     """The panel shows this beside the field, so "somewhere in this text" is
     not good enough for an expression a staff member is debugging."""
     error = bad("qty_kg * upstrem")
 
-    assert error.line >= 1
-    assert error.column >= 0
+    assert error.line == 1
+    assert error.column == 9
+
+
+def test_a_syntax_error_column_is_zero_based_like_col_offset():
+    """SyntaxError.offset is 1-based; ExpressionError.column must match the
+    0-based col_offset convention used everywhere else, or the caret in the
+    panel points one character right of the actual problem."""
+    error = bad("1 +* 2")
+
+    assert error.column == 3

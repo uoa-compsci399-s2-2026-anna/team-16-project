@@ -27,6 +27,7 @@ def bad(expression):
     "max(0, qty_kg * downstream)",
     "abs(downstream) * qty_kg",
     "round(qty_kg * upstream, 2)",
+    "round(qty_kg * upstream, -1)",
     "qty_kg * const_LEVY_NZD_PER_T / 1000",
     "1.5 * qty_kg",
     "qty_kg - downstream",
@@ -135,6 +136,22 @@ def test_rounds_second_argument_must_be_an_integer_literal():
     be an int at runtime - a Decimal or float there is a TypeError the
     engine would raise live."""
     bad("round(qty_kg * upstream, qty_kg)")
+
+
+def test_rounds_second_argument_may_be_a_negative_integer_literal():
+    """round(x, -1) rounds to the nearest ten - a legitimate thing to ask
+    for. Python has no negative-literal syntax: `-1` parses as
+    UnaryOp(USub, Constant(1)), not a bare Constant, so the int-literal
+    check has to unwrap the unary minus rather than reject anything that
+    isn't a plain ast.Constant."""
+    ok("round(qty_kg * upstream, -1)")
+
+
+def test_rounds_second_argument_must_still_be_a_literal_when_negated():
+    """-qty_kg is UnaryOp(USub, Name), not UnaryOp(USub, Constant) - the
+    unwrapped operand still has to be an int literal, or this would accept
+    any unary-minus expression as ndigits."""
+    bad("round(qty_kg * upstream, -qty_kg)")
 
 
 @pytest.mark.parametrize("expression", [

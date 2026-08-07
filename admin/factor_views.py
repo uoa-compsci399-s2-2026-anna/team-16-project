@@ -6,8 +6,13 @@ its default is every mapped column.
 
 Unlike the taxonomy screens, these allow delete: a factor row belongs to one
 version, versions are cloned rather than edited in place, and a row deleted
-from a draft has no historical result pointing at it. A published set is a
-different matter — see FactorSetAdmin.
+from a draft has no historical result pointing at it. A published or
+archived set is a different matter - every one of the five views below
+refuses both editing and deleting a row whose parent factor_set is not a
+draft (`_refuse_if_factor_set_not_draft`, `_require_draft_factor_set`,
+`_refuse_delete_from_non_draft`), and a *move* is checked on both the row's
+previous factor_set and its pending one, not the pending one alone. See
+FactorSetAdmin for the set-level version of the same invariant.
 
 The two high-volume tables carry roughly 270 and 600 rows per factor set, so
 every list here filters by factor_set. A staff member editing the wrong
@@ -30,17 +35,76 @@ from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_
 _CATEGORY = "Factors"
 
 
-def _require_draft_factor_set(session, model) -> None:
-    """Refuse a create/update whose parent factor_set is not a draft.
+def _refuse_if_factor_set_not_draft(factor_set: FactorSet | None) -> None:
+    """Raise unless `factor_set` is a draft, or there is none to check.
 
-    This module's own docstring says "versions are cloned rather than
-    edited in place." Nothing enforced that until this guard existed: a
-    staff member could open a published set's own factor_upstream row and
-    change value_per_kg directly through sqladmin's generic edit form -
-    plain setattr then commit, nowhere near a service function - and every
-    historical submission stamped with that factor_set_id would silently
-    stop reproducing, which is the entire guarantee stamping a
-    factor_set_id onto a submission exists to buy (contract §2.2).
+    The one check both the edit-path guard (`_require_draft_factor_set`)
+    and every view's delete-path guard below actually need to make. This
+    module's own docstring says "versions are cloned rather than edited in
+    place" - nothing enforced that until this existed: a staff member could
+    open a published set's own factor_upstream row and change value_per_kg
+    directly through sqladmin's generic edit form, or delete it outright,
+    nowhere near a service function - and every historical submission
+    stamped with that factor_set_id would silently stop reproducing, which
+    is the entire guarantee stamping a factor_set_id onto a submission
+    exists to buy (contract §2.2).
+    """
+    if factor_set is not None and factor_set.status is not FactorSetStatus.draft:
+        raise TaxonomyInvariantError(
+            f"'{factor_set.version_label}' is {factor_set.status.value}, "
+            "not draft. Its numbers must not change: every historical "
+            "submission stamped with this factor_set_id depends on them "
+            "staying exactly as published. Clone this set into a new "
+            "draft first."
+        )
+
+
+#: The factor_set_id a row was filed under just before an edit lands, keyed
+#: by nothing (one value, like _pending_deleted_constant_factor_set below) -
+#: sqladmin's edit route only ever handles one row per request. See
+#: `_capture_previous_factor_set_id`'s own docstring for why this exists at
+#: all rather than reading SQLAlchemy's attribute history directly.
+_pending_previous_factor_set_id: contextvars.ContextVar[int | None] = (
+    contextvars.ContextVar("kai_admin_pending_previous_factor_set_id", default=None)
+)
+
+
+def _capture_previous_factor_set_id(view: AuditedModelView, model: type, pk: str) -> int | None:
+    """`model`'s row `pk`'s factor_set_id, read *before* the pending edit
+    lands - see each view's own `update_model` override below for where this
+    is stashed on `_pending_previous_factor_set_id` for
+    `_require_draft_factor_set` to read back.
+
+    The brief for this guard pointed at SQLAlchemy's attribute history -
+    the mechanism admin/modelviews.py's `_snapshot_before` already uses for
+    the audit trail. Tried first, directly, in `_require_draft_factor_set`:
+    it does not work from there. `_snapshot_before` is only ever called
+    *before* the `session.flush()` the before_commit listener runs ahead of
+    `validate_before_commit` (admin/modelviews.py's own docstring explains
+    why the flush has to happen first: a query issued before it would not
+    see this write's own pending change). Verified directly against this
+    SQLAlchemy: for a scalar column reassigned then flushed,
+    `history.deleted` holds the old value beforehand and is empty
+    afterwards - the flush resets what SQLAlchemy considers the attribute's
+    "committed" state, the same way it empties `session.new`/`session.dirty`
+    (FormulaAdmin.validate_before_commit's own docstring below covers that
+    half of the same trap). `validate_before_commit` - and so
+    `_require_draft_factor_set` - only ever runs after that flush, so by the
+    time either could read it, the "before" value is already gone.
+
+    The fix follows the same shape `ConstantAdmin.delete_model` already
+    uses for delete: capture what is needed before the mutating call, on a
+    lookup taken while the true "before" state still exists, since nothing
+    downstream can recover it once that call has run.
+    """
+    with view.session_maker() as lookup:
+        row = lookup.get(model, int(pk))
+        return row.factor_set_id if row is not None else None
+
+
+def _require_draft_factor_set(session, model) -> None:
+    """Refuse a create/update whose parent factor_set is not a draft - on
+    either end of a move.
 
     Called from all five factor-row views' own validate_before_commit.
     Reads the pending rows of `model` straight out of `session.identity_map`
@@ -49,26 +113,51 @@ def _require_draft_factor_set(session, model) -> None:
     FormulaAdmin.validate_before_commit's docstring for how that was
     confirmed).
 
-    Deliberately does not cover a delete: a deleted row leaves
+    Checks the row's *pending* factor_set (its new value) and, if
+    `_pending_previous_factor_set_id` names a different one, that too.
+    Checking the pending value alone missed a row moving **out of** a
+    published set: reassigning `factor_set_id` from a published set to a
+    draft makes the row look, by its new value alone, like an ordinary
+    draft-row edit - and reassigning a referenced row **into** another set
+    is exactly as much of a break for the set losing it. An edit that does
+    not touch `factor_set_id` leaves the ContextVar equal to the row's own
+    (unchanged) value, so this second check is a no-op for the ordinary
+    case, draft-to-draft moves included.
+
+    Delete is deliberately not handled here: a deleted row leaves
     session.identity_map once its own delete flushes (see
-    ConstantAdmin.delete_model's docstring for the confirmed mechanism and
-    the ContextVar it uses to work around it for the one guard that already
-    needs to), and none of the five call sites below carries the equivalent
-    per-row bookkeeping a delete would need. Deleting a row out of a
-    published set is exactly as much a reproducibility break as editing one
-    in place - this is a known, unclosed gap, not a considered exemption.
+    ConstantAdmin.delete_model's docstring for the confirmed mechanism), so
+    there is nothing left in `session.identity_map` for this loop to find by
+    the time validate_before_commit runs. Each view's own delete_model
+    override, below, checks the row before it is gone instead.
     """
     rows = [obj for obj in session.identity_map.values() if isinstance(obj, model)]
     for row in rows:
-        factor_set = row.factor_set
-        if factor_set is not None and factor_set.status is not FactorSetStatus.draft:
-            raise TaxonomyInvariantError(
-                f"'{factor_set.version_label}' is {factor_set.status.value}, "
-                "not draft. Its numbers must not change: every historical "
-                "submission stamped with this factor_set_id depends on them "
-                "staying exactly as published. Clone this set into a new "
-                "draft before editing it."
-            )
+        _refuse_if_factor_set_not_draft(row.factor_set)
+
+        previous_id = _pending_previous_factor_set_id.get()
+        if previous_id is not None and previous_id != row.factor_set_id:
+            _refuse_if_factor_set_not_draft(session.get(FactorSet, previous_id))
+
+
+def _refuse_delete_from_non_draft(view: AuditedModelView, model: type, pk: str) -> None:
+    """Refuse deleting `model`'s row `pk` out of a published or archived set.
+
+    The delete-path counterpart to `_require_draft_factor_set`'s edit-path
+    guard - closing the gap that guard's own docstring used to describe as
+    "known, unclosed": removing a factor_upstream row from a published set
+    breaks reproducibility exactly as editing it in place does.
+
+    Looks the row up through `view`'s own session_maker *before* the delete
+    happens, the same way `ConstantAdmin.delete_model` already does for its
+    own orphan check - a deleted row leaves session.identity_map once its
+    own delete flushes, so validate_before_commit has nothing left to
+    inspect by the time it runs; there is no "after" hook this could be.
+    """
+    with view.session_maker() as lookup:
+        row = lookup.get(model, int(pk))
+        factor_set = row.factor_set if row is not None else None
+    _refuse_if_factor_set_not_draft(factor_set)
 
 
 class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
@@ -95,6 +184,23 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     ]
     column_sortable_list = [FactorUpstream.value_per_kg]
     page_size = 100
+
+    async def update_model(self, request, pk: str, data: dict):
+        """Stash factor_set_id as it stood before this edit lands. Contract
+        §2.2. See _capture_previous_factor_set_id's own docstring."""
+        token = _pending_previous_factor_set_id.set(
+            _capture_previous_factor_set_id(self, FactorUpstream, pk)
+        )
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _pending_previous_factor_set_id.reset(token)
+
+    async def delete_model(self, request, pk) -> None:
+        """A published or archived set's rows must not be removed either.
+        Contract §2.2. See _refuse_delete_from_non_draft's own docstring."""
+        _refuse_delete_from_non_draft(self, FactorUpstream, pk)
+        await super().delete_model(request, pk)
 
     def validate_before_commit(self, session) -> None:
         """A published or archived set's numbers must not change in place.
@@ -138,6 +244,23 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     ]
     column_sortable_list = [FactorDownstream.value_per_kg]
     page_size = 100
+
+    async def update_model(self, request, pk: str, data: dict):
+        """Stash factor_set_id as it stood before this edit lands. Contract
+        §2.2. See _capture_previous_factor_set_id's own docstring."""
+        token = _pending_previous_factor_set_id.set(
+            _capture_previous_factor_set_id(self, FactorDownstream, pk)
+        )
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _pending_previous_factor_set_id.reset(token)
+
+    async def delete_model(self, request, pk) -> None:
+        """A published or archived set's rows must not be removed either.
+        Contract §2.2. See _refuse_delete_from_non_draft's own docstring."""
+        _refuse_delete_from_non_draft(self, FactorDownstream, pk)
+        await super().delete_model(request, pk)
 
     def validate_before_commit(self, session) -> None:
         """A published or archived set's numbers must not change in place.
@@ -204,8 +327,20 @@ class ConstantAdmin(AuditedModelView, model=Constant):
     ]
     page_size = 50
 
+    async def update_model(self, request, pk: str, data: dict):
+        """Stash factor_set_id as it stood before this edit lands. Contract
+        §2.2. See _capture_previous_factor_set_id's own docstring."""
+        token = _pending_previous_factor_set_id.set(
+            _capture_previous_factor_set_id(self, Constant, pk)
+        )
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _pending_previous_factor_set_id.reset(token)
+
     async def delete_model(self, request, pk) -> None:
-        """Remember which factor_set this row belonged to, before it is gone.
+        """Remember which factor_set this row belonged to, before it is gone
+        - and refuse outright if that set is not a draft. Contract §2.2.
 
         A deleted row leaves `session.identity_map` once its delete flushes
         (confirmed directly in FormulaAdmin's own validate_before_commit
@@ -225,10 +360,17 @@ class ConstantAdmin(AuditedModelView, model=Constant):
         which that module's own docstring already establishes propagates a
         ContextVar set beforehand into the worker thread the before_commit
         listener - and so validate_before_commit below - runs on.
+
+        The draft check runs on this same lookup rather than through
+        `_refuse_delete_from_non_draft` - that helper opens its own,
+        separate lookup session, and this method already has the row open
+        for exactly the same reason (the ContextVar bookkeeping above).
         """
         with self.session_maker() as lookup:
             constant = lookup.get(Constant, int(pk))
+            factor_set = constant.factor_set if constant is not None else None
             factor_set_id = constant.factor_set_id if constant is not None else None
+        _refuse_if_factor_set_not_draft(factor_set)
         token = _pending_deleted_constant_factor_set.set(factor_set_id)
         try:
             await super().delete_model(request, pk)
@@ -306,6 +448,23 @@ class EquivalenceAdmin(AuditedModelView, model=Equivalence):
     column_default_sort = ("sort_order", False)
     page_size = 50
 
+    async def update_model(self, request, pk: str, data: dict):
+        """Stash factor_set_id as it stood before this edit lands. Contract
+        §2.2. See _capture_previous_factor_set_id's own docstring."""
+        token = _pending_previous_factor_set_id.set(
+            _capture_previous_factor_set_id(self, Equivalence, pk)
+        )
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _pending_previous_factor_set_id.reset(token)
+
+    async def delete_model(self, request, pk) -> None:
+        """A published or archived set's rows must not be removed either.
+        Contract §2.2. See _refuse_delete_from_non_draft's own docstring."""
+        _refuse_delete_from_non_draft(self, Equivalence, pk)
+        await super().delete_model(request, pk)
+
     def validate_before_commit(self, session) -> None:
         """A published or archived set's numbers must not change in place.
         Contract §2.2. See _require_draft_factor_set's own docstring."""
@@ -326,6 +485,23 @@ class FormulaAdmin(AuditedModelView, model=Formula):
     column_filters = [ForeignKeyFilter(Formula.factor_set_id, FactorSet.version_label,
                                        title="Factor set")]
     page_size = 50
+
+    async def update_model(self, request, pk: str, data: dict):
+        """Stash factor_set_id as it stood before this edit lands. Contract
+        §2.2. See _capture_previous_factor_set_id's own docstring."""
+        token = _pending_previous_factor_set_id.set(
+            _capture_previous_factor_set_id(self, Formula, pk)
+        )
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _pending_previous_factor_set_id.reset(token)
+
+    async def delete_model(self, request, pk) -> None:
+        """A published or archived set's rows must not be removed either.
+        Contract §2.2. See _refuse_delete_from_non_draft's own docstring."""
+        _refuse_delete_from_non_draft(self, Formula, pk)
+        await super().delete_model(request, pk)
 
     def validate_before_commit(self, session) -> None:
         """Refuse an expression the engine could not run. Contract §4.3.

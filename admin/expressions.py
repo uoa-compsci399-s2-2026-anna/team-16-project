@@ -194,12 +194,23 @@ def _check_call(node: ast.Call) -> None:
 
 
 def _is_int_literal(node: ast.AST) -> bool:
-    """True for a bare, non-boolean integer literal such as `2`.
+    """True for a bare, non-boolean integer literal such as `2`, or its
+    negation `-1`.
 
     round()'s ndigits must be an int at runtime; anything else the grammar
     could put there (qty_kg, 2.0, a nested call) raises a TypeError the
-    engine would hit live, so only this shape is accepted.
+    engine would hit live, so only this shape is accepted. A negative
+    ndigits (round to tens, hundreds, ...) is a legitimate thing to ask for,
+    but Python has no negative-literal syntax: `-1` parses as
+    `UnaryOp(USub, Constant(1))`, not a bare `Constant` carrying a negative
+    value, so a single unary minus is unwrapped before the same bare-int
+    check that already covers the positive case. Unwrapping only ever one
+    level deep is deliberate: after unwrapping, `-qty_kg`'s operand is
+    `Name`, not `Constant`, so it is still refused - the check is "a literal,
+    optionally negated," not "any expression built from unary minus."
     """
+    if isinstance(node, ast.UnaryOp) and isinstance(node.op, ast.USub):
+        node = node.operand
     return (
         isinstance(node, ast.Constant)
         and isinstance(node.value, int)

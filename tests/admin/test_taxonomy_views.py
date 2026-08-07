@@ -9,49 +9,43 @@ task-3-report.md for the full account:
    ``client`` fixture in tests/conftest.py) - the same object
    tests/admin/test_accounts_view.py drives - and calling one of its methods
    without ``await`` returns an un-awaited coroutine, not a response.
-2. ``session`` here is a *local* fixture, not the rolled-back one
-   tests/conftest.py defines. That one binds its sessionmaker to a Connection
-   already holding an open transaction, so - per SQLAlchemy's
-   ``join_transaction_mode`` default - ``session.commit()`` never issues a
-   real COMMIT visible outside that one Connection. ``admin_client`` drives
-   real HTTP requests that reach the taxonomy views through the running
-   app's *own*, separate sessionmaker (a different connection entirely), so
-   a test that seeds a row via the rolled-back fixture and then expects
-   ``admin_client`` to see it would fail for a reason that has nothing to do
-   with the invariant under test. The local ``session`` fixture below opens
-   a real session against ``admin_app``'s own sessionmaker instead, commits
-   for real, and cleans up the exact rows it touches afterwards - the same
-   shape as this file's own ``admin_client``/``_cleanup_staff`` and
-   tests/admin/test_accounts_view.py's, and for the same reason (see that
-   file's ``_cleanup_staff`` docstring): nothing else undoes a commit made
-   through ``admin_app.state.session_factory``.
+2. ``session`` here wraps tests/admin/conftest.py's hard-committing
+   ``_committed_session``, not the rolled-back ``session``
+   tests/conftest.py defines at the top level. That one binds its
+   sessionmaker to a Connection already holding an open transaction, so -
+   per SQLAlchemy's ``join_transaction_mode`` default - ``session.commit()``
+   never issues a real COMMIT visible outside that one Connection.
+   ``admin_client`` drives real HTTP requests that reach the taxonomy views
+   through the running app's *own*, separate sessionmaker (a different
+   connection entirely), so a test that seeds a row via the rolled-back
+   fixture and then expects ``admin_client`` to see it would fail for a
+   reason that has nothing to do with the invariant under test.
+   ``_committed_session`` opens a real session against ``admin_app``'s own
+   sessionmaker instead and commits for real (see its own docstring for why
+   it is not itself named ``session``); this file's own autouse cleanup
+   fixture below removes the exact rows its tests touch afterwards.
 """
 
-import re
-import time
-import uuid
-
-import pyotp
 import pytest
-import pytest_asyncio
 from sqlalchemy import bindparam as sa_bindparam
 from sqlalchemy import select, text
 
-from admin.accounts import (
-    begin_mfa_enrolment, complete_mfa_enrolment, create_staff, get_staff, set_password,
-)
-from admin.models import StaffRole
 from admin.taxonomy_models import Destination, DestinationGroup, FoodCategory
 from admin.taxonomy_views import (
     DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
     SectorAdmin, UnitPresetAdmin,
 )
-from admin.totp import TOTP_INTERVAL
-from admin.views import time as views_time
+from tests.admin.conftest import _resync
 
 pytestmark = pytest.mark.db
 
-SECRET_KEY = "test-secret-key-not-used-anywhere-real"
+
+@pytest.fixture
+def session(_committed_session):
+    """This file's own name for tests/admin/conftest.py's hard-committing
+    session - see this module's own docstring."""
+    return _committed_session
+
 
 ALL_VIEWS = [
     DestinationGroupAdmin, DestinationAdmin, SectorAdmin,
@@ -120,93 +114,11 @@ def test_the_details_page_shows_no_more_than_the_list(view):
 
 # --- Fixtures ---------------------------------------------------------
 #
-# No tests/admin/conftest.py exists (per Task 6's own note), so - matching
-# every other file under tests/admin/ - these are file-local. admin_client
-# and its helpers are the same shape as tests/admin/test_accounts_view.py's;
-# duplicated rather than imported to keep this file self-contained the way
-# every sibling file in this directory already is.
-
-
-def _create_onboarded_account(admin_app, *, role=StaffRole.admin):
-    """Create and commit a fully onboarded account of the given role."""
-    username = f"u{uuid.uuid4().hex[:10]}"
-    password = "a-long-enough-password"
-    factory = admin_app.state.session_factory
-    with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role)
-        db.flush()
-        set_password(db, username, password)
-        secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
-        # Backdated so the login step below, which mints a fresh TOTP code
-        # for "now", cannot collide with the counter enrolment just spent.
-        enrol_now = int(time.time()) - 4 * TOTP_INTERVAL
-        complete_mfa_enrolment(
-            db, username,
-            pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(enrol_now),
-            secret_key=SECRET_KEY, now=enrol_now,
-        )
-        db.commit()
-        staff = get_staff(db, username)
-    return staff, password, secret
-
-
-async def _login(client, monkeypatch, *, username, password, secret):
-    """Drive the real HTTP login flow for an already-created, onboarded account."""
-    now = int(time.time())
-    monkeypatch.setattr(views_time, "time", lambda: now)
-
-    login = await client.post(
-        "/admin/login",
-        data={"username": username, "password": password},
-        follow_redirects=False,
-    )
-    assert login.status_code == 302, "password step should have succeeded"
-
-    verify_page = await client.get("/admin/verify")
-    match = re.search(r'name="csrf_token" value="([^"]+)"', verify_page.text)
-    assert match, "no CSRF token rendered on /admin/verify"
-    code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now)
-    verify = await client.post(
-        "/admin/verify",
-        data={"code": code, "csrf_token": match.group(1)},
-        follow_redirects=False,
-    )
-    assert verify.status_code == 302, "TOTP step should have completed the login"
-
-
-def _cleanup_staff(admin_app, *staff_rows):
-    """Remove the staff row (and any audit_log entry against it) this
-    fixture created - see tests/admin/test_accounts_view.py's function of
-    the same name for the full rationale (that module's cleanup is the
-    established pattern; this is the same thing, scoped to this file).
-    """
-    factory = admin_app.state.session_factory
-    with factory() as db:
-        for staff in staff_rows:
-            db.execute(
-                text("DELETE FROM audit_log WHERE table_name = 'staff' AND row_id = :id"),
-                {"id": staff.id},
-            )
-            db.execute(text("DELETE FROM staff WHERE id = :id"), {"id": staff.id})
-        db.commit()
-
-
-@pytest_asyncio.fixture
-async def admin_client(admin_app, client, monkeypatch):
-    """A client logged in as a fully onboarded administrator.
-
-    See tests/admin/test_accounts_view.py's fixture of the same name: cleanup
-    is registered before login is attempted, not after, so a failure partway
-    through _login does not leave a committed staff row behind.
-    """
-    staff, password, secret = _create_onboarded_account(admin_app, role=StaffRole.admin)
-    try:
-        await _login(client, monkeypatch, username=staff.username, password=password, secret=secret)
-    except BaseException:
-        _cleanup_staff(admin_app, staff)
-        raise
-    yield client
-    _cleanup_staff(admin_app, staff)
+# admin_client, staff_client, session and _resync now come from
+# tests/admin/conftest.py. This file keeps only what names its own fixed
+# codes: the cleanup helper below and the autouse fixture that runs it,
+# since tests/admin/conftest.py's own `session` fixture cannot know what a
+# given file's tests committed through it.
 
 
 _TAXONOMY_CODES = {
@@ -278,49 +190,18 @@ def _cleanup_taxonomy_rows(admin_app):
         db.commit()
 
 
-def _resync(session):
-    """End this session's own transaction and clear its identity map, so the
-    next query reflects what `admin_client`'s HTTP request - a different
-    connection - just committed.
-
-    `session.expire_all()` alone is not enough: MySQL's default REPEATABLE
-    READ isolation gives a transaction one consistent snapshot from its first
-    statement onward, so a query re-issued on the *same still-open*
-    transaction keeps seeing the pre-request snapshot no matter how many
-    Python-side attributes were expired. Verified directly against this
-    MySQL - test_a_valid_edit_still_goes_through failed on the assertion
-    (stale "Fruit" instead of the freshly written "Fruit and berries") with
-    only `expire_all()`, while a raw connection queried in parallel already
-    showed the update. `session.commit()` here has nothing pending to write;
-    its effect is to close out the stale transaction and open a fresh one for
-    the query that follows.
+@pytest.fixture(autouse=True)
+def _cleanup_this_files_rows(admin_app):
+    """Runs after every test in this file, regardless of whether it used
+    `session` - matching the unconditional (`finally`) cleanup the old
+    file-local `session` fixture used to perform itself. This is the *whole
+    point* of the cleanup rather than an afterthought - a test that fails
+    partway through, after `session.commit()` has already run, would
+    otherwise leave a row behind that collides with the fixed codes the next
+    test in this file inserts.
     """
-    session.commit()
-    session.expire_all()
-
-
-@pytest.fixture
-def session(admin_app):
-    """A real, hard-committing session against the running admin app's own
-    database. See this module's docstring for why the rolled-back `session`
-    fixture in tests/conftest.py cannot stand in here: `admin_client` reaches
-    the taxonomy views through admin_app's own sessionmaker, a different
-    connection, and MySQL will not let a write that was never really
-    committed be visible there.
-
-    Cleanup is unconditional (`finally`), not merely on success, and it is
-    the *whole point* of this fixture rather than an afterthought - a test
-    that fails partway through, after `session.commit()` has already run,
-    would otherwise leave a row behind that collides with the fixed codes
-    the next test in this file inserts.
-    """
-    factory = admin_app.state.session_factory
-    db = factory()
-    try:
-        yield db
-    finally:
-        db.close()
-        _cleanup_taxonomy_rows(admin_app)
+    yield
+    _cleanup_taxonomy_rows(admin_app)
 
 
 # --- End-to-end tests: the invariant holds through the real edit path -----

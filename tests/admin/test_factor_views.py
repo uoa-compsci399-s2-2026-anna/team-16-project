@@ -8,29 +8,35 @@ the same reasons - see that file's module docstring for the full account:
    ``admin_client`` call. ``admin_client`` is httpx's ``AsyncClient`` (the
    ``client`` fixture in tests/conftest.py); calling one of its methods
    without ``await`` returns an un-awaited coroutine, not a response.
-2. ``session`` here is a *local*, hard-committing fixture, not the
-   rolled-back one tests/conftest.py defines. ``admin_client`` drives real
-   HTTP requests that reach the factor views through the running app's own,
-   separate sessionmaker - a different connection entirely - so a test that
-   seeds a row via the rolled-back fixture and then expects ``admin_client``
-   to see it would fail for a reason that has nothing to do with the
-   invariant under test.
+2. ``session`` here wraps tests/admin/conftest.py's hard-committing
+   ``_committed_session``, not the rolled-back one tests/conftest.py
+   defines at the top level. ``admin_client`` drives real HTTP requests
+   that reach the factor views through the running app's own, separate
+   sessionmaker - a different connection entirely - so a test that seeds a
+   row via the rolled-back fixture and then expects ``admin_client`` to see
+   it would fail for a reason that has nothing to do with the invariant
+   under test.
+
+``admin_client``, ``staff_client`` and ``_resync`` come straight from
+tests/admin/conftest.py. ``session`` is a three-line local wrapper around
+that module's ``_committed_session`` rather than a direct import - see
+``_committed_session``'s own docstring for why the hard-committing
+implementation is not itself named ``session`` at the conftest level: doing
+that shadows every other file in this directory, not just this one. This
+file's own ``_cleanup_staff`` used to be the one every other file under
+tests/admin/ copied verbatim, because it deletes audit rows by ``actor``
+rather than by ``row_id IN (SELECT id FROM <table>)``: the latter cannot
+reach a *delete* entry, because the row it describes is precisely the one
+that no longer exists. See tests/admin/conftest.py's own copy of that
+docstring for the full account.
 """
 
-import re
-import time
-import uuid
 from decimal import Decimal
 
-import pyotp
 import pytest
-import pytest_asyncio
 from sqlalchemy import bindparam as sa_bindparam
 from sqlalchemy import select, text
 
-from admin.accounts import (
-    begin_mfa_enrolment, complete_mfa_enrolment, create_staff, get_staff, set_password,
-)
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
@@ -39,14 +45,18 @@ from admin.factor_views import (
     ConstantAdmin, EquivalenceAdmin, FactorDownstreamAdmin, FactorUpstreamAdmin,
     FormulaAdmin,
 )
-from admin.models import StaffRole
 from admin.taxonomy_models import Metric
-from admin.totp import TOTP_INTERVAL
-from admin.views import time as views_time
+from tests.admin.conftest import _resync
 
 pytestmark = pytest.mark.db
 
-SECRET_KEY = "test-secret-key-not-used-anywhere-real"
+
+@pytest.fixture
+def session(_committed_session):
+    """This file's own name for tests/admin/conftest.py's hard-committing
+    session - see this module's own docstring and ``_committed_session``'s
+    for why the shared fixture is not itself called ``session``."""
+    return _committed_session
 
 ALL_VIEWS = [
     FactorUpstreamAdmin, FactorDownstreamAdmin, ConstantAdmin, FormulaAdmin,
@@ -98,129 +108,51 @@ def test_the_high_volume_views_page_at_a_workable_size(view):
 
 # --- Fixtures ---------------------------------------------------------
 #
-# No tests/admin/conftest.py exists, so - matching every other file under
-# tests/admin/ - these are file-local. admin_client and its helpers are the
-# same shape as tests/admin/test_taxonomy_views.py's; duplicated rather than
-# imported to keep this file self-contained the way every sibling file in
-# this directory already is.
-
-
-def _create_onboarded_account(admin_app, *, role=StaffRole.admin):
-    """Create and commit a fully onboarded account of the given role."""
-    username = f"u{uuid.uuid4().hex[:10]}"
-    password = "a-long-enough-password"
-    factory = admin_app.state.session_factory
-    with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role)
-        db.flush()
-        set_password(db, username, password)
-        secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
-        # Backdated so the login step below, which mints a fresh TOTP code
-        # for "now", cannot collide with the counter enrolment just spent.
-        enrol_now = int(time.time()) - 4 * TOTP_INTERVAL
-        complete_mfa_enrolment(
-            db, username,
-            pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(enrol_now),
-            secret_key=SECRET_KEY, now=enrol_now,
-        )
-        db.commit()
-        staff = get_staff(db, username)
-    return staff, password, secret
-
-
-async def _login(client, monkeypatch, *, username, password, secret):
-    """Drive the real HTTP login flow for an already-created, onboarded account."""
-    now = int(time.time())
-    monkeypatch.setattr(views_time, "time", lambda: now)
-
-    login = await client.post(
-        "/admin/login",
-        data={"username": username, "password": password},
-        follow_redirects=False,
-    )
-    assert login.status_code == 302, "password step should have succeeded"
-
-    verify_page = await client.get("/admin/verify")
-    match = re.search(r'name="csrf_token" value="([^"]+)"', verify_page.text)
-    assert match, "no CSRF token rendered on /admin/verify"
-    code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now)
-    verify = await client.post(
-        "/admin/verify",
-        data={"code": code, "csrf_token": match.group(1)},
-        follow_redirects=False,
-    )
-    assert verify.status_code == 302, "TOTP step should have completed the login"
-
-
-def _cleanup_staff(admin_app, *staff_rows):
-    """Remove the staff row and *every* audit_log entry this file's tests
-    caused, keyed on the acting username.
-
-    Keying on the actor rather than on the changed row is deliberate. The
-    obvious cleanup — delete audit rows whose row_id is still present in the
-    table they name — cannot reach a *delete* entry, because the row it
-    describes is precisely the one that no longer exists. This file commits
-    such an entry (the constant-orphaning tests delete a constant through
-    HTTP), and it survived into `tests/admin/test_modelviews.py`, whose
-    `select(AuditLog)` takes the first row in the table and asserts its
-    action is "create". It read "delete" instead, and only when the whole
-    directory ran — the file passes alone.
-
-    Every audit row these tests produce carries this fixture's throwaway
-    administrator as its actor, so one predicate covers all of them.
-    """
-    factory = admin_app.state.session_factory
-    with factory() as db:
-        for staff in staff_rows:
-            db.execute(
-                text("DELETE FROM audit_log WHERE actor = :username"),
-                {"username": staff.username},
-            )
-            db.execute(
-                text("DELETE FROM audit_log WHERE table_name = 'staff' AND row_id = :id"),
-                {"id": staff.id},
-            )
-            db.execute(text("DELETE FROM staff WHERE id = :id"), {"id": staff.id})
-        db.commit()
-
-
-@pytest_asyncio.fixture
-async def admin_client(admin_app, client, monkeypatch):
-    """A client logged in as a fully onboarded administrator.
-
-    See tests/admin/test_taxonomy_views.py's fixture of the same name:
-    cleanup is registered before login is attempted, not after, so a failure
-    partway through _login does not leave a committed staff row behind.
-    """
-    staff, password, secret = _create_onboarded_account(admin_app, role=StaffRole.admin)
-    try:
-        await _login(client, monkeypatch, username=staff.username, password=password, secret=secret)
-    except BaseException:
-        _cleanup_staff(admin_app, staff)
-        raise
-    yield client
-    _cleanup_staff(admin_app, staff)
+# admin_client, staff_client, session and _resync now come from
+# tests/admin/conftest.py, which took its copy of the shared plumbing from
+# this file - see this file's own module docstring. What stays here is what
+# names this file's own fixed labels/codes, plus the `two_sets` fixture's
+# own "e6-"/"e6_" labels and codes (tests/admin/conftest.py's own docstring
+# on that fixture block), since the published-set guard tests below are the
+# first in this file to use it.
 
 
 _FACTOR_SET_LABELS = ["kc-factor-view-test", "kc-factor-view-test-other"]
 _METRIC_CODES = ["kc-factor-view-test-metric"]
 
+_E6_FACTOR_SET_LABELS = ["e6-source", "e6-only-draft", "e6-live", "e6-next",
+                        "e6-second-draft", "e6-move-target"]
+_E6_TAXONOMY = {
+    "destination_group": ["e6_disposal"],
+    "destination": ["e6_landfill"],
+    "sector": ["e6_processing"],
+    "food_category": ["e6_dairy"],
+    "metric": ["e6_co2e"],
+}
+
 
 def _cleanup_factor_rows(admin_app):
     """Remove every row this file's tests may have hard-committed via the
-    local `session` fixture below, by the fixed set of labels/codes those
-    tests are written against. `factor_set_id` cascades (ondelete="CASCADE"
-    on FactorUpstream/FactorDownstream/Constant/Formula/Equivalence, see
+    shared `session` fixture, by the fixed set of labels/codes those tests
+    are written against. `factor_set_id` cascades (ondelete="CASCADE" on
+    FactorUpstream/FactorDownstream/Constant/Formula/Equivalence, see
     admin/factor_models.py) so deleting the factor_set rows themselves is
     enough to take their children with it; the metric row and any audit_log
     entries are cleaned up explicitly.
+
+    Also covers the `two_sets`/`populated_set`/`one_draft` fixtures'
+    "e6-"-labelled factor sets and "e6_"-coded taxonomy rows
+    (tests/admin/conftest.py): those cascade the same way, but the taxonomy
+    rows underneath them (sector, food_category, metric, destination,
+    destination_group) do not belong to any factor_set and need their own
+    cleanup, run after the factor sets that reference them are gone.
     """
     factory = admin_app.state.session_factory
     with factory() as db:
         factor_set_ids = db.execute(
             text("SELECT id FROM factor_set WHERE version_label IN :labels")
             .bindparams(sa_bindparam("labels", expanding=True)),
-            {"labels": _FACTOR_SET_LABELS},
+            {"labels": _FACTOR_SET_LABELS + _E6_FACTOR_SET_LABELS},
         ).scalars().all()
         metric_ids = db.execute(
             text("SELECT id FROM metric WHERE code IN :codes")
@@ -259,39 +191,76 @@ def _cleanup_factor_rows(admin_app):
                 .bindparams(sa_bindparam("ids", expanding=True)),
                 {"ids": metric_ids},
             )
+
+        # e6_extra_<factor_set_id> metrics (tests/admin/conftest.py's
+        # _add_formula) have already lost their referencing formula rows via
+        # the factor_set cascade above; only the metric rows themselves are
+        # left to remove, alongside the rest of the e6_ taxonomy.
+        e6_metric_ids = db.execute(
+            text("SELECT id FROM metric WHERE code IN :codes "
+                 "OR code LIKE 'e6\\_extra\\_%' ESCAPE '\\\\'")
+            .bindparams(sa_bindparam("codes", expanding=True)),
+            {"codes": _E6_TAXONOMY["metric"]},
+        ).scalars().all()
+        destination_ids = db.execute(
+            text("SELECT id FROM destination WHERE code IN :codes")
+            .bindparams(sa_bindparam("codes", expanding=True)),
+            {"codes": _E6_TAXONOMY["destination"]},
+        ).scalars().all()
+        sector_ids = db.execute(
+            text("SELECT id FROM sector WHERE code IN :codes")
+            .bindparams(sa_bindparam("codes", expanding=True)),
+            {"codes": _E6_TAXONOMY["sector"]},
+        ).scalars().all()
+        food_category_ids = db.execute(
+            text("SELECT id FROM food_category WHERE code IN :codes")
+            .bindparams(sa_bindparam("codes", expanding=True)),
+            {"codes": _E6_TAXONOMY["food_category"]},
+        ).scalars().all()
+        group_ids = db.execute(
+            text("SELECT id FROM destination_group WHERE code IN :codes")
+            .bindparams(sa_bindparam("codes", expanding=True)),
+            {"codes": _E6_TAXONOMY["destination_group"]},
+        ).scalars().all()
+
+        for table, ids in (
+            ("metric", e6_metric_ids), ("destination", destination_ids),
+            ("sector", sector_ids), ("food_category", food_category_ids),
+        ):
+            if ids:
+                db.execute(
+                    text(f"DELETE FROM audit_log WHERE table_name = '{table}' "
+                         "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                    {"ids": ids},
+                )
+                db.execute(
+                    text(f"DELETE FROM {table} WHERE id IN :ids")
+                    .bindparams(sa_bindparam("ids", expanding=True)),
+                    {"ids": ids},
+                )
+        # destination_group after destination: the latter carries a foreign
+        # key to the former.
+        if group_ids:
+            db.execute(
+                text("DELETE FROM audit_log WHERE table_name = 'destination_group' "
+                     "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": group_ids},
+            )
+            db.execute(
+                text("DELETE FROM destination_group WHERE id IN :ids")
+                .bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": group_ids},
+            )
         db.commit()
 
 
-def _resync(session):
-    """End this session's own transaction and clear its identity map, so the
-    next query reflects what `admin_client`'s HTTP request - a different
-    connection - just committed.
-
-    See tests/admin/test_taxonomy_views.py's function of the same name:
-    MySQL's REPEATABLE READ isolation means `session.expire_all()` alone is
-    not enough - a query re-issued on the same still-open transaction keeps
-    seeing the pre-request snapshot regardless.
-    """
-    session.commit()
-    session.expire_all()
-
-
-@pytest.fixture
-def session(admin_app):
-    """A real, hard-committing session against the running admin app's own
-    database. See tests/admin/test_taxonomy_views.py's module docstring for
-    why the rolled-back `session` fixture in tests/conftest.py cannot stand
-    in here.
-
-    Cleanup is unconditional (`finally`), not merely on success.
-    """
-    factory = admin_app.state.session_factory
-    db = factory()
-    try:
-        yield db
-    finally:
-        db.close()
-        _cleanup_factor_rows(admin_app)
+@pytest.fixture(autouse=True)
+def _cleanup_this_files_rows(admin_app):
+    """Runs after every test in this file, regardless of whether it used
+    `session` - matching the unconditional (`finally`) cleanup the old
+    file-local `session` fixture used to perform itself."""
+    yield
+    _cleanup_factor_rows(admin_app)
 
 
 def _seed_set_and_metric(session):
@@ -608,3 +577,122 @@ async def test_editing_a_formula_in_a_published_set_is_refused_even_when_valid(
     assert session.scalar(
         select(Formula).where(Formula.id == formula.id)
     ).expression == "qty_kg * upstream"
+
+
+# --- End-to-end tests: the published-set guard's delete and move paths -----
+#
+# _require_draft_factor_set (admin/factor_views.py) already refuses editing
+# a row in place. These four close the two gaps E-5's reviewer found: delete
+# was unguarded entirely, and a *move* was checked only against the row's
+# pending factor_set_id - a row on its way out of a published set looks, by
+# that value alone, like an ordinary draft edit.
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_row_from_a_published_set_is_refused(
+    session, admin_client, two_sets
+):
+    """A submission stamps the factor set it was calculated against, so
+    every historical result naming this set stops reproducing. Deleting is
+    not gentler than editing - it is the same damage."""
+    published, _ = two_sets
+    row = session.scalar(
+        select(FactorUpstream).where(FactorUpstream.factor_set_id == published.id)
+    )
+    row_id = row.id
+    session.commit()
+
+    # sqladmin's generic delete route is registered for DELETE only
+    # (sqladmin/application.py's Route(..., methods=["DELETE"])) - unlike an
+    # @action route, which is GET-only. test_deleting_a_referenced_constant_is_refused
+    # above already drives this the same way.
+    await admin_client.delete("/admin/factor-upstream/delete", params={"pks": str(row_id)})
+
+    _resync(session)
+    assert session.get(FactorUpstream, row_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_moving_a_row_out_of_a_published_set_is_refused(
+    session, admin_client, two_sets
+):
+    """The guard reads the *pending* factor_set_id, so a row on its way out
+    of a published set looks like a draft row to a naive check.
+
+    The move target is a fresh, empty draft of its own rather than
+    `two_sets`'s own populated one: that one already carries a
+    FactorUpstream row on the same (sector, food_category, metric) tuple -
+    both sets in `two_sets` are built from the same `taxonomy_for_factors` -
+    so moving into it collides with `uq_factor_upstream` and the edit is
+    refused by a plain IntegrityError before the guard this test targets
+    ever runs. That refusal happens to look identical from the outside
+    (the row stays on `published`), which is exactly what makes it a false
+    positive worth guarding against here.
+    """
+    published, _ = two_sets
+    empty_draft = FactorSet(version_label="e6-move-target",
+                            status=FactorSetStatus.draft, is_mock=True)
+    session.add(empty_draft)
+    session.flush()
+    row = session.scalar(
+        select(FactorUpstream).where(FactorUpstream.factor_set_id == published.id)
+    )
+    row_id, sector_id = row.id, row.sector_id
+    category_id, metric_id = row.food_category_id, row.metric_id
+    session.commit()
+
+    await admin_client.post(f"/admin/factor-upstream/edit/{row_id}", data={
+        "factor_set": str(empty_draft.id), "sector": str(sector_id),
+        "food_category": str(category_id), "metric": str(metric_id),
+        "value_per_kg": "1.9", "data_quality": "", "source_note": "",
+    })
+
+    _resync(session)
+    assert session.get(FactorUpstream, row_id).factor_set_id == published.id
+
+
+@pytest.mark.asyncio
+async def test_a_draft_row_can_still_be_deleted(session, admin_client, two_sets):
+    """The guard must refuse the published case and nothing else. A version
+    that refused every delete would satisfy the first test and make drafts
+    uneditable, which is the opposite of the intent."""
+    _, draft = two_sets
+    row = session.scalar(
+        select(FactorUpstream).where(FactorUpstream.factor_set_id == draft.id)
+    )
+    row_id = row.id
+    session.commit()
+
+    await admin_client.delete("/admin/factor-upstream/delete", params={"pks": str(row_id)})
+
+    _resync(session)
+    assert session.get(FactorUpstream, row_id) is None
+
+
+@pytest.mark.asyncio
+async def test_moving_a_row_between_two_drafts_still_goes_through(
+    session, admin_client, two_sets
+):
+    """The move guard's counterpart to the draft-delete test above: refusing
+    only a move whose source or destination is published, not every move.
+    Needs a second draft of its own - `two_sets` provides only one."""
+    _, draft = two_sets
+    other_draft = FactorSet(version_label="e6-second-draft",
+                            status=FactorSetStatus.draft, is_mock=True)
+    session.add(other_draft)
+    session.flush()
+    row = session.scalar(
+        select(FactorUpstream).where(FactorUpstream.factor_set_id == draft.id)
+    )
+    row_id, sector_id = row.id, row.sector_id
+    category_id, metric_id = row.food_category_id, row.metric_id
+    session.commit()
+
+    await admin_client.post(f"/admin/factor-upstream/edit/{row_id}", data={
+        "factor_set": str(other_draft.id), "sector": str(sector_id),
+        "food_category": str(category_id), "metric": str(metric_id),
+        "value_per_kg": "1.9", "data_quality": "", "source_note": "",
+    })
+
+    _resync(session)
+    assert session.get(FactorUpstream, row_id).factor_set_id == other_draft.id

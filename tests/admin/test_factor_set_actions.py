@@ -155,6 +155,24 @@ async def test_the_clone_confirmation_names_the_new_version(
 
 
 @pytest.mark.asyncio
+async def test_the_clone_confirmation_points_at_the_comparison_view(
+    session, admin_client, populated_set
+):
+    """The pre-publish comparison view (§8.2, admin/dryrun_views.py's
+    CompareView) is the natural next stop after cloning a draft to edit -
+    the page that tells staff what to do next should close that loop
+    rather than leave them to find /admin/factor-sets/{id}/compare on
+    their own."""
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/factor-set/action/clone?pks={populated_set.id}"
+    )
+
+    assert "compar" in response.text.lower()
+
+
+@pytest.mark.asyncio
 async def test_selecting_more_than_one_set_is_refused(
     session, admin_client, populated_set, one_draft
 ):

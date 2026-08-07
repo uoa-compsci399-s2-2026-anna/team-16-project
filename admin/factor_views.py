@@ -801,7 +801,7 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             source_label = source.version_label
             label = self._unique_clone_label(session, source_label)
             try:
-                clone_factor_set(session, pk, label, actor)
+                clone_id = clone_factor_set(session, pk, label, actor)
             except LifecycleError as exc:
                 session.rollback()
                 return await self._refused(request, str(exc))
@@ -809,7 +809,9 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         return await self.templates.TemplateResponse(
             request, "brand/factor_set_cloned.html",
             {"clone_label": label, "source_label": source_label,
-             "next_url": self._list_url(request)},
+             "next_url": self._list_url(request),
+             "compare_url": str(request.url_for("admin:view-compare",
+                                                 factor_set_id=clone_id))},
         )
 
     @action(

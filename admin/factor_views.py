@@ -900,6 +900,17 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         No `confirmation_message`, unlike the four actions above: this is a
         read-only report, not a lifecycle action, and writes nothing for a
         confirmation step to protect against.
+
+        The route name is ``admin:view-compare``, not the bare
+        ``view-compare`` sqladmin registers it under: Starlette's
+        ``Request.url_for`` only sets ``scope["router"]`` when the scope
+        does not already carry one, and inside a view mounted under
+        sqladmin's own ``Mount`` (named ``"admin"``) the scope already has
+        the *outer* FastAPI router in it by the time this method runs -
+        exactly why ``_list_url`` above resolves ``"admin:list"``, not
+        ``"list"``. The unprefixed name is only ever visible to
+        ``app.url_path_for`` called directly on the inner app, never to
+        ``request.url_for`` from inside a request handler.
         """
         self._require_accessible(request)
         try:
@@ -907,5 +918,5 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         except LifecycleError as exc:
             return await self._refused(request, str(exc))
         return RedirectResponse(
-            request.url_for("view-compare", factor_set_id=pk), status_code=302
+            request.url_for("admin:view-compare", factor_set_id=pk), status_code=302
         )

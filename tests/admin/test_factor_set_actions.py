@@ -262,3 +262,34 @@ async def test_archiving_an_already_archived_set_shows_the_reason(
 
     assert response.status_code == 400
     assert "already archived" in response.text.lower()
+
+
+# --- Fix wave: compare ---------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_compare_action_redirects_to_the_compare_page(
+    session, admin_client, one_draft
+):
+    """Regression test for a route-name bug: `compare_action` first called
+    `request.url_for("view-compare", ...)`, the bare name sqladmin
+    registers `CompareView.compare` under. `Request.url_for` only sets
+    `scope["router"]` when the scope does not already carry one, and by
+    the time this action runs, the scope already carries the *outer*
+    FastAPI router - the same reason `_list_url` above resolves
+    `"admin:list"`, never the bare `"list"`. The unprefixed name is only
+    ever visible to `app.url_path_for` called directly on the inner
+    sqladmin app; from inside a request handler it raises
+    `starlette.routing.NoMatchFound`, an unhandled 500 no LifecycleError
+    catch around this action can reach. Fixed to `"admin:view-compare"`.
+    """
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/factor-set/action/compare?pks={one_draft.id}"
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"].endswith(
+        f"/admin/factor-sets/{one_draft.id}/compare"
+    )

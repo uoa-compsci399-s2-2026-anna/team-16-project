@@ -105,7 +105,21 @@ async def test_a_scenario_that_fails_does_not_hide_the_others(
 ):
     """A draft with one broken formula is exactly when this page matters
     most. Losing the whole report to one failing scenario would send the
-    staff member to publish blind."""
+    staff member to publish blind.
+
+    Checking only the status code and an error string (the brief's own
+    version of this test) would pass unchanged if the loop aborted after
+    the first refusal and rendered one page-level error — exactly the
+    regression this test's name claims to guard. Asserting the call count
+    and that the *second* scenario's own name and metric value are present
+    is what actually pins "the others still run".
+    """
+    fake_calc_client.result = {
+        "totals": {"current": {"metrics": {
+            "co2e": {"total": "111.0000000000", "unit": "kg CO2e",
+                     "display_precision": 1}}}, "net_benefit": {}},
+        "entries": [],
+    }
     fake_calc_client.refuse_on_call = 1
     session.commit()
 
@@ -113,6 +127,31 @@ async def test_a_scenario_that_fails_does_not_hide_the_others(
 
     assert response.status_code == 200
     assert "FORMULA_ERROR" in response.text or "could not" in response.text.lower()
+    # Two scenarios, two calls each, even though the first scenario's
+    # second call was refused — the loop kept going rather than stopping.
+    assert len(fake_calc_client.calls) == 4
+    second_scenario = seeded_scenario_pair[1]
+    assert second_scenario.name in response.text
+    assert "111" in response.text
+
+
+async def test_an_unreachable_service_is_a_page_level_message(
+    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+):
+    """B's endpoint is not deployed for most of this project's life — this
+    is the state both `/admin/try` and this page will be in for a while,
+    and it must read as an outage rather than a fault in either factor
+    set. Unlike a refusal, an unreachable service is not this scenario's
+    own problem — it says nothing looked at any scenario at all — so it is
+    one message for the whole page, not a row repeated per scenario."""
+    fake_calc_client.unavailable = True
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{two_sets[1].id}/compare")
+
+    assert response.status_code == 200
+    body = response.text.lower()
+    assert "not reachable" in body or "unavailable" in body
 
 
 async def test_comparing_against_nothing_published_says_so(

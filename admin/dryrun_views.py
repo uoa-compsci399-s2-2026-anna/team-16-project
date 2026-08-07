@@ -360,7 +360,12 @@ class CompareView(BaseView):
             scenarios = db.execute(
                 select(ComparisonScenario)
                 .where(ComparisonScenario.active.is_(True))
-                .order_by(ComparisonScenario.sort_order)
+                # `.id` breaks ties: every scenario fixture defaults
+                # `sort_order` to 0, and MySQL gives no ordering guarantee
+                # among rows equal on the only ORDER BY key - display order
+                # would otherwise be whatever the query plan happened to
+                # return, not the order staff set up.
+                .order_by(ComparisonScenario.sort_order, ComparisonScenario.id)
             ).scalars().all()
 
             # Built while the session is still open: each scenario's

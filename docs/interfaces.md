@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-07 (v1.0 draft)"
+date: "2026-08-07 (v1.1 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,15 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.1 — 2026-08-07 (raised by E, **affects B**)
+
+Made while planning the factor screens, on the principle that the last thing to arrive should not be the thing that forces a migration.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | `factor_upstream` and `factor_downstream` each gain `source_note` and `data_quality`, both nullable. The client has not supplied real factors, and the Otago 2025 baseline says data quality varies by an order of magnitude across the supply chain — primary-production loss rates are largely borrowed from Australian figures. `is_mock` is all-or-nothing and cannot express "these forty rows are solid and those twelve are borrowed". The columns exist now, empty, so real data arrives as an import rather than a migration. `data_quality` is free text, not an enum, for the same reason the destination groupings are a table. | §2.2 |
+| 2 | `equivalence` gains `source_note`. Open item O-3 — the New Zealand sources for km driven, meal equivalents and showers are unsettled, and an equivalence with no stated basis is the figure most likely to be challenged in public. | §2.2 |
 
 ### v1.0 — 2026-08-07 (raised by E from reviews of B's and C's branches, **affects A, B and C**)
 
@@ -255,6 +264,8 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `food_category_id` | INT | FK, NOT NULL | |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | |
+| `source_note` | TEXT | NULL | Where this number came from |
+| `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
 UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `metric_id`)
 
@@ -268,8 +279,14 @@ UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `metric_id`)
 | `food_category_id` | INT | FK, **NULL** | **NULL means the row applies to every food category for that destination** |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | **May be negative** (an offset) |
+| `source_note` | TEXT | NULL | Where this number came from |
+| `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
 UNIQUE(`factor_set_id`, `destination_id`, `food_category_id`, `metric_id`)
+
+> **Why every factor row carries its own provenance.** The client has not yet supplied real factors, and when they arrive they will not arrive uniformly: the Otago 2025 baseline states plainly that data quality varies by an order of magnitude across the supply chain, and that primary-production loss rates are largely borrowed from Australian figures. A calculator that cannot say which of its numbers are measured and which are proxies cannot be defended in public — and `is_mock` on the factor set is all-or-nothing, unable to express "these forty rows are solid and those twelve are borrowed".
+>
+> These columns exist now, empty, so that the arrival of real data is an **import** rather than a **migration**. `data_quality` is free text rather than an enum for the same reason the destination groupings are a table and not a hard-coded set: nobody yet knows which categories the client will use, and a column that must be altered to accept a new value puts us back where we started.
 
 > **This UNIQUE does not do what it appears to, and a functional index is required.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — the very rows where `food_category_id IS NULL`. The lookup below would then pick one of them nondeterministically, and the calculator would return different numbers for the same input with nothing in the logs to explain it. Add a unique index over `COALESCE(food_category_id, 0)` alongside the declared constraint, and test it by inserting the second generic row and asserting `IntegrityError`. The same caveat applies to `submission_entry` (§2.3) and to any other UNIQUE containing a nullable column.
 >
@@ -313,6 +330,7 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `source_metric_id` | INT | FK, NOT NULL | Which metric it converts from |
 | `value_per_unit` | DECIMAL(20,10) | NOT NULL | Result = metric total × this factor |
 | `label_template` | VARCHAR(255) | NOT NULL | `Equivalent to driving {value} km` |
+| `source_note` | TEXT | NULL | Basis for the conversion. Open item O-3 — the New Zealand sources for km driven, meal equivalents and showers are not yet settled, and an equivalence with no stated basis is the figure most likely to be challenged |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 

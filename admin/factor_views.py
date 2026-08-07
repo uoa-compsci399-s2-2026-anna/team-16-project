@@ -25,6 +25,7 @@ from sqladmin.filters import BooleanFilter, ForeignKeyFilter, OperationColumnFil
 from sqlalchemy import select
 
 from admin.expressions import ExpressionError, validate_expression
+from admin.factor_lifecycle import _revalidate_formulas
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
@@ -275,38 +276,6 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
 _pending_deleted_constant_factor_set: contextvars.ContextVar[int | None] = (
     contextvars.ContextVar("kai_admin_pending_deleted_constant_factor_set", default=None)
 )
-
-
-def _revalidate_formulas(session, factor_set_id: int) -> None:
-    """Re-run §4.3's own check against every formula in one factor_set.
-
-    Shared by ConstantAdmin below: a formula that validated cleanly when it
-    was saved can be broken later by an edit to a *different* row -
-    deleting or renaming the constant it referenced - and nothing about the
-    formula row itself changes when that happens, so FormulaAdmin's own
-    validate_before_commit (admin/factor_views.py) never fires; its flush
-    contains no Formula row to react to.
-
-    Raises TaxonomyInvariantError naming the broken formula's metric, so the
-    staff member sees which formula their change would strand, not just
-    that something, somewhere, broke.
-    """
-    codes = session.scalars(
-        select(Constant.code).where(Constant.factor_set_id == factor_set_id)
-    ).all()
-    formulas = session.scalars(
-        select(Formula).where(Formula.factor_set_id == factor_set_id)
-    ).all()
-    for formula in formulas:
-        try:
-            validate_expression(formula.expression, constant_codes=codes)
-        except ExpressionError as exc:
-            raise TaxonomyInvariantError(
-                f"This change breaks the formula for metric "
-                f"'{formula.metric.code}': line {exc.line}, column "
-                f"{exc.column}: {exc.message} Fix or remove that formula "
-                "first."
-            ) from exc
 
 
 class ConstantAdmin(AuditedModelView, model=Constant):

@@ -306,6 +306,12 @@ Audit logging and rollback in Stage 3 must not be dropped.
 
 **`python -m admin.cli seed-taxonomy` must be run after `alembic upgrade head` against a fresh database.** The migration creates the six taxonomy tables empty; without the seed there are no destination groups, destinations, sectors, food categories, metrics or unit presets for the calculator or the admin panel to show. `admin/seed.py`'s `seed_taxonomy()` matches on `code` and only ever creates rows that are absent, so the command is safe to re-run on every deployment — a database that already has the taxonomy prints zero rows created per table and leaves every name a staff member has already edited through the panel untouched. It does *not* leave every edit untouched, though: `code` is itself an editable field (`FoodCategoryAdmin.form_columns` includes it), and re-running the seed against a taxonomy whose `code` has been changed does not recognise the renamed row as the one it already created — it creates a fresh row alongside it instead. For most tables that is merely a duplicate a staff member can deactivate. For `food_category.standard_mix` and `destination.prevention` it is worse: a renamed `standard_mix` plus a freshly seeded one both carry `is_standard_mix=True`, an invariant the calculator's engine depends on. `seed_taxonomy()` now flushes and calls `check_single_standard_mix()` and `check_prevention_intact()` (`admin/taxonomy_rules.py`) before returning, so this case aborts the whole transaction rather than committing a taxonomy the panel's own views would refuse — see `tests/admin/test_seed.py`'s `test_seed_refuses_to_commit_a_taxonomy_it_would_leave_broken`.
 
+A correctly installed system answers `NO_PUBLISHED_FACTOR_SET` (503,
+"calculator under maintenance") until staff create and publish a factor set.
+`seed-taxonomy` deliberately creates none — the taxonomy is the vocabulary,
+the factors are the data, and the client has not supplied real factors yet.
+Reaching that 503 on a fresh install is expected, not a fault.
+
 ---
 
 # 10. Open Items

@@ -22,12 +22,15 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select
 
-from admin.factor_lifecycle import LifecycleError, clone_factor_set
+from admin.factor_lifecycle import (
+    LifecycleError, clone_factor_set, publish_factor_set, rollback_to,
+)
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
 )
 from admin.models import utcnow
+from tests.admin.conftest import _add_formula
 
 pytestmark = pytest.mark.db
 
@@ -205,3 +208,130 @@ def test_a_clone_is_audited(_committed_session, populated_set):
     assert entry is not None
     assert entry.actor == "kim"
     assert entry.action == "create"
+
+
+# --- Task 3: publish and roll back ------------------------------------------
+
+
+def test_publishing_archives_the_previous_published_set(_committed_session, two_sets):
+    """§2.2's invariant is maintained by the transition itself, not by
+    asking the staff member to archive the old one first."""
+    session = _committed_session
+    live, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.archived
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.published
+
+
+def test_publishing_stamps_who_and_when(_committed_session, two_sets):
+    """These columns are deliberately absent from the edit form (E-5), so
+    this is the only thing that may write them."""
+    session = _committed_session
+    _, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    published = session.get(FactorSet, draft.id)
+    assert published.published_by == "kim"
+    assert published.published_at is not None
+
+
+def test_publishing_the_first_set_needs_no_predecessor(_committed_session, one_draft):
+    """A fresh deployment has nothing published — §9's
+    NO_PUBLISHED_FACTOR_SET is the designed response to that state, so
+    reaching it is normal, not an error."""
+    session = _committed_session
+    publish_factor_set(session, one_draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.published
+
+
+def test_publishing_a_set_with_a_broken_formula_is_refused(_committed_session, two_sets):
+    """The whole point of publishing being a distinct step.
+
+    A formula can become unrunnable without anyone editing it — deleting the
+    constant it references does it (E-5). Publishing is the last moment the
+    calculator is still working, so it is the right place to check.
+    """
+    session = _committed_session
+    _, draft = two_sets
+    _add_formula(session, draft, "qty_kg * const_GONE")
+
+    with pytest.raises(LifecycleError) as excinfo:
+        publish_factor_set(session, draft.id, actor="kim")
+
+    assert "const_GONE" in str(excinfo.value)
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
+
+
+def test_publishing_an_already_published_set_is_refused(_committed_session, two_sets):
+    session = _committed_session
+    live, _ = two_sets
+
+    with pytest.raises(LifecycleError):
+        publish_factor_set(session, live.id, actor="kim")
+
+
+def test_publishing_refuses_when_two_are_already_published(_committed_session, two_sets):
+    """§5.2: "Rolls back if the invariant would be violated." A pre-existing
+    violation must be refused rather than quietly half-fixed — the operator
+    needs to choose which one survives."""
+    session = _committed_session
+    live, draft = two_sets
+    draft.status = FactorSetStatus.published
+    session.flush()
+    # "e6-" prefixed, not the brief's literal "third" - _cleanup_e6_rows
+    # (tests/admin/conftest.py) only ever matches that prefix, and a bare
+    # "third" factor_set row would leak past every future test run.
+    third = FactorSet(version_label="e6-third", status=FactorSetStatus.draft,
+                      is_mock=True)
+    session.add(third)
+    session.flush()
+
+    with pytest.raises(LifecycleError):
+        publish_factor_set(session, third.id, actor="kim")
+
+
+def test_rollback_restores_an_archived_set(_committed_session, two_sets):
+    session = _committed_session
+    live, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    rollback_to(session, live.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.published
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.archived
+
+
+def test_rollback_refuses_a_draft(_committed_session, two_sets):
+    """Rollback restores something that was live before. A draft has never
+    been live, and publishing it is a different decision with a different
+    audit meaning."""
+    session = _committed_session
+    _, draft = two_sets
+
+    with pytest.raises(LifecycleError):
+        rollback_to(session, draft.id, actor="kim")
+
+
+def test_both_transitions_are_audited(_committed_session, two_sets):
+    from admin.models import AuditLog
+
+    session = _committed_session
+    live, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    actions = {
+        (e.row_id, e.action)
+        for e in session.scalars(
+            select(AuditLog).where(AuditLog.table_name == "factor_set")
+        ).all()
+    }
+    assert (draft.id, "publish") in actions
+    assert (live.id, "archive") in actions

@@ -710,6 +710,13 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
     recommended path for staff edits: clone, edit, publish."""
 ```
 
+> **Where these live today.** `admin/factor_lifecycle.py`, not
+> `db/repository.py`. The admin panel needs them and the repository
+> implementation is on an unmerged branch; when it lands, one implementation
+> goes and the other is imported. `admin/` may import from `db/`, never the
+> reverse. Cache invalidation is the repository's half and is not implemented
+> in the admin copy.
+
 ## 5.3 Submissions
 
 ```python

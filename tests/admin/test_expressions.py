@@ -139,6 +139,20 @@ def test_non_decimal_literals_are_refused(expression):
     bad(expression)
 
 
+def test_an_oversized_integer_literal_is_accepted_not_crashed_on():
+    """A 400-digit integer is a decimal number, which is what §4.3 permits.
+    The engine works in Decimal, which represents it exactly, so there is
+    no reason to refuse it — and the validator must not crash trying to
+    decide (math.isfinite raises OverflowError on an int this large)."""
+    ok("qty_kg * " + "9" * 400)
+
+
+def test_a_non_finite_float_literal_is_still_refused():
+    """Guards against a fix that stops calling isfinite altogether: 1e999
+    is a float, not an oversized int, and it is not finite."""
+    bad("qty_kg * 1e999")
+
+
 def test_an_error_carries_a_position():
     """The panel shows this beside the field, so "somewhere in this text" is
     not good enough for an expression a staff member is debugging."""

@@ -108,14 +108,25 @@ def _check_constant(node: ast.Constant) -> None:
 
     ast.Constant covers every Python literal — strings, bytes, None,
     complex, Ellipsis and bool as well as int/float. bool is an int
-    subclass, so it must be excluded explicitly. A non-finite float
-    (inf/nan, reachable via a literal like 1e999) parses and evaluates
-    fine but only fails later at Decimal conversion or JSON
-    serialisation, after the number has been computed — so it is
-    refused here instead.
+    subclass, so it must be excluded explicitly.
+
+    The int/float check and the finiteness check are kept separate
+    deliberately: `math.isfinite` raises OverflowError on an int too
+    large to convert to float, and an oversized int literal (the
+    engine works in Decimal, which represents it exactly) is not an
+    error at all. Only a float can be non-finite in the first place —
+    a non-finite float (inf/nan, reachable via a literal like 1e999)
+    parses and evaluates fine but only fails later at Decimal
+    conversion or JSON serialisation, after the number has been
+    computed — so it is refused here instead.
     """
     value = node.value
-    if isinstance(value, bool) or not isinstance(value, (int, float)) or not math.isfinite(value):
+    if isinstance(value, bool) or not isinstance(value, (int, float)):
+        raise ExpressionError(
+            f"{_describe_value(value)} is not a decimal number a formula can use.",
+            line=node.lineno, column=node.col_offset,
+        )
+    if isinstance(value, float) and not math.isfinite(value):
         raise ExpressionError(
             f"{_describe_value(value)} is not a decimal number a formula can use.",
             line=node.lineno, column=node.col_offset,

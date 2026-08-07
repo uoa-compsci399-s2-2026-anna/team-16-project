@@ -323,7 +323,72 @@ async def test_a_formula_with_an_unknown_variable_is_refused(session, admin_clie
     })
 
     _resync(session)
-    assert session.scalar(select(Formula)) is None
+    assert session.scalar(
+        select(Formula).where(Formula.factor_set_id == fs.id)
+    ) is None
+    assert "upstrem" in response.text
+
+
+@pytest.mark.asyncio
+async def test_a_formula_referring_to_its_own_sets_constant_is_accepted(
+    session, admin_client
+):
+    """The positive half of the cross-set check below. A guard that hard-
+    coded `constant_codes=[]` would still pass every refusal test in this
+    file - neither refusal expression uses a const_ name that only a
+    correctly-scoped lookup would admit - so nothing here would prove the
+    lookup ever finds anything. This is the case that only passes if
+    `const_LEVY_NZD_PER_T` correctly resolves against a constant defined in
+    the formula's *own* factor set."""
+    fs, metric = _seed_set_and_metric(session)
+    session.add(Constant(factor_set_id=fs.id, code="LEVY_NZD_PER_T",
+                         value=Decimal("60")))
+    session.commit()
+
+    await admin_client.post("/admin/formula/create", data={
+        "factor_set": str(fs.id), "metric": str(metric.id),
+        "expression": "qty_kg * const_LEVY_NZD_PER_T", "notes": "",
+    })
+
+    _resync(session)
+    saved = session.scalar(select(Formula).where(Formula.factor_set_id == fs.id))
+    assert saved is not None
+    assert saved.expression == "qty_kg * const_LEVY_NZD_PER_T"
+
+
+@pytest.mark.asyncio
+async def test_editing_a_formula_to_an_invalid_expression_is_refused(
+    session, admin_client
+):
+    """The guard's own docstring notes that AuditedModelView's before_commit
+    listener flushes before calling validate_before_commit, which is exactly
+    what emptied session.new/session.dirty in the first draft of this hook
+    and made it a dead loop that accepted everything. All three tests above
+    only exercise /admin/formula/create - a regression back to that dead
+    loop on the *edit* path specifically (the path the identity_map fix
+    changed) would go unnoticed without a case that posts to
+    /admin/formula/edit/{id}."""
+    fs, metric = _seed_set_and_metric(session)
+    session.commit()
+
+    await admin_client.post("/admin/formula/create", data={
+        "factor_set": str(fs.id), "metric": str(metric.id),
+        "expression": "qty_kg * (upstream + downstream)", "notes": "",
+    })
+    _resync(session)
+    formula = session.scalar(select(Formula).where(Formula.factor_set_id == fs.id))
+    assert formula is not None
+
+    response = await admin_client.post(
+        f"/admin/formula/edit/{formula.id}",
+        data={"factor_set": str(fs.id), "metric": str(metric.id),
+              "expression": "qty_kg * upstrem", "notes": ""},
+    )
+
+    _resync(session)
+    assert session.scalar(
+        select(Formula).where(Formula.factor_set_id == fs.id)
+    ).expression == "qty_kg * (upstream + downstream)"
     assert "upstrem" in response.text
 
 
@@ -348,4 +413,6 @@ async def test_a_formula_referring_to_a_constant_from_another_set_is_refused(
     })
 
     _resync(session)
-    assert session.scalar(select(Formula)) is None
+    assert session.scalar(
+        select(Formula).where(Formula.factor_set_id == fs.id)
+    ) is None

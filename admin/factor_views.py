@@ -21,11 +21,18 @@ version's number is the failure this prevents, and it is silent.
 
 import contextvars
 
+from sqladmin import action
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter, OperationColumnFilter
 from sqlalchemy import select
+from starlette.exceptions import HTTPException
+from starlette.responses import RedirectResponse
 
+from admin.auth import SESSION_KEY
 from admin.expressions import ExpressionError, validate_expression
-from admin.factor_lifecycle import _revalidate_formulas
+from admin.factor_lifecycle import (
+    LifecycleError, _revalidate_formulas, clone_factor_set, publish_factor_set,
+    rollback_to,
+)
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
@@ -536,8 +543,52 @@ class FormulaAdmin(AuditedModelView, model=Formula):
 
 
 class FactorSetAdmin(AuditedModelView, model=FactorSet):
-    """Contract §8.2. Clone, publish and roll back arrive in the next stage;
-    this shows the versions and holds the one-published invariant."""
+    """Contract §8.2. Clone, publish and roll back live here as `@action`
+    routes rather than through the generic edit form - see form_columns'
+    own comment below for why `status` was removed from it.
+
+    Two things an `@action` does not inherit from AuditedModelView, both
+    documented in that class's own docstring and both already solved in
+    admin/accounts_view.py:
+
+    1. **No auditing.** `_actor_var` (admin/modelviews.py) is set only
+       inside insert_model/update_model/delete_model, so the before_commit
+       listener returns early for a commit one of the three actions below
+       makes itself. clone_factor_set/publish_factor_set/rollback_to
+       (admin/factor_lifecycle.py) write their own audit entries for
+       exactly this reason - each takes `actor` and this file supplies it,
+       then commits the transaction those functions deliberately leave
+       open.
+    2. **No access check.** sqladmin registers `@action` routes with
+       login_required only, never is_accessible, and as GET routes at
+       `/{identity}/action/{slug}` with the selected rows in a `pks` query
+       parameter (see admin/accounts_view.py's module docstring for the
+       verification against sqladmin's own application.py). Without an
+       explicit check at the top of each method below, the URL is reachable
+       by any onboarded staff member even when the menu entry and the list
+       page are hidden from them.
+
+    Unlike StaffAdmin's equivalent actions, the check here is
+    `self.is_accessible(request)`, not an admin-only helper: contract §8.3
+    decided, deliberately, that publishing is available to both roles -
+    "audit_log plus one-click rollback already provide accountability and
+    recovery, and gating them behind an administrator would stall routine
+    work in a three-to-five person team." FactorSetAdmin overrides neither
+    is_visible nor is_accessible, so both inherit sqladmin's own default
+    (ModelView.is_accessible: "By default, it will allow access for
+    everyone") - both an administrator and a plain staff member pass.
+
+    A LifecycleError from any of the three service functions is caught and
+    rendered through brand/action_refused.html rather than left to
+    propagate: sqladmin's own exception_handlers map only HTTPException
+    (sqladmin/application.py), and a custom @action route is a plain
+    Starlette route added via Admin.add_route, not one of the internally
+    wrapped list/create/edit/delete handlers - nothing else along that path
+    catches a bare exception, so an uncaught LifecycleError would surface as
+    an unhandled 500 with no message, exactly the outcome contract §9.1
+    exists to avoid a member of the public seeing from a broken formula, and
+    the same failure mode here for a member of staff.
+    """
 
     name = "Factor set"
     name_plural = "Factor sets"
@@ -571,3 +622,123 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     def validate_before_commit(self, session) -> None:
         """At most one published set. Contract §2.2."""
         check_single_published_set(session)
+
+    def _require_accessible(self, request) -> None:
+        if not self.is_accessible(request):
+            raise HTTPException(status_code=403)
+
+    def _list_url(self, request):
+        return request.url_for("admin:list", identity=self.identity)
+
+    def _first_pk(self, request) -> int | None:
+        """The first id in the `pks` query param sqladmin's action routes
+        receive - all three actions here operate on a single row at a time,
+        selected from the list page's own row action, not the bulk-select
+        checkboxes."""
+        for pk in request.query_params.get("pks", "").split(","):
+            if pk:
+                return int(pk)
+        return None
+
+    def _unique_clone_label(self, session, source_label: str) -> str:
+        """`f"{source_label} (copy)"`, or that with a numeric suffix if the
+        plain form is already taken. clone_factor_set (admin/factor_lifecycle.py)
+        refuses a duplicate label outright rather than generating one itself
+        - the staff member did not type this label, so it is this view's job
+        to hand it one that is actually free."""
+        base = f"{source_label} (copy)"
+        label = base
+        suffix = 2
+        while session.scalar(
+            select(FactorSet).where(FactorSet.version_label == label)
+        ) is not None:
+            label = f"{base} {suffix}"
+            suffix += 1
+        return label
+
+    def _refused(self, request, message: str):
+        return self.templates.TemplateResponse(
+            request, "brand/action_refused.html",
+            {"message": message, "next_url": self._list_url(request)},
+            status_code=400,
+        )
+
+    @action(
+        name="clone",
+        label="Clone",
+        confirmation_message=(
+            "This creates a new draft with every factor, constant, formula "
+            "and equivalence from this set duplicated. Nothing the public "
+            "sees changes."
+        ),
+    )
+    async def clone_action(self, request):
+        self._require_accessible(request)
+        pk = self._first_pk(request)
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            source = session.get(FactorSet, pk) if pk is not None else None
+            if source is None:
+                return await self._refused(
+                    request, f"No factor set with id {pk} exists to clone."
+                )
+            source_label = source.version_label
+            label = self._unique_clone_label(session, source_label)
+            try:
+                clone_factor_set(session, pk, label, actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await self._refused(request, str(exc))
+            session.commit()
+        return await self.templates.TemplateResponse(
+            request, "brand/factor_set_cloned.html",
+            {"clone_label": label, "source_label": source_label,
+             "next_url": self._list_url(request)},
+        )
+
+    @action(
+        name="publish",
+        label="Publish",
+        confirmation_message=(
+            "This makes this set live and archives whatever is currently "
+            "published. Every calculation from this point on uses its "
+            "numbers."
+        ),
+    )
+    async def publish_action(self, request):
+        self._require_accessible(request)
+        pk = self._first_pk(request)
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            try:
+                if pk is None:
+                    raise LifecycleError("No factor set was selected to publish.")
+                publish_factor_set(session, pk, actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await self._refused(request, str(exc))
+            session.commit()
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    @action(
+        name="rollback",
+        label="Roll back",
+        confirmation_message=(
+            "This restores this archived set to published, archiving "
+            "whatever is currently published in its place."
+        ),
+    )
+    async def rollback_action(self, request):
+        self._require_accessible(request)
+        pk = self._first_pk(request)
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            try:
+                if pk is None:
+                    raise LifecycleError("No factor set was selected to roll back to.")
+                rollback_to(session, pk, actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await self._refused(request, str(exc))
+            session.commit()
+        return RedirectResponse(self._list_url(request), status_code=302)

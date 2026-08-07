@@ -1,0 +1,15 @@
+{% extends "brand/base.html" %}
+{% block title %}Draft created{% endblock %}
+{% block content %}
+  <h1>Draft created</h1>
+  <p>
+    <strong>{{ clone_label }}</strong> is a copy of {{ source_label }}, with
+    every factor, constant, formula and equivalence duplicated. It is a draft:
+    nothing the public sees has changed.
+  </p>
+  <p>
+    Edit it from the factor screens — each one filters by factor set — and
+    publish it when it is ready.
+  </p>
+  <p><a href="{{ next_url }}">Back to factor sets</a></p>
+{% endblock %}

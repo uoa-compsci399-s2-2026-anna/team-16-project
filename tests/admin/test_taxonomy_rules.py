@@ -125,6 +125,24 @@ def test_a_deactivated_prevention_is_refused(session):
         check_prevention_intact(session)
 
 
+def test_a_deactivated_group_containing_prevention_is_refused(session):
+    """`prevention` itself can stay active while the group it belongs to is
+    switched off — and every active-destination listing is built by joining
+    through the group, so `prevention` drops out of it exactly as if it had
+    been deactivated directly. A staff member tidying up the destination
+    group list (not the destination list) is the likelier way to reach this:
+    they operate on groups, never on `prevention` by name."""
+    _prevention(session)
+    group = session.scalar(
+        select(DestinationGroup).where(DestinationGroup.code == "reuse")
+    )
+    group.active = False
+    session.flush()
+
+    with pytest.raises(TaxonomyInvariantError):
+        check_prevention_intact(session)
+
+
 def test_a_view_can_refuse_a_commit_from_the_hook(session):
     """The hook has to be able to stop a commit, not merely observe one.
 

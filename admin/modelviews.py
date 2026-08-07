@@ -306,6 +306,18 @@ class AuditedModelView(ModelView):
 
         The default is deliberately a no-op: most views have no cross-row
         invariant, and inheriting one they do not need would be worse.
+
+        This hook only runs at all if the flush produced at least one row of
+        *this view's own model* in ``created``/``updated``/``deleted`` -
+        ``_audited_session_maker``'s listener filters on ``isinstance(obj,
+        model)`` and returns before ever reaching this call otherwise. An
+        override is safe when its invariant spans a *different* model too,
+        as long as editing that other model's own rows always goes through
+        that other model's own ``AuditedModelView`` subclass (which carries
+        the same hook against its own listener, on its own model) - but a
+        view whose invariant depends solely on a model no listener ever
+        fires for would never have this hook called, regardless of what the
+        override itself checks.
         """
 
     async def insert_model(self, request, data: dict):

@@ -396,6 +396,30 @@ async def test_deactivating_prevention_is_refused(session, admin_client):
 
 
 @pytest.mark.asyncio
+async def test_deactivating_preventions_group_is_refused(session, admin_client):
+    """The end-to-end proof for DestinationGroupAdmin: a staff member tidying
+    up the destination-group list, not the destination list, is the likelier
+    route to breaking this invariant - see check_prevention_intact."""
+    group = DestinationGroup(code="reuse", name="Reuse", is_waste=False)
+    session.add(group)
+    session.commit()
+    session.add(Destination(group_id=group.id, code="prevention", name="Prevented"))
+    session.commit()
+
+    response = await admin_client.post(
+        f"/admin/destination-group/edit/{group.id}",
+        data={"code": "reuse", "name": "Reuse", "sort_order": "0"},
+        # `is_waste` and `active` both omitted = unchecked
+    )
+
+    _resync(session)
+    assert session.scalar(
+        select(DestinationGroup).where(DestinationGroup.code == "reuse")
+    ).active is True, "the edit was committed despite dropping prevention out of service"
+    assert "prevention" in response.text.lower()
+
+
+@pytest.mark.asyncio
 async def test_a_valid_edit_still_goes_through(session, admin_client):
     """The invariants must refuse the specific broken states and nothing else.
     A hook that refused everything would pass every test above."""

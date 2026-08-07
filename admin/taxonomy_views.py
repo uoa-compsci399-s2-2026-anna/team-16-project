@@ -51,6 +51,12 @@ class DestinationGroupAdmin(AuditedModelView, model=DestinationGroup):
                       BooleanFilter(DestinationGroup.active)]
     column_default_sort = ("sort_order", False)
 
+    def validate_before_commit(self, session) -> None:
+        """`prevention`'s group must survive every edit made through this
+        screen - deactivating the group takes `prevention` out of service
+        just as surely as deactivating `prevention` itself would."""
+        check_prevention_intact(session)
+
 
 class DestinationAdmin(AuditedModelView, model=Destination):
     name = "Destination"

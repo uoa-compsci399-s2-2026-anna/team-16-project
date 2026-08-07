@@ -62,6 +62,13 @@ def check_prevention_intact(session: Session) -> None:
     while keeping the current and alternative scenarios mass-conserving. The
     engine resolves it by code, so renaming it and deleting it are the same
     event as far as a calculation is concerned.
+
+    "Usable" also requires its *group* to be active, not only the row
+    itself: every active-destination listing is built by joining through
+    `destination_group`, so a deactivated group drops `prevention` out of
+    service exactly as surely as deactivating `prevention` directly would -
+    and is the likelier route, since a staff member tidying up the group
+    list acts on `DestinationGroup` rows, never on `prevention` by name.
     """
     prevention = session.scalar(
         select(Destination).where(Destination.code == PREVENTION_CODE)
@@ -79,4 +86,13 @@ def check_prevention_intact(session: Session) -> None:
             "required and must stay active: it represents waste that was "
             "avoided, and without it the calculator cannot express an "
             "improved scenario."
+        )
+    if not prevention.group.active:
+        raise TaxonomyInvariantError(
+            f"The destination group '{prevention.group.code}', which contains "
+            f"'{PREVENTION_CODE}', is deactivated. It must stay active: "
+            f"deactivating the group removes '{PREVENTION_CODE}' from every "
+            "active-destination listing just as surely as deactivating "
+            "'prevention' itself, and without it the calculator cannot "
+            "express an improved scenario. Reactivate the group before saving."
         )

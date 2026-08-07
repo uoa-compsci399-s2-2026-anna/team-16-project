@@ -630,15 +630,37 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     def _list_url(self, request):
         return request.url_for("admin:list", identity=self.identity)
 
-    def _first_pk(self, request) -> int | None:
-        """The first id in the `pks` query param sqladmin's action routes
-        receive - all three actions here operate on a single row at a time,
-        selected from the list page's own row action, not the bulk-select
-        checkboxes."""
-        for pk in request.query_params.get("pks", "").split(","):
-            if pk:
-                return int(pk)
-        return None
+    def _one_pk(self, request) -> int:
+        """Exactly one id out of the `pks` query param, or raise
+        LifecycleError naming why not.
+
+        More than one id is not a hypothetical: sqladmin's own
+        `templates/sqladmin/list.html` puts these three actions in the
+        bulk **Actions** dropdown too, alongside the row-level ones, and
+        `statics/js/main.js` builds `?pks=` from every ticked checkbox
+        (verified live: two drafts selected, publish clicked - 302 back to
+        the list, the first published, the second left as a draft, nothing
+        on the page saying so). Silently acting on the first id and
+        dropping the rest would leave a staff member believing the action
+        covered everything they ticked when it covered one row - worse
+        than refusing outright, and especially now that `status` is off
+        the edit form: these actions are the only way left to fix what one
+        of them just did to the row it skipped.
+
+        A non-integer id (`?pks=abc`, only reachable by a hand-typed URL)
+        is refused the same way rather than left to raise ValueError past
+        this method - which would otherwise 500 in exactly the shape the
+        LifecycleError catch around every action below exists to prevent.
+        """
+        raw = [pk for pk in request.query_params.get("pks", "").split(",") if pk]
+        if not raw:
+            raise LifecycleError("No factor set was selected.")
+        if len(raw) > 1:
+            raise LifecycleError("Select one factor set at a time.")
+        try:
+            return int(raw[0])
+        except ValueError:
+            raise LifecycleError(f"'{raw[0]}' is not a valid factor set id.")
 
     def _unique_clone_label(self, session, source_label: str) -> str:
         """`f"{source_label} (copy)"`, or that with a numeric suffix if the
@@ -656,8 +678,8 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             suffix += 1
         return label
 
-    def _refused(self, request, message: str):
-        return self.templates.TemplateResponse(
+    async def _refused(self, request, message: str):
+        return await self.templates.TemplateResponse(
             request, "brand/action_refused.html",
             {"message": message, "next_url": self._list_url(request)},
             status_code=400,
@@ -674,10 +696,13 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     )
     async def clone_action(self, request):
         self._require_accessible(request)
-        pk = self._first_pk(request)
         actor = request.session.get(SESSION_KEY, "unknown")
+        try:
+            pk = self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
         with self.session_maker() as session:
-            source = session.get(FactorSet, pk) if pk is not None else None
+            source = session.get(FactorSet, pk)
             if source is None:
                 return await self._refused(
                     request, f"No factor set with id {pk} exists to clone."
@@ -707,12 +732,13 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     )
     async def publish_action(self, request):
         self._require_accessible(request)
-        pk = self._first_pk(request)
         actor = request.session.get(SESSION_KEY, "unknown")
+        try:
+            pk = self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
         with self.session_maker() as session:
             try:
-                if pk is None:
-                    raise LifecycleError("No factor set was selected to publish.")
                 publish_factor_set(session, pk, actor)
             except LifecycleError as exc:
                 session.rollback()
@@ -730,12 +756,13 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     )
     async def rollback_action(self, request):
         self._require_accessible(request)
-        pk = self._first_pk(request)
         actor = request.session.get(SESSION_KEY, "unknown")
+        try:
+            pk = self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
         with self.session_maker() as session:
             try:
-                if pk is None:
-                    raise LifecycleError("No factor set was selected to roll back to.")
                 rollback_to(session, pk, actor)
             except LifecycleError as exc:
                 session.rollback()

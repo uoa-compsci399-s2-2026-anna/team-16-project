@@ -143,3 +143,66 @@ async def test_the_clone_confirmation_names_the_new_version(
         select(FactorSet).where(FactorSet.version_label != populated_set.version_label)
     )
     assert clone.version_label in response.text
+
+
+@pytest.mark.asyncio
+async def test_selecting_more_than_one_set_is_refused(
+    session, admin_client, populated_set, one_draft
+):
+    """sqladmin's own bulk **Actions** dropdown (templates/sqladmin/list.html)
+    ties these three actions to every ticked checkbox
+    (statics/js/main.js builds ?pks= from all of them), not just the
+    row-level action - so more than one id in ?pks= is a real, reachable
+    request. Publishing two ticked drafts must not silently publish the
+    first and leave the second untouched with no indication anything was
+    skipped; both stay exactly as they were and the response names the
+    problem.
+    """
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/factor-set/action/publish?pks={populated_set.id},{one_draft.id}"
+    )
+
+    _resync(session)
+    assert session.get(FactorSet, populated_set.id).status is FactorSetStatus.draft
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.draft
+    assert response.status_code == 400
+    assert "one factor set at a time" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_a_non_integer_pk_is_refused_not_500(session, admin_client, one_draft):
+    """?pks=abc is only reachable by a hand-typed URL, but must not raise
+    ValueError out of the handler - the same unhandled-500 shape the
+    LifecycleError catch around every action exists to prevent."""
+    session.commit()
+
+    response = await admin_client.get("/admin/factor-set/action/publish?pks=abc")
+
+    assert response.status_code == 400
+
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.draft
+
+
+@pytest.mark.asyncio
+async def test_cloning_twice_generates_a_unique_suffix(
+    session, admin_client, populated_set
+):
+    """_unique_clone_label is the only novel algorithm this task added;
+    nothing else pins its collision handling."""
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-set/action/clone?pks={populated_set.id}")
+    _resync(session)
+    await admin_client.get(f"/admin/factor-set/action/clone?pks={populated_set.id}")
+    _resync(session)
+
+    labels = set(session.scalars(
+        select(FactorSet.version_label).where(
+            FactorSet.version_label.like(f"{populated_set.version_label} (copy)%")
+        )
+    ).all())
+    assert f"{populated_set.version_label} (copy)" in labels
+    assert f"{populated_set.version_label} (copy) 2" in labels

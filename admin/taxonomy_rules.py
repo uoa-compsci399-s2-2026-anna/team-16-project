@@ -69,7 +69,15 @@ def check_prevention_intact(session: Session) -> None:
     service exactly as surely as deactivating `prevention` directly would -
     and is the likelier route, since a staff member tidying up the group
     list acts on `DestinationGroup` rows, never on `prevention` by name.
+
+    Skipped entirely on an empty destination table. A database with no
+    destinations at all is one that has not been seeded yet, and refusing to
+    create the first destination group because `prevention` does not exist
+    yet would make the panel impossible to bootstrap by hand.
     """
+    any_destination = session.scalar(select(Destination).limit(1))
+    if any_destination is None:
+        return
     prevention = session.scalar(
         select(Destination).where(Destination.code == PREVENTION_CODE)
     )

@@ -40,9 +40,40 @@ def migrated_engine(database_url_root):
     root.dispose()
 
 
+def _include_object(object_, name, type_, reflected, compare_to):
+    """Exclude factor_downstream's functional COALESCE index from the diff.
+
+    admin/factor_models.py deliberately does not declare
+    `uq_factor_downstream_generic` (contract §2.2) as a SQLAlchemy `Index`:
+    it is a MySQL functional index — `(COALESCE(food_category_id, 0))` as a
+    key part — and this SQLAlchemy/PyMySQL combination cannot reflect that
+    expression back out correctly. Verified directly against this MySQL by
+    querying information_schema.STATISTICS: the expression key part comes
+    back as a row with `column_name IS NULL` and `expression =
+    'coalesce(\\`food_category_id\\`, 0)'`, but SQLAlchemy's MySQL dialect
+    turns that into a plain column named `food_category_id` when reflecting
+    indexes rather than a text/expression element - producing a shape that
+    matches neither "declared as a plain index" (compares unequal against a
+    real functional index) nor "not declared at all" (which reports it as
+    an index to remove). Either way, comparing this one index is not
+    meaningful with the installed SQLAlchemy version, so it is excluded here
+    rather than left to produce a permanent false positive.
+
+    This does not weaken what the test proves: every other table, column,
+    constraint and plain index in admin/factor_models.py is still compared.
+    The functional index's own correctness is proven independently by
+    tests/admin/test_factor_models.py::test_two_generic_downstream_rows_are_refused,
+    and its presence in the migration chain by the manual `alembic upgrade
+    head` / `downgrade` cycle run while developing alembic/versions/0005_factors.py.
+    """
+    return not (type_ == "index" and name == "uq_factor_downstream_generic")
+
+
 def test_the_migration_chain_matches_the_models(migrated_engine):
     with migrated_engine.connect() as conn:
-        ctx = MigrationContext.configure(conn)
+        ctx = MigrationContext.configure(
+            conn, opts={"include_object": _include_object}
+        )
         difference = compare_metadata(ctx, Base.metadata)
 
     assert difference == [], (

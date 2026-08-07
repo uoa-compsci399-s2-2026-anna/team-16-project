@@ -93,6 +93,11 @@ def _prevention(session, *, code="prevention", active=True):
     session.flush()
 
 
+def test_an_empty_destination_table_is_not_refused(session):
+    """A database nobody has seeded yet must still accept its first rows."""
+    check_prevention_intact(session)  # does not raise
+
+
 def test_an_intact_prevention_is_accepted(session):
     _prevention(session)
 
@@ -101,7 +106,15 @@ def test_an_intact_prevention_is_accepted(session):
 
 def test_a_missing_prevention_is_refused(session):
     """The engine looks this destination up by code to express "waste
-    avoided". Without it the alternative scenario cannot be built at all."""
+    avoided". Without it the alternative scenario cannot be built at all.
+
+    Seeds one unrelated destination first: an entirely empty destination
+    table means the taxonomy has not been seeded yet (see
+    test_an_empty_destination_table_is_not_refused above), which is a
+    different, tolerated case from a taxonomy that exists but is missing
+    `prevention` specifically."""
+    _prevention(session, code="not_prevention")
+
     with pytest.raises(TaxonomyInvariantError) as excinfo:
         check_prevention_intact(session)
 
@@ -137,6 +150,24 @@ def test_a_deactivated_group_containing_prevention_is_refused(session):
         select(DestinationGroup).where(DestinationGroup.code == "reuse")
     )
     group.active = False
+    session.flush()
+
+    with pytest.raises(TaxonomyInvariantError):
+        check_prevention_intact(session)
+
+
+def test_moving_prevention_into_an_inactive_group_is_refused(session):
+    """Deactivating prevention's group is refused; moving prevention into an
+    already-inactive group reaches the same broken state by another route."""
+    _prevention(session)
+    dormant = DestinationGroup(code="dormant", name="Dormant",
+                               is_waste=False, active=False)
+    session.add(dormant)
+    session.flush()
+    prevention = session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    prevention.group_id = dormant.id
     session.flush()
 
     with pytest.raises(TaxonomyInvariantError):

@@ -25,6 +25,7 @@ from admin.config import load_settings
 from admin.models import Staff, StaffRole
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
 from admin.seed import seed_taxonomy
+from admin.taxonomy_rules import TaxonomyInvariantError
 from db.session import create_session_factory
 
 
@@ -209,7 +210,11 @@ def main(argv: list[str] | None = None) -> int:
                 print("Administrator accounts already exist. Nothing to do.")
             report_bootstrap_result(created)
         elif args.command == "seed-taxonomy":
-            created = cmd_seed_taxonomy(db_session)
+            try:
+                created = cmd_seed_taxonomy(db_session)
+            except TaxonomyInvariantError as exc:
+                print(f"Refused to seed: {exc}")
+                return 1
             db_session.commit()
             print("Seeded the taxonomy.")
             for table, count in created.items():

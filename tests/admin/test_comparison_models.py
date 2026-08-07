@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 
@@ -97,11 +97,50 @@ def test_deleting_a_scenario_takes_its_lines(_committed_session, taxonomy_for_fa
 
 def test_the_gwp_horizon_is_one_of_the_two_the_contract_allows(_committed_session,
                                                                taxonomy_for_factors):
-    """§6.2: 20 or 100. A scenario is a saved request, so it carries the same
-    choice — and the whole point of a methane comparison is being able to
-    pin which horizon produced a number."""
+    """§6.2: 20 or 100, nothing else. A scenario is a saved request, so it
+    carries the same choice — and the whole point of a methane comparison is
+    being able to pin which horizon produced a number. sqladmin renders
+    `gwp_horizon` as a free IntegerField, so this has to be a database
+    constraint or a scenario saved with e.g. 57 would sit unnoticed until
+    the comparison view ran it and the API refused it with
+    `VALIDATION_ERROR`."""
     scenario = _scenario(_committed_session, taxonomy_for_factors)
+
     scenario.gwp_horizon = 20
     _committed_session.flush()
-
     assert _committed_session.scalar(select(ComparisonScenario)).gwp_horizon == 20
+
+    scenario.gwp_horizon = 100
+    _committed_session.flush()
+    assert _committed_session.scalar(select(ComparisonScenario)).gwp_horizon == 100
+
+    scenario.gwp_horizon = 57
+    # MySQL 8 reports a violated CHECK constraint as error 3819, which
+    # PyMySQL/SQLAlchemy surface as OperationalError, not IntegrityError -
+    # confirmed by trial (IntegrityError does not catch it here).
+    with pytest.raises(OperationalError):
+        _committed_session.flush()
+
+
+def test_a_duplicate_destination_within_a_scenario_is_refused(_committed_session,
+                                                              taxonomy_for_factors):
+    """§6.2's validation table forbids a duplicate `destination` within one
+    scenario's line array. A scenario is a saved request, so it must not be
+    possible to save one the request validator will refuse the first time
+    the comparison view runs it."""
+    scenario = _scenario(_committed_session, taxonomy_for_factors)
+    _committed_session.add(ComparisonScenarioLine(
+        scenario_id=scenario.id,
+        destination_id=taxonomy_for_factors.destination.id,
+        qty_kg=Decimal("1200.000"),
+    ))
+    _committed_session.flush()
+
+    _committed_session.add(ComparisonScenarioLine(
+        scenario_id=scenario.id,
+        destination_id=taxonomy_for_factors.destination.id,
+        qty_kg=Decimal("300.000"),
+    ))
+
+    with pytest.raises(IntegrityError):
+        _committed_session.flush()

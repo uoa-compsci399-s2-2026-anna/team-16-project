@@ -14,7 +14,10 @@ it without a deployment.
 
 from decimal import Decimal
 
-from sqlalchemy import DECIMAL, Boolean, ForeignKey, Integer, SmallInteger, String
+from sqlalchemy import (
+    DECIMAL, Boolean, CheckConstraint, ForeignKey, Integer, SmallInteger, String,
+    UniqueConstraint,
+)
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from admin.taxonomy_models import Destination, FoodCategory, Sector
@@ -22,9 +25,21 @@ from db.base import Base
 
 
 class ComparisonScenario(Base):
-    """One saved test case for the pre-publish comparison view."""
+    """One saved test case for the pre-publish comparison view.
+
+    Carries no current/alternative discriminator, even though §6.2's
+    `POST /calculate` request has two line arrays. Judged acceptable under
+    YAGNI rather than a gap: the comparison view is already differencing two
+    runs of the same scenario (published vs. draft), and any destination
+    reachable through `alternative` is reachable as a `current` line in a
+    second, separate scenario. Do not "fix" this by adding a scenario column
+    without a concrete need for it.
+    """
 
     __tablename__ = "comparison_scenario"
+    __table_args__ = (
+        CheckConstraint("gwp_horizon IN (20, 100)", name="ck_comparison_scenario_gwp_horizon"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -50,9 +65,22 @@ class ComparisonScenario(Base):
 
 
 class ComparisonScenarioLine(Base):
-    """One destination and quantity within a scenario."""
+    """One destination and quantity within a scenario.
+
+    UNIQUE(scenario_id, destination_id): §6.2's validation table forbids a
+    duplicate `destination` within one scenario's line array, and every
+    sibling line table (`admin/factor_models.py`'s `FactorUpstream`,
+    `FactorDownstream`) carries the equivalent composite constraint. A
+    scenario is a saved request, so it must not be possible to save one the
+    request validator will refuse the first time the comparison view runs
+    it.
+    """
 
     __tablename__ = "comparison_scenario_line"
+    __table_args__ = (
+        UniqueConstraint("scenario_id", "destination_id",
+                         name="uq_comparison_scenario_line"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     scenario_id: Mapped[int] = mapped_column(

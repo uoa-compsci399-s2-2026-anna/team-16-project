@@ -33,7 +33,8 @@ def upgrade() -> None:
     sa.ForeignKeyConstraint(['food_category_id'], ['food_category.id'], ),
     sa.ForeignKeyConstraint(['sector_id'], ['sector.id'], ),
     sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('code')
+    sa.UniqueConstraint('code'),
+    sa.CheckConstraint('gwp_horizon IN (20, 100)', name='ck_comparison_scenario_gwp_horizon')
     )
     op.create_table('comparison_scenario_line',
     sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
@@ -42,7 +43,8 @@ def upgrade() -> None:
     sa.Column('qty_kg', sa.DECIMAL(precision=16, scale=3), nullable=False),
     sa.ForeignKeyConstraint(['destination_id'], ['destination.id'], ),
     sa.ForeignKeyConstraint(['scenario_id'], ['comparison_scenario.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('scenario_id', 'destination_id', name='uq_comparison_scenario_line')
     )
     # ### end Alembic commands ###
     #

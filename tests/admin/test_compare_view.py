@@ -204,6 +204,27 @@ async def test_a_malformed_metrics_shape_does_not_500(
     assert response.status_code == 200
 
 
+async def test_a_non_dict_metric_entry_reads_as_could_not_be_computed(
+    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+):
+    """The metrics map itself can be a well-formed dict while one entry in
+    it is not - `{"co2e": "oops"}` rather than `{"co2e": {"total": ...}}`.
+    `_metric_rows` indexed straight into that entry with `published["total"]`,
+    which is a TypeError on a string. Guarded the same way as a missing
+    metric: renders "could not be computed" for that side."""
+    fake_calc_client.result = {
+        "totals": {"current": {"metrics": {"co2e": "oops"}}}, "net_benefit": {},
+        "entries": [],
+    }
+    published, draft = two_sets
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{draft.id}/compare")
+
+    assert response.status_code == 200
+    assert "could not be computed" in response.text.lower()
+
+
 async def test_comparing_against_nothing_published_says_so(
     admin_client, fake_calc_client, one_draft, seeded_scenario, session
 ):

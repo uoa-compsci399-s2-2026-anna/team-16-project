@@ -14,6 +14,8 @@ every list here filters by factor_set. A staff member editing the wrong
 version's number is the failure this prevents, and it is silent.
 """
 
+import contextvars
+
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter, OperationColumnFilter
 from sqlalchemy import select
 
@@ -91,6 +93,47 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     page_size = 100
 
 
+#: The factor_set a Constant row belonged to just before ConstantAdmin
+#: deletes it. See ConstantAdmin.delete_model's docstring for why this
+#: cannot simply be read back out of `session` inside validate_before_commit
+#: the way the update path can.
+_pending_deleted_constant_factor_set: contextvars.ContextVar[int | None] = (
+    contextvars.ContextVar("kai_admin_pending_deleted_constant_factor_set", default=None)
+)
+
+
+def _revalidate_formulas(session, factor_set_id: int) -> None:
+    """Re-run §4.3's own check against every formula in one factor_set.
+
+    Shared by ConstantAdmin below: a formula that validated cleanly when it
+    was saved can be broken later by an edit to a *different* row -
+    deleting or renaming the constant it referenced - and nothing about the
+    formula row itself changes when that happens, so FormulaAdmin's own
+    validate_before_commit (admin/factor_views.py) never fires; its flush
+    contains no Formula row to react to.
+
+    Raises TaxonomyInvariantError naming the broken formula's metric, so the
+    staff member sees which formula their change would strand, not just
+    that something, somewhere, broke.
+    """
+    codes = session.scalars(
+        select(Constant.code).where(Constant.factor_set_id == factor_set_id)
+    ).all()
+    formulas = session.scalars(
+        select(Formula).where(Formula.factor_set_id == factor_set_id)
+    ).all()
+    for formula in formulas:
+        try:
+            validate_expression(formula.expression, constant_codes=codes)
+        except ExpressionError as exc:
+            raise TaxonomyInvariantError(
+                f"This change breaks the formula for metric "
+                f"'{formula.metric.code}': line {exc.line}, column "
+                f"{exc.column}: {exc.message} Fix or remove that formula "
+                "first."
+            ) from exc
+
+
 class ConstantAdmin(AuditedModelView, model=Constant):
     name = "Constant"
     name_plural = "Constants"
@@ -108,6 +151,63 @@ class ConstantAdmin(AuditedModelView, model=Constant):
                          title="Factor set"),
     ]
     page_size = 50
+
+    async def delete_model(self, request, pk) -> None:
+        """Remember which factor_set this row belonged to, before it is gone.
+
+        A deleted row leaves `session.identity_map` once its delete flushes
+        (confirmed directly in FormulaAdmin's own validate_before_commit
+        docstring above: present for a fresh insert, present for an update,
+        "correctly absent for a row this same session just deleted"), so by
+        the time validate_before_commit runs there is nothing left in
+        session state naming which factor_set a deleted constant came from.
+
+        Looked up here, before `super().delete_model()` does anything, and
+        carried across on a ContextVar rather than an instance attribute -
+        sqladmin constructs one ConstantAdmin instance for the app's whole
+        lifetime, shared by every concurrent request, so an instance
+        attribute would let two simultaneous deletes clobber each other's
+        value. This mirrors _actor_var/_view_var in admin/modelviews.py
+        exactly: set on the request's own asyncio task before the call that
+        eventually reaches `anyio.to_thread.run_sync` for the actual commit,
+        which that module's own docstring already establishes propagates a
+        ContextVar set beforehand into the worker thread the before_commit
+        listener - and so validate_before_commit below - runs on.
+        """
+        with self.session_maker() as lookup:
+            constant = lookup.get(Constant, int(pk))
+            factor_set_id = constant.factor_set_id if constant is not None else None
+        token = _pending_deleted_constant_factor_set.set(factor_set_id)
+        try:
+            await super().delete_model(request, pk)
+        finally:
+            _pending_deleted_constant_factor_set.reset(token)
+
+    def validate_before_commit(self, session) -> None:
+        """A constant deleted or renamed must not orphan a formula. §4.3 + §2.2.
+
+        Scoped to the factor_set(s) this write actually touched, not every
+        factor_set in the database: an unrelated, already-broken formula
+        sitting in some other draft must not block an edit that has nothing
+        to do with it.
+
+        The update/create path reads the affected factor_set(s) straight out
+        of `session.identity_map` - a row this session is inserting or
+        editing stays there through the flush, same as FormulaAdmin relies
+        on. The delete path has nothing there to read (see delete_model's
+        own docstring above) and falls back to the ContextVar delete_model
+        stashed before the row disappeared.
+        """
+        factor_set_ids = {
+            obj.factor_set_id for obj in session.identity_map.values()
+            if isinstance(obj, Constant)
+        }
+        pending_delete = _pending_deleted_constant_factor_set.get()
+        if pending_delete is not None:
+            factor_set_ids.add(pending_delete)
+
+        for factor_set_id in factor_set_ids:
+            _revalidate_formulas(session, factor_set_id)
 
 
 class EquivalenceAdmin(AuditedModelView, model=Equivalence):

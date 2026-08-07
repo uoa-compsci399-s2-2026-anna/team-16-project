@@ -416,3 +416,82 @@ async def test_a_formula_referring_to_a_constant_from_another_set_is_refused(
     assert session.scalar(
         select(Formula).where(Formula.factor_set_id == fs.id)
     ) is None
+
+
+# --- End-to-end tests: ConstantAdmin's real behaviour -----------------------
+
+
+@pytest.mark.asyncio
+async def test_deleting_a_referenced_constant_is_refused(session, admin_client):
+    """ConstantAdmin's own flush never contains a Formula row, so
+    FormulaAdmin's validate_before_commit - which only fires for rows of its
+    own model, per AuditedModelView's own docstring - never runs when a
+    constant is deleted. Without a guard of ConstantAdmin's own, this delete
+    goes through silently and the formula becomes unrunnable the next time a
+    member of the public calculates - a FORMULA_ERROR 500 with nothing on
+    any admin screen ever having said so."""
+    fs, metric = _seed_set_and_metric(session)
+    constant = Constant(factor_set_id=fs.id, code="LEVY_NZD_PER_T", value=Decimal("60"))
+    session.add(constant)
+    session.flush()
+    formula = Formula(factor_set_id=fs.id, metric_id=metric.id,
+                      expression="qty_kg * const_LEVY_NZD_PER_T")
+    session.add(formula)
+    session.commit()
+
+    await admin_client.delete("/admin/constant/delete", params={"pks": str(constant.id)})
+
+    _resync(session)
+    assert session.scalar(select(Constant).where(Constant.id == constant.id)) is not None
+    saved_formula = session.scalar(select(Formula).where(Formula.id == formula.id))
+    assert saved_formula is not None
+    assert saved_formula.expression == "qty_kg * const_LEVY_NZD_PER_T"
+
+
+@pytest.mark.asyncio
+async def test_deleting_an_unreferenced_constant_goes_through(session, admin_client):
+    """The guard refuses only a delete that would orphan a formula - a guard
+    that refused every constant delete would pass the test above too."""
+    fs, _metric = _seed_set_and_metric(session)
+    constant = Constant(factor_set_id=fs.id, code="UNUSED_CONST", value=Decimal("1"))
+    session.add(constant)
+    session.commit()
+    constant_id = constant.id
+
+    await admin_client.delete("/admin/constant/delete", params={"pks": str(constant_id)})
+
+    _resync(session)
+    # constant_id, not constant.id: the row is gone, and _resync's
+    # expire_all() means touching the already-identity-mapped `constant`
+    # object's own attributes here would trigger an implicit refresh against
+    # a row that no longer exists, raising ObjectDeletedError rather than
+    # answering the question this assertion is actually asking.
+    assert session.scalar(select(Constant).where(Constant.id == constant_id)) is None
+
+
+@pytest.mark.asyncio
+async def test_renaming_a_referenced_constant_is_refused(session, admin_client):
+    """Renaming a constant's code is indistinguishable from deleting it, from
+    a formula's point of view: the exact code the expression resolves
+    against is gone either way. This exercises ConstantAdmin's *edit* path,
+    where the row does stay in session.identity_map after flush - unlike
+    delete, this needs no extra bookkeeping - but only if the guard scopes
+    its recheck to the constant actually being edited."""
+    fs, metric = _seed_set_and_metric(session)
+    constant = Constant(factor_set_id=fs.id, code="LEVY_NZD_PER_T", value=Decimal("60"))
+    session.add(constant)
+    session.flush()
+    formula = Formula(factor_set_id=fs.id, metric_id=metric.id,
+                      expression="qty_kg * const_LEVY_NZD_PER_T")
+    session.add(formula)
+    session.commit()
+
+    await admin_client.post(f"/admin/constant/edit/{constant.id}", data={
+        "factor_set": str(fs.id), "code": "LEVY_RENAMED", "value": "60",
+        "unit": "", "note": "",
+    })
+
+    _resync(session)
+    assert session.scalar(
+        select(Constant).where(Constant.id == constant.id)
+    ).code == "LEVY_NZD_PER_T"

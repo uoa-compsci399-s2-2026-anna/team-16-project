@@ -14,7 +14,7 @@ never commits: the caller owns that, matching the convention the rest of
 
 from sqlalchemy import select
 
-from admin.audit import write_audit
+from admin.audit import row_to_dict, write_audit
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
@@ -27,14 +27,6 @@ class LifecycleError(Exception):
     The message is shown to the staff member who attempted it, so it says
     what is wrong and what to do, not which function raised.
     """
-
-
-def _row_columns(row) -> dict:
-    """Every mapped column of one row, by name."""
-    return {
-        column.key: getattr(row, column.key)
-        for column in row.__mapper__.column_attrs
-    }
 
 
 def _clone_children(session, model, source_id: int, new_set_id: int) -> None:
@@ -51,7 +43,7 @@ def _clone_children(session, model, source_id: int, new_set_id: int) -> None:
     for row in rows:
         fields = {
             key: value
-            for key, value in _row_columns(row).items()
+            for key, value in row_to_dict(row).items()
             if key not in ("id", "factor_set_id")
         }
         session.add(model(factor_set_id=new_set_id, **fields))
@@ -79,6 +71,10 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
     if source is None:
         raise LifecycleError(f"No factor set with id {source_id} exists to clone.")
 
+    # TOCTOU: another write could insert the same label between this check
+    # and the flush below. Left as a plain pre-check rather than catching
+    # the resulting IntegrityError — this is a single-operator admin panel,
+    # not a public endpoint, so the race is not worth the extra complexity.
     duplicate = session.scalar(
         select(FactorSet).where(FactorSet.version_label == label)
     )
@@ -106,7 +102,7 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 
     write_audit(
         session, actor=actor, action="create", table_name="factor_set",
-        row_id=clone.id, before=None, after=_row_columns(clone),
+        row_id=clone.id, before=None, after=row_to_dict(clone),
     )
 
     return clone.id

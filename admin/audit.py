@@ -20,6 +20,22 @@ REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash"}
 _REDACTED = "[redacted]"
 
 
+def row_to_dict(row: Any) -> dict:
+    """Every mapped column of one row, by name.
+
+    Relationships are excluded — a relationship is other rows, not a column
+    of this one. Shared by admin/modelviews.py (building an `after` snapshot
+    for ordinary CRUD) and admin/factor_lifecycle.py (building one for a
+    clone's own audit entry): both need the same "every column, nothing
+    derived" shape, so this lives in admin/audit.py, which both already
+    depend on for `write_audit`, rather than being defined twice.
+    """
+    return {
+        column.key: getattr(row, column.key)
+        for column in row.__mapper__.column_attrs
+    }
+
+
 def _encode(value: Any) -> Any:
     """JSON-safe form of one value.
 

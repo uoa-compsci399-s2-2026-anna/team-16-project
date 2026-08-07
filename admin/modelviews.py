@@ -35,7 +35,7 @@ from sqlalchemy import event
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
-from admin.audit import write_audit
+from admin.audit import row_to_dict, write_audit
 from admin.auth import SESSION_KEY
 from admin.models import AuditLog
 
@@ -62,30 +62,6 @@ _actor_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
 _view_var: contextvars.ContextVar["AuditedModelView | None"] = contextvars.ContextVar(
     "kai_admin_audit_view", default=None
 )
-
-
-def _row_to_dict(row: Any) -> dict:
-    """Every mapped column of one row, by name.
-
-    Relationships are excluded from the dict itself — a relationship is
-    other rows, not a column of this one. That does not mean each of those
-    rows gets its own audit entry when *this* write touches them: the
-    ``before_commit`` listener below filters ``session.new`` / ``.dirty`` /
-    ``.deleted`` with ``isinstance(obj, model)``, so only rows of the model
-    this particular ``AuditedModelView`` was constructed for are ever
-    considered. An ORM cascade — a ``factor_set`` delete taking its
-    ``factor_upstream`` rows with it via ``cascade="all, delete-orphan"``,
-    for instance — deletes those child rows in the same flush without this
-    listener ever seeing them, and writes no audit entry for them at all.
-    Nothing on this branch exercises that: both views defined here set
-    ``can_delete = False``. A future view that allows delete and owns a
-    cascading relationship needs its own handling for the children, or they
-    vanish untracked.
-    """
-    return {
-        column.key: getattr(row, column.key)
-        for column in row.__mapper__.column_attrs
-    }
 
 
 def _snapshot_before(row: Any) -> dict:
@@ -169,6 +145,16 @@ def _audited_session_maker(
             # none at all.
             return
 
+        # `isinstance(obj, model)` means only rows of the model this
+        # particular AuditedModelView was constructed for are ever
+        # considered. An ORM cascade — a `factor_set` delete taking its
+        # `factor_upstream` rows with it via `cascade="all, delete-orphan"`,
+        # for instance — deletes those child rows in the same flush without
+        # this listener ever seeing them, and writes no audit entry for them
+        # at all. Nothing on this branch exercises that: both views defined
+        # here set `can_delete = False`. A future view that allows delete
+        # and owns a cascading relationship needs its own handling for the
+        # children, or they vanish untracked.
         created = [obj for obj in session.new if isinstance(obj, model)]
         updated = [
             obj for obj in session.dirty
@@ -208,13 +194,13 @@ def _audited_session_maker(
             write_audit(
                 session, actor=actor, action="create", table_name=table_name,
                 row_id=getattr(obj, "id", None), before=None,
-                after=_row_to_dict(obj),
+                after=row_to_dict(obj),
             )
         for obj in updated:
             write_audit(
                 session, actor=actor, action="update", table_name=table_name,
                 row_id=getattr(obj, "id", None), before=before_by_id[id(obj)],
-                after=_row_to_dict(obj),
+                after=row_to_dict(obj),
             )
         for obj in deleted:
             write_audit(
@@ -258,8 +244,9 @@ class AuditedModelView(ModelView):
        Fernet-encrypted TOTP secret in the clear, from a list this same
        view correctly redacted. Any subclass with a sensitive column has to
        repeat that narrowing itself.
-    3. See ``_row_to_dict``'s docstring below for what the audit trail does
-       and does not capture from an ORM cascade.
+    3. See the comment beside ``session.new``'s ``isinstance`` filter in
+       ``_audited_session_maker`` below for what the audit trail does and
+       does not capture from an ORM cascade.
     """
 
     def __init__(self) -> None:

@@ -399,7 +399,16 @@ def taxonomy_for_factors(_committed_session):
 
 
 def _make_set(session, label, status, taxonomy, *, populated):
-    """One factor set, optionally with a row of every child kind."""
+    """One factor set, optionally with a row of every child kind.
+
+    Every optional column (`source_note`, `data_quality`, `unit`, `note`,
+    `notes`, `sort_order`, `active`) is given a non-default value, not left
+    to whatever the column default happens to be. A clone implementation
+    that only copies NOT NULL columns is indistinguishable from a correct
+    one when every optional column already sits at its default - this is
+    what lets tests/admin/test_factor_lifecycle.py's full-column comparison
+    actually catch that.
+    """
     from admin.factor_models import (
         Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
     )
@@ -414,17 +423,25 @@ def _make_set(session, label, status, taxonomy, *, populated):
         FactorUpstream(factor_set_id=fs.id, sector_id=taxonomy.sector.id,
                        food_category_id=taxonomy.category.id,
                        metric_id=taxonomy.metric.id,
-                       value_per_kg=Decimal("1.9000000000")),
+                       value_per_kg=Decimal("1.9000000000"),
+                       source_note="e6 fixture upstream source note",
+                       data_quality="measured"),
         FactorDownstream(factor_set_id=fs.id, destination_id=taxonomy.destination.id,
                          food_category_id=None, metric_id=taxonomy.metric.id,
-                         value_per_kg=Decimal("0.9900000000")),
-        Constant(factor_set_id=fs.id, code="GWP_CH4_100", value=Decimal("29.8")),
+                         value_per_kg=Decimal("0.9900000000"),
+                         source_note="e6 fixture downstream source note",
+                         data_quality="estimated"),
+        Constant(factor_set_id=fs.id, code="GWP_CH4_100", value=Decimal("29.8"),
+                 unit="kg CO2e / kg CH4", note="e6 fixture constant note"),
         Formula(factor_set_id=fs.id, metric_id=taxonomy.metric.id,
-                expression="qty_kg * (upstream + downstream)"),
+                expression="qty_kg * (upstream + downstream)",
+                notes="e6 fixture formula note"),
         Equivalence(factor_set_id=fs.id, code="km_driven", name="Kilometres driven",
                     source_metric_id=taxonomy.metric.id,
                     value_per_unit=Decimal("0.192"),
-                    label_template="Equivalent to driving {value} km"),
+                    label_template="Equivalent to driving {value} km",
+                    source_note="e6 fixture equivalence source note",
+                    sort_order=3, active=False),
     ])
     session.flush()
     return fs

@@ -18,11 +18,15 @@ not the same.
 """
 
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter
+from wtforms import SelectField
 
 from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 from admin.modelviews import AuditedModelView
 
 _CATEGORY = "Comparison"
+
+#: §6.2's own choice, mirrored by comparison_models.py's CHECK constraint.
+_GWP_HORIZON_CHOICES = [(20, "20 years"), (100, "100 years")]
 
 
 class ComparisonScenarioAdmin(AuditedModelView, model=ComparisonScenario):
@@ -50,6 +54,14 @@ class ComparisonScenarioAdmin(AuditedModelView, model=ComparisonScenario):
     column_searchable_list = [ComparisonScenario.code, ComparisonScenario.name]
     column_filters = [BooleanFilter(ComparisonScenario.active)]
     column_default_sort = ("sort_order", False)
+
+    # A free IntegerField let staff type anything - 57 sailed past the form
+    # and landed on MySQL's own CHECK-violation text (error 3819). A
+    # two-option select can't be typed into wrong.
+    form_overrides = {"gwp_horizon": SelectField}
+    form_args = {
+        "gwp_horizon": {"choices": _GWP_HORIZON_CHOICES, "coerce": int},
+    }
 
 
 class ComparisonScenarioLineAdmin(AuditedModelView, model=ComparisonScenarioLine):

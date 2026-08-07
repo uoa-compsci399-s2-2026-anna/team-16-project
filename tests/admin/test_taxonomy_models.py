@@ -35,6 +35,7 @@ def test_a_group_can_be_moved_out_of_waste(session):
 
     group.is_waste = False
     session.flush()
+    session.expire_all()
 
     assert session.scalar(
         select(DestinationGroup).where(DestinationGroup.code == "recycle_recovery")

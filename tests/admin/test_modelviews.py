@@ -54,11 +54,19 @@ def audited_view(session):
     listener-carrying sessionmaker (see admin/modelviews.py's
     _audited_session_maker), and needs a real sessionmaker to copy from.
     Bound to `session.get_bind()` - the same Connection `session` itself
-    uses - so that the audited write (via SQLAlchemy's default
-    `conditional_savepoint` join mode) becomes a nested SAVEPOINT inside the
-    fixture's own outer transaction: visible to `session`'s own queries in
-    the tests below, and undone along with everything else when that outer
-    transaction rolls back at teardown.
+    uses - so writes made through this view are visible to `session`'s own
+    queries in the tests below, and are undone along with everything else
+    when that outer transaction rolls back at teardown. This does *not* give
+    the audited write its own real, independently-rollback-able SAVEPOINT:
+    SQLAlchemy's default `conditional_savepoint` join mode only issues one
+    for a second session sharing a connection if that connection is already
+    inside a nested transaction (`session.begin_nested()` +
+    `session.connection()`) at the moment the second session begins - this
+    fixture does neither, so it silently falls back to `"rollback_only"`. See
+    tests/admin/test_taxonomy_rules.py's `standard_mix_guarded_view` fixture
+    for the pair that actually forces a real SAVEPOINT, and for the mismatch
+    this leaves between the two fixtures' docstrings if only one of them is
+    ever updated.
 
     `autoflush=False` mirrors production: sqladmin's own `Admin.__init__`
     (sqladmin/application.py) configures the app's real, shared sessionmaker

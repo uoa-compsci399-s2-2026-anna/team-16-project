@@ -138,7 +138,17 @@ def _describe_value(value: object) -> str:
 
 
 def _check_call(node: ast.Call) -> None:
-    """A call is permitted only to one of the four named functions."""
+    """A call is permitted only to one of the four named functions, and only
+    with an argument count the engine can actually run.
+
+    Checking the name alone lets through calls that parse and pass a
+    name-only check but blow up at runtime — `abs(qty_kg, upstream)`,
+    `round(qty_kg, 2, 3)` — with a TypeError the public sees as a
+    FORMULA_ERROR 500. `min`/`max` need at least two arguments here: Python
+    allows a single-argument call meaning "iterable", but no node this
+    module permits can ever produce an iterable, so a one-argument min/max
+    is unrunnable regardless of what that argument is.
+    """
     if not isinstance(node.func, ast.Name):
         raise ExpressionError(
             "Only min, max, abs and round may be called in a formula.",
@@ -155,6 +165,46 @@ def _check_call(node: ast.Call) -> None:
             "Keyword arguments are not allowed in a formula.",
             line=node.lineno, column=node.col_offset,
         )
+
+    name = node.func.id
+    argc = len(node.args)
+    if name == "abs" and argc != 1:
+        raise ExpressionError(
+            f"abs() takes exactly one argument ({argc} given).",
+            line=node.lineno, column=node.col_offset,
+        )
+    if name == "round" and argc not in (1, 2):
+        raise ExpressionError(
+            f"round() takes one or two arguments ({argc} given).",
+            line=node.lineno, column=node.col_offset,
+        )
+    if name in ("min", "max") and argc < 2:
+        raise ExpressionError(
+            f"{name}() needs at least two arguments here ({argc} given): "
+            "a formula cannot build the iterable that would make a single "
+            f"argument to {name}() meaningful.",
+            line=node.lineno, column=node.col_offset,
+        )
+    if name == "round" and argc == 2 and not _is_int_literal(node.args[1]):
+        raise ExpressionError(
+            "round()'s second argument must be a whole number literal, "
+            "e.g. round(x, 2).",
+            line=node.args[1].lineno, column=node.args[1].col_offset,
+        )
+
+
+def _is_int_literal(node: ast.AST) -> bool:
+    """True for a bare, non-boolean integer literal such as `2`.
+
+    round()'s ndigits must be an int at runtime; anything else the grammar
+    could put there (qty_kg, 2.0, a nested call) raises a TypeError the
+    engine would hit live, so only this shape is accepted.
+    """
+    return (
+        isinstance(node, ast.Constant)
+        and isinstance(node.value, int)
+        and not isinstance(node.value, bool)
+    )
 
 
 _DESCRIPTIONS = {

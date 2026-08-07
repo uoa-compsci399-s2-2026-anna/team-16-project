@@ -111,6 +111,48 @@ def test_a_keyword_argument_is_refused():
 
 
 @pytest.mark.parametrize("expression", [
+    "min()",
+    "max()",
+    "min(qty_kg)",
+    "max(qty_kg)",
+    "abs(qty_kg, upstream)",
+    "abs()",
+    "round(qty_kg, qty_kg)",
+    "round(qty_kg, 2, 3)",
+    "round()",
+])
+def test_a_call_with_the_wrong_argument_count_is_refused(expression):
+    """The validator checks the callee name but must also check arity: none
+    of these can actually run. abs() takes exactly one argument; round()
+    takes one or two, and the second must be an int; min/max need at least
+    two arguments here because no permitted node can produce an iterable for
+    the one-argument "iterable" form Python otherwise allows."""
+    bad(expression)
+
+
+def test_rounds_second_argument_must_be_an_integer_literal():
+    """round(x, qty_kg) parses and passes a name-only check, but ndigits must
+    be an int at runtime - a Decimal or float there is a TypeError the
+    engine would raise live."""
+    bad("round(qty_kg * upstream, qty_kg)")
+
+
+@pytest.mark.parametrize("expression", [
+    "abs(downstream)",
+    "abs(qty_kg * upstream)",
+    "round(qty_kg * upstream, 2)",
+    "round(qty_kg)",
+    "min(qty_kg, 100)",
+    "max(0, qty_kg * downstream)",
+    "min(qty_kg, 100, downstream)",
+])
+def test_valid_call_shapes_still_pass(expression):
+    """A fix for the arity gap must not overcorrect: these are all forms the
+    contract's own examples and neighbours actually use."""
+    ok(expression)
+
+
+@pytest.mark.parametrize("expression", [
     "+qty_kg",
     "qty_kg * +upstream",
 ])

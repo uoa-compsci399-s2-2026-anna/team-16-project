@@ -253,15 +253,24 @@ def rollback_to(session: Session, factor_set_id: int, actor: str) -> None:
     published now.
 
     Same shape as publish_factor_set above — same lock, same "at most one
-    published" refusal — with one difference: the target must already be
-    `archived`. Rollback restores something that was live before; a draft
-    has never been live, and publishing it is a different decision with a
-    different audit meaning (that is what publish_factor_set is for).
+    published" refusal, same formula re-validation — with one difference:
+    the target must already be `archived`. Rollback restores something that
+    was live before; a draft has never been live, and publishing it is a
+    different decision with a different audit meaning (that is what
+    publish_factor_set is for).
 
-    Not re-run here: `_revalidate_formulas`. An archived set's own rows
-    cannot be edited in place (every factor view refuses that — see
-    admin/factor_views.py's `_refuse_if_factor_set_not_draft`), so nothing
-    can have broken its formulas since the moment it was last published.
+    `_revalidate_formulas` runs here too, even though an archived set's own
+    rows cannot be edited in place once it has been through
+    publish_factor_set (every factor view refuses that — see
+    admin/factor_views.py's `_refuse_if_factor_set_not_draft`). That
+    reasoning has a gap this function must not rely on: `FactorSetAdmin`'s
+    edit form lets `status` be set directly, so a draft can be moved
+    straight to `archived` without ever passing through
+    publish_factor_set's own check — see
+    tests/admin/test_factor_set_view.py's
+    test_a_status_change_through_the_edit_form_is_ignored, which is what
+    caught this. Re-running the check here costs one query and removes the
+    dependency on that history entirely.
     """
     rows = _lock_factor_sets(session)
     by_id = {row.id: row for row in rows}
@@ -284,6 +293,11 @@ def rollback_to(session: Session, factor_set_id: int, actor: str) -> None:
             f"({labels}). Exactly one may be published at a time — archive "
             "all but one before rolling back to another."
         )
+
+    try:
+        _revalidate_formulas(session, factor_set_id)
+    except TaxonomyInvariantError as exc:
+        raise LifecycleError(str(exc)) from exc
 
     changes: list[tuple[FactorSet, dict, str]] = []
 

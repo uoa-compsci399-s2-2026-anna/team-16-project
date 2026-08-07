@@ -296,6 +296,13 @@ def test_publishing_refuses_when_two_are_already_published(_committed_session, t
 
 
 def test_rollback_restores_an_archived_set(_committed_session, two_sets):
+    """Also covers what test_both_transitions_are_audited (below) does not:
+    that name notwithstanding, it only ever drives publish_factor_set, so
+    nothing previously proved rollback_to's own audit verb ("rollback", not
+    "publish" - contract §2.3's action list distinguishes the two) or that
+    it stamps the row it actually changed."""
+    from admin.models import AuditLog
+
     session = _committed_session
     live, draft = two_sets
     publish_factor_set(session, draft.id, actor="kim")
@@ -306,6 +313,15 @@ def test_rollback_restores_an_archived_set(_committed_session, two_sets):
 
     assert session.get(FactorSet, live.id).status is FactorSetStatus.published
     assert session.get(FactorSet, draft.id).status is FactorSetStatus.archived
+
+    actions = {
+        (e.row_id, e.action)
+        for e in session.scalars(
+            select(AuditLog).where(AuditLog.table_name == "factor_set")
+        ).all()
+    }
+    assert (live.id, "rollback") in actions
+    assert (draft.id, "archive") in actions
 
 
 def test_rollback_refuses_a_draft(_committed_session, two_sets):

@@ -102,48 +102,25 @@ def _cleanup_this_files_rows(admin_app):
 
 
 @pytest.mark.asyncio
-async def test_publishing_a_second_set_through_the_edit_form_is_refused(
-    session, admin_client
-):
-    """§2.2's invariant, on the path that bypasses every service function.
+async def test_a_status_change_through_the_edit_form_is_ignored(session, admin_client):
+    """Task 3 review finding: `status` used to be a plain form field, reached
+    directly through sqladmin's generic Query.update -> setattr -> commit,
+    with no service function anywhere near it. That let a staff member move
+    a draft straight to `published` (or `archived`) from the edit screen,
+    getting none of what `admin/factor_lifecycle.py`'s publish_factor_set /
+    rollback_to actually guarantee: the `SELECT ... FOR UPDATE` that settles
+    two simultaneous publishes, the formula re-validation, the
+    published_at/published_by stamps, the publish/archive audit pair - as
+    long as no other set happened to be published at that moment, the panel
+    raised no objection at all.
 
-    The edit form reaches `status` directly through sqladmin's
-    Query.update -> setattr -> commit, which is exactly how an earlier stage
-    of this project shipped an administrator-floor guard that a checkbox
-    walked straight past.
+    `status` was removed from `FactorSetAdmin.form_columns` to close this.
+    sqladmin ignores form fields outside form_columns rather than rejecting
+    the request, so this POST is expected to succeed (a 4xx would actually
+    indicate a *different* bug) - the only thing this test checks is that
+    the stored status did not move, which is why it asserts on the database
+    row and not on response.status_code.
     """
-    live = FactorSet(version_label=_FACTOR_SET_LABELS[0], status=FactorSetStatus.published,
-                     is_mock=False)
-    draft = FactorSet(version_label=_FACTOR_SET_LABELS[1], status=FactorSetStatus.draft,
-                      is_mock=True)
-    session.add_all([live, draft])
-    session.commit()
-
-    response = await admin_client.post(f"/admin/factor-set/edit/{draft.id}", data={
-        "version_label": _FACTOR_SET_LABELS[1], "status": "published", "is_mock": "on",
-        "notes": "",
-    })
-
-    _resync(session)
-    assert session.scalar(
-        select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[1])
-    ).status is FactorSetStatus.draft
-    # Not "published" in response.text.lower(): that word also appears in
-    # the re-rendered status <select>'s own option list, so it passes
-    # against a raw traceback just as easily as against a real refusal.
-    # sqladmin's edit route (see admin/taxonomy_views.py's module docstring
-    # for the confirmed mechanism) wraps update_model in a bare
-    # `except Exception`, sets `context["error"] = str(e)` and re-renders
-    # with a 400 - checking the status code and the invariant's own message
-    # is what actually proves this was refused for the right reason.
-    assert response.status_code == 400
-    assert "Archive all but one" in response.text
-
-
-@pytest.mark.asyncio
-async def test_publishing_when_nothing_is_published_goes_through(session, admin_client):
-    """The invariant refuses the second published set and nothing else. A
-    guard that refused every status change would pass the test above."""
     draft = FactorSet(version_label=_FACTOR_SET_LABELS[2], status=FactorSetStatus.draft,
                       is_mock=True)
     session.add(draft)
@@ -157,4 +134,4 @@ async def test_publishing_when_nothing_is_published_goes_through(session, admin_
     _resync(session)
     assert session.scalar(
         select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[2])
-    ).status is FactorSetStatus.published
+    ).status is FactorSetStatus.draft

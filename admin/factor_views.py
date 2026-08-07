@@ -555,10 +555,16 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
                            FactorSet.is_mock, FactorSet.effective_from,
                            FactorSet.published_at, FactorSet.published_by,
                            FactorSet.notes]
-    # published_at/published_by are absent deliberately: they are stamped by
-    # the publish action in E-6, and a staff member typing them by hand would
-    # make the audit trail disagree with itself.
-    form_columns = [FactorSet.version_label, FactorSet.status, FactorSet.is_mock,
+    # published_at/published_by/status are absent deliberately: all three are
+    # stamped by the lifecycle actions (admin/factor_lifecycle.py's
+    # publish_factor_set/rollback_to), and a staff member typing them by hand
+    # would both make the audit trail disagree with itself and walk straight
+    # past the lock, the formula re-validation and the "at most one
+    # published" refusal those functions exist to enforce - status is not a
+    # plain data column, it is the entire lifecycle contract's write path,
+    # and sqladmin's generic edit route (setattr then commit, no service
+    # function anywhere near it) has no way to know that.
+    form_columns = [FactorSet.version_label, FactorSet.is_mock,
                     FactorSet.effective_from, FactorSet.notes]
     column_default_sort = ("id", True)
 

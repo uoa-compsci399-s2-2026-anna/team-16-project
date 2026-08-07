@@ -119,6 +119,27 @@ def test_a_non_json_response_is_unavailable_not_refused():
                                  factor_set_version=None)
 
 
+def test_a_malformed_error_envelope_is_unavailable_not_refused():
+    """A gateway or proxy emitting {"error": "upstream unavailable"} is the
+    absent-service case wearing a JSON body: a non-dict `error`, or a dict
+    missing a string `code` or `message`, is not a §9 envelope and must not
+    surface as a refusal - let alone leak an AttributeError from treating a
+    string like a dict."""
+    def handler(request):
+        return httpx.Response(200, json={"error": "boom"})
+
+    with pytest.raises(CalculateUnavailable):
+        _client(handler).dry_run({"entries": []}, cookies={},
+                                 factor_set_version=None)
+
+    def handler_missing_code(request):
+        return httpx.Response(500, json={"error": {"message": "nope"}})
+
+    with pytest.raises(CalculateUnavailable):
+        _client(handler_missing_code).dry_run({"entries": []}, cookies={},
+                                              factor_set_version=None)
+
+
 def test_decimals_are_left_as_strings():
     """§1.2. The response's numbers are strings and must stay strings all
     the way to the template - parsing one into a float here would lose the

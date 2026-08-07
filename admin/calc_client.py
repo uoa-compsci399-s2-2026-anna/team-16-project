@@ -114,9 +114,25 @@ class HttpCalculateClient:
 
         error = payload.get("error")
         if error is not None:
+            # A §9 envelope's "error" is an object with a string code and
+            # message. A string (a proxy's `{"error": "upstream
+            # unavailable"}`) or a dict missing either field is not that
+            # envelope - it is the absent-service case wearing a JSON body,
+            # and treating it as a refusal would hand staff an
+            # AttributeError (non-dict) or a literal "None" rendered into
+            # the page (missing field) during the exact outage this client
+            # exists to report cleanly.
+            if (
+                not isinstance(error, dict)
+                or not isinstance(error.get("code"), str)
+                or not isinstance(error.get("message"), str)
+            ):
+                raise CalculateUnavailable(
+                    f"malformed error envelope ({response.status_code})"
+                )
             raise CalculateRefused(
-                code=error.get("code"),
-                message=error.get("message"),
+                code=error["code"],
+                message=error["message"],
                 details=error.get("details"),
             )
 

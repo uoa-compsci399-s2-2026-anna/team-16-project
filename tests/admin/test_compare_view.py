@@ -136,14 +136,24 @@ async def test_a_scenario_that_fails_does_not_hide_the_others(
 
 
 async def test_an_unreachable_service_is_a_page_level_message(
-    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+    admin_client, fake_calc_client, two_sets, seeded_scenario_pair, session
 ):
     """B's endpoint is not deployed for most of this project's life — this
     is the state both `/admin/try` and this page will be in for a while,
     and it must read as an outage rather than a fault in either factor
     set. Unlike a refusal, an unreachable service is not this scenario's
     own problem — it says nothing looked at any scenario at all — so it is
-    one message for the whole page, not a row repeated per scenario."""
+    one message for the whole page, not a row repeated per scenario.
+
+    A single seeded scenario cannot tell a page-level message from a
+    per-row one that happens to fire once — both render exactly one error
+    notice either way. `seeded_scenario_pair` gives two scenarios, so a
+    per-row rendering would produce one error notice per scenario it got
+    to before failing, plus that scenario's own heading. This asserts
+    exactly one error notice renders on the whole page and that neither
+    scenario's own heading renders at all — the loop never got past the
+    first call before `CalculateUnavailable` propagated out of it.
+    """
     fake_calc_client.unavailable = True
     session.commit()
 
@@ -151,7 +161,10 @@ async def test_an_unreachable_service_is_a_page_level_message(
 
     assert response.status_code == 200
     body = response.text.lower()
-    assert "not reachable" in body or "unavailable" in body
+    assert "not reachable" in body
+    assert response.text.count('notice notice--error') == 1
+    for scenario in seeded_scenario_pair:
+        assert scenario.name not in response.text
 
 
 async def test_a_mock_factor_set_shows_the_placeholder_banner(

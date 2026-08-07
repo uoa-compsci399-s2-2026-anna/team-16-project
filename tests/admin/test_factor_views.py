@@ -495,3 +495,99 @@ async def test_renaming_a_referenced_constant_is_refused(session, admin_client):
     assert session.scalar(
         select(Constant).where(Constant.id == constant.id)
     ).code == "LEVY_NZD_PER_T"
+
+
+# --- End-to-end tests: the published-set immutability guard ----------------
+
+
+def _seed_published_set_and_metric(session):
+    """A published factor set and a metric, the counterpart to
+    _seed_set_and_metric's draft one - for the guard below, whose whole
+    point is telling those two states apart."""
+    fs = FactorSet(version_label=_FACTOR_SET_LABELS[0], status=FactorSetStatus.published,
+                   is_mock=False)
+    session.add(fs)
+    metric = Metric(code=_METRIC_CODES[0], name="Test metric", unit="kg")
+    session.add(metric)
+    session.flush()
+    return fs, metric
+
+
+@pytest.mark.asyncio
+async def test_editing_an_equivalence_in_a_published_set_is_refused(session, admin_client):
+    """admin/factor_views.py's own module docstring says "versions are
+    cloned rather than edited in place" - nothing enforced that before this
+    guard existed. Every historical submission stamped with this
+    factor_set_id depends on its numbers staying exactly as published."""
+    fs, metric = _seed_published_set_and_metric(session)
+    equivalence = Equivalence(
+        factor_set_id=fs.id, code="km_driven", name="Km driven",
+        source_metric_id=metric.id, value_per_unit=Decimal("1.5"),
+        label_template="Equivalent to driving {value} km",
+    )
+    session.add(equivalence)
+    session.commit()
+
+    await admin_client.post(f"/admin/equivalence/edit/{equivalence.id}", data={
+        "factor_set": str(fs.id), "code": "km_driven", "name": "Km driven",
+        "source_metric": str(metric.id), "value_per_unit": "999",
+        "label_template": "Equivalent to driving {value} km",
+        "source_note": "", "sort_order": "0", "active": "on",
+    })
+
+    _resync(session)
+    assert session.scalar(
+        select(Equivalence).where(Equivalence.id == equivalence.id)
+    ).value_per_unit == Decimal("1.5")
+
+
+@pytest.mark.asyncio
+async def test_editing_an_equivalence_in_a_draft_set_goes_through(session, admin_client):
+    """The guard refuses only a published/archived set's rows - a guard that
+    refused every edit would pass the test above too."""
+    fs, metric = _seed_set_and_metric(session)
+    equivalence = Equivalence(
+        factor_set_id=fs.id, code="km_driven", name="Km driven",
+        source_metric_id=metric.id, value_per_unit=Decimal("1.5"),
+        label_template="Equivalent to driving {value} km",
+    )
+    session.add(equivalence)
+    session.commit()
+
+    await admin_client.post(f"/admin/equivalence/edit/{equivalence.id}", data={
+        "factor_set": str(fs.id), "code": "km_driven", "name": "Km driven",
+        "source_metric": str(metric.id), "value_per_unit": "999",
+        "label_template": "Equivalent to driving {value} km",
+        "source_note": "", "sort_order": "0", "active": "on",
+    })
+
+    _resync(session)
+    assert session.scalar(
+        select(Equivalence).where(Equivalence.id == equivalence.id)
+    ).value_per_unit == Decimal("999")
+
+
+@pytest.mark.asyncio
+async def test_editing_a_formula_in_a_published_set_is_refused_even_when_valid(
+    session, admin_client
+):
+    """Proves the new published-set guard fires independently of
+    FormulaAdmin's own pre-existing expression-validity check: the new
+    expression submitted here is perfectly valid, so only the new guard can
+    be the one refusing this - a regression that dropped the composed call
+    would let this straight through."""
+    fs, metric = _seed_published_set_and_metric(session)
+    formula = Formula(factor_set_id=fs.id, metric_id=metric.id,
+                      expression="qty_kg * upstream")
+    session.add(formula)
+    session.commit()
+
+    await admin_client.post(f"/admin/formula/edit/{formula.id}", data={
+        "factor_set": str(fs.id), "metric": str(metric.id),
+        "expression": "qty_kg * downstream", "notes": "",
+    })
+
+    _resync(session)
+    assert session.scalar(
+        select(Formula).where(Formula.id == formula.id)
+    ).expression == "qty_kg * upstream"

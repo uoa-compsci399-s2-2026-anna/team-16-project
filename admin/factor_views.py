@@ -21,12 +21,54 @@ from sqlalchemy import select
 
 from admin.expressions import ExpressionError, validate_expression
 from admin.factor_models import (
-    Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
+    Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
+    FactorUpstream, Formula,
 )
 from admin.modelviews import AuditedModelView
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
 
 _CATEGORY = "Factors"
+
+
+def _require_draft_factor_set(session, model) -> None:
+    """Refuse a create/update whose parent factor_set is not a draft.
+
+    This module's own docstring says "versions are cloned rather than
+    edited in place." Nothing enforced that until this guard existed: a
+    staff member could open a published set's own factor_upstream row and
+    change value_per_kg directly through sqladmin's generic edit form -
+    plain setattr then commit, nowhere near a service function - and every
+    historical submission stamped with that factor_set_id would silently
+    stop reproducing, which is the entire guarantee stamping a
+    factor_set_id onto a submission exists to buy (contract §2.2).
+
+    Called from all five factor-row views' own validate_before_commit.
+    Reads the pending rows of `model` straight out of `session.identity_map`
+    - the same mechanism FormulaAdmin's own check already relies on: a row
+    this session is inserting or editing stays there through the flush (see
+    FormulaAdmin.validate_before_commit's docstring for how that was
+    confirmed).
+
+    Deliberately does not cover a delete: a deleted row leaves
+    session.identity_map once its own delete flushes (see
+    ConstantAdmin.delete_model's docstring for the confirmed mechanism and
+    the ContextVar it uses to work around it for the one guard that already
+    needs to), and none of the five call sites below carries the equivalent
+    per-row bookkeeping a delete would need. Deleting a row out of a
+    published set is exactly as much a reproducibility break as editing one
+    in place - this is a known, unclosed gap, not a considered exemption.
+    """
+    rows = [obj for obj in session.identity_map.values() if isinstance(obj, model)]
+    for row in rows:
+        factor_set = row.factor_set
+        if factor_set is not None and factor_set.status is not FactorSetStatus.draft:
+            raise TaxonomyInvariantError(
+                f"'{factor_set.version_label}' is {factor_set.status.value}, "
+                "not draft. Its numbers must not change: every historical "
+                "submission stamped with this factor_set_id depends on them "
+                "staying exactly as published. Clone this set into a new "
+                "draft before editing it."
+            )
 
 
 class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
@@ -53,6 +95,11 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     ]
     column_sortable_list = [FactorUpstream.value_per_kg]
     page_size = 100
+
+    def validate_before_commit(self, session) -> None:
+        """A published or archived set's numbers must not change in place.
+        Contract §2.2. See _require_draft_factor_set's own docstring."""
+        _require_draft_factor_set(session, FactorUpstream)
 
 
 class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
@@ -91,6 +138,11 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     ]
     column_sortable_list = [FactorDownstream.value_per_kg]
     page_size = 100
+
+    def validate_before_commit(self, session) -> None:
+        """A published or archived set's numbers must not change in place.
+        Contract §2.2. See _require_draft_factor_set's own docstring."""
+        _require_draft_factor_set(session, FactorDownstream)
 
 
 #: The factor_set a Constant row belonged to just before ConstantAdmin
@@ -184,7 +236,17 @@ class ConstantAdmin(AuditedModelView, model=Constant):
             _pending_deleted_constant_factor_set.reset(token)
 
     def validate_before_commit(self, session) -> None:
-        """A constant deleted or renamed must not orphan a formula. §4.3 + §2.2.
+        """A constant deleted or renamed must not orphan a formula, and a
+        published or archived set's constants must not change in place.
+        §4.3 + §2.2.
+
+        Composes both guards rather than picking one: _require_draft_factor_set
+        below stops an edit to a published set's own constants, and the
+        orphan check afterwards stops a *draft* edit from stranding a
+        formula. Neither subsumes the other - a constant can be renamed
+        inside a draft (refused only if a formula depends on the old name)
+        and a constant in a published set must not be touched at all,
+        formula or no formula.
 
         Scoped to the factor_set(s) this write actually touched, not every
         factor_set in the database: an unrelated, already-broken formula
@@ -198,6 +260,8 @@ class ConstantAdmin(AuditedModelView, model=Constant):
         own docstring above) and falls back to the ContextVar delete_model
         stashed before the row disappeared.
         """
+        _require_draft_factor_set(session, Constant)
+
         factor_set_ids = {
             obj.factor_set_id for obj in session.identity_map.values()
             if isinstance(obj, Constant)
@@ -241,6 +305,11 @@ class EquivalenceAdmin(AuditedModelView, model=Equivalence):
     ]
     column_default_sort = ("sort_order", False)
     page_size = 50
+
+    def validate_before_commit(self, session) -> None:
+        """A published or archived set's numbers must not change in place.
+        Contract §2.2. See _require_draft_factor_set's own docstring."""
+        _require_draft_factor_set(session, Equivalence)
 
 
 class FormulaAdmin(AuditedModelView, model=Formula):
@@ -297,7 +366,14 @@ class FormulaAdmin(AuditedModelView, model=Formula):
         which for a Formula edit is the Formula row itself plus whatever
         foreign-key lookups the form performed (FactorSet, Metric - filtered
         out below by `isinstance`).
+
+        Also composes _require_draft_factor_set: a formula in a published or
+        archived set must not change even when the new expression is
+        perfectly valid - contract §2.2's own immutability guarantee, not
+        this method's §4.3 one, is what refuses that edit.
         """
+        _require_draft_factor_set(session, Formula)
+
         pending = [obj for obj in session.identity_map.values()
                    if isinstance(obj, Formula)]
         for formula in pending:

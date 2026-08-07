@@ -30,6 +30,11 @@ def _int(name: str, default: int) -> int:
     return int(raw) if raw else default
 
 
+def _str(name: str, default: str) -> str:
+    raw = os.getenv(name, "").strip()
+    return raw if raw else default
+
+
 _BOOL_TRUE_VALUES = ("1", "true", "yes", "on")
 _BOOL_FALSE_VALUES = ("0", "false", "no", "off")
 
@@ -58,6 +63,13 @@ def _bool(name: str, default: bool) -> bool:
     )
 
 
+#: Where B's POST /api/v1/calculate lives, absent an explicit API_BASE_URL.
+#: A same-host loopback address because in every environment this panel has
+#: run in so far, the API is deployed alongside it; a deployment that splits
+#: them onto separate hosts sets API_BASE_URL explicitly (see .env.example).
+_DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
+
+
 @dataclass(frozen=True)
 class Settings:
     secret_key: str
@@ -71,11 +83,7 @@ class Settings:
     # subdomain hand over the session. Set SESSION_HTTPS_ONLY=false only for
     # local development served over plain http.
     session_https_only: bool = True
-    # Where B's POST /api/v1/calculate lives. Defaults to a same-host
-    # loopback address because in every environment this panel has run in
-    # so far, the API is deployed alongside it; a deployment that splits
-    # them onto separate hosts sets API_BASE_URL explicitly.
-    api_base_url: str = "http://127.0.0.1:8000"
+    api_base_url: str = _DEFAULT_API_BASE_URL
 
 
 def load_settings() -> Settings:
@@ -86,6 +94,5 @@ def load_settings() -> Settings:
         login_max_failures=_int("LOGIN_MAX_FAILURES", 5),
         login_lockout_minutes=_int("LOGIN_LOCKOUT_MINUTES", 15),
         session_https_only=_bool("SESSION_HTTPS_ONLY", True),
-        api_base_url=os.getenv("API_BASE_URL", "http://127.0.0.1:8000").strip()
-        or "http://127.0.0.1:8000",
+        api_base_url=_str("API_BASE_URL", _DEFAULT_API_BASE_URL),
     )

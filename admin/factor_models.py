@@ -15,8 +15,8 @@ from datetime import datetime
 from decimal import Decimal
 
 from sqlalchemy import (
-    DECIMAL, Boolean, DateTime, Enum, ForeignKey, Integer, String, Text,
-    UniqueConstraint, text,
+    DECIMAL, Boolean, DateTime, Enum, ForeignKey, Index, Integer, String,
+    Text, UniqueConstraint, text,
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
@@ -107,25 +107,33 @@ class FactorDownstream(Base):
     coexisting — MySQL treats NULLs as distinct, so the constraint is silent
     on exactly the "applies to every category" rows it most needs to guard.
     A functional index over COALESCE(food_category_id, 0) is what actually
-    closes that gap, but it is **not** declared here as a SQLAlchemy `Index`:
-    doing so makes `alembic revision --autogenerate` emit it correctly, but
-    it also makes `compare_metadata` (tests/test_migrations.py) misreport it
-    as a "changed index" on every run — confirmed against this MySQL/
-    SQLAlchemy combination, which can only produce an "approximate
-    signature" when reflecting an expression index back out of MySQL, and
-    then diffs that approximation against the model's declaration as if it
-    were a real difference. The index instead lives only as raw SQL in
-    alembic/versions/0005_factors.py's upgrade()/downgrade(), which is what
-    the brief calls for and what a plain `compare_metadata` genuinely cannot
-    see either way. tests/admin/test_factor_models.py creates the same index
-    by hand against the `create_all()`-built test schema, since that path
-    never runs migration DDL — see the fixture there for why.
+    closes that gap, and it **is** declared here as a SQLAlchemy `Index`
+    (`uq_factor_downstream_generic`, using a `text()` expression as its key
+    part), so `Base.metadata.create_all()` — the path every test outside
+    tests/admin/test_factor_models.py builds its schema with — produces it
+    too. The same index is *also* created as raw SQL in
+    alembic/versions/0005_factors.py's upgrade()/downgrade(), because the
+    migration chain is a second, independent path to the same schema and
+    autogenerate cannot be trusted to emit a functional index's expression
+    key part on its own. It is excluded from `compare_metadata`
+    (tests/test_migrations.py's `_include_object`) because this SQLAlchemy/
+    PyMySQL combination reflects the expression key part back out as a plain
+    `food_category_id` column rather than an expression, which would
+    otherwise make `compare_metadata` report a permanent, spurious
+    remove/add pair on every run.
     """
 
     __tablename__ = "factor_downstream"
     __table_args__ = (
         UniqueConstraint("factor_set_id", "destination_id", "food_category_id",
                          "metric_id", name="uq_factor_downstream"),
+        Index(
+            "uq_factor_downstream_generic",
+            "factor_set_id", "destination_id",
+            text("(COALESCE(food_category_id, 0))"),
+            "metric_id",
+            unique=True,
+        ),
     )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)

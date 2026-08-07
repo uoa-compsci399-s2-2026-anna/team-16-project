@@ -3,7 +3,7 @@
 from decimal import Decimal
 
 import pytest
-from sqlalchemy import select, text
+from sqlalchemy import select
 from sqlalchemy.exc import IntegrityError
 
 from admin.factor_models import (
@@ -13,65 +13,6 @@ from admin.factor_models import (
 from admin.taxonomy_models import FoodCategory, Metric, Sector
 
 pytestmark = pytest.mark.db
-
-
-@pytest.fixture(scope="session", autouse=True)
-def _factor_downstream_generic_index(engine):
-    """Create the COALESCE functional index on the create_all()-built schema.
-
-    Contract §2.2's real enforcement for "two generic downstream rows are
-    refused" is `uq_factor_downstream_generic`, added as raw SQL in
-    alembic/versions/0005_factors.py's upgrade(). It is deliberately *not*
-    declared as a SQLAlchemy `Index` on admin.factor_models.FactorDownstream
-    (see that class's docstring): doing so makes
-    tests/test_migrations.py's compare_metadata misreport it as changed on
-    every run, because this SQLAlchemy/PyMySQL combination cannot reflect a
-    MySQL functional index's expression key part back out correctly.
-
-    That choice has a cost here: tests/conftest.py's `engine` fixture builds
-    the test schema with `Base.metadata.create_all()`, which only emits what
-    is declared on the models — so on its own, this schema does not have the
-    index migration DDL is never executed for it - and
-    `test_two_generic_downstream_rows_are_refused` below would pass for the
-    wrong reason (no constraint stops the second row) rather than the right
-    one. This fixture closes that gap directly: it creates the same index,
-    with the same raw SQL as the migration, against the same session-scoped
-    `engine` every test in this file runs against - once, since both the
-    fixture and the engine are session-scoped, before the first test in this
-    module runs.
-
-    Session-scoped and autouse rather than added to tests/conftest.py: nothing
-    outside this file depends on the index, and this keeps the migration's
-    twin next to the tests that exercise it instead of growing a shared
-    fixture file for a single table's concern.
-    """
-    with engine.begin() as conn:
-        # Drop first. MySQL has no CREATE INDEX ... IF NOT EXISTS, and DDL
-        # auto-commits, so a run killed part-way through — a timeout, a
-        # keyboard interrupt — leaves the index behind with no teardown having
-        # run. The next run's CREATE then fails, and because this is an
-        # autouse session fixture the failure surfaces as every test in this
-        # file erroring at setup, which reads like the models are broken
-        # rather than like a stale index. Observed exactly once while
-        # developing this file, which is once more than it needs to happen.
-        already_there = conn.execute(text("""
-            SELECT 1 FROM information_schema.STATISTICS
-            WHERE TABLE_SCHEMA = DATABASE()
-              AND TABLE_NAME = 'factor_downstream'
-              AND INDEX_NAME = 'uq_factor_downstream_generic'
-            LIMIT 1
-        """)).first()
-        if already_there:
-            conn.execute(
-                text("DROP INDEX uq_factor_downstream_generic ON factor_downstream")
-            )
-        conn.execute(
-            text(
-                "CREATE UNIQUE INDEX uq_factor_downstream_generic "
-                "ON factor_downstream "
-                "(factor_set_id, destination_id, (COALESCE(food_category_id, 0)), metric_id)"
-            )
-        )
 
 
 def _downstream_prereqs(session) -> int:

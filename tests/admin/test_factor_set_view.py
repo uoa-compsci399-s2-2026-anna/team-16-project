@@ -234,7 +234,16 @@ async def test_publishing_a_second_set_through_the_edit_form_is_refused(
     assert session.scalar(
         select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[1])
     ).status is FactorSetStatus.draft
-    assert "published" in response.text.lower()
+    # Not "published" in response.text.lower(): that word also appears in
+    # the re-rendered status <select>'s own option list, so it passes
+    # against a raw traceback just as easily as against a real refusal.
+    # sqladmin's edit route (see admin/taxonomy_views.py's module docstring
+    # for the confirmed mechanism) wraps update_model in a bare
+    # `except Exception`, sets `context["error"] = str(e)` and re-renders
+    # with a 400 - checking the status code and the invariant's own message
+    # is what actually proves this was refused for the right reason.
+    assert response.status_code == 400
+    assert "Archive all but one" in response.text
 
 
 @pytest.mark.asyncio

@@ -43,11 +43,11 @@ def migrated_engine(database_url_root):
 def _include_object(object_, name, type_, reflected, compare_to):
     """Exclude factor_downstream's functional COALESCE index from the diff.
 
-    admin/factor_models.py deliberately does not declare
-    `uq_factor_downstream_generic` (contract §2.2) as a SQLAlchemy `Index`:
-    it is a MySQL functional index — `(COALESCE(food_category_id, 0))` as a
-    key part — and this SQLAlchemy/PyMySQL combination cannot reflect that
-    expression back out correctly. Verified directly against this MySQL by
+    admin/factor_models.py *does* declare `uq_factor_downstream_generic`
+    (contract §2.2) as a SQLAlchemy `Index` — it is a MySQL functional
+    index — `(COALESCE(food_category_id, 0))` as a key part — and this
+    SQLAlchemy/PyMySQL combination cannot reflect that expression back out
+    correctly. Verified directly against this MySQL by
     querying information_schema.STATISTICS: the expression key part comes
     back as a row with `column_name IS NULL` and `expression =
     'coalesce(\\`food_category_id\\`, 0)'`, but SQLAlchemy's MySQL dialect

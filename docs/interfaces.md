@@ -252,7 +252,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 > `validate_before_commit` hook — inside the transaction that is about to
 > commit, after the flush so it sees the pending change, and before any audit
 > row is written so a refusal leaves no record claiming it happened. The
-> publish and rollback actions of §8.2 additionally take `SELECT ... FOR
+> publish and rollback actions of §8.2 will additionally take `SELECT ... FOR
 > UPDATE` over the table, because two staff members publishing different
 > drafts at the same moment is a race this hook alone cannot settle.
 

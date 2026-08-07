@@ -98,9 +98,17 @@ def _request_body(form) -> dict:
     the ``factor_set_version`` keyword, so it is left out here.
     """
     gwp_horizon_raw = form.get("gwp_horizon") or "100"
+    try:
+        gwp_horizon = int(gwp_horizon_raw)
+    except ValueError:
+        # A malformed form post, not a reason to 500 - fall back to the
+        # contract's own default rather than let this view join
+        # CalculateRefused/CalculateUnavailable as a third, undesigned
+        # failure mode.
+        gwp_horizon = 100
     return {
         "token": None,
-        "gwp_horizon": int(gwp_horizon_raw),
+        "gwp_horizon": gwp_horizon,
         "entries": [
             {
                 "sector": form.get("sector"),

@@ -144,6 +144,30 @@ async def test_a_submitted_scenario_reaches_the_client_with_the_header(
     assert call.body["entries"][0]["food_category"] is None
 
 
+async def test_a_non_numeric_gwp_horizon_falls_back_to_100(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """A non-numeric `gwp_horizon` is a malformed form post, not proof the
+    engine should never run - `int()` on it unguarded raises `ValueError`
+    out of the view, which is a 500 rather than one of this view's two
+    designed failure pages (refused/unavailable). Falling back to the
+    contract's own default (100) keeps the request going with a value the
+    API accepts."""
+    session.commit()
+
+    response = await admin_client.post("/admin/try", data={
+        "factor_set": one_draft.version_label,
+        "sector": taxonomy_for_factors.sector.code,
+        "food_category": "",
+        "gwp_horizon": "not-a-number",
+        "destination": taxonomy_for_factors.destination.code,
+        "qty_kg": "1200.000",
+    })
+
+    assert response.status_code == 200
+    assert fake_calc_client.calls[0].body["gwp_horizon"] == 100
+
+
 async def test_the_result_page_shows_what_the_api_returned(
     admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
 ):

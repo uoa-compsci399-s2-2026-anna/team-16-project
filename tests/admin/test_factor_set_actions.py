@@ -100,11 +100,20 @@ async def test_a_plain_staff_member_can_reach_the_actions(session, staff_client,
     route was reached and ran real logic rather than being screened before
     it got there. 403 (is_accessible failing) and 404 (the route missing
     entirely) are the two outcomes that would mean the route was not
-    actually reachable; neither happens here for any of the three slugs.
+    actually reachable; neither happens here for any of the four slugs.
+
+    The four run in this order against the one draft fixture provides -
+    clone, publish, rollback, archive - so each of the later three sees the
+    state the one before it actually left behind (clone's own new row is
+    never touched again): after publish, ``one_draft`` is published, so
+    rollback (which requires an *archived* target) is correctly refused
+    (400) and archive (which accepts a published target - see
+    test_factor_lifecycle.py's own test_archiving_the_published_set_is_allowed)
+    goes through (302).
     """
     session.commit()
 
-    for slug in ("clone", "publish", "rollback"):
+    for slug in ("clone", "publish", "rollback", "archive"):
         response = await staff_client.get(
             f"/admin/factor-set/action/{slug}?pks={one_draft.id}"
         )
@@ -206,3 +215,50 @@ async def test_cloning_twice_generates_a_unique_suffix(
     ).all())
     assert f"{populated_set.version_label} (copy)" in labels
     assert f"{populated_set.version_label} (copy) 2" in labels
+
+
+# --- Fix wave: archive -------------------------------------------------
+#
+# The only route left to take the calculator offline once `status` came off
+# the edit form - see admin/factor_lifecycle.py's own archive_factor_set
+# docstring.
+
+
+@pytest.mark.asyncio
+async def test_archiving_from_the_screen_marks_it_archived(session, admin_client, one_draft):
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-set/action/archive?pks={one_draft.id}")
+
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.archived
+
+
+@pytest.mark.asyncio
+async def test_archiving_the_published_set_takes_it_offline(session, admin_client, two_sets):
+    """The whole point: a staff member who finds an error in the live
+    factors must be able to pull them even when nothing else is ready to
+    publish in their place."""
+    live, _ = two_sets
+    session.commit()
+
+    await admin_client.get(f"/admin/factor-set/action/archive?pks={live.id}")
+
+    _resync(session)
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.archived
+
+
+@pytest.mark.asyncio
+async def test_archiving_an_already_archived_set_shows_the_reason(
+    session, admin_client, one_draft
+):
+    session.commit()
+    await admin_client.get(f"/admin/factor-set/action/archive?pks={one_draft.id}")
+    _resync(session)
+
+    response = await admin_client.get(
+        f"/admin/factor-set/action/archive?pks={one_draft.id}"
+    )
+
+    assert response.status_code == 400
+    assert "already archived" in response.text.lower()

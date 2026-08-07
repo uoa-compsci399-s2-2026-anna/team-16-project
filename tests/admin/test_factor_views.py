@@ -409,6 +409,49 @@ async def test_renaming_a_referenced_constant_is_refused(session, admin_client):
     ).code == "LEVY_NZD_PER_T"
 
 
+@pytest.mark.asyncio
+async def test_moving_a_referenced_constant_to_another_draft_is_refused(
+    session, admin_client
+):
+    """Moving a constant out of a draft orphans a formula left behind in
+    that draft exactly as surely as deleting the constant outright would
+    (test_deleting_a_referenced_constant_is_refused, above) - but the set
+    *losing* the constant is not the set the moved row now belongs to, so
+    the naive "revalidate wherever this row's own factor_set_id now points"
+    check misses it entirely: after the move, nothing about `fs` is in
+    `session.identity_map` at all, since none of its own rows changed.
+    ConstantAdmin.validate_before_commit has to look at the constant's
+    *previous* factor_set_id too, not only its pending one, to catch this -
+    the same "both ends of a move" reasoning
+    `_require_draft_factor_set` already applies to the draft-only check
+    itself."""
+    fs, metric = _seed_set_and_metric(session)
+    other = FactorSet(version_label=_FACTOR_SET_LABELS[1],
+                      status=FactorSetStatus.draft, is_mock=True)
+    session.add(other)
+    session.flush()
+    constant = Constant(factor_set_id=fs.id, code="LEVY_NZD_PER_T", value=Decimal("60"))
+    session.add(constant)
+    session.flush()
+    formula = Formula(factor_set_id=fs.id, metric_id=metric.id,
+                      expression="qty_kg * const_LEVY_NZD_PER_T")
+    session.add(formula)
+    session.commit()
+
+    await admin_client.post(f"/admin/constant/edit/{constant.id}", data={
+        "factor_set": str(other.id), "code": "LEVY_NZD_PER_T", "value": "60",
+        "unit": "", "note": "",
+    })
+
+    _resync(session)
+    assert session.scalar(
+        select(Constant).where(Constant.id == constant.id)
+    ).factor_set_id == fs.id
+    assert session.scalar(
+        select(Formula).where(Formula.id == formula.id)
+    ).expression == "qty_kg * const_LEVY_NZD_PER_T"
+
+
 # --- End-to-end tests: the published-set immutability guard ----------------
 
 

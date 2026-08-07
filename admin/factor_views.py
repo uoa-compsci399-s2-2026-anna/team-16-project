@@ -30,8 +30,8 @@ from starlette.responses import RedirectResponse
 from admin.auth import SESSION_KEY
 from admin.expressions import ExpressionError, validate_expression
 from admin.factor_lifecycle import (
-    LifecycleError, _revalidate_formulas, clone_factor_set, publish_factor_set,
-    rollback_to,
+    LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
+    revalidate_formulas, rollback_to,
 )
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
@@ -377,6 +377,20 @@ class ConstantAdmin(AuditedModelView, model=Constant):
         on. The delete path has nothing there to read (see delete_model's
         own docstring above) and falls back to the ContextVar delete_model
         stashed before the row disappeared.
+
+        A *move* needs the same "both ends" treatment
+        `_require_draft_factor_set` itself already gives the draft-only
+        check above, and for the same underlying reason: moving a constant
+        out of one draft into another orphans a formula in the set losing
+        it exactly as surely as deleting the constant outright would -
+        `session.identity_map` only ever names the row's *new* factor_set_id
+        after a move, so the set it came from was never in `factor_set_ids`
+        without this. `_pending_previous_factor_set_id` (stashed by
+        update_model above, before the edit lands) supplies it. Not guarded
+        on the previous set being a draft here: if it were not,
+        `_require_draft_factor_set`'s own check above already raised before
+        this line runs, so a non-None previous id reaching here is always a
+        draft's.
         """
         _require_draft_factor_set(session, Constant)
 
@@ -387,9 +401,12 @@ class ConstantAdmin(AuditedModelView, model=Constant):
         pending_delete = _pending_deleted_constant_factor_set.get()
         if pending_delete is not None:
             factor_set_ids.add(pending_delete)
+        previous_id = _pending_previous_factor_set_id.get()
+        if previous_id is not None:
+            factor_set_ids.add(previous_id)
 
         for factor_set_id in factor_set_ids:
-            _revalidate_formulas(session, factor_set_id)
+            revalidate_formulas(session, factor_set_id)
 
 
 class EquivalenceAdmin(AuditedModelView, model=Equivalence):
@@ -542,10 +559,21 @@ class FormulaAdmin(AuditedModelView, model=Formula):
                 ) from exc
 
 
+#: The status a FactorSet row carried just before an edit lands - the
+#: FactorSetAdmin counterpart to `_pending_previous_factor_set_id` above,
+#: same shape and same reason: FactorSetAdmin.update_model stashes it here
+#: before the pending edit lands, and FactorSetAdmin.validate_before_commit
+#: reads it back, because by the time that hook runs the flush ahead of it
+#: has already erased SQLAlchemy's own attribute history for the column.
+_pending_previous_factor_set_status: contextvars.ContextVar[FactorSetStatus | None] = (
+    contextvars.ContextVar("kai_admin_pending_previous_factor_set_status", default=None)
+)
+
+
 class FactorSetAdmin(AuditedModelView, model=FactorSet):
-    """Contract §8.2. Clone, publish and roll back live here as `@action`
-    routes rather than through the generic edit form - see form_columns'
-    own comment below for why `status` was removed from it.
+    """Contract §8.2. Clone, publish, roll back and archive live here as
+    `@action` routes rather than through the generic edit form - see
+    form_columns' own comment below for why `status` was removed from it.
 
     Two things an `@action` does not inherit from AuditedModelView, both
     documented in that class's own docstring and both already solved in
@@ -553,12 +581,12 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     1. **No auditing.** `_actor_var` (admin/modelviews.py) is set only
        inside insert_model/update_model/delete_model, so the before_commit
-       listener returns early for a commit one of the three actions below
-       makes itself. clone_factor_set/publish_factor_set/rollback_to
-       (admin/factor_lifecycle.py) write their own audit entries for
-       exactly this reason - each takes `actor` and this file supplies it,
-       then commits the transaction those functions deliberately leave
-       open.
+       listener returns early for a commit one of the four actions below
+       makes itself. clone_factor_set/publish_factor_set/rollback_to/
+       archive_factor_set (admin/factor_lifecycle.py) write their own audit
+       entries for exactly this reason - each takes `actor` and this file
+       supplies it, then commits the transaction those functions
+       deliberately leave open.
     2. **No access check.** sqladmin registers `@action` routes with
        login_required only, never is_accessible, and as GET routes at
        `/{identity}/action/{slug}` with the selected rows in a `pks` query
@@ -578,7 +606,7 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     (ModelView.is_accessible: "By default, it will allow access for
     everyone") - both an administrator and a plain staff member pass.
 
-    A LifecycleError from any of the three service functions is caught and
+    A LifecycleError from any of the four service functions is caught and
     rendered through brand/action_refused.html rather than left to
     propagate: sqladmin's own exception_handlers map only HTTPException
     (sqladmin/application.py), and a custom @action route is a plain
@@ -588,6 +616,23 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     an unhandled 500 with no message, exactly the outcome contract §9.1
     exists to avoid a member of the public seeing from a broken formula, and
     the same failure mode here for a member of staff.
+
+    **Archiving** (`archive_action` below) is the only route left to take
+    the calculator offline once `status` came off the edit form: publishing
+    a different set to displace a bad one requires a different set to exist,
+    which it may not. Archiving the currently-published set on purpose,
+    leaving nothing published, is a supported outcome - contract §9's
+    NO_PUBLISHED_FACTOR_SET (503, "calculator under maintenance") is the
+    designed response - not an error this action refuses.
+
+    **A published or archived set's own fields must not change in place**
+    either, for the same reason the five child factor views refuse it for
+    their rows (`_require_draft_factor_set`'s own docstring): a staff member
+    switching `is_mock` off a live set through the generic edit form would
+    remove the mandatory, non-dismissible placeholder-data banner while the
+    numbers underneath are still mock, with no service function anywhere
+    near that path to stop it. See `_pending_previous_factor_set_status`,
+    `update_model` and `validate_before_commit` below.
     """
 
     name = "Factor set"
@@ -619,9 +664,55 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
                     FactorSet.effective_from, FactorSet.notes]
     column_default_sort = ("id", True)
 
+    async def update_model(self, request, pk: str, data: dict):
+        """Stash status as it stood before this edit lands, for
+        validate_before_commit to read back. Contract §2.2.
+
+        Same shape as `_capture_previous_factor_set_id` above, and for the
+        same reason: this session carries autoflush=False, and
+        validate_before_commit only ever runs after the flush the
+        before_commit listener issues ahead of it (admin/modelviews.py) - by
+        which point SQLAlchemy's own attribute history for `status` is
+        already gone, whether or not this edit actually touched that column.
+        The lookup happens on a separate, throwaway session opened before
+        the pending edit lands, so it always sees the row's true "before"
+        state.
+        """
+        with self.session_maker() as lookup:
+            row = lookup.get(FactorSet, int(pk))
+            previous_status = row.status if row is not None else None
+        token = _pending_previous_factor_set_status.set(previous_status)
+        try:
+            return await super().update_model(request, pk, data)
+        finally:
+            _pending_previous_factor_set_status.reset(token)
+
     def validate_before_commit(self, session) -> None:
-        """At most one published set. Contract §2.2."""
+        """At most one published set (§2.2), and a published or archived
+        set's own fields must not change in place (§2.2's same immutability
+        guarantee the five child factor views already enforce for their own
+        rows via `_require_draft_factor_set` - this is the parent row
+        getting the same treatment, since nothing about editing FactorSet
+        itself goes through any of those five).
+
+        Only the update path can trip the second check:
+        `_pending_previous_factor_set_status` is set by `update_model`
+        above and stays at its default (`None`) for a create, so a brand
+        new row - always inserted as `draft`, per FactorSet's own column
+        default - is never refused here.
+        """
         check_single_published_set(session)
+
+        previous_status = _pending_previous_factor_set_status.get()
+        if previous_status is not None and previous_status is not FactorSetStatus.draft:
+            raise TaxonomyInvariantError(
+                f"This factor set is {previous_status.value}, not draft. "
+                "Its own fields must not change in place: switching "
+                "is_mock off a published set, for instance, would remove "
+                "the mandatory placeholder-data warning while the numbers "
+                "underneath are still mock. Clone this set into a new "
+                "draft first."
+            )
 
     def _require_accessible(self, request) -> None:
         if not self.is_accessible(request):
@@ -764,6 +855,32 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         with self.session_maker() as session:
             try:
                 rollback_to(session, pk, actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await self._refused(request, str(exc))
+            session.commit()
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    @action(
+        name="archive",
+        label="Archive",
+        confirmation_message=(
+            "This archives this factor set on its own, with nothing else "
+            "promoted to take its place. If this set is currently "
+            "published, the calculator will show a maintenance message to "
+            "the public until another set is published."
+        ),
+    )
+    async def archive_action(self, request):
+        self._require_accessible(request)
+        actor = request.session.get(SESSION_KEY, "unknown")
+        try:
+            pk = self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+        with self.session_maker() as session:
+            try:
+                archive_factor_set(session, pk, actor)
             except LifecycleError as exc:
                 session.rollback()
                 return await self._refused(request, str(exc))

@@ -115,6 +115,15 @@ def check_single_published_set(session: Session) -> None:
     designed response. Two is not: which numbers the public calculator uses
     would come down to which row the query happened to return first, and the
     two versions exist precisely because they disagree.
+
+    Backstop, currently unreachable from FactorSetAdmin's own form: `status`
+    is not on `form_columns`, so no path through the generic edit or create
+    route can ever produce a second published row for this to catch — the
+    lock and refusal inside publish_factor_set/rollback_to
+    (admin/factor_lifecycle.py) are what actually stop that today. Kept and
+    directly unit-tested anyway as defence in depth against a future form
+    change reopening the gap, not because anything currently exercises it
+    live.
     """
     published = session.scalars(
         select(FactorSet).where(FactorSet.status == FactorSetStatus.published)

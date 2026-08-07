@@ -1,11 +1,18 @@
-"""Clone, publish and roll back a factor set. Contract §5.2.
+"""Clone, publish, roll back and archive a factor set. Contract §5.2.
 
-**Ownership note.** §5.2 places these three functions in `db/repository.py`,
-which B owns, and B has an implementation on an unmerged branch. They live
-here for now because the panel cannot do its job without them and that
-branch has no landing date. When it lands, one of the two implementations
-goes and the other is imported — `admin/` may import from `db/`, never the
-reverse. Nothing in this module may be imported by `db/` or `api/`.
+**Ownership note.** §5.2 places the first three of these functions
+(clone/publish/rollback) in `db/repository.py`, which B owns, and B has an
+implementation on an unmerged branch. They live here for now because the
+panel cannot do its job without them and that branch has no landing date.
+When it lands, one of the two implementations goes and the other is
+imported — `admin/` may import from `db/`, never the reverse. Nothing in
+this module may be imported by `db/` or `api/`.
+
+`archive_factor_set` is this module's own addition, not one of §5.2's
+three: before it existed, the only way a set ever reached `archived` was as
+a side effect of publish/rollback promoting a different one, leaving no way
+to take the calculator offline when the live factors need pulling and
+nothing else is ready to replace them. See its own docstring below.
 
 Every function here does its whole job inside the caller's transaction and
 never commits: the caller owns that, matching the convention the rest of
@@ -40,13 +47,15 @@ class LifecycleError(Exception):
     """
 
 
-def _revalidate_formulas(session, factor_set_id: int) -> None:
+def revalidate_formulas(session, factor_set_id: int) -> None:
     """Re-run §4.3's own check against every formula in one factor_set.
 
     Moved here from admin/factor_views.py (Task 3): publish_factor_set below
     needs the same check, and this module may not import from a views
     module, so the shared logic lives here instead and factor_views.py
-    imports it back.
+    imports it back. Named without a leading underscore because it is
+    exactly that shared, cross-module dependency, not a private helper of
+    this file alone.
 
     Used two ways: ConstantAdmin.validate_before_commit (factor_views.py)
     calls it because a formula that validated cleanly when saved can be
@@ -195,7 +204,7 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     than one row is already published (§2.2's invariant is already broken —
     the fix is an operator choosing which survives, not this function
     silently archiving one); or the target's own formulas do not all
-    validate against its own constants (`_revalidate_formulas` — publishing
+    validate against its own constants (`revalidate_formulas` — publishing
     is the last moment the calculator is still guaranteed to work).
 
     Zero published rows beforehand is not an error — see
@@ -221,7 +230,7 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
         )
 
     try:
-        _revalidate_formulas(session, factor_set_id)
+        revalidate_formulas(session, factor_set_id)
     except TaxonomyInvariantError as exc:
         raise LifecycleError(str(exc)) from exc
 
@@ -259,18 +268,20 @@ def rollback_to(session: Session, factor_set_id: int, actor: str) -> None:
     different decision with a different audit meaning (that is what
     publish_factor_set is for).
 
-    `_revalidate_formulas` runs here too, even though an archived set's own
+    `revalidate_formulas` runs here too, even though an archived set's own
     rows cannot be edited in place once it has been through
     publish_factor_set (every factor view refuses that — see
-    admin/factor_views.py's `_refuse_if_factor_set_not_draft`). That
-    reasoning has a gap this function must not rely on: `FactorSetAdmin`'s
-    edit form lets `status` be set directly, so a draft can be moved
-    straight to `archived` without ever passing through
-    publish_factor_set's own check — see
+    admin/factor_views.py's `_refuse_if_factor_set_not_draft`). `status` is
+    not on `FactorSetAdmin.form_columns` at all, so sqladmin's generic edit
+    route cannot move a draft straight to `archived` or `published` the way
+    an earlier version of this project let it — see
     tests/admin/test_factor_set_view.py's
-    test_a_status_change_through_the_edit_form_is_ignored, which is what
-    caught this. Re-running the check here costs one query and removes the
-    dependency on that history entirely.
+    test_a_status_change_through_the_edit_form_is_ignored, which now proves
+    a submitted `status` field is silently ignored. The revalidation here is
+    kept anyway, as defence in depth rather than because a known gap still
+    exists: it costs one query, and it keeps this function correct on its
+    own even if the form-level guard is ever loosened again, rather than
+    depending on that guard's history to still hold.
     """
     rows = _lock_factor_sets(session)
     by_id = {row.id: row for row in rows}
@@ -295,7 +306,7 @@ def rollback_to(session: Session, factor_set_id: int, actor: str) -> None:
         )
 
     try:
-        _revalidate_formulas(session, factor_set_id)
+        revalidate_formulas(session, factor_set_id)
     except TaxonomyInvariantError as exc:
         raise LifecycleError(str(exc)) from exc
 
@@ -320,3 +331,52 @@ def rollback_to(session: Session, factor_set_id: int, actor: str) -> None:
             session, actor=actor, action=action, table_name="factor_set",
             row_id=row.id, before=before, after=row_to_dict(row),
         )
+
+
+def archive_factor_set(session: Session, factor_set_id: int, actor: str) -> None:
+    """Archive `factor_set_id` directly - no other set is promoted.
+
+    Before this existed, the only way any set ever reached `archived` was as
+    a side effect of publish_factor_set/rollback_to promoting a different
+    one. That leaves staff who find an error in the live factors with no
+    route to take the calculator offline: publishing something else
+    requires something else to publish, which may not exist. This is that
+    route.
+
+    Archiving the currently published set — leaving zero factor sets
+    published — is not refused. That is precisely "take the calculator
+    offline", and contract §9's NO_PUBLISHED_FACTOR_SET (503, "calculator
+    under maintenance") is the designed response to reaching that state, not
+    an error condition this function should stand in the way of. The only
+    thing refused is archiving a set that is already archived — nothing
+    changes, and stamping a fresh audit "archive" entry over an unchanged
+    row would misrepresent the trail the same way re-publishing an already
+    published set would (see publish_factor_set above).
+
+    Takes the same `SELECT ... FOR UPDATE` lock as clone/publish/rollback
+    (`_lock_factor_sets`) even though there is no "at most one published"
+    race to settle here: it is what makes "does factor_set_id exist" a
+    question asked against a snapshot nothing else can change out from under
+    this transaction before it commits, the same guarantee the other three
+    functions rely on it for.
+
+    Never commits — the caller owns the transaction, matching every other
+    function in this module.
+    """
+    rows = _lock_factor_sets(session)
+    by_id = {row.id: row for row in rows}
+
+    target = by_id.get(factor_set_id)
+    if target is None:
+        raise LifecycleError(f"No factor set with id {factor_set_id} exists to archive.")
+    if target.status is FactorSetStatus.archived:
+        raise LifecycleError(f"'{target.version_label}' is already archived.")
+
+    before = row_to_dict(target)
+    target.status = FactorSetStatus.archived
+    session.flush()
+
+    write_audit(
+        session, actor=actor, action="archive", table_name="factor_set",
+        row_id=target.id, before=before, after=row_to_dict(target),
+    )

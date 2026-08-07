@@ -23,7 +23,8 @@ import pytest
 from sqlalchemy import func, select
 
 from admin.factor_lifecycle import (
-    LifecycleError, clone_factor_set, publish_factor_set, rollback_to,
+    LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
+    rollback_to,
 )
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
@@ -351,3 +352,95 @@ def test_both_transitions_are_audited(_committed_session, two_sets):
     }
     assert (draft.id, "publish") in actions
     assert (live.id, "archive") in actions
+
+
+# --- Fix wave: archive_factor_set -------------------------------------------
+#
+# Removing `status` from FactorSetAdmin.form_columns closed a real bypass but
+# also left publish_factor_set/rollback_to as the only two ways any set ever
+# reached `archived` - always as a side effect of promoting a different one.
+# That leaves no way to take the calculator offline when the live factors
+# need pulling and nothing else is ready to publish in their place.
+# archive_factor_set is that route: archive a set directly, promoting
+# nothing.
+
+
+def test_archiving_a_draft_marks_it_archived(_committed_session, one_draft):
+    session = _committed_session
+    archive_factor_set(session, one_draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.archived
+
+
+def test_archiving_the_published_set_is_allowed(_committed_session, two_sets):
+    """Archiving the only published set, leaving nothing published, is
+    exactly 'take the calculator offline' - contract §9's
+    NO_PUBLISHED_FACTOR_SET (503, 'calculator under maintenance') is the
+    designed response to that state, so reaching it on purpose is a
+    supported operation, not an error this function should refuse."""
+    session = _committed_session
+    live, _ = two_sets
+    archive_factor_set(session, live.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.archived
+
+
+def test_archiving_an_already_archived_set_is_refused(_committed_session, two_sets):
+    """Nothing changes, so a fresh audit 'archive' entry over an unchanged
+    row would misrepresent the trail the same way re-publishing an already
+    published set would (test_publishing_an_already_published_set_is_refused,
+    above)."""
+    session = _committed_session
+    live, _ = two_sets
+    archive_factor_set(session, live.id, actor="kim")
+    session.flush()
+
+    with pytest.raises(LifecycleError):
+        archive_factor_set(session, live.id, actor="kim")
+
+
+def test_archiving_a_set_that_does_not_exist_is_refused(_committed_session):
+    session = _committed_session
+    with pytest.raises(LifecycleError):
+        archive_factor_set(session, 9999, actor="kim")
+
+
+def test_archive_never_commits(_committed_session, one_draft):
+    """Module docstring, admin/factor_lifecycle.py: every function here
+    leaves the transaction to its caller - proven the same way
+    test_clone_never_commits (above) proves it for clone_factor_set.
+
+    Commits `one_draft` itself first, unlike test_clone_never_commits: that
+    test only ever checks that its own new row is gone after rollback, but
+    this one needs `one_draft` itself to survive the rollback so there is a
+    row left to re-read - and `_make_set` (tests/admin/conftest.py) only
+    flushes its fixtures, it never commits them, so without this the
+    rollback below would undo the fixture's own insert too and
+    session.get(...) would come back None for a reason that has nothing to
+    do with archive_factor_set.
+    """
+    session = _committed_session
+    session.commit()
+
+    archive_factor_set(session, one_draft.id, actor="kim")
+    session.rollback()
+
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.draft
+
+
+def test_archive_is_audited(_committed_session, one_draft):
+    from admin.models import AuditLog
+
+    session = _committed_session
+    archive_factor_set(session, one_draft.id, actor="kim")
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == one_draft.id,
+                               AuditLog.action == "archive")
+    )
+    assert entry is not None
+    assert entry.actor == "kim"

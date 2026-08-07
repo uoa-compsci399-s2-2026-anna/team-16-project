@@ -116,22 +116,80 @@ async def test_a_status_change_through_the_edit_form_is_ignored(session, admin_c
 
     `status` was removed from `FactorSetAdmin.form_columns` to close this.
     sqladmin ignores form fields outside form_columns rather than rejecting
-    the request, so this POST is expected to succeed (a 4xx would actually
-    indicate a *different* bug) - the only thing this test checks is that
-    the stored status did not move, which is why it asserts on the database
-    row and not on response.status_code.
+    the request, so this POST is expected to succeed - asserting only that
+    the stored status did not move is not enough on its own, though: a 404,
+    a rejected CSRF token, or a WTForms validation failure on some other
+    omitted field would each also leave `status` at `draft` and pass this
+    test even if the edit form had stopped working entirely. Posting
+    `notes="x"` alongside the ignored `status` field and asserting both that
+    the response is a 302 *and* that `notes` actually landed proves the edit
+    itself went through - the real claim being tested is that `status` alone
+    was ignored, not that nothing was.
     """
     draft = FactorSet(version_label=_FACTOR_SET_LABELS[2], status=FactorSetStatus.draft,
                       is_mock=True)
     session.add(draft)
     session.commit()
 
-    await admin_client.post(f"/admin/factor-set/edit/{draft.id}", data={
+    response = await admin_client.post(f"/admin/factor-set/edit/{draft.id}", data={
         "version_label": _FACTOR_SET_LABELS[2], "status": "published", "is_mock": "on",
-        "notes": "",
+        "notes": "x",
     })
 
+    assert response.status_code == 302
+    _resync(session)
+    updated = session.scalar(
+        select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[2])
+    )
+    assert updated.status is FactorSetStatus.draft
+    assert updated.notes == "x"
+
+
+@pytest.mark.asyncio
+async def test_editing_a_drafts_notes_still_works(session, admin_client):
+    """The guard added below (test_editing_a_published_sets_is_mock_is_refused)
+    must refuse only a non-draft set's own fields, not every edit - a
+    version that refused every FactorSetAdmin edit would pass that test too
+    and make drafts uneditable, which is the opposite of the intent."""
+    draft = FactorSet(version_label=_FACTOR_SET_LABELS[2], status=FactorSetStatus.draft,
+                      is_mock=True)
+    session.add(draft)
+    session.commit()
+
+    response = await admin_client.post(f"/admin/factor-set/edit/{draft.id}", data={
+        "version_label": _FACTOR_SET_LABELS[2], "is_mock": "on", "notes": "edited",
+    })
+
+    assert response.status_code == 302
     _resync(session)
     assert session.scalar(
         select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[2])
-    ).status is FactorSetStatus.draft
+    ).notes == "edited"
+
+
+@pytest.mark.asyncio
+async def test_editing_a_published_sets_is_mock_is_refused(session, admin_client):
+    """`is_mock` stayed on form_columns after `status` came off it, and
+    FactorSetAdmin.validate_before_commit only ever called
+    check_single_published_set. A staff member could open the live set and
+    switch `is_mock` off - removing the mandatory, non-dismissible
+    placeholder-data banner while the numbers underneath were still mock.
+    The client has not supplied real emissions factors yet (O-1), so that
+    banner is the whole of what stops a placeholder number being read as
+    real. Submitted without an `is_mock` field at all, which is how an
+    unticked checkbox actually arrives - HTML omits it rather than sending
+    "off"."""
+    live = FactorSet(version_label=_FACTOR_SET_LABELS[0], status=FactorSetStatus.published,
+                     is_mock=True)
+    session.add(live)
+    session.commit()
+
+    response = await admin_client.post(f"/admin/factor-set/edit/{live.id}", data={
+        "version_label": _FACTOR_SET_LABELS[0], "notes": "",
+    })
+
+    assert response.status_code == 400
+    _resync(session)
+    assert session.scalar(
+        select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[0])
+    ).is_mock is True

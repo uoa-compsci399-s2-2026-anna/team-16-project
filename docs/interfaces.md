@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-07 (v0.9 draft)"
+date: "2026-08-07 (v1.0 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,20 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.0 — 2026-08-07 (raised by E from reviews of B's and C's branches, **affects A, B and C**)
+
+The first revision driven by reading other people's code rather than by writing the panel. Four of the five come from a real defect found on a branch.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **A submission now carries one or more `entries`**, each a `(sector, food_category)` pair with its own scenario lines. The response carries engine-computed `totals` alongside per-entry results. Found by reviewing C's branch against B's: C's multi-entry UI sent one `POST` per entry sharing one session token, and §5.3's token upsert overwrote each row with the next — a five-row calculation persisted one row, while the client added the per-entry results together in JavaScript. The client now computes nothing; a multi-stage business is one submission and one request. | §2.3, §6.2 | **A, B, C** |
+| 2 | **`UNIQUE` containing a nullable column does not prevent duplicates in MySQL.** NULLs compare distinct, so `factor_downstream`'s generic `food_category_id IS NULL` rows could duplicate without limit and the fallback lookup would pick one nondeterministically — wrong numbers, no error, nothing in the logs. A functional index over `COALESCE(food_category_id, 0)` is now required. **Raised by B during implementation**, with an integration test proving it. | §2.2, §2.3 | **B** |
+| 3 | **`details[].field` is a bracket-indexed path** (`entries[0].current[1].qty_kg`), not Pydantic's native `loc` form. The two fixture sets on the team had already chosen different formats, and a mismatch makes field-level highlighting fail silently — the user only ever sees the generic banner. | §9 | **B, C** |
+| 4 | `qty_kg` is limited to 3 decimal places, and the rule is now written down. B enforced it; it was in no version of this document, and `unit_preset.kg_per_unit` is `DECIMAL(12,4)`, so a container preset times a non-integer count lands on 4 places and returns a 400 the user cannot act on. | §6.2 | **B, C** |
+| 5 | A `token` that does not resolve to a live submission is treated as absent and a new one is minted, rather than returning `VALIDATION_ERROR`. A stale `sessionStorage` value from an earlier deployment must not break the calculator. | §6.2 | **B** |
+
+> **Still open after this revision:** §7's module list does not match what C actually built — `view.js`, `calculator.js`, `results.js`, `improvement.js`, `main.js` and `methodology.js` are not named there, and `view.js` in particular holds the shared escaping and formatting primitives that D and E will otherwise reimplement. C to supply the JSDoc; E to fold it in.
 
 ### v0.9 — 2026-08-07 (raised by E, affects E only)
 
@@ -257,6 +271,10 @@ UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `metric_id`)
 
 UNIQUE(`factor_set_id`, `destination_id`, `food_category_id`, `metric_id`)
 
+> **This UNIQUE does not do what it appears to, and a functional index is required.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — the very rows where `food_category_id IS NULL`. The lookup below would then pick one of them nondeterministically, and the calculator would return different numbers for the same input with nothing in the logs to explain it. Add a unique index over `COALESCE(food_category_id, 0)` alongside the declared constraint, and test it by inserting the second generic row and asserting `IntegrityError`. The same caveat applies to `submission_entry` (§2.3) and to any other UNIQUE containing a nullable column.
+>
+> Raised by B during implementation, before it could produce a wrong answer in the field.
+
 > The nullable `food_category_id` exists for cost items such as the waste levy, which are charged per tonne regardless of food type, so no special case is needed. Lookup order: exact match on `food_category_id` first, then fall back to the NULL row, then treat as zero.
 
 ### `constant`
@@ -310,25 +328,43 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `created_at` | DATETIME | NOT NULL | |
 | `updated_at` | DATETIME | NOT NULL | Refreshed on upsert |
 | `factor_set_id` | INT | FK, NOT NULL | Version stamp; makes results reproducible |
-| `sector_id` | INT | FK, NOT NULL | |
-| `food_category_id` | INT | FK, NULL | Null when the user did not break waste down by type |
-| `gwp_horizon` | SMALLINT | NOT NULL, DEFAULT 100 | |
+| `gwp_horizon` | SMALLINT | NOT NULL, DEFAULT 100 | Applies to the whole submission |
 | `excluded_from_public` | BOOLEAN | NOT NULL, DEFAULT FALSE | **Staff moderation, not user consent** |
 | `exclusion_reason` | VARCHAR(255) | NULL | |
 
 **No IP address, no user agent, no fingerprint of any kind is stored.**
+
+`sector_id` and `food_category_id` live on `submission_entry`, not here: one submission carries several, each with its own factors.
+
+### `submission_entry`
+
+One `(sector, food_category)` pair within a submission. A food business has waste at more than one point in the supply chain, and each point draws a different upstream factor, so they cannot share one set of lines.
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | BIGINT | PK, AI | |
+| `submission_id` | BIGINT | FK, NOT NULL, ON DELETE CASCADE | |
+| `sector_id` | INT | FK, NOT NULL | |
+| `food_category_id` | INT | FK, NULL | Null when the user did not break waste down by type |
+| `sort_order` | INT | NOT NULL, DEFAULT 0 | Preserves the order the user entered them, so `entries[]` in the §6.2 response can be paired with the rows on screen |
+
+UNIQUE(`submission_id`, `sector_id`, `food_category_id`)
+
+> The uniqueness constraint has the same MySQL NULL caveat as `factor_downstream` (§2.2): a nullable column in a UNIQUE key does not prevent duplicates, because NULLs compare distinct. Use a functional index over `COALESCE(food_category_id, 0)`.
 
 ### `submission_line`
 
 | Column | Type | Constraints | Notes |
 | --- | --- | --- | --- |
 | `id` | BIGINT | PK, AI | |
-| `submission_id` | BIGINT | FK, NOT NULL, ON DELETE CASCADE | |
+| `submission_entry_id` | BIGINT | FK, NOT NULL, ON DELETE CASCADE | |
 | `scenario` | ENUM(`current`, `alternative`) | NOT NULL | |
 | `destination_id` | INT | FK, NOT NULL | |
 | `qty_kg` | DECIMAL(16,3) | NOT NULL, >= 0 | |
 
-UNIQUE(`submission_id`, `scenario`, `destination_id`)
+UNIQUE(`submission_entry_id`, `scenario`, `destination_id`)
+
+> **Statistics aggregate over entries, not submissions** (§5.4). One submission with three entries is three sector observations, not one — otherwise a multi-stage business would be counted as whichever stage happened to be first. `total_calculations` still counts submissions.
 
 ### `audit_log`
 
@@ -812,21 +848,35 @@ Called once on page load to build every dropdown and input row.
 
 **Calculates and persists. One call equals one submission** (Decision 8).
 
+**A submission carries one or more entries.** A food business has waste at more than one point in the supply chain, and each point has its own sector, its own food category and therefore its own upstream factor — so they cannot be folded into a single set of lines. Each entry is one `(sector, food_category)` pair with its own scenario lines.
+
+> **Why the whole submission travels in one call.** The alternative — one request per entry — breaks three things at once. `token` keys an upsert (§5.3), so the second entry would overwrite the first and only the last would survive. The client would have to add the per-entry results together itself, which puts an impact number in the browser that the engine never produced and that no golden case can cover (Decision 6). And one user action would cost N requests against a 120/hour limit. **Every number the user sees is computed server-side, including the totals across entries.**
+
 **Request**
 
 ```json
 {
   "token": "3f2b… (optional; omitted on the first call)",
-  "sector": "processing",
-  "food_category": "dairy",
   "gwp_horizon": 100,
-  "current": [
-    { "destination": "landfill", "qty_kg": "1200.000" },
-    { "destination": "animal_feed", "qty_kg": "300.000" }
-  ],
-  "alternative": [
-    { "destination": "anaerobic_digestion", "qty_kg": "1200.000" },
-    { "destination": "animal_feed", "qty_kg": "300.000" }
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": [
+        { "destination": "landfill", "qty_kg": "1200.000" },
+        { "destination": "animal_feed", "qty_kg": "300.000" }
+      ],
+      "alternative": [
+        { "destination": "anaerobic_digestion", "qty_kg": "1200.000" },
+        { "destination": "animal_feed", "qty_kg": "300.000" }
+      ]
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "current": [ { "destination": "not_harvested", "qty_kg": "800.000" } ],
+      "alternative": [ { "destination": "prevention", "qty_kg": "800.000" } ]
+    }
   ],
   "dry_run": null
 }
@@ -834,23 +884,29 @@ Called once on page load to build every dropdown and input row.
 
 | Field | Type | Required | Notes |
 | --- | --- | --- | --- |
-| `token` | string \| null | No | Session token; omitted on the first call |
-| `sector` | string | Yes | Must exist in the taxonomy |
-| `food_category` | string \| null | No | Null is treated as `standard_mix` |
-| `gwp_horizon` | int | No | 20 or 100; defaults to 100 |
-| `current` | array | Yes | At least one line |
-| `alternative` | array \| null | No | Null means no comparison is performed |
+| `token` | string \| null | No | Session token; omitted on the first call. Any value that does not resolve to a live submission is treated as absent and a new one is minted — a stale `sessionStorage` value must not produce an error |
+| `gwp_horizon` | int | No | 20 or 100; defaults to 100. Applies to the whole submission |
+| `entries` | array | Yes | At least one entry |
+| `entries[].sector` | string | Yes | Must exist in the taxonomy |
+| `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
+| `entries[].current` | array | Yes | At least one line |
+| `entries[].alternative` | array \| null | No | Null means no comparison is performed **for that entry** |
 | `dry_run` | object \| null | No | **Staff only**; see §6.2.1. Requires `X-Dry-Run: true` |
+
+If **any** entry carries an `alternative`, the response carries `net_benefit` at both levels; entries without one contribute zero to it rather than being excluded, so the totals stay mass-conserving.
 
 **Validation rules (enforced server-side)**
 
 | Rule | On violation |
 | --- | --- |
 | `qty_kg >= 0` | `VALIDATION_ERROR` |
+| `qty_kg` has at most 3 decimal places | `VALIDATION_ERROR` |
 | Per line `qty_kg <= 10,000,000` | `VALIDATION_ERROR` |
-| Per scenario total `<= 50,000,000` | `VALIDATION_ERROR` |
-| Per scenario line count `<= 20` | `VALIDATION_ERROR` |
-| No duplicate `destination` within a scenario | `VALIDATION_ERROR` |
+| Per scenario total, per entry `<= 50,000,000` | `VALIDATION_ERROR` |
+| Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
+| Entry count `<= 20` | `VALIDATION_ERROR` |
+| No duplicate `destination` within one entry's scenario | `VALIDATION_ERROR` |
+| No duplicate `(sector, food_category)` across entries | `VALIDATION_ERROR` |
 | All codes exist | `UNKNOWN_CODE` |
 | `dry_run` present without `X-Dry-Run: true` | `VALIDATION_ERROR` |
 | `dry_run.factor_set_version` and `dry_run.bundle` both non-null | `VALIDATION_ERROR` |
@@ -904,29 +960,59 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
   "factor_source": "published",
   "gwp_horizon": 100,
   "token": "3f2b…",
-  "current": {
-    "total_kg": "1500.000",
-    "metrics": {
-      "co2e": {
-        "unit": "kg CO2e",
-        "display_precision": 1,
-        "total": "3468.0000000000",
-        "by_destination": [
-          { "destination": "landfill", "qty_kg": "1200.000",
-            "upstream": "1.9000000000", "downstream": "0.9900000000",
-            "value": "3468.0000000000" }
-        ]
-      }
+  "totals": {
+    "total_kg": "2300.000",
+    "current": {
+      "metrics": {
+        "co2e": {
+          "unit": "kg CO2e",
+          "display_precision": 1,
+          "total": "5118.0000000000"
+        }
+      },
+      "equivalences": [
+        { "code": "km_driven", "label": "Equivalent to driving 21,400 km",
+          "value": "21400.0000000000", "source_metric": "co2e" }
+      ]
     },
-    "equivalences": [
-      { "code": "km_driven", "label": "Equivalent to driving 14,500 km",
-        "value": "14500.0000000000", "source_metric": "co2e" }
-    ]
+    "alternative": { "… same shape as current …" },
+    "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" }
   },
-  "alternative": { "… same shape as current …" },
-  "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" }
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": {
+        "total_kg": "1500.000",
+        "metrics": {
+          "co2e": {
+            "unit": "kg CO2e",
+            "display_precision": 1,
+            "total": "3468.0000000000",
+            "by_destination": [
+              { "destination": "landfill", "qty_kg": "1200.000",
+                "upstream": "1.9000000000", "downstream": "0.9900000000",
+                "value": "3468.0000000000" }
+            ]
+          }
+        },
+        "equivalences": [
+          { "code": "km_driven", "label": "Equivalent to driving 14,500 km",
+            "value": "14500.0000000000", "source_metric": "co2e" }
+        ]
+      },
+      "alternative": { "… same shape as current …" },
+      "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" }
+    }
+  ]
 }
 ```
+
+**`totals` is what the headline figures are rendered from; `entries` is what the breakdown table is rendered from.** Both are computed by the engine. The client adds nothing together — it has no correct way to, because a decimal transmitted as a string (§1.2) cannot be summed in JavaScript without going through `Number`, and because the golden suite (§10.2) can only cover a number the engine produced.
+
+`totals.current.metrics[code]` carries no `by_destination`: the same destination can appear under several entries with different upstream factors, so a cross-entry destination breakdown would need its own aggregation rule. If the client asks for one later, it belongs here as a new field the engine fills, not as a loop in the browser.
+
+`entries[]` preserves request order, so a client can pair each result with the row the user typed.
 
 When `alternative` is not supplied, both `alternative` and `net_benefit` are `null`.
 
@@ -1333,10 +1419,14 @@ Every non-2xx response uses one envelope:
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "A single line may not exceed 10,000,000 kg",
-    "details": [ { "field": "current[0].qty_kg", "issue": "exceeds_max" } ]
+    "details": [ { "field": "entries[0].current[1].qty_kg", "issue": "exceeds_max" } ]
   }
 }
 ```
+
+**`field` is a bracket-indexed path into the request body**, exactly as a front end would write it: `entries[0].current[1].qty_kg`. Array positions are `[n]`, object keys are `.key`, and the path starts at the root of the request.
+
+> This needs stating because the two obvious implementations disagree and the disagreement is silent. Pydantic's native `loc` is a tuple that renders as `entries.0.current.1.qty_kg`; a front end building a lookup key from its own render loop writes `entries[0].current[1].qty_kg`. Neither is wrong, but if the API emits one and the client looks up the other, **field-level highlighting simply never binds** — no error, no console warning, the user just sees the generic banner and never learns which row is bad. Both fixture sets on the team had already chosen different formats. The API is responsible for converting Pydantic's `loc` to this form before it goes on the wire.
 
 | HTTP | `code` | Trigger | Front-end response |
 | --- | --- | --- | --- |

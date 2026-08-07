@@ -64,13 +64,26 @@ def _form_context(db) -> dict:
 
 
 def _request_body(form) -> dict:
-    """The contract v1.1 body for one entry, one current-scenario line.
+    """One entry, one current-scenario line, in the ``entries``-array shape.
 
-    One entry, one line is deliberate (Task 3's brief): this view exists so
-    a single formula can be tuned against a single input, not to build
-    arbitrary multi-entry requests — that is the comparison view's job.
-    ``HttpCalculateClient.dry_run`` fills in ``dry_run`` itself from the
-    ``factor_set_version`` keyword, so it is left out here.
+    This is **not** the shape in this tree's own ``docs/interfaces.md``
+    §6.2, which is v0.10 and flat (``sector``/``food_category``/``current``
+    at the top level). It follows v1.1, still on the unmerged
+    ``docs/contract-v1.0`` branch (PR #10): a teammate found that a flat,
+    one-POST-per-entry front end sharing one session token had each POST's
+    token upsert overwrite the previous entry's row, so a five-entry
+    calculation persisted one row while the client summed the rest in
+    JavaScript client-side. ``entries`` closes that by putting every entry
+    in one request, computed and persisted server-side as one row. The
+    project owner has confirmed v1.1 is the direction the tree's own copy
+    will be reconciled to; build against it now rather than the copy that
+    predates the fix.
+
+    One entry, one line is still deliberate (Task 3's brief): this view
+    exists so a single formula can be tuned against a single input, not to
+    build arbitrary multi-entry requests — that is the comparison view's
+    job. ``HttpCalculateClient.dry_run`` fills in ``dry_run`` itself from
+    the ``factor_set_version`` keyword, so it is left out here.
     """
     gwp_horizon_raw = form.get("gwp_horizon") or "100"
     return {

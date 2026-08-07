@@ -878,6 +878,14 @@ Called once on page load to build every dropdown and input row.
 
 **Calculates and persists. One call equals one submission** (Decision 8).
 
+> This section is v0.10 and its request body is flat (one `sector` /
+> `food_category` / `current` per call). A multi-entry `entries` array is
+> proposed as v1.1 on the unmerged `docs/contract-v1.0` branch (PR #10),
+> fixing a one-POST-per-entry front end whose shared session token had each
+> call's upsert overwrite the previous entry's row. Not yet reconciled into
+> this file — the admin panel's dry-run client (`admin/calc_client.py`,
+> `admin/dryrun_views.py`) already builds to v1.1.
+
 **Request**
 
 ```json

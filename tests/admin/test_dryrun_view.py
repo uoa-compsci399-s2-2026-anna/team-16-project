@@ -122,7 +122,9 @@ async def test_a_submitted_scenario_reaches_the_client_with_the_header(
     await admin_client.post("/admin/try", data={
         "factor_set": one_draft.version_label,
         "sector": taxonomy_for_factors.sector.code,
-        "food_category": taxonomy_for_factors.category.code,
+        # Blank means "standard mix" (§6.2's food_category rule) - sent, not
+        # omitted, to exercise the form's own blank-select option.
+        "food_category": "",
         "gwp_horizon": "100",
         "destination": taxonomy_for_factors.destination.code,
         "qty_kg": "1200.000",
@@ -132,6 +134,14 @@ async def test_a_submitted_scenario_reaches_the_client_with_the_header(
     call = fake_calc_client.calls[0]
     assert call.factor_set_version == one_draft.version_label
     assert call.body["entries"][0]["sector"] == taxonomy_for_factors.sector.code
+    # gwp_horizon is a top-level request field (contract v1.1), not a
+    # per-entry one — a formula bound to const_GWP_CH4 would silently see
+    # the wrong horizon if this regressed to living inside the entry.
+    assert call.body["gwp_horizon"] == 100
+    assert "gwp_horizon" not in call.body["entries"][0]
+    # The blank food-category option must send null, not "" — the API
+    # treats null as standard_mix (§6.2) but has no rule for an empty string.
+    assert call.body["entries"][0]["food_category"] is None
 
 
 async def test_the_result_page_shows_what_the_api_returned(
@@ -206,11 +216,17 @@ async def test_an_unreachable_api_says_so_plainly(
     assert "not reachable" in body or "unavailable" in body
 
 
-async def test_no_submission_row_is_written(
+async def test_no_audit_row_is_written(
     admin_client, fake_calc_client, one_draft, session
 ):
-    """The header exists for this. Dozens of tuning runs must not appear in
-    the public statistics."""
+    """This pins only what it can: `admin/models.py` has no submission
+    table at all (persistence is B's `POST /api/v1/calculate`, behind
+    `X-Dry-Run: true`, which this view never bypasses), so nothing in this
+    stage could write one either way. What this view *could* wrongly do is
+    write its own audit_log row on a dry run, the way every AuditedModelView
+    write does — it does not, because the view never opens a session that
+    writes anything; it only reads the form context and calls the client.
+    """
     from sqlalchemy import func, select
     from admin.models import AuditLog
 

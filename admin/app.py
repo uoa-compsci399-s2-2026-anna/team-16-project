@@ -110,6 +110,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     admin.add_base_view(ChangePasswordView)
     admin.add_base_view(EnrolView)
 
+    from admin.dryrun_views import DryRunView
+
+    admin.add_base_view(DryRunView)
+
     from admin.modelviews import AuditLogAdmin
 
     admin.add_view(AuditLogAdmin)

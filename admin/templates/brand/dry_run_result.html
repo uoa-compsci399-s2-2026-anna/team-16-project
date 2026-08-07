@@ -1,0 +1,51 @@
+{% extends "brand/base.html" %}
+{% block title %}Dry run result{% endblock %}
+{% block content %}
+  <h1>Dry run result</h1>
+
+  {% if outcome == "unavailable" %}
+    <div class="notice notice--error">
+      <strong>The calculation service is not reachable.</strong> This is not
+      a problem with the formula being tuned — the endpoint is absent or
+      broken. Try again once it is back.
+    </div>
+    <p class="muted">{{ message }}</p>
+  {% elif outcome == "refused" %}
+    <div class="notice notice--error">
+      <strong>{{ code }}</strong>: {{ message }}
+    </div>
+    {% if details %}
+      <ul>
+        {% for detail in details %}
+          <li>{{ detail.field }} — {{ detail.issue }}</li>
+        {% endfor %}
+      </ul>
+    {% endif %}
+  {% else %}
+    {% if result.factor_set and result.factor_set.is_mock %}
+      <div class="notice notice--warning">
+        Placeholder data — this factor set is marked mock.
+      </div>
+    {% endif %}
+    <p class="muted">Factor source: {{ result.factor_source }}</p>
+
+    {% set current_metrics = result.totals.current.metrics
+       if result.totals and result.totals.current else {} %}
+    <table>
+      <thead>
+        <tr><th>Metric</th><th>Unit</th><th>Total</th></tr>
+      </thead>
+      <tbody>
+        {% for metric_code, metric in current_metrics.items() %}
+          <tr>
+            <td>{{ metric_code }}</td>
+            <td>{{ metric.unit }}</td>
+            <td>{{ metric.total }}</td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% endif %}
+
+  <p><a href="/admin/try">Try another</a></p>
+{% endblock %}

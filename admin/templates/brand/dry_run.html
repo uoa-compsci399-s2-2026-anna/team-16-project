@@ -1,0 +1,52 @@
+{% extends "brand/base.html" %}
+{% block title %}Try a scenario{% endblock %}
+{% block content %}
+  <h1>Try a scenario</h1>
+  <p class="muted">
+    Sends one line to the calculation service with <code>X-Dry-Run:
+    true</code>. Nothing here is saved, and it never reaches the public
+    statistics — run this as many times as tuning a formula takes.
+  </p>
+  <form method="post" autocomplete="off">
+    <label for="factor_set">Factor set</label>
+    <select id="factor_set" name="factor_set">
+      <option value="">Published (default)</option>
+      {% for fs in factor_sets %}
+        <option value="{{ fs.version_label }}">{{ fs.version_label }} — {{ fs.status.value }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="sector">Sector</label>
+    <select id="sector" name="sector" required>
+      {% for sector in sectors %}
+        <option value="{{ sector.code }}">{{ sector.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="food_category">Food category</label>
+    <select id="food_category" name="food_category">
+      <option value="">Standard mix (composition unknown)</option>
+      {% for category in food_categories %}
+        <option value="{{ category.code }}">{{ category.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="gwp_horizon">Methane horizon</label>
+    <select id="gwp_horizon" name="gwp_horizon">
+      <option value="100" selected>100 years</option>
+      <option value="20">20 years</option>
+    </select>
+
+    <label for="destination">Destination</label>
+    <select id="destination" name="destination" required>
+      {% for destination in destinations %}
+        <option value="{{ destination.code }}">{{ destination.name }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="qty_kg">Quantity (kg)</label>
+    <input type="text" id="qty_kg" name="qty_kg" required value="1000.000">
+
+    <button type="submit">Run</button>
+  </form>
+{% endblock %}

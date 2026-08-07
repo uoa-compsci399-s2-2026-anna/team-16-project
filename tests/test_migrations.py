@@ -81,3 +81,51 @@ def test_the_migration_chain_matches_the_models(migrated_engine):
         "something the models declare that the migrations do not produce, or "
         "the reverse:\n" + "\n".join(repr(d) for d in difference)
     )
+
+
+def test_the_chain_creates_the_functional_index_compare_metadata_cannot_see(
+    migrated_engine,
+):
+    """The one thing `_include_object` above deliberately stops checking.
+
+    `uq_factor_downstream_generic` is excluded from `compare_metadata` because
+    SQLAlchemy cannot reflect a MySQL expression index back out in a form that
+    compares meaningfully. That exclusion is justified, but it leaves the index
+    proven by nothing: `tests/admin/test_factor_models.py` creates the same
+    index by hand against the `create_all()` schema, because that path never
+    runs migration DDL — so deleting the `op.execute` from
+    `alembic/versions/0005_factors.py` leaves the entire suite green while a
+    real deployment silently loses the constraint.
+
+    That constraint is not cosmetic. Without it MySQL admits unlimited
+    duplicate `food_category_id IS NULL` rows — the generic "applies to every
+    food category" rows — and the engine's fallback lookup then picks one
+    nondeterministically: the same input returning different numbers, with
+    nothing in the logs to explain it.
+
+    This asserts against `information_schema` rather than behaviour because
+    behaviour is already covered; what was missing is evidence that *the
+    migration* produces it.
+    """
+    with migrated_engine.connect() as conn:
+        rows = conn.execute(text("""
+            SELECT COLUMN_NAME, EXPRESSION, NON_UNIQUE
+            FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'factor_downstream'
+              AND INDEX_NAME = 'uq_factor_downstream_generic'
+            ORDER BY SEQ_IN_INDEX
+        """)).all()
+
+    assert rows, (
+        "alembic upgrade head did not create uq_factor_downstream_generic. "
+        "Without it a second generic downstream row inserts happily and the "
+        "engine's factor lookup becomes nondeterministic."
+    )
+    assert all(row.NON_UNIQUE == 0 for row in rows), "the index is not unique"
+
+    expressions = [row.EXPRESSION for row in rows if row.EXPRESSION]
+    assert any("coalesce" in expr.lower() for expr in expressions), (
+        "the index exists but has no COALESCE key part, so NULLs still compare "
+        f"distinct and it does not do its job. Key parts: {rows}"
+    )

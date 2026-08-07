@@ -46,6 +46,25 @@ def _factor_downstream_generic_index(engine):
     fixture file for a single table's concern.
     """
     with engine.begin() as conn:
+        # Drop first. MySQL has no CREATE INDEX ... IF NOT EXISTS, and DDL
+        # auto-commits, so a run killed part-way through — a timeout, a
+        # keyboard interrupt — leaves the index behind with no teardown having
+        # run. The next run's CREATE then fails, and because this is an
+        # autouse session fixture the failure surfaces as every test in this
+        # file erroring at setup, which reads like the models are broken
+        # rather than like a stale index. Observed exactly once while
+        # developing this file, which is once more than it needs to happen.
+        already_there = conn.execute(text("""
+            SELECT 1 FROM information_schema.STATISTICS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND TABLE_NAME = 'factor_downstream'
+              AND INDEX_NAME = 'uq_factor_downstream_generic'
+            LIMIT 1
+        """)).first()
+        if already_there:
+            conn.execute(
+                text("DROP INDEX uq_factor_downstream_generic ON factor_downstream")
+            )
         conn.execute(
             text(
                 "CREATE UNIQUE INDEX uq_factor_downstream_generic "

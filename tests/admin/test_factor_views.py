@@ -153,12 +153,29 @@ async def _login(client, monkeypatch, *, username, password, secret):
 
 
 def _cleanup_staff(admin_app, *staff_rows):
-    """Remove the staff row (and any audit_log entry against it) this
-    fixture created - see tests/admin/test_accounts_view.py's function of
-    the same name for the full rationale."""
+    """Remove the staff row and *every* audit_log entry this file's tests
+    caused, keyed on the acting username.
+
+    Keying on the actor rather than on the changed row is deliberate. The
+    obvious cleanup — delete audit rows whose row_id is still present in the
+    table they name — cannot reach a *delete* entry, because the row it
+    describes is precisely the one that no longer exists. This file commits
+    such an entry (the constant-orphaning tests delete a constant through
+    HTTP), and it survived into `tests/admin/test_modelviews.py`, whose
+    `select(AuditLog)` takes the first row in the table and asserts its
+    action is "create". It read "delete" instead, and only when the whole
+    directory ran — the file passes alone.
+
+    Every audit row these tests produce carries this fixture's throwaway
+    administrator as its actor, so one predicate covers all of them.
+    """
     factory = admin_app.state.session_factory
     with factory() as db:
         for staff in staff_rows:
+            db.execute(
+                text("DELETE FROM audit_log WHERE actor = :username"),
+                {"username": staff.username},
+            )
             db.execute(
                 text("DELETE FROM audit_log WHERE table_name = 'staff' AND row_id = :id"),
                 {"id": staff.id},

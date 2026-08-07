@@ -13,7 +13,12 @@ Each file's own `_cleanup_*_rows` helper stays local (it names the specific
 labels and codes that file's own tests are written against) and each file
 still needs its own autouse fixture that calls it, since this module has no
 way to know what a given test file committed through the hard-committing
-session below.
+session below. The one exception is the "e6-"/"e6_"-prefixed rows the
+factor-set fixtures below commit - `_committed_session` cleans those up
+itself, in its own teardown, so a new file that uses `two_sets` and friends
+gets that part for free. See `_committed_session`'s own docstring for why
+that is folded into its teardown rather than a second, `admin_app`-level
+autouse fixture.
 
 The hard-committing session itself is deliberately *not* exported under the
 name `session` - see `_committed_session`'s own docstring for why naming it
@@ -39,6 +44,7 @@ from types import SimpleNamespace
 import pyotp
 import pytest
 import pytest_asyncio
+from sqlalchemy import bindparam as sa_bindparam
 from sqlalchemy import text
 
 from admin.accounts import (
@@ -225,11 +231,33 @@ def _committed_session(admin_app):
     it, while every other file in this directory keeps getting
     tests/conftest.py's rolled-back one undisturbed.
 
-    Cleanup here is unconditional (`finally`) but deliberately generic: it
-    only closes the session. Which rows a given file's tests hard-committed
-    - and so which rows need deleting afterwards - is specific to that file's
-    own fixed labels and codes, so each file registers its own additional,
-    autouse cleanup fixture that calls its local `_cleanup_*_rows` helper.
+    Cleanup here covers the one thing every consumer of this fixture shares
+    - the "e6-"/"e6_"-prefixed rows `taxonomy_for_factors`, `populated_set`,
+    `one_draft` and `two_sets` (below) commit through it, via
+    `_cleanup_e6_rows` - unconditionally (`finally`), so a test that fails
+    partway through still leaves the database clean for the next one.
+
+    Deliberately *not* a separate `autouse=True` fixture depending on
+    `admin_app` directly, which was tried first: `admin_app` builds a real
+    FastAPI app and SQLAlchemy engine, and an autouse fixture naming it as a
+    parameter forces that construction for *every* test in this directory,
+    whether or not the test has anything to do with factor sets -
+    including test_expressions.py's 64 pure-function tests, which touch no
+    database at all. Measured directly: adding such a fixture and running
+    64 otherwise-trivial tests through it took just under 8 seconds where
+    the same 64 tests take 0.05s without it - roughly 125ms each, which
+    across this directory's several hundred tests is not a rounding error.
+    Folding the cleanup into this fixture's own teardown instead means it
+    only ever runs for a test that already needed `_committed_session` (or
+    something built on it), which is exactly the set of tests that could
+    have committed one of these rows in the first place - the same
+    guarantee, at the cost of nothing for everything else.
+
+    Which rows a given file's *own* fixed labels and codes touch (as
+    opposed to these shared "e6-" ones) is still specific to that file, so
+    each file that needs its own cleanup still registers its own additional
+    autouse fixture calling its local `_cleanup_*_rows` helper, same as
+    before.
     """
     factory = admin_app.state.session_factory
     db = factory()
@@ -237,6 +265,89 @@ def _committed_session(admin_app):
         yield db
     finally:
         db.close()
+        _cleanup_e6_rows(admin_app)
+
+
+def _cleanup_e6_rows(admin_app) -> None:
+    """Remove every row any test in this directory may have hard-committed
+    through `taxonomy_for_factors`, `populated_set`, `one_draft`, `two_sets`
+    or `_add_formula` - or built directly with the same "e6-"/"e6_" prefix,
+    as tests/admin/test_factor_views.py's published-set guard tests do for
+    extra factor sets beyond what those fixtures themselves create.
+
+    Matched by prefix (`LIKE 'e6-%'` / `LIKE 'e6\\_%' ESCAPE '\\\\'`) rather
+    than a fixed list of labels/codes: a fixed list has to be extended by
+    hand every time a new consumer adds another ad hoc "e6-..." row, which
+    is exactly the kind of thing a second consumer forgets - the whole
+    reason this lives here once rather than being copied into every file
+    that uses these fixtures.
+
+    `factor_set_id` cascades (`ondelete="CASCADE"` on
+    FactorUpstream/FactorDownstream/Constant/Formula/Equivalence, see
+    admin/factor_models.py) so deleting the factor_set rows themselves is
+    enough to take their children with it; the taxonomy rows underneath
+    them (sector, food_category, metric, destination, destination_group) do
+    not belong to any factor_set and are cleaned up explicitly,
+    destination_group last because destination carries a foreign key to it.
+    """
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        factor_set_ids = db.execute(
+            text("SELECT id FROM factor_set WHERE version_label LIKE 'e6-%'")
+        ).scalars().all()
+
+        if factor_set_ids:
+            for table in ("formula", "constant", "factor_upstream",
+                          "factor_downstream", "equivalence"):
+                db.execute(
+                    text(f"DELETE FROM audit_log WHERE table_name = '{table}' "
+                         "AND row_id IN (SELECT id FROM " + table +
+                         " WHERE factor_set_id IN :ids)")
+                    .bindparams(sa_bindparam("ids", expanding=True)),
+                    {"ids": factor_set_ids},
+                )
+            db.execute(
+                text("DELETE FROM audit_log WHERE table_name = 'factor_set' "
+                     "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": factor_set_ids},
+            )
+            db.execute(
+                text("DELETE FROM factor_set WHERE id IN :ids")
+                .bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": factor_set_ids},
+            )
+
+        for table in ("metric", "destination", "sector", "food_category"):
+            ids = db.execute(
+                text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'")
+            ).scalars().all()
+            if ids:
+                db.execute(
+                    text(f"DELETE FROM audit_log WHERE table_name = '{table}' "
+                         "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                    {"ids": ids},
+                )
+                db.execute(
+                    text(f"DELETE FROM {table} WHERE id IN :ids")
+                    .bindparams(sa_bindparam("ids", expanding=True)),
+                    {"ids": ids},
+                )
+
+        group_ids = db.execute(
+            text("SELECT id FROM destination_group WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'")
+        ).scalars().all()
+        if group_ids:
+            db.execute(
+                text("DELETE FROM audit_log WHERE table_name = 'destination_group' "
+                     "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": group_ids},
+            )
+            db.execute(
+                text("DELETE FROM destination_group WHERE id IN :ids")
+                .bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": group_ids},
+            )
+        db.commit()
 
 
 # --- Task 2 Step 1's factor-set fixtures ------------------------------------
@@ -245,10 +356,24 @@ def _committed_session(admin_app):
 # not exist yet) because Task 1's own published-set guard tests need
 # `two_sets`, and Tasks 2-4 need the same fixtures again - one definition
 # rather than a fourth copy.
+#
+# These depend on `_committed_session` *by that name*, not on `session`.
+# `session` is not defined at this conftest level (see `_committed_session`'s
+# own docstring for why), so a fixture here that asked for `session` would
+# resolve it per the *requesting test's own file* - the local hard-committing
+# wrapper in test_factor_views.py, but tests/conftest.py's rolled-back one in
+# any file that has not added that same wrapper. That is exactly the trap a
+# new consumer (Task 4's test_factor_set_actions.py) would fall into
+# silently: `admin_client` would see none of the rows these fixtures commit,
+# and the resulting test failure - a row missing over HTTP - reads like a
+# broken guard rather than a fixture resolving to the wrong session.
+# Depending on `_committed_session` directly removes the ambiguity: every
+# caller gets the same, real, hard-committing session no matter which file
+# it is defined in.
 
 
 @pytest.fixture()
-def taxonomy_for_factors(session):
+def taxonomy_for_factors(_committed_session):
     """The minimum taxonomy a factor row can point at.
 
     Built through the real models rather than raw inserts: a factor row's
@@ -259,6 +384,7 @@ def taxonomy_for_factors(session):
         Destination, DestinationGroup, FoodCategory, Metric, Sector,
     )
 
+    session = _committed_session
     group = DestinationGroup(code="e6_disposal", name="Disposal", is_waste=True)
     session.add(group)
     session.flush()
@@ -305,31 +431,31 @@ def _make_set(session, label, status, taxonomy, *, populated):
 
 
 @pytest.fixture()
-def populated_set(session, taxonomy_for_factors):
+def populated_set(_committed_session, taxonomy_for_factors):
     """A draft carrying one row of each child kind, for clone tests."""
     from admin.factor_models import FactorSetStatus
 
-    return _make_set(session, "e6-source", FactorSetStatus.draft,
+    return _make_set(_committed_session, "e6-source", FactorSetStatus.draft,
                      taxonomy_for_factors, populated=True)
 
 
 @pytest.fixture()
-def one_draft(session, taxonomy_for_factors):
+def one_draft(_committed_session, taxonomy_for_factors):
     """A single draft and nothing published - the fresh-deployment state."""
     from admin.factor_models import FactorSetStatus
 
-    return _make_set(session, "e6-only-draft", FactorSetStatus.draft,
+    return _make_set(_committed_session, "e6-only-draft", FactorSetStatus.draft,
                      taxonomy_for_factors, populated=True)
 
 
 @pytest.fixture()
-def two_sets(session, taxonomy_for_factors):
+def two_sets(_committed_session, taxonomy_for_factors):
     """A published set and a draft: the ordinary before-publish state."""
     from admin.factor_models import FactorSetStatus
 
-    live = _make_set(session, "e6-live", FactorSetStatus.published,
+    live = _make_set(_committed_session, "e6-live", FactorSetStatus.published,
                      taxonomy_for_factors, populated=True)
-    draft = _make_set(session, "e6-next", FactorSetStatus.draft,
+    draft = _make_set(_committed_session, "e6-next", FactorSetStatus.draft,
                       taxonomy_for_factors, populated=True)
     return live, draft
 

@@ -32,6 +32,7 @@ docstring for the full account.
 """
 
 from decimal import Decimal
+from urllib.parse import unquote_plus
 
 import pytest
 from sqlalchemy import bindparam as sa_bindparam
@@ -110,25 +111,17 @@ def test_the_high_volume_views_page_at_a_workable_size(view):
 #
 # admin_client, staff_client, session and _resync now come from
 # tests/admin/conftest.py, which took its copy of the shared plumbing from
-# this file - see this file's own module docstring. What stays here is what
-# names this file's own fixed labels/codes, plus the `two_sets` fixture's
-# own "e6-"/"e6_" labels and codes (tests/admin/conftest.py's own docstring
-# on that fixture block), since the published-set guard tests below are the
-# first in this file to use it.
+# this file - see this file's own module docstring. The published-set guard
+# tests below use `two_sets`, plus a couple of ad hoc "e6-"-labelled factor
+# sets of their own (a second and third draft, to test a move without
+# colliding with two_sets's own populated rows) - tests/admin/conftest.py's
+# own `_cleanup_e6_fixtures` autouse fixture covers all of that by prefix,
+# so nothing "e6-"/"e6_"-shaped needs repeating here. What stays local is
+# only this file's own fixed labels/codes.
 
 
 _FACTOR_SET_LABELS = ["kc-factor-view-test", "kc-factor-view-test-other"]
 _METRIC_CODES = ["kc-factor-view-test-metric"]
-
-_E6_FACTOR_SET_LABELS = ["e6-source", "e6-only-draft", "e6-live", "e6-next",
-                        "e6-second-draft", "e6-move-target"]
-_E6_TAXONOMY = {
-    "destination_group": ["e6_disposal"],
-    "destination": ["e6_landfill"],
-    "sector": ["e6_processing"],
-    "food_category": ["e6_dairy"],
-    "metric": ["e6_co2e"],
-}
 
 
 def _cleanup_factor_rows(admin_app):
@@ -139,20 +132,13 @@ def _cleanup_factor_rows(admin_app):
     admin/factor_models.py) so deleting the factor_set rows themselves is
     enough to take their children with it; the metric row and any audit_log
     entries are cleaned up explicitly.
-
-    Also covers the `two_sets`/`populated_set`/`one_draft` fixtures'
-    "e6-"-labelled factor sets and "e6_"-coded taxonomy rows
-    (tests/admin/conftest.py): those cascade the same way, but the taxonomy
-    rows underneath them (sector, food_category, metric, destination,
-    destination_group) do not belong to any factor_set and need their own
-    cleanup, run after the factor sets that reference them are gone.
     """
     factory = admin_app.state.session_factory
     with factory() as db:
         factor_set_ids = db.execute(
             text("SELECT id FROM factor_set WHERE version_label IN :labels")
             .bindparams(sa_bindparam("labels", expanding=True)),
-            {"labels": _FACTOR_SET_LABELS + _E6_FACTOR_SET_LABELS},
+            {"labels": _FACTOR_SET_LABELS},
         ).scalars().all()
         metric_ids = db.execute(
             text("SELECT id FROM metric WHERE code IN :codes")
@@ -190,66 +176,6 @@ def _cleanup_factor_rows(admin_app):
                 text("DELETE FROM metric WHERE id IN :ids")
                 .bindparams(sa_bindparam("ids", expanding=True)),
                 {"ids": metric_ids},
-            )
-
-        # e6_extra_<factor_set_id> metrics (tests/admin/conftest.py's
-        # _add_formula) have already lost their referencing formula rows via
-        # the factor_set cascade above; only the metric rows themselves are
-        # left to remove, alongside the rest of the e6_ taxonomy.
-        e6_metric_ids = db.execute(
-            text("SELECT id FROM metric WHERE code IN :codes "
-                 "OR code LIKE 'e6\\_extra\\_%' ESCAPE '\\\\'")
-            .bindparams(sa_bindparam("codes", expanding=True)),
-            {"codes": _E6_TAXONOMY["metric"]},
-        ).scalars().all()
-        destination_ids = db.execute(
-            text("SELECT id FROM destination WHERE code IN :codes")
-            .bindparams(sa_bindparam("codes", expanding=True)),
-            {"codes": _E6_TAXONOMY["destination"]},
-        ).scalars().all()
-        sector_ids = db.execute(
-            text("SELECT id FROM sector WHERE code IN :codes")
-            .bindparams(sa_bindparam("codes", expanding=True)),
-            {"codes": _E6_TAXONOMY["sector"]},
-        ).scalars().all()
-        food_category_ids = db.execute(
-            text("SELECT id FROM food_category WHERE code IN :codes")
-            .bindparams(sa_bindparam("codes", expanding=True)),
-            {"codes": _E6_TAXONOMY["food_category"]},
-        ).scalars().all()
-        group_ids = db.execute(
-            text("SELECT id FROM destination_group WHERE code IN :codes")
-            .bindparams(sa_bindparam("codes", expanding=True)),
-            {"codes": _E6_TAXONOMY["destination_group"]},
-        ).scalars().all()
-
-        for table, ids in (
-            ("metric", e6_metric_ids), ("destination", destination_ids),
-            ("sector", sector_ids), ("food_category", food_category_ids),
-        ):
-            if ids:
-                db.execute(
-                    text(f"DELETE FROM audit_log WHERE table_name = '{table}' "
-                         "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
-                    {"ids": ids},
-                )
-                db.execute(
-                    text(f"DELETE FROM {table} WHERE id IN :ids")
-                    .bindparams(sa_bindparam("ids", expanding=True)),
-                    {"ids": ids},
-                )
-        # destination_group after destination: the latter carries a foreign
-        # key to the former.
-        if group_ids:
-            db.execute(
-                text("DELETE FROM audit_log WHERE table_name = 'destination_group' "
-                     "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
-                {"ids": group_ids},
-            )
-            db.execute(
-                text("DELETE FROM destination_group WHERE id IN :ids")
-                .bindparams(sa_bindparam("ids", expanding=True)),
-                {"ids": group_ids},
             )
         db.commit()
 
@@ -606,10 +532,21 @@ async def test_deleting_a_row_from_a_published_set_is_refused(
     # (sqladmin/application.py's Route(..., methods=["DELETE"])) - unlike an
     # @action route, which is GET-only. test_deleting_a_referenced_constant_is_refused
     # above already drives this the same way.
-    await admin_client.delete("/admin/factor-upstream/delete", params={"pks": str(row_id)})
+    response = await admin_client.delete(
+        "/admin/factor-upstream/delete", params={"pks": str(row_id)}
+    )
 
     _resync(session)
     assert session.get(FactorUpstream, row_id) is not None
+    # "the row survived" alone does not distinguish a real refusal from a
+    # 403 or a mistyped URL that never reached the delete route at all -
+    # both leave the row untouched too. sqladmin's delete route
+    # (application.py's own `delete()`) catches the guard's exception and
+    # redirects to the list page with the message url-encoded onto an
+    # `error=` query parameter rather than raising it back out as a 4xx, so
+    # this reads the guard's own wording out of that redirect target rather
+    # than trusting a status code sqladmin never actually sets here.
+    assert "is published, not draft" in unquote_plus(response.text)
 
 
 @pytest.mark.asyncio

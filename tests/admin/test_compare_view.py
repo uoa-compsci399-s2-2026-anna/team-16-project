@@ -98,6 +98,10 @@ async def test_both_values_are_rendered_from_the_responses(
     # Both calls returned the same figure, so if the page were subtracting it
     # would show a zero it invented. It should show the value twice instead.
     assert response.text.count("3468") >= 2
+    # Built with url_for(), not hard-coded, so it keeps resolving if this
+    # route ever moves - pinned here as the link text/target it must still
+    # resolve to (url_for renders an absolute URL, hence the substring).
+    assert '/admin/try">Try a single scenario</a>' in response.text
 
 
 async def test_a_scenario_that_fails_does_not_hide_the_others(

@@ -23,6 +23,11 @@
     </div>
     <p class="muted">{{ message }}</p>
   {% else %}
+    {% if target.is_mock or published.is_mock %}
+      <div class="notice notice--warning">
+        Placeholder data — this factor set is marked mock.
+      </div>
+    {% endif %}
     <p class="muted">
       Comparing <strong>{{ target.version_label }}</strong> (this draft)
       against <strong>{{ published.version_label }}</strong> (published),

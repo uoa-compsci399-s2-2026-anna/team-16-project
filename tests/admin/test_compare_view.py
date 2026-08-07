@@ -154,6 +154,24 @@ async def test_an_unreachable_service_is_a_page_level_message(
     assert "not reachable" in body or "unavailable" in body
 
 
+async def test_a_mock_factor_set_shows_the_placeholder_banner(
+    admin_client, fake_calc_client, two_sets, seeded_scenario, session
+):
+    """Every factor set in this project is mock right now (O-1: the client
+    has not supplied real emissions factors). `target` and `published` are
+    already in this view's context with their own `is_mock` — this is the
+    page staff use to decide whether to publish, so it must carry the same
+    mandatory, non-dismissible warning `dry_run_result.html` shows, not let
+    a mock total sit on screen looking like a real one."""
+    published, draft = two_sets
+    session.commit()
+
+    response = await admin_client.get(f"/admin/factor-sets/{draft.id}/compare")
+
+    assert "notice--warning" in response.text
+    assert "Placeholder data" in response.text
+
+
 async def test_comparing_against_nothing_published_says_so(
     admin_client, fake_calc_client, one_draft, seeded_scenario, session
 ):

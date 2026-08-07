@@ -137,6 +137,17 @@ def test_rotating_twice_leaves_secrets_readable_with_the_newest_key(session):
     )
 
 
+def test_seed_taxonomy_is_idempotent_through_the_cli(session):
+    from admin.cli import cmd_seed_taxonomy
+
+    first = cmd_seed_taxonomy(session)
+    session.flush()
+    second = cmd_seed_taxonomy(session)
+
+    assert sum(first.values()) > 0
+    assert sum(second.values()) == 0
+
+
 def test_rotate_key_writes_nothing_when_one_account_of_several_fails(session):
     """The catastrophic failure mode: a partial rotation leaves some secrets
     readable only with the old key and some only with the new one, with no

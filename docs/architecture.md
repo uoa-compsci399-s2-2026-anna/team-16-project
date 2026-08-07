@@ -304,6 +304,8 @@ Audit logging and rollback in Stage 3 must not be dropped.
 
 `alembic/env.py` calls `load_settings()` to resolve the database URL, so `SECRET_KEY` (and every other setting `load_settings()` requires) must already be set in the environment for `alembic upgrade head` to run at all — a migration cannot be the step that first establishes the environment.
 
+**`python -m admin.cli seed-taxonomy` must be run after `alembic upgrade head` against a fresh database.** The migration creates the six taxonomy tables empty; without the seed there are no destination groups, destinations, sectors, food categories, metrics or unit presets for the calculator or the admin panel to show. `admin/seed.py`'s `seed_taxonomy()` matches on `code` and only ever creates rows that are absent, so the command is safe to re-run on every deployment — a database that already has the taxonomy prints zero rows created per table and changes nothing, including any name a staff member has already edited through the panel.
+
 ---
 
 # 10. Open Items
@@ -314,5 +316,7 @@ Audit logging and rollback in Stage 3 must not be dropped.
 | O-2 | Definition of the cost metric: beyond the waste levy, is the value of the wasted food itself included, and at cost price or retail price? | A, E |
 | O-3 | Sources for New Zealand equivalence factors (kilometres driven, meal equivalents, showers) | A, D |
 | O-4 | Any localisation beyond language (units, date formats) | C, D |
+| O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
+| O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.

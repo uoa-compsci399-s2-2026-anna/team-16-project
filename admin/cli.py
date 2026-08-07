@@ -24,6 +24,7 @@ from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
 from admin.models import Staff, StaffRole
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
+from admin.seed import seed_taxonomy
 from db.session import create_session_factory
 
 
@@ -84,6 +85,11 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
         staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
 
     return len(plaintext)
+
+
+def cmd_seed_taxonomy(db_session: Session) -> dict[str, int]:
+    """Load the NZ taxonomy into an empty or partially populated database."""
+    return seed_taxonomy(db_session)
 
 
 def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
@@ -147,6 +153,12 @@ def _build_parser() -> argparse.ArgumentParser:
         "bootstrap", help="Create the initial administrator accounts if none exist"
     )
 
+    sub.add_parser(
+        "seed-taxonomy",
+        help="Load the NZ food loss and waste taxonomy into an empty or "
+        "partially populated database",
+    )
+
     return parser
 
 
@@ -196,6 +208,12 @@ def main(argv: list[str] | None = None) -> int:
             if not created:
                 print("Administrator accounts already exist. Nothing to do.")
             report_bootstrap_result(created)
+        elif args.command == "seed-taxonomy":
+            created = cmd_seed_taxonomy(db_session)
+            db_session.commit()
+            print("Seeded the taxonomy.")
+            for table, count in created.items():
+                print(f"  {table:<18}{count:>2} created")
 
     return 0
 

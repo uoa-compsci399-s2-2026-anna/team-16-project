@@ -44,8 +44,9 @@ use. The audited `before`/`after` payloads here are hand-built rather than
 which for this model includes ``ip_hmac``. ``row_to_dict`` has no
 per-model redaction of its own (``REDACTED_FIELDS`` in ``admin/audit.py``
 does not name it, and adding it there would be a change to a file this
-task does not touch); hand-building the payload from the three
-non-fingerprint columns is what keeps a 64-character HMAC — the exact
+task does not touch); hand-building the payload from the four
+non-primary-key, non-fingerprint columns (``reason``, ``created_by``,
+``created_at``, ``expires_at``) is what keeps a 64-character HMAC — the exact
 value ``IpBlock.__str__`` already refuses to render, on the reasoning that
 displaying it invites someone to try to reverse it — out of `/admin/audit`
 as well as out of the list page.
@@ -122,6 +123,19 @@ class IpBlockAdmin(AuditedModelView, model=IpBlock):
         IpBlock.created_at: "First blocked",
     }
     column_default_sort = ("created_at", True)
+
+    # sqladmin's own list page has no built-in "New" button here -
+    # can_create is False, deliberately (see above), so the generic
+    # `check_can_create` block in sqladmin/list.html never renders one.
+    # Without this override, "/ip-block/block" is reachable only by a staff
+    # member recalling the URL from the contract document, which is a bad
+    # position to be in mid-incident. This is a real sqladmin hook
+    # (`list_template`, checked against sqladmin/models.py's own ModelView
+    # ClassVar) rather than a workaround: the override template extends
+    # sqladmin's own "sqladmin/list.html" and replaces only the
+    # `model_menu_bar` block, so every other part of the page - search,
+    # filters, pagination, the bulk-action dropdown - is untouched.
+    list_template = "brand/ip_block_list.html"
 
     def is_visible(self, request) -> bool:
         return self._is_admin(request)
@@ -215,7 +229,10 @@ class IpBlockAdmin(AuditedModelView, model=IpBlock):
         route introduces).
         """
         self._require_admin(request)
-        context = {"error": None}
+        # Passed on every render of this form (GET and every rejected
+        # POST) so brand/block_ip.html can offer a way back to the list -
+        # action_refused.html already does the same with its own next_url.
+        context = {"error": None, "list_url": self._list_url(request)}
         if request.method == "GET":
             return await self.templates.TemplateResponse(
                 request, "brand/block_ip.html", context

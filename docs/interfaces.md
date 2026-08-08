@@ -29,7 +29,9 @@ This document defines **what every person's code receives and what it returns.**
 
 ### v1.2 — 2026-08-09 (the merge of the two contract lines, **affects everybody**)
 
-Two documents became one. Most of the work was mechanical; the corrections below were not. Eleven of the eighteen changes are defects that were already in the document before the merge — the merge is what made them visible, by putting statements next to the statements they contradict. **Three of them (1, 2, 5) were live blockers on A's and B's integration work**: a section of this document that had gone two revisions without being updated, and that two people were about to code against.
+Two documents became one. Most of the work was mechanical; the twenty-three corrections below were not. **Most of them are defects that were already in the document before the merge** — the merge is what made them visible, by putting statements next to the statements they contradict. **Three (1, 2, 5) were live blockers on A's and B's integration work**: a section of this document that had gone two revisions without being updated, and that two people were about to code against.
+
+A smaller group — 6's scenario filter, 20 and 21 — are defects the corrections themselves created, and they share one cause worth stating once, because it will recur every time this document is tightened. **Making a vague section specific makes every remaining omission in it load-bearing in a way it was not before.** Pre-merge §5.4 named no table, no column and no join, so it could not be implemented wrongly from §5.4 alone; the rewrite named all three and left out a scenario predicate, a nullable column's fallback, and one join. Each omission then read as a followable instruction for the wrong query. When you make a section precise, re-read it against the cases it now appears to answer.
 
 | # | Change | Section | Affects |
 | --- | --- | --- | --- |
@@ -39,7 +41,7 @@ Two documents became one. Most of the work was mechanical; the corrections below
 | 4 | **§6.2 now requires an entry's two scenarios to describe the same mass, to within 0.010 kg. Nothing enforced it before, in any version.** The dual-scenario design rests on the rule: `architecture.md` §4.1 states that the `prevention` destination — all factors zero — exists so that "wasting less" is expressed by *moving* mass to it rather than by sending less of it, precisely so `net_benefit` cannot be inflated by assuming away the waste. **An implementer building from §6.2 alone permitted exactly what `prevention` was designed to prevent**, and nothing downstream would have surfaced it: an alternative that simply drops a 1,200 kg landfill line yields a large fictitious `net_benefit`, `totals.total_kg` reports the current scenario's mass only so the two figures are never both on the page, and the golden suite cannot catch it because it tests the engine against a fixed request and this is a property of the *request*. The tolerance is **absolute and derived, not chosen**: the front end rounds each alternative line independently to 3 dp (≤ 0.0005 kg each) and §6.2 already caps a scenario at 20 lines, bounding drift at 0.010 kg at any tonnage. A relative tolerance is looser than the defect at 5,000 t and tighter than the unavoidable rounding at 2 kg | §3, §6.2 | **B, C** |
 | 5 | **§6.2's dry-run row named two of the three submission tables.** It said no `submission` or `submission_line` row is written; `submission_entry` was added between that sentence and now. An implementer following it literally writes **orphan `submission_entry` rows on every staff dry run** — and §5.4 aggregates `by_sector` and `by_food_category` over exactly that table, so the pollution lands in the public statistics `X-Dry-Run` exists to protect, while `total_calculations` stays flat and conceals it. Staff run dozens of calculations while tuning one formula | §6.2 | **B, E** |
 | 6 | **§5.4 now carries the entry-aggregation rule that §2.3 attributes to it, and the scenario filter that nothing has ever stated.** §2.3's `submission_line` note asserts "statistics aggregate over entries, not submissions (§5.4)" — and §5.4's `get_public_stats` and `StatsBucket` said nothing about entries. B implements §5.4 from §5.4. Joining `by_sector` to `submission` instead counts a multi-stage food business once, as whichever stage it entered first: the query returns a plausible number, nothing fails, and the population the calculator is most useful to is the one it silently mis-describes. **The second half is worse and no version of this document has ever said it:** `submission_line.scenario` is `ENUM('current','alternative')` and both scenarios live in one table, so a `by_destination` group-by with no scenario predicate counts hypothetical lines as real waste — **`prevention`, the destination for waste that did not happen, becomes a bucket in the public chart**, every `total_kg` roughly doubles, and §6.4's "the cumulative total entered into this tool" is false on its face. All three breakdowns and `total_kg` read `scenario = 'current'` only. Also states the consequence D has to write copy around — `total_calculations` counts submissions while every bucket `count` counts entries, so the two figures on the statistics page differ by design and must not be presented as a breakdown of one another | §5.4, §6.4 | **B, D** |
-| 7 | **§7 replaced with the eleven modules that exist, transcribed from C's branch.** It named five, described two of those inaccurately, and omitted six — including `view.js`, which holds the escaping and formatting primitives D and E would each otherwise reimplement, and whose single `escapeHtml` is the reason that branch is XSS-clean. Two shapes changed **to match her code rather than the reverse**: a line is `{id, destination, qtyInput}`, where `id` survives a full re-render (`render()` replaces `main.innerHTML`) and `qtyInput` keeps the raw string so nothing rounds until it is sent. `unitPreset` and `unitCount` stay in this document as unmet requirements — the container-preset input was never built, `toKg` is imported by nothing — as does the `gwp_horizon` control | §7 | **C, D, E** |
+| 7 | **§7 replaced with the eleven modules it now names — the nine of C's that are built, transcribed from her branch, plus D's two, which are still specifications: `charts.js` and `news.js` do not exist and Chart.js appears nowhere in the tree.** §7 named five, described two of those inaccurately, and omitted six — including `view.js`, which holds the escaping and formatting primitives D and E would each otherwise reimplement, and whose single `escapeHtml` is the reason that branch is XSS-clean. Two shapes changed **to match her code rather than the reverse**: a line is `{id, destination, qtyInput}`, where `id` survives a full re-render (`render()` replaces `main.innerHTML`) and `qtyInput` keeps the raw string so nothing rounds until it is sent. `unitPreset` and `unitCount` stay in this document as unmet requirements — the container-preset input was never built, `toKg` is imported by nothing — as does the `gwp_horizon` control | §7 | **C, D, E** |
 | 8 | **Settled: the cross-entry destination breakdown is rendered per entry, from `entries[]`.** C's results page builds one combined destination tab by adding `by_destination[].value` across entries in JavaScript — the last §7.6 violation that could not be removed by reading a different field. The ruling costs no new field, no engine change and nothing on A's critical path, and it is the more truthful rendering: the same destination under two entries draws two different upstream factors and is genuinely two rows. Two front-end figures are **removed** rather than relocated, because no field exists to move them to — the percentage-change figure (defined in no version of this contract; `net_benefit` already carries it in the user's own units) and the `landfill_diverted` card (a metric with no row in the `metric` table, with the destination code hard-coded in JavaScript) | §6.2 | **A, C** |
 | 9 | **§8.3's audit item is resolved, not open.** v0.13 recorded "an API-side block cannot audit itself today" as unresolved with B named as the decider. **Her branch had already resolved it** — `write_audit` and `_json_safe` sit in `db/repository.py`, where §5.5 has placed them since v0.3. There was never a decision to take, only a duplicate to remove, and leaving it open means the person who owns it goes looking for a choice that does not exist. The integration detail matters more than the bookkeeping: B's `_json_safe` recurses into nested dicts and lists and redacts at every level, E's `_scrub` handles top-level keys only — so a `password_hash` or `mfa_secret_enc` one level down inside a payload passes straight through E's copy into a table every staff member can read. **B's survives**; E's `date` handling folds in | §8.3 | **B, E** |
 | 10 | **The submissions migration is `0008`, `down_revision = "0007"`.** `docs/ToB_v3.0.md` §1.3 says `0006` / `"0005"`, which was true when written; `0006` (comparison scenarios) and `0007` (`ip_block`) have landed since. Following it literally creates a **third Alembic head** — not a merge conflict but an ambiguous chain, and `upgrade heads` then fails partway through on a table that already exists. **MySQL DDL autocommits**, so there is nothing to roll back and the recovery is `DROP DATABASE`. Cheapest possible thing to get right; among the most expensive to get wrong, which is why it is in the contract rather than a task brief | §2.3, §8.3 | **B** |
@@ -51,6 +53,11 @@ Two documents became one. Most of the work was mechanical; the corrections below
 | 16 | **`ip_block`'s "see the note above" now names its target.** The merge reordered §2.3 to put the three submission tables in dependency order, which moved `submission_entry` and `submission_line` in between — so a reference written when the two were adjacent pointed at whatever happened to precede it. It now names the E-8 privacy blockquote explicitly, which is the note that licenses the table's existence against the no-address rule and is the one thing a reader must not fail to find from here | §2.3 | **B, E** |
 | 17 | **v0.11's standing instruction is discharged, and this entry closes it.** It asked for §8.2's corrected pre-publish-comparison wording to be applied to the unmerged `docs/contract-v1.0` branch as well. That branch did still carry the stale "old value, new value and change" / "differenced client-side" text, and the merge takes the corrected version because `contract-v1.0` never touched those lines. §8.2 now carries the correction. Recorded because an open instruction in a change log stays open until something says otherwise, and the next reader would spend their time confirming a done action | §0.1, §8.2 | **E** |
 | 18 | **Stale cross-references and internal inconsistencies corrected.** Four sit on the path A follows between `FactorBundle.from_json()` and the file format it parses: three sites pointed at §10.1 for the `bundle.json` shape (it is §10.2) and one pointed at §10.2 for the golden suite (it is §10.1). Four more were found by reading the merged document end to end rather than as a diff — §2.3's `submission.token` expiry job pointed at §2.3 itself rather than at §5.3's `expire_tokens`; §7.3 cited a "§7.6.1" that has never existed in any version (it is §7.6 rule 1); §7.3a still called `improvement.js`'s per-line rounding drift "not resolved here" after change 4 resolved it, when §6.2's 0.010 kg tolerance is derived from that exact behaviour and accepts it — **on the boundary, and only while the 20-line cap holds**; and §6.3 said v1.1 added `data_quality` to `equivalence`, which it did not (§2.2 gives `equivalence` a `source_note` and no `data_quality`) | §2.3, §4.1, §6.2, §6.2.1, §6.3, §7.3, §7.3a | **A, B, C** |
+| 19 | **`ip_hmac` is added to §5.5's `REDACTED_FIELDS`, which said three fields for four revisions after it stopped being three.** §8.3 has asserted since v0.12 that `write_audit` redacts `ip_hmac`; §5.5's literal — the v0.3 definition, written before the field existed — did not carry it, so the document stated a protection and its absence in two places at once. **The definition was the stale half, not the claim.** E-8's final review added it to `admin/audit.py`'s copy precisely because flipping `can_delete = True` on the blocklist screen would otherwise serialise a whole `IpBlock` row through `row_to_dict` and land the fingerprint in `audit_log`, which every staff member can read. It matters more after B's integration than before it: `db/repository.py`'s `write_audit` becomes the canonical one and `admin/audit.py` becomes a re-export (change 9), so **the copy that already redacts `ip_hmac` stops being the code that runs**, and an API-side automatic block writes its entry through this one. The reason is written in rather than left implicit — `ip_hmac` is not a credential like the other three; it is derived from a visitor's address, and §2.3 permits storing such a derivation in `ip_block` alone, not in a table with a wider audience | §5.5 | **B, E** |
+| 20 | **§5.4 now says what happens to a NULL `food_category_id`: it groups into an explicit `unspecified` bucket, suppressed on the same threshold as any other, and never dropped.** This is change 6's lesson repeating one field over. Pre-merge §5.4 named no grouping column, so it could not be implemented wrongly from §5.4 alone; naming `submission_entry.food_category_id` made the nullability load-bearing, and §2.3 has always said NULL means the user did not break their waste down by type — a real answer, likely a common one, and one `StatsBucket.code` had no legal value for. Dropping the bucket does not remove a number from the page, it **inflates every other share on it**, in the direction of overclaiming. Also stated: do **not** resolve NULL to `standard_mix` here. The engine does that (§3, §6.2) because it needs a factor; the statistics must not, because it would report a composition the user never claimed and make `standard_mix`'s share indistinguishable from the users who chose it | §5.4, §6.4 | **B, D** |
+| 21 | **§5.4's `excluded_from_public` exclusion named a join path one table short of the column it filters on.** Third instance of the same class, found by re-reading §5.4 against changes 6 and 20. `excluded_from_public` is on `submission` (§2.3); the breakdowns group over `submission_entry` and `submission_line`, and `by_destination`'s stated path stopped at "joined to its entry". Followed literally, **staff moderation applies to nothing** — the excluded submission's entries and lines are counted anyway, silently, which is the entire purpose of the flag defeated by a missing join. Every breakdown now joins up to `submission`, and the docstring says it goes one table further than its own grouping needs so nobody trims it back | §5.4 | **B** |
+| 22 | Four smaller inconsistencies the end-to-end read turned up, all fixed: §4.2 said "one" §6.2 response field has no §3 counterpart when there are two (`token` is the other, from §5.3); the dry-run row said "no token is returned" while §6.2's prose said `token` is `null` — **settled as `null`, present as a key**, per §6.3's own rule for the same choice; §6.4's worked example had bucket counts summing to exactly `total_calculations`, demonstrating the equality on the page whose new paragraph explains why the two differ, and now carries 1,247 submissions across 1,600 entries plus an `unspecified` bucket so D can see one; and §2.3 still sent the reader to §8.3 for a reconciliation item change 9 had closed | §2.3, §4.2, §6.2, §6.4 | **A, B, C, D, E** |
+| 23 | `docs/architecture.md` §9.1.1, cited by §8.3 for the protection design's operational detail, **is not on `main`** — it lands with PR #9, and until then resolves only on `admin_panel`. Said out loud at the citation. A cross-reference that dangles for a stated reason is a known state; one that dangles silently reads as an error in this document | §8.3 | **B, E** |
 
 > **Still open after this revision.** None of these is a defect in the document; all of them are decisions nobody has taken. **O-1 remains the hard blocker** — the client has not supplied real emissions factors, so everything runs on mock data and the banner stays mandatory. Beyond it: whether an in-memory rate-limit counter may hold a raw address (#15, B's); whether `admin.detection.looks_automated`, `RequestRate` and `_client_ip` move into a shared layer or are duplicated in `api/` (§8.3, B's, and the four blocklist items in `api/` are all downstream of it); whether `landfill_diverted` becomes a real `metric` row plus a formula (#8, the client's); and the positive/negative semantic colour pair, which C and D both need and neither has written down.
 
@@ -509,8 +516,12 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 > `unblock` could never remove. Blocks must be re-applied after a rotation.
 >
 > Auditing: `db/blocklist.py` writes no audit entry. See §8.3's "Blocklist"
-> section for who writes one today, and for the reconciliation item this
-> creates for the API layer.
+> section for who writes one instead. The reconciliation item this used to
+> create for the API layer — that `write_audit` sat in `admin/`, which
+> `api/` may not import — is **closed**: it has always been in
+> `db/repository.py` on B's branch (v1.2 change 9). What remains open there
+> is a different question, about `looks_automated`, `RequestRate` and
+> `_client_ip`.
 
 `sector_id` and `food_category_id` live on `submission_entry`, not here: one submission carries several, each with its own factors.
 
@@ -828,7 +839,7 @@ Impact calculation happens server-side **in exactly one place**, and the engine 
 
 B's `serialize_result` therefore **maps** `CalculationResult` onto the §6.2 JSON and performs no arithmetic beyond the `totals.total_kg` hoist described in §3. It adds nothing, and it must not.
 
-> **One §6.2 response field has no §3 counterpart, by design: `factor_source`.** It cannot come from the engine — the engine is pure over a `FactorBundle` and has no way to know whether that bundle was loaded from the published set, from a named version, or handed to it inline in a request body. **The API layer supplies it**, from the branch it took when it resolved the bundle (§6.2.1's four-row table): `"published"`, `"version:<label>"` or `"inline"`. That is a fact the API layer already holds and the engine never had, so it is not a second calculation site and does not weaken the rule above. `factor_set_version` and `is_mock` do come from the bundle and therefore from `CalculationResult`.
+> **Two §6.2 response fields have no §3 counterpart, by design, and only one of them is interesting: `factor_source`.** (The other is `token`, which comes from `upsert_submission`'s return value, §5.3, and is `null` on a dry run — it was never a candidate to come from the engine, which has no concept of a session.) `factor_source` cannot come from the engine — the engine is pure over a `FactorBundle` and has no way to know whether that bundle was loaded from the published set, from a named version, or handed to it inline in a request body. **The API layer supplies it**, from the branch it took when it resolved the bundle (§6.2.1's four-row table): `"published"`, `"version:<label>"` or `"inline"`. That is a fact the API layer already holds and the engine never had, so it is not a second calculation site and does not weaken the rule above. `factor_set_version` and `is_mock` do come from the bundle and therefore from `CalculationResult`.
 
 Within the engine, the roll-up rules are:
 
@@ -1044,7 +1055,10 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
     """
     Aggregate public statistics.
 
-    - Excludes rows with excluded_from_public = TRUE
+    - Excludes every entry and every line belonging to a submission with
+      excluded_from_public = TRUE. That column is on `submission` (§2.3),
+      so each breakdown below joins one table further than its own
+      grouping needs — up to `submission`, not merely to the entry.
     - Merges any bucket with count < threshold into 'other'
     - Suppression happens here and is never delegated to the front end
 
@@ -1053,8 +1067,11 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
 
       by_sector         group over submission_entry.sector_id,
                         restricted to entries having current-scenario lines
-      by_food_category  group over submission_entry.food_category_id, same
-      by_destination    group over submission_line joined to its entry,
+      by_food_category  group over submission_entry.food_category_id, same;
+                        a NULL food_category_id groups into an explicit
+                        'unspecified' bucket -- it is never dropped
+      by_destination    group over submission_line joined to its entry and
+                        on to its submission,
                         WHERE submission_line.scenario = 'current'
       total_kg          summed over the same current-scenario lines
       total_calculations  counts submission rows
@@ -1070,7 +1087,7 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
 
 @dataclass(frozen=True)
 class StatsBucket:
-    code: str          # taxonomy code, or 'other'
+    code: str          # taxonomy code, 'unspecified', or 'other'
     label: str
     count: int         # ENTRIES in this bucket, not submissions
     share: Decimal     # 0..1, of the entry count within this breakdown
@@ -1088,12 +1105,16 @@ class PublicStats:
 
 > **`submission_line.scenario` must be filtered, and this is the single easiest way to make the public statistics false.** The column is `ENUM('current', 'alternative')` (§2.3) and both scenarios' lines sit in the same table. A `by_destination` query that groups over `submission_line` without a scenario predicate — which is what the instruction above reads like if you stop before the `WHERE` — counts every hypothetical line as real waste. **`prevention` then appears as a destination in the public chart**, and `prevention` is by construction the destination for waste that *did not happen*; every `total_kg` roughly doubles; and §6.4's "the cumulative total entered into this tool" becomes false on its face, on the page whose whole design problem is not overclaiming. The alternative scenario is a user's what-if. It is not an observation of anything and it does not belong in a statistic.
 >
+> **A NULL `food_category_id` is a bucket, not a gap.** `submission_entry.food_category_id` is nullable and §2.3 already says what NULL means: the user did not break their waste down by type. That is a real answer about a real submission, and it is likely to be a common one — the calculator is aimed at businesses that mostly do not weigh their waste by food type. It groups into an explicit **`unspecified`** bucket, carrying the same `count`, `share` and `total_kg` as any other, and it is **subject to the same suppression threshold** as any other. It is never silently dropped: `share` is computed within its own breakdown and the shares must sum to 1, so discarding a bucket does not remove a number from the page — it inflates every other share on it, in the direction of overclaiming. D renders it with one rule, like every other bucket; only the label is special ("Not broken down by type").
+>
+> Note that `unspecified` is a *storage* fact, not a calculation one. The engine resolves a null `food_category` to `standard_mix` before it computes anything (§3, §6.2), so the same entry is `standard_mix` to the engine and `unspecified` to the statistics. Both are correct: one is the factor that was applied, the other is what the user actually told us. **Do not resolve NULL to `standard_mix` here** — that would report a composition the user never claimed, and would make `standard_mix`'s share indistinguishable from the users who selected it deliberately.
+>
 > **`total_calculations` and the bucket counts are deliberately counting different things, and the statistics page must not present them as if they were not.** `total_calculations` is submissions; every `StatsBucket.count` is entries. `Σ by_sector[].count` is therefore ≥ `total_calculations`, and the gap is exactly the number of multi-entry submissions. `share` is computed within its own breakdown — over entries — so shares still sum to 1 and are the safe figure to display. Copy that reads "1,247 calculations" beside a sector chart whose counts add to 1,600 invites the obvious question; the honest phrasing names the unit ("1,247 calculations, covering 1,600 points in the supply chain"). See §6.4's copy constraint, which is D's.
 
 ## 5.5 Audit
 
 ```python
-REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash"}
+REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash", "ip_hmac"}
 
 def write_audit(session, actor: str, action: str, table_name: str,
                 row_id: int | None,
@@ -1108,9 +1129,19 @@ def write_audit(session, actor: str, action: str, table_name: str,
     /admin/audit, so an unfiltered staff row would expose password hashes
     and TOTP secrets to anyone holding an account.
 
+    ip_hmac is in that set for a different reason from the other three:
+    it is not a credential, it is derived from a visitor's address, and
+    §2.3 permits storing such a derivation in exactly one place — the
+    ip_block table, which only administrators can read. audit_log has a
+    wider audience, so the same value must not reach it.
+
     Decimal values serialise as strings, never as float (§1.2).
     """
 ```
+
+> **Why `ip_hmac` is redacted, and why the list said three for four revisions.** The set above is the v0.3 definition; `ip_hmac` did not exist then. E-8's final review round added it to `admin/audit.py`'s copy, because flipping `can_delete = True` on the blocklist screen would otherwise serialise a whole `IpBlock` row through `row_to_dict` and write the fingerprint into `audit_log` — §8.3 has stated that this list carries it ever since, while this list did not. **The definition was the stale half, not the claim.**
+>
+> This matters more after B's integration than before it. `db/repository.py`'s `write_audit` becomes the canonical one and `admin/audit.py` becomes a re-export of it (§8.3), so E's copy — the one that already redacts `ip_hmac` — stops being the code that runs. An API-side automatic block writes its audit entry through **this** function.
 
 Two callers, and no others:
 
@@ -1244,7 +1275,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 | Header | Purpose |
 | --- | --- |
-| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written, and no token is returned — the three tables of §2.3 are untouched, not two of them. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
+| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written — the three tables of §2.3 are untouched, not two of them. No token is minted, and the response carries **`"token": null`** — the key is present and null, never omitted, per §6.3's rule for the same choice. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
 
 > `submission_entry` is named explicitly because it was added after this row was written and an implementer working from the older wording writes orphan entry rows on every staff dry run. Staff run dozens of calculations while tuning one formula, and `submission_entry` is what §5.4 aggregates `by_sector` and `by_food_category` over — so those orphans would land squarely in the public statistics this header exists to protect, while `total_calculations` stayed flat and hid it.
 
@@ -1362,7 +1393,7 @@ When `alternative` is not supplied, both `alternative` and `net_benefit` are `nu
 | `"version:<label>"` | The named persisted set |
 | `"inline"` | The bundle supplied in the request body |
 
-Without this field a staff member who gets an unexpected number cannot tell whether their data failed to take effect or their formula is wrong. On a dry run `token` is `null`.
+Without this field a staff member who gets an unexpected number cannot tell whether their data failed to take effect or their formula is wrong. On a dry run `token` is `null` — present as a key, holding `null`, never omitted.
 
 > **The front end must check `factor_set.is_mock`.** When true, a placeholder-data warning banner is mandatory in the results area.
 
@@ -1424,17 +1455,29 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
   "total_calculations": 1247,
   "suppression_threshold": 5,
   "by_destination": [
-    { "code": "landfill", "label": "Landfill", "count": 512,
-      "share": "0.4105", "total_kg": "884200.000" },
+    { "code": "landfill", "label": "Landfill", "count": 1268,
+      "share": "0.4064", "total_kg": "884200.000" },
     { "code": "other", "label": "Other (sample too small)", "count": 9,
-      "share": "0.0072", "total_kg": "3100.000" }
+      "share": "0.0029", "total_kg": "3100.000" }
   ],
-  "by_sector": [ "… same shape …" ],
-  "by_food_category": [ "… same shape …" ]
+  "by_sector": [
+    { "code": "processing", "label": "Processing / Manufacturing", "count": 604,
+      "share": "0.3775", "total_kg": "521800.000" },
+    { "code": "other", "label": "Other (sample too small)", "count": 7,
+      "share": "0.0044", "total_kg": "2400.000" }
+  ],
+  "by_food_category": [
+    { "code": "unspecified", "label": "Not broken down by type", "count": 742,
+      "share": "0.4638", "total_kg": "612900.000" },
+    { "code": "dairy", "label": "Dairy", "count": 231,
+      "share": "0.1444", "total_kg": "168300.000" }
+  ]
 }
 ```
 
-`total_calculations` counts **submissions**; every bucket `count` counts **entries** (§5.4). One submission can carry up to twenty entries, so the bucket counts will exceed `total_calculations` and are not a breakdown of it. `share` is computed within its own breakdown and does sum to 1.
+`total_calculations` counts **submissions**; every bucket `count` counts **entries** (§5.4). **The sample above is written so the difference is visible rather than hidden:** its 1,247 submissions carry 1,600 entries between them, so `by_sector` and `by_food_category` counts sum to 1,600, not to 1,247. `by_destination` sums higher again — 3,120 — because one entry lands in the bucket of every destination it used. (Each array above is abridged to two buckets for length; a real response carries every bucket that survives suppression, and it is against those full totals that the `share` values shown are computed.) `share` is computed within its own breakdown, against that breakdown's own total, and does sum to 1. **None of the three is a breakdown of `total_calculations`**, and one submission can carry up to twenty entries.
+
+`by_food_category` shows the `unspecified` bucket (§5.4): entries whose user did not break their waste down by food type. It is an ordinary bucket — suppressed on the same threshold, counted and shared like any other — and it is expected to be one of the largest. It is not the same thing as `standard_mix`, which is what a user selects deliberately.
 
 > **Copy constraint (owner: D).** The subject of the statistics page must be the calculator itself — "Across the 1,247 calculations run in this tool…" — and **never** "Distribution of food waste destinations in New Zealand". Prefer `share`; if `total_kg` is displayed it must be explicitly labelled as the cumulative total entered into this tool. Do not label a bucket `count` as a number of calculations — it is a number of supply-chain points entered, and the two figures on this page differ by design.
 
@@ -1916,7 +1959,7 @@ The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`),
 
 **The one case this whole design is built around not causing:** an administrator blocks the address they are sitting behind, and the block itself now stands between them and every page that would let them undo it — including the login page, because the blocklist check has no exemption. `python -m admin.cli unblock <address>` (above) is the only way back short of editing the database by hand, and is the reason that command exists at all.
 
-`ProtectionMiddleware` also carries a stateless header check and a per-address rate limit (`PROTECTION_MAX_REQUESTS_PER_MINUTE`), both configurable and both able to be turned off in one place: `PROTECTION_ENABLED=false` disables the blocklist, the header check and the rate limit together, with no finer-grained switch — the documented escape hatch for a false-positive lockout that is not a blocklist entry. **It needs no code change, but it does need a process restart**: settings are read once, by `load_settings()` at start-up. See `docs/architecture.md` §9.1.1 for the operational detail, the `PROTECTION_TRUSTED_PROXY` warning, the four recovery paths, and this design's explicit limits.
+`ProtectionMiddleware` also carries a stateless header check and a per-address rate limit (`PROTECTION_MAX_REQUESTS_PER_MINUTE`), both configurable and both able to be turned off in one place: `PROTECTION_ENABLED=false` disables the blocklist, the header check and the rate limit together, with no finer-grained switch — the documented escape hatch for a false-positive lockout that is not a blocklist entry. **It needs no code change, but it does need a process restart**: settings are read once, by `load_settings()` at start-up. See `docs/architecture.md` §9.1.1 for the operational detail, the `PROTECTION_TRUSTED_PROXY` warning, the four recovery paths, and this design's explicit limits. **That section lands with PR #9 and is not on `main` yet** — until #9 merges, `architecture.md` stops at §9.1 Deployment and the reference resolves only on the `admin_panel` branch. Stated rather than left to be discovered, because a cross-reference that dangles for a known reason is a known state and one that dangles silently reads as an error in this document.
 
 **`/admin/login` and `/admin/verify` are exempt from the rate limit** — and from that check only; the blocklist and the header check still apply to both. Behind a reverse proxy with `PROTECTION_TRUSTED_PROXY` false (which is the shipped arrangement, since TLS is terminated upstream and trusting `X-Forwarded-For` without a proxy that overwrites it would let any caller forge any address) every caller arrives as the proxy's own address and shares one rate-limit bucket, and refused requests are counted too — so without this exemption one request a second from any unauthenticated caller kept that bucket permanently over the limit and answered 429 to every unauthenticated request in the deployment, the login pages included. The authenticated-staff exemption cannot rescue that, because it needs the session only those two pages mint. Login attempts are still throttled per account by `LOGIN_MAX_FAILURES`/`LOGIN_LOCKOUT_MINUTES`, which is the check that actually defends a credential-stuffing run.
 

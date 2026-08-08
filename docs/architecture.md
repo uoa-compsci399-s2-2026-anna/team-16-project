@@ -325,8 +325,25 @@ out of a false-positive lockout:
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `PROTECTION_ENABLED` | `true` | Whether any of the three checks run at all. **This is the escape hatch.** Setting it to `false` and restarting turns off the blocklist, the header check and the rate limit together — there is no finer-grained switch. Use it when protection itself is producing the lockout (a false-positive header match, a shared address hitting the rate limit) and reaching the CLI's `unblock` command would not fix it, because the block is not what is refusing the request. |
-| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`admin/detection.py`'s `RequestRate`) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. |
+| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`admin/detection.py`'s `RequestRate`) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. Must be 1 or greater; `admin/config.py` refuses to start on `0` or a negative value, because a limit of `0` refuses the first unauthenticated request from every address, `/admin/login` included. |
 | `PROTECTION_TRUSTED_PROXY` | `false` | Whether to read the caller's address from `X-Forwarded-For` instead of the raw TCP connection. **Must stay `false` unless a reverse proxy that itself overwrites `X-Forwarded-For` genuinely sits in front of this panel.** With no such proxy, `X-Forwarded-For` is a header any caller can set to any value — trusting it lets one visitor forge another's address, collapses the rate limit into a single shared counter, and can turn one legitimate block into a block on every visitor at once. |
+
+**Every one of these settings needs a process restart to take effect.**
+`load_settings()` (`admin/config.py`) reads the environment once, at start-up,
+and `Settings` is frozen; nothing re-reads `.env` while the panel is running.
+"No redeploy" is true — no code changes and no rebuild — but "no restart" is
+not, and an operator who edits `.env` mid-incident and watches nothing change
+will conclude the escape hatch is broken. Edit `.env`, then restart the
+process.
+
+**Locked out? Three recovery paths, in the order to reach for them.**
+
+| Situation | What to do |
+| --- | --- |
+| You know the exact address string that is blocked | `python -m admin.cli unblock <address>`. One command, no restart, and it audits itself. |
+| A block is refusing you and you do **not** know which address it was | `PROTECTION_ENABLED=false` in `.env` → **restart** → log in → remove the block by row on `/admin/ip-block/list` (the `unblock` action needs no address, only the row) → set `PROTECTION_ENABLED=true` → **restart** again. This is the path that actually works when you cannot reproduce the address you typed, and it is easy to miss: the CLI command needs the address string, the screen does not. |
+| Protection itself is refusing you and no block is involved (a false-positive header match, a shared address hitting the rate limit) | `PROTECTION_ENABLED=false` → restart. There is nothing for `unblock` to remove. Do not leave it off longer than the incident. |
+| Nothing above is reachable — no shell that can run `python -m admin.cli`, no way to edit `.env` | Against the database directly: `DELETE FROM ip_block;` clears every block. It is safe in the sense that matters here — `ip_block` has no foreign keys and nothing references it, so nothing else breaks — and the panel is reachable again on the next request, with no restart. It removes *every* block, and it writes no `audit_log` entry, so note what you did. Nothing else in this schema should ever be edited by hand. |
 
 **The CLI escape hatch.** `python -m admin.cli unblock <address>` removes a row
 from the blocklist directly against the database, bypassing the panel
@@ -336,9 +353,55 @@ blocklist check in `ProtectionMiddleware` has no exemption for an
 authenticated staff session — a block is another administrator's deliberate
 act and outranks everything else, `/admin/login` included — so once it
 applies to your own address, there is no page left to click. With no email
-system to recover through either, this command (or `PROTECTION_ENABLED=false`
-for the header/rate case above) is the only way back short of editing the
-database by hand.
+system to recover through either, this command (or one of the other two paths
+in the table above) is the only way back.
+
+It takes the address, not a row id, and re-derives the fingerprint from it, so
+it only works if you can reproduce the address string. That is not as easy as
+it sounds — a block entered as `2001:db8:0:0:0:0:0:1` and a caller arriving as
+`2001:db8::1` are the same address, which is why `db.blocklist.normalise_ip`
+canonicalises both before hashing, and why the command rejects a value that is
+not a single address rather than reporting "nothing to do". If you still cannot
+reproduce it, use the second path in the table above: the screen removes a
+block by row and needs no address at all.
+
+**Where the address in the manual-block form is supposed to come from.**
+Nothing in this system ever shows staff a caller's address — §2.3 forbids
+storing one and the panel does not log one — so `/admin/ip-block/block` cannot
+supply the value it asks for. It has to come from outside: the reverse proxy's
+or hosting platform's own access log, an alert from the host, or a report from
+someone who can see the traffic. **Confirm the deployment actually keeps a
+proxy access log before an incident, not during one**; without one, the manual
+block form has no usable input and the only protections in force are the header
+check and the rate limit.
+
+**A `SECRET_KEY` rotation clears the blocklist.** `python -m admin.cli
+rotate-key` deletes every `ip_block` row and says how many. `SECRET_KEY`
+derives the HMAC key the fingerprints are computed under, and an HMAC cannot be
+re-keyed the way an encrypted TOTP secret can — with the plaintext address gone
+there is nothing to re-fingerprint from, which is precisely the property §2.3
+wanted. Left in place, every row would survive the rotation matching nobody:
+`is_blocked` would find nothing and `unblock` could not remove them either.
+Re-apply any blocks that are still needed after a rotation.
+
+**`/admin/login` and `/admin/verify` are exempt from the rate limit.** From
+that check only — the blocklist and the header check still apply to both. This
+is not a convenience: with `PROTECTION_TRUSTED_PROXY` correctly `false` and a
+reverse proxy in front (the shipped arrangement — TLS is terminated upstream),
+every caller arrives as the proxy's own address and shares **one** rate-limit
+bucket, and `RequestRate.record` counts refused requests too. So one request a
+second from any unauthenticated caller anywhere kept that single bucket
+permanently over the limit and answered 429 to every unauthenticated request in
+the deployment, including the two login pages — and the authenticated-staff
+exemption below structurally could not help, because it needs the session only
+those two pages mint. Recovery was an env var plus a restart, for an attack any
+unauthenticated caller can mount remotely. Very little is given up: login
+attempts are still throttled **per account** by `LOGIN_MAX_FAILURES` /
+`LOGIN_LOCKOUT_MINUTES` (`admin/throttle.py`), which is the check that actually
+defends a credential-stuffing run, and a bare `curl` loop against
+`/admin/login` is still refused by the header check. A flood against those two
+paths is not even counted, so it cannot fill the bucket the rest of the panel
+shares.
 
 **Known limitation: the anti-lockout exemption cannot cover the login
 handshake itself.** `ProtectionMiddleware` exempts an already-authenticated
@@ -347,10 +410,11 @@ staff session from the header and rate checks, but that exemption is built on
 step (`admin/auth.py`'s `stamp_session`). A caller who has not yet logged in —
 which is everyone at `/admin/login` and `/admin/verify`, by definition — has
 no session to be exempt on, so a pre-16.4 Safari, or any privacy extension
-that strips `Sec-Fetch-*` headers, can be refused by the header check on the
-login page itself, with nothing past "Refused." to explain why. This is not a
-bug in the check order — the exemption cannot exist before the credential it
-is built on does — so it is not fixed here. **Recovery:** an operator who
+that strips `Sec-Fetch-*` headers, can be refused by the **header** check on
+the login page itself, with nothing past "Refused." to explain why. (The rate
+limit no longer applies there — see just above — but the header check still
+does.) This is not a bug in the check order — the exemption cannot exist before
+the credential it is built on does — so it is not fixed here. **Recovery:** an operator who
 hits this can either turn off protection for the affected caller's session
 with `PROTECTION_ENABLED=false` (the same escape hatch as above, since this
 is not a blocklist entry and `unblock` has nothing to remove), or have the

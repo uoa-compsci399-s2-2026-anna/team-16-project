@@ -41,15 +41,21 @@ its own ``write_audit`` entry, the same pattern
 ``admin/accounts_view.py``'s ``reset_mfa_action``/``deactivate_action``
 use. The audited `before`/`after` payloads here are hand-built rather than
 ``admin.audit.row_to_dict`` — that helper serialises every mapped column,
-which for this model includes ``ip_hmac``. ``row_to_dict`` has no
-per-model redaction of its own (``REDACTED_FIELDS`` in ``admin/audit.py``
-does not name it, and adding it there would be a change to a file this
-task does not touch); hand-building the payload from the four
-non-primary-key, non-fingerprint columns (``reason``, ``created_by``,
+which for this model includes ``ip_hmac``. Hand-building the payload from
+the four non-primary-key, non-fingerprint columns (``reason``, ``created_by``,
 ``created_at``, ``expires_at``) is what keeps a 64-character HMAC — the exact
 value ``IpBlock.__str__`` already refuses to render, on the reasoning that
 displaying it invites someone to try to reverse it — out of `/admin/audit`
 as well as out of the list page.
+
+``ip_hmac`` is **also** in ``admin/audit.py``'s ``REDACTED_FIELDS``, so
+``row_to_dict`` would redact it even if some future caller did serialise a
+whole ``IpBlock`` row. That is defence in depth behind this file, not a
+replacement for it: the hand-built payloads here are still what keeps the
+fingerprint out of a payload in the first place. Both are worth having,
+because everything standing between that fingerprint and a table every
+staff member can read is otherwise three class flags on this view and two
+dicts in this file.
 
 **A re-block's audit entry, and why ``created_at``/``created_by`` can
 mismatch on the list page.** ``db.blocklist.block_ip`` upserts: a second

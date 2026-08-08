@@ -25,6 +25,18 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v0.13 — 2026-08-09 (raised by E, **affects B, C and D**)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Added the `ip_block` schema table — columns, types and constraints — which §8.3 previously named without defining. **B needs this for the migration**, and the `CHAR(64)` / UNIQUE choices are load-bearing rather than incidental. | §2.3 |
+| 2 | Added the `BLOCKED` (403) error code and its envelope, with `details` fixed at `null` and a `message` that never varies. Previously undefined, so B would have had to invent a code and C and D would each have handled it differently — and would likely have retried it as though it were `RATE_LIMITED`, which never succeeds. | §9, §9.2 |
+| 3 | Stated that addresses are normalised inside `ip_fingerprint` (`ipaddress.ip_address(x).compressed`) and that unparseable input raises `InvalidAddressError` rather than being hashed. **B's middleware must not let that exception escape** on the request path. Before this, `" 203.0.113.9"`, `203.0.113.09` and the several spellings of one IPv6 address each fingerprinted differently from what the middleware computes, so a block appeared on the screen and stopped nobody, with nothing failing anywhere. | §2.3 |
+| 4 | Replaced §8.3's "auditing is the caller's job" instruction — which, as written, told the API layer to do something the layering rule forbids — with an honest reconciliation item: `write_audit` lives in `admin/`, `api/` may not import it, so an API-side block cannot audit itself today. Named the resolution (move `write_audit`/`row_to_dict` to `db/`, where §5.5 already says they belong) and named B as the owner of the decision. Same for `looks_automated`, `RequestRate` and `_client_ip`, which are in `admin/` and which B's middleware needs: recommendation recorded, decision hers, and stated plainly as unresolved rather than pretending otherwise. | §8.3 |
+| 5 | Stated that `python -m admin.cli rotate-key` now clears `ip_block`. An HMAC cannot be re-keyed, so every block previously survived a documented, supported `SECRET_KEY` rotation as an unreachable row that `is_blocked` never matched and `unblock` could never remove. | §2.3, §8.3 |
+| 6 | Stated that `/admin/login` and `/admin/verify` are exempt from the rate limit (and from that check only). Behind a proxy with `PROTECTION_TRUSTED_PROXY` false — the shipped arrangement — every caller shared one bucket and refused requests were counted, so 1 request/second from any unauthenticated caller locked every administrator out remotely. | §8.3 |
+| 7 | Recorded that nothing in this system ever shows staff a caller's address, so the manual-block form cannot supply its own input — it has to come from a proxy or platform access log. Worth confirming such a log exists before an incident. | §8.3 |
+
 ### v0.12 — 2026-08-08 (raised by E, affects E only)
 
 | # | Change | Section |
@@ -407,9 +419,57 @@ The standard test scenarios §8.2's pre-publish comparison view runs. A scenario
 > derive the HMAC key from the same `SECRET_KEY` with
 > `info = b"kaicalc-blocklist-v1"` — the same address must produce the same
 > fingerprint on both sides, or a block applied in the panel silently fails to
-> hold at the API. Auditing is the caller's job: `db/blocklist.py` writes no
-> audit entry, and the admin panel writes one for every block and unblock a
-> staff member performs.
+> hold at the API.
+>
+> **Addresses are normalised before they are fingerprinted, inside
+> `ip_fingerprint`.** `db.blocklist.normalise_ip` canonicalises through
+> `ipaddress.ip_address(x).compressed`, so `" 203.0.113.9"`,
+> `2001:db8:0:0:0:0:0:1` and `2001:db8::1` all reach the same row. It is inside
+> `ip_fingerprint` deliberately, so every caller — the API layer, the panel,
+> the CLI — inherits it without asking. An unparseable value raises
+> `db.blocklist.InvalidAddressError` (a `ValueError` subclass) rather than being
+> hashed: a fingerprint of nonsense writes a row that matches no caller and
+> that `unblock` cannot remove either. **Callers on a request path must not let
+> that exception escape** — `admin/protection.py`'s `_client_ip` normalises the
+> connection address itself and treats an unusable one as "no address"; B's
+> middleware needs the same guard.
+>
+> **Rotating `SECRET_KEY` clears the blocklist.** An HMAC cannot be re-keyed the
+> way an encrypted TOTP secret can — there is no plaintext address left to
+> re-fingerprint from, which is the property this whole design wanted. So
+> `python -m admin.cli rotate-key` deletes every `ip_block` row and reports how
+> many, rather than leaving rows that `is_blocked` would never match and
+> `unblock` could never remove. Blocks must be re-applied after a rotation.
+>
+> Auditing: `db/blocklist.py` writes no audit entry. See §8.3's "Blocklist"
+> section for who writes one today, and for the reconciliation item this
+> creates for the API layer.
+
+### `ip_block`
+
+Owned by B's layer (`db/`), built by E — see §8.3's "Blocklist" and the note
+above. No foreign keys: a block is not owned by a staff row, and it must
+survive the account of whoever made it being deleted.
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | Never leaves the server; the panel selects rows by it, no API exposes it |
+| `ip_hmac` | CHAR(64) | UNIQUE, NOT NULL | HMAC-SHA256 of the normalised address, hex. `CHAR`, not `VARCHAR` — always exactly 64 characters. UNIQUE is what makes `block_ip` an upsert rather than a source of duplicates |
+| `reason` | TEXT | NOT NULL | Free text, shown on the screen and in `audit_log` **in place of** the address |
+| `created_at` | DATETIME | NOT NULL | Naive UTC (§1.3). Not refreshed by a re-block — see below |
+| `created_by` | VARCHAR(64) | NOT NULL | Staff username, or `cli`. Overwritten by a re-block |
+| `expires_at` | DATETIME | NULL | NULL means it does not expire. `is_blocked` filters on this in SQL |
+
+> A re-block of the same address updates `reason`, `created_by` and
+> `expires_at` in place and leaves `created_at` alone, so the two can name
+> different people at different times. The panel labels them "First blocked"
+> and "Most recently blocked by" rather than "when" and "who" for that reason
+> (`admin/blocklist_views.py`). A re-block with no duration also clears any
+> existing `expires_at` — blank means permanent, not "leave as it was".
+
+> Expired rows are filtered, never pruned. At this scale that is fine; a
+> scheduled job can own it later, alongside the `submission.token` expiry job
+> (§2.3).
 
 ### `submission_line`
 
@@ -1391,8 +1451,8 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
 | `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
-| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
-| `python -m admin.cli unblock <address>` | E-8's own break-glass: remove a block from the server when the panel itself is unreachable because of it |
+| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change — **and clear `ip_block`**, because an HMAC cannot be re-keyed; it reports how many blocks were cleared and that they must be re-applied |
+| `python -m admin.cli unblock <address>` | E-8's own break-glass: remove a block from the server when the panel itself is unreachable because of it. Rejects a value that is not a single IP address rather than silently doing nothing |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 
 One module with subcommands rather than three separate module entry points: `python -m admin.cli --help` then lists every operational command in one place, which is what the handover documentation needs, and settings loading and session construction are written once rather than three times.
@@ -1407,11 +1467,21 @@ The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without 
 
 `db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. It never writes to the blocklist itself.
 
-The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3).
+The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in a table every staff member can read.
+
+**Where an operator gets an address to type into that form.** Nowhere in this system — and that is worth stating, because the form otherwise reads as more capable than the panel is. Nothing here ever shows staff a caller's address: §2.3 forbids storing one, and the panel deliberately does not log one either. The address has to come from outside: the reverse proxy's or hosting platform's own access log, an alert from the host, or a report from someone who can see the traffic. The form's purpose is to *apply* an address an operator already has in hand from one of those, during an incident, with no CDN or upstream firewall available to do it for them. Anyone planning to rely on this screen should confirm the deployment keeps a proxy access log at all, before an incident rather than during one.
+
+> **Known reconciliation item for the `db/` merge — not an instruction that can be followed today.** §2.3 says auditing is the caller's job, and §5.5 says audit writing belongs to the repository layer. Neither is true of the code as built: `write_audit` lives in `admin/audit.py`, and `api/` may not import `admin/` (CLAUDE.md's layering rule, AST-pinned by `tests/db/test_blocklist.py`). So an API-side automatic block cannot write an audit entry at all as things stand, and "the caller audits" is executable for the admin panel and the CLI only. This is a consequence of E building the blocklist in B's layer while B's repository was on an unmerged branch, the same way the factor-set lifecycle was, and it is E's to declare rather than B's to discover.
+>
+> **Resolution when the two branches merge:** `write_audit` and `row_to_dict` move to `db/` (which is where §5.5 already says they belong), `admin/audit.py` becomes a re-export or is deleted, and only then does the "caller audits" instruction become executable from `api/`. Until that happens, an API-side block writes no audit entry and `/admin/audit` will not show it. **Owner of the decision: B**, as owner of `db/` and the repository layer; E's part is done and the note above is the handover.
+>
+> **The same unresolved split applies to three more names.** `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` are all in `admin/` and are all things B's public-traffic middleware needs. They were built there because `admin/` is where E's stage lived, not because that is where they belong: `detection.py` imports nothing outside the standard library and `_client_ip` imports nothing outside Starlette, so neither has any reason to sit above the layering boundary. **Recommendation:** move `detection.py` to `db/` or to a new shared module and leave `admin/protection.py` importing it, rather than have `api/` duplicate the header-marker list and the sliding-window counter — two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. `_client_ip` should move with it. **This is genuinely unresolved, and B decides it**, since a move changes a file in her layer; E's recommendation is on record here so that the alternative (duplication) is a choice someone made rather than the default nobody discussed. Note also that `RequestRate` is per-process, so under more than one worker the effective limit is multiplied by the worker count — the API's own rate limiting (§6.5) is a separate problem and E has not solved it.
 
 **The one case this whole design is built around not causing:** an administrator blocks the address they are sitting behind, and the block itself now stands between them and every page that would let them undo it — including the login page, because the blocklist check has no exemption. `python -m admin.cli unblock <address>` (above) is the only way back short of editing the database by hand, and is the reason that command exists at all.
 
-`ProtectionMiddleware` also carries a stateless header check and a per-address rate limit (`PROTECTION_MAX_REQUESTS_PER_MINUTE`), both configurable and both able to be turned off in one place: `PROTECTION_ENABLED=false` disables the blocklist, the header check and the rate limit together, with no finer-grained switch and no redeploy required — the documented escape hatch for a false-positive lockout that is not a blocklist entry. See `docs/architecture.md` §9.1 for the operational detail, the `PROTECTION_TRUSTED_PROXY` warning, and this design's explicit limits.
+`ProtectionMiddleware` also carries a stateless header check and a per-address rate limit (`PROTECTION_MAX_REQUESTS_PER_MINUTE`), both configurable and both able to be turned off in one place: `PROTECTION_ENABLED=false` disables the blocklist, the header check and the rate limit together, with no finer-grained switch — the documented escape hatch for a false-positive lockout that is not a blocklist entry. **It needs no code change, but it does need a process restart**: settings are read once, by `load_settings()` at start-up. See `docs/architecture.md` §9.1.1 for the operational detail, the `PROTECTION_TRUSTED_PROXY` warning, the three recovery paths, and this design's explicit limits.
+
+**`/admin/login` and `/admin/verify` are exempt from the rate limit** — and from that check only; the blocklist and the header check still apply to both. Behind a reverse proxy with `PROTECTION_TRUSTED_PROXY` false (which is the shipped arrangement, since TLS is terminated upstream and trusting `X-Forwarded-For` without a proxy that overwrites it would let any caller forge any address) every caller arrives as the proxy's own address and shares one rate-limit bucket, and refused requests are counted too — so without this exemption one request a second from any unauthenticated caller kept that bucket permanently over the limit and answered 429 to every unauthenticated request in the deployment, the login pages included. The authenticated-staff exemption cannot rescue that, because it needs the session only those two pages mint. Login attempts are still throttled per account by `LOGIN_MAX_FAILURES`/`LOGIN_LOCKOUT_MINUTES`, which is the check that actually defends a credential-stuffing run.
 
 ## 8.4 Staff Authentication Interface (owner: E, consumed by B)
 
@@ -1462,6 +1532,7 @@ Every non-2xx response uses one envelope:
 | 400 | `VALIDATION_ERROR` | Missing field, out of bounds, duplicate destination, malformed dry-run bundle | Highlight the offending field |
 | 400 | `UNKNOWN_CODE` | A code in the request does not exist | Re-fetch the taxonomy and prompt a refresh |
 | 401 | `UNAUTHORIZED` | `X-Dry-Run: true` without a valid staff session | Redirect to `/admin/login` |
+| 403 | `BLOCKED` | The caller's address is on the blocklist (`db.blocklist.is_blocked`, §2.3) | Show the `message` and stop. **Do not retry, and do not offer a retry button** |
 | 429 | `RATE_LIMITED` | Rate limit exceeded | Ask the user to retry later; disable the button for 60s |
 | 500 | `FORMULA_ERROR` | A staff-configured formula is invalid | See below |
 | 503 | `NO_PUBLISHED_FACTOR_SET` | No factor set has been published | Show "calculator under maintenance" |
@@ -1476,6 +1547,37 @@ Every non-2xx response uses one envelope:
 | Authenticated dry run | `details` carries `expression`, `line`, `column` and `reason` from the `FormulaError` (§4.4) |
 
 Withholding the location from the public protects staff-authored configuration from disclosure. Withholding it from the staff member who is at that moment editing the formula would make the editor unusable — they cannot fix what they are not told.
+
+## 9.2 `BLOCKED` (403)
+
+Defined here so that B does not have to invent a code and C and D do not each
+handle it differently. Distinct from `RATE_LIMITED` on purpose: `RATE_LIMITED`
+means "too fast, try again", and the front end is told to re-enable the button
+after 60 seconds. `BLOCKED` means a staff member decided this caller should not
+be served, and a retry will never succeed — a front end that treated the two
+the same would poll a blocked caller against the API forever.
+
+```json
+{
+  "error": {
+    "code": "BLOCKED",
+    "message": "This request was refused. If you believe this is an error, contact the Kai Commitment team.",
+    "details": null
+  }
+}
+```
+
+**`details` is always `null`, and `message` never varies.** The refusal must not
+say which rule fired, when the block expires, or that a blocklist exists at all
+— the same reasoning `admin/protection.py`'s bare `"Refused."` body records: a
+caller being refused is not owed the rule it broke, because that is a free
+tuning signal for whoever is probing. Staff read the reason and the expiry on
+`/admin/ip-block/list` and in `audit_log`.
+
+**The block is checked before anything else**, including request validation, so
+a blocked caller cannot use the API's own error messages to probe the
+taxonomy — and, being a single indexed lookup on `ip_hmac`, it costs one query.
+It applies to every endpoint under `/api/v1/`, `GET` included.
 
 ---
 

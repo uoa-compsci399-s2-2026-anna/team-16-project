@@ -12,6 +12,13 @@
     <label for="address">Address</label>
     <input type="text" id="address" name="address" autofocus required
            placeholder="203.0.113.9">
+    <p class="muted">
+      One IPv4 or IPv6 address — no port, no range, no leading zeroes.
+      <strong>This panel cannot tell you what to type here.</strong> It never
+      stores or displays a caller's address, by design, so the value has to
+      come from outside: your hosting platform's or reverse proxy's access
+      log, or an alert from whoever can see the traffic.
+    </p>
     <label for="reason">Reason</label>
     <textarea id="reason" name="reason" required rows="2"></textarea>
     <p class="muted">

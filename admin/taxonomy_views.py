@@ -7,29 +7,209 @@ invariant that spans rows; see admin/taxonomy_rules.py.
 None of them allows delete. Every one of these tables carries `active`, and
 a row a historical submission refers to has to stay resolvable - a deleted
 destination turns a stored result into a dangling reference. Deactivating is
-how a row leaves service.
+how a row leaves service - which is what _TaxonomyAdmin's bulk deactivate/
+activate actions below are for.
 
-A raised TaxonomyInvariantError needs no extra handling here: sqladmin
-0.30's own edit route (sqladmin/application.py's `edit`) already wraps the
-call to `update_model` in a bare `except Exception`, sets `context["error"]
-= str(e)`, and re-renders `edit.html` (which prints `{{ error }}` into an
-alert div) with a 400 status instead of letting the exception become a 500.
-Verified directly against the installed 0.30.0 rather than assumed - see
-tests/admin/test_taxonomy_views.py and task-3-report.md.
+A raised TaxonomyInvariantError needs no extra handling on the ordinary
+single-row edit path: sqladmin 0.30's own edit route
+(sqladmin/application.py's `edit`) already wraps the call to `update_model`
+in a bare `except Exception`, sets `context["error"] = str(e)`, and
+re-renders `edit.html` (which prints `{{ error }}` into an alert div) with a
+400 status instead of letting the exception become a 500. Verified directly
+against the installed 0.30.0 rather than assumed - see
+tests/admin/test_taxonomy_views.py and task-3-report.md. The bulk actions
+below are a different route entirely (a plain Starlette route added via
+`@action`, not one of sqladmin's own wrapped handlers) and catch it
+themselves - see _TaxonomyAdmin._bulk_set_active.
 """
 
+from sqladmin import action
 from sqladmin.filters import BooleanFilter, OperationColumnFilter
+from starlette.exceptions import HTTPException
+from starlette.responses import RedirectResponse
 
+from admin.audit import row_to_dict, write_audit
+from admin.auth import SESSION_KEY
 from admin.modelviews import AuditedModelView
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
-from admin.taxonomy_rules import check_prevention_intact, check_single_standard_mix
+from admin.taxonomy_rules import (
+    TaxonomyInvariantError, check_prevention_intact, check_single_standard_mix,
+)
 
 _CATEGORY = "Taxonomy"
 
 
-class DestinationGroupAdmin(AuditedModelView, model=DestinationGroup):
+class _TaxonomyAdmin(AuditedModelView):
+    """Common base for the six taxonomy screens below: the bulk deactivate/
+    activate actions that make each screen's Actions button live.
+
+    **The defect this class fixes.** sqladmin's own
+    `templates/sqladmin/list.html` disables the Actions dropdown unless
+    `model_view.can_delete` or `model_view._custom_actions_in_list` is
+    truthy:
+
+        <button {% if not model_view.can_delete and not
+        model_view._custom_actions_in_list %} disabled {% endif %}
+
+    Every one of the six views below sets `can_delete = False` deliberately
+    - a destination named by a stored historical result must stay
+    resolvable, so `active` is how a row leaves service, not delete - and,
+    before this class existed, defined no custom action either. The button
+    was therefore correctly disabled and permanently useless: not a bug,
+    the absence of a feature. `active` is exactly what these two actions are
+    for, and with 14 destinations and 10 food categories, opening each
+    row's own edit form to flip one checkbox is the wrong shape for
+    retiring several at once.
+
+    **Genuinely bulk, unlike FactorSetAdmin's actions.** clone/publish/
+    rollback/archive (admin/factor_views.py) refuse more than one selected
+    id outright, via `_one_pk` - "published" is a property of one row at a
+    time, and silently acting on the first id of several would leave a
+    staff member believing the action covered everything they ticked. That
+    reasoning does not apply here: a staff member selecting eight
+    destinations to retire together is the point, so `_selected_pks` below
+    keeps every id rather than refusing past the first.
+
+    **The trap.** An `@action` inherits neither auditing nor the invariant
+    guard from AuditedModelView - documented directly in
+    admin/modelviews.py: `_actor_var`/`_view_var` are set only inside
+    insert_model/update_model/delete_model, so the `before_commit` listener
+    installed by `_audited_session_maker` returns early for a commit an
+    `@action` makes itself, and `validate_before_commit` never runs. Built
+    naively (`for pk in pks: row.active = False; session.commit()`), this
+    would let a staff member deactivate `prevention` - the destination the
+    engine resolves by code to express "waste avoided", without which the
+    alternative scenario cannot be built at all - or the destination group
+    containing it (`check_prevention_intact` already checks the group's own
+    `active`, since every active-destination listing joins through it), or
+    the last active standard-mix food category (what the calculator falls
+    back to when a visitor does not know their waste composition, which is
+    most visitors).
+
+    So `_bulk_set_active` below applies every change in the batch first,
+    flushes, and only then calls this subclass's own
+    `_bulk_invariant_check` - the same function its `validate_before_commit`
+    already calls for the ordinary single-row edit path, there is exactly
+    one rule per table, not two. A raised TaxonomyInvariantError rolls the
+    *entire* batch back before anything is audited or committed: a partial
+    application that left some of the batch changed and some not would be
+    worse than refusing outright, indistinguishable on the page from a
+    complete one.
+
+    **Auditing is explicit too**, one `write_audit` call per row actually
+    changed - the same pattern admin/accounts_view.py's own
+    `deactivate_action`/`reset_mfa_action` already use for exactly this
+    reason (contract §8.1: every admin write produces an audit_log entry,
+    and an action that skips it is invisible in /admin/audit).
+    """
+
+    #: The cross-row invariant this table's bulk actions must not break, or
+    #: None for the three tables with no such invariant (Sector, Metric,
+    #: UnitPreset). Set with `staticmethod(...)` on the three subclasses
+    #: that need one, below - a plain function assigned directly would bind
+    #: through the descriptor protocol and receive `self` as its first
+    #: (and only) positional argument instead of `session`.
+    _bulk_invariant_check: staticmethod | None = None
+
+    def _require_accessible(self, request) -> None:
+        if not self.is_accessible(request):
+            raise HTTPException(status_code=403)
+
+    def _list_url(self, request):
+        return request.url_for("admin:list", identity=self.identity)
+
+    def _selected_pks(self, request) -> list[int]:
+        """Every id named in `pks`, or raise TaxonomyInvariantError naming
+        why not. Unlike FactorSetAdmin's own `_one_pk`
+        (admin/factor_views.py), every id is kept rather than refusing past
+        the first - see this class's own docstring for why these actions
+        are deliberately bulk."""
+        raw = [pk for pk in request.query_params.get("pks", "").split(",") if pk]
+        if not raw:
+            raise TaxonomyInvariantError("No rows were selected.")
+        ids = []
+        for pk in raw:
+            try:
+                ids.append(int(pk))
+            except ValueError:
+                raise TaxonomyInvariantError(f"'{pk}' is not a valid id.")
+        return ids
+
+    async def _refused(self, request, message: str):
+        """Contract §8.2/§9.1's shared refusal rendering, same template and
+        shape as FactorSetAdmin's own `_refused` (admin/factor_views.py)."""
+        return await self.templates.TemplateResponse(
+            request, "brand/action_refused.html",
+            {
+                "message": message,
+                "next_url": self._list_url(request),
+                "link_text": f"Back to {self.name_plural.lower()}",
+            },
+            status_code=400,
+        )
+
+    async def _bulk_set_active(self, request, *, active: bool):
+        """Shared body of `deactivate_action`/`activate_action` below - see
+        this class's own docstring for what each step guards against."""
+        self._require_accessible(request)
+        actor = request.session.get(SESSION_KEY, "unknown")
+        try:
+            pks = self._selected_pks(request)
+        except TaxonomyInvariantError as exc:
+            return await self._refused(request, str(exc))
+
+        with self.session_maker() as session:
+            rows = [
+                row for row in (session.get(self.model, pk) for pk in pks)
+                if row is not None
+            ]
+
+            before_by_id = {row.id: row_to_dict(row) for row in rows}
+            for row in rows:
+                row.active = active
+            session.flush()
+
+            if self._bulk_invariant_check is not None:
+                try:
+                    self._bulk_invariant_check(session)
+                except TaxonomyInvariantError as exc:
+                    session.rollback()
+                    return await self._refused(request, str(exc))
+
+            for row in rows:
+                write_audit(
+                    session, actor=actor, action="update",
+                    table_name=self.model.__tablename__, row_id=row.id,
+                    before=before_by_id[row.id], after=row_to_dict(row),
+                )
+            session.commit()
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    @action(
+        name="deactivate",
+        label="Deactivate",
+        confirmation_message=(
+            "This deactivates every selected row. A deactivated row stays "
+            "resolvable by anything that already refers to it - a historical "
+            "result, for instance - but drops out of every active-only "
+            "listing the calculator and this panel's own forms use."
+        ),
+    )
+    async def deactivate_action(self, request):
+        return await self._bulk_set_active(request, active=False)
+
+    @action(
+        name="activate",
+        label="Activate",
+        confirmation_message="This activates every selected row.",
+    )
+    async def activate_action(self, request):
+        return await self._bulk_set_active(request, active=True)
+
+
+class DestinationGroupAdmin(_TaxonomyAdmin, model=DestinationGroup):
     name = "Destination group"
     name_plural = "Destination groups"
     category = _CATEGORY
@@ -51,6 +231,10 @@ class DestinationGroupAdmin(AuditedModelView, model=DestinationGroup):
                       BooleanFilter(DestinationGroup.active)]
     column_default_sort = ("sort_order", False)
 
+    #: Same rule the bulk deactivate action below must not break either -
+    #: see _TaxonomyAdmin's own docstring.
+    _bulk_invariant_check = staticmethod(check_prevention_intact)
+
     def validate_before_commit(self, session) -> None:
         """`prevention`'s group must survive every edit made through this
         screen - deactivating the group takes `prevention` out of service
@@ -58,7 +242,7 @@ class DestinationGroupAdmin(AuditedModelView, model=DestinationGroup):
         check_prevention_intact(session)
 
 
-class DestinationAdmin(AuditedModelView, model=Destination):
+class DestinationAdmin(_TaxonomyAdmin, model=Destination):
     name = "Destination"
     name_plural = "Destinations"
     category = _CATEGORY
@@ -83,12 +267,16 @@ class DestinationAdmin(AuditedModelView, model=Destination):
                       BooleanFilter(Destination.active)]
     column_default_sort = ("sort_order", False)
 
+    #: Same rule the bulk deactivate action below must not break either -
+    #: see _TaxonomyAdmin's own docstring.
+    _bulk_invariant_check = staticmethod(check_prevention_intact)
+
     def validate_before_commit(self, session) -> None:
         """`prevention` must survive every edit made through this screen."""
         check_prevention_intact(session)
 
 
-class SectorAdmin(AuditedModelView, model=Sector):
+class SectorAdmin(_TaxonomyAdmin, model=Sector):
     name = "Sector"
     name_plural = "Sectors"
     category = _CATEGORY
@@ -108,7 +296,7 @@ class SectorAdmin(AuditedModelView, model=Sector):
     column_default_sort = ("sort_order", False)
 
 
-class FoodCategoryAdmin(AuditedModelView, model=FoodCategory):
+class FoodCategoryAdmin(_TaxonomyAdmin, model=FoodCategory):
     name = "Food category"
     name_plural = "Food categories"
     category = _CATEGORY
@@ -130,12 +318,16 @@ class FoodCategoryAdmin(AuditedModelView, model=FoodCategory):
                       BooleanFilter(FoodCategory.active)]
     column_default_sort = ("sort_order", False)
 
+    #: Same rule the bulk deactivate action below must not break either -
+    #: see _TaxonomyAdmin's own docstring.
+    _bulk_invariant_check = staticmethod(check_single_standard_mix)
+
     def validate_before_commit(self, session) -> None:
         """Exactly one active category is the standard mix. Contract §2.1."""
         check_single_standard_mix(session)
 
 
-class MetricAdmin(AuditedModelView, model=Metric):
+class MetricAdmin(_TaxonomyAdmin, model=Metric):
     name = "Metric"
     name_plural = "Metrics"
     category = _CATEGORY
@@ -157,7 +349,7 @@ class MetricAdmin(AuditedModelView, model=Metric):
     column_default_sort = ("sort_order", False)
 
 
-class UnitPresetAdmin(AuditedModelView, model=UnitPreset):
+class UnitPresetAdmin(_TaxonomyAdmin, model=UnitPreset):
     name = "Unit preset"
     name_plural = "Unit presets"
     category = _CATEGORY

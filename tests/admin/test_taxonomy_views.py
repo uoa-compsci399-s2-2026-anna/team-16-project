@@ -30,7 +30,7 @@ import pytest
 from sqlalchemy import bindparam as sa_bindparam
 from sqlalchemy import select, text
 
-from admin.taxonomy_models import Destination, DestinationGroup, FoodCategory
+from admin.taxonomy_models import Destination, DestinationGroup, FoodCategory, Sector
 from admin.taxonomy_views import (
     DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
     SectorAdmin, UnitPresetAdmin,
@@ -112,6 +112,59 @@ def test_the_details_page_shows_no_more_than_the_list(view):
     )
 
 
+def _admin_object(admin_app):
+    """The live sqladmin `Admin` instance behind a running `admin_app`.
+
+    `create_app` (admin/app.py) does not keep or expose one - confirmed by
+    tests/admin/test_dryrun_view.py's own `fake_calc_client` fixture, which
+    reaches the *inner* mounted Starlette sub-app (`Admin.__init__`'s own
+    `self.admin`) the same way, off the outer app's routes, for the same
+    reason. That sub-app's own `"index"` route is `Route("/", endpoint=
+    self.index, name="index")` in sqladmin's own application.py -
+    `self.index` is a bound method of the `Admin` instance itself, so
+    `route.endpoint.__self__` recovers it. Verified directly: calling this
+    against a freshly built `admin_app` and then `._find_model_view(...)`
+    (sqladmin's own lookup, application.py) returns the exact
+    `DestinationGroupAdmin` instance `Admin.add_view` constructed and
+    registered.
+    """
+    inner_app = next(
+        route.app for route in admin_app.routes
+        if getattr(route, "name", None) == "admin"
+    )
+    index_route = next(r for r in inner_app.router.routes if r.name == "index")
+    return index_route.endpoint.__self__
+
+
+@pytest.mark.parametrize("view", ALL_VIEWS)
+def test_the_actions_button_is_live(view, admin_app):
+    """The defect this task fixes: sqladmin's own templates/sqladmin/list.html
+    disables the Actions dropdown unless `model_view.can_delete` or
+    `model_view._custom_actions_in_list` is truthy -
+
+        <button {% if not model_view.can_delete and not
+        model_view._custom_actions_in_list %} disabled {% endif %}
+
+    Every one of these six views sets `can_delete = False` deliberately
+    (test_no_taxonomy_row_can_be_deleted above) and, before this task,
+    defined no custom action either - so the button was correctly disabled
+    and permanently useless. `_custom_actions_in_list` is populated by
+    `Admin._handle_action_decorated_func` at *registration* time
+    (sqladmin/application.py), not by the `@action` decorator itself, which
+    only stamps attributes onto the function - so this has to be checked on
+    the actual instance an `Admin` registered, via `_admin_object` above,
+    not on a bare `view()` instantiated outside of one.
+    """
+    admin_obj = _admin_object(admin_app)
+    registered = admin_obj._find_model_view(view.identity)
+
+    assert registered._custom_actions_in_list, (
+        f"{view.__name__}'s Actions button is disabled: can_delete is False "
+        "and no custom action is registered for its list page"
+    )
+    assert {"deactivate", "activate"} <= set(registered._custom_actions_in_list)
+
+
 # --- Fixtures ---------------------------------------------------------
 #
 # admin_client, staff_client, session and _resync now come from
@@ -123,8 +176,9 @@ def test_the_details_page_shows_no_more_than_the_list(view):
 
 _TAXONOMY_CODES = {
     "food_category": ["standard_mix", "fruit"],
-    "destination": ["prevention"],
+    "destination": ["prevention", "e4_landfill"],
     "destination_group": ["reuse"],
+    "sector": ["e4_north", "e4_south"],
 }
 
 
@@ -152,6 +206,11 @@ def _cleanup_taxonomy_rows(admin_app):
             text("SELECT id FROM destination_group WHERE code IN :codes")
             .bindparams(sa_bindparam("codes", expanding=True)),
             {"codes": _TAXONOMY_CODES["destination_group"]},
+        ).scalars().all()
+        sector_ids = db.execute(
+            text("SELECT id FROM sector WHERE code IN :codes")
+            .bindparams(sa_bindparam("codes", expanding=True)),
+            {"codes": _TAXONOMY_CODES["sector"]},
         ).scalars().all()
 
         if food_category_ids:
@@ -186,6 +245,17 @@ def _cleanup_taxonomy_rows(admin_app):
                 text("DELETE FROM destination_group WHERE id IN :ids")
                 .bindparams(sa_bindparam("ids", expanding=True)),
                 {"ids": group_ids},
+            )
+        if sector_ids:
+            db.execute(
+                text("DELETE FROM audit_log WHERE table_name = 'sector' "
+                     "AND row_id IN :ids").bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": sector_ids},
+            )
+            db.execute(
+                text("DELETE FROM sector WHERE id IN :ids")
+                .bindparams(sa_bindparam("ids", expanding=True)),
+                {"ids": sector_ids},
             )
         db.commit()
 
@@ -319,3 +389,154 @@ async def test_a_valid_edit_still_goes_through(session, admin_client):
     assert session.scalar(
         select(FoodCategory).where(FoodCategory.code == "fruit")
     ).name == "Fruit and berries"
+
+
+# --- Bulk deactivate / activate ---------------------------------------
+#
+# The fix for the defect this task exists to close: these six views set
+# can_delete = False deliberately and, until now, defined no custom action
+# either, so sqladmin's own Actions button (see test_the_actions_button_is_live
+# above) was correctly, permanently disabled. See admin/taxonomy_views.py's
+# _TaxonomyAdmin for what closes it and the trap doing so naively falls into.
+
+
+@pytest.mark.asyncio
+async def test_bulk_deactivate_deactivates_several_rows_and_audits_each(
+    session, admin_client
+):
+    """SectorAdmin carries no cross-row invariant (unlike Destination,
+    DestinationGroup and FoodCategory below), so this is the plain case:
+    every selected row changes, and every change is audited - the two facts
+    a naive `for pk in pks: row.active = False; session.commit()` would not
+    get for free, since an `@action` inherits neither from AuditedModelView
+    (admin/modelviews.py's own docstring)."""
+    from admin.models import AuditLog
+
+    session.add(Sector(code="e4_north", name="North Island"))
+    session.add(Sector(code="e4_south", name="South Island"))
+    session.commit()
+    north = session.scalar(select(Sector).where(Sector.code == "e4_north"))
+    south = session.scalar(select(Sector).where(Sector.code == "e4_south"))
+
+    response = await admin_client.get(
+        f"/admin/sector/action/deactivate?pks={north.id},{south.id}"
+    )
+
+    _resync(session)
+    assert session.get(Sector, north.id).active is False
+    assert session.get(Sector, south.id).active is False
+    assert response.status_code in (200, 302)
+
+    audit_rows = session.scalars(
+        select(AuditLog).where(
+            AuditLog.table_name == "sector",
+            AuditLog.row_id.in_([north.id, south.id]),
+        )
+    ).all()
+    assert {row.row_id for row in audit_rows} == {north.id, south.id}
+    assert {row.action for row in audit_rows} == {"update"}
+
+
+@pytest.mark.asyncio
+async def test_bulk_activate_reactivates_several_rows(session, admin_client):
+    session.add(Sector(code="e4_north", name="North Island", active=False))
+    session.add(Sector(code="e4_south", name="South Island", active=False))
+    session.commit()
+    north = session.scalar(select(Sector).where(Sector.code == "e4_north"))
+    south = session.scalar(select(Sector).where(Sector.code == "e4_south"))
+
+    response = await admin_client.get(
+        f"/admin/sector/action/activate?pks={north.id},{south.id}"
+    )
+
+    _resync(session)
+    assert session.get(Sector, north.id).active is True
+    assert session.get(Sector, south.id).active is True
+    assert response.status_code in (200, 302)
+
+
+@pytest.mark.asyncio
+async def test_bulk_deactivating_prevention_is_refused_and_nothing_in_the_batch_applies(
+    session, admin_client
+):
+    """`prevention` selected together with an innocuous destination: the
+    whole batch is refused, not just prevention's own row - a naive
+    implementation that applied changes one row at a time and refused only
+    when it reached `prevention` would leave the innocuous row deactivated
+    with nothing on the page saying so."""
+    group = DestinationGroup(code="reuse", name="Reuse", is_waste=False)
+    session.add(group)
+    session.commit()
+    session.add(Destination(group_id=group.id, code="prevention", name="Prevented"))
+    session.add(Destination(group_id=group.id, code="e4_landfill", name="Landfill"))
+    session.commit()
+    prevention = session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    landfill = session.scalar(
+        select(Destination).where(Destination.code == "e4_landfill")
+    )
+
+    response = await admin_client.get(
+        f"/admin/destination/action/deactivate?pks={prevention.id},{landfill.id}"
+    )
+
+    _resync(session)
+    assert session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    ).active is True
+    assert session.scalar(
+        select(Destination).where(Destination.code == "e4_landfill")
+    ).active is True
+    assert response.status_code == 400
+    assert "prevention" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_bulk_deactivating_preventions_group_is_refused(session, admin_client):
+    group = DestinationGroup(code="reuse", name="Reuse", is_waste=False)
+    session.add(group)
+    session.commit()
+    session.add(Destination(group_id=group.id, code="prevention", name="Prevented"))
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/destination-group/action/deactivate?pks={group.id}"
+    )
+
+    _resync(session)
+    assert session.scalar(
+        select(DestinationGroup).where(DestinationGroup.code == "reuse")
+    ).active is True
+    assert response.status_code == 400
+    assert "prevention" in response.text.lower()
+
+
+@pytest.mark.asyncio
+async def test_bulk_deactivating_the_last_active_standard_mix_is_refused(
+    session, admin_client
+):
+    """Selected together with an ordinary category - same "whole batch
+    refused" proof as the prevention test above, for FoodCategoryAdmin's own
+    invariant."""
+    session.add(FoodCategory(code="standard_mix", name="Mixed", is_standard_mix=True))
+    session.add(FoodCategory(code="fruit", name="Fruit", is_standard_mix=False))
+    session.commit()
+    standard = session.scalar(
+        select(FoodCategory).where(FoodCategory.code == "standard_mix")
+    )
+    fruit = session.scalar(select(FoodCategory).where(FoodCategory.code == "fruit"))
+
+    response = await admin_client.get(
+        f"/admin/food-category/action/deactivate?pks={standard.id},{fruit.id}"
+    )
+
+    _resync(session)
+    assert session.scalar(
+        select(FoodCategory).where(FoodCategory.code == "standard_mix")
+    ).active is True
+    assert session.scalar(
+        select(FoodCategory).where(FoodCategory.code == "fruit")
+    ).active is True
+    assert response.status_code == 400
+    assert "standard mix" in response.text.lower()

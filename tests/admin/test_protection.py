@@ -224,17 +224,106 @@ async def test_static_files_are_not_checked(client):
     assert response.status_code == 200
 
 
+_RATE_TEST_HEADERS = {
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0",
+    "accept": "text/html", "sec-fetch-mode": "navigate",
+}
+
+
 async def test_exceeding_the_rate_limit_is_refused(client, settings):
-    """Faster than a human types, from one source, on the login page."""
-    headers = {"user-agent": "Mozilla/5.0 (X11; Linux x86_64) Chrome/131.0",
-               "accept": "text/html", "sec-fetch-mode": "navigate"}
+    """Faster than a human types, from one source.
+
+    Counted against `/admin/factor-set/list`, not `/admin/login`: the two
+    login-handshake paths are deliberately exempt from this check (see
+    `admin/protection.py`'s `_RATE_EXEMPT_PATHS` and the test below), so
+    hammering `/admin/login` no longer proves the rate limit exists at all.
+    Any other path under `/admin` does. Unauthenticated, this path answers
+    with sqladmin's own redirect to the login page until the limit is
+    reached; only the final assertion is about the middleware.
+    """
     limit = settings.protection_max_requests_per_minute
 
     for _ in range(limit):
-        await client.get("/admin/login", headers=headers)
-    response = await client.get("/admin/login", headers=headers)
+        await client.get("/admin/factor-set/list", headers=_RATE_TEST_HEADERS)
+    response = await client.get("/admin/factor-set/list", headers=_RATE_TEST_HEADERS)
 
     assert response.status_code == 429
+
+
+@pytest.mark.parametrize("path", ["/admin/login", "/admin/verify"])
+async def test_the_login_handshake_is_never_rate_limited(client, settings, path):
+    """The remote-lockout weapon this exemption removes.
+
+    The shipped deployment terminates TLS upstream, so a reverse proxy is in
+    front of the panel, while `PROTECTION_TRUSTED_PROXY` correctly defaults to
+    False - so every caller arrives as the proxy's own address and shares one
+    rate-limit bucket. `RequestRate.record` counts refused requests too, so
+    one request a second from any unauthenticated caller anywhere kept that
+    single bucket permanently over the limit and answered 429 to *everyone* -
+    including these two pages. The authenticated-staff exemption structurally
+    could not help, because it needs the session only these two pages mint:
+    recovery was an env var plus a restart.
+
+    Asserts every response, not just the last: a 429 anywhere in this loop is
+    the lockout. Very little is given up - `admin/throttle.py` still throttles
+    login attempts per account, and the header check still refuses a scripted
+    caller here (see `test_a_scripted_request_is_refused`, which uses
+    `/admin/login`).
+    """
+    limit = settings.protection_max_requests_per_minute
+
+    for i in range(limit * 2 + 1):
+        response = await client.get(path, headers=_RATE_TEST_HEADERS)
+        assert response.status_code != 429, f"rate-limited at request {i + 1}"
+        # 200 for /admin/login, which renders; 302 for /admin/verify, which
+        # sends a caller with no half-completed login back to /admin/login.
+        # Both are the page's own answer, i.e. the request reached it -
+        # `!= 429` above is the assertion about the middleware, and this one
+        # guards against the exemption being satisfied by some *other*
+        # refusal (a 403 from the header check, say) instead.
+        assert response.status_code in (200, 302), response.status_code
+
+
+async def test_the_login_handshake_does_not_consume_the_shared_rate_budget(
+    client, settings
+):
+    """Not merely "exempt from refusal" - not counted at all.
+
+    A version of the exemption that still called `record()` and only skipped
+    the refusal would leave the attack intact in a different shape: the flood
+    would go on filling the one bucket every *other* unauthenticated path
+    shares with it, so staff could reach `/admin/login` but nothing else, and
+    an attacker would still have a remote denial-of-service against the whole
+    panel from an unauthenticated endpoint.
+    """
+    limit = settings.protection_max_requests_per_minute
+
+    for _ in range(limit * 2 + 1):
+        await client.get("/admin/login", headers=_RATE_TEST_HEADERS)
+
+    response = await client.get("/admin/factor-set/list", headers=_RATE_TEST_HEADERS)
+
+    assert response.status_code != 429
+
+
+async def test_the_login_page_is_still_refused_to_a_blocked_address(
+    client, session, settings
+):
+    """The exemption is from the rate limit only. A block is an
+    administrator's deliberate act, it is per-address rather than a shared
+    counter (so it has none of the lockout failure mode the rate limit had),
+    and it outranks reaching the login page - which is precisely why
+    `python -m admin.cli unblock` exists.
+    """
+    from db.blocklist import block_ip
+
+    block_ip(session, "127.0.0.1", reason="test", actor="kim",
+             secret_key=settings.secret_key)
+    session.commit()
+
+    response = await client.get("/admin/login", headers=_RATE_TEST_HEADERS)
+
+    assert response.status_code == 403
 
 
 async def test_the_refusal_page_does_not_explain_what_tripped_it(client):

@@ -68,6 +68,44 @@ _STATIC_PREFIX = "/admin/static/"
 #: read the actual reason on the blocklist screen and in the audit trail.
 _REFUSED_BODY = "Refused."
 
+#: The two pages that mint the session every other exemption in this file is
+#: built on. **Exempt from the rate limit only** - never from the blocklist,
+#: never from the header check.
+#:
+#: Why this exemption exists, and why it is not optional. The shipped
+#: deployment terminates TLS upstream (.env.example, SESSION_HTTPS_ONLY), so a
+#: reverse proxy is in front of this panel - while ``PROTECTION_TRUSTED_PROXY``
+#: correctly defaults to False, because trusting ``X-Forwarded-For`` with no
+#: proxy that overwrites it lets any caller claim any address. The combination
+#: is that every caller arrives as the proxy's own address and therefore shares
+#: **one** rate-limit bucket. ``RequestRate.record`` is called on refused
+#: requests too, so a caller sending one request a second keeps that single
+#: bucket permanently over ``PROTECTION_MAX_REQUESTS_PER_MINUTE`` and every
+#: unauthenticated request in the deployment answers 429 - including
+#: ``/admin/login`` and ``/admin/verify``. The authenticated-staff exemption
+#: below structurally cannot rescue that: it needs ``SESSION_KEY``, which only
+#: these two pages can issue. Recovery would be an env var plus a restart, for
+#: an attack any unauthenticated caller can mount from anywhere. Exempting
+#: these two paths removes the weapon: a flood against them now costs the
+#: attacker nothing and gains them nothing, staff can always reach the login
+#: handshake, and once they are through it the authenticated-staff exemption
+#: covers the rest of the panel.
+#:
+#: What is given up, and why it is little. ``admin/throttle.py`` already
+#: throttles login attempts **per account** (``LOGIN_MAX_FAILURES`` /
+#: ``LOGIN_LOCKOUT_MINUTES``, with password and TOTP failures sharing one
+#: counter), which is the check that actually defends a credential-stuffing
+#: run - a per-address request rate never was. The header check still applies
+#: here too, so a bare ``curl``/``requests`` loop against ``/admin/login`` is
+#: still refused with 403 before it can attempt anything.
+#:
+#: The blocklist deliberately still applies to these paths (see ``dispatch``):
+#: it is a per-address lookup rather than a shared counter, so it has none of
+#: this failure mode, and a block is an administrator's deliberate act that
+#: outranks reaching the login page. That is exactly why
+#: ``python -m admin.cli unblock`` exists (docs/architecture.md 9.1.1).
+_RATE_EXEMPT_PATHS = frozenset({"/admin/login", "/admin/verify"})
+
 
 def _decode_session_cookie(raw: str, *, secret_key: str, max_age: int) -> dict:
     """Decode a SessionMiddleware-format cookie without SessionMiddleware.
@@ -229,7 +267,10 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
     4. Header signals (``admin.detection.looks_automated``).
     5. Rate limit, keyed on the HMAC fingerprint of the address - never the
        raw address itself, which contract §2.3 forbids holding anywhere,
-       including in this process's own memory.
+       including in this process's own memory. ``/admin/login`` and
+       ``/admin/verify`` are exempt from this check and this check only -
+       see ``_RATE_EXEMPT_PATHS`` for the remote-lockout chain that exemption
+       closes, and why the blocklist above it still applies to them.
 
     Reads the blocklist and never writes to it - see the module docstring.
     """
@@ -245,6 +286,17 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
         # login throttle. A per-request RequestRate would start empty every
         # time and rate-limit nothing.
         self._rate = RequestRate(window_seconds=60.0)
+
+    @staticmethod
+    def _rate_exempt(path: str) -> bool:
+        """Whether ``path`` is one of the two login-handshake pages.
+
+        Trailing slash tolerated: Starlette's own ``redirect_slashes`` means
+        ``/admin/login/`` reaches the same page, and an exemption that a single
+        extra character defeats is not an exemption - a caller would simply
+        flood the slashed form instead.
+        """
+        return (path.rstrip("/") or "/") in _RATE_EXEMPT_PATHS
 
     async def dispatch(self, request: Request, call_next) -> Response:
         settings = self._settings
@@ -281,7 +333,12 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
 
         # Same reasoning as the blocklist check above: skipped, not
         # bucketed, when there is no real address to key the counter on.
-        if ip is not None:
+        # Also skipped - and deliberately not even counted - on the two login
+        # paths: see _RATE_EXEMPT_PATHS for the remote-lockout chain this
+        # closes. Not counting rather than counting-but-not-refusing is the
+        # stronger form: a flood against /admin/login must not fill the bucket
+        # that every *other* unauthenticated path shares with it either.
+        if ip is not None and not self._rate_exempt(request.url.path):
             fingerprint = ip_fingerprint(ip, secret_key=settings.secret_key)
             count = self._rate.record(fingerprint, now=time.time())
             if count > settings.protection_max_requests_per_minute:

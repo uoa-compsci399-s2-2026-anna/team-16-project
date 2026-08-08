@@ -12,6 +12,19 @@ pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 
 @pytest.fixture
+def _protection_default_for_tests() -> str:
+    """Overrides tests/conftest.py's own fixture of the same name.
+
+    Every other file in the suite gets ProtectionMiddleware built with
+    PROTECTION_ENABLED=false (see that fixture's docstring) - this is the
+    one file that must not depend on that default in either direction, so
+    it sets its own, explicitly, rather than inheriting whichever way the
+    rest of the suite happens to be pointed.
+    """
+    return "true"
+
+
+@pytest.fixture
 def session(_committed_session):
     """This file's name for the hard-committing session against the running
     admin app's own database - see tests/admin/conftest.py's

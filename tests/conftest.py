@@ -99,7 +99,32 @@ def session(engine):
 
 
 @pytest.fixture
-def admin_app(monkeypatch):
+def _protection_default_for_tests() -> str:
+    """The ``PROTECTION_ENABLED`` value ``admin_app`` builds its app with.
+
+    "false" for the whole suite. ``admin/protection.py``'s ProtectionMiddleware
+    is a deployment concern - it inspects headers, rate-limits and consults
+    the IP blocklist on every request - and defaulting it on here would mean
+    every other file's fixtures (``client``, ``admin_client``, ``staff_client``,
+    the ``_login()`` helper in tests/admin/conftest.py) start failing at
+    whichever request happens to run before a session cookie exists, purely
+    because httpx's own default User-Agent is one of the strings
+    ``admin.detection.looks_automated`` flags as a scripting tool. None of
+    those files are testing protection; they were written before it existed
+    and shouldn't have to know it does.
+
+    ``tests/admin/test_protection.py`` is the one file that must exercise the
+    real thing, so it overrides this fixture to "true" for its own app
+    instances - see that file. ``tests/admin/test_config.py`` separately
+    asserts that ``admin.config.Settings``' own shipped default is True,
+    straight off the dataclass field rather than through any fixture or env
+    var - the guard against this override leaking into what actually ships.
+    """
+    return "false"
+
+
+@pytest.fixture
+def admin_app(monkeypatch, _protection_default_for_tests):
     """A freshly built admin app, backed by its own engine.
 
     Tasks 4-8 each build an app per test. ``create_app`` calls
@@ -118,6 +143,9 @@ def admin_app(monkeypatch):
     # break every test that relies on a session surviving more than one
     # request.
     monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
+    # See _protection_default_for_tests just above for why this is not
+    # simply left at admin/config.py's own shipped default.
+    monkeypatch.setenv("PROTECTION_ENABLED", _protection_default_for_tests)
     app = create_app()
     yield app
     app.state.session_factory.kw["bind"].dispose()

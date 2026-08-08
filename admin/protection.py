@@ -73,10 +73,60 @@ def _decode_session_cookie(raw: str, *, secret_key: str, max_age: int) -> dict:
     """Decode a SessionMiddleware-format cookie without SessionMiddleware.
 
     See the module docstring for why this exists instead of
-    ``request.session``. Any failure - a bad signature, an expired
-    timestamp, or a payload that is not the JSON object SessionMiddleware
-    writes - is treated as "no session data", the same way SessionMiddleware
-    itself falls back to an empty session on ``BadSignature``.
+    ``request.session``. **This is the most security-sensitive function in
+    this file** - it is what decides whether a request gets the anti-lockout
+    exemption, so it must accept exactly the cookies AdminAuth's own
+    ``SessionMiddleware`` would accept, and refuse everything else. Matched
+    against ``starlette.middleware.sessions.SessionMiddleware.__call__``
+    (installed by ``AdminAuth.__init__``, admin/backend.py) parameter by
+    parameter:
+
+    * **Signing algorithm** - ``itsdangerous.TimestampSigner``, the same
+      class SessionMiddleware constructs (``self.signer =
+      itsdangerous.TimestampSigner(str(secret_key))``). Same ``unsign``
+      call, same argument order.
+    * **Secret** - the caller passes ``settings.secret_key``, the identical
+      value ``AdminAuth.__init__`` passes as ``secret_key=settings.secret_key``
+      to ``super().__init__()``, which is what reaches ``SessionMiddleware``.
+      One ``Settings`` instance, read in both places - there is no second
+      copy of this value anywhere that could drift from it.
+    * **Cookie name** - hardcoded here as ``"session"``
+      (``_SESSION_COOKIE_NAME``), matching ``SessionMiddleware``'s own
+      default. ``AdminAuth`` never passes ``session_cookie=`` to override it
+      (see its ``super().__init__()`` call), so the default is what is
+      actually in force.
+    * **max_age handling** - the caller passes
+      ``settings.session_max_age_minutes * 60``, the identical conversion
+      ``AdminAuth.__init__`` performs (``max_age=settings.session_max_age_minutes
+      * 60``) before it reaches ``SessionMiddleware``. ``TimestampSigner.unsign``
+      raises ``SignatureExpired`` (a ``BadSignature`` subclass) once the
+      embedded timestamp is older than this many seconds - caught below,
+      same as any other bad signature.
+    * **https_only / same_site** - response-side cookie-attribute settings
+      only (what ``Set-Cookie`` carries when a session is written). They
+      play no part in reading an already-issued cookie back, so there is
+      nothing to match here.
+
+    **Failure handling, and why it cannot be more permissive than
+    SessionMiddleware.** A missing/absent cookie, a bad signature, an
+    expired timestamp, or (after a valid signature) a payload that is not
+    the JSON object SessionMiddleware writes - every one of these returns
+    ``{}``, i.e. "no session data", which downstream means no ``SESSION_KEY``
+    and therefore no exemption. This is a strict subset of what
+    SessionMiddleware accepts, never a superset: SessionMiddleware itself
+    falls back to an *empty* ``Session()`` on ``BadSignature`` (starlette's
+    own source, same file), so any cookie this function refuses,
+    SessionMiddleware would treat as no session too - there is no cookie
+    this function accepts that SessionMiddleware would reject, or vice
+    versa. The one difference is defensive rather than permissive: this
+    function also catches ``ValueError`` (a malformed base64/JSON payload
+    *after* a valid signature) and treats it the same as a bad signature;
+    SessionMiddleware has no equivalent guard and would raise instead - but
+    a validly-signed payload that isn't well-formed JSON cannot arise from a
+    cookie either of these two code paths ever issued (the signature
+    guarantees the payload is byte-for-byte what was originally signed), so
+    this only matters for a forged cookie, and forging one requires the
+    secret key regardless of which of these two error paths it hits.
     """
     signer = itsdangerous.TimestampSigner(secret_key)
     try:

@@ -7,9 +7,11 @@ how it is parsed: a misconfigured deployment should refuse to start rather
 than silently run insecure.
 """
 
+import dataclasses
+
 import pytest
 
-from admin.config import load_settings
+from admin.config import Settings, load_settings
 
 _REQUIRED_ENV = {
     "SECRET_KEY": "test-secret-key-not-used-anywhere-real",
@@ -55,3 +57,27 @@ def test_session_https_only_refuses_to_start_on_an_unrecognised_value(monkeypatc
 
     with pytest.raises(ValueError):
         load_settings()
+
+
+def test_protection_ships_enabled_by_default():
+    """The guard against a test-suite convenience becoming a production
+    accident.
+
+    tests/conftest.py's ``admin_app`` fixture builds every app in this
+    suite - except tests/admin/test_protection.py's own - with
+    ``PROTECTION_ENABLED=false``, deliberately: admin/protection.py's
+    ProtectionMiddleware is a deployment concern the rest of the suite was
+    never written to expect, and turning it on for every fixture would mean
+    header/rate/blocklist checks failing in files that have nothing to do
+    with them. That override is only safe as long as nobody ever flips the
+    *shipped* default the same way by mistake - so this test reads
+    ``Settings.protection_enabled``'s own dataclass field default directly,
+    not through ``load_settings()`` (which reads the environment) or any
+    fixture (which the test suite itself now overrides). Nothing here can
+    accidentally inherit the test-only "false" - that is the point.
+    """
+    field = next(
+        f for f in dataclasses.fields(Settings) if f.name == "protection_enabled"
+    )
+
+    assert field.default is True

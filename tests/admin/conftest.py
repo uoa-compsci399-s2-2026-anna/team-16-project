@@ -59,13 +59,20 @@ SECRET_KEY = "test-secret-key-not-used-anywhere-real"
 #: admin/protection.py (Task 3) refuses a request with no session cookie yet
 #: whose headers look scripted (admin.detection.looks_automated) - and
 #: httpx.AsyncClient's own default User-Agent ("python-httpx/x.y.z") is
-#: itself one of the markers that check flags. `_login` below drives the
-#: password and TOTP steps before any session cookie exists, so those two
-#: requests need to look like a browser navigation or ProtectionMiddleware
-#: refuses them with 403 before AdminAuth ever sees the form data. Once
-#: `_login` returns, the session cookie makes every further request through
-#: the same client exempt (the anti-lockout rule), so nothing past this
-#: point needs these headers.
+#: itself one of the markers that check flags. ProtectionMiddleware is off
+#: by default for every app this fixture file builds (see
+#: tests/conftest.py's `_protection_default_for_tests`), so most callers of
+#: `_login` never touch this check at all - but
+#: tests/admin/test_protection.py overrides that default to "true" for its
+#: own app instances, and its two `admin_client`-based tests still have to
+#: get through `_login`'s password and TOTP steps before any session cookie
+#: exists to exempt them. Sending browser-shaped headers here is what keeps
+#: `_login` working under both configurations rather than only the common
+#: one - it is not a workaround for a problem every file has, only for the
+#: one file that turns protection on. Once `_login` returns, the session
+#: cookie makes every further request through the same client exempt (the
+#: anti-lockout rule) regardless of headers, so nothing past this point
+#: needs them.
 _BROWSER_HEADERS = {
     "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
                   "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",

@@ -3,6 +3,9 @@
 import pytest
 from sqlalchemy import text
 
+from admin.app import create_app
+from tests.conftest import TEST_URL
+
 # pytest.mark.asyncio, not in the brief's own listing, is required here:
 # pytest.ini sets asyncio_mode = strict for this project, so an `async def`
 # test with no marker is collected but never actually run as a coroutine -
@@ -12,16 +15,40 @@ pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 
 @pytest.fixture
-def _protection_default_for_tests() -> str:
-    """Overrides tests/conftest.py's own fixture of the same name.
+def admin_app(monkeypatch):
+    """This file's own app: ProtectionMiddleware genuinely on, not
+    tests/conftest.py's session-wide ``PROTECTION_ENABLED=false`` default.
 
-    Every other file in the suite gets ProtectionMiddleware built with
-    PROTECTION_ENABLED=false (see that fixture's docstring) - this is the
-    one file that must not depend on that default in either direction, so
-    it sets its own, explicitly, rather than inheriting whichever way the
-    rest of the suite happens to be pointed.
+    A full local override of tests/conftest.py's ``admin_app``, not a
+    companion ``autouse`` fixture that patches the environment on the side -
+    that was tried first and is wrong. ``_cleanup_ip_blocks`` below is also
+    ``autouse`` and also requires ``admin_app``, so with two independent
+    ``autouse`` fixtures at the same scope and no dependency between them,
+    pytest does not guarantee which runs first: confirmed directly, with a
+    debug print, that the environment-patching version of this fixture ran
+    *after* ``admin_app`` had already called ``create_app()`` and read
+    ``PROTECTION_ENABLED=false`` - the session default - rather than before
+    it. Setting the variable inside *this* fixture's own body, ahead of its
+    own ``create_app()`` call, makes the ordering an actual dependency
+    (this function must return before anything downstream of ``admin_app``
+    can run) instead of a hoped-for scope/autouse tiebreak.
+
+    Otherwise identical to tests/conftest.py's ``admin_app`` - see that
+    fixture's own docstring for why each remaining line is here. Duplicated
+    rather than composed (e.g. requesting the outer ``admin_app`` as a
+    same-named parameter, pytest's usual override-and-extend recipe) because
+    that recipe only lets an override see the outer fixture's *result*,
+    after its body - including its ``create_app()`` call - has already run;
+    what this fixture needs is to change the environment *before* that call,
+    which requires owning the call itself.
     """
-    return "true"
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
+    monkeypatch.setenv("PROTECTION_ENABLED", "true")
+    app = create_app()
+    yield app
+    app.state.session_factory.kw["bind"].dispose()
 
 
 @pytest.fixture

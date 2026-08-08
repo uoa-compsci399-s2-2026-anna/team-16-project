@@ -136,6 +136,10 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(StaffAdmin)
 
+    from admin.blocklist_views import IpBlockAdmin
+
+    admin.add_view(IpBlockAdmin)
+
     # The six taxonomy views of contract §8.1 landed in E-4 (this block). All
     # six of E-5's factor views - factor_set, factor_upstream,
     # factor_downstream, constant, formula, equivalence - are registered just

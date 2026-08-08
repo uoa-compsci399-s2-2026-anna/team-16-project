@@ -312,6 +312,66 @@ A correctly installed system answers `NO_PUBLISHED_FACTOR_SET` (503,
 the factors are the data, and the client has not supplied real factors yet.
 Reaching that 503 on a fresh install is expected, not a fault.
 
+### 9.1.1 E-8: panel protection
+
+`ProtectionMiddleware` (`admin/protection.py`) sits ahead of every route under
+`/admin`, static files excepted, and refuses a request in three ways: the
+blocklist (`db/blocklist.py`, §2.3), a stateless check on header shape
+(`admin/detection.py`'s `looks_automated`), and a per-address rate limit. All
+three are controlled by three settings, none of which existed in `.env.example`
+before this stage — a genuine gap, since the first of them is the only way
+out of a false-positive lockout:
+
+| Setting | Default | Meaning |
+| --- | --- | --- |
+| `PROTECTION_ENABLED` | `true` | Whether any of the three checks run at all. **This is the escape hatch.** Setting it to `false` and restarting turns off the blocklist, the header check and the rate limit together — there is no finer-grained switch. Use it when protection itself is producing the lockout (a false-positive header match, a shared address hitting the rate limit) and reaching the CLI's `unblock` command would not fix it, because the block is not what is refusing the request. |
+| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`admin/detection.py`'s `RequestRate`) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. |
+| `PROTECTION_TRUSTED_PROXY` | `false` | Whether to read the caller's address from `X-Forwarded-For` instead of the raw TCP connection. **Must stay `false` unless a reverse proxy that itself overwrites `X-Forwarded-For` genuinely sits in front of this panel.** With no such proxy, `X-Forwarded-For` is a header any caller can set to any value — trusting it lets one visitor forge another's address, collapses the rate limit into a single shared counter, and can turn one legitimate block into a block on every visitor at once. |
+
+**The CLI escape hatch.** `python -m admin.cli unblock <address>` removes a row
+from the blocklist directly against the database, bypassing the panel
+entirely. It exists for the one case this whole stage is designed around not
+causing: an administrator blocks the address they are sitting behind. The
+blocklist check in `ProtectionMiddleware` has no exemption for an
+authenticated staff session — a block is another administrator's deliberate
+act and outranks everything else, `/admin/login` included — so once it
+applies to your own address, there is no page left to click. With no email
+system to recover through either, this command (or `PROTECTION_ENABLED=false`
+for the header/rate case above) is the only way back short of editing the
+database by hand.
+
+**Known limitation: the anti-lockout exemption cannot cover the login
+handshake itself.** `ProtectionMiddleware` exempts an already-authenticated
+staff session from the header and rate checks, but that exemption is built on
+`SESSION_KEY`, which is only set after a password *and* a completed TOTP
+step (`admin/auth.py`'s `stamp_session`). A caller who has not yet logged in —
+which is everyone at `/admin/login` and `/admin/verify`, by definition — has
+no session to be exempt on, so a pre-16.4 Safari, or any privacy extension
+that strips `Sec-Fetch-*` headers, can be refused by the header check on the
+login page itself, with nothing past "Refused." to explain why. This is not a
+bug in the check order — the exemption cannot exist before the credential it
+is built on does — so it is not fixed here. **Recovery:** an operator who
+hits this can either turn off protection for the affected caller's session
+with `PROTECTION_ENABLED=false` (the same escape hatch as above, since this
+is not a blocklist entry and `unblock` has nothing to remove), or have the
+affected person log in from a browser/extension configuration
+`admin.detection.looks_automated` does not flag, then treat the header check's
+false-positive rate on real browsers as a tuning problem for `admin/detection.py`
+going forward.
+
+**What this is not.** `ProtectionMiddleware` is in-process, application-level
+protection for a small admin panel — it is **not** a CDN, **not** an upstream
+firewall, and makes no claim to be either. It does not stop a real headless
+browser that sends convincing header shapes, and it does not stop a
+distributed attack: the rate limit and the header check both key on one
+process's own view of one address at a time, so traffic spread across many
+addresses passes both checks at whatever rate each individual address stays
+under. The blocklist is the one layer that survives a distributed attacker
+who has been identified and blocked by address, and even that assumes the
+addresses are stable enough to be worth blocking. An operator deciding
+whether to trust this panel's exposure to the open internet should read this
+paragraph before any of the settings above.
+
 ---
 
 # 10. Open Items

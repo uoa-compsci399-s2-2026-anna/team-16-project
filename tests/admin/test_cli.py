@@ -7,6 +7,7 @@ functions rather than only exercised by hand.
 
 import pyotp
 import pytest
+from sqlalchemy import select
 
 from admin.accounts import (
     begin_mfa_enrolment,
@@ -14,14 +15,17 @@ from admin.accounts import (
     create_staff,
     get_staff,
 )
-from admin.cli import cmd_create_staff, cmd_issue_password, cmd_reset_mfa, cmd_rotate_key
-from admin.models import StaffRole
+from admin.cli import (
+    cmd_create_staff, cmd_issue_password, cmd_reset_mfa, cmd_rotate_key, cmd_unblock,
+)
+from admin.models import AuditLog, StaffRole
 from admin.security import (
     TotpSecretUndecryptableError,
     decrypt_totp_secret,
     verify_password,
 )
 from admin.totp import TOTP_INTERVAL
+from db.blocklist import block_ip, is_blocked
 
 pytestmark = pytest.mark.db
 
@@ -169,3 +173,42 @@ def test_rotate_key_writes_nothing_when_one_account_of_several_fails(session):
 
     assert get_staff(session, "alice").mfa_secret_enc == before_alice
     assert get_staff(session, "bob").mfa_secret_enc == before_bob
+
+
+def test_unblock_command_removes_a_block(session):
+    """The escape hatch: an administrator who has blocked the address they
+    are sitting behind gets back in with this one command."""
+    block_ip(session, "203.0.113.9", reason="test", actor="kim",
+              secret_key=OLD_KEY)
+    session.flush()
+
+    removed = cmd_unblock(session, "203.0.113.9", secret_key=OLD_KEY)
+    session.flush()
+
+    assert removed is True
+    assert is_blocked(session, "203.0.113.9", secret_key=OLD_KEY) is False
+
+
+def test_unblock_command_reports_nothing_to_do_for_an_unblocked_address(session):
+    assert cmd_unblock(session, "203.0.113.9", secret_key=OLD_KEY) is False
+
+
+def test_unblock_command_writes_an_audit_entry_naming_no_address(session):
+    """db.blocklist writes no audit entry of its own (auditing is the
+    caller's job); the CLI is the caller here, same as every other
+    server-side recovery command in this file."""
+    block_ip(session, "203.0.113.9", reason="test", actor="kim",
+              secret_key=OLD_KEY)
+    session.flush()
+
+    cmd_unblock(session, "203.0.113.9", secret_key=OLD_KEY)
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "ip_block")
+    )
+    assert entry is not None
+    assert entry.actor == "cli"
+    assert entry.action == "delete"
+    assert "203.0.113.9" not in str(entry.before_json)
+    assert "203.0.113.9" not in str(entry.after_json)

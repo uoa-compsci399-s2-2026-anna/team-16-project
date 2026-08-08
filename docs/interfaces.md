@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-08 (v0.11 draft)"
+date: "2026-08-08 (v0.12 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,14 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v0.12 — 2026-08-08 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Documented E-8's blocklist as an explicit, named exception to "no IP address, no user agent, no fingerprint of any kind is stored" — an HMAC of an address, keyed on `SECRET_KEY` with a named `info` string (`kaicalc-blocklist-v1`), stored only for an address a staff member or the automatic protection has blocked. | §2.3 |
+| 2 | Corrected §8.3's "Blocklist" paragraph, which predated E-8 and described a table (`ip_blocklist`, CIDR-keyed, storing nothing) that does not match what was actually built (`ip_block`, HMAC-keyed). Left uncorrected, it directly contradicted the new §2.3 text added by this same version. | §8.3 |
+| 3 | Added the blocklist screen (`/admin/ip-block/list`, `/admin/ip-block/block`, the `unblock` action) and the `python -m admin.cli unblock <address>` operational command — the server-side way back in for an administrator who has blocked the address they are sitting behind, since the blocklist check exempts no one, not even an authenticated staff session. | §8.3 |
 
 ### v0.11 — 2026-08-08 (raised by E, affects E only)
 
@@ -382,6 +390,26 @@ The standard test scenarios §8.2's pre-publish comparison view runs. A scenario
 | `exclusion_reason` | VARCHAR(255) | NULL | |
 
 **No IP address, no user agent, no fingerprint of any kind is stored.**
+
+> **One exception, added deliberately in E-8.** The `ip_block` table stores an
+> HMAC of an address — never the address — under a key derived from
+> `SECRET_KEY`, and only for callers a staff member or the automatic
+> protection has blocked. A database taken on its own yields no list of who
+> visited. Nothing else is persisted: user agents, headers and paths are read
+> within a request and forgotten. **Browser fingerprinting was considered and
+> rejected** — ineffective against the traffic this defends against, and the
+> highest privacy risk of the options.
+>
+> **One blocklist, owned by `db/`.** `ip_block` and the block/unblock/query
+> functions live in `db/blocklist.py`, not in `admin/`. There is one list, and
+> both callers read it: the API layer applies it to public traffic, the admin
+> panel applies it to itself and provides the screen that manages it. Both
+> derive the HMAC key from the same `SECRET_KEY` with
+> `info = b"kaicalc-blocklist-v1"` — the same address must produce the same
+> fingerprint on both sides, or a block applied in the panel silently fails to
+> hold at the API. Auditing is the caller's job: `db/blocklist.py` writes no
+> audit entry, and the admin panel writes one for every block and unblock a
+> staff member performs.
 
 ### `submission_line`
 
@@ -1364,6 +1392,7 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
 | `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
 | `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
+| `python -m admin.cli unblock <address>` | E-8's own break-glass: remove a block from the server when the panel itself is unreachable because of it |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 
 One module with subcommands rather than three separate module entry points: `python -m admin.cli --help` then lists every operational command in one place, which is what the handover documentation needs, and settings loading and session construction are written once rather than three times.
@@ -1372,7 +1401,15 @@ The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without 
 
 ### Blocklist
 
-An `ip_blocklist(id, cidr, reason, created_at, created_by)` table plus middleware, used to block sources of junk submissions, **never to identify ordinary users.** The middleware reads the connecting address and stores nothing.
+**Corrected in v0.12 — the previous paragraph here (`ip_blocklist(id, cidr, reason, created_at, created_by)`, "the middleware ... stores nothing") predates E-8 and described the wrong table under the wrong name.** §2.3 is now the authoritative description of what is actually built: the real table is `ip_block(id, ip_hmac, reason, created_at, created_by, expires_at)`, keyed on a 64-character HMAC of the address rather than a CIDR, and it does store something — a fingerprint, never the address itself. See §2.3's own callout for the full reasoning, including why plain fingerprinting alone (storing nothing derived from the address) was rejected: an operator needs to be able to remove a specific block, which requires being able to recompute the same fingerprint for the same address again, not merely detect a match once.
+
+`db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. It never writes to the blocklist itself.
+
+The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3).
+
+**The one case this whole design is built around not causing:** an administrator blocks the address they are sitting behind, and the block itself now stands between them and every page that would let them undo it — including the login page, because the blocklist check has no exemption. `python -m admin.cli unblock <address>` (above) is the only way back short of editing the database by hand, and is the reason that command exists at all.
+
+`ProtectionMiddleware` also carries a stateless header check and a per-address rate limit (`PROTECTION_MAX_REQUESTS_PER_MINUTE`), both configurable and both able to be turned off in one place: `PROTECTION_ENABLED=false` disables the blocklist, the header check and the rate limit together, with no finer-grained switch and no redeploy required — the documented escape hatch for a false-positive lockout that is not a blocklist entry. See `docs/architecture.md` §9.1 for the operational detail, the `PROTECTION_TRUSTED_PROXY` warning, and this design's explicit limits.
 
 ## 8.4 Staff Authentication Interface (owner: E, consumed by B)
 

@@ -6,11 +6,14 @@ Contract: docs/interfaces.md 8.3, "Operational commands".
     python -m admin.cli reset-mfa <username>
     python -m admin.cli issue-password <username>
     python -m admin.cli rotate-key --old <key> --new <key>
+    python -m admin.cli unblock <address>
 
 These are the break-glass paths that outlive the project team: bootstrapping
 the first administrator, recovery layer L3 when every administrator is locked
-out, and re-encrypting TOTP secrets after a SECRET_KEY change. They are
-covered by tests rather than only exercised by hand for that reason.
+out, re-encrypting TOTP secrets after a SECRET_KEY change, and (E-8) the way
+back in for an administrator who has blocked the address they are sitting
+behind. They are covered by tests rather than only exercised by hand for
+that reason.
 """
 
 import argparse
@@ -20,12 +23,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from admin.accounts import UnknownStaffError, create_staff, issue_password, reset_mfa
+from admin.audit import write_audit
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
 from admin.models import Staff, StaffRole
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
 from admin.seed import seed_taxonomy
 from admin.taxonomy_rules import TaxonomyInvariantError
+from db.blocklist import ip_fingerprint, unblock_ip
+from db.blocklist_models import IpBlock
 from db.session import create_session_factory
 
 
@@ -86,6 +92,49 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
         staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
 
     return len(plaintext)
+
+
+def cmd_unblock(db_session: Session, address: str, *, secret_key: str) -> bool:
+    """Recovery layer for E-8's blocklist: the server-side way back in.
+
+    Exists for the case the whole stage is designed around not causing: an
+    administrator blocks the address they are sitting behind.
+    ``ProtectionMiddleware`` (admin/protection.py) refuses the blocklist
+    check ahead of every other rule, with no exemption even for an
+    authenticated staff session, so there is no page left to click - the
+    panel itself is unreachable. There is no email system either, so
+    without this command the only way back would be editing the database
+    by hand. Returns whether a block was actually removed, so the caller
+    can tell "nothing to do" from "done".
+
+    Looks the row up first, by the same fingerprint ``unblock_ip`` will
+    recompute, purely so the audit entry below can name what was removed -
+    ``unblock_ip`` itself (db/blocklist.py) returns only a bool and writes
+    no audit entry, by design: auditing is the caller's job. The CLI
+    audits with ``actor="cli"``, the same convention this module's own
+    ``cmd_issue_password``/``issue_password`` pairing already uses for a
+    write made from the server rather than through a staff session.
+    """
+    fp = ip_fingerprint(address, secret_key=secret_key)
+    row = db_session.scalar(select(IpBlock).where(IpBlock.ip_hmac == fp))
+    if row is None:
+        return False
+
+    before = {
+        "reason": row.reason,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "expires_at": row.expires_at,
+    }
+    row_id = row.id
+
+    removed = unblock_ip(db_session, address, actor="cli", secret_key=secret_key)
+    if removed:
+        write_audit(
+            db_session, actor="cli", action="delete", table_name="ip_block",
+            row_id=row_id, before=before, after=None,
+        )
+    return removed
 
 
 def cmd_seed_taxonomy(db_session: Session) -> dict[str, int]:
@@ -150,6 +199,11 @@ def _build_parser() -> argparse.ArgumentParser:
     rotate.add_argument("--old", required=True)
     rotate.add_argument("--new", required=True)
 
+    unblock = sub.add_parser(
+        "unblock", help="Remove a block from an address (E-8's escape hatch)"
+    )
+    unblock.add_argument("address")
+
     sub.add_parser(
         "bootstrap", help="Create the initial administrator accounts if none exist"
     )
@@ -203,6 +257,15 @@ def main(argv: list[str] | None = None) -> int:
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
             print("Update SECRET_KEY in .env and restart the application.")
+        elif args.command == "unblock":
+            removed = cmd_unblock(
+                db_session, args.address, secret_key=settings.secret_key
+            )
+            db_session.commit()
+            if removed:
+                print(f"Unblocked {args.address}.")
+            else:
+                print(f"No block found for {args.address}. Nothing to do.")
         elif args.command == "bootstrap":
             created = ensure_bootstrap_admins(db_session)
             db_session.commit()

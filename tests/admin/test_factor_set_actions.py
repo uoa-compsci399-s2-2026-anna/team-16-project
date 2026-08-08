@@ -199,6 +199,31 @@ async def test_selecting_more_than_one_set_is_refused(
 
 
 @pytest.mark.asyncio
+async def test_a_refused_factor_set_action_does_not_explain_the_administrator_floor(
+    session, admin_client
+):
+    """brand/action_refused.html is shared with admin/accounts_view.py's
+    deactivate_action, which hardcoded a paragraph about the two-
+    administrator floor and a 'Back to accounts' link. Every render of that
+    template inherited both, including this one - a staff member who clicks
+    Publish with nothing selected was told about a feature they were not
+    using at all.
+
+    Clicking Publish with no row ticked is the exact scenario the project
+    owner found by hand: ``_one_pk`` (admin/factor_views.py) refuses with
+    'No factor set was selected.' before any session is even opened, so this
+    needs no fixture beyond the client.
+    """
+    response = await admin_client.get("/admin/factor-set/action/publish")
+
+    assert response.status_code == 400
+    assert "no factor set was selected" in response.text.lower()
+    assert "lost phone" not in response.text.lower()
+    assert "two active administrators" not in response.text.lower()
+    assert "back to accounts" not in response.text.lower()
+
+
+@pytest.mark.asyncio
 async def test_a_non_integer_pk_is_refused_not_500(session, admin_client, one_draft):
     """?pks=abc is only reachable by a hand-typed URL, but must not raise
     ValueError out of the handler - the same unhandled-500 shape the

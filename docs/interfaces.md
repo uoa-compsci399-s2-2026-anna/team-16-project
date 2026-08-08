@@ -27,6 +27,32 @@ This document defines **what every person's code receives and what it returns.**
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
 
+### v1.2 — 2026-08-09 (the merge of the two contract lines, **affects everybody**)
+
+Two documents became one. Most of the work was mechanical; the corrections below were not. Eleven of the seventeen changes are defects that were already in the document before the merge — the merge is what made them visible, by putting statements next to the statements they contradict. **Three of them (1, 2, 4) were live blockers on A's and B's integration work**: a section of this document that had gone two revisions without being updated, and that two people were about to code against.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **The two forks are merged.** v0.10–v0.13 (`admin_panel`) and v1.0–v1.1 (`docs/contract-v1.0`) both revised the same document in parallel for two days, and both were live and unmarked. Nothing was dropped from either side except §6.2's placeholder note, which said only "this file has not been reconciled with the other fork yet" and which this commit falsifies. The cost of the fork is concrete rather than theoretical: `admin/calc_client.py` and `admin/dryrun_views.py` were written on the `admin_panel` branch **against the other fork's §6.2**, because that was the only place the shape they needed existed. Code was being written against a contract that was not in the tree it was being written in | all | **all** |
+| 2 | **§3, §4.2 and §5.3 now describe a multi-entry calculation, which is what §6.2 has described since v1.0.** They did not. `CalculationRequest` was `current`/`alternative` with `sector_code` on `ScenarioInput`; `calculate()` returned one `ScenarioResult` pair; `upsert_submission` took that request. Meanwhile §2.3 had grown `submission_entry` and §6.2 sent `entries[]` and returned `totals`. v1.0's own change-log entry is marked "Affects **A, B and C**" and only two of the three sections were ever changed. **This is what "A and B are the most tightly coupled" costs when it goes wrong:** A builds an engine that structurally cannot produce `totals`, B has to invent the cross-entry aggregation signature with no contract to code against, and the two inventions meet for the first time at integration — where the golden suite cannot adjudicate, because the golden suite tests the engine A built | §3, §4.2, §5.3 | **A, B** |
+| 3 | **`totals` is computed by the engine, not summed in the API adapter, and §4.2 now says so with the reasoning.** An adapter in `api/` that adds per-entry metric totals together is a *second* impact-calculation site — the same defect as the browser doing it, differing only in which process runs the arithmetic. It would put the page's headline figure beyond the reach of the golden suite, which exercises `calculate()` and nothing above it, and it would make a non-additive roll-up a code change in `api/` — "metrics are data, not code" broken in the layer least likely to be reviewed for it. The rules for what the roll-up does with an entry that has no alternative (its current figures count on both sides, so its net benefit is zero and mass is conserved) are written out, because that is the one behaviour §6.2 states in prose and nowhere in a signature | §3, §4.2 | **A, B** |
+| 4 | **§6.2's dry-run row named two of the three submission tables.** It said no `submission` or `submission_line` row is written; `submission_entry` was added between that sentence and now. An implementer following it literally writes **orphan `submission_entry` rows on every staff dry run** — and §5.4 aggregates `by_sector` and `by_food_category` over exactly that table, so the pollution lands in the public statistics `X-Dry-Run` exists to protect, while `total_calculations` stays flat and conceals it. Staff run dozens of calculations while tuning one formula | §6.2 | **B, E** |
+| 5 | **§5.4 now carries the entry-aggregation rule that §2.3 attributes to it.** §2.3's `submission_line` note asserts "statistics aggregate over entries, not submissions (§5.4)" — and §5.4's `get_public_stats` and `StatsBucket` said nothing about entries. B implements §5.4 from §5.4. Joining `by_sector` to `submission` instead counts a multi-stage food business once, as whichever stage it entered first: the query returns a plausible number, nothing fails, and the population the calculator is most useful to is the one it silently mis-describes. Also states the consequence D has to write copy around — `total_calculations` counts submissions while every bucket `count` counts entries, so the two figures on the statistics page differ by design and must not be presented as a breakdown of one another | §5.4, §6.4 | **B, D** |
+| 6 | **§7 replaced with the eleven modules that exist, transcribed from C's branch.** It named five, described two of those inaccurately, and omitted six — including `view.js`, which holds the escaping and formatting primitives D and E would each otherwise reimplement, and whose single `escapeHtml` is the reason that branch is XSS-clean. Two shapes changed **to match her code rather than the reverse**: a line is `{id, qtyInput}`, where `id` survives a full re-render (`render()` replaces `main.innerHTML`) and `qtyInput` keeps the raw string so nothing rounds until it is sent. `unitPreset` and `unitCount` stay in this document as unmet requirements — the container-preset input was never built, `toKg` is imported by nothing — as does the `gwp_horizon` control | §7 | **C, D, E** |
+| 7 | **Settled: the cross-entry destination breakdown is rendered per entry, from `entries[]`.** C's results page builds one combined destination tab by adding `by_destination[].value` across entries in JavaScript — the last §7.6 violation that could not be removed by reading a different field. The ruling costs no new field, no engine change and nothing on A's critical path, and it is the more truthful rendering: the same destination under two entries draws two different upstream factors and is genuinely two rows. Two front-end figures are **removed** rather than relocated, because no field exists to move them to — the percentage-change figure (defined in no version of this contract; `net_benefit` already carries it in the user's own units) and the `landfill_diverted` card (a metric with no row in the `metric` table, with the destination code hard-coded in JavaScript) | §6.2 | **A, C** |
+| 8 | **§8.3's audit item is resolved, not open.** v0.13 recorded "an API-side block cannot audit itself today" as unresolved with B named as the decider. **Her branch had already resolved it** — `write_audit` and `_json_safe` sit in `db/repository.py`, where §5.5 has placed them since v0.3. There was never a decision to take, only a duplicate to remove, and leaving it open means the person who owns it goes looking for a choice that does not exist. The integration detail matters more than the bookkeeping: B's `_json_safe` recurses into nested dicts and lists and redacts at every level, E's `_scrub` handles top-level keys only — so a `password_hash` or `mfa_secret_enc` one level down inside a payload passes straight through E's copy into a table every staff member can read. **B's survives**; E's `date` handling folds in | §8.3 | **B, E** |
+| 9 | **The submissions migration is `0008`, `down_revision = "0007"`.** `docs/ToB_v3.0.md` §1.3 says `0006` / `"0005"`, which was true when written; `0006` (comparison scenarios) and `0007` (`ip_block`) have landed since. Following it literally creates a **third Alembic head** — not a merge conflict but an ambiguous chain, and `upgrade heads` then fails partway through on a table that already exists. **MySQL DDL autocommits**, so there is nothing to roll back and the recovery is `DROP DATABASE`. Cheapest possible thing to get right; among the most expensive to get wrong, which is why it is in the contract rather than a task brief | §2.3, §8.3 | **B** |
+| 10 | **§10 now says that `tests/fixtures/` does not exist.** This section calls those files "the executable form of the contract"; `origin/Demo-UI` is the only branch in the repository that has any, and they are in the pre-v1.0 flat shape. `main`, `admin_panel` and `docs/contract-v1.0` have no such directory, and B's branch carries a second, differently-wrong set. A fixture that disagrees with the contract does not fail — it produces front-end code bound to fields the API will never send, which is how C's branch came to have a `field` format the API does not emit. The canonical set lands **once**, in the v1.2 shape, with the B integration PR: two people writing fixtures from one contract produce two sets that differ wherever the contract is silent, which is exactly where a fixture is load-bearing. `errors/blocked.json`, `errors/unauthorized.json` and `calculate_response_single.json` are missing from every branch and all three are required | §10 | **B, C, D** |
+| 11 | **`sector.details` is folded into `description`. No new column.** C's `taxonomy.json` adds a `details` string per sector and her UI renders it in an expander that falls back to `description` — so against a real API every sector shows its description twice. `description` is already `TEXT` and already carries user-facing prose; a second column means a migration, a schema change, a §6.1 field and one more thing for staff to keep in step, for a field the client has not asked for | §2.1 | **B, C** |
+| 12 | **§6.3 carries `source_note` and `data_quality`; §10.2 states they are optional in `bundle.json` and must not be rejected.** v1.1 added the columns to both factor tables and `source_note` to `equivalence` on the stated ground that a calculator which cannot say which numbers are measured and which are borrowed cannot be defended in public — and then the only public surface that could say so, `GET /factors`, was left without them. Publishing the values and dropping the provenance removes the defence and keeps the exposure. On the bundle side the fields are optional and ignored: the engine computes nothing from provenance, but §8.2's **Save as regression case** writes a `bundle.json` straight out of a dry run, so `from_json()` must accept and ignore the keys rather than raise `BundleFormatError` on a bundle that is otherwise entirely valid | §6.3, §10.2 | **A, B** |
+| 13 | **§8.1's list of CRUD models is no longer "eleven".** `comparison_scenario` and `comparison_scenario_line` (v0.10) and `ip_block` (v0.12) were each specified in §2 and §8.2/§8.3 without being added here — so the section that states "every write must produce an `audit_log` entry" named three fewer tables than the panel writes to, and an audit of that requirement against this list would have come back clean. `ip_block` is listed with the qualification that it is **not** generic CRUD: list-only, `role = admin`, `ip_hmac` never in `column_list`, created through a custom form and removed through an audited `unblock` action | §8.1 | **E** |
+| 14 | **§6.5's "IP addresses are never persisted" contradicted §2.3.** v0.12 deliberately softened that absolute with the blocklist exception — an HMAC, never an address, only for a blocked caller — and §6.5 kept asserting the unqualified form, so the document stated a rule and its exception in two places at once. The absolute is the one that was wrong: a reader implementing §6.5 literally had grounds to call §2.3's table a contract violation. Also records as **open** the question underneath it, which is genuinely unsettled and B's: whether an *in-memory* rate-limit counter may be keyed on a raw address. `api/rate_limit.py` does; `admin/protection.py` uses the §2.3 fingerprint. Two layers currently applying different privacy standards to the same data is not a defensible position for a calculator whose selling point is that it stores nothing about the visitor | §6.5 | **B, E** |
+| 15 | **`ip_block`'s "see the note above" now names its target.** The merge reordered §2.3 to put the three submission tables in dependency order, which moved `submission_entry` and `submission_line` in between — so a reference written when the two were adjacent pointed at whatever happened to precede it. It now names the E-8 privacy blockquote explicitly, which is the note that licenses the table's existence against the no-address rule and is the one thing a reader must not fail to find from here | §2.3 | **B, E** |
+| 16 | **v0.11's standing instruction is discharged, and this entry closes it.** It asked for §8.2's corrected pre-publish-comparison wording to be applied to the unmerged `docs/contract-v1.0` branch as well. That branch did still carry the stale "old value, new value and change" / "differenced client-side" text, and the merge takes the corrected version because `contract-v1.0` never touched those lines. §8.2 now carries the correction. Recorded because an open instruction in a change log stays open until something says otherwise, and the next reader would spend their time confirming a done action | §0.1, §8.2 | **E** |
+| 17 | Four stale cross-references corrected: three sites pointed at §10.1 for the `bundle.json` shape (it is §10.2) and one pointed at §10.2 for the golden suite (it is §10.1). Minor, but §10.1 and §10.2 are the two documents `FactorBundle.from_json()` sits between, and A is the person following those pointers | §4.1, §6.2, §6.2.1 | **A** |
+
+> **Still open after this revision.** None of these is a defect in the document; all of them are decisions nobody has taken. **O-1 remains the hard blocker** — the client has not supplied real emissions factors, so everything runs on mock data and the banner stays mandatory. Beyond it: whether an in-memory rate-limit counter may hold a raw address (#14, B's); whether `admin.detection.looks_automated`, `RequestRate` and `_client_ip` move into a shared layer or are duplicated in `api/` (§8.3, B's, and the four blocklist items in `api/` are all downstream of it); whether `landfill_diverted` becomes a real `metric` row plus a formula (#7, the client's); and the positive/negative semantic colour pair, which C and D both need and neither has written down.
+
 ### v1.1 — 2026-08-07 (raised by E, **affects B**)
 
 Made while planning the factor screens, on the principle that the last thing to arrive should not be the thing that forces a migration.
@@ -229,9 +255,11 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `id` | INT | PK, AI | |
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | `primary_production`, `processing`, `wholesale_retail`, `consumer_household`, `consumer_hospitality`, `consumer_institution` |
 | `name` | VARCHAR(128) | NOT NULL | |
-| `description` | TEXT | NULL | |
+| `description` | TEXT | NULL | The whole of the user-facing explanatory text, short or long. **There is no second `details` column** — see below |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+> **There is one description field, not two.** C's `tests/fixtures/taxonomy.json` added a `details` string per sector and her sector step renders it in an expandable panel, falling back to `description`. No version of this contract has ever defined `details`, so against a real API the expander shows every sector's `description` twice. **Ruling: fold the longer text into `description`.** `description` is `TEXT` and already carries user-facing prose; a second column means a migration, a schema change, an extra field in §6.1 and one more thing for staff to keep in step — for a field the client has not asked for. C's fixture drops `details` and merges its text into `description`; her expander reads `description`.
 
 ### `food_category`
 
@@ -423,6 +451,8 @@ The standard test scenarios §8.2's pre-publish comparison view runs. A scenario
 
 ## 2.3 Submissions
 
+Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are filed as a single Alembic migration, **`0008`, `down_revision = "0007"`** — see §8.3, and do not take the revision number from `docs/ToB_v3.0.md` §1.3, which predates two migrations that have since landed.
+
 ### `submission`
 
 | Column | Type | Constraints | Notes |
@@ -515,9 +545,11 @@ UNIQUE(`submission_entry_id`, `scenario`, `destination_id`)
 
 ### `ip_block`
 
-Owned by B's layer (`db/`), built by E — see §8.3's "Blocklist" and the note
-above. No foreign keys: a block is not owned by a staff row, and it must
-survive the account of whoever made it being deleted.
+Owned by B's layer (`db/`), built by E — see §8.3's "Blocklist", and the
+**"One exception, added deliberately in E-8" blockquote under `submission`
+earlier in this section**, which is what licenses this table's existence
+against the no-address rule. No foreign keys: a block is not owned by a staff
+row, and it must survive the account of whoever made it being deleted.
 
 | Column | Type | Constraints | Notes |
 | --- | --- | --- | --- |
@@ -599,6 +631,8 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 
 All are `@dataclass(frozen=True)` and live in `engine/types.py`. **The engine does not depend on SQLAlchemy**; the repository layer converts ORM objects into these types.
 
+> **These types carry `entries`, and they did so from v1.0 onwards.** v1.0's change-log entry 1 is marked "Affects **A, B and C**", and it reshaped §2.3 and §6.2 — but §3, §4.2 and §5.3 were never brought into line and went on describing a single-entry calculation for two revisions. Corrected in v1.2. If you are holding an older copy, the tell is `sector_code` on `ScenarioInput` and a `CalculationResult` with `current` at the top level.
+
 ```python
 from dataclasses import dataclass
 from decimal import Decimal
@@ -611,16 +645,23 @@ class ScenarioLine:
     qty_kg: Decimal                 # >= 0
 
 @dataclass(frozen=True)
-class ScenarioInput:
+class EntryInput:
+    """One (sector, food_category) pair and both of its scenarios.
+
+    Sector and food category sit here rather than on each scenario because
+    §6.2 puts them on the entry: an entry's `current` and `alternative`
+    describe the same point in the supply chain, and a wire request cannot
+    express two different sectors for one entry. Putting them on the
+    scenario would make an unrepresentable state representable."""
     sector_code: str
-    food_category_code: str | None  # None -> use standard_mix
-    lines: tuple[ScenarioLine, ...]
+    food_category_code: str | None          # None -> use standard_mix
+    current: tuple[ScenarioLine, ...]
+    alternative: tuple[ScenarioLine, ...] | None
 
 @dataclass(frozen=True)
 class CalculationRequest:
-    current: ScenarioInput
-    alternative: ScenarioInput | None
-    gwp_horizon: int = 100          # 20 or 100
+    entries: tuple[EntryInput, ...]         # at least one; request order is preserved
+    gwp_horizon: int = 100                  # 20 or 100; applies to the whole request
 
 # ---------- Output ----------
 
@@ -638,7 +679,7 @@ class MetricResult:
     unit: str
     display_precision: int
     total: Decimal
-    by_destination: tuple[BreakdownRow, ...]
+    by_destination: tuple[BreakdownRow, ...]    # empty at the totals level; see below
 
 @dataclass(frozen=True)
 class EquivalenceResult:
@@ -654,14 +695,39 @@ class ScenarioResult:
     equivalences: tuple[EquivalenceResult, ...]
 
 @dataclass(frozen=True)
+class EntryResult:
+    sector_code: str
+    food_category_code: str | None
+    current: ScenarioResult
+    alternative: ScenarioResult | None
+    net_benefit: dict[str, Decimal] | None  # key = metric_code
+
+@dataclass(frozen=True)
+class CalculationTotals:
+    """The cross-entry roll-up. Computed by the engine, never by a caller."""
+    current: ScenarioResult
+    alternative: ScenarioResult | None
+    net_benefit: dict[str, Decimal] | None  # key = metric_code
+
+@dataclass(frozen=True)
 class CalculationResult:
     factor_set_version: str
     is_mock: bool
     gwp_horizon: int
-    current: ScenarioResult
-    alternative: ScenarioResult | None
-    net_benefit: dict[str, Decimal] | None  # key = metric_code
+    totals: CalculationTotals
+    entries: tuple[EntryResult, ...]        # request order, one per EntryInput
 ```
+
+**Four rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
+
+1. **`entries` preserves request order.** §6.2 states it, and `submission_entry.sort_order` (§2.3) exists to persist it. It is what lets C pair a result with the row the user typed.
+2. **`by_destination` is populated per entry and empty at the totals level.** §6.2: the same destination can appear under several entries drawing different upstream factors, so a cross-entry destination breakdown has no single correct aggregation rule. `MetricResult` is one type either way; at the totals level the tuple is empty and the serialiser omits the key. See §6.2 for the ruling on how the front end renders that breakdown.
+3. **An entry with no alternative contributes its `current` result to `totals.alternative`.** This is what §6.2's "entries without one contribute zero to it rather than being excluded, so the totals stay mass-conserving" means in code: the entry's own `EntryResult.alternative` and `EntryResult.net_benefit` stay `None`, but the totals roll-up counts its current figures on both sides, so its contribution to `totals.net_benefit` is exactly zero and `totals.alternative`'s mass equals `totals.current`'s. Excluding it instead would make the alternative lighter than the current scenario and inflate net benefit — the precise failure the dual-scenario design exists to prevent.
+4. **When *no* entry carries an alternative, `totals.alternative` and `totals.net_benefit` are both `None`,** and so is every `EntryResult.alternative` / `EntryResult.net_benefit`.
+
+> **`ScenarioInput` is gone.** It held `sector_code`, `food_category_code` and `lines`; those three now live on `EntryInput`, split across `current` and `alternative`. It is deleted rather than emptied down to a single `lines` field, because a surviving `ScenarioInput` is exactly what B's `api/engine_adapter.py` currently populates with `req.current.sector_code`, and a type that keeps its name while losing its meaning is the one an integration will keep using by accident.
+>
+> **`totals.total_kg` on the wire is `totals.current.total_kg`** (§6.2 hoists it one level). It is the current scenario's mass. Nothing in §6.2's validation table requires the alternative to conserve mass, so the two can differ; when they do, the alternative's mass is recoverable from `entries[].alternative.total_kg`. This is a wire-format hoist, not a fifth field on `CalculationTotals`.
 
 ---
 
@@ -702,7 +768,7 @@ class FactorBundle:
 
     @classmethod
     def from_json(cls, data: dict) -> "FactorBundle":
-        """Build a bundle from the bundle.json shape defined in §10.1.
+        """Build a bundle from the bundle.json shape defined in §10.2.
         Pure: no database, no file system, no clock. All decimals arrive as
         strings and are converted with Decimal(); float is never used as an
         intermediate. Raises BundleFormatError on malformed input."""
@@ -726,17 +792,19 @@ class FactorBundle:
 ```python
 def calculate(req: CalculationRequest, bundle: FactorBundle) -> CalculationResult:
     """
-    Evaluate the current scenario (and the alternative, if present) and
-    compute net benefit.
+    Evaluate every entry's current scenario (and its alternative, if present),
+    roll the entries up into totals, and compute net benefit at both levels.
 
     Parameters
-      req    : A validated request. Every destination, sector and
-               food_category code must exist in bundle, otherwise
-               UnknownCodeError is raised.
+      req    : A validated request carrying one or more entries. Every
+               destination, sector and food_category code must exist in
+               bundle, otherwise UnknownCodeError is raised.
       bundle : Factor set snapshot.
 
     Returns
-      CalculationResult. When alternative is None, net_benefit is also None.
+      CalculationResult, carrying `totals` and `entries` (§3). `entries` is in
+      request order. When no entry carries an alternative, totals.alternative,
+      totals.net_benefit and every entry's alternative / net_benefit are None.
 
     Raises
       UnknownCodeError     : a code in the request is absent from bundle
@@ -749,18 +817,45 @@ def calculate(req: CalculationRequest, bundle: FactorBundle) -> CalculationResul
     """
 ```
 
-```python
-def calculate_scenario(scenario: ScenarioInput, bundle: FactorBundle,
-                       gwp_horizon: int) -> ScenarioResult:
-    """Evaluate a single scenario. Called internally by calculate()."""
-```
+**`totals` is computed by the engine, not summed in the API adapter. This is a ruling, and it is not open.**
+
+Impact calculation happens server-side **in exactly one place**, and the engine is that place. An adapter in `api/` that adds per-entry `MetricResult.total` values together is a *second* calculation site — structurally the same defect as C's browser-side `aggregateResults`, differing only in which process the arithmetic runs in. It would put a headline figure in front of a user that no golden case can cover, because the golden suite (§10.1) exercises `calculate()` and nothing above it. Three consequences follow directly, and they are the reason this is worth a paragraph rather than a sentence:
+
+- The number a user sees on the results page would have no test.
+- A metric whose roll-up is not a plain sum — a maximum, a threshold, anything the client asks for later — would need a code change in `api/`, which is "metrics are data, not code" broken in the one layer that is hardest to notice it in.
+- `POST /calculate` and the golden suite would disagree about what the calculator computes, and only the API path would be wrong.
+
+B's `serialize_result` therefore **maps** `CalculationResult` onto the §6.2 JSON and performs no arithmetic beyond the `totals.total_kg` hoist described in §3. It adds nothing, and it must not.
+
+Within the engine, the roll-up rules are:
+
+| Field | Rule |
+| --- | --- |
+| `totals.current.metrics[code].total` | Σ over entries of that entry's metric total |
+| `totals.current.total_kg` | Σ over entries of `current.total_kg` |
+| `totals.current.equivalences` | Computed **from the rolled-up metric total**, not summed from the per-entry equivalence values. The conversion is linear so the two agree mathematically, but `Decimal` has finite precision and one computation is one rounding |
+| `totals.current.metrics[code].by_destination` | Empty (§3 rule 2) |
+| `totals.alternative` | Same rules, over each entry's `alternative` — **or its `current` where the entry has none** (§3 rule 3) |
+| `totals.net_benefit` | `net_benefit(totals.current, totals.alternative)` — computed on the rolled-up scenarios, not summed from the per-entry `net_benefit` maps |
 
 ```python
 def net_benefit(current: ScenarioResult,
                 alternative: ScenarioResult) -> dict[str, Decimal]:
     """Per metric: current.total - alternative.total.
-    Only metric codes present on both sides are included."""
+    Only metric codes present on both sides are included.
+    Applied at both levels: per entry, and to the rolled-up totals."""
 ```
+
+**Everything below `calculate()` is A's to shape.** §6.2 determines the request, the result and the roll-up rules above; it says nothing about how the engine is decomposed internally. The v0.13 helper `calculate_scenario(scenario, bundle, gwp_horizon)` no longer type-checks — `ScenarioInput` is gone and a scenario can no longer supply its own sector — so a per-scenario helper now needs the sector and food category passed alongside the lines, for example:
+
+```python
+def calculate_scenario(lines: tuple[ScenarioLine, ...], sector_code: str,
+                       food_category_code: str | None, bundle: FactorBundle,
+                       gwp_horizon: int) -> ScenarioResult:
+    """Evaluate one scenario of one entry. Internal to the engine."""
+```
+
+That signature is illustrative, not contractual. No caller outside `engine/` may depend on it; B calls `calculate()` and nothing else.
 
 ## 4.3 Expression Evaluation
 
@@ -907,10 +1002,27 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 def upsert_submission(session, token: str | None, req: CalculationRequest,
                       factor_set_id: int) -> tuple[int, str]:
     """
-    Upsert keyed by token.
+    Upsert keyed by token. One call, one submission, N entries.
 
-    token is None or expired -> insert a new row and mint a new UUID4 token.
-    token is valid           -> overwrite that row, including all its lines.
+    token is None, unparseable, or does not resolve to a live submission
+                             -> insert a new row and mint a new UUID4 token.
+    token is valid           -> overwrite that row and its whole entry set.
+
+    `req` is a §3 CalculationRequest and therefore carries `req.entries`, not
+    a single `req.current`. Writing the submission means writing three tables:
+
+      submission        one row; stamps factor_set_id and req.gwp_horizon
+      submission_entry  one row per req.entries[i], with sort_order = i so
+                        the response's entries[] can be paired back to the
+                        rows on the user's screen (§2.3)
+      submission_line   one row per line, per scenario, per entry, keyed on
+                        submission_entry_id
+
+    On overwrite the entry set is rebuilt, not patched: delete every
+    submission_entry for this submission (ON DELETE CASCADE takes the lines
+    with it) and insert the request's entries in order. Patching in place
+    would have to reconcile an entry the user removed against one they added,
+    and the entries have no client-supplied identity to reconcile on.
 
     Returns (submission_id, token). The token is always returned so the
     front end can store it in sessionStorage.
@@ -932,25 +1044,42 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
     - Excludes rows with excluded_from_public = TRUE
     - Merges any bucket with count < threshold into 'other'
     - Suppression happens here and is never delegated to the front end
+
+    THE UNIT OF AGGREGATION IS THE ENTRY, NOT THE SUBMISSION (§2.3).
+
+      by_sector         group over submission_entry.sector_id
+      by_food_category  group over submission_entry.food_category_id
+      by_destination    group over submission_line, joined to its entry
+      total_calculations  counts submission rows
+
+    A submission with three entries is three sector observations. Joining
+    by_sector to `submission` instead — which is what a schema-driven reading
+    of the old single-sector shape produces — counts a multi-stage food
+    business once, as whichever stage it happened to enter first. That is the
+    exact population the calculator is most useful to and least able to
+    describe, and the query returns a plausible number either way, so nothing
+    fails and nobody notices.
     """
 
 @dataclass(frozen=True)
 class StatsBucket:
     code: str          # taxonomy code, or 'other'
     label: str
-    count: int
-    share: Decimal     # 0..1
+    count: int         # ENTRIES in this bucket, not submissions
+    share: Decimal     # 0..1, of the entry count within this breakdown
     total_kg: Decimal
 
 @dataclass(frozen=True)
 class PublicStats:
     generated_at: datetime
-    total_calculations: int
+    total_calculations: int      # SUBMISSIONS, not entries
     suppression_threshold: int
     by_destination: tuple[StatsBucket, ...]
     by_sector: tuple[StatsBucket, ...]
     by_food_category: tuple[StatsBucket, ...]
 ```
+
+> **`total_calculations` and the bucket counts are deliberately counting different things, and the statistics page must not present them as if they were not.** `total_calculations` is submissions; every `StatsBucket.count` is entries. `Σ by_sector[].count` is therefore ≥ `total_calculations`, and the gap is exactly the number of multi-entry submissions. `share` is computed within its own breakdown — over entries — so shares still sum to 1 and are the safe figure to display. Copy that reads "1,247 calculations" beside a sector chart whose counts add to 1,600 invites the obvious question; the honest phrasing names the unit ("1,247 calculations, covering 1,600 points in the supply chain"). See §6.4's copy constraint, which is D's.
 
 ## 5.5 Audit
 
@@ -1097,7 +1226,9 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 | Header | Purpose |
 | --- | --- |
-| `X-Dry-Run: true` | **Do not persist.** No `submission` or `submission_line` row is written and no token is returned. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
+| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written, and no token is returned — the three tables of §2.3 are untouched, not two of them. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
+
+> `submission_entry` is named explicitly because it was added after this row was written and an implementer working from the older wording writes orphan entry rows on every staff dry run. Staff run dozens of calculations while tuning one formula, and `submission_entry` is what §5.4 aggregates `by_sector` and `by_food_category` over — so those orphans would land squarely in the public statistics this header exists to protect, while `total_calculations` stayed flat and hid it.
 
 ## 6.2.1 The `dry_run` Object
 
@@ -1120,13 +1251,13 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | Field | Type | Notes |
 | --- | --- | --- |
 | `factor_set_version` | string \| null | `version_label` of a persisted set — draft, published or archived |
-| `bundle` | object \| null | A **complete** factor set snapshot in the §10.1 `bundle.json` shape |
+| `bundle` | object \| null | A **complete** factor set snapshot in the §10.2 `bundle.json` shape |
 
 The two are mutually exclusive. When both are null the published set is used — the request is still not persisted.
 
 > **Why a complete bundle rather than a diff against a base version.** A merge routine is new, untested code sitting between the staff member and the engine: when a dry run produces a wrong number, there is no way to tell whether the formula was wrong or the merge was. Diffs also have unpleasant edge cases — how does a generic `food_category: null` row merge with a specific one, and how is "delete this row" expressed? A complete snapshot has none of these questions. The volume does not justify the risk: roughly 270 upstream rows, 600 downstream rows and 20 others, around 90 KB uncompressed, and it travels behind authentication.
 
-> **The bundle carries the taxonomy, not just the factors** (§10.1). Two reasons: §4.1's `has_destination()`, `has_sector()`, `has_food_category()` and `standard_mix_code()` cannot be implemented without it; and the client has stated that food categories, destinations and groupings will change over time, so staff must be able to trial a new destination before committing it — which is impossible if the bundle cannot carry its definition.
+> **The bundle carries the taxonomy, not just the factors** (§10.2). Two reasons: §4.1's `has_destination()`, `has_sector()`, `has_food_category()` and `standard_mix_code()` cannot be implemented without it; and the client has stated that food categories, destinations and groupings will change over time, so staff must be able to trial a new destination before committing it — which is impossible if the bundle cannot carry its definition.
 
 > This does **not** change how taxonomy is normally edited. Routine create/update/delete still goes through the admin CRUD of §8.1 and writes to the database. An inline bundle is a parallel, temporary channel that exists only for the lifetime of one request.
 
@@ -1188,11 +1319,20 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
 }
 ```
 
-**`totals` is what the headline figures are rendered from; `entries` is what the breakdown table is rendered from.** Both are computed by the engine. The client adds nothing together — it has no correct way to, because a decimal transmitted as a string (§1.2) cannot be summed in JavaScript without going through `Number`, and because the golden suite (§10.2) can only cover a number the engine produced.
+**`totals` is what the headline figures are rendered from; `entries` is what the breakdown table is rendered from.** Both are computed by the engine. The client adds nothing together — it has no correct way to, because a decimal transmitted as a string (§1.2) cannot be summed in JavaScript without going through `Number`, and because the golden suite (§10.1) can only cover a number the engine produced.
 
 `totals.current.metrics[code]` carries no `by_destination`: the same destination can appear under several entries with different upstream factors, so a cross-entry destination breakdown would need its own aggregation rule. If the client asks for one later, it belongs here as a new field the engine fills, not as a loop in the browser.
 
-`entries[]` preserves request order, so a client can pair each result with the row the user typed.
+> **Settled: the destination breakdown is rendered per entry, from `entries[]`.** C's results page currently builds a single combined destination tab by looping over entries and adding `by_destination[].value` together in JavaScript — a §7.6 violation, and it is the last one that cannot be removed by reading a different field. The resolution is a rendering change, not a contract change: **one breakdown section per entry**, each read straight from `entries[i].current.metrics[code].by_destination`, labelled with that entry's sector and food category.
+>
+> This adds no field, requires no engine change and puts nothing on A's critical path. It is also the more truthful presentation: 1,200 kg to landfill from processing and 1,200 kg to landfill from primary production carry different upstream factors and are genuinely different rows, and merging them into one "landfill" bar hides the reason a multi-entry calculation was worth making. If the client later asks for a single combined view, it arrives as an engine-filled field with a stated aggregation rule — not as a loop in the browser, and not by reopening this.
+>
+> **Two front-end figures are removed rather than relocated, because no field exists to move them to:**
+>
+> - **The percentage-change figure** ("34.2% reduction", `improvement.js:153`, computed as `difference / |current| × 100`). No version of this contract has ever defined a percentage. It is a derived impact number computed in the browser, so it cannot stay; and it is not worth an engine field, because `net_benefit` already carries the same information in the unit the user entered. Removed. If it is wanted back, it is a metric-shaped request and goes through the engine.
+> - **The `landfill_diverted` card** (`improvement.js:147`). It synthesises a metric that has no row in the `metric` table, and it hard-codes the destination code `'landfill'` in JavaScript — the two things "metrics are data, not code" exists to prevent. `docs/ToC_v1.0.md` §2.2 already ruled that if the client wants this figure it becomes a real `metric` row plus a formula. Removed meanwhile.
+
+`entries[]` preserves request order, so a client can pair each result with the row the user typed. `submission_entry.sort_order` (§2.3) is what persists that order.
 
 When `alternative` is not supplied, both `alternative` and `net_benefit` are `null`.
 
@@ -1234,21 +1374,27 @@ Factors and formulas are published openly (Decision 7).
   ],
   "upstream": [
     { "sector": "processing", "food_category": "dairy",
-      "metric": "co2e", "value_per_kg": "1.9000000000" }
+      "metric": "co2e", "value_per_kg": "1.9000000000",
+      "source_note": "Otago 2025 baseline, table 14",
+      "data_quality": "measured" }
   ],
   "downstream": [
     { "destination": "landfill", "food_category": "dairy",
-      "metric": "co2e", "value_per_kg": "0.9900000000" }
+      "metric": "co2e", "value_per_kg": "0.9900000000",
+      "source_note": null, "data_quality": "proxy-AU" }
   ],
   "equivalences": [
     { "code": "km_driven", "source_metric": "co2e",
       "value_per_unit": "4.1800000000",
-      "label_template": "Equivalent to driving {value} km" }
+      "label_template": "Equivalent to driving {value} km",
+      "source_note": null }
   ]
 }
 ```
 
-With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`).
+**`source_note` and `data_quality` are part of this response, and both may be `null`.** They were added to `factor_upstream`, `factor_downstream` and `equivalence` in v1.1 (§2.2) and this endpoint is the whole reason they exist: v1.1's stated rationale is that a calculator which cannot say which of its numbers are measured and which are borrowed cannot be defended in public, and §6.3 is the only public surface where a number can say so. A factor export that carries the values and drops their provenance publishes exactly the figure that is hardest to defend, with the defence removed. `null` is a legal value — most rows will carry `null` until the client supplies real data — and it must appear as `null`, not as an omitted key, so a consumer can tell "no provenance recorded" from "this endpoint does not report provenance".
+
+With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other.
 
 ## 6.4 `GET /api/v1/stats`
 
@@ -1270,7 +1416,9 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
 }
 ```
 
-> **Copy constraint (owner: D).** The subject of the statistics page must be the calculator itself — "Across the 1,247 calculations run in this tool…" — and **never** "Distribution of food waste destinations in New Zealand". Prefer `share`; if `total_kg` is displayed it must be explicitly labelled as the cumulative total entered into this tool.
+`total_calculations` counts **submissions**; every bucket `count` counts **entries** (§5.4). One submission can carry up to twenty entries, so the bucket counts will exceed `total_calculations` and are not a breakdown of it. `share` is computed within its own breakdown and does sum to 1.
+
+> **Copy constraint (owner: D).** The subject of the statistics page must be the calculator itself — "Across the 1,247 calculations run in this tool…" — and **never** "Distribution of food waste destinations in New Zealand". Prefer `share`; if `total_kg` is displayed it must be explicitly labelled as the cumulative total entered into this tool. Do not label a bucket `count` as a number of calculations — it is a number of supply-chain points entered, and the two figures on this page differ by design.
 
 ## 6.5 Rate Limits
 
@@ -1279,7 +1427,11 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
 | `POST /api/v1/calculate` | 120 / hour / IP |
 | `GET /api/v1/*` | 600 / hour / IP |
 
-Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or Redis; **IP addresses are never persisted.**
+Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or Redis.
+
+**No IP address is persisted by the rate limiter, and none is persisted anywhere in this system except the one exception §2.3 records.** That exception is `ip_block`, which stores an HMAC of an address — never the address — and only for a caller a staff member or the automatic protection has blocked. This sentence used to read "IP addresses are never persisted" without qualification; v0.12 added the blocklist exception in §2.3 and this line was not updated, so the document asserted an absolute and its exception in two places at once. The absolute is the one that was wrong: a reader implementing §6.5 literally would have had grounds to call §2.3's table a contract violation.
+
+> **Open, and B owns it: whether an *in-memory* counter may be keyed on a raw address.** §6.5 sets its bar at persistence, and `api/rate_limit.py` keys on `"post-calculate:203.0.113.9"`, which satisfies it. §2.3's prohibition has been read as covering process memory too, and `admin/protection.py` keys on the §2.3 fingerprint accordingly. **The two layers currently apply different privacy standards to the same data**, which is not a defensible position for a calculator whose stated selling point is that it stores nothing about the visitor. Not resolved here because §6.5 is B's section and this is a decision, not a correction. Whichever way it goes, both layers move together.
 
 ---
 
@@ -1287,61 +1439,92 @@ Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or 
 
 ES modules, no build step. Located in `web/js/`.
 
-## 7.1 `api.js` (written by C, shared with D)
+**Eleven modules, nine of them C's and built.** Until v1.2 this section named five and described two of those inaccurately — six real modules were absent, including `view.js`, which holds the escaping and formatting primitives D and E would otherwise each reimplement. The signatures below are transcribed from the branch, not proposed for it. Where C's code and the old contract disagreed on shape, **the contract has changed to match her code** and says so at the point of change; where a contract requirement is genuinely unmet, it is marked **Not built** and stays a requirement.
+
+## 7.1 `api.js` (written by C, shared with D and E)
+
+The only module that calls `fetch` — verified across the branch. **No other module calls `fetch` directly.**
 
 ```js
-/**
- * @typedef {Object} ApiError
- * @property {string} code     Error code, see §9
- * @property {string} message  Display-ready message
- * @property {Array}  details  Field-level errors; may be empty
- */
+export class ApiError extends Error {
+  constructor(code, message, details = [], status = 0);
+  code;      // string — §9 error code, or 'NETWORK_ERROR' | 'HTTP_ERROR' | 'MOCK_FIXTURE_ERROR'
+  message;   // string — display-ready
+  details;   // Array  — field-level errors; [] when absent
+  status;    // number — HTTP status; 0 when the request never completed
+}
 
-/** @returns {Promise<Taxonomy>} @throws {ApiError} */
+/** GET /api/v1/taxonomy   @returns {Promise<Taxonomy>} @throws {ApiError} */
 export async function getTaxonomy();
 
 /**
- * @param {CalculatePayload} payload
- * @param {{dryRun?: boolean}} [opts]
- * @returns {Promise<CalculationResult>}
- * @throws {ApiError}
+ * POST /api/v1/calculate
+ * @param {CalculatePayload} payload   §6.2 body, carrying `entries`
+ * @param {{dryRun?: boolean}} [opts]  dryRun === true -> X-Dry-Run: true
+ * @returns {Promise<CalculationResult>} @throws {ApiError}
  */
-export async function calculate(payload, opts);
+export async function calculate(payload, opts = {});
 
-/** @returns {Promise<PublicStats>} @throws {ApiError} */
+/** GET /api/v1/stats   @returns {Promise<PublicStats>} @throws {ApiError} */
 export async function getStats();
 
-/** @param {{version?: string}} [opts] @returns {Promise<Factors>} */
-export async function getFactors(opts);
+/** GET /api/v1/factors[?version=…]   @returns {Promise<Factors>} */
+export async function getFactors(opts = {});
 ```
 
-`api.js` owns URL construction, headers, JSON parsing, and converting any non-2xx response into a thrown `ApiError`. **No other module calls `fetch` directly.**
+`api.js` owns URL construction, headers, JSON parsing, and converting any non-2xx response into a thrown `ApiError`, reading `body.error.{code,message,details}` with a fallback to a flat `body.{code,message,details}`. It distinguishes three failure modes — network unreachable, non-JSON response, structured API error — and they carry different messages.
+
+**Mock mode is part of this contract, not a private convenience.** It is the substrate C, D and E all develop on while the backend is unmerged, so its behaviour is written down here rather than left to be rediscovered:
+
+| Parameter | Effect |
+| --- | --- |
+| `?mock=1` | Every call is served from `tests/fixtures/` instead of the network. Read once at module load |
+| `&mockError=<NAME>` | `POST /calculate` throws from `tests/fixtures/errors/<name>.json` (lower-cased); status 429 for `RATE_LIMITED`, else 400 |
+
+Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stats` → `stats.json`, `POST /calculate` → `calculate_response.json`. **The mock path currently re-synthesises the `mass` metric from the request body in JavaScript.** That is simulating a server rather than violating §7.6, but it means the numbers on screen in a mock demo were computed in the browser, and it must be rewritten when the fixtures move to the `entries`/`totals` shape (§10).
+
+**Known defect, not a contract question:** the fixture path is absolute from the site root (`fetch('/tests/fixtures/…')`). That works under `python3 -m http.server` at the repo root and breaks the moment FastAPI serves `web/` as the static root — which breaks C, D and E simultaneously, because all three develop in mock mode.
 
 ## 7.2 `state.js` (written by C)
 
 ```js
-/** Single state object. Ad-hoc DOM manipulation elsewhere is not permitted. */
-export const state = {
-  taxonomy: null,
-  token: null,               // from sessionStorage
-  sector: null,
-  foodCategory: null,
-  gwpHorizon: 100,
-  current: [],               // [{destination, qtyKg, unitPreset, unitCount}]
-  alternative: [],
-  result: null,
-  loading: false,
-  error: null,
-};
+/** Single mutable state object with a subscriber set. */
+export const state;
 
-/** Shallow-merges the patch and notifies all subscribers */
+/** Object.assign of the patch, then notify every subscriber. */
 export function setState(patch);
 
 /** @param {(s: typeof state) => void} fn @returns {() => void} unsubscribe */
 export function subscribe(fn);
+
+/** Clears the sessionStorage token and returns to the intro step. */
+export function resetCalculator();
 ```
 
+Keys, grouped. **This is C's shape and the contract has adopted it**; the previous ten-key object in this section was a proposal that her code superseded.
+
+| Group | Keys |
+| --- | --- |
+| Server data | `taxonomy`, `result` |
+| Session | `token` — initialised from `sessionStorage.kaiCalculatorToken` at module load |
+| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `current: [{id, destination, qtyInput}]` |
+| Multi-entry | `entries: []` — committed entries, same shape as the draft |
+| UI | `step` (−1 intro … 5 results), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
+| Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
+| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementResult`, `improvementLoading`, `improvementError` |
+
+> **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
+
+**Still requirements, and still unmet:**
+
+- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission.
+- **`gwpHorizon` is set to 100 at initialisation and no control ever writes it.** §6.2 makes the horizon user-selectable between 20 and 100; a stated requirement is currently unmet and invisible on screen.
+
+> **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths have already drifted: the typed path and the re-rendered path apply **different validity rules to the same field**. Any change to a validation rule has to be made in both.
+
 ## 7.3 `units.js` (written by C)
+
+**All front-end mass arithmetic belongs in this module.** That is the whole point of §7.6.1: the front end's arithmetic can be audited in one file. It currently is not — `tonnes ? 1000 : 1` is duplicated at six sites across `results.js` and `improvement.js`, which is not a correctness bug today and defeats the rule.
 
 ```js
 /**
@@ -1351,10 +1534,125 @@ export function subscribe(fn);
  * @param {Array}  presets     taxonomy.unit_presets
  * @returns {string}           Kilograms as a string with 3 decimal places,
  *                             ready to send to the API
- * @throws {Error}             presetCode does not exist
+ * @throws {Error}             presetCode does not exist, or the product is
+ *                             not finite
+ * ** Currently imported by nothing — see §7.2, the preset input is not built. **
  */
 export function toKg(count, presetCode, presets);
+
+/**
+ * @param {number|string} amount
+ * @param {'kilograms'|'tonnes'} unit
+ * @returns {number|null}  null when amount is not finite
+ */
+export function massToKg(amount, unit);
+
+/** massToKg(...) fixed to 3 decimal places, i.e. API-ready.
+ *  @returns {string|null}  Currently imported by nothing. */
+export function kgString(amount, unit);
 ```
+
+## 7.3a Calculator Modules (written by C)
+
+Six modules that no version of §7 named. Transcribed from the branch.
+
+### `view.js` — the shared primitives
+
+**D and E consume this module rather than reimplementing it.** One `escapeHtml`, applied at every interpolation site, is the single reason C's branch is XSS-clean; a second copy in D's or E's code is a second thing to get right.
+
+```js
+/** &, <, >, " and ' -> entities. Safe for text and double-quoted attributes. */
+export function escapeHtml(value = '');
+
+/** Number(value).toLocaleString('en-NZ', {maximumFractionDigits: precision});
+ *  returns 'Not available' for a non-finite input. */
+export function formatNumber(value, precision = 2);
+
+/** lower-case, non-alphanumerics -> '-', trimmed. For DOM ids and class names. */
+export function slug(value);
+
+/** HTML for the standard Back / primary-action pair. Emits
+ *  data-action="go-step" data-step="<backStep>" and data-action="<action>". */
+export function buttonRow(backStep, label = 'Continue', disabled = false, action = 'continue');
+```
+
+> **Precondition, stated because D and E will now depend on it:** `escapeHtml` does not escape backticks or `/`, so it is safe only in **double-quoted** attribute contexts and in text. Every attribute in C's branch is double-quoted. An unquoted attribute breaks the guarantee silently.
+>
+> **Known gap:** `formatNumber` sets no `minimumFractionDigits`, so a cost of exactly `825.00` renders as "825" at `display_precision: 2`. §6.1 supplies `display_precision` for both bounds.
+
+### `calculator.js` — the wizard
+
+```js
+/** Writes the current screen into `main`. Handles the loading and
+ *  taxonomy-failure screens; dispatches on state.step (−1 intro, 0-4 screens,
+ *  5 delegates to results.renderResults). */
+export function render(main);
+
+/** Updates the header, the "Clear all data" button and the six-step
+ *  progress indicator. */
+export function renderChrome();
+
+/** Installs four delegated listeners on `main` (click / change / input /
+ *  keydown) and stores the taxonomy-reload callback the UNKNOWN_CODE path uses. */
+export function bindCalculator(main, retryTaxonomy);
+```
+
+`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `retry`, `view-methodology`.
+
+Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `publicError(error)` maps a §9 code to user copy; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `submitCalculation()` issues the request.
+
+> **`prevention` is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — `prevention` is how the alternative scenario expresses waste avoided (§2.1), and offering it as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting.
+>
+> **Two defects here are contract-relevant.** `fieldErrorMap` keys on the raw `details[].field` string while the render loop looks up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never binds; and the index is the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differ whenever any destination is left empty, which is the normal case. Both fail silently: no error, no console warning, the user sees only the generic banner. The index half is a bug under any `field` format.
+
+### `results.js` — the results screen
+
+```js
+/** The step-5 screen: mock banner (when any response has factor_set.is_mock),
+ *  impact summary cards, tangible equivalents, a three-tab breakdown
+ *  (stage / destination / food), a methodology-and-limitations block naming
+ *  the factor version, action buttons, and the improvement panel.
+ *  @returns {string} HTML */
+export function renderResults(state);
+
+/** Builds a plain-text report and triggers a Blob download as
+ *  'food-waste-impact-results.txt'. */
+export function downloadResults(state);
+```
+
+> Most of this module is currently a client-side aggregation layer that sums engine-computed metric totals, equivalence values and destination rows across entries. **All of it is deleted** by reading `totals` and `net_benefit` from §6.2 instead; the destination tab is rebuilt per entry per the ruling in §6.2. What survives is `summaryCards` (which already iterates metrics correctly), the tab/table/bar markup, and the download plumbing.
+>
+> Two hard-codings must go with it: the breakdown table hard-codes the columns `CO₂e / Cost / Water`, and the equivalence list hard-codes its own labels for `km_driven` / `meals` / `showers`, discarding the `label` the API renders from `label_template`. Both defeat the promise that a new metric or equivalence costs one `INSERT` (§2.1), and the second overrides the client's approved wording with C's.
+
+### `improvement.js` — the alternative scenario
+
+```js
+export function currentAllocationPercentages(state);  // {destinationCode: number}
+export function openImprovement(state);               // seeds from current allocation
+export function resetImprovement(state);
+/** Keystroke fast path: mirrors slider and number input, updates the running
+ *  total and inline error, enables/disables Compare — all without setState. */
+export function updateImprovementInput(control, state);
+export function allocationTotal(allocations);
+export function improvementValidation(state);         // '' when valid
+export async function compareImprovement(state);
+export function ImprovementScenario(state);           // collapsed CTA or open panel
+export function ComparisonResults(state);             // '' until a comparison exists
+```
+
+> **Charts must render negative values.** `downstream` may be negative (§2.2) and a metric total therefore may be too, but the comparison bars currently apply `Math.abs()` to their widths, so −500 and +500 draw identically. The reuse-and-offset story is the client's headline message and it is currently invisible. The `.value-positive` / `.value-negative` / `.value-zero` CSS already exists in the stylesheet and is referenced by nothing.
+>
+> The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. Flagged for A and B, not resolved here.
+
+### `main.js` — entry point for `index.html`
+
+No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`, binds the header home and "Clear all data" buttons, defines `loadTaxonomy({preserveError})` (also passed to `bindCalculator` as the `UNKNOWN_CODE` reload path), and performs the first render and taxonomy fetch.
+
+> **Known defect:** it calls `main.focus()` after *every* `setState`. Arrow-key navigation inside the sector radio group fires `change` → full re-render → focus yanked to `<main>`, so a keyboard-only user cannot get past step 1. This undoes a substantial and otherwise well-built accessibility layer.
+
+### `methodology.js` — entry point for `methodology.html`
+
+No exports. Uses top-level `await` to call `getFactors()`, then writes the factor-set metadata and the published-formula table into `#factor-content`, prefixed by the placeholder-data banner when `factor_set.is_mock`. Renders an escaped error block on failure. `formula.expression` is staff-authored content reaching a public page and is escaped inside `<code>`.
 
 ## 7.4 `charts.js` (written by D)
 
@@ -1393,12 +1691,16 @@ export async function fetchNews(limit);
 
 Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embed`
 
+> **§7.4 and §7.5 are specifications, not descriptions.** Neither module exists yet, and Chart.js appears nowhere in the tree — C's bars are CSS-width `<span>` elements. They remain D's deliverables.
+
 ## 7.6 Front-End Hard Constraints
 
-1. **The front end performs no impact calculation.** Apart from unit conversion in `units.js`, every number comes from the API.
-2. **When `is_mock` is true, the warning banner is mandatory** and cannot be dismissed.
+1. **The front end performs no impact calculation.** Apart from unit conversion in `units.js`, every number comes from the API. This includes cross-entry totals: read `totals` and `net_benefit` from §6.2, never a sum over `entries[]`.
+2. **When `is_mock` is true, the warning banner is mandatory** and cannot be dismissed. This covers **every results view and every export**, and it must be conditional on `is_mock` rather than unconditional — an export that always carries the placeholder disclaimer becomes an export that disclaims real data the day real factors are published, which is the more damaging direction of the same bug.
 3. The calculator page is **mobile-first**, baseline width 375px.
 4. After every successful calculation, write the returned `token` back to `sessionStorage`.
+5. **Iterate over metrics and equivalences; never hard-code their codes.** A view that lists `['co2e','water','cost']` silently omits the metric a staff member added, and adding a metric is meant to cost one `INSERT` and one formula (§2.1).
+6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show.
 
 ---
 
@@ -1408,11 +1710,17 @@ Built on `sqladmin`, mounted at `/admin`, authentication required.
 
 ## 8.1 Models Exposed for Direct CRUD
 
-`sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream`
+**Taxonomy and factors — eleven, from v0.1:** `sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream`
+
+**Comparison scenarios — two, added v0.10 (§2.2a):** `comparison_scenario`, `comparison_scenario_line`. Edited under their own "Comparison" category. Unlike the taxonomy tables these may be **deleted** through the panel: a scenario is a staff member's own saved test case and is referenced by nothing else in the schema.
+
+**Blocklist — one, added v0.12 (§2.3):** `ip_block`. Listed here for completeness but **it is not generic CRUD, and treating it as such would leak the thing it exists to avoid storing.** The view is list-only and restricted to `role = admin`; `ip_hmac` never appears in `column_list`; a block is created through the custom form at `/admin/ip-block/block` and removed through the audited `unblock` action rather than `sqladmin`'s generic delete. §8.3 is the specification.
 
 Requirements: list views must offer search and filtering.
 
-**Every write must produce an `audit_log` entry.** Admin CRUD achieves this through an `AuditedModelView` base class that all eleven views inherit; factor-set lifecycle operations do it inline in the repository. Both call `write_audit()` (§5.5), which is the only code that inserts into `audit_log`.
+**Every write must produce an `audit_log` entry.** Admin CRUD achieves this through an `AuditedModelView` base class that every view above inherits; factor-set lifecycle operations do it inline in the repository. Both call `write_audit()` (§5.5), which is the only code that inserts into `audit_log`.
+
+> This list said "eleven" for four revisions after it stopped being eleven. `comparison_scenario` and `comparison_scenario_line` landed in v0.10 and `ip_block` in v0.12, and each was specified in §2 and §8.2/§8.3 without being added here — so §8.1, the section that states the audit requirement, named three fewer tables than the panel actually writes to. A reader auditing "does every write produce an audit entry" against this list would have concluded yes while three tables sat outside it.
 
 `AuditedModelView` captures the pre-change row in the before-write hook — the after-write hook only ever sees the new values — and hard-codes `can_create = can_edit = can_delete = False` on the `audit_log` view itself.
 
@@ -1520,6 +1828,12 @@ that beyond the comment — they have already drifted out of sync once during
 this branch. E-4 through E-6 read this section: if either comparison
 changes, check the other.
 
+> **The submissions migration is `0008`, with `down_revision = "0007"`. Recorded here because it is the second reconciliation item this merge settles, and because the document that says otherwise is still on the shelf.** `docs/ToB_v3.0.md` §1.3 instructs B to file the three submission tables (`submission`, `submission_entry`, `submission_line`, plus the `COALESCE(food_category_id, 0)` functional index) as `alembic/versions/0006_submissions.py` with `down_revision = "0005"`. That was correct when it was written. Since then `0006` (comparison scenarios, v0.10) and `0007` (`ip_block`, v0.12) have both landed, so **ToB v3.0 is stale on this point and must not be followed literally.**
+>
+> Following it produces a **third Alembic head**, not a merge conflict: two migrations both claiming `down_revision = "0005"`, `alembic upgrade head` aborting on ambiguity, and `upgrade heads` then failing partway through on a table that already exists. **MySQL DDL autocommits**, so there is no transaction to roll back and the recovery is `DROP DATABASE` — which is survivable on a developer's machine and is not survivable anywhere else. This is the cheapest possible thing to get right and one of the most expensive to get wrong, which is the only reason it is written into the contract rather than left in a task brief.
+
+
+
 `admin.accounts.issue_password(session, username, *, actor) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned once, to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
@@ -1569,9 +1883,14 @@ The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`),
 
 **Where an operator gets an address to type into that form.** Nowhere in this system — and that is worth stating, because the form otherwise reads as more capable than the panel is. Nothing here ever shows staff a caller's address: §2.3 forbids storing one, and the panel deliberately does not log one either. The address has to come from outside: the reverse proxy's or hosting platform's own access log, an alert from the host, or a report from someone who can see the traffic. The form's purpose is to *apply* an address an operator already has in hand from one of those, during an incident, with no CDN or upstream firewall available to do it for them. Anyone planning to rely on this screen should confirm the deployment keeps a proxy access log at all, before an incident rather than during one.
 
-> **Known reconciliation item for the `db/` merge — not an instruction that can be followed today.** §2.3 says auditing is the caller's job, and §5.5 says audit writing belongs to the repository layer. Neither is true of the code as built: `write_audit` lives in `admin/audit.py`, and `api/` may not import `admin/` (CLAUDE.md's layering rule, AST-pinned by `tests/db/test_blocklist.py`). So an API-side automatic block cannot write an audit entry at all as things stand, and "the caller audits" is executable for the admin panel and the CLI only. This is a consequence of E building the blocklist in B's layer while B's repository was on an unmerged branch, the same way the factor-set lifecycle was, and it is E's to declare rather than B's to discover.
+> **Resolved — `write_audit` lives in `db/repository.py`, and it always did on B's branch.** v0.13 recorded this as an open item awaiting a decision from B, on the evidence available to E at the time: `write_audit` was in `admin/audit.py`, `api/` may not import `admin/` (CLAUDE.md's layering rule, AST-pinned by `tests/db/test_blocklist.py`), and so an API-side automatic block could not audit itself. **The survey of `origin/database` closed it.** B's branch already carries `write_audit` and `_json_safe` in `db/repository.py` — exactly where §5.5 has placed them since v0.3 — so there is no decision left to take, only a duplicate to remove. It was never two designs; it was one design and two branches.
 >
-> **Resolution when the two branches merge:** `write_audit` and `row_to_dict` move to `db/` (which is where §5.5 already says they belong), `admin/audit.py` becomes a re-export or is deleted, and only then does the "caller audits" instruction become executable from `api/`. Until that happens, an API-side block writes no audit entry and `/admin/audit` will not show it. **Owner of the decision: B**, as owner of `db/` and the repository layer; E's part is done and the note above is the handover.
+> **What that means for the integration, concretely:**
+>
+> - **`db/repository.py`'s `write_audit` is the one that survives.** `admin/audit.py` becomes a re-export of it, or is deleted. E's copy gives way.
+> - **B's `_json_safe` recurses into nested dicts and lists and redacts at every level; E's `_scrub` only handles top-level keys.** That is not a style difference. A `mfa_secret_enc` or a `password_hash` nested one level down inside a `before_json` payload passes straight through `_scrub` and lands in `audit_log`, which every staff member can read — the exact privilege-escalation path §5.5's blocklist exists to close. **B's is the one that survives**, on this ground alone.
+> - **E's `_encode` handles `date` more carefully than B's.** That one branch folds into B's function; nothing else of E's does.
+> - Once the re-export is in place, "the caller audits" becomes executable from `api/`, and an API-side automatic block appears in `/admin/audit` like every other write.
 >
 > **The same unresolved split applies to three more names.** `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` are all in `admin/` and are all things B's public-traffic middleware needs. They were built there because `admin/` is where E's stage lived, not because that is where they belong: `detection.py` imports nothing outside the standard library and `_client_ip` imports nothing outside Starlette, so neither has any reason to sit above the layering boundary. **Recommendation:** move `detection.py` to `db/` or to a new shared module and leave `admin/protection.py` importing it, rather than have `api/` duplicate the header-marker list and the sliding-window counter — two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. `_client_ip` should move with it. **This is genuinely unresolved, and B decides it**, since a move changes a file in her layer; E's recommendation is on record here so that the alternative (duplication) is a choice someone made rather than the default nobody discussed. Note also that `RequestRate` is per-process, so under more than one worker the effective limit is multiplied by the worker count — the API's own rate limiting (§6.5) is a separate problem and E has not solved it.
 
@@ -1695,9 +2014,24 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 | `calculate_response_single.json` | A response with no alternative scenario |
 | `stats.json` | A sample `GET /stats` response including an `other` bucket |
 | `factors.json` | A sample `GET /factors` response |
-| `errors/*.json` | One sample per error code |
+| `errors/*.json` | One sample per error code, including `errors/unauthorized.json` and `errors/blocked.json` |
 
 **These files are the executable form of the contract.** Backend contract tests assert that real responses match their shape; the front end develops against them directly. They must be updated whenever the contract changes (see §0).
+
+> **As of v1.2 this section describes an intention, not a directory. `tests/fixtures/` does not exist on `main`.** It does not exist on `admin_panel` — the branch that owns this document — nor on `docs/contract-v1.0`, nor on `origin/database`. **`origin/Demo-UI` is the only branch in the repository carrying any fixtures at all**, ten files, and they are in the pre-v1.0 flat shape: top-level `sector` / `food_category` / `current`, no `entries`, no `totals`, no `factor_source`. B's branch carried a second set of twelve, also flat, also with a different `details[].field` format. Neither set matches the contract, and a fixture that disagrees with the contract does not fail — it produces front-end code bound to fields the API will never send.
+>
+> **The canonical set lands once, in the v1.2 shape, with the B integration PR.** Not twice, and not in parallel: two people writing fixtures from the same contract produce two sets that differ in the places the contract is silent, which is precisely where a fixture is load-bearing. B owns §6 and therefore owns the shape; C's `taxonomy.json` content is the better content and should fill it.
+>
+> Required and currently missing from every branch:
+>
+> | File | Why it is required |
+> | --- | --- |
+> | `calculate_request.json`, `calculate_response.json` | Must be rewritten to `entries[]` / `totals` + `entries[]`, and must **correspond to each other** — the existing pair does not |
+> | `calculate_response_single.json` | Named in the table above; exists only on `origin/database`, in the wrong shape |
+> | `errors/unauthorized.json` | Named in the table above; exists on no branch |
+> | `errors/blocked.json` | `BLOCKED` was added in v0.13 and has never had a fixture. Note it is the one error whose `details` is `null` rather than `[]` (§9.2) — a fixture set that makes `details: []` universal is how that requirement gets implemented away |
+>
+> Three content requirements, because a shape-correct fixture can still block the person developing against it: `taxonomy.json` must contain a `prevention` destination and at least one destination in the `reuse` group (without them the mass-conserving offset and the entire non-waste half of the MfE taxonomy — the client's headline story — cannot be demonstrated); `stats.json` must contain a suppressed `other` bucket, since §6.4's copy constraint is the thing D has to write against; and `factors.json` must not be all-empty arrays, or the methodology page renders "No published formulas were returned" in every demo.
 
 ## 10.1 Golden Test Suite (owner: A)
 
@@ -1771,5 +2105,12 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 | No `active` fields | Anything present in a bundle is active. §4.1 already states `metrics` is "active only"; filtering happens in the repository, and the engine does not re-check. |
 | No `unit_presets` | Volume-to-kilogram conversion happens in the front end (§7.3); the engine only ever receives kilograms. |
 | Every decimal is a **string** | §1.2. `from_json()` converts with `Decimal()`; `float` is never an intermediate. |
+| `source_note` and `data_quality` are **optional and ignored** | They may appear on any `upstream`, `downstream` or `equivalences` row and may be `null`. The engine does not read them — provenance changes no number. **`from_json()` must accept and ignore them, never raise `BundleFormatError`, and `validate()` must not report them.** |
+
+> **Why the provenance columns are optional here but required in §6.3.** v1.1 added `source_note` and `data_quality` to both factor tables and `source_note` to `equivalence` (§2.2). §6.3 is the public factor export and must carry them — that is what they are for. `bundle.json` is a different object with three consumers (§10.1's golden cases, `FactorBundle.from_json()`, and `dry_run.bundle`), none of which computes anything from provenance, so requiring them would mean writing a note on every row of every golden case to say nothing.
+>
+> Optional-and-ignored rather than forbidden, because the bundles that reach `from_json()` are not all hand-written. §8.2's **Save as regression case** action writes a `bundle.json` straight out of a dry run, and a dry-run bundle is the natural place to paste a `GET /factors` response — which carries both fields. A parser that rejects an unknown key turns that into a `BundleFormatError` on a bundle that is otherwise entirely valid, at the moment a staff member is trying to capture a case worth keeping.
+>
+> **The database and §6.3 are the authoritative provenance surface, not the bundle.** Provenance may be dropped on a round trip through a dry run; that is acceptable because an inline bundle is never written back (§6.2.1) and a golden case is not a factor source. If provenance ever has to survive a round trip, this convention is the line that changes.
 
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.

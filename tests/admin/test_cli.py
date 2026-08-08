@@ -26,6 +26,7 @@ from admin.security import (
 )
 from admin.totp import TOTP_INTERVAL
 from db.blocklist import block_ip, is_blocked
+from db.blocklist_models import IpBlock
 
 pytestmark = pytest.mark.db
 
@@ -92,7 +93,7 @@ def test_rotate_key_reencrypts_every_enrolled_secret(session):
     secret_a = enrol(session, "alice", OLD_KEY)
     secret_b = enrol(session, "bob", OLD_KEY)
 
-    rotated = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    rotated, _cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
     session.flush()
 
     assert rotated == 2
@@ -111,7 +112,7 @@ def test_rotate_key_skips_accounts_with_no_enrolment(session):
     create_staff(session, username="bob", display_name="Bob")
     session.flush()
 
-    assert cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY) == 1
+    assert cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY) == (1, 0)
 
 
 def test_rotate_key_with_the_wrong_old_key_changes_nothing(session):
@@ -212,3 +213,72 @@ def test_unblock_command_writes_an_audit_entry_naming_no_address(session):
     assert entry.action == "delete"
     assert "203.0.113.9" not in str(entry.before_json)
     assert "203.0.113.9" not in str(entry.after_json)
+
+
+def test_rotate_key_clears_the_blocklist(session):
+    """SECRET_KEY also derives the key `ip_block.ip_hmac` is computed under
+    (db/blocklist.py's BLOCKLIST_INFO), and an HMAC cannot be re-keyed the way
+    an encrypted TOTP secret can — there is no plaintext address left to
+    re-fingerprint from, which is exactly the property §2.3 wanted.
+
+    So before this, a documented and supported rotation left every block
+    behind as an unreachable value: `is_blocked` matched nothing, `cli
+    unblock` could not remove the row either (it recomputes a new-key
+    fingerprint to find it), and the panel went on listing it as though it
+    were in force. An unreachable row that silently stops blocking is worse
+    than no row.
+    """
+    enrol(session, "alice", OLD_KEY)
+    block_ip(session, "203.0.113.9", reason="scripted traffic", actor="kim",
+             secret_key=OLD_KEY)
+    block_ip(session, "198.51.100.7", reason="burst", actor="kim",
+             secret_key=OLD_KEY)
+    session.flush()
+
+    rotated, cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    session.flush()
+
+    assert (rotated, cleared) == (1, 2)
+    assert session.scalars(select(IpBlock)).all() == []
+
+
+def test_rotate_key_leaves_no_block_that_the_new_key_cannot_reach(session):
+    """The consequence stated as the operator would experience it: after a
+    rotation there is no row that `is_blocked` misses and `unblock` cannot
+    remove. Asserted through the public functions rather than by counting
+    rows, so it still holds if the implementation ever changes from a delete
+    to something else."""
+    block_ip(session, "203.0.113.9", reason="scripted traffic", actor="kim",
+             secret_key=OLD_KEY)
+    session.flush()
+
+    cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    session.flush()
+
+    assert is_blocked(session, "203.0.113.9", secret_key=NEW_KEY) is False
+    assert session.scalars(select(IpBlock)).all() == []
+
+
+def test_a_failed_rotation_leaves_the_blocklist_alone(session):
+    """Same all-or-nothing rule the TOTP half already follows: a rotation that
+    raises must not have destroyed the blocklist on its way out, because the
+    operator's next move is to retry with the correct old key."""
+    enrol(session, "alice", OLD_KEY)
+    block_ip(session, "203.0.113.9", reason="scripted traffic", actor="kim",
+             secret_key=OLD_KEY)
+    session.flush()
+
+    with pytest.raises(TotpSecretUndecryptableError):
+        cmd_rotate_key(session, old_key="a-completely-wrong-key", new_key=NEW_KEY)
+
+    assert is_blocked(session, "203.0.113.9", secret_key=OLD_KEY) is True
+
+
+def test_unblock_refuses_a_value_that_is_not_an_address(session):
+    """`ip_fingerprint` raises rather than hashing unparseable input, so this
+    command has to say so rather than surfacing an ipaddress traceback from
+    four frames down to an operator who is already locked out."""
+    from db.blocklist import InvalidAddressError
+
+    with pytest.raises(InvalidAddressError):
+        cmd_unblock(session, "203.0.113.9:54321", secret_key=OLD_KEY)

@@ -80,7 +80,7 @@ from admin.auth import SESSION_KEY
 from admin.models import StaffRole
 from admin.modelviews import AuditedModelView
 from admin.runtime import get_runtime
-from db.blocklist import block_ip, ip_fingerprint
+from db.blocklist import InvalidAddressError, block_ip, ip_fingerprint, normalise_ip
 from db.blocklist_models import IpBlock
 
 
@@ -245,6 +245,32 @@ class IpBlockAdmin(AuditedModelView, model=IpBlock):
 
         if not address:
             context["error"] = "Enter the address to block."
+            return await self.templates.TemplateResponse(
+                request, "brand/block_ip.html", context, status_code=400
+            )
+        # Rejected here rather than left for `block_ip` to raise. The form
+        # used to accept any non-empty string, and `ip_fingerprint` used to
+        # hash it verbatim - so "203.0.113.09", " 203.0.113.9", a value
+        # carrying a port, or one of IPv6's several spellings of the same
+        # address each produced a *different* fingerprint from the one
+        # `ProtectionMiddleware` computes for the caller who actually
+        # arrives. The row appeared on the list page, the audit entry was
+        # written, and the block stopped nobody, with nothing failing
+        # anywhere: the same silent-failure class as the two sides of the
+        # HKDF derivation disagreeing. `db.blocklist.normalise_ip` now
+        # canonicalises inside `ip_fingerprint`, so the only remaining case
+        # is input that is not an address at all, which is this branch.
+        #
+        # The rejected value is deliberately *not* passed back into the
+        # template. brand/block_ip.html renders `error` and nothing else from
+        # the submitted form - re-populating the field would put a value a
+        # staff member may have typed *thinking* it was an address (§2.3's
+        # concern is exactly this) into the page's HTML, and the page is one
+        # that renders inside the panel every staff member can reach.
+        try:
+            normalise_ip(address)
+        except InvalidAddressError as exc:
+            context["error"] = str(exc)
             return await self.templates.TemplateResponse(
                 request, "brand/block_ip.html", context, status_code=400
             )

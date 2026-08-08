@@ -13,6 +13,7 @@ algorithm, same length, same "no salt" reasoning, but this module's own
 
 import hashlib
 import hmac
+import ipaddress
 from datetime import datetime, timedelta
 
 from cryptography.hazmat.primitives import hashes
@@ -26,6 +27,68 @@ from db.blocklist_models import IpBlock, utcnow  # noqa: F401  - re-exported
 #: admin panel and the API both derive against, or a block made in one place
 #: silently stops matching lookups made in the other.
 BLOCKLIST_INFO = b"kaicalc-blocklist-v1"
+
+
+class InvalidAddressError(ValueError):
+    """The value handed to ``normalise_ip``/``ip_fingerprint`` is not an
+    address.
+
+    A ``ValueError`` subclass so that ``except ValueError`` still catches it
+    (``ipaddress.ip_address`` raises a plain ``ValueError``, which is what
+    every existing caller would have been written against), but nameable, so
+    a caller that wants to distinguish "the operator mistyped an address"
+    from any other ``ValueError`` in the same block can - the admin form and
+    the CLI both do.
+    """
+
+
+def normalise_ip(ip: str) -> str:
+    """The one canonical spelling of an address.
+
+    **Why this is not optional, and why it lives under ``ip_fingerprint``
+    rather than at each call site.** The blocklist matches on
+    ``HMAC(address)``, so two spellings of the same address produce two
+    different fingerprints and a block made under one never matches a caller
+    arriving as the other. Nothing fails, nothing logs, and the screen shows
+    a block that stops nobody - the same silent-failure class as the two
+    sides of the HKDF derivation disagreeing on ``BLOCKLIST_INFO``, which is
+    why that value is named in the contract.
+
+    The spellings that collide in practice:
+
+    * ``" 203.0.113.9"`` - a copied value with surrounding whitespace.
+    * ``"203.0.113.09"`` - a zero-padded octet. Rejected outright rather than
+      normalised: ``ipaddress`` refuses it (it is ambiguous - historically
+      some resolvers read a leading zero as octal), so an operator who types
+      it gets told, rather than getting a block on a fourth address.
+    * ``"2001:db8:0:0:0:0:0:1"`` vs ``"2001:db8::1"`` vs ``"2001:DB8::1"`` -
+      three spellings of one IPv6 address. ``compressed`` is the form
+      ``ipaddress`` itself considers canonical, and lower-cases the hex.
+    * ``"203.0.113.9:54321"`` / ``"[2001:db8::1]:443"`` - a value carrying a
+      port. Rejected: the port is not part of the address, and silently
+      keeping it would fingerprint a value no caller ever arrives as.
+    * ``"203.0.113.0/24"`` - a CIDR range. Rejected: the blocklist holds
+      single addresses (a hash cannot be range-matched), so accepting the
+      syntax would promise something the table cannot do.
+
+    Raises ``InvalidAddressError`` on anything else. **Raising rather than
+    fingerprinting the raw string is the deliberate choice**: returning a
+    fingerprint of unparseable input succeeds, writes a row, and produces
+    exactly the silently-dead block this function exists to prevent. A caller
+    on a request path that must not fail (``admin/protection.py``'s
+    middleware) normalises the connection address itself and skips the
+    lookup when it cannot - see ``_client_ip`` there; a caller taking input
+    from a human (the admin form, ``python -m admin.cli unblock``) reports
+    the error to them.
+    """
+    try:
+        return ipaddress.ip_address(ip.strip()).compressed
+    except ValueError as exc:
+        raise InvalidAddressError(
+            "Not a single IP address. Enter one IPv4 or IPv6 address with no "
+            "port, no prefix length and no leading zeroes - for example "
+            "203.0.113.9 or 2001:db8::1."
+        ) from exc
 
 
 def _derive_key(secret_key: str, info: bytes) -> bytes:
@@ -52,9 +115,19 @@ def ip_fingerprint(ip: str, *, secret_key: str) -> str:
     Keyed, not plain hashed: a rainbow table over the whole IPv4 space is
     trivial to build, but an HMAC under a key the attacker does not have is
     not reversible.
+
+    Normalises through ``normalise_ip`` first, and raises
+    ``InvalidAddressError`` when that fails. Normalising **here** rather than
+    in each caller is deliberate: this is the single function every other
+    entry point in this module funnels through (``block_ip``, ``unblock_ip``
+    and ``is_blocked`` all call it), so the API layer, the admin panel and
+    the CLI all inherit the same canonical form without having to remember
+    to ask for it. A caller that normalised at its own boundary instead
+    would be one caller away from the two sides disagreeing again.
     """
     key = _derive_key(secret_key, BLOCKLIST_INFO)
-    return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()
+    canonical = normalise_ip(ip)
+    return hmac.new(key, canonical.encode("utf-8"), hashlib.sha256).hexdigest()
 
 
 def block_ip(

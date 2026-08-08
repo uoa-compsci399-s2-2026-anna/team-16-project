@@ -17,9 +17,35 @@ level list (tests/admin/test_protection.py, test_accounts_view.py) or as a
 import pytest
 from sqlalchemy import select, text
 
+from admin.app import create_app
 from tests.admin.conftest import _resync
+from tests.conftest import TEST_URL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
+
+
+@pytest.fixture
+def admin_app(monkeypatch):
+    """This file's own app, with ``ProtectionMiddleware`` genuinely on.
+
+    A verbatim copy of tests/admin/test_protection.py's local ``admin_app``
+    override - read that fixture's docstring for the full reasoning, which
+    applies unchanged here. The short form: tests/conftest.py sets
+    ``PROTECTION_ENABLED=false`` for the whole session, and this file's
+    ``_cleanup_ip_blocks`` is ``autouse`` and also requires ``admin_app``, so
+    a *companion* ``autouse`` fixture patching the environment on the side
+    loses an ordering race against ``admin_app``'s own ``create_app()`` call -
+    that was tried once already and confirmed to run too late. Owning the
+    ``create_app()`` call is what makes the ordering a real dependency edge
+    instead of a hoped-for scope tiebreak.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
+    monkeypatch.setenv("PROTECTION_ENABLED", "true")
+    app = create_app()
+    yield app
+    app.state.session_factory.kw["bind"].dispose()
 
 
 @pytest.fixture
@@ -322,3 +348,107 @@ async def test_a_re_block_with_no_duration_wipes_an_existing_expiry(
     _resync(session)
     row = session.scalar(select(IpBlock))
     assert row.expires_at is None
+
+
+async def test_the_form_refuses_a_value_that_is_not_an_address(
+    admin_client, session
+):
+    """The silent failure this closes. Before normalisation, the form accepted
+    any non-empty string and `ip_fingerprint` hashed it verbatim - so a typo
+    wrote a row, showed it on the list page, wrote an audit entry, and blocked
+    nobody, because the fingerprint the middleware computes for a real caller
+    could never equal the fingerprint of a typo. Nothing failed anywhere.
+    """
+    from db.blocklist_models import IpBlock
+
+    response = await admin_client.post("/admin/ip-block/block", data={
+        "address": "203.0.113.9:54321", "reason": "carries a port",
+    })
+
+    assert response.status_code == 400
+    _resync(session)
+    assert session.scalar(select(IpBlock)) is None
+
+
+async def test_the_form_does_not_echo_a_rejected_address_back_into_the_page(
+    admin_client
+):
+    """§2.3's concern, applied to the one field on this screen that holds a
+    plaintext address. The reason a staff member's mistyped value might be
+    worth re-populating for their convenience is exactly the reason it must
+    not be: it is an address, or something they believed was one, and this
+    page renders inside a panel every staff member can reach. The template
+    renders `error` and nothing else from the submitted form - this pins
+    that.
+    """
+    response = await admin_client.post("/admin/ip-block/block", data={
+        "address": "203.0.113.99-and-a-typo", "reason": "mistyped",
+    })
+
+    assert response.status_code == 400
+    assert "203.0.113.99" not in response.text
+
+
+async def test_a_block_made_through_the_form_actually_refuses_that_caller(
+    admin_client, session, settings
+):
+    """The one test that runs the whole feature end to end.
+
+    Every other test in this file stops at the database: it asserts a row
+    exists, or that `is_blocked` returns True. Nothing joined the two halves -
+    the form writes a fingerprint via `get_runtime(request).settings`, and
+    `ProtectionMiddleware` computes one via its own `self._settings`. The same
+    object today, but two paths, and a divergence between them (a different
+    `SECRET_KEY`, a different HKDF `info`, a different normalisation) produces
+    a block that appears on the screen and stops nobody, with nothing failing
+    anywhere. That is the same silent-failure class the contract names
+    `BLOCKLIST_INFO` in §2.3 to guard against, and until now nothing in the
+    suite would have caught it.
+
+    Blocks `127.0.0.1` because that is the address `httpx`'s `ASGITransport`
+    presents to the app, so the very next request through this client is the
+    blocked caller. The client is already an authenticated administrator,
+    which makes the assertion stronger rather than weaker: the blocklist is
+    the *only* check that has no exemption for a live staff session, so a 403
+    here cannot be the header check or the rate limit.
+    """
+    await admin_client.post("/admin/ip-block/block", data={
+        "address": "127.0.0.1", "reason": "end-to-end block",
+    })
+    _resync(session)
+
+    response = await admin_client.get("/admin/ip-block/list")
+
+    assert response.status_code == 403
+
+
+async def test_unblocking_through_the_screen_lets_that_caller_back_in(
+    admin_client, session, settings
+):
+    """The other half, and the reason the unblock action must reach the same
+    row the form wrote. `unblock_action` deletes by primary key while the form
+    and the CLI work from a recomputed fingerprint (see
+    admin/blocklist_views.py's module docstring) - two paths to one row, and
+    nothing previously pinned that they meet.
+
+    The block is seeded through `db.blocklist.block_ip` rather than the form
+    because the form's own 127.0.0.1 block locks this client out of the
+    unblock route as well; seeding leaves the client able to reach the action
+    it is here to exercise, and `test_a_block_made_through_the_form...` above
+    already covers the form's write reaching the middleware.
+    """
+    from db.blocklist import block_ip
+    from db.blocklist_models import IpBlock
+
+    block_ip(session, "203.0.113.9", reason="burst", actor="kim",
+             secret_key=settings.secret_key)
+    session.commit()
+    row = session.scalar(select(IpBlock))
+
+    response = await admin_client.get(
+        f"/admin/ip-block/action/unblock?pks={row.id}", follow_redirects=False
+    )
+
+    assert response.status_code == 302
+    _resync(session)
+    assert session.scalar(select(IpBlock)) is None

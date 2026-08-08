@@ -26,8 +26,35 @@ def _required(name: str) -> str:
 
 
 def _int(name: str, default: int) -> int:
+    """Parse a positive integer setting, refusing zero and negatives.
+
+    ``int()`` already raises on garbage, which is what ``_bool`` was
+    hardened to match. It does not raise on ``0`` or ``-1``, and every
+    setting read through this function is a count or a duration where
+    neither is meaningful. The one that turns a typo into an outage is
+    ``PROTECTION_MAX_REQUESTS_PER_MINUTE=0``: ``admin/protection.py``
+    refuses a request once its count *exceeds* the limit, so a limit of 0
+    means the first unauthenticated request from any address is refused with
+    429 — including on ``/admin/login``, which is the page an operator
+    would then need in order to fix it. The others fail in the same shape:
+    ``SESSION_MAX_AGE_MINUTES=0`` expires every session as it is minted,
+    ``LOGIN_MAX_FAILURES=0`` locks out every account on its first attempt.
+
+    ``.env.example`` is the one file the client will edit by hand, and a
+    misconfigured deployment should refuse to start rather than start
+    refusing everyone — the same ruling ``_bool`` records.
+    """
     raw = os.getenv(name, "").strip()
-    return int(raw) if raw else default
+    if not raw:
+        return default
+    value = int(raw)
+    if value < 1:
+        raise ValueError(
+            f"{name}={raw!r} must be 1 or greater. Zero or a negative value "
+            "would refuse or expire everything this setting governs, "
+            "including the pages needed to correct it."
+        )
+    return value
 
 
 def _str(name: str, default: str) -> str:

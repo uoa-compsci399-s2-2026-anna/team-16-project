@@ -160,3 +160,106 @@ def test_the_key_derivation_is_pinned():
     assert ip_fingerprint("203.0.113.9", secret_key="fixed-key-for-this-vector") == \
         "3b35112e5cf707aa8525a79b0391e8bf08daea563a0a4c0dc23c24c9f59059a1"
     assert len(ip_fingerprint("203.0.113.9", secret_key=KEY)) == 64
+
+
+# --- Address normalisation -------------------------------------------------
+#
+# The failure this closes is silent in exactly the way a key mismatch is:
+# `ip_fingerprint` used to HMAC the raw string, and the admin form accepted
+# any non-empty value, so a block entered as " 203.0.113.9" or
+# "2001:db8:0:0:0:0:0:1" produced a fingerprint the middleware would never
+# compute for the caller who actually arrives. The row appeared on the
+# screen, the audit entry was written, and the block stopped nobody.
+
+
+@pytest.mark.parametrize("spelling", [
+    " 203.0.113.9",
+    "203.0.113.9 ",
+    "\t203.0.113.9\n",
+])
+def test_surrounding_whitespace_does_not_change_the_fingerprint(spelling):
+    """A copied-and-pasted address is the ordinary way this happens."""
+    assert ip_fingerprint(spelling, secret_key=KEY) == \
+        ip_fingerprint("203.0.113.9", secret_key=KEY)
+
+
+@pytest.mark.parametrize("spelling", [
+    "2001:db8:0:0:0:0:0:1",
+    "2001:db8::1",
+    "2001:DB8::1",
+    "2001:0db8:0000:0000:0000:0000:0000:0001",
+])
+def test_every_spelling_of_one_ipv6_address_gives_one_fingerprint(spelling):
+    """IPv6 has several textual forms per address by design - zero
+    compression, leading zeroes, upper or lower case hex. Any of them can
+    reach the manual-block form; only one of them is what the middleware
+    computes from `request.client.host`. `ipaddress`'s own `compressed` form
+    is what both sides now agree on."""
+    assert ip_fingerprint(spelling, secret_key=KEY) == \
+        ip_fingerprint("2001:db8::1", secret_key=KEY)
+
+
+@pytest.mark.parametrize("value", [
+    "203.0.113.09",          # zero-padded octet - ambiguous, historically octal
+    "203.0.113.9:54321",     # carries a port
+    "[2001:db8::1]:443",     # carries a port, bracketed IPv6
+    "203.0.113.0/24",        # a CIDR range, which a hash cannot match
+    "203.0.113",             # short
+    "203.0.113.256",         # out of range
+    "not-an-address",
+    "",
+    "   ",
+    "localhost",
+])
+def test_an_unparseable_address_is_refused_rather_than_fingerprinted(value):
+    """Raising is the deliberate choice over hashing the raw string.
+
+    Hashing it succeeds, writes a row, shows it on the screen and blocks
+    nobody - an unreachable row that silently stops blocking is worse than
+    no row, and it is unreachable by `cli unblock` too, since that
+    recomputes the same fingerprint from whatever the operator types next
+    time. Refusing at the boundary is what makes the failure visible to the
+    person who can fix it.
+    """
+    from db.blocklist import InvalidAddressError
+
+    with pytest.raises(InvalidAddressError):
+        ip_fingerprint(value, secret_key=KEY)
+
+
+def test_the_refusal_is_still_a_value_error():
+    """`InvalidAddressError` subclasses `ValueError` on purpose: every caller
+    written before this existed catches `ValueError` (which is what
+    `ipaddress.ip_address` raises), and the API layer's own validation
+    handlers do the same."""
+    from db.blocklist import InvalidAddressError
+
+    assert issubclass(InvalidAddressError, ValueError)
+
+
+@pytest.mark.db
+def test_a_block_entered_in_one_spelling_matches_a_caller_in_another(session):
+    """The end of the chain, and the actual defect: the panel and the
+    middleware must reach the same row for the same address however each of
+    them spells it."""
+    block_ip(session, "2001:0db8:0000:0000:0000:0000:0000:0001",
+             reason="scripted traffic", actor="kim", secret_key=KEY)
+    session.flush()
+
+    assert is_blocked(session, "2001:db8::1", secret_key=KEY) is True
+    assert unblock_ip(session, "2001:DB8::1", actor="kim", secret_key=KEY) is True
+
+
+@pytest.mark.db
+def test_two_spellings_of_one_address_do_not_make_two_rows(session):
+    """`block_ip` upserts on the fingerprint, so this follows from
+    normalisation - but it is the observable consequence a staff member would
+    actually notice, and it would have been two rows before."""
+    block_ip(session, "203.0.113.9", reason="first", actor="kim", secret_key=KEY)
+    session.flush()
+    block_ip(session, " 203.0.113.9 ", reason="second", actor="kim", secret_key=KEY)
+    session.flush()
+
+    rows = session.scalars(select(IpBlock)).all()
+    assert len(rows) == 1
+    assert rows[0].reason == "second"

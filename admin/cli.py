@@ -30,7 +30,7 @@ from admin.models import Staff, StaffRole
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
 from admin.seed import seed_taxonomy
 from admin.taxonomy_rules import TaxonomyInvariantError
-from db.blocklist import ip_fingerprint, unblock_ip
+from db.blocklist import InvalidAddressError, ip_fingerprint, unblock_ip
 from db.blocklist_models import IpBlock
 from db.session import create_session_factory
 
@@ -70,19 +70,47 @@ def cmd_issue_password(db_session: Session, username: str) -> str:
     return issue_password(db_session, username, actor="cli")
 
 
-def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
-    """Re-encrypt every stored TOTP secret under a new SECRET_KEY.
+def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[int, int]:
+    """Re-encrypt every stored TOTP secret, and clear the blocklist, under a
+    new SECRET_KEY. Returns (secrets re-encrypted, blocks cleared).
 
     Decrypts everything before writing anything. A partial rotation would
     leave some secrets readable only with the old key and some only with the
     new one, with no key that opens the whole table — unrecoverable without
     resetting every account.
+
+    **Why the blocklist is cleared rather than re-keyed.** ``SECRET_KEY`` also
+    derives the HMAC key `ip_block.ip_hmac` is computed under
+    (``db/blocklist.py``'s ``BLOCKLIST_INFO``). A TOTP secret can be carried
+    across a rotation because it is *encrypted* — decryptable with the old
+    key, re-encryptable with the new one. A fingerprint cannot: an HMAC is
+    one-way, so with the plaintext address gone there is nothing to
+    re-fingerprint from. That is the whole point of storing it that way
+    (§2.3), and it is why re-keying is not an option here.
+
+    So every `ip_block` row survives a rotation as an unreachable value:
+    ``is_blocked`` computes a fingerprint under the new key and matches
+    nothing, ``python -m admin.cli unblock`` cannot remove the row either
+    (it recomputes the same new-key fingerprint to find it), and the panel
+    goes on listing it as though it were in force. **An unreachable row that
+    silently stops blocking is worse than no row** — it is a protection an
+    operator believes they have and does not. Deleting them makes the
+    consequence of a rotation visible and actionable: the caller prints how
+    many were cleared and says they must be re-applied.
+
+    No audit entry is written for the deletion. ``write_audit`` stamps an
+    ``actor``, and every row here is being removed by a key change rather
+    than by a person's decision about any particular one; the operator's own
+    printed output and this docstring are the record. (Contrast
+    ``cmd_unblock``, which *is* one person's decision about one row.)
     """
     accounts = db_session.scalars(
         select(Staff).where(Staff.mfa_secret_enc.is_not(None))
     ).all()
 
-    # Decrypt all first; a failure here must leave the table untouched.
+    # Decrypt all first; a failure here must leave the table untouched -
+    # including the blocklist, which is why the delete below comes after this
+    # comprehension rather than before it.
     plaintext = [
         (staff, decrypt_totp_secret(staff.mfa_secret_enc, secret_key=old_key))
         for staff in accounts
@@ -91,7 +119,11 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
     for staff, secret in plaintext:
         staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
 
-    return len(plaintext)
+    blocks = db_session.scalars(select(IpBlock)).all()
+    for row in blocks:
+        db_session.delete(row)
+
+    return len(plaintext), len(blocks)
 
 
 def cmd_unblock(db_session: Session, address: str, *, secret_key: str) -> bool:
@@ -253,14 +285,36 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  Password: {password}")
             print("  They must change it at their next login. Hand it over in person.")
         elif args.command == "rotate-key":
-            count = cmd_rotate_key(db_session, old_key=args.old, new_key=args.new)
+            count, cleared = cmd_rotate_key(
+                db_session, old_key=args.old, new_key=args.new
+            )
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
+            if cleared:
+                print(
+                    f"Cleared {cleared} IP block(s). A block is stored as an "
+                    "HMAC of the address under a key derived from SECRET_KEY, "
+                    "and an HMAC cannot be re-keyed - the rows would have "
+                    "survived the rotation matching nobody, and could not "
+                    "have been removed with `unblock` either. Re-apply any "
+                    "that are still needed from /admin/ip-block/block."
+                )
             print("Update SECRET_KEY in .env and restart the application.")
         elif args.command == "unblock":
-            removed = cmd_unblock(
-                db_session, args.address, secret_key=settings.secret_key
-            )
+            try:
+                removed = cmd_unblock(
+                    db_session, args.address, secret_key=settings.secret_key
+                )
+            except InvalidAddressError as exc:
+                # An operator reaching for this command is usually locked out
+                # and in a hurry. Without this branch a mistyped address left
+                # them staring at an ipaddress traceback from four frames
+                # down, which reads like the command is broken rather than
+                # like the argument is. Echoing the address back is safe here
+                # and nowhere else: this is their own terminal, not a page
+                # every staff member can read.
+                print(f"{args.address!r} is not a valid address. {exc}")
+                return 1
             db_session.commit()
             if removed:
                 print(f"Unblocked {args.address}.")

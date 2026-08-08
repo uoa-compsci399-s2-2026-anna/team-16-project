@@ -92,3 +92,44 @@ def test_protection_ships_enabled_by_default(monkeypatch):
     monkeypatch.delenv("PROTECTION_ENABLED", raising=False)
 
     assert load_settings().protection_enabled is True
+
+
+@pytest.mark.parametrize("raw", ["0", "-1", "-30"])
+def test_protection_rate_limit_refuses_zero_and_negatives(monkeypatch, raw):
+    """`PROTECTION_MAX_REQUESTS_PER_MINUTE=0` used to be accepted, and
+    admin/protection.py refuses a request once the count *exceeds* the limit -
+    so 0 refused the first unauthenticated request from every address with
+    429, `/admin/login` included, i.e. the page an operator would then need
+    to fix it. `_bool` was deliberately hardened to refuse garbage rather
+    than guess; `_int` accepted 0 and negatives in the one file the client
+    edits by hand.
+    """
+    _set_required(monkeypatch)
+    monkeypatch.setenv("PROTECTION_MAX_REQUESTS_PER_MINUTE", raw)
+
+    with pytest.raises(ValueError):
+        load_settings()
+
+
+@pytest.mark.parametrize("name", [
+    "SESSION_MAX_AGE_MINUTES", "LOGIN_MAX_FAILURES", "LOGIN_LOCKOUT_MINUTES",
+])
+def test_every_integer_setting_refuses_zero(monkeypatch, name):
+    """The guard is in `_int` itself rather than at the one call site that
+    prompted it: every setting read through it is a count or a duration where
+    zero fails in the same shape (a session that expires as it is minted, an
+    account locked out on its first attempt). A guard at one call site is one
+    the next `_int` setting silently does not get."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv(name, "0")
+
+    with pytest.raises(ValueError):
+        load_settings()
+
+
+def test_the_rate_limit_still_accepts_a_real_value(monkeypatch):
+    """The counter-case: the guard must not have made the setting unusable."""
+    _set_required(monkeypatch)
+    monkeypatch.setenv("PROTECTION_MAX_REQUESTS_PER_MINUTE", "1")
+
+    assert load_settings().protection_max_requests_per_minute == 1

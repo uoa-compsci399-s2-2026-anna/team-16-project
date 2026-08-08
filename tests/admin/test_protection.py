@@ -6,6 +6,8 @@ from base64 import b64encode
 
 import itsdangerous
 import pytest
+import pytest_asyncio
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 
 from admin.accounts import get_staff
@@ -441,5 +443,76 @@ async def test_a_deactivated_accounts_cookie_earns_no_exemption(
     client.cookies.set("session", cookie)
     response = await client.get("/admin/factor-set/list",
                                 headers={"user-agent": "curl/8.4.0"})
+
+    assert response.status_code == 403
+
+
+# --- Requests that arrive with no address at all --------------------------
+#
+# `_client_ip`'s pure-function cases live in tests/admin/test_client_address.py:
+# they need no database and no HTTP client, and this module's `pytestmark`
+# marks every test in it `db` and `asyncio`, neither of which is true of them.
+
+
+@pytest_asyncio.fixture
+async def clientless_client(admin_app):
+    """A client whose requests arrive with no address at all
+    (`scope["client"] is None`, which Starlette surfaces as
+    `request.client is None`).
+
+    Rare but real - some ASGI transports and test harnesses omit it - and
+    until now nothing pinned what the middleware does with it.
+    """
+    transport = ASGITransport(app=admin_app, client=None)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        yield c
+
+
+async def test_a_request_with_no_address_skips_the_blocklist_deliberately(
+    clientless_client, session, settings
+):
+    """Not a fail-open choice so much as a logical impossibility: the
+    blocklist is keyed on `HMAC(address)`, so with no address there is no
+    fingerprint to compute and no row to look up. The alternative - inventing
+    a stand-in key - is what an earlier version did with `""`, which
+    collapsed every such caller into one shared bucket and one shared
+    blocklist entry. The header check below still constrains them.
+    """
+    from db.blocklist import block_ip
+
+    block_ip(session, "127.0.0.1", reason="test", actor="kim",
+             secret_key=settings.secret_key)
+    session.commit()
+
+    response = await clientless_client.get("/admin/login",
+                                          headers=_RATE_TEST_HEADERS)
+
+    assert response.status_code == 200
+
+
+async def test_a_request_with_no_address_skips_the_rate_limit(
+    clientless_client, settings
+):
+    """Same reasoning: `RequestRate` is keyed on the fingerprint, and there is
+    none. Pinned so that a later change which invents a key for this case -
+    and thereby gives every addressless caller one shared bucket - fails
+    here rather than shipping."""
+    limit = settings.protection_max_requests_per_minute
+
+    for _ in range(limit * 2 + 1):
+        response = await clientless_client.get("/admin/factor-set/list",
+                                               headers=_RATE_TEST_HEADERS)
+        assert response.status_code != 429
+
+
+async def test_a_request_with_no_address_is_still_header_checked(
+    clientless_client
+):
+    """The one check that does not need an address, and therefore the only
+    thing still standing between an addressless caller and the panel. If the
+    two skips above were ever widened into "no address, no checks", this is
+    the test that catches it."""
+    response = await clientless_client.get("/admin/login",
+                                           headers={"user-agent": "curl/8.4.0"})
 
     assert response.status_code == 403

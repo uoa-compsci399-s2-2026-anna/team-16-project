@@ -51,7 +51,7 @@ from admin.accounts import UnknownStaffError, get_staff
 from admin.auth import SESSION_GENERATION_KEY, SESSION_KEY
 from admin.config import Settings
 from admin.detection import RequestRate, looks_automated
-from db.blocklist import ip_fingerprint, is_blocked
+from db.blocklist import InvalidAddressError, ip_fingerprint, is_blocked, normalise_ip
 
 #: starlette.middleware.sessions.SessionMiddleware's default cookie name.
 #: AdminAuth (admin/backend.py) never overrides ``session_cookie``, so this
@@ -239,6 +239,23 @@ def _client_ip(request: Request, *, trusted_proxy: bool) -> str | None:
     being its own, unidentified caller. ``dispatch`` skips both checks
     outright when this is ``None``, rather than inventing an address to
     check against.
+
+    Also returns ``None`` when the value that *is* present does not parse as
+    an address. ``db.blocklist.ip_fingerprint`` raises
+    ``InvalidAddressError`` on such a value by design - an unparseable
+    address that still produced a fingerprint is a block that silently
+    matches nobody - and this middleware runs ahead of *every* request under
+    ``/admin``, so it must not turn a malformed ``request.client.host`` into
+    a 500 on the login page. Normalising here and treating an unusable value
+    exactly as ``None`` is what keeps those two requirements compatible.
+
+    **An unparseable ``X-Forwarded-For`` falls back to the real connection
+    address rather than to ``None``.** With ``trusted_proxy`` true that header
+    is the one attacker-reachable input on this path, and returning ``None``
+    for it would hand any caller a one-header bypass of both the blocklist
+    and the rate limit (``X-Forwarded-For: nonsense``). Falling back means a
+    forged header gains nothing: the caller is still measured against the
+    address the ASGI server actually saw.
     """
     if trusted_proxy:
         forwarded = request.headers.get("x-forwarded-for")
@@ -246,9 +263,26 @@ def _client_ip(request: Request, *, trusted_proxy: bool) -> str | None:
             # The left-most entry is the original client; anything to its
             # right was appended by a hop this deployment's own proxy chain
             # controls.
-            return forwarded.split(",")[0].strip()
+            candidate = _normalise_or_none(forwarded.split(",")[0])
+            if candidate is not None:
+                return candidate
     client = request.client
-    return client.host if client is not None else None
+    return _normalise_or_none(client.host) if client is not None else None
+
+
+def _normalise_or_none(candidate: str) -> str | None:
+    """``db.blocklist.normalise_ip``, with its refusal turned into ``None``.
+
+    The whole of the difference between this module and every other caller of
+    ``normalise_ip``: the admin form and the CLI report an invalid address to
+    the person who typed it, whereas this one runs on every request and has
+    nobody to report to - see ``_client_ip`` for why ``None`` is the right
+    answer here and why it is not reachable from a forged header.
+    """
+    try:
+        return normalise_ip(candidate)
+    except InvalidAddressError:
+        return None
 
 
 def _refuse(status_code: int) -> Response:

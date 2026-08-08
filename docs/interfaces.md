@@ -29,7 +29,7 @@ This document defines **what every person's code receives and what it returns.**
 
 ### v1.2 — 2026-08-09 (the merge of the two contract lines, **affects everybody**)
 
-Two documents became one. Most of the work was mechanical; the corrections below were not. Eleven of the seventeen changes are defects that were already in the document before the merge — the merge is what made them visible, by putting statements next to the statements they contradict. **Three of them (1, 2, 4) were live blockers on A's and B's integration work**: a section of this document that had gone two revisions without being updated, and that two people were about to code against.
+Two documents became one. Most of the work was mechanical; the corrections below were not. Eleven of the eighteen changes are defects that were already in the document before the merge — the merge is what made them visible, by putting statements next to the statements they contradict. **Three of them (1, 2, 5) were live blockers on A's and B's integration work**: a section of this document that had gone two revisions without being updated, and that two people were about to code against.
 
 | # | Change | Section | Affects |
 | --- | --- | --- | --- |
@@ -50,7 +50,7 @@ Two documents became one. Most of the work was mechanical; the corrections below
 | 15 | **§6.5's "IP addresses are never persisted" contradicted §2.3.** v0.12 deliberately softened that absolute with the blocklist exception — an HMAC, never an address, only for a blocked caller — and §6.5 kept asserting the unqualified form, so the document stated a rule and its exception in two places at once. The absolute is the one that was wrong: a reader implementing §6.5 literally had grounds to call §2.3's table a contract violation. Also records as **open** the question underneath it, which is genuinely unsettled and B's: whether an *in-memory* rate-limit counter may be keyed on a raw address. `api/rate_limit.py` does; `admin/protection.py` uses the §2.3 fingerprint. Two layers currently applying different privacy standards to the same data is not a defensible position for a calculator whose selling point is that it stores nothing about the visitor | §6.5 | **B, E** |
 | 16 | **`ip_block`'s "see the note above" now names its target.** The merge reordered §2.3 to put the three submission tables in dependency order, which moved `submission_entry` and `submission_line` in between — so a reference written when the two were adjacent pointed at whatever happened to precede it. It now names the E-8 privacy blockquote explicitly, which is the note that licenses the table's existence against the no-address rule and is the one thing a reader must not fail to find from here | §2.3 | **B, E** |
 | 17 | **v0.11's standing instruction is discharged, and this entry closes it.** It asked for §8.2's corrected pre-publish-comparison wording to be applied to the unmerged `docs/contract-v1.0` branch as well. That branch did still carry the stale "old value, new value and change" / "differenced client-side" text, and the merge takes the corrected version because `contract-v1.0` never touched those lines. §8.2 now carries the correction. Recorded because an open instruction in a change log stays open until something says otherwise, and the next reader would spend their time confirming a done action | §0.1, §8.2 | **E** |
-| 18 | Four stale cross-references corrected: three sites pointed at §10.1 for the `bundle.json` shape (it is §10.2) and one pointed at §10.2 for the golden suite (it is §10.1). Minor, but §10.1 and §10.2 are the two documents `FactorBundle.from_json()` sits between, and A is the person following those pointers | §4.1, §6.2, §6.2.1 | **A** |
+| 18 | **Stale cross-references and internal inconsistencies corrected.** Four sit on the path A follows between `FactorBundle.from_json()` and the file format it parses: three sites pointed at §10.1 for the `bundle.json` shape (it is §10.2) and one pointed at §10.2 for the golden suite (it is §10.1). Four more were found by reading the merged document end to end rather than as a diff — §2.3's `submission.token` expiry job pointed at §2.3 itself rather than at §5.3's `expire_tokens`; §7.3 cited a "§7.6.1" that has never existed in any version (it is §7.6 rule 1); §7.3a still called `improvement.js`'s per-line rounding drift "not resolved here" after change 4 resolved it, when §6.2's 0.010 kg tolerance is derived from that exact behaviour and accepts it — **on the boundary, and only while the 20-line cap holds**; and §6.3 said v1.1 added `data_quality` to `equivalence`, which it did not (§2.2 gives `equivalence` a `source_note` and no `data_quality`) | §2.3, §4.1, §6.2, §6.2.1, §6.3, §7.3, §7.3a | **A, B, C** |
 
 > **Still open after this revision.** None of these is a defect in the document; all of them are decisions nobody has taken. **O-1 remains the hard blocker** — the client has not supplied real emissions factors, so everything runs on mock data and the banner stays mandatory. Beyond it: whether an in-memory rate-limit counter may hold a raw address (#15, B's); whether `admin.detection.looks_automated`, `RequestRate` and `_client_ip` move into a shared layer or are duplicated in `api/` (§8.3, B's, and the four blocklist items in `api/` are all downstream of it); whether `landfill_diverted` becomes a real `metric` row plus a formula (#8, the client's); and the positive/negative semantic colour pair, which C and D both need and neither has written down.
 
@@ -570,7 +570,7 @@ row, and it must survive the account of whoever made it being deleted.
 
 > Expired rows are filtered, never pruned. At this scale that is fine; a
 > scheduled job can own it later, alongside the `submission.token` expiry job
-> (§2.3).
+> (`expire_tokens`, §5.3).
 
 ### `audit_log`
 
@@ -1410,7 +1410,7 @@ Factors and formulas are published openly (Decision 7).
 }
 ```
 
-**`source_note` and `data_quality` are part of this response, and both may be `null`.** They were added to `factor_upstream`, `factor_downstream` and `equivalence` in v1.1 (§2.2) and this endpoint is the whole reason they exist: v1.1's stated rationale is that a calculator which cannot say which of its numbers are measured and which are borrowed cannot be defended in public, and §6.3 is the only public surface where a number can say so. A factor export that carries the values and drops their provenance publishes exactly the figure that is hardest to defend, with the defence removed. `null` is a legal value — most rows will carry `null` until the client supplies real data — and it must appear as `null`, not as an omitted key, so a consumer can tell "no provenance recorded" from "this endpoint does not report provenance".
+**`source_note` and `data_quality` are part of this response, and both may be `null`.** v1.1 added `source_note` to `factor_upstream`, `factor_downstream` and `equivalence`, and `data_quality` to the two factor tables only — `equivalence` has no `data_quality` column (§2.2) — and this endpoint is the whole reason they exist: v1.1's stated rationale is that a calculator which cannot say which of its numbers are measured and which are borrowed cannot be defended in public, and §6.3 is the only public surface where a number can say so. A factor export that carries the values and drops their provenance publishes exactly the figure that is hardest to defend, with the defence removed. `null` is a legal value — most rows will carry `null` until the client supplies real data — and it must appear as `null`, not as an omitted key, so a consumer can tell "no provenance recorded" from "this endpoint does not report provenance".
 
 With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other.
 
@@ -1544,7 +1544,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 ## 7.3 `units.js` (written by C)
 
-**All front-end mass arithmetic belongs in this module.** That is the whole point of §7.6.1: the front end's arithmetic can be audited in one file. It currently is not — `tonnes ? 1000 : 1` is duplicated at six sites across `results.js` and `improvement.js`, which is not a correctness bug today and defeats the rule.
+**All front-end mass arithmetic belongs in this module.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It currently is not — `tonnes ? 1000 : 1` is duplicated at six sites across `results.js` and `improvement.js`, which is not a correctness bug today and defeats the rule.
 
 ```js
 /**
@@ -1662,7 +1662,7 @@ export function ComparisonResults(state);             // '' until a comparison e
 
 > **Charts must render negative values.** `downstream` may be negative (§2.2) and a metric total therefore may be too, but the comparison bars currently apply `Math.abs()` to their widths, so −500 and +500 draw identically. The reuse-and-offset story is the client's headline message and it is currently invisible. The `.value-positive` / `.value-negative` / `.value-zero` CSS already exists in the stylesheet and is referenced by nothing.
 >
-> The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. Flagged for A and B, not resolved here.
+> The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. **Settled in v1.2, in C's favour:** §6.2's mass-conservation rule is derived from exactly this behaviour and its 0.010 kg tolerance is 20 lines × 0.0005 kg, so the drift this module produces is accepted rather than rejected — but only because §6.2 also caps a scenario at 20 lines per entry. The worst case sits on the boundary, and the comparison is `<=`. If that cap ever rises, this allocation must round to a running remainder instead.
 
 ### `main.js` — entry point for `index.html`
 
@@ -1908,7 +1908,7 @@ The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`),
 > **What that means for the integration, concretely:**
 >
 > - **`db/repository.py`'s `write_audit` is the one that survives.** `admin/audit.py` becomes a re-export of it, or is deleted. E's copy gives way.
-> - **B's `_json_safe` recurses into nested dicts and lists and redacts at every level; E's `_scrub` only handles top-level keys.** That is not a style difference. A `mfa_secret_enc` or a `password_hash` nested one level down inside a `before_json` payload passes straight through `_scrub` and lands in `audit_log`, which every staff member can read — the exact privilege-escalation path §5.5's blocklist exists to close. **B's is the one that survives**, on this ground alone.
+> - **B's `_json_safe` recurses into nested dicts and lists and redacts at every level; E's `_scrub` only handles top-level keys.** That is not a style difference. A `mfa_secret_enc` or a `password_hash` nested one level down inside a `before_json` payload passes straight through `_scrub` and lands in `audit_log`, which every staff member can read — the exact privilege-escalation path §5.5's field blocklist exists to close. **B's is the one that survives**, on this ground alone.
 > - **E's `_encode` handles `date` more carefully than B's.** That one branch folds into B's function; nothing else of E's does.
 > - Once the re-export is in place, "the caller audits" becomes executable from `api/`, and an API-side automatic block appears in `/admin/audit` like every other write.
 >

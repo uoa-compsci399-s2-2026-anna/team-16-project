@@ -85,6 +85,12 @@ class Staff(Base):
     def mfa_enrolled(self) -> bool:
         return self.mfa_enrolled_at is not None
 
+    def __str__(self) -> str:
+        #: username, never id - a staff member is identified by how they log
+        #: in, and no other column here is safe to show (password_hash and
+        #: mfa_secret_enc are secrets).
+        return self.username
+
 
 class StaffRecoveryCode(Base):
     __tablename__ = "staff_recovery_code"
@@ -103,6 +109,12 @@ class StaffRecoveryCode(Base):
 
     staff: Mapped[Staff] = relationship(back_populates="recovery_codes")
 
+    def __str__(self) -> str:
+        #: code_hash must never appear here - it is the whole reason this
+        #: row exists. The id is the only thing left to distinguish one
+        #: recovery code from another for the same account.
+        return f"recovery code #{self.id}"
+
 
 class AuditLog(Base):
     """Contract §2.3. Written only by admin/audit.py's write_audit()."""
@@ -117,3 +129,6 @@ class AuditLog(Base):
     row_id: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
     before_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     after_json: Mapped[dict | None] = mapped_column(JSON, nullable=True)
+
+    def __str__(self) -> str:
+        return f"{self.action} {self.table_name}#{self.row_id}"

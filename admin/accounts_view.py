@@ -235,7 +235,17 @@ class StaffAdmin(AuditedModelView, model=Staff):
                     session.rollback()
                     return await self.templates.TemplateResponse(
                         request, "brand/action_refused.html",
-                        {"message": str(exc), "next_url": self._list_url(request)},
+                        {
+                            "message": str(exc),
+                            "explanation": (
+                                "The panel keeps at least two active administrators. "
+                                "With no email system to recover through, one "
+                                "administrator is one lost phone away from a panel "
+                                "nobody can enter."
+                            ),
+                            "next_url": self._list_url(request),
+                            "link_text": "Back to accounts",
+                        },
                         status_code=400,
                     )
                 write_audit(

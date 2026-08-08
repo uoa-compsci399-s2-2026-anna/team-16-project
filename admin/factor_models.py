@@ -57,6 +57,12 @@ class FactorSet(Base):
     published_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
     notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
+    def __str__(self) -> str:
+        #: version_label, not id: a factor set carries no `code` column, but
+        #: version_label is unique and is the label every clone/publish/
+        #: rollback screen already shows staff.
+        return self.version_label
+
 
 class FactorUpstream(Base):
     """Per-kilogram impact of producing the food, by sector and category.
@@ -87,6 +93,12 @@ class FactorUpstream(Base):
     sector: Mapped[Sector] = relationship()
     food_category: Mapped[FoodCategory] = relationship()
     metric: Mapped[Metric] = relationship()
+
+    def __str__(self) -> str:
+        #: No natural name of its own - composed from the sector/category
+        #: pair and the metric it prices, the combination the unique
+        #: constraint above is keyed on.
+        return f"{self.sector.code}/{self.food_category.code} — {self.metric.code}"
 
 
 class FactorDownstream(Base):
@@ -156,6 +168,13 @@ class FactorDownstream(Base):
     food_category: Mapped[FoodCategory | None] = relationship()
     metric: Mapped[Metric] = relationship()
 
+    def __str__(self) -> str:
+        #: food_category is nullable ("applies to every category for this
+        #: destination", e.g. the NZ waste levy) - say so rather than
+        #: rendering a blank.
+        category = self.food_category.code if self.food_category else "all categories"
+        return f"{self.destination.code}/{category} — {self.metric.code}"
+
 
 class Constant(Base):
     """A named number a formula can reference. Contract §2.2.
@@ -182,6 +201,11 @@ class Constant(Base):
 
     factor_set: Mapped[FactorSet] = relationship()
 
+    def __str__(self) -> str:
+        #: code is unique per factor set, which is exactly the scope a
+        #: select box for this table is ever populated from.
+        return self.code
+
 
 class Formula(Base):
     """How one metric is computed from one line. Contract §2.2, §4.3.
@@ -206,6 +230,11 @@ class Formula(Base):
 
     factor_set: Mapped[FactorSet] = relationship()
     metric: Mapped[Metric] = relationship()
+
+    def __str__(self) -> str:
+        #: No code of its own - UNIQUE(factor_set_id, metric_id) makes the
+        #: metric it computes the natural identifier.
+        return f"{self.metric.code} formula"
 
 
 class Equivalence(Base):
@@ -243,3 +272,6 @@ class Equivalence(Base):
 
     factor_set: Mapped[FactorSet] = relationship()
     source_metric: Mapped[Metric] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"

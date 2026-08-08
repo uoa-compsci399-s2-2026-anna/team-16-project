@@ -44,6 +44,9 @@ class DestinationGroup(Base):
 
     destinations: Mapped[list["Destination"]] = relationship(back_populates="group")
 
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
 
 class Destination(Base):
     """Contract §2.1. Where the food actually went.
@@ -70,6 +73,9 @@ class Destination(Base):
 
     group: Mapped[DestinationGroup] = relationship(back_populates="destinations")
 
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
 
 class Sector(Base):
     """Contract §2.1. Where in the supply chain the waste arose."""
@@ -84,6 +90,9 @@ class Sector(Base):
                                             server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                          server_default="1")
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
 
 
 class FoodCategory(Base):
@@ -108,6 +117,9 @@ class FoodCategory(Base):
                                             server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                          server_default="1")
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
 
 
 class Metric(Base):
@@ -142,6 +154,9 @@ class Metric(Base):
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                          server_default="1")
 
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
 
 class UnitPreset(Base):
     """Contract §2.1. "Two 20 litre buckets" in kilograms.
@@ -168,3 +183,6 @@ class UnitPreset(Base):
     #: — and `code` is the cross-layer identifier, so a primary key must
     #: never be what a human is asked to read or choose.
     food_category: Mapped["FoodCategory | None"] = relationship()
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.label}"

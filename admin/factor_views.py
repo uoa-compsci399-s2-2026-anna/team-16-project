@@ -770,9 +770,21 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         return label
 
     async def _refused(self, request, message: str):
+        """Contract §8.2/§9.1: renders the same brand/action_refused.html
+        template admin/accounts_view.py's deactivate_action uses, but with no
+        `explanation` - the message here already names what went wrong
+        (no set selected, more than one selected, the set is already
+        published, and so on), and none of it has anything to do with the
+        two-administrator floor that template's account-refusal call site
+        explains. Passing no explanation renders no second paragraph rather
+        than inventing filler that does not fit."""
         return await self.templates.TemplateResponse(
             request, "brand/action_refused.html",
-            {"message": message, "next_url": self._list_url(request)},
+            {
+                "message": message,
+                "next_url": self._list_url(request),
+                "link_text": "Back to factor sets",
+            },
             status_code=400,
         )
 

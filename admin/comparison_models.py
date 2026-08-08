@@ -68,6 +68,9 @@ class ComparisonScenario(Base):
         back_populates="scenario", cascade="all, delete-orphan"
     )
 
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
 
 class ComparisonScenarioLine(Base):
     """One destination and quantity within a scenario.
@@ -98,3 +101,8 @@ class ComparisonScenarioLine(Base):
 
     scenario: Mapped[ComparisonScenario] = relationship(back_populates="lines")
     destination: Mapped[Destination] = relationship()
+
+    def __str__(self) -> str:
+        #: No natural name of its own - the destination and quantity are
+        #: what a scenario's line array actually varies.
+        return f"{self.destination.code}: {self.qty_kg} kg"

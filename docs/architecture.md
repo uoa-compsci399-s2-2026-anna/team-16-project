@@ -336,7 +336,7 @@ not, and an operator who edits `.env` mid-incident and watches nothing change
 will conclude the escape hatch is broken. Edit `.env`, then restart the
 process.
 
-**Locked out? Three recovery paths, in the order to reach for them.**
+**Locked out? Four recovery paths, in the order to reach for them.**
 
 | Situation | What to do |
 | --- | --- |

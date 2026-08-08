@@ -181,13 +181,26 @@ def _is_authenticated_staff(
     return True
 
 
-def _client_ip(request: Request, *, trusted_proxy: bool) -> str:
+def _client_ip(request: Request, *, trusted_proxy: bool) -> str | None:
     """The caller's address, never trusting a caller-supplied header unless
     an operator has explicitly said a reverse proxy is in front of this.
 
     See ``Settings.protection_trusted_proxy``'s own docstring
     (admin/config.py) for why the default matters: with no proxy in front,
     trusting ``X-Forwarded-For`` lets any caller claim to be any address.
+
+    Returns ``None`` when the ASGI connection carries no client address at
+    all (``request.client is None``) - rare in a real deployment (the ASGI
+    server populates this from the actual TCP connection; nothing here is
+    attacker-controlled), but real for some transports and test harnesses.
+    An earlier version returned ``""`` for this case, which is wrong in
+    exactly the way an empty rate-limit/blocklist key is wrong elsewhere in
+    this module: ``""`` is itself a valid dict/lookup key, so every such
+    caller silently collapsed into one shared bucket - both the in-memory
+    rate counter and the blocklist's fingerprint lookup - rather than each
+    being its own, unidentified caller. ``dispatch`` skips both checks
+    outright when this is ``None``, rather than inventing an address to
+    check against.
     """
     if trusted_proxy:
         forwarded = request.headers.get("x-forwarded-for")
@@ -197,7 +210,7 @@ def _client_ip(request: Request, *, trusted_proxy: bool) -> str:
             # controls.
             return forwarded.split(",")[0].strip()
     client = request.client
-    return client.host if client is not None else ""
+    return client.host if client is not None else None
 
 
 def _refuse(status_code: int) -> Response:
@@ -245,11 +258,14 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
 
         # Blocklist first, and with no exemption: a block is a deliberate
         # act by another administrator and outranks everything below,
-        # including a live staff session.
-        with self._session_factory() as db:
-            blocked = is_blocked(db, ip, secret_key=settings.secret_key)
-        if blocked:
-            return _refuse(403)
+        # including a live staff session. Skipped when ip is None - see
+        # _client_ip's own docstring for why there is no address here to
+        # check in the first place, rather than a stand-in to check with.
+        if ip is not None:
+            with self._session_factory() as db:
+                blocked = is_blocked(db, ip, secret_key=settings.secret_key)
+            if blocked:
+                return _refuse(403)
 
         # Anti-lockout: staff who already passed a password, a TOTP code and
         # a session-generation check are exempt from the header and rate
@@ -263,9 +279,12 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
         if looks_automated(request.headers) is not None:
             return _refuse(403)
 
-        fingerprint = ip_fingerprint(ip, secret_key=settings.secret_key)
-        count = self._rate.record(fingerprint, now=time.time())
-        if count > settings.protection_max_requests_per_minute:
-            return _refuse(429)
+        # Same reasoning as the blocklist check above: skipped, not
+        # bucketed, when there is no real address to key the counter on.
+        if ip is not None:
+            fingerprint = ip_fingerprint(ip, secret_key=settings.secret_key)
+            count = self._rate.record(fingerprint, now=time.time())
+            if count > settings.protection_max_requests_per_minute:
+                return _refuse(429)
 
         return await call_next(request)

@@ -7,11 +7,9 @@ how it is parsed: a misconfigured deployment should refuse to start rather
 than silently run insecure.
 """
 
-import dataclasses
-
 import pytest
 
-from admin.config import Settings, load_settings
+from admin.config import load_settings
 
 _REQUIRED_ENV = {
     "SECRET_KEY": "test-secret-key-not-used-anywhere-real",
@@ -59,25 +57,38 @@ def test_session_https_only_refuses_to_start_on_an_unrecognised_value(monkeypatc
         load_settings()
 
 
-def test_protection_ships_enabled_by_default():
+def test_protection_ships_enabled_by_default(monkeypatch):
     """The guard against a test-suite convenience becoming a production
     accident.
 
-    tests/conftest.py's ``admin_app`` fixture builds every app in this
-    suite - except tests/admin/test_protection.py's own - with
-    ``PROTECTION_ENABLED=false``, deliberately: admin/protection.py's
-    ProtectionMiddleware is a deployment concern the rest of the suite was
-    never written to expect, and turning it on for every fixture would mean
-    header/rate/blocklist checks failing in files that have nothing to do
-    with them. That override is only safe as long as nobody ever flips the
-    *shipped* default the same way by mistake - so this test reads
-    ``Settings.protection_enabled``'s own dataclass field default directly,
-    not through ``load_settings()`` (which reads the environment) or any
-    fixture (which the test suite itself now overrides). Nothing here can
-    accidentally inherit the test-only "false" - that is the point.
-    """
-    field = next(
-        f for f in dataclasses.fields(Settings) if f.name == "protection_enabled"
-    )
+    tests/conftest.py's ``_protection_off_by_default`` fixture sets
+    ``PROTECTION_ENABLED=false`` in the environment for this whole test
+    session, deliberately: admin/protection.py's ProtectionMiddleware is a
+    deployment concern the rest of the suite was never written to expect,
+    and leaving it on for every fixture would mean header/rate/blocklist
+    checks failing in files that have nothing to do with them.
 
-    assert field.default is True
+    An earlier version of this test read ``Settings.protection_enabled``'s
+    dataclass field default directly via ``dataclasses.fields(Settings)``,
+    reasoning that this couldn't be fooled by the environment. That reasoning
+    had a hole: ``load_settings()`` - the function every real deployment
+    actually calls - never reads the dataclass field default at all. It
+    passes ``protection_enabled=_bool("PROTECTION_ENABLED", True)``
+    explicitly (admin/config.py), a second, independent ``True`` that has to
+    be kept in sync with the field's own by hand. The dataclass-field version
+    of this test could not see that second value drift - flipping
+    ``load_settings()``'s own default to ``False`` would ship a panel with
+    protection off on every deployment that never sets the env var, and this
+    test would still pass.
+
+    Fixed by calling ``load_settings()`` itself, the actual production path,
+    with the required settings present and ``PROTECTION_ENABLED`` explicitly
+    absent - ``monkeypatch.delenv`` is required here specifically because
+    ``_protection_off_by_default`` has already put "false" in the
+    environment for this session, and this test exists to check what happens
+    with *no* override present, i.e. what a fresh deployment gets.
+    """
+    _set_required(monkeypatch)
+    monkeypatch.delenv("PROTECTION_ENABLED", raising=False)
+
+    assert load_settings().protection_enabled is True

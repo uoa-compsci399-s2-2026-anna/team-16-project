@@ -56,6 +56,35 @@ from admin.views import time as views_time
 
 SECRET_KEY = "test-secret-key-not-used-anywhere-real"
 
+#: admin/protection.py (Task 3) refuses a request with no session cookie yet
+#: whose headers look scripted (admin.detection.looks_automated) - and
+#: httpx.AsyncClient's own default User-Agent ("python-httpx/x.y.z") is
+#: itself one of the markers that check flags. `_login` below drives the
+#: password and TOTP steps before any session cookie exists, so those two
+#: requests need to look like a browser navigation or ProtectionMiddleware
+#: refuses them with 403 before AdminAuth ever sees the form data. Once
+#: `_login` returns, the session cookie makes every further request through
+#: the same client exempt (the anti-lockout rule), so nothing past this
+#: point needs these headers.
+_BROWSER_HEADERS = {
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+    "accept": "text/html,application/xhtml+xml",
+    "sec-fetch-mode": "navigate",
+}
+
+
+@pytest.fixture
+def settings(admin_app):
+    """The running app's own Settings.
+
+    Lets a test read `secret_key`, `protection_max_requests_per_minute` and
+    friends from the exact object admin/protection.py and the rest of the
+    app were built against, rather than a second, hardcoded copy that could
+    silently drift from admin/config.py's own defaults.
+    """
+    return admin_app.state.settings
+
 
 # --- Account / login plumbing ----------------------------------------------
 
@@ -91,17 +120,19 @@ async def _login(client, monkeypatch, *, username, password, secret):
     login = await client.post(
         "/admin/login",
         data={"username": username, "password": password},
+        headers=_BROWSER_HEADERS,
         follow_redirects=False,
     )
     assert login.status_code == 302, "password step should have succeeded"
 
-    verify_page = await client.get("/admin/verify")
+    verify_page = await client.get("/admin/verify", headers=_BROWSER_HEADERS)
     match = re.search(r'name="csrf_token" value="([^"]+)"', verify_page.text)
     assert match, "no CSRF token rendered on /admin/verify"
     code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now)
     verify = await client.post(
         "/admin/verify",
         data={"code": code, "csrf_token": match.group(1)},
+        headers=_BROWSER_HEADERS,
         follow_redirects=False,
     )
     assert verify.status_code == 302, "TOTP step should have completed the login"

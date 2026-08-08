@@ -84,6 +84,24 @@ class Settings:
     # local development served over plain http.
     session_https_only: bool = True
     api_base_url: str = _DEFAULT_API_BASE_URL
+    # Whether ProtectionMiddleware (admin/protection.py) runs at all. True by
+    # default; an operator debugging a false-positive block can flip this off
+    # without redeploying code, at the cost of the blocklist and the header/
+    # rate checks all going dark together - there is no finer-grained switch.
+    protection_enabled: bool = True
+    protection_max_requests_per_minute: int = 30
+    # Whether to trust X-Forwarded-For for the caller's address. Defaults
+    # False, and that default is load-bearing, not a placeholder: behind a
+    # reverse proxy every caller arrives as the proxy's own address, so with
+    # this True but no proxy in front, the rate limit becomes one counter
+    # shared by every visitor and a single blocked address blocks everyone.
+    # With this False (the only safe default) admin/protection.py reads
+    # request.client.host and ignores X-Forwarded-For entirely - a header a
+    # caller can set to anything, so trusting it without a proxy that
+    # actually strips/overwrites inbound copies of it would let any caller
+    # forge whichever address they like. Set True only once a reverse proxy
+    # that overwrites X-Forwarded-For itself sits in front of this panel.
+    protection_trusted_proxy: bool = False
 
 
 def load_settings() -> Settings:
@@ -95,4 +113,9 @@ def load_settings() -> Settings:
         login_lockout_minutes=_int("LOGIN_LOCKOUT_MINUTES", 15),
         session_https_only=_bool("SESSION_HTTPS_ONLY", True),
         api_base_url=_str("API_BASE_URL", _DEFAULT_API_BASE_URL),
+        protection_enabled=_bool("PROTECTION_ENABLED", True),
+        protection_max_requests_per_minute=_int(
+            "PROTECTION_MAX_REQUESTS_PER_MINUTE", 30
+        ),
+        protection_trusted_proxy=_bool("PROTECTION_TRUSTED_PROXY", False),
     )

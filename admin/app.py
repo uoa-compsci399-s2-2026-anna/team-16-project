@@ -15,6 +15,7 @@ from admin.bootstrap import ensure_bootstrap_admins
 from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
+from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
 from db.session import create_session_factory
@@ -68,6 +69,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # One throttle for the process. A per-request instance would hold a fresh
     # counter every time and never lock anything.
     app.state.throttle = build_throttle(settings)
+
+    # Global, and installed on the *outer* app - not passed into Admin()'s
+    # own ``middlewares=`` list. Either placement runs before sqladmin's
+    # inner SessionMiddleware (see admin/protection.py's module docstring
+    # for why: a Mount hands the request to the inner app only after the
+    # outer app's own middleware has already run), so where it sits doesn't
+    # change what it can read - this is simply the natural home for
+    # something that has to see every request under /admin, static files
+    # included, ahead of the mount-ordering note just below.
+    app.add_middleware(
+        ProtectionMiddleware, session_factory=session_factory, settings=settings
+    )
 
     # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
     # Starlette sub-application at "/admin" as the *last* line of its

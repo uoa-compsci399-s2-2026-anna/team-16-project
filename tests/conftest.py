@@ -15,7 +15,20 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 
-import admin.models  # noqa: F401  - registers the tables on Base.metadata
+# Base.metadata must be complete before the `engine` fixture below calls
+# drop_all()/create_all(): drop_all() computes its drop order from whatever
+# is registered here, and a model module nobody imported is invisible to it.
+# If a table from an unregistered module still exists in the database (e.g.
+# left over from a previous run) but references, or is referenced by, a
+# table that *is* registered, drop_all() can order the drops wrongly and
+# fail on a foreign key. Import every admin model module here, not just the
+# one that happens to get pulled in transitively by `admin.app` - the next
+# person adding a model module needs to add its import here too.
+import admin.comparison_models  # noqa: F401  - registers the comparison tables
+import admin.factor_models  # noqa: F401  - registers the six factor tables
+import admin.models  # noqa: F401  - registers staff, staff_recovery_code, audit_log
+import admin.taxonomy_models  # noqa: F401  - registers the six taxonomy tables
+import db.blocklist_models  # noqa: F401  - registers ip_block on Base.metadata
 from admin.app import create_app
 from db.base import Base
 

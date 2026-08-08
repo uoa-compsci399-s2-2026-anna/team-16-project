@@ -29,6 +29,7 @@ automatically - tier 1 fails it outright, and tier 2 fails it with a clear
 "no factory registered" message rather than silently skipping it.
 """
 
+from datetime import datetime
 from decimal import Decimal
 
 import pytest
@@ -37,6 +38,7 @@ import admin.comparison_models  # noqa: F401 - registers its tables on Base.meta
 import admin.factor_models  # noqa: F401
 import admin.models  # noqa: F401
 import admin.taxonomy_models  # noqa: F401
+import db.blocklist_models  # noqa: F401 - registers ip_block on Base.metadata
 from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
@@ -46,6 +48,7 @@ from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
 from db.base import Base
+from db.blocklist_models import IpBlock
 
 ALL_MAPPED_CLASSES = sorted(
     (m.class_ for m in Base.registry.mappers), key=lambda c: c.__name__
@@ -186,6 +189,15 @@ _FACTORIES = {
         ),
         identifying=["line_dest", "12.500"],
         forbidden=["9014"],
+    ),
+    IpBlock: _case(
+        lambda: IpBlock(
+            id=9015, ip_hmac="f" * 64, reason="scripted traffic",
+            created_at=datetime(2026, 1, 1, 12, 0), created_by="kim",
+            expires_at=datetime(2026, 1, 1, 12, 30),
+        ),
+        identifying=["scripted traffic", "2026-01-01"],
+        forbidden=["9015", "f" * 64],
     ),
 }
 

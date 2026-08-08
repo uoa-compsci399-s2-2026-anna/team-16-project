@@ -47,3 +47,20 @@ class IpBlock(Base):
     #: addresses are reassigned, and a permanent block on a shared address
     #: punishes whoever holds it next.
     expires_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    def __str__(self) -> str:
+        #: reason, plus enough of the timing to tell two blocks with the same
+        #: reason apart. Never ip_hmac: it is 64 characters no human can act
+        #: on, and it is derived from an address - putting it in the one
+        #: string sqladmin renders everywhere (list columns, detail pages,
+        #: every select box) is exactly the leak contract §2.3's exception
+        #: exists to prevent. Never id either, for the same reason every
+        #: other model in this project prefers a human identifier over its
+        #: primary key.
+        when = self.created_at.strftime("%Y-%m-%d %H:%M") if self.created_at \
+            else "not yet recorded"
+        expiry = (
+            f"expires {self.expires_at.strftime('%Y-%m-%d %H:%M')}"
+            if self.expires_at is not None else "no expiry"
+        )
+        return f"{self.reason} (blocked {when}, {expiry})"

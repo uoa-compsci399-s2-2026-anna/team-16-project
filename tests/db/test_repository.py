@@ -212,6 +212,79 @@ def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     assert all("destination_id" not in row for row in data["upstream"])
 
 
+def _seam_request(sector, food_category, current, alternative=None):
+    from engine.types import CalculationRequest, EntryInput, ScenarioLine
+
+    def lines(rows):
+        return tuple(
+            ScenarioLine(destination_code=code, qty_kg=Decimal(qty)) for code, qty in rows
+        )
+
+    return CalculationRequest(
+        entries=(
+            EntryInput(
+                sector_code=sector,
+                food_category_code=food_category,
+                current=lines(current),
+                alternative=None if alternative is None else lines(alternative),
+            ),
+        )
+    )
+
+
+def test_the_default_bundle_factory_reaches_the_real_engine(seeded_session):
+    """**The seam this branch exists to close, and until now it had no test.**
+
+    `_default_bundle_factory` -> `build_bundle_data` -> `FactorBundle.from_json`
+    -> `calculate` is the production path of every public calculation, and
+    every test that touches either end stubs the other: `tests/api/` injects a
+    `FakeEngineAdapter`, and every other test in this file passes an explicit
+    `bundle_factory`. So the one call with **no** `bundle_factory` — the call
+    the API actually makes — was exercised by hand and by nothing else.
+
+    **If `build_bundle_data` ever stops emitting one of `from_json`'s twelve
+    required keys, nothing in the suite goes red and every public calculation
+    returns 500.** That is not hypothetical: Task 3 found `from_json` parsing a
+    three-key upstream shape while the repository emitted four, and found it by
+    accident. This is the test that would have caught it.
+
+    The two figures are chosen to exercise both halves of the projection:
+
+    - 10 kg of `processing`/`dairy` to `landfill` is 10 x (1.9 + 0.99) = 28.9,
+      and moving it to `prevention` gives 0 — the whole offset, through the
+      real `destination_id` column rather than a hand-built bundle.
+    - 1000 kg of `primary_production`/`vegetables` to `landfill` is
+      1000 x (0 + 0.70) = 700.0: an absent upstream row falling back to zero
+      (§4.1) and the **generic** `food_category IS NULL` downstream row being
+      selected for a category that has no row of its own. Neither of those
+      resolutions exists anywhere in `build_bundle_data`; both are properties
+      of the two documents lining up.
+    """
+    from engine.calculate import calculate
+
+    bundle = load_factor_bundle(seeded_session)
+
+    assert bundle.validate() == []
+
+    prevented = calculate(
+        _seam_request(
+            "processing", "dairy", [("landfill", "10")], [("prevention", "10")]
+        ),
+        bundle,
+    )
+    assert prevented.entries[0].current.metrics["co2e"].total == Decimal("28.9")
+    assert prevented.entries[0].alternative.metrics["co2e"].total == Decimal("0")
+    assert prevented.entries[0].net_benefit["co2e"] == Decimal("28.9")
+
+    generic = calculate(
+        _seam_request("primary_production", "vegetables", [("landfill", "1000")]),
+        bundle,
+    )
+    row = generic.entries[0].current.metrics["co2e"].by_destination[0]
+    assert (row.upstream, row.downstream) == (Decimal("0"), Decimal("0.7"))
+    assert generic.entries[0].current.metrics["co2e"].total == Decimal("700.0")
+
+
 def test_publish_refuses_a_set_that_would_reopen_o7(seeded_session):
     """Contract §2.2/§5.2. The offset is data now, so data can un-do it.
 
@@ -253,6 +326,112 @@ def test_publish_refuses_a_set_that_would_reopen_o7(seeded_session):
     message = str(excinfo.value)
     assert "processing/dairy/co2e" in message
     assert "prevention" in message
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_publish_refuses_a_prevention_row_that_is_present_but_not_zero(seeded_session):
+    """**The guard checks the value, not the row's existence**, and this is the
+    case that tells the two apart.
+
+    An existence check is satisfied completely by a `prevention` upstream row
+    at 1.9 — the same value as the general row — which is O-7 reopened for that
+    tuple with one extra step and no error, no warning and nothing in the log.
+    It is a worse position than the absent row, because both callers' messages
+    tell a staff member to add a row "at 0", so a set that fails an existence
+    check gets fixed and a set that passes it looks finished.
+
+    The value is a modelling decision (`architecture.md` §4.1, and the
+    `source_note` on the shipped rows): prevented food was never produced, so
+    there is no upstream burden to attribute. Any other value is a claim
+    nothing in the system supports, so anything but zero is refused — not only
+    a value equal to the general row's.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+    seeded_session.execute(
+        FactorUpstream.__table__.update()
+        .where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+        .values(value_per_kg=Decimal("1.9000000000"))
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+    with pytest.raises(FactorSetStateError) as excinfo:
+        publish_factor_set(seeded_session, draft_id, "alice")
+
+    assert "processing/dairy/co2e" in str(excinfo.value)
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_a_prevention_row_just_above_zero_is_refused_too(seeded_session):
+    """One unit in the last place DECIMAL(20,10) carries. The check is
+    `== 0`, not "small enough" — there is no tolerance to tune and no value
+    below which a partial offset becomes acceptable."""
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    seeded_session.execute(
+        FactorUpstream.__table__.update()
+        .where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+        .values(value_per_kg=Decimal("0.0000000001"))
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+
+
+def test_both_callers_of_the_o7_guard_refuse_the_same_non_zero_row(seeded_session):
+    """§5.2 and v1.9: the query has one home in `db/` and two callers, and the
+    panel calls `admin/factor_lifecycle.publish_factor_set`, not this module's.
+    A value rule enforced in only one of them leaves the staff path — the one
+    the failure description is written about — unguarded."""
+    from admin.factor_lifecycle import LifecycleError
+    from admin.factor_lifecycle import publish_factor_set as panel_publish
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    seeded_session.execute(
+        FactorUpstream.__table__.update()
+        .where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+        .values(value_per_kg=Decimal("1.9000000000"))
+    )
+    seeded_session.flush()
+
+    with pytest.raises(LifecycleError) as excinfo:
+        panel_publish(seeded_session, draft_id, actor="alice")
+
+    assert "processing/dairy/co2e" in str(excinfo.value)
     assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
 
 

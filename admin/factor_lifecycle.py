@@ -259,11 +259,13 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
         listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
         raise LifecycleError(
             f"{len(missing)} factor combinations have an upstream factor but "
-            f"no '{PREVENTION_CODE}' row, so a line moved to "
-            f"'{PREVENTION_CODE}' would still be charged their full upstream "
+            f"no '{PREVENTION_CODE}' upstream row at 0 — either it is missing "
+            f"or it carries a non-zero value — so a line moved to "
+            f"'{PREVENTION_CODE}' would still be charged upstream "
             "impact and the calculator would understate the benefit of "
-            f"preventing waste for them: {listed}. Add an upstream factor of "
-            f"0 with destination '{PREVENTION_CODE}' for each, then publish."
+            f"preventing waste for them: {listed}. Add or correct an upstream "
+            f"factor of 0 with destination '{PREVENTION_CODE}' for each, then "
+            "publish."
         )
 
     changes: list[tuple[FactorSet, dict, str]] = []

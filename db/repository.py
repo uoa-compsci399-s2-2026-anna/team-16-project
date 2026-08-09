@@ -429,13 +429,25 @@ def find_missing_prevention_upstream(
     session: Session, factor_set_id: int
 ) -> list[tuple[str, str, str]]:
     """Which `(sector, food_category, metric)` tuples of this set would still
-    charge a prevented line its full upstream factor. Contract §2.2, O-7.
+    charge a prevented line an upstream factor. Contract §2.2, O-7.
 
     A tuple qualifies when it has a general upstream row (`destination_id IS
-    NULL`) and no row for `prevention`. For those tuples the lookup falls
-    through to the general row, a line moved to `prevention` keeps the entry's
-    whole upstream burden, and the calculator reverts to its pre-v1.8
-    behaviour — understating the benefit of wasting less by most of its value.
+    NULL`) and **no `prevention` row at zero** — whether because the
+    `prevention` row is absent or because it carries a non-zero value. For
+    those tuples a line moved to `prevention` keeps some or all of the entry's
+    upstream burden and the calculator reverts towards its pre-v1.8 behaviour,
+    understating the benefit of wasting less.
+
+    **Existence is not the rule; the value is.** An earlier revision of this
+    function checked only that a `prevention` row was present, while both
+    callers' messages told the staff member to add one "at 0". A row at 1.9
+    satisfied an existence check completely and reopened O-7 for that tuple
+    silently — the same failure this guard was written for, with one extra
+    step, and against a `source_note` and an `architecture.md` §4.1 that now
+    state the whole offset as fact. Zero here is a modelling decision, not a
+    default: prevented food was never produced, so there is no upstream burden
+    to attribute, and any other value is a claim nothing in the system
+    supports.
 
     **This is worse than the original O-7, not better, which is why it is
     checked rather than filed.** O-7 was wrong everywhere and therefore
@@ -466,6 +478,11 @@ def find_missing_prevention_upstream(
         .where(
             FactorUpstream.factor_set_id == factor_set_id,
             FactorUpstream.destination_id == prevention_id,
+            #: The whole of the difference between "a row exists" and "the
+            #: offset is whole". Compared against `Decimal` rather than `0` so
+            #: that no float is bound into the statement (§1.2); DECIMAL(20,10)
+            #: compares exactly on both MySQL and SQLite.
+            FactorUpstream.value_per_kg == Decimal("0"),
         )
         .subquery()
     )
@@ -500,8 +517,9 @@ def _refuse_incomplete_prevention(session: Session, factor_set_id: int) -> None:
     listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
     raise FactorSetStateError(
         f"{len(missing)} factor combinations have an upstream factor but no "
-        f"'{PREVENTION_CODE}' row, so a prevented line would still be charged "
-        f"their full upstream impact: {listed}. Add a "
+        f"'{PREVENTION_CODE}' upstream row at 0 — either it is missing or it "
+        f"carries a non-zero value — so a prevented line would still be "
+        f"charged upstream impact: {listed}. Add or correct a "
         f"'{PREVENTION_CODE}' upstream row at 0 for each before publishing."
     )
 

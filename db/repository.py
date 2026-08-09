@@ -11,7 +11,7 @@ from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import delete, distinct, func, select, update
+from sqlalchemy import distinct, func, select, update
 from sqlalchemy.orm import Session
 
 from db.errors import (
@@ -36,6 +36,7 @@ from db.models import (
     Scenario,
     Sector,
     Submission,
+    SubmissionEntry,
     SubmissionLine,
     UnitPreset,
     utcnow,
@@ -442,6 +443,15 @@ def _resolve_id(session: Session, model: Any, code: str) -> int:
 def upsert_submission(
     session: Session, token: str | None, req: Any, factor_set_id: int
 ) -> tuple[int, str]:
+    """Contract §5.3. One call, one submission, N entries.
+
+    `req` is a §3 `CalculationRequest` and carries `req.entries`, each one an
+    `EntryInput` with its own `sector_code`, `food_category_code` and its own
+    `current` / `alternative` tuples of `ScenarioLine`. There is no
+    `req.current`: `ScenarioInput` was deleted in v1.2 precisely because an
+    integration that keeps reading `req.current.sector_code` persists one row
+    for a five-entry calculation and nothing raises.
+    """
     now = utcnow()
     submission = None
     if token:
@@ -453,12 +463,6 @@ def upsert_submission(
         ):
             submission.token = None
             submission = None
-    sector_id = _resolve_id(session, Sector, req.current.sector_code)
-    food_category_id = (
-        _resolve_id(session, FoodCategory, req.current.food_category_code)
-        if req.current.food_category_code
-        else None
-    )
     if submission is None:
         token = str(uuid.uuid4())
         submission = Submission(
@@ -467,8 +471,6 @@ def upsert_submission(
             created_at=now,
             updated_at=now,
             factor_set_id=factor_set_id,
-            sector_id=sector_id,
-            food_category_id=food_category_id,
             gwp_horizon=req.gwp_horizon,
         )
         session.add(submission)
@@ -476,25 +478,57 @@ def upsert_submission(
     else:
         submission.updated_at = now
         submission.factor_set_id = factor_set_id
-        submission.sector_id = sector_id
-        submission.food_category_id = food_category_id
         submission.gwp_horizon = req.gwp_horizon
-        session.execute(delete(SubmissionLine).where(SubmissionLine.submission_id == submission.id))
-    for scenario_name, scenario in (
-        (Scenario.current, req.current),
-        (Scenario.alternative, req.alternative),
-    ):
-        if scenario is None:
-            continue
-        for line in scenario.lines:
-            session.add(
-                SubmissionLine(
-                    submission_id=submission.id,
-                    scenario=scenario_name,
-                    destination_id=_resolve_id(session, Destination, line.destination_code),
-                    qty_kg=line.qty_kg,
-                )
+        # §5.3: the entry set is rebuilt, not patched -- the entries carry no
+        # client-supplied identity to reconcile a removed one against an added
+        # one. Cleared through the ORM relationship rather than by a bulk
+        # DELETE so that the lines go with the entries on SQLite too, where
+        # ON DELETE CASCADE is inert unless PRAGMA foreign_keys is on.
+        submission.entries.clear()
+        # Flushed before the inserts below, or a rebuild that re-uses the same
+        # (sector, food_category) pair -- a user changing one number and
+        # recalculating, the commonest case there is -- collides with
+        # uq_submission_entry. The unit of work emits deletes after inserts.
+        session.flush()
+    for sort_order, entry in enumerate(req.entries):
+        # Every code is resolved before the row is constructed. _resolve_id
+        # issues a SELECT, which triggers autoflush; a half-built entry that
+        # is attached to `submission` but not yet in the session is skipped by
+        # that flush with only a warning.
+        sector_id = _resolve_id(session, Sector, entry.sector_code)
+        food_category_id = (
+            _resolve_id(session, FoodCategory, entry.food_category_code)
+            if entry.food_category_code
+            else None
+        )
+        lines = [
+            SubmissionLine(
+                scenario=scenario_name,
+                destination_id=_resolve_id(session, Destination, line.destination_code),
+                qty_kg=line.qty_kg,
             )
+            for scenario_name, scenario_lines in (
+                (Scenario.current, entry.current),
+                (Scenario.alternative, entry.alternative),
+            )
+            if scenario_lines is not None
+            for line in scenario_lines
+        ]
+        session.add(
+            SubmissionEntry(
+                submission=submission,
+                sector_id=sector_id,
+                #: NULL means the user did not break their waste down by type.
+                #: Stored as NULL: resolving it to standard_mix here would
+                #: report a composition the user never claimed (§5.4).
+                food_category_id=food_category_id,
+                #: §2.3. Request order, so §6.2's entries[] can be paired with
+                #: the rows on the user's screen; id order cannot be relied on
+                #: because the rebuild above reassigns ids.
+                sort_order=sort_order,
+                lines=lines,
+            )
+        )
     session.flush()
     return submission.id, token
 
@@ -508,85 +542,174 @@ def expire_tokens(session: Session, now: datetime) -> int:
     return result.rowcount or 0
 
 
+#: §5.4/§6.4. The label of the bucket a NULL `submission_entry.food_category_id`
+#: falls into: the user did not break their waste down by type. Deliberately
+#: not `standard_mix`, which is what a user selects on purpose.
+UNSPECIFIED_FOOD_CATEGORY = ("unspecified", "Not broken down by type")
+OTHER_BUCKET = ("other", "Other (sample too small)")
+
+
+def _decimal(value: Any) -> Decimal:
+    #: SQLite hands a summed DECIMAL back through float; MySQL does not.
+    #: §1.2 puts these on the wire as strings, so a float must not survive
+    #: this far.
+    if isinstance(value, Decimal):
+        return value
+    return Decimal("0") if value is None else Decimal(str(value))
+
+
 def _bucketise(
-    rows: list[tuple[str, str, int, Decimal]], total: int, threshold: int
+    rows: list[tuple[str, str, int, Any]], threshold: int
 ) -> tuple[StatsBucket, ...]:
+    """Suppress, then share.
+
+    The denominator is this breakdown's **own** total entry count, not
+    `total_calculations` (§6.4: "share is computed within its own breakdown,
+    against that breakdown's own total, and does sum to 1"). A submission
+    contributes one observation per entry to `by_sector`, and one per entry
+    *per destination used* to `by_destination`, so no breakdown is a
+    breakdown of the submission count.
+
+    A suppressed bucket keeps its count inside that denominator by being
+    merged into `other` rather than dropped: dropping it would not remove a
+    number from the page, it would inflate every share left on it.
+    """
+    total = sum(count for _, _, count, _ in rows)
+    ordered = sorted(rows, key=lambda row: (-row[2], row[0]))
+
+    def share(count: int) -> Decimal:
+        if not total:
+            return Decimal("0")
+        return (Decimal(count) / Decimal(total)).quantize(Decimal("0.0001"))
+
     visible: list[StatsBucket] = []
     other_count = 0
     other_kg = Decimal("0")
-    for code, label, count, total_kg in rows:
+    for code, label, count, total_kg in ordered:
         if count < threshold:
             other_count += count
-            other_kg += total_kg or Decimal("0")
+            other_kg += _decimal(total_kg)
             continue
-        share = (Decimal(count) / Decimal(total)).quantize(Decimal("0.0001")) if total else Decimal("0")
-        visible.append(StatsBucket(code, label, count, share, total_kg or Decimal("0")))
+        visible.append(StatsBucket(code, label, count, share(count), _decimal(total_kg)))
     if other_count:
-        share = (Decimal(other_count) / Decimal(total)).quantize(Decimal("0.0001")) if total else Decimal("0")
-        visible.append(StatsBucket("other", "Other (sample too small)", other_count, share, other_kg))
+        visible.append(
+            StatsBucket(*OTHER_BUCKET, other_count, share(other_count), other_kg)
+        )
     return tuple(visible)
 
 
 def get_public_stats(session: Session, threshold: int = 5) -> PublicStats:
-    eligible = select(Submission.id).where(Submission.excluded_from_public.is_(False)).subquery()
-    total = session.scalar(select(func.count()).select_from(eligible)) or 0
+    """Contract §5.4.
+
+    Three properties of this function are each easy to lose and none of them
+    fails loudly:
+
+    1. **Every breakdown reads the current scenario only.** Both scenarios
+       share `submission_line`, and the alternative is a user's what-if, not
+       an observation. Without the predicate, `prevention` — the destination
+       for waste that by construction did *not* happen — becomes a bucket in
+       the public chart and every `total_kg` roughly doubles.
+    2. **Every breakdown joins up to `submission`,** one table further than
+       its own grouping needs, because `excluded_from_public` lives there
+       (§2.3). Stopping at `submission_entry` applies staff moderation to
+       nothing.
+    3. **The unit of aggregation is the entry, not the submission.** One
+       submission with three entries is three sector observations; counting
+       it once, as whichever stage it happened to enter first, is exactly
+       wrong for the multi-stage businesses this calculator is most useful to.
+       `total_calculations` alone still counts submissions, so it and the
+       bucket counts deliberately do not sum (§6.4).
+    """
+    total_calculations = session.scalar(
+        select(func.count())
+        .select_from(Submission)
+        .where(Submission.excluded_from_public.is_(False))
+    ) or 0
+
+    # One row per entry: that entry's current-scenario mass. Grouped on the
+    # entry, not the submission -- an entry's mass belongs in its own sector
+    # and food-category bucket, not spread across its siblings'.
+    entry_current_kg = (
+        select(
+            SubmissionLine.submission_entry_id.label("submission_entry_id"),
+            func.sum(SubmissionLine.qty_kg).label("total_kg"),
+        )
+        .where(SubmissionLine.scenario == Scenario.current)
+        .group_by(SubmissionLine.submission_entry_id)
+        .subquery()
+    )
+    # The inner join to it is what "restricted to entries having
+    # current-scenario lines" means: an entry with no current line has no
+    # mass to report and is not an observation of anything.
+    entries = (
+        select(
+            SubmissionEntry.id,
+            SubmissionEntry.sector_id,
+            SubmissionEntry.food_category_id,
+            entry_current_kg.c.total_kg,
+        )
+        .join(Submission, SubmissionEntry.submission_id == Submission.id)
+        .join(
+            entry_current_kg,
+            entry_current_kg.c.submission_entry_id == SubmissionEntry.id,
+        )
+        .where(Submission.excluded_from_public.is_(False))
+        .subquery()
+    )
+
+    sector_rows = session.execute(
+        select(
+            Sector.code,
+            Sector.name,
+            func.count(entries.c.id),
+            func.sum(entries.c.total_kg),
+        )
+        .join(entries, entries.c.sector_id == Sector.id)
+        .group_by(Sector.code, Sector.name)
+    ).all()
+
+    # A NULL food category is a bucket, not a gap, and it is not resolved to
+    # standard_mix: the engine does that to pick a factor, the statistics must
+    # report what the user actually told us (§5.4).
+    food_code = func.coalesce(FoodCategory.code, UNSPECIFIED_FOOD_CATEGORY[0])
+    food_name = func.coalesce(FoodCategory.name, UNSPECIFIED_FOOD_CATEGORY[1])
+    food_rows = session.execute(
+        select(
+            food_code,
+            food_name,
+            func.count(entries.c.id),
+            func.sum(entries.c.total_kg),
+        )
+        .select_from(entries)
+        .outerjoin(FoodCategory, entries.c.food_category_id == FoodCategory.id)
+        .group_by(food_code, food_name)
+    ).all()
+
     destination_rows = session.execute(
         select(
             Destination.code,
             Destination.name,
-            func.count(distinct(SubmissionLine.submission_id)),
+            func.count(distinct(SubmissionLine.submission_entry_id)),
             func.sum(SubmissionLine.qty_kg),
         )
+        .select_from(SubmissionLine)
+        .join(SubmissionEntry, SubmissionLine.submission_entry_id == SubmissionEntry.id)
+        .join(Submission, SubmissionEntry.submission_id == Submission.id)
         .join(Destination, SubmissionLine.destination_id == Destination.id)
         .where(
-            SubmissionLine.submission_id.in_(select(eligible.c.id)),
+            Submission.excluded_from_public.is_(False),
             SubmissionLine.scenario == Scenario.current,
         )
         .group_by(Destination.code, Destination.name)
     ).all()
-    current_totals = (
-        select(
-            SubmissionLine.submission_id,
-            func.sum(SubmissionLine.qty_kg).label("total_kg"),
-        )
-        .where(SubmissionLine.scenario == Scenario.current)
-        .group_by(SubmissionLine.submission_id)
-        .subquery()
-    )
-    sector_rows = session.execute(
-        select(Sector.code, Sector.name, func.count(Submission.id), func.sum(current_totals.c.total_kg))
-        .join(Submission, Submission.sector_id == Sector.id)
-        .join(current_totals, current_totals.c.submission_id == Submission.id)
-        .where(Submission.id.in_(select(eligible.c.id)))
-        .group_by(Sector.code, Sector.name)
-    ).all()
-    standard_mixes = session.scalars(
-        select(FoodCategory).where(
-            FoodCategory.is_standard_mix.is_(True),
-            FoodCategory.active.is_(True),
-        )
-    ).all()
-    if len(standard_mixes) != 1:
-        raise TaxonomyInvariantError(
-            "Exactly one active food category must be standard_mix"
-        )
-    standard_mix = standard_mixes[0]
-    food_code = func.coalesce(FoodCategory.code, standard_mix.code if standard_mix else "standard_mix")
-    food_name = func.coalesce(FoodCategory.name, standard_mix.name if standard_mix else "Standard mix")
-    food_rows = session.execute(
-        select(food_code, food_name, func.count(Submission.id), func.sum(current_totals.c.total_kg))
-        .outerjoin(FoodCategory, Submission.food_category_id == FoodCategory.id)
-        .join(current_totals, current_totals.c.submission_id == Submission.id)
-        .where(Submission.id.in_(select(eligible.c.id)))
-        .group_by(food_code, food_name)
-    ).all()
+
     return PublicStats(
         generated_at=utcnow(),
-        total_calculations=total,
+        total_calculations=total_calculations,
         suppression_threshold=threshold,
-        by_destination=_bucketise(list(destination_rows), total, threshold),
-        by_sector=_bucketise(list(sector_rows), total, threshold),
-        by_food_category=_bucketise(list(food_rows), total, threshold),
+        by_destination=_bucketise(list(destination_rows), threshold),
+        by_sector=_bucketise(list(sector_rows), threshold),
+        by_food_category=_bucketise(list(food_rows), threshold),
     )
 
 

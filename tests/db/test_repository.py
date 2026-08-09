@@ -15,6 +15,7 @@ from db.models import (
     FactorUpstream,
     Scenario,
     Submission,
+    SubmissionEntry,
     SubmissionLine,
     utcnow,
 )
@@ -32,15 +33,32 @@ from db.repository import (
 
 
 def _request(current="10", alternative="999", food_category="dairy"):
+    """One entry, in the §3 shape.
+
+    Was a `CalculationRequest` with `current` / `alternative` `ScenarioInput`s
+    at the top level. v1.2 moved the sector and the food category onto
+    `EntryInput` and made the scenarios plain tuples of `ScenarioLine`, so the
+    single-entry request these tests exercise is now a one-element
+    `req.entries`. The behaviour each test asserts is unchanged; only the
+    shape of the request that produces it is. Multi-entry behaviour lives in
+    tests/db/test_repository_entries.py.
+    """
     line = lambda qty: SimpleNamespace(destination_code="landfill", qty_kg=Decimal(qty))
-    scenario = lambda qty: SimpleNamespace(
-        sector_code="processing", food_category_code=food_category, lines=(line(qty),)
+    entry = SimpleNamespace(
+        sector_code="processing",
+        food_category_code=food_category,
+        current=(line(current),),
+        alternative=(line(alternative),) if alternative is not None else None,
     )
-    return SimpleNamespace(
-        current=scenario(current),
-        alternative=scenario(alternative) if alternative is not None else None,
-        gwp_horizon=100,
-    )
+    return SimpleNamespace(entries=(entry,), gwp_horizon=100)
+
+
+def _lines_of(session, submission_id):
+    return session.scalars(
+        select(SubmissionLine)
+        .join(SubmissionEntry, SubmissionLine.submission_entry_id == SubmissionEntry.id)
+        .where(SubmissionEntry.submission_id == submission_id)
+    ).all()
 
 
 def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
@@ -52,8 +70,13 @@ def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
     second_id, second_token = upsert_submission(seeded_session, token, _request("20", "30"), factor_set_id)
     assert second_id == submission_id
     assert second_token == token
-    lines = seeded_session.scalars(select(SubmissionLine).where(SubmissionLine.submission_id == submission_id)).all()
-    assert {line.qty_kg for line in lines} == {Decimal("20.000"), Decimal("30.000")}
+    # Lines now hang off the entry, so "this submission's lines" is a join
+    # rather than a column. Counting the whole table would also pass here --
+    # and would keep passing if the rebuild started leaking orphans.
+    assert {line.qty_kg for line in _lines_of(seeded_session, submission_id)} == {
+        Decimal("20.000"), Decimal("30.000")
+    }
+    assert seeded_session.scalar(select(func.count()).select_from(SubmissionLine)) == 2
 
 
 def test_public_stats_use_current_only(seeded_session):
@@ -61,6 +84,11 @@ def test_public_stats_use_current_only(seeded_session):
     upsert_submission(seeded_session, None, _request("10", "999"), get_published_factor_set_id(seeded_session))
     stats = get_public_stats(seeded_session, threshold=1)
     assert stats.by_destination[0].total_kg == Decimal("10.000")
+    # The scenario predicate belongs on every breakdown, not only on the one
+    # grouped over submission_line: by_sector and by_food_category sum the
+    # same lines through the entry, so a missing filter doubles them too.
+    assert stats.by_sector[0].total_kg == Decimal("10.000")
+    assert stats.by_food_category[0].total_kg == Decimal("10.000")
 
 
 def test_audit_redacts_secrets_and_serialises_decimal(seeded_session):
@@ -175,7 +203,19 @@ def test_publish_refuses_a_preexisting_multiple_published_invariant_violation(se
     ) == 2
 
 
-def test_stats_exclude_staff_flagged_submissions_and_map_null_food_to_standard_mix(seeded_session):
+def test_stats_exclude_staff_flagged_submissions_and_bucket_null_food_as_unspecified(seeded_session):
+    """Staff exclusion is unchanged; the NULL food category is not.
+
+    This test asserted `standard_mix`, which is what the *engine* resolves a
+    null food category to in order to pick a factor. v1.2's §5.4 rules that
+    out for the statistics: `standard_mix` is a category a user chooses
+    deliberately, and reporting the two as one both claims a composition the
+    user never gave and makes the deliberate choice unreadable. The null is
+    its own bucket, `unspecified`, suppressed on the same threshold as any
+    other. The exclusion half of the test is untouched, and now also proves
+    the join reaches `submission` -- `excluded_from_public` is not on
+    `submission_entry`, which is what by_food_category groups over.
+    """
     factor_set_id = get_published_factor_set_id(seeded_session)
     excluded_id, _ = upsert_submission(
         seeded_session, None, _request("100", None), factor_set_id
@@ -192,5 +232,6 @@ def test_stats_exclude_staff_flagged_submissions_and_map_null_food_to_standard_m
     stats = get_public_stats(seeded_session, threshold=1)
     assert stats.total_calculations == 1
     assert stats.by_destination[0].total_kg == Decimal("7.000")
-    assert stats.by_food_category[0].code == "standard_mix"
+    assert stats.by_food_category[0].code == "unspecified"
+    assert stats.by_food_category[0].label == "Not broken down by type"
     assert stats.by_food_category[0].count == 1

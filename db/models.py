@@ -225,8 +225,13 @@ class SubmissionEntry(Base):
         ForeignKey("submission.id", ondelete="CASCADE"), nullable=False
     )
     sector_id: Mapped[int] = mapped_column(ForeignKey("sector.id"), nullable=False)
-    #: Null when the user did not break waste down by type. §6.2 reads that as
-    #: the standard mix; §5.4 maps it to `standard_mix` in the statistics.
+    #: Null when the user did not break waste down by type. The engine reads
+    #: that as the standard mix to pick a factor (§6.2), but §5.4 gives it its
+    #: own `unspecified` bucket in the statistics and explicitly forbids
+    #: resolving it to `standard_mix` there: one is the factor that was
+    #: applied, the other is what the user actually told us, and folding them
+    #: together both claims a composition nobody gave and makes a deliberate
+    #: choice of the standard mix unreadable.
     food_category_id: Mapped[int | None] = mapped_column(
         ForeignKey("food_category.id"), nullable=True
     )

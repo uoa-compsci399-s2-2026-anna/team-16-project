@@ -37,6 +37,19 @@ on:
         required: true
         type: string
 
+  # ==========================================================================
+  # TEMPORARY - REMOVED BEFORE THIS BRANCH IS FINISHED. See the DRY RUN note
+  # in the `prepare` job. GitHub only offers manual dispatch for a workflow
+  # that already exists on the DEFAULT branch, so this file cannot be
+  # dispatched until it is merged - and a release workflow first exercised on
+  # the real 1.0.0 is one that has never been tested. This trigger, and the
+  # `|| '<version>'` fallback below, are the only two differences between the
+  # file that gets exercised and the file that ships.
+  # ==========================================================================
+  push:
+    branches:
+      - 'build/**'
+
 # Never cancel a release in flight. `cancel-in-progress: true` would be right
 # for CI and catastrophic here: the window it would interrupt is between
 # `imagetools create` and `gh release create`, which leaves images published
@@ -65,7 +78,13 @@ jobs:
       - id: resolve
         env:
           # The only place the release version enters this workflow.
-          RAW_VERSION: ${{ inputs.version }}
+          #
+          # DRY RUN, TEMPORARY: the `|| '...'` supplies a version on the push
+          # trigger above, which has no inputs. Both are removed together once
+          # the workflow has been exercised. The value being exercised first is
+          # DELIBERATELY MALFORMED - `0.0.1-rc1` - so that the fail-early path
+          # is proven on a real run rather than only in a shell one-liner.
+          RAW_VERSION: ${{ inputs.version || '0.0.1-rc1' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

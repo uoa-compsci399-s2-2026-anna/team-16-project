@@ -1,10 +1,35 @@
-@import url('https://fonts.googleapis.com/css2?family=Geologica:wght@600;700;800&family=Kumbh+Sans:wght@400;500;600;700;800&display=swap');
+/* Self-hosted, as the brand guidelines require ("self-host the files"). The `@import` from
+   fonts.googleapis.com that stood here made every visitor's browser announce itself to a
+   third party before the first paint — on a calculator whose stated promise is that it
+   stores nothing about the visitor — and it put the first paint behind a network the site
+   does not control. The two files are byte-identical to `admin/static/fonts/`, so the public
+   page and the admin panel render in the same faces. */
+@font-face {
+  font-family: 'Geologica';
+  src: url('../assets/fonts/geologica-bold.woff2') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Kumbh Sans';
+  src: url('../assets/fonts/kumbh-sans-regular.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
 
 :root {
   font-family: "Kumbh Sans", Helvetica, Arial, sans-serif;
   color: #003223;
   background: #fff;
-  font-synthesis: none;
+  /* The brand supplies one weight per family — Geologica **Bold**, Kumbh Sans **Regular** —
+     so the CDN's 500/600/700/800/900 no longer have a real face behind them. `none` would
+     have silently flattened every bold label on the page back to regular; `weight` lets the
+     browser synthesise the heavier weights and keeps the hierarchy. Style and small-caps
+     synthesis stay off. Replacing this with real weight files is the correct fix if the
+     client supplies them. */
+  font-synthesis: weight;
   text-rendering: optimizeLegibility;
   --kai-kale: #003223;
   --kai-white: #fff;

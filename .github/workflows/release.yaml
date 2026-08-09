@@ -81,10 +81,11 @@ jobs:
           #
           # DRY RUN, TEMPORARY: the `|| '...'` supplies a version on the push
           # trigger above, which has no inputs. Both are removed together once
-          # the workflow has been exercised. The value being exercised first is
-          # DELIBERATELY MALFORMED - `0.0.1-rc1` - so that the fail-early path
-          # is proven on a real run rather than only in a shell one-liner.
-          RAW_VERSION: ${{ inputs.version || '0.0.1-rc1' }}
+          # the workflow has been exercised. `0.0.1-rc1` was rejected by the
+          # check below on the previous commit, which is what proves the
+          # fail-early path on a real run; this is the scratch version the full
+          # dry run publishes and then deletes.
+          RAW_VERSION: ${{ inputs.version || '0.0.1' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

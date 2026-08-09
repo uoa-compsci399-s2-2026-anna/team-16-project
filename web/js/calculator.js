@@ -67,13 +67,37 @@ function amountStep() {
   return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">Step 3</p><h1 id="amount-title">How much food waste are you measuring?</h1><p class="section-intro">Enter the total amount. You will allocate this total across destinations in the next step.</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="total-waste">Waste amount <span class="required">(required)</span></label><p class="field-hint">Use up to two decimal places.</p><input id="total-waste" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalAmount)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</div><div class="form-field"><label for="total-unit">Unit <span class="required">(required)</span></label><p class="field-hint">Choose the measurement unit.</p><select id="total-unit"><option value="kilograms" ${state.totalUnit === 'kilograms' ? 'selected' : ''}>kilograms</option><option value="tonnes" ${state.totalUnit === 'tonnes' ? 'selected' : ''}>tonnes</option></select></div></div>${buttonRow(1)}</section>`
 }
 
+/**
+ * The `entries[N].current[M].qty_kg` path §9 will use to name each row of the draft entry,
+ * aligned with `state.current` so the render loop can look up its own row, and `null` for
+ * a row the request never carried.
+ *
+ * Two things have to agree with what `submitCalculation` actually posted, and neither
+ * follows from the render loop:
+ *
+ *   * **`buildLines` drops every blank row before sending**, so a row's request index is
+ *     its position among the *submitted* lines. That is not its position in
+ *     `state.current` as soon as one destination is left empty — which is the normal
+ *     case, and a mismatch that predates the contract fork.
+ *   * **the draft entry travels last**, at `entries[state.entries.length]`. §9's paths are
+ *     rooted at the request body, so a bare `current[i].qty_kg` key can never match one.
+ *
+ * Both failures are silent: no error, no console warning, just the generic banner.
+ */
+function draftFieldPaths() {
+  const entryIndex = state.entries.length
+  let sent = 0
+  return normaliseLines(state.current).map(line => (Number(line.qtyKg) > 0 ? `entries[${entryIndex}].current[${sent++}].qty_kg` : null))
+}
+
 function destinationRows() {
   const allocationExcess = exceedsTotal(allocatedAmount(state.current), Number(state.totalAmount || 0))
+  const paths = draftFieldPaths()
   return state.current.map((line, index) => {
     const destination = selected(state.taxonomy.destinations, line.destination)
-    const fieldPath = `current[${index}].qty_kg`
-    const invalid = Boolean(state.fieldErrors[fieldPath]) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
-    return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(destination?.name || line.destination)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(destination?.name || line.destination)} amount in ${escapeHtml(state.totalUnit)}"><span>${escapeHtml(state.totalUnit)}</span></div>${invalid ? `<p class="field-error" role="alert">${escapeHtml(state.fieldErrors[fieldPath])}</p>` : ''}</div>`
+    const serverError = paths[index] ? state.fieldErrors[paths[index]] : null
+    const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
+    return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(destination?.name || line.destination)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(destination?.name || line.destination)} amount in ${escapeHtml(state.totalUnit)}"><span>${escapeHtml(state.totalUnit)}</span></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
   }).join('')
 }
 
@@ -119,7 +143,7 @@ function reviewStep() {
     <article class="review-block"><div class="section-heading-row"><h2>Waste destinations</h2><button class="text-button" type="button" data-action="go-step" data-step="3">Edit</button></div>${reviewLines(draftEntry())}</article>
     <button class="button button-add add-entry-button" type="button" data-action="add-entry">+ Add another supply-chain entry</button>
     <aside class="disclaimer compact" aria-label="Important information"><span class="info-icon" aria-hidden="true">i</span><div><strong>Estimate notice</strong><p>Demonstration only — verified calculation factors have not yet been supplied. Final results will depend on factors supplied and approved by Kai Commitment.</p></div></aside>
-    ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${buttonRow(3, state.loading ? 'Calculating…' : Date.now() < state.rateLimitedUntil ? 'Try again shortly' : state.entries.length ? `Calculate results for ${state.entries.length + 1} entries` : 'Calculate impact', state.loading || Date.now() < state.rateLimitedUntil, 'calculate')}</section>`
+    ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${buttonRow(3, state.loading ? 'Calculating…' : Date.now() < state.rateLimitedUntil ? 'Try again shortly' : state.entries.length ? `Calculate results for ${state.entries.length + 1} entries` : 'Calculate impact', state.loading || Date.now() < state.rateLimitedUntil || blocked(), 'calculate')}</section>`
 }
 
 function validateCurrentStep() {
@@ -146,20 +170,67 @@ function buildLines(entry) {
 
 let reloadTaxonomy = null
 
+// §9.2: a `BLOCKED` caller will never be served, so every retry affordance has to go —
+// a "Try again" button that cannot ever succeed is worse than none. This is the opposite
+// of `RATE_LIMITED`, which keeps its 60-second re-enable.
+const blocked = () => state.errorCode === 'BLOCKED'
+
+// `BLOCKED` is terminal, so a step change must not wipe the banner: that would leave the
+// user looking at a permanently disabled Calculate button with no text saying why.
+const clearedError = () => (blocked() ? {} : { error: null, errorCode: null })
+
 function publicError(error) {
   switch (error.code) {
-    case 'VALIDATION_ERROR': return error.message || 'Check the highlighted fields and try again.'
+    case 'VALIDATION_ERROR': return validationMessage(error)
     case 'UNKNOWN_CODE': return 'Calculator options have changed. The latest options are being loaded; please review your selections and try again.'
     case 'RATE_LIMITED': return 'Too many calculations have been requested. Please wait 60 seconds and try again.'
     case 'FORMULA_ERROR': return 'The calculator could not produce a result because its calculation configuration needs attention. Please try again later.'
+    // §9: `ENGINE_UNAVAILABLE` means the calculator cannot run at all right now rather
+    // than that this request was bad, which is `NO_PUBLISHED_FACTOR_SET`'s situation and
+    // takes the same copy.
+    case 'ENGINE_UNAVAILABLE':
     case 'NO_PUBLISHED_FACTOR_SET': return 'The calculator is currently under maintenance because no factor set is available.'
+    // §9.2: `message` never varies, is written for end users, and is the whole of what a
+    // refused caller is owed. Do not add copy suggesting a retry.
+    case 'BLOCKED': return error.message || 'This request was refused. If you believe this is an error, contact the Kai Commitment team.'
     default: return error.message || 'The calculation could not be completed.'
   }
 }
 
+/**
+ * The banner text for a 400.
+ *
+ * `destinationRows` shows every detail that names a row of the entry on screen against
+ * that row, so the banner only has to point at them. A detail that names anything else —
+ * a saved entry, an `alternative`, a field this form has no input for — has no box to
+ * attach to and would otherwise vanish entirely, so it is spelled out here instead.
+ */
+function validationMessage(error) {
+  const bound = new Set(draftFieldPaths().filter(Boolean))
+  const unbound = (error.details || []).filter(detail => !bound.has(detail.field))
+  if (!unbound.length) return 'Check the highlighted fields and try again.'
+  return [error.message || 'The calculation could not be completed.', ...unbound.map(describeDetail)].join(' ')
+}
+
+// §9's path is rooted at the request body and starts `entries[N]`, where N is the
+// submission-order index. The user counts entries from one.
+function describeDetail(detail) {
+  const entry = /^entries\[(\d+)\]/.exec(detail.field || '')
+  const message = detail.message || 'This value could not be accepted.'
+  return entry ? `Entry ${Number(entry[1]) + 1}: ${message}` : message
+}
+
 function fieldErrorMap(error) {
+  // §9: `code` alone decides the shape of `details` — no presence checks. Only
+  // VALIDATION_ERROR carries the `{field, issue, message}` shape; FORMULA_ERROR carries
+  // `{expression, line, column, reason}` and names no field, and `BLOCKED` carries `null`
+  // rather than an array at all.
   if (error.code !== 'VALIDATION_ERROR') return {}
-  return Object.fromEntries((error.details || []).filter(detail => detail.field).map(detail => [detail.field, error.message || 'Check this value.']))
+  // The value is the detail's own `message`, not the envelope's. The envelope's `message`
+  // describes the request as a whole, so standing it against each row printed "Request
+  // validation failed" beside every highlighted input and discarded the only text that
+  // said what was actually wrong with that row (§9).
+  return Object.fromEntries((error.details || []).map(detail => [detail.field, detail.message || 'This value could not be accepted.']))
 }
 
 async function submitCalculation() {
@@ -195,6 +266,11 @@ async function submitCalculation() {
 function updateLine(control) {
   const lineId = control.dataset.lineId
   state.current = state.current.map(line => line.id === lineId ? { ...line, qtyInput: control.value } : line)
+  // The server named its failing lines by their position among the lines that were sent
+  // (§9), and blanking or filling a row changes which lines would be sent at all. The
+  // stored paths stop meaning what they meant, so they go rather than move to a
+  // neighbouring row; the highlights they drew are cleared below with the rest.
+  state.fieldErrors = {}
   state.lastChangedDestination = state.current.find(line => line.id === lineId)?.destination || null
   const total = Number(state.totalAmount) || 0
   const sum = allocatedAmount(state.current)
@@ -209,6 +285,10 @@ function updateLine(control) {
   document.getElementById('allocation-error').textContent = error
   document.querySelectorAll('.destination-row').forEach(row => row.classList.remove('invalid'))
   document.querySelectorAll('.destination-row input').forEach(input => input.removeAttribute('aria-invalid'))
+  // These paragraphs are the server's per-field prose, which `state.fieldErrors` has just
+  // discarded. Dropping only the highlight left the sentence sitting under an unhighlighted
+  // row, still naming a line position the request no longer has.
+  document.querySelectorAll('.destination-row .field-error').forEach(message => message.remove())
   if (exceedsTotal(sum, total) || Number(control.value) < 0) {
     control.closest('.destination-row')?.classList.add('invalid')
     control.setAttribute('aria-invalid', 'true')
@@ -232,7 +312,9 @@ export function render(main) {
     return
   }
   if (!state.taxonomy) {
-    main.innerHTML = `<section class="content-section error-state"><h1>Calculator unavailable</h1><p>${escapeHtml(state.error || 'The taxonomy could not be loaded.')}</p><button class="button button-primary" type="button" data-action="retry">Try again</button></section>`
+    // §9.2: `BLOCKED` is the one failure here that a retry can never clear, so the button
+    // is withheld rather than disabled — the message is the whole of the response.
+    main.innerHTML = `<section class="content-section error-state"><h1>Calculator unavailable</h1><p>${escapeHtml(state.error || 'The taxonomy could not be loaded.')}</p>${blocked() ? '' : '<button class="button button-primary" type="button" data-action="retry">Try again</button>'}</section>`
     return
   }
   const screens = [sectorStep, foodStep, amountStep, destinationStep, reviewStep]
@@ -258,8 +340,8 @@ export function bindCalculator(main, retryTaxonomy) {
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action
-    if (action === 'start') setState({ step: 0, error: null })
-    if (action === 'go-step') setState({ step: Number(control.dataset.step), error: null })
+    if (action === 'start') setState({ step: 0, ...clearedError() })
+    if (action === 'go-step') setState({ step: Number(control.dataset.step), ...clearedError() })
     if (action === 'toggle-sector') {
       const code = control.dataset.sector
       setState({ expandedSectors: state.expandedSectors.includes(code) ? state.expandedSectors.filter(item => item !== code) : [...state.expandedSectors, code] })
@@ -293,7 +375,7 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'reset-improvement') resetImprovement(state)
     if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementResult: null, improvementError: null })
     if (action === 'compare-improvement') compareImprovement(state)
-    if (action === 'retry') retryTaxonomy()
+    if (action === 'retry' && !blocked()) retryTaxonomy()
     if (action === 'view-methodology') window.location.href = './methodology.html'
     if (['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
       window.scrollTo({ top: 0, behavior: 'smooth' })

@@ -78,6 +78,37 @@ def _codes(session, model) -> dict[str, int]:
     return {row.code: row.id for row in session.scalars(select(model)).all()}
 
 
+class MissingCodeError(RuntimeError):
+    """A code this file names is not in the taxonomy."""
+
+
+def _lookup(table: dict[str, int], code: str, kind: str, where: str) -> int:
+    """Resolve one code, and say which one when it is not there.
+
+    A bare ``table[code]`` raises ``KeyError: 'standard_mix'`` four frames
+    down, and because ``init.sh`` runs under ``set -e`` that failure stops the
+    migrate service, which stops api and admin - **the whole stack refuses to
+    start over one renamed row**. Refusing is right: silently seeding a
+    factor set with a row missing would publish a calculator that returns
+    plausible numbers with a hole in them. But the operator has to be told
+    what to fix, and a KeyError does not say which table the code belongs to,
+    which row of this file wanted it, or that the cause is almost certainly a
+    ``code`` renamed through the admin panel (a supported edit -
+    ``FoodCategoryAdmin.form_columns`` includes ``code``) or a change to
+    ``admin/seed.py`` that this file was not updated alongside.
+    """
+    try:
+        return table[code]
+    except KeyError:
+        known = ", ".join(sorted(table)) or "(none)"
+        raise MissingCodeError(
+            f"{where} names {kind} {code!r}, which is not in the taxonomy. "
+            f"Known {kind} codes: {known}. Either a code was renamed through "
+            f"the admin panel, or admin/seed.py changed without "
+            f"docker/mock-factors.json being updated to match."
+        ) from None
+
+
 def _decimal(row: dict, key: str) -> Decimal:
     """Values are transported as strings, per the DECIMAL-everywhere rule.
 
@@ -147,14 +178,17 @@ def main() -> int:
             ))
             counts["constant"] += 1
 
-        for row in data.get("formulas", []):
+        for index, row in enumerate(data.get("formulas", [])):
+            where = f"formulas[{index}]"
             session.add(Formula(
-                factor_set_id=set_id, metric_id=metrics[row["metric"]],
+                factor_set_id=set_id,
+                metric_id=_lookup(metrics, row["metric"], "metric", where),
                 expression=row["expression"], notes=row.get("notes"),
             ))
             counts["formula"] += 1
 
-        for row in data.get("upstream", []):
+        for index, row in enumerate(data.get("upstream", [])):
+            where = f"upstream[{index}]"
             #: `destination` is nullable and means "every destination that has
             #: none of its own". The `prevention` rows at 0 are the ones that
             #: make prevention a whole offset (O-7); without them
@@ -163,36 +197,50 @@ def main() -> int:
             dest = row.get("destination")
             session.add(FactorUpstream(
                 factor_set_id=set_id,
-                sector_id=sectors[row["sector"]],
-                food_category_id=foods[row["food_category"]],
-                destination_id=None if dest is None else destinations[dest],
-                metric_id=metrics[row["metric"]],
+                sector_id=_lookup(sectors, row["sector"], "sector", where),
+                food_category_id=_lookup(
+                    foods, row["food_category"], "food_category", where
+                ),
+                destination_id=(
+                    None if dest is None
+                    else _lookup(destinations, dest, "destination", where)
+                ),
+                metric_id=_lookup(metrics, row["metric"], "metric", where),
                 value_per_kg=_decimal(row, "value_per_kg"),
                 source_note=row.get("source_note"),
                 data_quality=row.get("data_quality"),
             ))
             counts["factor_upstream"] += 1
 
-        for row in data.get("downstream", []):
+        for index, row in enumerate(data.get("downstream", [])):
+            where = f"downstream[{index}]"
             #: `food_category` is nullable and means "every food category for
             #: this destination" - how a per-tonne charge like the waste levy
             #: is represented.
             food = row.get("food_category")
             session.add(FactorDownstream(
                 factor_set_id=set_id,
-                destination_id=destinations[row["destination"]],
-                food_category_id=None if food is None else foods[food],
-                metric_id=metrics[row["metric"]],
+                destination_id=_lookup(
+                    destinations, row["destination"], "destination", where
+                ),
+                food_category_id=(
+                    None if food is None
+                    else _lookup(foods, food, "food_category", where)
+                ),
+                metric_id=_lookup(metrics, row["metric"], "metric", where),
                 value_per_kg=_decimal(row, "value_per_kg"),
                 source_note=row.get("source_note"),
                 data_quality=row.get("data_quality"),
             ))
             counts["factor_downstream"] += 1
 
-        for row in data.get("equivalences", []):
+        for index, row in enumerate(data.get("equivalences", [])):
+            where = f"equivalences[{index}]"
             session.add(Equivalence(
                 factor_set_id=set_id, code=row["code"], name=row["name"],
-                source_metric_id=metrics[row["source_metric"]],
+                source_metric_id=_lookup(
+                    metrics, row["source_metric"], "metric", where
+                ),
                 value_per_unit=_decimal(row, "value_per_unit"),
                 label_template=row["label_template"],
                 source_note=row.get("source_note"),
@@ -219,4 +267,14 @@ def main() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    # MissingCodeError is caught here rather than left to propagate. It is a
+    # configuration mismatch an operator can fix, not a bug, and a traceback
+    # would bury the one sentence that says which code is missing under six
+    # frames of SQLAlchemy. The exit status is still non-zero, so init.sh's
+    # `set -e` still stops the deployment - the message changes, the refusal
+    # does not.
+    try:
+        sys.exit(main())
+    except MissingCodeError as exc:
+        print(f"seed_mock_factors: refused to seed. {exc}", file=sys.stderr)
+        sys.exit(1)

@@ -329,6 +329,14 @@ jobs:
               # printed to the log immediately below it either way.
               echo "::error title=Repository debris in kaicalc-${name}::$(printf '%s' "$hits" | tr '\n' ' ')"
               printf '%s\n' "$hits"
+              # Also into the file the failure artefact is built from. Without
+              # this the artefact would carry only docker build output and the
+              # offending paths would live in the job log alone - which is the
+              # thing the artefact exists so that nobody has to go and read.
+              {
+                echo "--- hygiene failure: repository debris in kaicalc-${name} ---"
+                printf '%s\n' "$hits"
+              } >> "$RUNNER_TEMP/build.log"
               fail=1
             else
               echo "clean"
@@ -391,9 +399,9 @@ jobs:
             echo "  - the hygiene assertion found repository debris in an"
             echo "    image, in which case the offending paths are below."
             echo
-            echo "--- last 200 lines of docker build output ---"
+            echo "--- last 200 lines of the build and hygiene output ---"
             tail -n 200 "$RUNNER_TEMP/build.log" 2>/dev/null \
-              || echo "(none: the job failed before or outside docker build)"
+              || echo "(none: the job failed before docker build ran)"
           } > "${{ matrix.arch }}.log"
           cat "${{ matrix.arch }}.log"
 
@@ -542,6 +550,11 @@ jobs:
               docker buildx imagetools inspect "${repo}:${MOVING}" --raw \
               | python3 "$RUNNER_TEMP/platforms.py"
             )"
+
+            # Into the log as well as the summary. A step summary is the nicer
+            # place to read this and the wrong place to grep it from six months
+            # later, when the question is "what was in the tag we gave them?"
+            echo "READ BACK ${repo}:${MOVING} -> ${published}"
 
             if [ "$published" != "$archs" ]; then
               # Intent and registry disagree. Not fatal - the registry wins,

@@ -17,7 +17,7 @@ from __future__ import annotations
 
 import ast
 import json
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from pathlib import Path
 
 import pytest
@@ -477,11 +477,18 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
     and the whole suite still passed. That is the same shape of defect as the
     impossible response body this file was written to catch.
 
-    **The label format is a convention this fixture set invented and the
-    contract does not define**: the interpolated `{value}` is the value
-    rounded to a whole unit with a comma thousands separator ("18,597 km"),
-    matching §6.2's own sample output. A must be told, because the engine has
-    to reproduce it and no section of the contract says so.
+    **The label format is now §3's rule 5**, not the undocumented convention
+    this fixture set invented to match §6.2's samples: `{value}` interpolates
+    to the value rounded to a whole unit, `ROUND_HALF_UP`, with a comma
+    thousands separator ("18,597 km"), and everything else in the template is
+    copied verbatim.
+
+    `quantize(Decimal("1"))` alone is **not** that rule — `Decimal`'s default
+    context rounds half to even, so it would turn 2.5 into 2 and pin the
+    wrong rule the first time a fixture value landed on a half. No value in
+    this set does, which is exactly why the rounding mode has to be written
+    out rather than left to the default: both modes pass today, and only one
+    of them is what A has been asked to build.
     """
     fixture = load(name)
     specs = {row["code"]: row for row in factors["equivalences"]}
@@ -503,7 +510,7 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
                 f"{where}.{item['code']}: value is {item['value']}, but "
                 f"{total} x {spec['value_per_unit']} is {expected}"
             )
-            shown = f"{expected.quantize(Decimal('1')):,}"
+            shown = f"{expected.quantize(Decimal('1'), rounding=ROUND_HALF_UP):,}"
             assert item["label"] == spec["label_template"].replace("{value}", shown), (
                 f"{where}.{item['code']}: label is {item['label']!r}, the "
                 f"template interpolates to "

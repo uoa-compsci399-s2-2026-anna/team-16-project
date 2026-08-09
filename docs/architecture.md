@@ -121,6 +121,8 @@ A scenario is `(sector, food_category, [(destination, qty_kg), ...])`.
 
 > `net_benefit[metric] = current[metric].total − alternative[metric].total`
 
+> **Read O-7 before you rely on the paragraph above.** The mass-conservation half is true and is enforced (`interfaces.md` §6.2's 0.010 kg rule). **The "100% offset, matching ReFED" half is not true of the data model as it stands**: only `prevention`'s *downstream* factors are zero, and the model has no way to zero an upstream one — `factor_upstream` is keyed on `(sector, food_category, metric)` and cannot see the destination, so a line moved to `prevention` keeps its entry's full upstream factor. On the shipped mock factors that leaves 79% of the benefit of preventing waste out of the answer, in the direction of understating the client's headline story. §10's **O-7** states the three options and who decides. This cross-reference exists so that nobody reads the paragraph above, believes it, and builds on it — it was believed for four contract revisions.
+
 ## 4.2 Upstream / Downstream Split
 
 Following ReFED's two-part model:
@@ -505,5 +507,35 @@ facts about the deployment that this code cannot establish for itself.
 | O-4 | Any localisation beyond language (units, date formats) | C, D |
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
+| O-7 | **`prevention` is not the 100% offset §4.1 claims.** Only its downstream factors are zero; a prevented line keeps its entry's full upstream factor, which is the larger term for most food categories. See below — this one must be settled before A writes the engine. | **A (blocking), B, E** |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
+
+## O-7 — `prevention` and the upstream factor
+
+**What is true.** `factor_upstream` is keyed on `(sector, food_category, metric)`. It has no destination column and cannot acquire one from `interfaces.md` §4.3's line variables, which carry `qty_kg`, `upstream`, `downstream` and the constants — neither the destination nor its group. So `line_value = qty_kg * (upstream + downstream)` applies the entry's upstream factor to every line in the entry, including a line sent to `prevention`. Setting `prevention`'s downstream factors to zero, which the data does, zeroes only the second term.
+
+**What §4.1 claims.** All factors zero; a 100% offset; parity with ReFED, which treats prevented waste as avoiding the production impact as well as the disposal impact.
+
+**The size of the gap, measured on `tests/fixtures/`.** 800 kg of `not_harvested` vegetables from `primary_production`, moved to `prevention` in the alternative:
+
+| | Current | Alternative | `net_benefit.co2e` |
+| --- | --- | --- | --- |
+| As built | 800 × (0.45 + 0.12) = 456.0 | 800 × (0.45 + 0.00) = 360.0 | **96.0** |
+| As §4.1 describes | 456.0 | 0.0 | **456.0** |
+
+**79% of the benefit is missing**, and upstream is the larger of the two terms for most categories, so this is representative rather than a worst case.
+
+**The failure is one-directional, and it lands on the worst number to get wrong.** `prevention` is systematically *understated*, never overstated — so `interfaces.md` §6.2's anti-inflation argument survives intact (mass conservation is a property of the request, and this does not touch it), but the client's headline message, that not wasting food in the first place beats every disposal route, comes out as the weakest number on the results page. A user who tries "what if we prevented this" sees a smaller improvement than composting it.
+
+**Three options. None is expressible in the data as it stands** — a pure formula cannot do it, because `downstream(prevention) = −upstream` would have to vary by sector and `factor_downstream` has no sector column.
+
+| Option | What changes | Cost | Whose call |
+| --- | --- | --- | --- |
+| **1. Documentation only** | Restate §4.1 as "`prevention`'s **downstream** factors are zero"; drop the ReFED-parity claim; say plainly on the methodology page that prevention is credited with avoided disposal only | Cheapest. No code, no schema, no migration | **The client's.** It changes what the calculator is described as measuring, and the description is the client's public position, not ours |
+| **2. Schema** | A destination (or destination-group) dimension on `factor_upstream`, or an upstream multiplier column on `destination` | Crosses A, B and E: migration, admin screens, bundle shape, `interfaces.md` §2.2 and §10.2 | A and B, with E for the panel |
+| **3. One new line variable** | Derive `prevented` from `destination_group.is_waste` (or a flag on `destination`) and expose it to §4.3, making the default formula `qty_kg * (upstream * (1 - prevented) + downstream)` | One variable, one formula edit, no new table. Keeps "metrics are data, not code" and adds no aggregation to §4.3 | A, with a `interfaces.md` §4.3 contract change |
+
+**Option 3 is the only route that keeps the configurability invariant** and is the one to prefer if the answer is "yes, prevention should avoid upstream too". Option 1 is the only one that is free, and it is the one nobody on this team may choose alone.
+
+**This must be settled before A writes the engine.** The golden suite (`interfaces.md` §10.1) bakes in whichever answer is taken, and that suite is the team's only evidence at handover that the calculator computes correctly — a suite that certifies the wrong semantics certifies them very convincingly.

@@ -204,7 +204,7 @@
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0000000000",
-      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. Note that the default formula still applies the entry's upstream factor to a prevented line — see docs/architecture.md §4.1, which describes prevention as a 100% offset. The two do not yet agree, and the gap is A's to close in the engine or the client's to close in the factor data.",
+      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. The default formula still applies the entry's upstream factor to a prevented line, so this is not the 100% offset docs/architecture.md §4.1 describes — see open item O-7, which measures the gap at 79% of the benefit on these factors and states the three options. Unsettled; do not quote a prevention figure from this factor set.",
       "data_quality": null
     },
     {

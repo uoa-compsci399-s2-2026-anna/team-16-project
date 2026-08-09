@@ -1,0 +1,45 @@
+{
+  "version_label": "GOLDEN-case-06",
+  "is_mock": true,
+
+  "sectors": [
+    { "code": "consumer_household", "name": "Consumer - household", "sort_order": 40 }
+  ],
+  "food_categories": [
+    { "code": "standard_mix", "name": "Standard mix", "is_standard_mix": true, "sort_order": 0 },
+    { "code": "dairy", "name": "Dairy", "is_standard_mix": false, "sort_order": 60 }
+  ],
+  "destination_groups": [
+    { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 30 }
+  ],
+  "destinations": [
+    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 120 }
+  ],
+  "metrics": [
+    { "code": "cost", "name": "Cost", "unit": "NZD",
+      "display_unit": null, "display_precision": 0, "sort_order": 40 }
+  ],
+
+  "constants": [
+    { "code": "LEVY_PER_KG", "value": "0.0600000000", "unit": "NZD / kg",
+      "note": "The New Zealand waste disposal levy at NZD 60 per tonne, as a per-kilogram charge. Non-zero on purpose: a constant bound to zero cannot tell a formula that reads it apart from one that ignores it." }
+  ],
+  "formulas": [
+    { "metric": "cost", "expression": "qty_kg * (upstream + downstream + const_LEVY_PER_KG)",
+      "notes": "Three terms, all distinct and none of them a multiple of another, so dropping any one of them changes the answer by a different amount." }
+  ],
+  "upstream": [
+    { "sector": "consumer_household", "food_category": "standard_mix", "destination": null,
+      "metric": "cost", "value_per_kg": "0.0100000000",
+      "source_note": "The row a null food_category must resolve to." },
+    { "sector": "consumer_household", "food_category": "dairy", "destination": null,
+      "metric": "cost", "value_per_kg": "9.9900000000",
+      "source_note": "Deliberately absurd, and never read by this case. An engine that resolved a null food_category to the wrong category would produce 2521.25 instead of 26.25 - a difference nobody could mistake for a rounding error." }
+  ],
+  "downstream": [
+    { "destination": "landfill", "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0350000000",
+      "source_note": "A gate fee, on the generic (food_category: null) row." }
+  ],
+  "equivalences": []
+}

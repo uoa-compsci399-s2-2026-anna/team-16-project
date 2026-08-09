@@ -1,0 +1,556 @@
+{
+  "version_label": "MOCK-v0 — PLACEHOLDER",
+  "is_mock": true,
+  "sectors": [
+    {
+      "code": "primary_production",
+      "name": "Primary production",
+      "description": "Growing, farming, fishing or harvesting food. This covers farms, orchards, vineyards, fisheries and other operations where food is grown, raised or caught. Typical losses are crops left unharvested, produce rejected on grade or appearance, and food lost during first handling.",
+      "sort_order": 10
+    },
+    {
+      "code": "processing",
+      "name": "Processing and manufacturing",
+      "description": "Producing, preparing, processing or packaging food. This covers factories, bakeries, packhouses and processing facilities. Typical losses are trimming waste, damaged product, production errors, rejected batches and food lost during packaging.",
+      "sort_order": 20
+    },
+    {
+      "code": "wholesale_retail",
+      "name": "Wholesale and retail",
+      "description": "Storing, moving and selling food — from distributors and wholesalers through to supermarkets, grocers and markets. Typical losses are storage and transport damage, stock that passes its date, unsold food and produce pulled from display.",
+      "sort_order": 30
+    },
+    {
+      "code": "consumer_household",
+      "name": "Households",
+      "description": "Food bought for the home and not eaten. Typical losses are leftovers, food that spoils before it is used, and edible parts removed during preparation.",
+      "sort_order": 40
+    },
+    {
+      "code": "consumer_hospitality",
+      "name": "Hospitality",
+      "description": "Preparing or serving food outside the home for sale. This covers restaurants, cafés, hotels, caterers and commercial kitchens. Typical losses are preparation waste, overproduction, buffet waste and what customers leave on the plate.",
+      "sort_order": 50
+    },
+    {
+      "code": "consumer_institution",
+      "name": "Institutions",
+      "description": "Preparing or serving food in public and community organisations. This covers schools, universities, hospitals, aged-care facilities, prisons and workplace cafeterias. Typical losses are kitchen preparation waste, overproduction and uneaten meals.",
+      "sort_order": 60
+    }
+  ],
+  "food_categories": [
+    {
+      "code": "standard_mix",
+      "name": "Mixed food waste (composition unknown)",
+      "is_standard_mix": true,
+      "sort_order": 5
+    },
+    {
+      "code": "fruit",
+      "name": "Fruit",
+      "is_standard_mix": false,
+      "sort_order": 10
+    },
+    {
+      "code": "vegetables",
+      "name": "Vegetables",
+      "is_standard_mix": false,
+      "sort_order": 20
+    },
+    {
+      "code": "nuts_seeds",
+      "name": "Nuts and edible seeds",
+      "is_standard_mix": false,
+      "sort_order": 30
+    },
+    {
+      "code": "meat",
+      "name": "Meat",
+      "is_standard_mix": false,
+      "sort_order": 40
+    },
+    {
+      "code": "seafood",
+      "name": "Seafood",
+      "is_standard_mix": false,
+      "sort_order": 50
+    },
+    {
+      "code": "dairy",
+      "name": "Dairy",
+      "is_standard_mix": false,
+      "sort_order": 60
+    },
+    {
+      "code": "bakery_grains",
+      "name": "Bakery and grains",
+      "is_standard_mix": false,
+      "sort_order": 70
+    },
+    {
+      "code": "staples",
+      "name": "Staples",
+      "is_standard_mix": false,
+      "sort_order": 80
+    },
+    {
+      "code": "beverages",
+      "name": "Beverages (non-dairy)",
+      "is_standard_mix": false,
+      "sort_order": 90
+    }
+  ],
+  "destination_groups": [
+    {
+      "code": "reuse",
+      "name": "Reuse",
+      "is_waste": false,
+      "sort_order": 10
+    },
+    {
+      "code": "recycle_recovery",
+      "name": "Recycle and recovery",
+      "is_waste": true,
+      "sort_order": 20
+    },
+    {
+      "code": "disposal",
+      "name": "Disposal",
+      "is_waste": true,
+      "sort_order": 30
+    }
+  ],
+  "destinations": [
+    {
+      "code": "prevention",
+      "name": "Prevented — waste avoided",
+      "group": "reuse",
+      "description": "Food that is never wasted in the first place. Used only in the alternative scenario: moving mass here is how the calculator expresses wasting less, and it keeps the two scenarios describing the same total mass.",
+      "sort_order": 5
+    },
+    {
+      "code": "food_redistribution",
+      "name": "Food redistribution",
+      "group": "reuse",
+      "description": "Surplus food given or sold on for people to eat — food rescue organisations, food banks and secondary markets.",
+      "sort_order": 10
+    },
+    {
+      "code": "upcycling",
+      "name": "Upcycling to other food products",
+      "group": "reuse",
+      "description": "Surplus food remade into another food product, such as bread into beer or fruit into preserves.",
+      "sort_order": 20
+    },
+    {
+      "code": "animal_feed",
+      "name": "Animal feed",
+      "group": "reuse",
+      "description": "Food diverted to feed livestock or other animals, either directly or after processing.",
+      "sort_order": 30
+    },
+    {
+      "code": "compost",
+      "name": "Composting (aerobic digestion)",
+      "group": "recycle_recovery",
+      "description": "Food broken down aerobically into a soil conditioner, on site or at a commercial facility.",
+      "sort_order": 40
+    },
+    {
+      "code": "anaerobic_digestion",
+      "name": "Anaerobic digestion",
+      "group": "recycle_recovery",
+      "description": "Food broken down without oxygen to produce biogas and digestate.",
+      "sort_order": 50
+    },
+    {
+      "code": "land_application",
+      "name": "Land application",
+      "group": "recycle_recovery",
+      "description": "Food spread directly onto land, without composting or digestion first.",
+      "sort_order": 60
+    },
+    {
+      "code": "not_harvested",
+      "name": "Not harvested or ploughed in",
+      "group": "recycle_recovery",
+      "description": "Edible crop left in the field or ploughed back into the soil. Relevant mainly to primary production.",
+      "sort_order": 70
+    },
+    {
+      "code": "bioprocessing",
+      "name": "Processing into non-food items",
+      "group": "recycle_recovery",
+      "description": "Food converted into bio-based materials or chemicals. The 2025 Otago baseline recommends reclassifying this as reuse; the grouping is a table row precisely so that change is an edit, not a migration.",
+      "sort_order": 80
+    },
+    {
+      "code": "other_recovery",
+      "name": "Other recovery, including biodiesel",
+      "group": "recycle_recovery",
+      "description": "Energy or material recovery not covered by the other routes, such as rendering to biodiesel.",
+      "sort_order": 90
+    },
+    {
+      "code": "combustion",
+      "name": "Combustion",
+      "group": "disposal",
+      "description": "Food burned, with or without energy recovery.",
+      "sort_order": 100
+    },
+    {
+      "code": "landfill",
+      "name": "Landfill",
+      "group": "disposal",
+      "description": "Food sent to a landfill, where it breaks down without oxygen and releases methane.",
+      "sort_order": 110
+    },
+    {
+      "code": "refuse_discard",
+      "name": "Refuse or discard",
+      "group": "disposal",
+      "description": "Food dumped, littered or otherwise discarded outside a managed waste system.",
+      "sort_order": 120
+    },
+    {
+      "code": "sewer",
+      "name": "Sewer or wastewater",
+      "group": "disposal",
+      "description": "Food flushed to the sewer, including through an in-sink waste disposal unit.",
+      "sort_order": 130
+    }
+  ],
+  "metrics": [
+    {
+      "code": "co2e",
+      "name": "Greenhouse gases",
+      "unit": "kg CO2e",
+      "display_unit": "kg CO₂e",
+      "display_precision": 1,
+      "sort_order": 10
+    },
+    {
+      "code": "ch4",
+      "name": "Methane",
+      "unit": "kg CH4",
+      "display_unit": null,
+      "display_precision": 1,
+      "sort_order": 20
+    },
+    {
+      "code": "water",
+      "name": "Water",
+      "unit": "L",
+      "display_unit": "L",
+      "display_precision": 0,
+      "sort_order": 30
+    },
+    {
+      "code": "cost",
+      "name": "Cost",
+      "unit": "NZD",
+      "display_unit": null,
+      "display_precision": 0,
+      "sort_order": 40
+    },
+    {
+      "code": "mass",
+      "name": "Mass",
+      "unit": "kg",
+      "display_unit": "kg",
+      "display_precision": 1,
+      "sort_order": 50
+    }
+  ],
+  "constants": [
+    {
+      "code": "GWP_CH4_100",
+      "value": "28.0000000000",
+      "unit": "kg CO2e / kg CH4",
+      "note": "IPCC AR5, 100-year horizon. Bound to const_GWP_CH4 when a request carries gwp_horizon = 100. No formula in this placeholder set references it yet — the split of the greenhouse-gas factor into its methane component arrives with the client's real data (O-1)."
+    },
+    {
+      "code": "GWP_CH4_20",
+      "value": "84.0000000000",
+      "unit": "kg CO2e / kg CH4",
+      "note": "IPCC AR5, 20-year horizon. Bound to const_GWP_CH4 when a request carries gwp_horizon = 20."
+    },
+    {
+      "code": "FOOD_VALUE_PER_KG",
+      "value": "0.0000000000",
+      "unit": "NZD / kg",
+      "note": "The value of the wasted food itself. Open item O-2 has not settled whether this is included, and at cost or at retail price, so it defaults to zero and the cost metric reports disposal cost and the waste levy only."
+    }
+  ],
+  "formulas": [
+    {
+      "metric": "co2e",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "The default form. Upstream is what it took to produce the food; downstream is what its destination does with it, and may be negative where the destination displaces something worse."
+    },
+    {
+      "metric": "ch4",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "Methane released at the destination. There is no upstream methane row in this placeholder set, so the upstream term is zero throughout."
+    },
+    {
+      "metric": "water",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "Embedded water. Almost all of it is upstream — the water was spent growing and processing the food, whatever happens to it afterwards."
+    },
+    {
+      "metric": "cost",
+      "expression": "qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)",
+      "notes": "Disposal cost and the waste levy, plus the value of the food itself once O-2 is settled and FOOD_VALUE_PER_KG stops being zero."
+    },
+    {
+      "metric": "mass",
+      "expression": "qty_kg",
+      "notes": "The mass metric is the quantity entered. It carries no factors, and it is the one metric a reader can check by hand."
+    }
+  ],
+  "upstream": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). The Otago 2025 baseline notes that New Zealand primary-production loss rates are largely borrowed from Australian figures.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. Applies to the standard mix, which is what a null food_category resolves to.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    }
+  ],
+  "downstream": [
+    {
+      "destination": "landfill",
+      "food_category": "dairy",
+      "metric": "co2e",
+      "value_per_kg": "0.9900000000",
+      "source_note": "PLACEHOLDER. A category-specific row: it wins over the generic landfill row below for dairy.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "PLACEHOLDER. The generic row — a null food_category means it applies to every category that has no row of its own.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0270000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0600000000",
+      "source_note": "The New Zealand waste disposal levy, NZD 60 per tonne for municipal landfill. This is the one number in the set that is a real New Zealand figure — it is a charge, not an emissions factor. Gate fees and haulage are not included.",
+      "data_quality": "measured"
+    },
+    {
+      "destination": "compost",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.2100000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "compost",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0002000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "compost",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0350000000",
+      "source_note": "PLACEHOLDER gate fee. Not levied.",
+      "data_quality": "modelled"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.0700000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0010000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0450000000",
+      "source_note": "PLACEHOLDER gate fee. Not levied.",
+      "data_quality": "modelled"
+    },
+    {
+      "destination": "animal_feed",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "-0.1500000000",
+      "source_note": "PLACEHOLDER, and negative on purpose: feeding surplus food to animals displaces feed that would otherwise have been grown. A negative downstream factor is an offset and charts must render it below the axis.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "not_harvested",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.1200000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "prevention",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. Since open item O-7 closed (contract v1.8) the upstream half is zero too — this factor set carries a `prevention` upstream row per (sector, food_category), so both terms of the line value vanish and prevention is the whole 100% offset docs/architecture.md §4.1 describes. A prevention figure from this set is quotable, subject to the placeholder-data warning every figure here carries.",
+      "data_quality": null
+    },
+    {
+      "destination": "prevention",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction.",
+      "data_quality": null
+    },
+    {
+      "destination": "prevention",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction.",
+      "data_quality": null
+    }
+  ],
+  "equivalences": [
+    {
+      "code": "km_driven",
+      "name": "Kilometres driven",
+      "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km",
+      "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
+      "sort_order": 10
+    }
+  ]
+}

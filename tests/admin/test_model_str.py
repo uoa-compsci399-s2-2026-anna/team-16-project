@@ -39,7 +39,7 @@ import admin.factor_models  # noqa: F401
 import admin.models  # noqa: F401
 import admin.taxonomy_models  # noqa: F401
 import db.blocklist_models  # noqa: F401 - registers ip_block on Base.metadata
-import db.models  # noqa: F401 - registers submission and submission_line
+import db.models  # noqa: F401 - registers the three submission tables
 from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
@@ -50,7 +50,7 @@ from admin.taxonomy_models import (
 )
 from db.base import Base
 from db.blocklist_models import IpBlock
-from db.models import Scenario, Submission, SubmissionLine
+from db.models import Scenario, Submission, SubmissionEntry, SubmissionLine
 
 ALL_MAPPED_CLASSES = sorted(
     (m.class_ for m in Base.registry.mappers), key=lambda c: c.__name__
@@ -192,9 +192,9 @@ _FACTORIES = {
         identifying=["line_dest", "12.500"],
         forbidden=["9014"],
     ),
-    #: db/models.py's two tables, which arrived with B's branch. This module
+    #: db/models.py's three tables, which arrived with B's branch. This module
     #: collects ALL_MAPPED_CLASSES off Base.registry precisely so that models
-    #: added later show up here automatically, and these two did.
+    #: added later show up here automatically, and these did.
     Submission: _case(
         lambda: Submission(
             id=9016, token="4d0f8e1e-0000-4000-8000-000000000000",
@@ -202,6 +202,18 @@ _FACTORIES = {
         ),
         identifying=["9016", "2026-01-01"],
         forbidden=["4d0f8e1e-0000-4000-8000-000000000000"],
+    ),
+    #: The sector/category pair moved off `submission` onto this table in
+    #: contract v1.2 §2.3 — one submission carries several supply-chain
+    #: stages, each with its own upstream factor.
+    SubmissionEntry: _case(
+        lambda: SubmissionEntry(
+            id=9018, sort_order=0,
+            sector=Sector(code="entry_sector", name="Entry Sector"),
+            food_category=FoodCategory(code="entry_cat", name="Entry Category"),
+        ),
+        identifying=["entry_sector", "entry_cat"],
+        forbidden=["9018"],
     ),
     SubmissionLine: _case(
         lambda: SubmissionLine(

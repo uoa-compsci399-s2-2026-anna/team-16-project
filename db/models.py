@@ -1,6 +1,6 @@
 """Part B SQLAlchemy models defined by docs/interfaces.md section 2.
 
-Only the two submission tables are declared here. The other thirteen are
+Only the three submission tables are declared here. The other thirteen are
 re-exported from `admin/` — see the note above the imports below.
 """
 
@@ -11,17 +11,21 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
+    CHAR,
+    DECIMAL,
     Boolean,
     CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
-    Numeric,
+    Index,
+    Integer,
     SmallInteger,
     String,
     UniqueConstraint,
+    text,
 )
-from sqlalchemy.orm import Mapped, mapped_column
+from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from db.base import BIGINT_PK, Base
 
@@ -98,6 +102,7 @@ __all__ = [
     "Scenario",
     "Sector",
     "Submission",
+    "SubmissionEntry",
     "SubmissionLine",
     "UnitPreset",
     "utcnow",
@@ -113,19 +118,57 @@ class Scenario(str, enum.Enum):
 
 
 class Submission(Base):
+    """One public calculation. Contract §2.3.
+
+    `sector_id` and `food_category_id` are **not** here — they live on
+    `submission_entry`, one row per `(sector, food_category)` pair, because a
+    food business has waste at more than one point in the supply chain and
+    each point draws a different upstream factor. `gwp_horizon` does stay
+    here: §2.3 calls it "[a]pplies to the whole submission" and §6.2 sends it
+    once, outside `entries[]`.
+
+    **No IP address, no user agent, no fingerprint.** Deduplication is by
+    `token` alone, which identifies a draft record and not a person, and
+    `expire_tokens` (§5.3) nulls the column an hour on — keeping the data,
+    severing the linkage.
+    """
+
     __tablename__ = "submission"
-    __table_args__ = (CheckConstraint("gwp_horizon IN (20, 100)", name="ck_submission_horizon"),)
+    __table_args__ = (
+        #: The two values §6.2 allows. `compare_metadata` cannot see a missing
+        #: CHECK on this SQLAlchemy/MySQL combination (see the "Known blind
+        #: spot" note in tests/test_migrations.py), so this one is proven
+        #: behaviourally by tests/db/test_submissions.py and against
+        #: information_schema by tests/test_migrations.py.
+        CheckConstraint("gwp_horizon IN (20, 100)", name="ck_submission_horizon"),
+    )
+
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
-    token: Mapped[str | None] = mapped_column(String(36), unique=True)
+    #: CHAR(36), not VARCHAR: §2.3 specifies CHAR and a UUID4 in canonical
+    #: form is always exactly 36 characters — the same reasoning `ip_block`
+    #: gives for its CHAR(64) hex digest.
+    token: Mapped[str | None] = mapped_column(CHAR(36), unique=True)
     token_expires_at: Mapped[datetime | None] = mapped_column(DateTime)
     created_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     updated_at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
+    #: Version stamp. Every submission records the factor set it was
+    #: calculated against, so a historical result stays reproducible after
+    #: staff have revised the numbers.
     factor_set_id: Mapped[int] = mapped_column(ForeignKey("factor_set.id"), nullable=False)
-    sector_id: Mapped[int] = mapped_column(ForeignKey("sector.id"), nullable=False)
-    food_category_id: Mapped[int | None] = mapped_column(ForeignKey("food_category.id"))
-    gwp_horizon: Mapped[int] = mapped_column(SmallInteger, nullable=False, default=100)
-    excluded_from_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    gwp_horizon: Mapped[int] = mapped_column(
+        SmallInteger, nullable=False, default=100, server_default="100"
+    )
+    #: Staff moderation, not user consent (§2.3). There is no consent
+    #: checkbox: one calculation is one submission.
+    excluded_from_public: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     exclusion_reason: Mapped[str | None] = mapped_column(String(255))
+
+    entries: Mapped[list["SubmissionEntry"]] = relationship(
+        back_populates="submission", cascade="all, delete-orphan",
+        order_by="SubmissionEntry.sort_order",
+    )
 
     def __str__(self) -> str:
         #: Required of every mapped model by tests/admin/test_model_str.py.
@@ -136,21 +179,114 @@ class Submission(Base):
             else f"submission #{self.id}"
 
 
-class SubmissionLine(Base):
-    __tablename__ = "submission_line"
+class SubmissionEntry(Base):
+    """One `(sector, food_category)` pair within a submission. Contract §2.3.
+
+    **The `food_category_id IS NULL` trap.** The declared
+    UNIQUE(submission_id, sector_id, food_category_id) below does not stop two
+    entries with the same sector and no food category from coexisting: MySQL
+    treats NULLs as distinct inside a UNIQUE key, so the constraint is silent
+    on exactly the "the user did not break waste down by type" rows it most
+    needs to guard. `uq_submission_entry_generic` — a functional index with
+    `(COALESCE(food_category_id, 0))` as a key part — is what actually closes
+    it. This is the same defect B found in `factor_downstream`, which §2.2
+    credits to her by name; the shape is identical and so is the failure.
+    Duplicated entries are not an error anywhere: `POST /calculate` writes
+    them all and §5.4's `by_sector` aggregation then counts one user's single
+    answer several times. Wrong numbers, no exception, nothing in the logs.
+
+    Declared here as a SQLAlchemy `Index` so that `Base.metadata.create_all()`
+    produces it too — that is the path every test outside
+    tests/test_migrations.py builds its schema with. The **same** index is
+    also written as raw SQL in alembic/versions/0008_submissions.py, because
+    the migration chain is a second, independent path to the same schema and
+    autogenerate cannot emit an expression key part on its own. It is excluded
+    from `compare_metadata` in tests/test_migrations.py's `_include_object`
+    for the reason documented there, and proven instead against
+    `information_schema`.
+    """
+
+    __tablename__ = "submission_entry"
     __table_args__ = (
-        UniqueConstraint("submission_id", "scenario", "destination_id", name="uq_submission_line_scope"),
-        CheckConstraint("qty_kg >= 0", name="ck_submission_line_qty"),
+        UniqueConstraint("submission_id", "sector_id", "food_category_id",
+                         name="uq_submission_entry"),
+        Index(
+            "uq_submission_entry_generic",
+            "submission_id", "sector_id",
+            text("(COALESCE(food_category_id, 0))"),
+            unique=True,
+        ),
     )
+
+    #: BIGINT, per §2.3 — one row per supply-chain stage per public
+    #: calculation, so it grows faster than `submission` does.
     id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
-    submission_id: Mapped[int] = mapped_column(ForeignKey("submission.id", ondelete="CASCADE"), nullable=False)
-    scenario: Mapped[Scenario] = mapped_column(Enum(Scenario), nullable=False)
-    destination_id: Mapped[int] = mapped_column(ForeignKey("destination.id"), nullable=False)
-    qty_kg: Mapped[Decimal] = mapped_column(Numeric(16, 3), nullable=False)
+    submission_id: Mapped[int] = mapped_column(
+        ForeignKey("submission.id", ondelete="CASCADE"), nullable=False
+    )
+    sector_id: Mapped[int] = mapped_column(ForeignKey("sector.id"), nullable=False)
+    #: Null when the user did not break waste down by type. §6.2 reads that as
+    #: the standard mix; §5.4 maps it to `standard_mix` in the statistics.
+    food_category_id: Mapped[int | None] = mapped_column(
+        ForeignKey("food_category.id"), nullable=True
+    )
+    #: The order the user entered them, so `entries[]` in the §6.2 response
+    #: can be paired with the rows on screen. Not id order: §5.3 rebuilds the
+    #: whole entry set on every upsert, which reassigns ids.
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                            server_default="0")
+
+    submission: Mapped[Submission] = relationship(back_populates="entries")
+    sector: Mapped[Sector] = relationship()
+    food_category: Mapped[FoodCategory | None] = relationship()
+    lines: Mapped[list["SubmissionLine"]] = relationship(
+        back_populates="entry", cascade="all, delete-orphan"
+    )
 
     def __str__(self) -> str:
         #: Required of every mapped model by tests/admin/test_model_str.py.
-        #: No `destination` relationship is declared on this table, so the
-        #: scenario and the quantity are what identify the row.
+        #: No code of its own — the (sector, food_category) pair the unique
+        #: constraint is keyed on is what names the row. food_category is
+        #: nullable and means the user gave no breakdown, so say that rather
+        #: than rendering a blank.
+        category = self.food_category.code if self.food_category else "no category breakdown"
+        return f"{self.sector.code}/{category}"
+
+
+class SubmissionLine(Base):
+    """One destination and quantity, in one scenario, within one entry.
+
+    Contract §2.3. The FK is `submission_entry_id`, not `submission_id`: a
+    line keyed on the submission cannot say which supply-chain stage it
+    belongs to, and the same destination legitimately appears once per entry.
+    """
+
+    __tablename__ = "submission_line"
+    __table_args__ = (
+        UniqueConstraint("submission_entry_id", "scenario", "destination_id",
+                         name="uq_submission_line_scope"),
+        #: §6.2 validates qty_kg >= 0 at the API too; this is the backstop for
+        #: every other writer. Invisible to `compare_metadata` — see the CHECK
+        #: note on Submission above.
+        CheckConstraint("qty_kg >= 0", name="ck_submission_line_qty"),
+    )
+
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
+    submission_entry_id: Mapped[int] = mapped_column(
+        ForeignKey("submission_entry.id", ondelete="CASCADE"), nullable=False
+    )
+    scenario: Mapped[Scenario] = mapped_column(Enum(Scenario), nullable=False)
+    destination_id: Mapped[int] = mapped_column(ForeignKey("destination.id"), nullable=False)
+    #: DECIMAL, never FLOAT/DOUBLE. Three decimal places is the scale §6.2
+    #: validates the request against and §1.2 transmits as a string.
+    qty_kg: Mapped[Decimal] = mapped_column(DECIMAL(16, 3), nullable=False)
+
+    entry: Mapped[SubmissionEntry] = relationship(back_populates="lines")
+
+    def __str__(self) -> str:
+        #: Required of every mapped model by tests/admin/test_model_str.py.
+        #: No `destination` relationship is declared on this table — it is
+        #: written in bulk by `upsert_submission` and never read one row at a
+        #: time — so the scenario and the quantity are what identify the row.
         scenario = self.scenario.value if isinstance(self.scenario, Scenario) else self.scenario
         return f"{scenario} {self.qty_kg} kg"

@@ -403,16 +403,65 @@ def test_shares_are_computed_within_a_breakdown_and_sum_to_one(seeded_session):
     assert stats.total_calculations == 1
     for breakdown in (stats.by_sector, stats.by_food_category, stats.by_destination):
         assert breakdown
-        # Exactly 1, up to the 4-decimal-place quantisation of each share:
-        # three buckets of one entry each are three thirds, and 3 x 0.3333 is
-        # 0.9999. The tolerance is one ulp per bucket, not a loose epsilon.
-        drift = abs(sum(bucket.share for bucket in breakdown) - Decimal("1"))
-        assert drift <= Decimal("0.0001") * len(breakdown)
+        # Exactly 1, with no tolerance. Three buckets of one entry each are
+        # three thirds and 3 x 0.3333 is 0.9999, so `_bucketise` assigns the
+        # residue to the largest bucket. §6.4 states the sum as a property a
+        # consumer may rely on; a tolerance here is a legend reading 99.99%.
+        assert sum(bucket.share for bucket in breakdown) == Decimal("1")
     # Two of the four destination observations are landfill, and that one
     # divides exactly -- the denominator is the breakdown's own 4, not the 1
     # calculation or the 3 entries.
     assert _bucket(stats.by_destination, "landfill").share == Decimal("0.5000")
     assert _bucket(stats.by_sector, "processing").share == Decimal("0.3333")
+
+
+def test_shares_still_sum_to_one_when_the_counts_do_not_divide_cleanly(seeded_session):
+    """A denominator of 17, with two of those entries suppressed into `other`.
+
+    Three buckets of 5/17 quantize to 0.2941 and `other`'s 2/17 to 0.1176,
+    which comes to 0.9999. §6.4 promises the shares sum to 1, so `_bucketise`
+    assigns the missing ten-thousandth to the largest bucket rather than
+    leaving a statistics page to render a legend adding to 99.99%.
+
+    The suppressed entries are inside that sum. They have to be: suppression
+    merges rather than drops precisely so that removing a bucket from the page
+    does not inflate every share left on it.
+    """
+    _extra_taxonomy(seeded_session)
+    factor_set_id = get_published_factor_set_id(seeded_session)
+    population = (
+        [("processing", "dairy")] * 5
+        + [("retail", "meat")] * 5
+        + [("hospitality", "bakery")] * 5
+        + [("primary_production", "vegetables")]
+        + [("distribution", "meat")]
+    )
+    for sector, food_category in population:
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry(sector, food_category, current=(("landfill", "1"),))),
+            factor_set_id,
+        )
+    stats = get_public_stats(seeded_session)
+
+    assert sum(bucket.count for bucket in stats.by_sector) == 17
+    other = _bucket(stats.by_sector, "other")
+    assert other is not None and other.count == 2
+    assert sum(bucket.share for bucket in stats.by_sector) == Decimal("1")
+    # Every share is still the honest quantisation of its own count bar one,
+    # which carries the residue -- the correction is a ten-thousandth on the
+    # largest bucket, not a rescaling of the breakdown.
+    carried = [
+        bucket
+        for bucket in stats.by_sector
+        if bucket.share
+        != (Decimal(bucket.count) / Decimal(17)).quantize(Decimal("0.0001"))
+    ]
+    assert len(carried) == 1
+    assert carried[0].share - (Decimal(5) / Decimal(17)).quantize(
+        Decimal("0.0001")
+    ) == Decimal("0.0001")
 
 
 def test_suppression_still_merges_small_buckets_into_other(seeded_session):

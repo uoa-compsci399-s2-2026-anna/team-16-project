@@ -483,7 +483,13 @@ async def test_contract_fixtures_have_the_same_top_level_shapes(app):
         "db/repository.py's build_bundle_data does not select them, so the "
         "export publishes the values with the provenance stripped. The fixture "
         "is written to the contract; this marker comes off when the repository "
-        "catches up, and `strict` means it fails the moment it does."
+        "catches up, and `strict` means it fails the moment it does. "
+        "Second, smaller gap in the same direction, recorded here rather than "
+        "left silent: the export's equivalence rows carry `name` and "
+        "`sort_order`, which §6.3's sample response does not show. The fixture "
+        "carries them because they are what the endpoint actually sends and "
+        "`name` is useful to D, but §6.3 should either list them or the export "
+        "should stop sending them. Contract question, not a code defect."
     ),
 )
 async def test_factors_fixture_matches_the_published_export(app):
@@ -525,14 +531,11 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     codes = {bucket["code"]: bucket for bucket in body["by_sector"]}
     assert codes["other"]["count"] == 1, "the below-threshold sector must merge"
     assert "consumer_hospitality" not in codes, "a suppressed bucket must not be named"
-    # §6.4 says the shares "sum to 1", and `stats.json` sums to exactly
-    # 1.0000. The live figure does not always: `_bucketise` quantizes each
-    # share independently to four places, so three buckets of 5/11, 5/11 and
-    # 1/11 come to 0.9999. The gap is bounded by one ulp per bucket and is
-    # asserted as such rather than papered over — a chart legend built on the
-    # fixture will read 100%, and against the API it can read 99.99%.
-    shares = [Decimal(bucket["share"]) for bucket in body["by_sector"]]
-    assert abs(sum(shares) - Decimal("1")) <= Decimal("0.0001") * len(shares)
+    # §6.4 says the shares "sum to 1", and both the fixture and the API now
+    # deliver exactly that. Buckets of 5/11, 5/11 and 1/11 quantize to 0.9999,
+    # so `_bucketise` assigns the residue; without that step a legend built on
+    # `stats.json` reads 100% and the same legend reads 99.99% live.
+    assert sum(Decimal(bucket["share"]) for bucket in body["by_sector"]) == Decimal("1")
     # `prevention` is an alternative-scenario destination. It must never reach
     # a public statistic, because it is by construction waste that did not
     # happen (§5.4).

@@ -7,6 +7,7 @@ import enum
 import threading
 import uuid
 from collections.abc import Callable
+from dataclasses import replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -573,6 +574,17 @@ def _bucketise(
     A suppressed bucket keeps its count inside that denominator by being
     merged into `other` rather than dropped: dropping it would not remove a
     number from the page, it would inflate every share left on it.
+
+    **The shares sum to exactly 1, and that takes one extra step.** §6.4
+    states it as a property a consumer may rely on, but quantizing each share
+    independently to four places does not deliver it: three buckets of one
+    entry each are three thirds, and 3 x 0.3333 is 0.9999. The residue is
+    assigned to the largest bucket, where it is the smallest relative
+    distortion, after `other` has been formed -- so every suppressed entry is
+    inside the sum, which is the whole reason suppression merges rather than
+    drops. Without this a statistics page renders a legend adding to 99.99%,
+    and the fixture D builds against (`tests/fixtures/stats.json`, which is
+    levelled) and the API disagree about whether the chart is complete.
     """
     total = sum(count for _, _, count, _ in rows)
     ordered = sorted(rows, key=lambda row: (-row[2], row[0]))
@@ -595,6 +607,13 @@ def _bucketise(
         visible.append(
             StatsBucket(*OTHER_BUCKET, other_count, share(other_count), other_kg)
         )
+    if total and visible:
+        residue = Decimal("1") - sum(bucket.share for bucket in visible)
+        if residue:
+            largest = max(range(len(visible)), key=lambda i: visible[i].share)
+            visible[largest] = replace(
+                visible[largest], share=visible[largest].share + residue
+            )
     return tuple(visible)
 
 

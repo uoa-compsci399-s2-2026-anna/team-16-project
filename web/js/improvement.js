@@ -20,6 +20,31 @@ const sumQtyKg = lines => lines.reduce((sum, line) => sum + typed(line.qty_kg), 
 // rejects the whole submission rather than the entry.
 const MASS_TOLERANCE_KG = 0.01
 
+// The one metric code this module names, and it is not the hard-coded list §7.6.5 forbids:
+// that rule exists because a view listing `['co2e','water','cost']` *omits* the metric a
+// staff member inserted, and every metric the response carries still appears here. `mass` is
+// held out because §6.2 requires an entry's two scenarios to describe the same mass, so its
+// `net_benefit` is zero by construction — "Mass: No change" on every comparison, in a list
+// whose subject is what changed.
+const MASS_METRIC = 'mass'
+
+// §7.6.6 in the one place on the page where a sign is a *direction*: `net_benefit` is
+// `current − alternative` (§3), so positive means the improved scenario is lower and
+// negative means it is higher. The stylesheet's `.value-positive` / `.value-negative` /
+// `.value-zero` carry the ↑ / ↓ / — pseudo-content for exactly that, and were referenced by
+// nothing. Elsewhere the sign is a property of the figure rather than a direction, and only
+// the negative case is marked — see `results.js`.
+const signClass = value => {
+  if (!Number.isFinite(value)) return ''
+  if (Math.abs(value) < 1e-9) return 'value-zero'
+  return value > 0 ? 'value-positive' : 'value-negative'
+}
+
+// The codes to render, in the response's own key order. That order is already display order:
+// §4.1 defines `FactorBundle.metrics` as sorted by `sort_order` and the engine iterates it to
+// build `metrics`, so no sort belongs here — and no list of codes does either (§7.6.5).
+const comparableCodes = metrics => Object.keys(metrics).filter(code => code !== MASS_METRIC)
+
 export function currentAllocationPercentages(state) {
   const totals = Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
   for (const entry of submissionEntries(state)) {
@@ -213,36 +238,64 @@ function changeCopy(metric) {
   // and v1.5 rules it removed rather than relocated, because `net_benefit` already carries
   // the same information in the unit the user entered.
   const difference = metric.difference
-  if (!Number.isFinite(difference)) return { className: 'neutral', text: 'Not available' }
-  if (Math.abs(difference) < 1e-9) return { className: 'neutral', text: 'No change' }
+  if (!Number.isFinite(difference)) return { className: 'neutral', valueClass: '', text: 'Not available' }
+  const valueClass = signClass(difference)
+  if (Math.abs(difference) < 1e-9) return { className: 'neutral', valueClass, text: 'No change' }
   const positive = difference > 0
-  return { className: positive ? 'positive' : 'negative', text: `${formatNumber(Math.abs(difference), metric.precision ?? 2)} ${escapeHtml(metric.unit || '')} ${positive ? 'saved' : 'increase'}` }
+  return { className: positive ? 'positive' : 'negative', valueClass, text: `${formatNumber(Math.abs(difference), metric.precision ?? 2)} ${escapeHtml(metric.unit || '')} ${positive ? 'saved' : 'increase'}` }
 }
 
+const metricName = (code, taxonomy) => (taxonomy.metrics || []).find(item => item.code === code)?.name || code
+
+// A scenario figure. `formatNumber` already prints the minus sign; the class is what makes a
+// negative total read as an offset rather than as a small number (§7.6.6).
+const scenarioValue = (value, metric) => `<strong class="${Number.isFinite(value) && value < 0 ? 'value-negative' : ''}">${formatNumber(value, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong>`
+
 function ImpactComparisonCard(code, metric, taxonomy) {
-  const definition = (taxonomy.metrics || []).find(item => item.code === code)
   const change = changeCopy(metric)
-  return `<article class="impact-comparison-card"><h3>${escapeHtml(definition?.name || code)}</h3><div class="comparison-values"><div><span>Current</span><strong>${formatNumber(metric.current, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong></div><span class="comparison-arrow" aria-hidden="true">→</span><div><span>Improved</span><strong>${formatNumber(metric.improved, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong></div></div><div class="comparison-change ${change.className}"><strong>${change.text}</strong></div></article>`
+  return `<article class="impact-comparison-card"><h3>${escapeHtml(metricName(code, taxonomy))}</h3><div class="comparison-values"><div><span>Current</span>${scenarioValue(metric.current, metric)}</div><span class="comparison-arrow" aria-hidden="true">→</span><div><span>Improved</span>${scenarioValue(metric.improved, metric)}</div></div><div class="comparison-change ${change.className}"><strong class="${change.valueClass}">${change.text}</strong></div></article>`
 }
 
 function ComparisonSummary(data, taxonomy) {
-  const preferred = ['co2e', 'water', 'cost'].filter(code => data.metrics[code])
-  return `<section class="comparison-summary"><h2>Potential Improvement</h2><ul>${preferred.map(code => {
-    const metric = data.metrics[code]
-    const definition = (taxonomy.metrics || []).find(item => item.code === code)
-    const change = changeCopy(metric)
-    return `<li class="${change.className}"><strong>${escapeHtml(definition?.name || code)}:</strong> ${change.text}</li>`
+  const codes = comparableCodes(data.metrics)
+  return `<section class="comparison-summary"><h2>Potential Improvement</h2><ul>${codes.map(code => {
+    const change = changeCopy(data.metrics[code])
+    return `<li class="${change.className}"><strong>${escapeHtml(metricName(code, taxonomy))}:</strong> <span class="${change.valueClass}">${change.text}</span></li>`
   }).join('') || '<li>No comparable impact metrics were returned.</li>'}</ul></section>`
 }
 
+/**
+ * The comparison chart, which must render a negative value as negative (§7.6.6).
+ *
+ * `Math.abs()` stood on both widths, so a −500 kg CO2e offset drew a bar identical to +500 —
+ * and `downstream` may be negative (§2.2; `animal_feed` is −0.15 in `tests/fixtures/factors.json`),
+ * so a total legitimately can be. A group containing a negative value therefore draws against
+ * a **centred zero line**: each bar takes at most half the track and grows right from the
+ * centre when positive, left from the centre when negative. Groups with no negative value
+ * keep the full-width left-anchored bar, so the common case is unchanged.
+ *
+ * This is still charting, not arithmetic on an API figure (§7.6.1) — a width relative to the
+ * largest bar in its own group, and no width is printed on the page.
+ */
 function ComparisonBars(metrics, taxonomy) {
-  const keys = ['co2e', 'water', 'cost'].filter(code => metrics[code])
-  return `<section class="comparison-bars" aria-labelledby="comparison-chart-title"><h2 id="comparison-chart-title">Current and Improved comparison</h2>${keys.map(code => {
+  const codes = comparableCodes(metrics)
+  const anyDiverging = codes.some(code => [metrics[code].current, metrics[code].improved].some(value => Number.isFinite(value) && value < 0))
+  const groups = codes.map(code => {
     const metric = metrics[code]
-    const definition = (taxonomy.metrics || []).find(item => item.code === code)
-    const max = Math.max(Math.abs(metric.current), Math.abs(metric.improved), 1)
-    return `<div class="comparison-bar-group"><h3>${escapeHtml(definition?.name || code)}</h3><div><span>Current</span><div class="comparison-bar-track"><span class="current-bar" style="width:${Math.abs(metric.current) / max * 100}%"></span></div><strong>${formatNumber(metric.current, metric.precision ?? 2)}</strong></div><div><span>Improved</span><div class="comparison-bar-track"><span class="improved-bar" style="width:${Math.abs(metric.improved) / max * 100}%"></span></div><strong>${formatNumber(metric.improved, metric.precision ?? 2)}</strong></div></div>`
-  }).join('')}</section>`
+    const values = [metric.current, metric.improved].filter(Number.isFinite)
+    const max = Math.max(...values.map(value => Math.abs(value)), 1)
+    const diverging = values.some(value => value < 0)
+    const bar = (value, className) => {
+      if (!Number.isFinite(value)) return ''
+      const width = Math.abs(value) / max * (diverging ? 50 : 100)
+      const offset = diverging ? (value < 0 ? 50 - width : 50) : 0
+      return `<span class="${className}${value < 0 ? ' negative-bar' : ''}" style="width:${width}%;margin-left:${offset}%"></span>`
+    }
+    const row = (label, value, className) => `<div><span>${label}</span><div class="comparison-bar-track${diverging ? ' diverging' : ''}">${bar(value, className)}</div>${scenarioValue(value, metric)}</div>`
+    return `<div class="comparison-bar-group"><h3>${escapeHtml(metricName(code, taxonomy))}</h3>${row('Current', metric.current, 'current-bar')}${row('Improved', metric.improved, 'improved-bar')}</div>`
+  }).join('')
+  const note = anyDiverging ? '<p class="comparison-bar-note">A metric total can be negative when a destination offsets more than it costs. Those bars are drawn from a centre line marking zero and run to the left.</p>' : ''
+  return `<section class="comparison-bars" aria-labelledby="comparison-chart-title"><h2 id="comparison-chart-title">Current and Improved comparison</h2>${note}${groups}</section>`
 }
 
 /**
@@ -267,5 +320,5 @@ export function ComparisonResults(state) {
   if (!result?.totals?.alternative) return ''
   const data = comparisonData(result)
   const mock = result.factor_set?.is_mock
-  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">Current Results → Improved Scenario</p><h2 id="comparison-results-title">Compare Results</h2>${mock ? '<p class="comparison-estimate-note">Demonstration only — this comparison uses mock factors and is not a verified impact result.</p>' : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${Object.entries(data.metrics).filter(([code]) => code !== 'mass').map(([code, metric]) => ImpactComparisonCard(code, metric, state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>Tangible equivalents</h2>${equivalentComparison(data.equivalences)}</section></section>`
+  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">Current Results → Improved Scenario</p><h2 id="comparison-results-title">Compare Results</h2>${mock ? '<p class="comparison-estimate-note">Demonstration only — this comparison uses mock factors and is not a verified impact result.</p>' : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>Tangible equivalents</h2>${equivalentComparison(data.equivalences)}</section></section>`
 }

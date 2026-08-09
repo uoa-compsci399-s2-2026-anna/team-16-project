@@ -5,6 +5,22 @@ import { ComparisonResults, ImprovementScenario } from './improvement.js'
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 const TAB_LABELS = { stage: 'By supply-chain stage', destination: 'By waste destination', food: 'By food type' }
 
+// The one metric code this module names, and it is not the hard-coded list §7.6.5 forbids:
+// that rule exists because a view listing `['co2e','water','cost']` *omits* the metric a
+// staff member inserted, and every metric the response carries still appears here. `mass` is
+// held out because §3 hoists it — its formula is `qty_kg` (§4.3), so `scenario.total_kg` and
+// `by_destination[].qty_kg` are the same figure, and it is already on screen as the primary
+// card and the "Waste amount" column. Printing it twice per row is not configurability.
+const MASS_METRIC = 'mass'
+
+// §7.6.6: `downstream` may be negative (§2.2), so a metric total may be — and that negative
+// total is the reuse-and-offset result the calculator exists to show. `.value-negative` is
+// the stylesheet's marker for it (beetroot, with a ↓). Nothing marks an ordinary positive
+// total: a green ↑ against every figure on the page is decoration, not a signal. The
+// three-way use of these classes is on the comparison screen, where the sign of
+// `net_benefit` is a direction of change rather than a property of the figure.
+const negativeClass = value => (Number.isFinite(value) && value < 0 ? ' value-negative' : '')
+
 // Display-only coercion of an API decimal string (§7.6.1): §1.2 puts decimals on the wire
 // as strings and `toLocaleString` needs a number. `Number(value) || 0` stood here and made
 // "the engine did not return this metric", "this value is malformed" and "this value is
@@ -26,10 +42,11 @@ const metricUnit = (metric, definition) => metric?.unit || definition?.unit || '
 
 function summaryCards(totals, taxonomy) {
   const metrics = totals.current?.metrics || {}
-  const impactCards = Object.entries(metrics).filter(([code]) => code !== 'mass').map(([code, metric]) => {
+  const impactCards = Object.entries(metrics).filter(([code]) => code !== MASS_METRIC).map(([code, metric]) => {
     const definition = findByCode(taxonomy.metrics, code)
     const precision = Number(metric.display_precision ?? definition?.display_precision ?? 2)
-    return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value">${formatNumber(number(metric.total), precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
+    const total = number(metric.total)
+    return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
   }).join('')
   const totalKg = number(totals.total_kg)
   return `<article class="result-card primary-result"><p class="result-label">Total food waste</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes</p></article>${impactCards}<article class="result-card"><p class="result-label">Percentage waste</p><p class="result-value">Not available</p><p class="result-note">Total food handled data is required.</p></article>`
@@ -115,12 +132,42 @@ function metricCell(row, code, taxonomy) {
   const cell = row.metrics[code]
   if (!cell) return 'Not available'
   const definition = findByCode(taxonomy.metrics, code)
-  return `${formatNumber(number(cell.total), Number(cell.display_precision ?? definition?.display_precision ?? 2))} ${escapeHtml(metricUnit(cell, definition))}`
+  const total = number(cell.total)
+  const text = `${formatNumber(total, Number(cell.display_precision ?? definition?.display_precision ?? 2))} ${escapeHtml(metricUnit(cell, definition))}`
+  return Number.isFinite(total) && total < 0 ? `<span class="value-negative">${text}</span>` : text
 }
+
+/**
+ * The metric columns of a breakdown tab, taken from the response rather than from this file.
+ *
+ * §7.6.5 and §2.1: adding a metric is meant to cost one `INSERT` and one formula. The three
+ * columns hard-coded here — `CO₂e / Cost / Water` — cost a code change instead, and they had
+ * already silently dropped `ch4`, a metric that is in §2.1's own example list and in
+ * `tests/fixtures/taxonomy.json`.
+ *
+ * The order is the response's own key order, not a sort applied here: §4.1 defines
+ * `FactorBundle.metrics` as sorted by `sort_order`, and the engine iterates it in that order
+ * to build `metrics`, so JSON key order already is display order. Codes are collected across
+ * every section of the tab so all its tables carry the same columns, and a row that is
+ * missing one renders `metricCell`'s "Not available" rather than shifting the row.
+ */
+function metricColumns(sections) {
+  const codes = []
+  for (const section of sections) {
+    for (const row of section.rows || []) {
+      for (const code of Object.keys(row.metrics || {})) {
+        if (code !== MASS_METRIC && !codes.includes(code)) codes.push(code)
+      }
+    }
+  }
+  return codes
+}
+
+const metricName = (code, taxonomy) => findByCode(taxonomy.metrics, code)?.name || code
 
 const widestRow = rows => rows.reduce((max, row) => Math.max(max, Number.isFinite(row.kilograms) ? Math.abs(row.kilograms) : 0), 0)
 
-function breakdownTable(section, tabLabel, taxonomy, widest) {
+function breakdownTable(section, tabLabel, taxonomy, widest, columns) {
   // Bar width only. This is a bar's width relative to the widest bar on the tab — scaled
   // across every section, so two per-entry sections stay comparable to each other — and not
   // a figure printed on the page. The percentage-of-total that stood here was a number the
@@ -131,8 +178,9 @@ function breakdownTable(section, tabLabel, taxonomy, widest) {
   }).join('')
   const caption = section.label ? `${tabLabel} data — ${section.label}` : `${tabLabel} data`
   const heading = section.label ? `<h3 class="breakdown-entry-heading">${escapeHtml(section.label)}</h3>` : ''
-  const body = section.rows.map(row => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${formatNumber(row.kilograms, 2)} kg</td><td>${metricCell(row, 'co2e', taxonomy)}</td><td>${metricCell(row, 'cost', taxonomy)}</td><td>${metricCell(row, 'water', taxonomy)}</td></tr>`).join('')
-  return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Category</th><th scope="col">Waste amount</th><th scope="col">CO₂e</th><th scope="col">Cost</th><th scope="col">Water</th></tr></thead><tbody>${body}</tbody></table></div></div>`
+  const head = columns.map(code => `<th scope="col">${escapeHtml(metricName(code, taxonomy))}</th>`).join('')
+  const body = section.rows.map(row => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${formatNumber(row.kilograms, 2)} kg</td>${columns.map(code => `<td>${metricCell(row, code, taxonomy)}</td>`).join('')}</tr>`).join('')
+  return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Category</th><th scope="col">Waste amount</th>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`
 }
 
 function breakdownSection(state, entryResults) {
@@ -140,9 +188,10 @@ function breakdownSection(state, entryResults) {
   const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
   const current = allBreakdowns[active]
   const scale = current.sections ? widestRow(current.sections.flatMap(section => section.rows)) : 0
+  const columns = current.sections ? metricColumns(current.sections) : []
   const panel = current.unavailable
     ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
-    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, TAB_LABELS[active], state.taxonomy, scale)).join('')}`
+    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, TAB_LABELS[active], state.taxonomy, scale, columns)).join('')}`
   return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">Breakdown by category</h2><p>Explore how the recorded waste is distributed.</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="Waste breakdown">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${label}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 

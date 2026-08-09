@@ -613,10 +613,15 @@ tbody th { font-weight: 750; }
 .comparison-bars { margin-top: 28px; }
 .comparison-bar-group { margin-top: 18px; }
 .comparison-bar-group > div { margin-top: 8px; display: grid; grid-template-columns: 76px minmax(80px, 1fr) minmax(68px, auto); gap: 12px; align-items: center; }
-.comparison-bar-track { height: 16px; overflow: hidden; border-radius: 999px; background: rgba(0, 50, 35, 0.08); }
+.comparison-bar-note { margin-bottom: 4px; color: var(--muted); font-size: 0.9rem; }
+.comparison-bar-track { position: relative; height: 16px; overflow: hidden; border-radius: 999px; background: rgba(0, 50, 35, 0.08); }
 .comparison-bar-track span { display: block; height: 100%; border-radius: inherit; }
 .current-bar { background: rgba(0, 50, 35, 0.52); }
 .improved-bar { background: rgba(40, 200, 130, 0.72); }
+/* A track that has to show a negative value carries a zero line at its centre; the bar is
+   offset from that line rather than from the left edge. See improvement.js / §7.6.6. */
+.comparison-bar-track.diverging::after { content: ''; position: absolute; top: 0; bottom: 0; left: 50%; width: 1px; background: rgba(0, 50, 35, 0.4); }
+.comparison-bar-track span.negative-bar { background: var(--orange); }
 .comparison-equivalent-section { margin-top: 28px; }
 .comparison-equivalent-note { margin-bottom: 16px; color: var(--muted); font-size: 0.9rem; }
 .comparison-equivalents { margin: 0; padding-left: 0; list-style: none; }

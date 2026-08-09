@@ -522,24 +522,39 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .primary-result .result-label, .primary-result .result-note { color: var(--mint); }
 .result-value { margin-bottom: 12px; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1.2; font-weight: 800; }
 .result-note { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
-.placeholder-grid { display: grid; gap: 12px; }
-.placeholder-panel { padding: 18px; border: 1px dashed rgba(0, 50, 35, 0.32); border-radius: 10px; display: flex; justify-content: space-between; gap: 12px; }
-.placeholder-panel span { color: var(--muted); }
 
 .equivalent-grid { display: grid; gap: 14px; margin-top: 24px; }
 .equivalent-grid article { padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
 .equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 800; }
 .equivalent-grid h3 { margin-bottom: 7px; }
 .equivalent-grid p { margin: 0; color: var(--muted); font-size: 0.92rem; }
-.equivalence-scenario, .breakdown-scenario { margin-top: 26px; }
-.scenario-result-heading { margin-top: 32px; }
-.value-positive, .value-negative, .value-zero { font-weight: 800; }
-.value-positive::before { content: '↑ '; }
-.value-negative::before { content: '↓ '; }
-.value-zero::before { content: '— '; }
-.value-positive { color: var(--green-dark); }
-.value-negative { color: var(--error); }
-.value-zero { color: var(--muted); }
+/* ---------------------------------------------------------------------------------------
+   THE ARROW SHOWS THE DIRECTION OF THE IMPACT, NOT THE SIGN OF THE NUMBER.
+
+   `net_benefit` is `current − alternative` (§3), so a POSITIVE net benefit is a saving:
+   the impact went **down**, and the arrow points down. A NEGATIVE net benefit means the
+   improved scenario is worse: the impact went **up**. Read the pair together — a down
+   arrow beside "1,104.0 kg CO2e saved" is consistent, and an up arrow beside it is what
+   made this ambiguous in the first place. **Do not flip these to match the arithmetic
+   sign of the figure printed next to them.**
+
+   These three classes are for a *change*, and `improvement.js`'s `signClass()` is the only
+   thing that may apply them. A figure that merely happens to be negative is `.value-negative`
+   below and carries no arrow, because it is a quantity rather than a movement.
+   --------------------------------------------------------------------------------------- */
+.change-down, .change-up, .change-none { font-weight: 800; }
+.change-down::before { content: '↓ '; }   /* saved    — positive net_benefit */
+.change-up::before { content: '↑ '; }     /* increase — negative net_benefit */
+.change-none::before { content: '— '; }
+.change-down { color: var(--green-dark); }
+.change-up { color: var(--error); }
+.change-none { color: var(--muted); }
+
+/* The sign of a figure, not a direction (§2.2, §7.6.6): `downstream` may be negative, so a
+   metric total may be, and that negative total is the reuse-and-offset result the calculator
+   exists to show. `formatNumber` already prints the minus sign; this makes it read as an
+   offset rather than as a small number. No arrow — see the ruling above. */
+.value-negative { color: var(--error); font-weight: 800; }
 .breakdown-tabs { margin-top: 24px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); overflow-x: auto; }
 .breakdown-tabs button { min-height: 50px; padding: 10px 15px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-weight: 700; white-space: nowrap; }
 .breakdown-tabs button:hover { color: var(--green-dark); background: rgba(223, 248, 237, 0.3); }

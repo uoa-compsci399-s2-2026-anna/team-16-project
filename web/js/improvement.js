@@ -30,14 +30,18 @@ const MASS_METRIC = 'mass'
 
 // §7.6.6 in the one place on the page where a sign is a *direction*: `net_benefit` is
 // `current − alternative` (§3), so positive means the improved scenario is lower and
-// negative means it is higher. The stylesheet's `.value-positive` / `.value-negative` /
-// `.value-zero` carry the ↑ / ↓ / — pseudo-content for exactly that, and were referenced by
-// nothing. Elsewhere the sign is a property of the figure rather than a direction, and only
-// the negative case is marked — see `results.js`.
+// negative means it is higher.
+//
+// The class names say which way the IMPACT moved, not which way the number leans, and the
+// stylesheet's arrows follow the name: a positive net benefit is a saving, so the impact
+// fell, so `.change-down`. The classes this used — `.value-positive` / `.value-negative` /
+// `.value-zero` — named the sign, and `.value-negative` was doing double duty for a figure
+// that is merely negative (see `results.js`), which is how an up arrow ended up beside
+// "1,104.0 kg CO2e saved". The two meanings are now two sets of classes.
 const signClass = value => {
   if (!Number.isFinite(value)) return ''
-  if (Math.abs(value) < 1e-9) return 'value-zero'
-  return value > 0 ? 'value-positive' : 'value-negative'
+  if (Math.abs(value) < 1e-9) return 'change-none'
+  return value > 0 ? 'change-down' : 'change-up'
 }
 
 // The codes to render, in the response's own key order. That order is already display order:

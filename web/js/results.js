@@ -15,10 +15,11 @@ const MASS_METRIC = 'mass'
 
 // §7.6.6: `downstream` may be negative (§2.2), so a metric total may be — and that negative
 // total is the reuse-and-offset result the calculator exists to show. `.value-negative` is
-// the stylesheet's marker for it (beetroot, with a ↓). Nothing marks an ordinary positive
-// total: a green ↑ against every figure on the page is decoration, not a signal. The
-// three-way use of these classes is on the comparison screen, where the sign of
-// `net_benefit` is a direction of change rather than a property of the figure.
+// the stylesheet's marker for it: beetroot and bold, and deliberately **no arrow**, because
+// this is a quantity rather than a movement. Nothing marks an ordinary positive total: a
+// green mark against every figure on the page is decoration, not a signal. The arrows belong
+// to the comparison screen's `.change-*` classes, where the sign of `net_benefit` is a
+// direction of change — see the ruling beside them in `styles.css`.
 const negativeClass = value => (Number.isFinite(value) && value < 0 ? ' value-negative' : '')
 
 // Display-only coercion of an API decimal string (§7.6.1): §1.2 puts decimals on the wire

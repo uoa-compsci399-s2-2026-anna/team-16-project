@@ -21,7 +21,7 @@ from sqlalchemy import (
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from admin.taxonomy_models import Destination, FoodCategory, Metric, Sector
-from db.base import Base
+from db.base import BIGINT_PK, Base
 
 
 class FactorSetStatus(str, enum.Enum):
@@ -76,7 +76,10 @@ class FactorUpstream(Base):
                          "metric_id", name="uq_factor_upstream"),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    #: Contract §2.2 specifies BIGINT here, not INT: roughly 270 upstream
+    #: and 600 downstream rows per factor set, once per version, is what
+    #: actually exhausts an INT. See db/base.py for why it is a variant.
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     factor_set_id: Mapped[int] = mapped_column(
         ForeignKey("factor_set.id", ondelete="CASCADE"), nullable=False
     )
@@ -148,7 +151,10 @@ class FactorDownstream(Base):
         ),
     )
 
-    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    #: Contract §2.2 specifies BIGINT here, not INT: roughly 270 upstream
+    #: and 600 downstream rows per factor set, once per version, is what
+    #: actually exhausts an INT. See db/base.py for why it is a variant.
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     factor_set_id: Mapped[int] = mapped_column(
         ForeignKey("factor_set.id", ondelete="CASCADE"), nullable=False
     )

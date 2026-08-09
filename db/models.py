@@ -11,13 +11,11 @@ from datetime import datetime, timezone
 from decimal import Decimal
 
 from sqlalchemy import (
-    BigInteger,
     Boolean,
     CheckConstraint,
     DateTime,
     Enum,
     ForeignKey,
-    Integer,
     Numeric,
     SmallInteger,
     String,
@@ -25,7 +23,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
-from db.base import Base
+from db.base import BIGINT_PK, Base
 
 # --- Re-exports, not definitions -------------------------------------------
 #
@@ -95,9 +93,6 @@ __all__ = [
     "UnitPreset",
     "utcnow",
 ]
-
-BIGINT_PK = BigInteger().with_variant(Integer, "sqlite")
-
 
 def utcnow() -> datetime:
     return datetime.now(timezone.utc).replace(tzinfo=None)

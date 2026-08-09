@@ -168,3 +168,76 @@ def test_the_chain_has_exactly_one_head_and_exactly_one_root():
         if revision.down_revision is None
     ]
     assert len(roots) == 1, f"more than one initial revision: {roots}"
+
+
+def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
+    migrated_engine,
+):
+    """The other thing this module's blind spot hides.
+
+    Per the "Known blind spot" note at the top of this file, `compare_metadata`
+    on this SQLAlchemy/MySQL combination reports a missing UNIQUE but not a
+    missing CHECK. `tests/admin/test_taxonomy_models.py` proves both taxonomy
+    CHECKs behaviourally, but it builds its schema with `create_all()` off the
+    models — it never runs migration DDL, so deleting `sa.CheckConstraint(...)`
+    from `alembic/versions/0004_taxonomy.py` leaves that file green while a real
+    deployment silently loses the constraint. Exactly the hole
+    `test_the_chain_creates_the_functional_index_compare_metadata_cannot_see`
+    above closes for the functional index.
+
+    These two arrived with B's models and were nearly lost when her duplicate
+    taxonomy classes were replaced by admin/taxonomy_models.py's during the
+    integration of her branch. `ck_unit_preset_kg` is the one that matters:
+    without it a negative `kg_per_unit` inserts cleanly and `web/units.js`
+    turns a unit count into a negative mass.
+    """
+    with migrated_engine.connect() as conn:
+        clauses = dict(conn.execute(text("""
+            SELECT CONSTRAINT_NAME, CHECK_CLAUSE
+            FROM information_schema.CHECK_CONSTRAINTS
+            WHERE CONSTRAINT_SCHEMA = DATABASE()
+        """)).all())
+
+    assert "ck_metric_precision" in clauses, (
+        "alembic upgrade head did not create ck_metric_precision. "
+        f"CHECK constraints found: {sorted(clauses)}"
+    )
+    assert "display_precision" in clauses["ck_metric_precision"]
+
+    assert "ck_unit_preset_kg" in clauses, (
+        "alembic upgrade head did not create ck_unit_preset_kg. Without it a "
+        "negative kg_per_unit inserts cleanly and web/units.js produces a "
+        f"negative mass. CHECK constraints found: {sorted(clauses)}"
+    )
+    assert "kg_per_unit" in clauses["ck_unit_preset_kg"]
+
+
+def test_the_chain_gives_the_factor_tables_bigint_primary_keys(migrated_engine):
+    """Contract §2.2 specifies BIGINT for `factor_upstream.id` and
+    `factor_downstream.id`, not INT.
+
+    Roughly 270 upstream and 600 downstream rows land per factor set, on every
+    version, and old sets are archived rather than deleted — the two tables in
+    the schema with a real reason to outgrow an INT.
+
+    `compare_metadata` *would* catch this one, unlike the CHECKs above. It is
+    asserted here anyway because it was lost the same way and in the same
+    commit: autogenerate emitted `sa.Integer()` for both because the models
+    declared a bare `mapped_column(primary_key=True)`, and the drift gate
+    agreed with itself.
+    """
+    with migrated_engine.connect() as conn:
+        types = dict(conn.execute(text("""
+            SELECT TABLE_NAME, DATA_TYPE
+            FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE()
+              AND COLUMN_NAME = 'id'
+              AND TABLE_NAME IN ('factor_upstream', 'factor_downstream',
+                                 'factor_set')
+        """)).all())
+
+    assert types["factor_upstream"] == "bigint", types
+    assert types["factor_downstream"] == "bigint", types
+    #: factor_set is INT in the contract and stays INT - one row per published
+    #: version, so this is not an oversight in the two rows above.
+    assert types["factor_set"] == "int", types

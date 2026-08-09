@@ -134,6 +134,14 @@ function reviewStep() {
   const sector = selected(state.taxonomy.sectors, state.sector)
   const food = selected(state.taxonomy.food_categories, state.foodCategory)
   const totalKg = massToKg(state.totalAmount, state.totalUnit)
+  // §7.6.2: the placeholder wording is conditional on `is_mock`, never unconditional. It was
+  // hard-coded here, which is correct only while every factor set is mock and inverts the day
+  // a real one is published — a screen that tells a user their verified factors have not been
+  // supplied. §6.1 puts `factor_set` on the taxonomy response, which is what this step has.
+  const mock = state.taxonomy?.factor_set?.is_mock
+  const estimateNotice = mock
+    ? 'Demonstration only — verified calculation factors have not yet been supplied. Final results will depend on factors supplied and approved by Kai Commitment.'
+    : 'Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.'
   return `<section class="content-section wide" aria-labelledby="review-title"><p class="eyebrow">Step 5</p><h1 id="review-title">Review your information</h1><p class="section-intro">Check this entry, or add another supply-chain entry before viewing the combined results.</p>
     ${state.entries.length ? `<section class="saved-entries"><div class="section-heading-row"><h2>Added entries</h2><span>${state.entries.length}</span></div>${state.entries.map(entryCard).join('')}</section>` : ''}
     <div class="section-heading-row current-entry-heading"><h2>Current entry ${state.entries.length + 1}</h2><span>Ready to calculate</span></div>
@@ -142,7 +150,7 @@ function reviewStep() {
     <article class="review-block"><div class="section-heading-row"><h2>Waste amount</h2><button class="text-button" type="button" data-action="go-step" data-step="2">Edit</button></div><p><strong>${formatNumber(state.totalAmount, 2)} ${escapeHtml(state.totalUnit)}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
     <article class="review-block"><div class="section-heading-row"><h2>Waste destinations</h2><button class="text-button" type="button" data-action="go-step" data-step="3">Edit</button></div>${reviewLines(draftEntry())}</article>
     <button class="button button-add add-entry-button" type="button" data-action="add-entry">+ Add another supply-chain entry</button>
-    <aside class="disclaimer compact" aria-label="Important information"><span class="info-icon" aria-hidden="true">i</span><div><strong>Estimate notice</strong><p>Demonstration only — verified calculation factors have not yet been supplied. Final results will depend on factors supplied and approved by Kai Commitment.</p></div></aside>
+    <aside class="disclaimer compact" aria-label="Important information"><span class="info-icon" aria-hidden="true">i</span><div><strong>Estimate notice</strong><p>${escapeHtml(estimateNotice)}</p></div></aside>
     ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${buttonRow(3, state.loading ? 'Calculating…' : Date.now() < state.rateLimitedUntil ? 'Try again shortly' : state.entries.length ? `Calculate results for ${state.entries.length + 1} entries` : 'Calculate impact', state.loading || Date.now() < state.rateLimitedUntil || blocked(), 'calculate')}</section>`
 }
 

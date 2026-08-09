@@ -208,7 +208,13 @@ export function downloadResults(state) {
     const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => `  - ${findByCode(state.taxonomy.destinations, line.destination)?.name || line.destination}: ${typed(line.qtyInput).toFixed(2)} ${entry.totalUnit}`)
     return [`Entry ${index + 1}: ${sector?.name || entry.sector}`, `Food type: ${food?.name || 'Not provided'}`, `Waste amount: ${typed(entry.totalAmount).toFixed(2)} ${entry.totalUnit}`, 'Destinations:', ...destinations, '']
   })
-  const report = ['Food Waste Impact Calculator — Results', '', `Total food waste: ${formatNumber(totalKg, 2)} kg`, `Total food waste: ${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes`, '', ...entryLines, DEMONSTRATION_NOTICE, 'Percentage waste is not available because total food handled data is required.'].join('\n')
+  // §7.6.2: the placeholder notice is conditional on `is_mock`, on **every** export, and it
+  // was appended unconditionally. That reads as correct while every factor set is mock and
+  // inverts the day a real one is published — a client-facing report that disclaims real
+  // data is the more damaging half of the same bug. The factor version replaces it as the
+  // line that says which numbers these are, so a real export is not left saying nothing.
+  const notice = state.result?.factor_set?.is_mock ? [DEMONSTRATION_NOTICE] : []
+  const report = ['Food Waste Impact Calculator — Results', '', `Total food waste: ${formatNumber(totalKg, 2)} kg`, `Total food waste: ${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes`, '', ...entryLines, `Factor version: ${state.result?.factor_set?.version_label || 'Not supplied'}`, ...notice, 'Percentage waste is not available because total food handled data is required.'].join('\n')
   const url = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url

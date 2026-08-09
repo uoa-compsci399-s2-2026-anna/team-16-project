@@ -1,7 +1,7 @@
 import { calculate } from './api.js'
 import { setState } from './state.js'
 import { kgString, massToKg } from './units.js'
-import { escapeHtml, formatNumber } from './view.js'
+import { escapeHtml, formatNumber, slug } from './view.js'
 
 // Display-only coercion of an API decimal string (§7.6.1). `Number(value) || 0` stood here
 // and made "the engine did not return this figure", "this figure is malformed" and "this
@@ -207,7 +207,17 @@ export async function compareImprovement(state, toPublicMessage = error => error
 }
 
 function DestinationAllocationRow(destination, current, improved) {
-  const id = `improved-${destination.code}`
+  // The one interpolation on the branch that reached an attribute through neither
+  // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
+  // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
+  // code containing a double quote breaks `for="…"` and `id="…"` on a public page. `slug` is
+  // what `calculator.js` already uses for the identical case, and it is the right tool here
+  // rather than `escapeHtml`: this value is a DOM id, and an id is not a place to carry
+  // punctuation that `getElementById` and `querySelector` then have to escape again.
+  // (`data-improvement-code` still carries the real code, escaped, and that is what the
+  // keystroke path reads — so two codes that slug alike share a label association but never
+  // a value.)
+  const id = `improved-${slug(destination.code)}`
   return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>Current: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="100" step="0.01" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="Improved ${escapeHtml(destination.name)} percentage"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="Improved ${escapeHtml(destination.name)} percentage value"><span>%</span></div></div></div>`
 }
 

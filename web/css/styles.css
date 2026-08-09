@@ -553,6 +553,9 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .breakdown-tabs button:hover { color: var(--green-dark); background: rgba(223, 248, 237, 0.3); }
 .breakdown-tabs button[aria-selected="true"] { color: var(--green-dark); border-bottom-color: var(--green-dark); }
 .breakdown-panel { padding-top: 24px; }
+.breakdown-note { margin-bottom: 22px; color: var(--muted); font-size: 0.92rem; }
+.breakdown-entry + .breakdown-entry { margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--border); }
+.breakdown-entry-heading { margin-bottom: 16px; font-size: 1.05rem; }
 .bar-list { display: grid; gap: 18px; margin-bottom: 28px; }
 .bar-row > div:first-child { margin-bottom: 7px; display: flex; justify-content: space-between; gap: 16px; }
 .bar-track { height: 14px; border: 1px solid rgba(0, 50, 35, 0.1); border-radius: 999px; background: rgba(223, 248, 237, 0.38); overflow: hidden; }
@@ -615,8 +618,10 @@ tbody th { font-weight: 750; }
 .current-bar { background: rgba(0, 50, 35, 0.52); }
 .improved-bar { background: rgba(40, 200, 130, 0.72); }
 .comparison-equivalent-section { margin-top: 28px; }
-.comparison-equivalents li { margin: 10px 0; }
-.comparison-equivalents span { display: block; color: var(--muted); font-size: 0.88rem; }
+.comparison-equivalent-note { margin-bottom: 16px; color: var(--muted); font-size: 0.9rem; }
+.comparison-equivalents { margin: 0; padding-left: 0; list-style: none; }
+.comparison-equivalents li { margin: 14px 0; padding: 18px; border-radius: 12px; background: rgba(0, 50, 35, 0.025); }
+.comparison-equivalents .comparison-values span { display: block; color: var(--muted); font-size: 0.88rem; }
 footer { position: relative; padding: 28px 20px; color: #fff; background: var(--green-dark); text-align: center; font-size: 0.9rem; overflow: hidden; }
 footer p { margin: 0; }
 .transparency-notice { max-width: 760px; margin: 10px auto 0; color: rgba(255, 255, 255, 0.78); font-size: 0.82rem; }

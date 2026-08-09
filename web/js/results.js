@@ -17,11 +17,10 @@ const typed = value => Number(value) || 0
 
 const findByCode = (items, code) => (items || []).find(item => item.code === code)
 
-// §6.2 returns each metric total in `unit`, and that is the unit the number is in. §2.1's
-// `display_unit` is a label for the same figure — no layer of this contract converts
-// between the two — but `tests/fixtures/taxonomy.json` sets it to a different *scale*
-// (`t CO2e` beside a kg total, `kL` beside a litre total), so reading it here printed
-// "3,993 t CO2e" for 3,993 kg CO2e, one section below the same figure labelled correctly.
+// §6.2 returns each metric total in `unit`, and that is the unit the number is in. §6.1
+// rules `display_unit` a presentation variant of `unit` *at the same scale* — never a
+// different scale, because §7.6.1 leaves no layer that could convert between the two.
+// Prefer the response's own `unit` regardless: it travels with the figure.
 const metricUnit = (metric, definition) => metric?.unit || definition?.unit || ''
 
 function summaryCards(totals, taxonomy) {
@@ -46,57 +45,100 @@ function equivalences(totals) {
   return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3></article>`).join('')}</div>`
 }
 
-function addBreakdownRow(map, label, kilograms, metrics = {}) {
-  const row = map.get(label) || { label, kilograms: 0, metrics: {} }
-  row.kilograms += kilograms
-  for (const [code, value] of Object.entries(metrics)) row.metrics[code] = (row.metrics[code] || 0) + number(value)
-  map.set(label, row)
+// §6.2: the breakdown is rendered from `entries[]`, and nothing on this screen is added
+// together. The accumulator this replaced merged rows whose labels collided — two entries
+// in one sector, or the same destination under two entries — by summing engine-computed
+// metric totals in the browser (§7.6.1). It is also the wrong presentation: 1,200 kg to
+// landfill from processing and 1,200 kg from primary production draw different upstream
+// factors and are genuinely two rows, which is the whole reason a multi-entry calculation
+// was worth making. A single combined view, if the client asks for one, arrives as a field
+// the engine fills with a stated aggregation rule — not as a loop here.
+const metricCells = scenario => Object.fromEntries(Object.entries(scenario?.metrics || {})
+  .map(([code, metric]) => [code, { total: metric.total, unit: metric.unit, display_precision: metric.display_precision }]))
+
+const sectorName = (entry, response, taxonomy) => {
+  const code = response.sector ?? entry.sector
+  return findByCode(taxonomy.sectors, code)?.name || code
+}
+
+// §6.2 labels each per-entry destination section with that entry's sector and food category.
+function entryLabel(entry, response, taxonomy) {
+  const foodCode = response.food_category ?? entry.foodCategory
+  const name = sectorName(entry, response, taxonomy)
+  if (!foodCode) return name
+  return `${name} · ${findByCode(taxonomy.food_categories, foodCode)?.name || foodCode}`
+}
+
+// One row per destination of one entry, every figure read from that entry's own result:
+// `qty_kg` and each metric's `value` come from `by_destination`, which §6.2 populates per
+// entry and leaves empty at the totals level.
+function destinationRows(scenario, taxonomy) {
+  const rows = new Map()
+  for (const [code, metric] of Object.entries(scenario.metrics || {})) {
+    for (const line of metric.by_destination || []) {
+      const row = rows.get(line.destination) || {
+        label: findByCode(taxonomy.destinations, line.destination)?.name || line.destination,
+        kilograms: number(line.qty_kg),
+        metrics: {},
+      }
+      row.metrics[code] = { total: line.value, unit: metric.unit, display_precision: metric.display_precision }
+      rows.set(line.destination, row)
+    }
+  }
+  return [...rows.values()]
 }
 
 function breakdowns(entryResults, taxonomy) {
-  const stage = new Map()
-  const destination = new Map()
-  const food = new Map()
+  const stage = []
+  const food = []
+  const destination = []
   for (const { entry, response } of entryResults) {
     const scenario = response.current || {}
-    const metricTotals = Object.fromEntries(Object.entries(scenario.metrics || {}).map(([code, metric]) => [code, metric.total]))
-    const entryKilograms = typed(entry.totalAmount) * (entry.totalUnit === 'tonnes' ? 1000 : 1)
-    const sector = findByCode(taxonomy.sectors, entry.sector)
-    addBreakdownRow(stage, sector?.name || entry.sector, entryKilograms, metricTotals)
-    const foodDefinition = findByCode(taxonomy.food_categories, entry.foodCategory)
-    if (entry.foodCategory && !foodDefinition?.is_standard_mix) addBreakdownRow(food, foodDefinition?.name || entry.foodCategory, entryKilograms, metricTotals)
-    for (const line of entry.current.filter(item => typed(item.qtyInput) > 0)) {
-      const destinationDefinition = findByCode(taxonomy.destinations, line.destination)
-      const kilograms = typed(line.qtyInput) * (entry.totalUnit === 'tonnes' ? 1000 : 1)
-      const destinationMetrics = {}
-      for (const [code, metric] of Object.entries(scenario.metrics || {})) {
-        const matching = (metric.by_destination || []).find(row => row.destination === line.destination)
-        if (matching) destinationMetrics[code] = matching.value
-      }
-      addBreakdownRow(destination, destinationDefinition?.name || line.destination, kilograms, destinationMetrics)
-    }
+    const metrics = metricCells(scenario)
+    const kilograms = number(scenario.total_kg)
+    stage.push({ label: sectorName(entry, response, taxonomy), kilograms, metrics })
+    const foodCode = response.food_category ?? entry.foodCategory
+    const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
+    if (foodCode && !foodDefinition?.is_standard_mix) food.push({ label: foodDefinition?.name || foodCode, kilograms, metrics })
+    const rows = destinationRows(scenario, taxonomy)
+    if (rows.length) destination.push({ label: entryLabel(entry, response, taxonomy), rows })
   }
   return {
-    stage: { rows: [...stage.values()] },
-    destination: destination.size ? { rows: [...destination.values()] } : { unavailable: 'Waste-destination breakdown is not available because no destination data was provided.' },
-    food: food.size ? { rows: [...food.values()] } : { unavailable: 'Food-type breakdown is not available because no food category data was provided.' },
+    stage: { sections: [{ rows: stage }] },
+    destination: destination.length ? { sections: destination, note: 'Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.' } : { unavailable: 'Waste-destination breakdown is not available because no destination data was provided.' },
+    food: food.length ? { sections: [{ rows: food }] } : { unavailable: 'Food-type breakdown is not available because no food category data was provided.' },
   }
 }
 
 function metricCell(row, code, taxonomy) {
-  if (!(code in row.metrics)) return 'Not available'
+  const cell = row.metrics[code]
+  if (!cell) return 'Not available'
   const definition = findByCode(taxonomy.metrics, code)
-  return `${formatNumber(row.metrics[code], Number(definition?.display_precision ?? 2))} ${escapeHtml(metricUnit(null, definition))}`
+  return `${formatNumber(number(cell.total), Number(cell.display_precision ?? definition?.display_precision ?? 2))} ${escapeHtml(metricUnit(cell, definition))}`
 }
 
-function breakdownSection(state, entryResults, totalKg) {
+function breakdownTable(section, tabLabel, taxonomy) {
+  // Bar width only. This is the width of a bar relative to the widest bar beside it, not a
+  // figure printed on the page — the percentage-of-total that stood here was a number the
+  // engine never produced, and §6.2 defines no share for an entry or a destination.
+  const widest = section.rows.reduce((max, row) => Math.max(max, Number.isFinite(row.kilograms) ? Math.abs(row.kilograms) : 0), 0)
+  const bars = section.rows.map(row => {
+    const width = widest && Number.isFinite(row.kilograms) ? Math.min(Math.abs(row.kilograms) / widest * 100, 100) : 0
+    return `<div class="bar-row"><div><strong>${escapeHtml(row.label)}</strong><span>${formatNumber(row.kilograms, 2)} kg</span></div><div class="bar-track"><span style="width:${width}%"></span></div></div>`
+  }).join('')
+  const caption = section.label ? `${tabLabel} data — ${section.label}` : `${tabLabel} data`
+  const heading = section.label ? `<h3 class="breakdown-entry-heading">${escapeHtml(section.label)}</h3>` : ''
+  const body = section.rows.map(row => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${formatNumber(row.kilograms, 2)} kg</td><td>${metricCell(row, 'co2e', taxonomy)}</td><td>${metricCell(row, 'cost', taxonomy)}</td><td>${metricCell(row, 'water', taxonomy)}</td></tr>`).join('')
+  return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Category</th><th scope="col">Waste amount</th><th scope="col">CO₂e</th><th scope="col">Cost</th><th scope="col">Water</th></tr></thead><tbody>${body}</tbody></table></div></div>`
+}
+
+function breakdownSection(state, entryResults) {
   const allBreakdowns = breakdowns(entryResults, state.taxonomy)
   const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
   const current = allBreakdowns[active]
-  const panel = current.unavailable ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>` : `<div class="bar-list" aria-hidden="true">${current.rows.map(row => {
-    const percentage = totalKg ? row.kilograms / totalKg * 100 : 0
-    return `<div class="bar-row"><div><strong>${escapeHtml(row.label)}</strong><span>${percentage.toFixed(1)}%</span></div><div class="bar-track"><span style="width:${Math.min(percentage, 100)}%"></span></div></div>`
-  }).join('')}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(TAB_LABELS[active])} data</caption><thead><tr><th scope="col">Category</th><th scope="col">Waste amount</th><th scope="col">Percentage</th><th scope="col">CO₂e</th><th scope="col">Cost</th><th scope="col">Water</th></tr></thead><tbody>${current.rows.map(row => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${formatNumber(row.kilograms, 2)} kg</td><td>${(totalKg ? row.kilograms / totalKg * 100 : 0).toFixed(1)}%</td><td>${metricCell(row, 'co2e', state.taxonomy)}</td><td>${metricCell(row, 'cost', state.taxonomy)}</td><td>${metricCell(row, 'water', state.taxonomy)}</td></tr>`).join('')}</tbody></table></div>`
+  const panel = current.unavailable
+    ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
+    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, TAB_LABELS[active], state.taxonomy)).join('')}`
   return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">Breakdown by category</h2><p>Explore how the recorded waste is distributed.</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="Waste breakdown">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${label}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 
@@ -137,7 +179,7 @@ export function renderResults(state) {
   return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">Step 6</p><h1 id="results-title">Your estimated impact</h1><p class="section-intro">Results returned by the calculation service for ${entryResults.length} supply-chain ${entryResults.length === 1 ? 'entry' : 'entries'}.</p>${warning}
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">Impact summary</h2><p>A high-level view of the recorded food waste.</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div></section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">Tangible equivalents</h2><p>Plain-language comparisons appear when supplied by the calculation service.</p></div></div>${equivalences(totals)}</section>
-    ${breakdownSection(state, entryResults, number(totals.total_kg))}
+    ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">Methodology &amp; Limitations</h2><p>Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.</p><p>Factor version: ${escapeHtml(version)}.</p><details><summary>View methodology</summary><div><p>Data sources and calculation factors are maintained and approved by Kai Commitment.</p><p>Percentage waste remains unavailable until total food handled data is supplied.</p></div></details></section>
     <div class="result-actions"><button class="button button-secondary" type="button" data-action="go-step" data-step="4">Edit your data</button><button class="button button-secondary" type="button" data-action="start-over">Start a new calculation</button>${downloadButton()}</div>
     ${ImprovementScenario(state)}

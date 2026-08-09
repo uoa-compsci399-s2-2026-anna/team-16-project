@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { setState, entryResultsFrom } from './state.js'
+import { setState } from './state.js'
 import { escapeHtml, formatNumber } from './view.js'
 
 // Display-only coercion of an API decimal string (§7.6.1). `Number(value) || 0` stood here
@@ -145,7 +145,10 @@ export async function compareImprovement(state) {
     })
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ improvementLoading: false, improvementResult: { ...response, comparisons: entryResultsFrom(entries, response) }, token })
+    // The per-entry pairing `comparisons` held was read by exactly one thing — the
+    // `landfill_diverted` card's cross-entry `by_destination` sum — and that card is gone.
+    // Every figure this screen renders now comes from `totals`.
+    setState({ improvementLoading: false, improvementResult: response, token })
     requestAnimationFrame(() => document.getElementById('comparison-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   } catch (error) {
     setState({ improvementLoading: false, improvementError: error.message || 'The improvement comparison could not be completed.' })
@@ -173,9 +176,10 @@ export function ImprovementScenario(state) {
  * this replaced added the per-entry totals up in the browser and then subtracted them
  * itself, so every "X saved" on screen was a number the engine never produced (§7.6.1).
  *
- * `landfill_diverted` still sums `by_destination` across entries, because it is a metric
- * with no row in the `metric` table and therefore no `net_benefit` entry to read. §6.2 (v1.5)
- * rules that the card is removed rather than relocated; that removal is a separate change.
+ * Equivalences carry no difference and `net_benefit` is keyed by metric code only (§3), so
+ * both scenarios' `label` strings are kept and neither is subtracted from the other — §8.2's
+ * ruling for the same situation on the admin comparison screen: render both, plainly
+ * labelled, and say in words that no difference is shown.
  */
 function comparisonData(result) {
   const totals = result.totals || {}
@@ -192,48 +196,33 @@ function comparisonData(result) {
       precision: currentMetric.display_precision,
     }
   }
-
-  let currentLandfill = 0
-  let improvedLandfill = 0
-  for (const { response } of result.comparisons || []) {
-    for (const row of response.current?.metrics?.mass?.by_destination || []) if (row.destination === 'landfill') currentLandfill += typed(row.qty_kg)
-    for (const row of response.alternative?.metrics?.mass?.by_destination || []) if (row.destination === 'landfill') improvedLandfill += typed(row.qty_kg)
+  // §3: `label` is `label_template` with the equivalence's own value already interpolated
+  // and formatted by the engine. Each side keeps its own sentence.
+  const equivalences = new Map()
+  const readSide = (rows, key) => {
+    for (const row of rows || []) equivalences.set(row.code, { ...(equivalences.get(row.code) || {}), [key]: row.label })
   }
-  metrics.landfill_diverted = { current: currentLandfill, improved: improvedLandfill, difference: currentLandfill - improvedLandfill, unit: 'kg', precision: 2, inverseLabel: true }
-
-  const equivalences = {}
-  for (const row of totals.current?.equivalences || []) {
-    equivalences[row.code] = { ...(equivalences[row.code] || { improved: Number.NaN, improvedSeen: false }), label: row.label, current: number(row.value), currentSeen: true }
-  }
-  for (const row of totals.alternative?.equivalences || []) {
-    equivalences[row.code] = { ...(equivalences[row.code] || { label: row.label, current: Number.NaN, currentSeen: false }), improved: number(row.value), improvedSeen: true }
-  }
-  return { metrics, equivalences }
-}
-
-function differenceData(metric) {
-  // The percentage has no field in any version of §6.2 and v1.5 rules it removed rather
-  // than relocated; that removal is a separate change. `difference` is `net_benefit`.
-  const difference = metric.difference
-  const percentage = metric.current === 0 ? null : difference / Math.abs(metric.current) * 100
-  return { difference, percentage }
+  readSide(totals.current?.equivalences, 'current')
+  readSide(totals.alternative?.equivalences, 'improved')
+  return { metrics, equivalences: [...equivalences.values()] }
 }
 
 function changeCopy(metric) {
-  const { difference, percentage } = differenceData(metric)
-  if (!Number.isFinite(difference)) return { className: 'neutral', text: 'Not available', percentage: '' }
-  if (Math.abs(difference) < 1e-9) return { className: 'neutral', text: 'No change', percentage: '' }
+  // `difference` is `net_benefit[code]` verbatim. The percentage that stood beside it was
+  // `difference / |current| × 100`, computed here; §6.2 defines no percentage in any version
+  // and v1.5 rules it removed rather than relocated, because `net_benefit` already carries
+  // the same information in the unit the user entered.
+  const difference = metric.difference
+  if (!Number.isFinite(difference)) return { className: 'neutral', text: 'Not available' }
+  if (Math.abs(difference) < 1e-9) return { className: 'neutral', text: 'No change' }
   const positive = difference > 0
-  const noun = metric.inverseLabel ? (positive ? 'diverted from landfill' : 'more sent to landfill') : (positive ? 'saved' : 'increase')
-  const percentageText = percentage === null || !Number.isFinite(percentage) ? 'Percentage change unavailable' : `${Math.abs(percentage).toFixed(1)}% ${positive ? 'reduction' : 'higher'}`
-  return { className: positive ? 'positive' : 'negative', text: `${formatNumber(Math.abs(difference), metric.precision ?? 2)} ${escapeHtml(metric.unit || '')} ${noun}`, percentage: percentageText }
+  return { className: positive ? 'positive' : 'negative', text: `${formatNumber(Math.abs(difference), metric.precision ?? 2)} ${escapeHtml(metric.unit || '')} ${positive ? 'saved' : 'increase'}` }
 }
 
 function ImpactComparisonCard(code, metric, taxonomy) {
   const definition = (taxonomy.metrics || []).find(item => item.code === code)
-  const label = code === 'landfill_diverted' ? 'Food waste diverted from landfill' : definition?.name || code
   const change = changeCopy(metric)
-  return `<article class="impact-comparison-card"><h3>${escapeHtml(label)}</h3><div class="comparison-values"><div><span>Current</span><strong>${formatNumber(metric.current, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong></div><span class="comparison-arrow" aria-hidden="true">→</span><div><span>Improved</span><strong>${formatNumber(metric.improved, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong></div></div><div class="comparison-change ${change.className}"><strong>${change.text}</strong>${change.percentage ? `<span>${change.percentage}</span>` : ''}</div></article>`
+  return `<article class="impact-comparison-card"><h3>${escapeHtml(definition?.name || code)}</h3><div class="comparison-values"><div><span>Current</span><strong>${formatNumber(metric.current, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong></div><span class="comparison-arrow" aria-hidden="true">→</span><div><span>Improved</span><strong>${formatNumber(metric.improved, metric.precision ?? 2)} ${escapeHtml(metric.unit || '')}</strong></div></div><div class="comparison-change ${change.className}"><strong>${change.text}</strong></div></article>`
 }
 
 function ComparisonSummary(data, taxonomy) {
@@ -242,7 +231,7 @@ function ComparisonSummary(data, taxonomy) {
     const metric = data.metrics[code]
     const definition = (taxonomy.metrics || []).find(item => item.code === code)
     const change = changeCopy(metric)
-    return `<li class="${change.className}"><strong>${escapeHtml(definition?.name || code)}:</strong> ${change.text}${change.percentage ? ` · ${change.percentage}` : ''}</li>`
+    return `<li class="${change.className}"><strong>${escapeHtml(definition?.name || code)}:</strong> ${change.text}</li>`
   }).join('') || '<li>No comparable impact metrics were returned.</li>'}</ul></section>`
 }
 
@@ -256,13 +245,21 @@ function ComparisonBars(metrics, taxonomy) {
   }).join('')}</section>`
 }
 
-function equivalentDifferences(equivalences) {
-  // §6.2's `net_benefit` is keyed by metric code and carries no entry for an equivalence,
-  // so this subtraction is the one figure on the screen with no field to read. It is the
-  // same open question as the percentage above, and it needs the same ruling.
-  const rows = Object.values(equivalences).filter(row => row.currentSeen && row.improvedSeen).map(row => ({ ...row, difference: row.current - row.improved })).filter(row => Number.isFinite(row.difference) && Math.abs(row.difference) > 1e-9)
+/**
+ * Both scenarios' equivalents, side by side, never differenced.
+ *
+ * `net_benefit` is keyed by metric code (§3 declares it `dict[str, Decimal]`) and
+ * `EquivalenceResult` carries no difference, so a "18,597 km fewer" figure could only be
+ * `current − improved` computed here — the same defect as the metric sums this module no
+ * longer performs, with nothing to replace it. §8.2 rules the same situation on the admin
+ * comparison screen: render both values, plainly labelled, and state that no difference is
+ * shown. (The copy this replaced also read "5,016 Equivalent to driving 18,597 km fewer",
+ * a subtracted number glued to the front of the engine's own sentence.)
+ */
+function equivalentComparison(rows) {
   if (!rows.length) return '<p class="empty-state">No comparable tangible equivalents were returned.</p>'
-  return `<ul class="comparison-equivalents">${rows.map(row => `<li>${formatNumber(Math.abs(row.difference), 2)} ${escapeHtml(row.label)} ${row.difference > 0 ? 'fewer' : 'more'} <span>Estimate based on the current factor set.</span></li>`).join('')}</ul>`
+  const side = (label, value) => `<div><span>${label}</span><strong>${value ? escapeHtml(value) : 'Not available'}</strong></div>`
+  return `<p class="comparison-equivalent-note">Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.</p><ul class="comparison-equivalents">${rows.map(row => `<li><div class="comparison-values">${side('Current', row.current)}<span class="comparison-arrow" aria-hidden="true">→</span>${side('Improved', row.improved)}</div></li>`).join('')}</ul>`
 }
 
 export function ComparisonResults(state) {
@@ -270,5 +267,5 @@ export function ComparisonResults(state) {
   if (!result?.totals?.alternative) return ''
   const data = comparisonData(result)
   const mock = result.factor_set?.is_mock
-  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">Current Results → Improved Scenario</p><h2 id="comparison-results-title">Compare Results</h2>${mock ? '<p class="comparison-estimate-note">Demonstration only — this comparison uses mock factors and is not a verified impact result.</p>' : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${Object.entries(data.metrics).filter(([code]) => code !== 'mass').map(([code, metric]) => ImpactComparisonCard(code, metric, state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>Tangible equivalents</h2>${equivalentDifferences(data.equivalences)}</section></section>`
+  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">Current Results → Improved Scenario</p><h2 id="comparison-results-title">Compare Results</h2>${mock ? '<p class="comparison-estimate-note">Demonstration only — this comparison uses mock factors and is not a verified impact result.</p>' : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${Object.entries(data.metrics).filter(([code]) => code !== 'mass').map(([code, metric]) => ImpactComparisonCard(code, metric, state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>Tangible equivalents</h2>${equivalentComparison(data.equivalences)}</section></section>`
 }

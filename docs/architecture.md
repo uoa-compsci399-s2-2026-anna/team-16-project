@@ -317,7 +317,8 @@ Reaching that 503 on a fresh install is expected, not a fault.
 `ProtectionMiddleware` (`admin/protection.py`) sits ahead of every route under
 `/admin`, static files excepted, and refuses a request in three ways: the
 blocklist (`db/blocklist.py`, §2.3), a stateless check on header shape
-(`admin/detection.py`'s `looks_automated`), and a per-address rate limit. All
+(`db/detection.py`'s `looks_automated`, re-exported as `admin.detection`), and
+a per-address rate limit. All
 three are controlled by three settings, none of which existed in `.env.example`
 before this stage — a genuine gap, since the first of them is the only way
 out of a false-positive lockout:
@@ -325,7 +326,7 @@ out of a false-positive lockout:
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `PROTECTION_ENABLED` | `true` | Whether any of the three checks run at all. **This is the escape hatch.** Setting it to `false` and restarting turns off the blocklist, the header check and the rate limit together — there is no finer-grained switch. Use it when protection itself is producing the lockout (a false-positive header match, a shared address hitting the rate limit) and reaching the CLI's `unblock` command would not fix it, because the block is not what is refusing the request. |
-| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`admin/detection.py`'s `RequestRate`) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. Must be 1 or greater; `admin/config.py` refuses to start on `0` or a negative value, because a limit of `0` refuses the first unauthenticated request from every address, `/admin/login` included. |
+| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`db/detection.py`'s `RequestRate`, shared with the public API's own limiter) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. Must be 1 or greater; `admin/config.py` refuses to start on `0` or a negative value, because a limit of `0` refuses the first unauthenticated request from every address, `/admin/login` included. |
 | `PROTECTION_TRUSTED_PROXY` | `false` | Whether to read the caller's address from `X-Forwarded-For` instead of the raw TCP connection. **Must stay `false` unless a reverse proxy that itself overwrites `X-Forwarded-For` genuinely sits in front of this panel.** With no such proxy, `X-Forwarded-For` is a header any caller can set to any value — trusting it lets one visitor forge another's address, collapses the rate limit into a single shared counter, and can turn one legitimate block into a block on every visitor at once. |
 
 **Every one of these settings needs a process restart to take effect.**
@@ -419,8 +420,8 @@ hits this can either turn off protection for the affected caller's session
 with `PROTECTION_ENABLED=false` (the same escape hatch as above, since this
 is not a blocklist entry and `unblock` has nothing to remove), or have the
 affected person log in from a browser/extension configuration
-`admin.detection.looks_automated` does not flag, then treat the header check's
-false-positive rate on real browsers as a tuning problem for `admin/detection.py`
+`db.detection.looks_automated` does not flag, then treat the header check's
+false-positive rate on real browsers as a tuning problem for `db/detection.py`
 going forward.
 
 **What this is not.** `ProtectionMiddleware` is in-process, application-level
@@ -435,6 +436,62 @@ who has been identified and blocked by address, and even that assumes the
 addresses are stable enough to be worth blocking. An operator deciding
 whether to trust this panel's exposure to the open internet should read this
 paragraph before any of the settings above.
+
+**The public API half.** The blocklist is now applied to `/api/v1/` as well
+(`api/app.py`'s `blocklist` middleware), which is where the traffic actually
+arrives — a block made on the panel's screen and not enforced at the API stops
+nobody. It shares one implementation with the panel: `db/blocklist.py` for the
+table and the fingerprint, `db/detection.py` for the address resolution and the
+sliding-window counter. Four operational differences from everything above, and
+each one is a decision rather than an omission:
+
+| | Panel (`/admin`) | Public API (`/api/v1/`) |
+| --- | --- | --- |
+| Blocklist | Yes, no exemption | Yes, no exemption. Ahead of routing, so a dead path under `/api/v1/` is refused identically to a live one — otherwise a blocked caller can still map which routes exist |
+| Header check (`looks_automated`) | Yes | **No.** `/admin` is a browser-only surface; a public JSON API is not. §6.3's CSV export exists to be fetched by a tool, so refusing `curl` here would refuse a use the contract invites |
+| Rate limit | `PROTECTION_MAX_REQUESTS_PER_MINUTE`, refusals counted | §6.5's fixed 120/hour (`POST /calculate`) and 600/hour (`GET`), refusals **not** counted — there is no login page behind this to keep reachable, and not counting is what makes `Retry-After` a promise rather than a guess |
+| Refusal body | `PlainTextResponse("Refused.")` | §9.2's `BLOCKED` envelope, built by `api/errors.py` like every other error. A JSON client that got plain text back for one error out of twelve would have to special-case it |
+| Off switch | `PROTECTION_ENABLED=false` | **None.** That variable is read by `admin/config.py` only. The API's protections are always on; there is no env var and no restart that turns them off |
+
+**`SECRET_KEY` is required by the API too, and must be the same value.** Both
+layers derive the fingerprint key from it independently, through the same
+`BLOCKLIST_INFO`, so two different secrets mean two different fingerprints for
+one address — a block made in the panel would simply never match at
+`/api/v1/`, with nothing raised on either side. `api/app.py` refuses to start
+without one rather than starting with a blocklist that silently does nothing.
+
+**Two hazards the API inherits with no equivalent mitigation, and what is done
+about them instead.** Both are the same problem seen from two sides — the API
+is measuring callers by a value the deployment may not be giving it — and
+neither has an in-process fix, so both are warned about at `WARNING` level and
+named here:
+
+1. **Behind the shipped deployment, every API caller arrives as the proxy's own
+   address.** TLS terminates upstream and `PROTECTION_TRUSTED_PROXY` correctly
+   defaults to `false`, so §6.5's "600 / hour / IP" is one global bucket for all
+   public traffic, and one blocklist entry denies every visitor at once. On the
+   panel this exact chain was a Critical — any unauthenticated caller could
+   lock out every administrator remotely — and `_RATE_EXEMPT_PATHS` is what
+   made it survivable by keeping the login handshake reachable. **A public API
+   has no login handshake to exempt**, so there is nothing equivalent to build.
+   `api/app.py` logs a start-up warning naming both consequences. Set
+   `PROTECTION_TRUSTED_PROXY=true` only once the proxy is confirmed to
+   overwrite `X-Forwarded-For` itself — with no such proxy, trusting that
+   header lets any caller claim any address, which is the worse failure of the
+   two, and is why `false` remains the default.
+2. **A deployment that hides the client address disables both protections
+   silently.** `uvicorn --uds` behind nginx gives every request
+   `scope["client"] is None`. There is then no address to fingerprint and none
+   to count under, so the blocklist and the rate limit are both skipped — the
+   correct answer per request (inventing a stand-in key is what collapses every
+   such caller into one shared bucket and one shared blocklist entry) and a
+   silent no-op in aggregate. `api/app.py` logs a warning the first time it
+   sees such a request, once per process. **Bind a TCP socket, or put the real
+   address in `X-Forwarded-For` and set `PROTECTION_TRUSTED_PROXY=true`.**
+
+**Confirm both at deployment time, not during an incident** — together with the
+proxy access log the manual-block form depends on (see above). All three are
+facts about the deployment that this code cannot establish for itself.
 
 ---
 

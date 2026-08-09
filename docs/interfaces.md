@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.2 draft)"
+date: "2026-08-09 (v1.3 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,19 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.3 — 2026-08-09 (the blocklist reaches the API, **affects B, C, D and E**)
+
+Two of the open items v1.2 recorded are now closed, and closed the same way, by the same change: the blocklist is applied to `/api/v1/` and the detection helpers it needed moved into a layer both callers can import. Nothing about a request or response shape changed — **§9.2's `BLOCKED` envelope is unchanged and is now actually emitted**, which is the part C and D care about.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **Closed the v1.2 open item on `looks_automated`, `RequestRate` and `_client_ip`.** They are in `db/detection.py`; `admin/detection.py` is a re-export; `admin/protection.py` keeps `_client_ip` as an alias for `db.detection.client_ip`, which is the same object rather than a second copy. §8.3's recommendation was the one implemented, and its reasoning was the deciding one: two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. Note that the stated rationale was slightly wrong in one particular — `db/detection.py` is not standard-library-only at runtime, because it imports `db.blocklist` for address normalisation. What actually mattered, and what holds, is that it needs nothing from `admin/` | §8.3 | **B, E** |
+| 2 | **Closed v1.2's item #15: whether an in-memory rate-limit counter may be keyed on a raw address.** It may not. Both layers now key on §2.3's HMAC fingerprint, and `api/rate_limit.py` counts with the same `db.detection.RequestRate` the panel uses rather than being a third implementation. §6.5 sets its bar at persistence and a raw address in a process-memory dict cleared that bar, but the dict outlives the request that filled it, so the address is one this system holds — and two layers applying different privacy standards to the same data was never a defensible position for a calculator whose selling point is that it stores nothing about the visitor | §6.5, §2.3 | **B, E** |
+| 3 | **§9.2's "checked before anything else" is now literally true, and is implemented as middleware rather than as a router dependency.** FastAPI solves a router's dependencies only after a request has matched a route, so a dead path under `/api/v1/` answered `404` while every live path answered `403` — which hands a blocked caller a working route scanner. Recorded in §9.2 because it is a requirement on the implementation, not a free choice | §9.2 | **B** |
+| 4 | **Recorded the two deployment hazards the API inherits and cannot fix in process**, both of which make §6.5 and §2.3 silently do nothing: every caller arriving as a reverse proxy's address, and a deployment (`uvicorn --uds`) that gives the process no client address at all. Both are warned about at start-up or on first occurrence. The panel survives the first only because `_RATE_EXEMPT_PATHS` keeps its login handshake reachable; a public API has no login handshake, so there is no equivalent to build | §6.5 | **B, E** |
+| 5 | **`SECRET_KEY` is required by the API, and must be the same value the panel uses.** Both derive the fingerprint key from it through the same `BLOCKLIST_INFO`; two different secrets mean a block made in the panel never matches at the API, with nothing raised on either side. `api/app.py` refuses to start without one rather than starting with a blocklist that does nothing | §2.3 | **B, E** |
+| 6 | **Recorded that `looks_automated` is deliberately not applied to `/api/v1/`.** It is applied to `/admin` only. Scripting a public JSON API is a legitimate way to use it, and §6.3's CSV export exists to be fetched by a tool — refusing `curl` there would refuse a use this contract invites. Written down because a reader who found the shared module and not this line would reasonably assume the omission was an oversight | §8.3, §6.5 | **B, E** |
 
 ### v1.2 — 2026-08-09 (the merge of the two contract lines, **affects everybody**)
 
@@ -60,6 +73,8 @@ A smaller group — 6's scenario filter, 20 and 21 — are defects the correctio
 | 23 | `docs/architecture.md` §9.1.1, cited by §8.3 for the protection design's operational detail, **is not on `main`** — it lands with PR #9, and until then resolves only on `admin_panel`. Said out loud at the citation. A cross-reference that dangles for a stated reason is a known state; one that dangles silently reads as an error in this document | §8.3 | **B, E** |
 
 > **Still open after this revision.** None of these is a defect in the document; all of them are decisions nobody has taken. **O-1 remains the hard blocker** — the client has not supplied real emissions factors, so everything runs on mock data and the banner stays mandatory. Beyond it: whether an in-memory rate-limit counter may hold a raw address (#15, B's); whether `admin.detection.looks_automated`, `RequestRate` and `_client_ip` move into a shared layer or are duplicated in `api/` (§8.3, B's, and the four blocklist items in `api/` are all downstream of it); whether `landfill_diverted` becomes a real `metric` row plus a formula (#8, the client's); and the positive/negative semantic colour pair, which C and D both need and neither has written down.
+>
+> **Two of those four closed in v1.3** (above): the detection helpers moved to `db/detection.py`, and the rate-limit counter now keys on the §2.3 fingerprint in both layers. `landfill_diverted` and the semantic colour pair are still open. This paragraph is left as it was written rather than edited, because it is a record of what was true at v1.2.
 
 ### v1.1 — 2026-08-07 (raised by E, **affects B**)
 
@@ -504,9 +519,13 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 > `db.blocklist.InvalidAddressError` (a `ValueError` subclass) rather than being
 > hashed: a fingerprint of nonsense writes a row that matches no caller and
 > that `unblock` cannot remove either. **Callers on a request path must not let
-> that exception escape** — `admin/protection.py`'s `_client_ip` normalises the
-> connection address itself and treats an unusable one as "no address"; B's
-> middleware needs the same guard.
+> that exception escape** — `db.detection.client_ip` normalises the connection
+> address itself and treats an unusable one as "no address". Both middlewares
+> now go through it (`admin/protection.py` and `api/app.py`), and the API's
+> also catches `InvalidAddressError` narrowly around an *injected* check, since
+> that callable is not its own code. A caller with no usable address is skipped
+> by both the blocklist and the rate limit rather than being given a stand-in
+> key — see §6.5 for the deployment in which that becomes every caller.
 >
 > **Rotating `SECRET_KEY` clears the blocklist.** An HMAC cannot be re-keyed the
 > way an encrypted TOTP secret can — there is no plaintext address left to
@@ -519,9 +538,10 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 > section for who writes one instead. The reconciliation item this used to
 > create for the API layer — that `write_audit` sat in `admin/`, which
 > `api/` may not import — is **closed**: it has always been in
-> `db/repository.py` on B's branch (v1.2 change 9). What remains open there
-> is a different question, about `looks_automated`, `RequestRate` and
-> `_client_ip`.
+> `db/repository.py` on B's branch (v1.2 change 9). The question that was still open there
+> — whether `looks_automated`, `RequestRate` and `_client_ip` move to a shared
+> layer or are duplicated in `api/` — is **closed in v1.3**: they are in
+> `db/detection.py`, and `admin/detection.py` re-exports them. See §8.3.
 
 `sector_id` and `food_category_id` live on `submission_entry`, not here: one submission carries several, each with its own factors.
 
@@ -1492,7 +1512,14 @@ Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or 
 
 **No IP address is persisted by the rate limiter, and none is persisted anywhere in this system except the one exception §2.3 records.** That exception is `ip_block`, which stores an HMAC of an address — never the address — and only for a caller a staff member or the automatic protection has blocked. This sentence used to read "IP addresses are never persisted" without qualification; v0.12 added the blocklist exception in §2.3 and this line was not updated, so the document asserted an absolute and its exception in two places at once. The absolute is the one that was wrong: a reader implementing §6.5 literally would have had grounds to call §2.3's table a contract violation.
 
-> **Open, and B owns it: whether an *in-memory* counter may be keyed on a raw address.** §6.5 sets its bar at persistence, and `api/rate_limit.py` keys on `"post-calculate:203.0.113.9"`, which satisfies it. §2.3's prohibition has been read as covering process memory too, and `admin/protection.py` keys on the §2.3 fingerprint accordingly. **The two layers currently apply different privacy standards to the same data**, which is not a defensible position for a calculator whose stated selling point is that it stores nothing about the visitor. Not resolved here because §6.5 is B's section and this is a decision, not a correction. Whichever way it goes, both layers move together.
+> **Resolved in v1.3 — an in-memory counter may not be keyed on a raw address either.** This was recorded as open and B's: §6.5 sets its bar at persistence, and `api/rate_limit.py` keyed on `"post-calculate:203.0.113.9"`, which cleared that bar, while `admin/protection.py` keyed on the §2.3 fingerprint because §2.3's prohibition has been read as covering process memory too. **Both layers now key on the fingerprint**, and both count with the same `db.detection.RequestRate`. The deciding argument was that the counter's dict outlives the request that filled it, so an address in a key is an address this system holds — and two layers applying different privacy standards to the same data was never defensible for a calculator whose stated selling point is that it stores nothing about the visitor. As the note said, both layers moved together.
+
+**How the counters actually behave, since "in memory or Redis" above understates it.** Both are sliding windows, not fixed ones: a fixed window resets on a boundary, which lets a caller spend a full hour's allowance in its last second and another in the first second of the next — 240 calculations inside two seconds against a limit of 120 per hour. The API's limiter (`api/rate_limit.py`) does **not** count a refused request, so a caller who overshoots recovers one window after their last *allowed* request rather than never, and `Retry-After` is the wait until their oldest counted request leaves the window. `admin/protection.py` does count refusals, deliberately — see §8.3's `_RATE_EXEMPT_PATHS`, which exists to survive what that implies. Both counters are per-process: **running more than one worker multiplies the effective limit by the worker count.**
+
+> **Two deployment facts silently disable this section, and neither has an in-process fix.** Both are warned about — the first at start-up, the second the first time it happens — and both are named in `docs/architecture.md` §9.1.1.
+>
+> 1. **Behind a reverse proxy with `PROTECTION_TRUSTED_PROXY` false, "per IP" above is a fiction.** That is the shipped arrangement (TLS terminates upstream) and `false` is the correct default — with no proxy that overwrites `X-Forwarded-For`, trusting it lets any caller claim any address, which is the worse failure. But every caller then arrives as the proxy's own address, so 600/hour becomes 600/hour for the whole internet, and one `ip_block` row denies every visitor at once. The panel survives this only because §8.3's `_RATE_EXEMPT_PATHS` keeps its login handshake reachable; **a public API has no login handshake to exempt, so there is no equivalent mitigation.** Set the flag true once the proxy is confirmed to overwrite the header itself.
+> 2. **A deployment that gives the process no client address disables both this section and §2.3's blocklist.** `uvicorn --uds` behind nginx does exactly that (`scope["client"] is None`). There is then no address to fingerprint and none to count under, so both checks are skipped — the correct answer per request, since inventing a stand-in key collapses every such caller into one shared bucket and one shared blocklist entry, and a silent no-op in aggregate. Bind a TCP socket, or supply the address in `X-Forwarded-For` and set `PROTECTION_TRUSTED_PROXY=true`.
 
 ---
 
@@ -1940,7 +1967,17 @@ The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without 
 
 > **Three things this document calls "fingerprint," and they are not the same thing.** §2.3's "no fingerprint of any kind is stored" and "browser fingerprinting was considered and rejected" both refer to a *browser* fingerprint — a persistent quasi-identifier built from device/header characteristics, rejected there as ineffective against the traffic it would defend against and the highest privacy risk of the options considered. The `ip_hmac` fingerprint described in this section is a different construction entirely — a keyed HMAC of a single known address, not a browser characteristic — kept specifically *because* an operator needs to recompute and compare it, which is exactly the property that made the browser kind unacceptable. Do not read §2.3's rejection of browser fingerprinting as covering this one; it doesn't, and the two are evaluated on different grounds.
 
-`db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. It never writes to the blocklist itself.
+`db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. **Two middlewares read it, and neither writes to it.** `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. `api/app.py`'s `blocklist` middleware (added v1.3, owner: B) does the same for every request under `/api/v1/`, ahead of routing so that a dead path is refused identically to a live one (§9.2). Until v1.3 there was no second reader at all: a block made on the screen below held on the panel and did nothing where the public traffic actually arrives, which is the one thing a blocklist is for.
+
+Three differences between the two, each deliberate and each explained where it is implemented:
+
+| | `admin/protection.py` | `api/app.py` |
+| --- | --- | --- |
+| Refusal body | `PlainTextResponse("Refused.")` — a browser surface | §9.2's `BLOCKED` envelope, built by `api/errors.py` like every other error. A JSON client that got plain text back for one error out of twelve would have to special-case it, and C and D would each have to do so separately |
+| Header check | `looks_automated` applies | Does **not** apply — scripting a public JSON API is a legitimate use, and §6.3's CSV export exists to be fetched by a tool |
+| Rate limit | `PROTECTION_MAX_REQUESTS_PER_MINUTE`, refusals counted, `/admin/login` and `/admin/verify` exempt | §6.5's fixed hourly limits, refusals not counted, nothing exempt |
+
+Both key on `db.detection.client_ip`, so a caller with no usable address is skipped by both rather than given a stand-in key — and both inherit the deployment hazards §6.5 records.
 
 The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in a table every staff member can read.
 
@@ -1955,7 +1992,13 @@ The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`),
 > - **E's `_encode` handles `date` more carefully than B's.** That one branch folds into B's function; nothing else of E's does.
 > - Once the re-export is in place, "the caller audits" becomes executable from `api/`, and an API-side automatic block appears in `/admin/audit` like every other write.
 >
-> **The same unresolved split applies to three more names.** `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` are all in `admin/` and are all things B's public-traffic middleware needs. They were built there because `admin/` is where E's stage lived, not because that is where they belong: `detection.py` imports nothing outside the standard library and `_client_ip` imports nothing outside Starlette, so neither has any reason to sit above the layering boundary. **Recommendation:** move `detection.py` to `db/` or to a new shared module and leave `admin/protection.py` importing it, rather than have `api/` duplicate the header-marker list and the sliding-window counter — two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. `_client_ip` should move with it. **This is genuinely unresolved, and B decides it**, since a move changes a file in her layer; E's recommendation is on record here so that the alternative (duplication) is a choice someone made rather than the default nobody discussed. Note also that `RequestRate` is per-process, so under more than one worker the effective limit is multiplied by the worker count — the API's own rate limiting (§6.5) is a separate problem and E has not solved it.
+> **Resolved in v1.3 — the three names moved to `db/detection.py`.** This paragraph recorded the split as genuinely unresolved and B's to decide: `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` were all in `admin/` and were all things the public-traffic middleware needed. **The recommendation recorded here is the one that was implemented.** They are now `db.detection.looks_automated`, `db.detection.RequestRate` and `db.detection.client_ip`; `admin/detection.py` is a re-export, and `admin/protection.py` keeps `_client_ip` as an alias for the same object rather than a second copy — `tests/db/test_detection_shared.py` asserts that identity with `is`, and AST-pins that `db/detection.py` imports nothing from `admin/`, the same pin `tests/db/test_blocklist.py` applies to the blocklist. The deciding argument was the one written here: two copies of a detection rule drift, and the copy that stops matching is the one nobody notices.
+>
+> One part of the rationale above was wrong and is corrected rather than repeated: **`db/detection.py` is not standard-library-only at runtime.** It imports `db.blocklist` for address normalisation, which pulls in SQLAlchemy and `cryptography`. Starlette is imported under `TYPE_CHECKING` only, so the module is still usable and testable without a web framework, but the stdlib-only property the recommendation leaned on does not survive the move in full. What does survive — and what the layering rule actually required — is that nothing in it needs `admin/`.
+>
+> **`looks_automated` is applied to `/admin` and deliberately not to `/api/v1/`.** The other two are used by both. This is a decision, not an oversight: `/admin` is a browser-only surface, so a caller there that is plainly a script is refused, whereas scripting a public JSON API is a legitimate way to use it and §6.3's CSV export exists precisely to be fetched by a tool. Refusing `curl` at `/api/v1/` would refuse a use this contract invites. The API applies the blocklist and §6.5's rate limit and nothing else.
+>
+> **`RequestRate` is still per-process**, so under more than one worker the effective limit is multiplied by the worker count — true of both layers now, since both count with the same class. The API's own rate limiting (§6.5) is no longer a separate problem: `api/rate_limit.py` wraps this counter rather than being a third implementation of one, keeping only the policy §6.5 needs (a per-call limit, and `Retry-After` derived from the oldest hit still inside the sliding window). It does **not** count refused requests, which is where it deliberately differs from `admin/protection.py` — see §6.5.
 
 **The one case this whole design is built around not causing:** an administrator blocks the address they are sitting behind, and the block itself now stands between them and every page that would let them undo it — including the login page, because the blocklist check has no exemption. `python -m admin.cli unblock <address>` (above) is the only way back short of editing the database by hand, and is the reason that command exists at all.
 
@@ -2062,6 +2105,19 @@ tuning signal for whoever is probing. Staff read the reason and the expiry on
 a blocked caller cannot use the API's own error messages to probe the
 taxonomy — and, being a single indexed lookup on `ip_hmac`, it costs one query.
 It applies to every endpoint under `/api/v1/`, `GET` included.
+
+**It must run ahead of routing, which means middleware and not a router
+dependency** (`api/app.py`'s `blocklist` middleware). FastAPI solves a router's
+dependencies only once a request has matched a route, so a dependency leaves
+`/api/v1/does-not-exist` answering `404` while every live path answers `403` —
+a working route scanner for a blocked caller, and a difference no amount of
+reticence in the body above can hide. Running ahead of routing also keeps the
+one-query cost honest: a dependency *and* a middleware would be two lookups.
+The response is built directly rather than raised, because an exception raised
+in middleware never reaches the handlers registered with
+`add_exception_handler` — Starlette's `ExceptionMiddleware` sits inside them,
+and the session middleware outside would turn a raised `ApiProblem` into a
+`500 INTERNAL_ERROR`.
 
 ---
 

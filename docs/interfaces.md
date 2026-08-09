@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.7 draft)"
+date: "2026-08-09 (v1.8 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,22 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.8 — 2026-08-09 (O-7 closes, **affects A, B and E**)
+
+**One change, and it is the one defect in this system that made the client's headline message wrong.** `architecture.md` §4.1 has said since the first revision that the special destination `prevention` has "factors are all zero — a 100% offset", and that this is what stops `net_benefit` being inflated by simply assuming less waste. **The data model could not express it.** `factor_upstream` was keyed on `(sector, food_category, metric)` and could not see the destination, so a line moved to `prevention` kept the entry's *full upstream factor* and only the downstream delta reached the net benefit. Measured on the canonical fixtures, 800 kg of `not_harvested` moved to `prevention` yielded `net_benefit.co2e` of **96.000** where a true offset yields **456.000** — 78.9% of the benefit missing, always in the same direction, on exactly the number the client's "wasting less" story is built from.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`factor_upstream` gains a nullable `destination_id`.** NULL means "applies to every destination for this `(sector, food_category, metric)`" — the same pattern `factor_downstream.food_category_id` already uses — so the lookup order becomes **exact destination, then the NULL row, then zero**, structurally identical to the one §4.1's `downstream()` already implements. Every upstream row written before this revision keeps meaning exactly what it meant. **The same NULL trap applies and is closed the same way**: MySQL compares NULLs as distinct inside a UNIQUE key, so `uq_factor_upstream` alone permits unlimited duplicate generic rows; a unique functional index over `COALESCE(destination_id, 0)` is what actually enforces it. Third appearance of the defect B first found on `factor_downstream` | §2.1, §2.2 | **A, B, E** |
+| 2 | **`FactorBundle.upstream()` gains a `destination` parameter** — `upstream(sector, food_cat, destination, metric)` — with the three-step fallback documented on it. §10.2's `bundle.json` gains a `destination` key on every `upstream[]` row, `null` for the generic case, and `validate()`'s upstream check gains a destination resolution. §6.3's export carries the key for the same reason: both are built from `build_bundle_data` | §4.1, §6.3, §10.2 | **A, B** |
+| 3 | **The rejected alternative, recorded because it was the one this document's O-7 section previously recommended.** A `prevented` line variable derived from `destination_group.is_waste`, with the default formula becoming `qty_kg * (upstream * (1 - prevented) + downstream)`, would have added a fifth line variable to §4.3 and required `admin/expressions.py`'s `BASE_VARIABLES` to gain a member in lockstep with the engine's evaluator — **two whitelists, written by two people, that must agree or the panel accepts formulas the engine rejects.** The schema option leaves `line_value = f(qty_kg, upstream, downstream, const_*)` with its exact shape: only the value bound to `upstream` changes, because the destination is resolved in the *lookup*. §4.3, the formula language and `BASE_VARIABLES` are **untouched by this revision** | §4.3 (unchanged, deliberately) | **A, E** |
+
+> **Both fixtures that encoded the old answer have been corrected**, per §0's process. `factors.json` gains a `destination` on every upstream row plus a `prevention` row at zero for each `(sector, food_category, metric)` that has a general row; `calculate_response.json` was **regenerated from the published factors** rather than hand-edited, and the only values that moved are the ones this change causes — entry 2's alternative scenario and the totals and net benefits above it. `net_benefit.co2e` for that entry is now **456.000**. `calculate_request.json`, `taxonomy.json`, `stats.json` and the seven error bodies are untouched.
+>
+> **What this does not change.** No request shape, no response shape, no front-end module signature. C and D have nothing to do. The one thing worth their attention is that the canonical response fixture's numbers moved, so a hard-coded expectation taken from it will need refreshing.
+>
+> **Still open after this revision.** **O-1** (real emissions factors) remains the hard blocker and everything still runs on mock factors, so the placeholder banner stays mandatory. **O-7 is closed** — see `architecture.md` §10, which records what was done and what was rejected. Carried forward unchanged: `landfill_diverted` as a real `metric` row, the container-preset input, `gwpHorizon`'s missing control, and the positive/negative colour pair. New and small: nothing refuses a general upstream row created without a matching `prevention` row, which is how this item could come back one tuple at a time; the fixtures are held to it by a test, the panel is not.
 
 ### v1.7 — 2026-08-09 (the change that was made without a row, **affects B, C, D and E**)
 
@@ -356,7 +372,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 
 > **`prevention` is the one destination code this system knows by name.** It expresses "waste avoided" and keeps the two scenarios mass-conserving. Three rules are stated in terms of it and none of them is optional: `admin/taxonomy_rules.check_prevention_intact` refuses any edit that would remove or deactivate it (or its group); §6.2 refuses it in a **current** scenario, because it is by construction the destination for waste that did not happen; and §5.4 reads the current scenario only, so it can never become a public statistic. The literal lives once, in `db/types.PREVENTION_CODE`, and `admin/taxonomy_rules` re-exports that object — `api/` may not import from `admin/` and needs the same string.
 >
-> **Its *downstream* factors are zero. Its upstream factors are not, and cannot be.** This blockquote read "with all factors set to zero" for five revisions and that is not true of the data model: `factor_upstream` is keyed on `(sector, food_category, metric)` and has no destination column, so a line moved to `prevention` keeps its entry's full upstream factor. See `architecture.md` **O-7**, which measures the gap and states the three options; it is unsettled and it is on A's critical path. Corrected here in v1.5 because this is the normative schema section, the first place a new reader meets the word, and the last site still asserting the original claim.
+> **Both its downstream and its upstream factors are zero, and since v1.8 that is a statement about the data rather than about the prose.** This blockquote read "with all factors set to zero" for five revisions while `factor_upstream` had no destination column, so a line moved to `prevention` kept its entry's full upstream factor; v1.5 corrected it to downstream-only and pointed at `architecture.md` O-7. **O-7 is closed** — `factor_upstream.destination_id` is the column, and `prevention` carries a row at zero for every `(sector, food_category, metric)` that has a general row. That last clause is the load-bearing one: the offset is now data, so a general row created without a matching `prevention` row reverts to the old behaviour for that tuple alone, and nothing in the panel refuses it.
 
 ### `sector`
 
@@ -459,12 +475,23 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `factor_set_id` | INT | FK, NOT NULL | |
 | `sector_id` | INT | FK, NOT NULL | |
 | `food_category_id` | INT | FK, NOT NULL | |
+| `destination_id` | INT | FK, **NULL** | **NULL means the row applies to every destination for that `(sector, food_category, metric)`** |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | |
 | `source_note` | TEXT | NULL | Where this number came from |
 | `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
-UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `metric_id`)
+UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `destination_id`, `metric_id`)
+
+> **The nullable `destination_id` exists so that `prevention` can be a real 100% offset — open item O-7, closed in v1.8.** NULL is the normal case and almost every row carries it: producing a kilogram of dairy costs what it costs whatever later becomes of it. Lookup order: exact match on `destination_id` first, then fall back to the NULL row, then treat as zero — the same three-step `factor_downstream` uses for `food_category_id`, and the same one `FactorBundle.downstream()` already implements.
+>
+> Before this column existed, `factor_upstream` could not see the destination, so a line moved to `prevention` kept its entry's full upstream factor and only the downstream delta reached `net_benefit`. On the canonical fixtures, 800 kg of `not_harvested` moved to `prevention` yielded 96.000 kg CO2e where a true offset yields 456.000 — 78.9% of the benefit missing, one-directionally, on the client's headline claim. The engine's `line_value = f(qty_kg, upstream, downstream, const_*)` is unchanged by the fix: the destination is resolved in the lookup, not applied in the formula.
+>
+> **The column is not restricted to `prevention` and must not be.** Factors are data (that is §2.1's whole premise); a future factor set may legitimately give `animal_feed` an upstream row of its own, and a CHECK naming one destination code would have to be migrated away the first time the client asked for that.
+
+> **This UNIQUE has the same defect `factor_downstream`'s does, for the same reason, and needs the same functional index.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — and here the generic rows are not the exception, they are almost the whole table. Two of them and the fallback lookup picks one nondeterministically: the same input returning a different net benefit run to run, with nothing in the logs. A unique index over `COALESCE(destination_id, 0)` is what enforces it, and it must be written by hand — autogenerate detected this one as a plain four-column index with the expression silently dropped. Test it by inserting the second generic row and asserting `IntegrityError`, against **MySQL**; on SQLite it proves nothing.
+>
+> Third instance of the trap, after `factor_downstream` (below) and `submission_entry` (§2.3). Raised by B on the first; found twice more by looking for it.
 
 ### `factor_downstream`
 
@@ -890,8 +917,14 @@ class FactorBundle:
     is_mock: bool
     metrics: tuple[MetricSpec, ...]         # active only, sorted by sort_order
 
-    def upstream(self, sector: str, food_cat: str, metric: str) -> Decimal:
-        """Returns Decimal('0') when no row matches."""
+    def upstream(self, sector: str, food_cat: str, destination: str,
+                 metric: str) -> Decimal:
+        """Exact match on destination first; then fall back to the generic row
+        (destination NULL); then Decimal('0'). The generic row is the normal
+        case — the destination-specific one exists so `prevention` can be a
+        real 100% offset (§2.2, open item O-7). Same three-step shape as
+        downstream() below, and (destination, None, metric)-style misses must
+        be *looked up*, not assumed absent."""
 
     def downstream(self, destination: str, food_cat: str, metric: str) -> Decimal:
         """Exact match on food_cat first; then fall back to the generic row
@@ -924,7 +957,8 @@ class FactorBundle:
         raise — the API layer decides how to present the problems.
 
         Checks: every upstream row's sector / food_category / metric exists
-        in this bundle; every downstream row's destination / metric exists
+        in this bundle and its destination is null or exists; every
+        downstream row's destination / metric exists
         and its food_category is null or exists; every destination.group
         exists; exactly one food_category has is_standard_mix; every
         formula.metric and every equivalence.source_metric exists."""
@@ -1047,6 +1081,8 @@ Variables available on each line:
 | `const_GWP_CH4` | Decimal | **Special binding:** resolves to `GWP_CH4_20` or `GWP_CH4_100` according to the request's `gwp_horizon` |
 
 Because no aggregation is required, the expression language has **no arrays, no loops and no `sum()`**, which keeps the evaluator's security boundary unambiguous.
+
+> **This table did not change in v1.8, and that is the interesting part of O-7's closing.** `upstream` is now resolved with the line's destination taken into account (§2.2, §4.1) — but the resolution happens in the *lookup*, before the evaluator is called, so the variable set, the language and `admin/expressions.py`'s `BASE_VARIABLES` are all exactly as they were. The rejected alternative would have added a fifth variable here and required the panel's whitelist to gain the same member in lockstep with the engine's. A formula never names a destination and never should.
 
 **Default formulas**
 
@@ -1427,7 +1463,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 > **The two scenarios of an entry must describe the same mass, and until v1.2 nothing enforced it.** The dual-scenario design rests on this: `architecture.md` §4.1 states that the `prevention` destination exists precisely so that `net_benefit` cannot be inflated by simply assuming less waste in the alternative — "wasting less" is expressed by *moving* mass to `prevention`, whose factors are all zero, not by sending less of it. That is a 100% offset and it conserves mass by construction.
 >
-> **The half of that sentence this rule depends on is the mass half, and it holds.** The "100% offset" half does not, as built — see `architecture.md` **O-7**: only `prevention`'s *downstream* factors are zero, and a prevented line keeps its entry's upstream factor. It is repeated here because it is the stated motivation for this rule, and the rule survives it: mass conservation is a property of the *request*, which O-7 does not touch. Do not read the phrase as a description of what the engine computes until O-7 is settled.
+> **Both halves of that sentence now hold, and the two are independent.** The mass half is a property of the *request* and has always held — this rule is what enforces it. The "100% offset" half did not hold as built, and `architecture.md` **O-7** measured the gap: only `prevention`'s *downstream* factors were zero, so a prevented line kept its entry's upstream factor. **O-7 closed in v1.8** — `factor_upstream` gained a nullable `destination_id` (§2.2) and `prevention` carries an upstream row at zero. The independence is worth keeping in mind: this rule was never weakened by O-7 and is not strengthened by its closing, so if the offset ever stops being complete again, *this* check will not be the one that notices.
 >
 > **Without a rule, an implementer building from §6.2 alone permits exactly what `prevention` was designed to prevent**, and nothing downstream exposes it. An alternative that simply drops a 1,200 kg landfill line produces a large, entirely fictitious `net_benefit`. The response cannot reveal it: `totals.total_kg` reports the **current** scenario's mass only (§3), so the two figures a reader would compare are never both on the page. The golden suite cannot catch it either — it exercises `calculate()` against a fixed request, and this is a property of the *request*. The only place it can be caught is here.
 >
@@ -1610,10 +1646,14 @@ Factors and formulas are published openly (Decision 7).
     { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": "" }
   ],
   "upstream": [
-    { "sector": "processing", "food_category": "dairy",
+    { "sector": "processing", "food_category": "dairy", "destination": null,
       "metric": "co2e", "value_per_kg": "1.9000000000",
       "source_note": "Otago 2025 baseline, table 14",
-      "data_quality": "measured" }
+      "data_quality": "measured" },
+    { "sector": "processing", "food_category": "dairy", "destination": "prevention",
+      "metric": "co2e", "value_per_kg": "0.0000000000",
+      "source_note": "Prevented waste was never produced, so no upstream burden is attributable to it.",
+      "data_quality": "definitional" }
   ],
   "downstream": [
     { "destination": "landfill", "food_category": "dairy",
@@ -2428,7 +2468,7 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 | `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry and absent at the totals level |
 | `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4) |
 | `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
-| `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, all three `prevention` rows at zero, and `source_note` / `data_quality` on every row |
+| `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, and `source_note` / `data_quality` on every row. **`prevention` is at zero on both sides** — all three downstream rows, and since v1.8 an upstream row for every `(sector, food_category, metric)` that has a general one (open item O-7). `test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what keeps the upstream half complete |
 | `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
 
 `errors/` does not carry the four codes v1.4 added to §9 — `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `INTERNAL_ERROR`, `ENGINE_UNAVAILABLE` — and that is deliberate rather than an omission: their bodies are the same three-key envelope with a fixed `message` and an empty `details`, none is reachable from a front-end code path C or D can exercise, and a fixture per framework failure would add four files that pin nothing the envelope check does not already pin. `HTTP_ERROR` has no fixture for the same reason **and** because its status varies. If a code ever gains a body worth reading, it gains a fixture.
@@ -2495,8 +2535,10 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
     { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": "" }
   ],
   "upstream": [
-    { "sector": "processing", "food_category": "dairy",
-      "metric": "co2e", "value_per_kg": "1.9000000000" }
+    { "sector": "processing", "food_category": "dairy", "destination": null,
+      "metric": "co2e", "value_per_kg": "1.9000000000" },
+    { "sector": "processing", "food_category": "dairy", "destination": "prevention",
+      "metric": "co2e", "value_per_kg": "0.0000000000" }
   ],
   "downstream": [
     { "destination": "landfill", "food_category": "dairy",
@@ -2527,3 +2569,5 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 > **The database and §6.3 are the authoritative provenance surface, not the bundle.** Provenance may be dropped on a round trip through a dry run; that is acceptable because an inline bundle is never written back (§6.2.1) and a golden case is not a factor source. If provenance ever has to survive a round trip, this convention is the line that changes.
 
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
+
+`upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.

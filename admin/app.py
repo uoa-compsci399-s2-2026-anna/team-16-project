@@ -5,6 +5,7 @@ they are wired together.
 """
 
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from sqladmin import Admin
@@ -19,6 +20,18 @@ from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
 from db.session import create_session_factory
+
+#: This package's own directory. Both the static files and the templates live
+#: inside it and are shipped as package data, so they are located relative to
+#: this file and never relative to the working directory - an installed
+#: package has no idea where the process was started from, and a panel that
+#: only starts from one directory is a panel that cannot be installed.
+#:
+#: admin/views.py and admin/dryrun_views.py have always resolved their
+#: Jinja2Templates this way; the two mounts below were the outliers, and
+#: `create_app()` from any other directory raised
+#: "RuntimeError: Directory 'admin/static' does not exist".
+_PACKAGE_DIR = Path(__file__).parent
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -93,7 +106,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ordering first: both static-file tests failed with 404. Mounting the
     # static files before constructing Admin() fixes it.
     app.mount(
-        "/admin/static", StaticFiles(directory="admin/static"), name="brand-static"
+        "/admin/static",
+        StaticFiles(directory=str(_PACKAGE_DIR / "static")),
+        name="brand-static",
     )
 
     admin = Admin(
@@ -101,7 +116,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_maker=session_factory,
         base_url="/admin",
         title="Kai Commitment",
-        templates_dir="admin/templates",
+        templates_dir=str(_PACKAGE_DIR / "templates"),
         authentication_backend=AdminAuth(settings=settings, app=app),
     )
 

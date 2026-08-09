@@ -26,8 +26,40 @@ def _required(name: str) -> str:
 
 
 def _int(name: str, default: int) -> int:
+    """Parse a positive integer setting, refusing zero and negatives.
+
+    ``int()`` already raises on garbage, which is what ``_bool`` was
+    hardened to match. It does not raise on ``0`` or ``-1``, and every
+    setting read through this function is a count or a duration where
+    neither is meaningful. The one that turns a typo into an outage is
+    ``PROTECTION_MAX_REQUESTS_PER_MINUTE=0``: ``admin/protection.py``
+    refuses a request once its count *exceeds* the limit, so a limit of 0
+    means the first unauthenticated request from any address is refused with
+    429 — including on ``/admin/login``, which is the page an operator
+    would then need in order to fix it. The others fail in the same shape:
+    ``SESSION_MAX_AGE_MINUTES=0`` expires every session as it is minted,
+    ``LOGIN_MAX_FAILURES=0`` locks out every account on its first attempt.
+
+    ``.env.example`` is the one file the client will edit by hand, and a
+    misconfigured deployment should refuse to start rather than start
+    refusing everyone — the same ruling ``_bool`` records.
+    """
     raw = os.getenv(name, "").strip()
-    return int(raw) if raw else default
+    if not raw:
+        return default
+    value = int(raw)
+    if value < 1:
+        raise ValueError(
+            f"{name}={raw!r} must be 1 or greater. Zero or a negative value "
+            "would refuse or expire everything this setting governs, "
+            "including the pages needed to correct it."
+        )
+    return value
+
+
+def _str(name: str, default: str) -> str:
+    raw = os.getenv(name, "").strip()
+    return raw if raw else default
 
 
 _BOOL_TRUE_VALUES = ("1", "true", "yes", "on")
@@ -58,6 +90,13 @@ def _bool(name: str, default: bool) -> bool:
     )
 
 
+#: Where B's POST /api/v1/calculate lives, absent an explicit API_BASE_URL.
+#: A same-host loopback address because in every environment this panel has
+#: run in so far, the API is deployed alongside it; a deployment that splits
+#: them onto separate hosts sets API_BASE_URL explicitly (see .env.example).
+_DEFAULT_API_BASE_URL = "http://127.0.0.1:8000"
+
+
 @dataclass(frozen=True)
 class Settings:
     secret_key: str
@@ -71,6 +110,25 @@ class Settings:
     # subdomain hand over the session. Set SESSION_HTTPS_ONLY=false only for
     # local development served over plain http.
     session_https_only: bool = True
+    api_base_url: str = _DEFAULT_API_BASE_URL
+    # Whether ProtectionMiddleware (admin/protection.py) runs at all. True by
+    # default; an operator debugging a false-positive block can flip this off
+    # without redeploying code, at the cost of the blocklist and the header/
+    # rate checks all going dark together - there is no finer-grained switch.
+    protection_enabled: bool = True
+    protection_max_requests_per_minute: int = 30
+    # Whether to trust X-Forwarded-For for the caller's address. Defaults
+    # False, and that default is load-bearing, not a placeholder: behind a
+    # reverse proxy every caller arrives as the proxy's own address, so with
+    # this True but no proxy in front, the rate limit becomes one counter
+    # shared by every visitor and a single blocked address blocks everyone.
+    # With this False (the only safe default) admin/protection.py reads
+    # request.client.host and ignores X-Forwarded-For entirely - a header a
+    # caller can set to anything, so trusting it without a proxy that
+    # actually strips/overwrites inbound copies of it would let any caller
+    # forge whichever address they like. Set True only once a reverse proxy
+    # that overwrites X-Forwarded-For itself sits in front of this panel.
+    protection_trusted_proxy: bool = False
 
 
 def load_settings() -> Settings:
@@ -81,4 +139,10 @@ def load_settings() -> Settings:
         login_max_failures=_int("LOGIN_MAX_FAILURES", 5),
         login_lockout_minutes=_int("LOGIN_LOCKOUT_MINUTES", 15),
         session_https_only=_bool("SESSION_HTTPS_ONLY", True),
+        api_base_url=_str("API_BASE_URL", _DEFAULT_API_BASE_URL),
+        protection_enabled=_bool("PROTECTION_ENABLED", True),
+        protection_max_requests_per_minute=_int(
+            "PROTECTION_MAX_REQUESTS_PER_MINUTE", 30
+        ),
+        protection_trusted_proxy=_bool("PROTECTION_TRUSTED_PROXY", False),
     )

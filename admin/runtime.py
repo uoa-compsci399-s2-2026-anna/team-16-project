@@ -34,6 +34,10 @@ class Runtime:
     session_factory: Any
     throttle: Any
     settings: Any
+    # admin.calc_client.CalculateClient - typed as Any rather than imported
+    # so this module stays free of a dependency on httpx; views import the
+    # Protocol themselves if they want the type.
+    calc_client: Any = None
 
 
 def get_runtime(request: Request) -> Runtime:

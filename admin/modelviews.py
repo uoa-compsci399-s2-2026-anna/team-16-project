@@ -35,7 +35,7 @@ from sqlalchemy import event
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, sessionmaker
 
-from admin.audit import write_audit
+from admin.audit import row_to_dict, write_audit
 from admin.auth import SESSION_KEY
 from admin.models import AuditLog
 
@@ -55,29 +55,13 @@ _actor_var: contextvars.ContextVar[str | None] = contextvars.ContextVar(
     "kai_admin_audit_actor", default=None
 )
 
-
-def _row_to_dict(row: Any) -> dict:
-    """Every mapped column of one row, by name.
-
-    Relationships are excluded from the dict itself — a relationship is
-    other rows, not a column of this one. That does not mean each of those
-    rows gets its own audit entry when *this* write touches them: the
-    ``before_commit`` listener below filters ``session.new`` / ``.dirty`` /
-    ``.deleted`` with ``isinstance(obj, model)``, so only rows of the model
-    this particular ``AuditedModelView`` was constructed for are ever
-    considered. An ORM cascade — a ``factor_set`` delete taking its
-    ``factor_upstream`` rows with it via ``cascade="all, delete-orphan"``,
-    for instance — deletes those child rows in the same flush without this
-    listener ever seeing them, and writes no audit entry for them at all.
-    Nothing on this branch exercises that: both views defined here set
-    ``can_delete = False``. A future view that allows delete and owns a
-    cascading relationship needs its own handling for the children, or they
-    vanish untracked.
-    """
-    return {
-        column.key: getattr(row, column.key)
-        for column in row.__mapper__.column_attrs
-    }
+#: The view whose write is in flight, so the before_commit listener can call
+#: back into its validate_before_commit. Set alongside _actor_var and for the
+#: same reason: the listener runs deep inside sqladmin's own machinery, with
+#: no reference to the view that started the call.
+_view_var: contextvars.ContextVar["AuditedModelView | None"] = contextvars.ContextVar(
+    "kai_admin_audit_view", default=None
+)
 
 
 def _snapshot_before(row: Any) -> dict:
@@ -161,6 +145,16 @@ def _audited_session_maker(
             # none at all.
             return
 
+        # `isinstance(obj, model)` means only rows of the model this
+        # particular AuditedModelView was constructed for are ever
+        # considered. An ORM cascade — a `factor_set` delete taking its
+        # `factor_upstream` rows with it via `cascade="all, delete-orphan"`,
+        # for instance — deletes those child rows in the same flush without
+        # this listener ever seeing them, and writes no audit entry for them
+        # at all. Nothing on this branch exercises that: both views defined
+        # here set `can_delete = False`. A future view that allows delete
+        # and owns a cascading relationship needs its own handling for the
+        # children, or they vanish untracked.
         created = [obj for obj in session.new if isinstance(obj, model)]
         updated = [
             obj for obj in session.dirty
@@ -182,17 +176,31 @@ def _audited_session_maker(
         # inside the transaction that is about to commit, not a new one.
         session.flush()
 
+        # Must run *after* the flush above: this session carries
+        # autoflush=False (see _audited_session_maker's own docstring), so a
+        # query inside validate_before_commit would not see this write's own
+        # pending changes if it ran first - a staff member unticking the
+        # only is_standard_mix row would pass the guard against the
+        # database's pre-write state and commit anyway. Still runs before
+        # any audit row is added: raising here propagates out of
+        # before_commit, which SQLAlchemy turns into a rollback of the
+        # whole transaction - flush included - so a refused change leaves
+        # neither the row nor an entry claiming it happened.
+        view = _view_var.get()
+        if view is not None:
+            view.validate_before_commit(session)
+
         for obj in created:
             write_audit(
                 session, actor=actor, action="create", table_name=table_name,
                 row_id=getattr(obj, "id", None), before=None,
-                after=_row_to_dict(obj),
+                after=row_to_dict(obj),
             )
         for obj in updated:
             write_audit(
                 session, actor=actor, action="update", table_name=table_name,
                 row_id=getattr(obj, "id", None), before=before_by_id[id(obj)],
-                after=_row_to_dict(obj),
+                after=row_to_dict(obj),
             )
         for obj in deleted:
             write_audit(
@@ -227,16 +235,18 @@ class AuditedModelView(ModelView):
        ``is_accessible`` — so every action method needs its own explicit
        permission check at the top; see ``admin/accounts_view.py``'s
        ``_require_admin`` for the pattern.
-    2. **``column_details_list`` and ``column_export_list`` both default to
-       every mapped column**, independently of ``column_list`` narrowing
-       the list page. This produced a live defect on this branch: without
-       setting them explicitly, the staff details page rendered the full
-       bcrypt password hash and the Fernet-encrypted TOTP secret in the
-       clear, one click away from the list this same view correctly
-       redacted. Any subclass with a sensitive column has to repeat that
-       narrowing itself.
-    3. See ``_row_to_dict``'s docstring below for what the audit trail does
-       and does not capture from an ORM cascade.
+    2. **``column_details_list`` defaults to every mapped column**,
+       independently of ``column_list`` narrowing the list page.
+       ``column_export_list`` does not — it falls back to ``column_list`` —
+       but the details page is one click from every list row. This produced
+       a live defect on this branch: without setting it explicitly, the
+       staff details page rendered the full bcrypt password hash and the
+       Fernet-encrypted TOTP secret in the clear, from a list this same
+       view correctly redacted. Any subclass with a sensitive column has to
+       repeat that narrowing itself.
+    3. See the comment beside ``session.new``'s ``isinstance`` filter in
+       ``_audited_session_maker`` below for what the audit trail does and
+       does not capture from an ORM cascade.
     """
 
     def __init__(self) -> None:
@@ -261,26 +271,68 @@ class AuditedModelView(ModelView):
         """
         return request.session.get(SESSION_KEY) or "unknown"
 
+    def validate_before_commit(self, session) -> None:
+        """Refuse a change that would break an invariant, by raising.
+
+        Called from inside the transaction that is about to commit, after
+        this write has been flushed but before the audit entries are
+        written. The flush matters: this session carries autoflush=False,
+        so a query issued before it would not see this write's own pending
+        change and could pass a check against stale, pre-write data — the
+        exact bypass a rule checked too early is meant to close. Raising
+        rolls the whole thing back — the row change (flush included) and
+        its audit entry together — so a refused edit leaves no trace
+        claiming it happened.
+
+        This is the only enforcement point a form cannot walk past.
+        sqladmin's generic edit path is Query.update -> setattr -> commit and
+        goes nowhere near a service function, which is how an earlier stage
+        of this project shipped an administrator-floor guard that the edit
+        form bypassed. Overriding this hook, rather than checking in
+        insert_model, is what makes an invariant hold on every path.
+
+        The default is deliberately a no-op: most views have no cross-row
+        invariant, and inheriting one they do not need would be worse.
+
+        This hook only runs at all if the flush produced at least one row of
+        *this view's own model* in ``created``/``updated``/``deleted`` -
+        ``_audited_session_maker``'s listener filters on ``isinstance(obj,
+        model)`` and returns before ever reaching this call otherwise. An
+        override is safe when its invariant spans a *different* model too,
+        as long as editing that other model's own rows always goes through
+        that other model's own ``AuditedModelView`` subclass (which carries
+        the same hook against its own listener, on its own model) - but a
+        view whose invariant depends solely on a model no listener ever
+        fires for would never have this hook called, regardless of what the
+        override itself checks.
+        """
+
     async def insert_model(self, request, data: dict):
-        token = _actor_var.set(self._actor(request))
+        actor_token = _actor_var.set(self._actor(request))
+        view_token = _view_var.set(self)
         try:
             return await super().insert_model(request, data)
         finally:
-            _actor_var.reset(token)
+            _actor_var.reset(actor_token)
+            _view_var.reset(view_token)
 
     async def update_model(self, request, pk: str, data: dict):
-        token = _actor_var.set(self._actor(request))
+        actor_token = _actor_var.set(self._actor(request))
+        view_token = _view_var.set(self)
         try:
             return await super().update_model(request, pk, data)
         finally:
-            _actor_var.reset(token)
+            _actor_var.reset(actor_token)
+            _view_var.reset(view_token)
 
     async def delete_model(self, request, pk: str):
-        token = _actor_var.set(self._actor(request))
+        actor_token = _actor_var.set(self._actor(request))
+        view_token = _view_var.set(self)
         try:
             return await super().delete_model(request, pk)
         finally:
-            _actor_var.reset(token)
+            _actor_var.reset(actor_token)
+            _view_var.reset(view_token)
 
 
 class AuditLogAdmin(ModelView, model=AuditLog):

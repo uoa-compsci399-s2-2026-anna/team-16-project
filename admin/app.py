@@ -12,8 +12,10 @@ from starlette.staticfiles import StaticFiles
 
 from admin.backend import AdminAuth
 from admin.bootstrap import ensure_bootstrap_admins
+from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
+from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
 from db.session import create_session_factory
@@ -68,6 +70,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # counter every time and never lock anything.
     app.state.throttle = build_throttle(settings)
 
+    # Global, and installed on the *outer* app - not passed into Admin()'s
+    # own ``middlewares=`` list. Either placement runs before sqladmin's
+    # inner SessionMiddleware (see admin/protection.py's module docstring
+    # for why: a Mount hands the request to the inner app only after the
+    # outer app's own middleware has already run), so where it sits doesn't
+    # change what it can read - this is simply the natural home for
+    # something that has to see every request under /admin, static files
+    # included, ahead of the mount-ordering note just below.
+    app.add_middleware(
+        ProtectionMiddleware, session_factory=session_factory, settings=settings
+    )
+
     # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
     # Starlette sub-application at "/admin" as the *last* line of its
     # __init__ (a Mount whose path_regex matches any "/admin/..." prefix).
@@ -100,6 +114,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_factory=session_factory,
         throttle=app.state.throttle,
         settings=settings,
+        calc_client=HttpCalculateClient(base_url=settings.api_base_url),
     )
 
     from admin.views import ChangePasswordView, EnrolView, VerifyView
@@ -107,6 +122,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     admin.add_base_view(VerifyView)
     admin.add_base_view(ChangePasswordView)
     admin.add_base_view(EnrolView)
+
+    from admin.dryrun_views import CompareView, DryRunView
+
+    admin.add_base_view(DryRunView)
+    admin.add_base_view(CompareView)
 
     from admin.modelviews import AuditLogAdmin
 
@@ -116,7 +136,36 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(StaffAdmin)
 
-    # The eleven taxonomy and factor views of contract §8.1 mount here in E-4
-    # and E-5. They inherit AuditedModelView, so each arrives already audited.
+    from admin.blocklist_views import IpBlockAdmin
+
+    admin.add_view(IpBlockAdmin)
+
+    # The six taxonomy views of contract §8.1 landed in E-4 (this block). All
+    # six of E-5's factor views - factor_set, factor_upstream,
+    # factor_downstream, constant, formula, equivalence - are registered just
+    # below; a read-only submission view is still to come. All inherit
+    # AuditedModelView, so each arrives already audited.
+    from admin.taxonomy_views import (
+        DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
+        SectorAdmin, UnitPresetAdmin,
+    )
+
+    for view in (SectorAdmin, FoodCategoryAdmin, DestinationGroupAdmin,
+                 DestinationAdmin, MetricAdmin, UnitPresetAdmin):
+        admin.add_view(view)
+
+    from admin.factor_views import (
+        ConstantAdmin, EquivalenceAdmin, FactorDownstreamAdmin,
+        FactorSetAdmin, FactorUpstreamAdmin, FormulaAdmin,
+    )
+
+    for view in (FactorSetAdmin, FactorUpstreamAdmin, FactorDownstreamAdmin,
+                 ConstantAdmin, FormulaAdmin, EquivalenceAdmin):
+        admin.add_view(view)
+
+    from admin.comparison_views import ComparisonScenarioAdmin, ComparisonScenarioLineAdmin
+
+    for view in (ComparisonScenarioAdmin, ComparisonScenarioLineAdmin):
+        admin.add_view(view)
 
     return app

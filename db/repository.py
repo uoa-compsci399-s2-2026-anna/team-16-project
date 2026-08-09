@@ -72,16 +72,17 @@ _cache_lock = threading.RLock()
 
 
 def _default_bundle_factory(data: dict[str, Any]) -> Any:
+    # v1.4 §4.1 names `engine/bundle.py`. This used to fall back to
+    # `engine.types`, which is §3's module for the frozen dataclasses; a
+    # `FactorBundle` found there would have satisfied this call and none of
+    # the golden suite's, which loads it the documented way.
     try:
         from engine.bundle import FactorBundle
-    except ImportError:
-        try:
-            from engine.types import FactorBundle
-        except ImportError as exc:
-            raise RuntimeError(
-                "A's engine FactorBundle is not installed; inject bundle_factory "
-                "until engine/ is merged"
-            ) from exc
+    except ImportError as exc:
+        raise RuntimeError(
+            "A's engine FactorBundle is not installed; inject bundle_factory "
+            "until engine/ is merged"
+        ) from exc
     return FactorBundle.from_json(data)
 
 

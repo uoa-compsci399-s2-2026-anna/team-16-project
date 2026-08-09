@@ -131,6 +131,16 @@ async def validation_handler(
 
 
 def engine_problem(exc: Exception, *, authenticated_dry_run: bool) -> ApiProblem:
+    """§4.4's four engine exceptions as §9 codes.
+
+    Matched by class name rather than by importing `engine.errors`, because
+    this module is imported at start-up and `engine/` may not be installed;
+    the names are safe to match on because §4.4 fixes all four in the
+    contract and gives each a mapped API error. Anything else the engine
+    raises is a bug in the engine, not a documented condition, and lands on
+    `INTERNAL_ERROR` deliberately - a code invented here would be one C could
+    not have branched on.
+    """
     name = type(exc).__name__
     if name == "UnknownCodeError":
         return ApiProblem(400, "UNKNOWN_CODE", "A requested code does not exist")

@@ -67,13 +67,15 @@ class DefaultEngineAdapter:
         return CalculationRequest, EntryInput, ScenarioLine
 
     def bundle_from_json(self, data: dict[str, Any]) -> Any:
+        # One path, not a search. This tried `engine.bundle` and fell back to
+        # `engine.types` because no version of the contract named the module
+        # `FactorBundle` lives in; v1.4 §4.1 names it, so a fallback would
+        # only let a layout the contract forbids work by accident and then
+        # diverge from the golden suite, which imports it the documented way.
         try:
             from engine.bundle import FactorBundle
-        except ImportError:
-            try:
-                from engine.types import FactorBundle
-            except ImportError as exc:
-                raise RuntimeError("A's engine package is not installed") from exc
+        except ImportError as exc:
+            raise RuntimeError("A's engine package is not installed") from exc
         return FactorBundle.from_json(data)
 
     def make_request(self, payload: CalculatePayload) -> Any:
@@ -106,13 +108,17 @@ class DefaultEngineAdapter:
         )
 
     def calculate(self, request: Any, bundle: Any) -> Any:
+        # v1.4 §4.2 names `engine/calculate.py`. The `from engine import
+        # calculate` fallback that used to sit here was worse than redundant:
+        # if `engine/calculate.py` existed but exported the function under
+        # another name, the fallback bound the *module* object and the failure
+        # became `TypeError: 'module' object is not callable` on the first
+        # public calculation, instead of an ImportError naming what is
+        # missing.
         try:
             from engine.calculate import calculate
-        except ImportError:
-            try:
-                from engine import calculate
-            except ImportError as exc:
-                raise RuntimeError("A's engine package is not installed") from exc
+        except ImportError as exc:
+            raise RuntimeError("A's engine package is not installed") from exc
         return calculate(request, bundle)
 
     def serialize_result(self, result: Any) -> dict[str, Any]:

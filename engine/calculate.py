@@ -1,89 +1,317 @@
+"""Contract §4.2 -- the calculation. **Pure**: no database, no file access,
+no system clock, no environment. `calculate(request, bundle)` is the only
+entry point outside `engine/` (§4.2 names this module for that reason).
+
+Four properties of this file are load-bearing, and each of them replaced a
+walking-skeleton shortcut whose failure mode was silent:
+
+**No metric code appears here.** The loop iterates `bundle.metrics` and
+evaluates each metric's stored formula. Adding a metric costs one INSERT and
+one expression, never a call site -- and `tests/test_calculator.py` proves it
+by adding a metric *row* rather than by checking that today's metrics render.
+
+**A formula computes one line; the engine performs the summation** (§4.3):
+
+    line_value   = f(qty_kg, upstream, downstream, const_*)
+    metric_total = Σ line_value
+
+This is why the expression language needs no arrays, no loops and no `sum()`,
+which is what keeps the evaluator's security boundary unambiguous.
+
+**The upstream lookup takes the line's destination** (§4.1, contract v1.8).
+`prevention` carries an upstream row of its own at zero, so a prevented line
+draws no upstream burden and the offset is whole. The lookup therefore has to
+happen *inside* the per-line loop -- it is the same edit as the summation
+above, which is why open item O-7 and the `lines[0]` defect were fixed
+together.
+
+**Every lookup on `FactorBundle` falls back to `Decimal('0')`, so this module
+checks the codes itself.** Zero is the right answer for a missing *factor*
+(§4.1) and a catastrophic one for a missing *code*: an unknown sector would
+otherwise produce a calculation of zero that reads as a real result. The
+`has_*` predicates exist for exactly this, and §4.4 gives the failure a name.
+"""
+
+from __future__ import annotations
+
 from decimal import Decimal
+
 from engine.bundle import FactorBundle
+from engine.errors import UnknownCodeError
 from engine.evaluator import evaluate
 from engine.types import (
-    ScenarioInput,
-    ScenarioResult,
-    MetricResult,
     BreakdownRow,
-    CalculationRequest
+    CalculationRequest,
+    CalculationResult,
+    CalculationTotals,
+    EntryResult,
+    MetricResult,
+    ScenarioLine,
+    ScenarioResult,
 )
-from engine.types import CalculationResult
+
+#: §1.2 and §6.2: a metric value travels as a decimal string at ten places,
+#: which `tests/api/test_fixture_consistency.py` asserts of every fixture.
+#: `Decimal` arithmetic does not produce that scale on its own -- `800.000 *
+#: 0.4500000000` carries thirteen places -- so the engine, which is the only
+#: place a metric value is produced, is where the scale is applied.
+METRIC_SCALE = Decimal("0.0000000001")
+
+#: §4.3's special binding. A formula names `const_GWP_CH4` and never a
+#: horizon, so switching the request between 20 and 100 years rebinds one
+#: variable and touches no stored expression.
+GWP_CH4 = "GWP_CH4"
+
+LEGAL_HORIZONS = (20, 100)
 
 
-def calculate_scenario(scenario: ScenarioInput, bundle: FactorBundle) -> ScenarioResult:
-    line = scenario.lines[0]
+def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationResult:
+    """§4.2. Evaluate every entry's scenarios, roll them up, and compute net
+    benefit at both levels. `entries` comes back in request order (§3 rule 1).
 
-    upstream = bundle.upstream(
-    scenario.sector_code,
-    scenario.food_category_code,
-    "co2e")
-
-    downstream = bundle.downstream(
-    line.destination_code,
-    scenario.food_category_code,
-    "co2e")
-
-    variables = {
-    "qty_kg": line.qty_kg,
-    "upstream": upstream,
-    "downstream": downstream,}
-    formula = bundle.formula("co2e")
-
-    total = evaluate(formula, variables)
-
-    breakdown_row = BreakdownRow(
-    destination_code=line.destination_code,
-    qty_kg=line.qty_kg,
-    upstream=upstream,
-    downstream=downstream,
-    value=total)
-
-    metric_result = MetricResult(
-    metric_code="co2e",
-    unit="kg CO2e",
-    display_precision=2,
-    total=total,
-    by_destination=(breakdown_row,))
-
-    scenario_result = ScenarioResult(
-    total_kg=line.qty_kg,
-    metrics={
-        "co2e": metric_result
-    },
-    equivalences=())
-
-    return scenario_result
-
-def calculate(
-    request: CalculationRequest,
-    bundle: FactorBundle
-) -> CalculationResult:
-
-    current = calculate_scenario(
-        request.current,
-        bundle
-    )
-    alternative = None
-    net_benefit = None
-
-    if request.alternative is not None:
-        alternative = calculate_scenario(
-            request.alternative,
-            bundle
+    Raises `UnknownCodeError`, `UnknownConstantError`, `FormulaError`, or
+    `ValueError` when `gwp_horizon` is neither 20 nor 100.
+    """
+    if request.gwp_horizon not in LEGAL_HORIZONS:
+        raise ValueError(
+            f"gwp_horizon must be 20 or 100, got {request.gwp_horizon!r}"
         )
 
-        net_benefit = {
-            "co2e": (
-                current.metrics["co2e"].total -
-                alternative.metrics["co2e"].total
+    entries: list[EntryResult] = []
+    for entry in request.entries:
+        current = calculate_scenario(
+            entry.current,
+            entry.sector_code,
+            entry.food_category_code,
+            bundle,
+            request.gwp_horizon,
+        )
+        alternative = None
+        benefit = None
+        if entry.alternative is not None:
+            alternative = calculate_scenario(
+                entry.alternative,
+                entry.sector_code,
+                entry.food_category_code,
+                bundle,
+                request.gwp_horizon,
             )
-        }
+            benefit = net_benefit(current, alternative)
+        entries.append(
+            EntryResult(
+                sector_code=entry.sector_code,
+                # Echoed as sent, **not** resolved. §6.2: "null is treated as
+                # standard_mix" is true of the factor lookup and of nothing
+                # else -- §5.4 keeps `unspecified` and `standard_mix` distinct
+                # on purpose, and resolving here would erase the difference.
+                food_category_code=entry.food_category_code,
+                current=current,
+                alternative=alternative,
+                net_benefit=benefit,
+            )
+        )
+
     return CalculationResult(
         factor_set_version=bundle.version_label,
         is_mock=bundle.is_mock,
         gwp_horizon=request.gwp_horizon,
+        totals=_totals(tuple(entries)),
+        entries=tuple(entries),
+    )
+
+
+def calculate_scenario(
+    lines: tuple[ScenarioLine, ...],
+    sector_code: str,
+    food_category_code: str | None,
+    bundle: FactorBundle,
+    gwp_horizon: int,
+) -> ScenarioResult:
+    """Evaluate one scenario of one entry. Internal to the engine (§4.2): no
+    caller outside `engine/` may depend on this signature.
+
+    Sector and food category are passed alongside the lines because they live
+    on the entry, not on the scenario -- an entry's `current` and
+    `alternative` describe the same point in the supply chain (§3).
+    """
+    food_category = _resolve_food_category(food_category_code, bundle)
+    if not bundle.has_sector(sector_code):
+        raise UnknownCodeError(f"unknown sector: {sector_code!r}")
+    for scenario_line in lines:
+        if not bundle.has_destination(scenario_line.destination_code):
+            raise UnknownCodeError(
+                f"unknown destination: {scenario_line.destination_code!r}"
+            )
+
+    constants = _constant_bindings(bundle, gwp_horizon)
+
+    metrics: dict[str, MetricResult] = {}
+    for spec in bundle.metrics:
+        formula = bundle.formula(spec.code)
+        rows: list[BreakdownRow] = []
+        total = Decimal("0")
+        for scenario_line in lines:
+            upstream = bundle.upstream(
+                sector_code,
+                food_category,
+                # v1.8's fourth dimension. Outside a per-line loop this
+                # argument cannot exist, which is why the two fixes are one.
+                scenario_line.destination_code,
+                spec.code,
+            )
+            downstream = bundle.downstream(
+                scenario_line.destination_code, food_category, spec.code
+            )
+            value = evaluate(
+                formula,
+                {
+                    "qty_kg": scenario_line.qty_kg,
+                    "upstream": upstream,
+                    "downstream": downstream,
+                    **constants,
+                },
+            )
+            # Summed **unrounded**, and quantised once below. Rounding each
+            # line and adding those is a different number from adding and
+            # rounding once; the breakdown row carries the rounded figure
+            # because it is display, and it is never added to anything.
+            total += value
+            rows.append(
+                BreakdownRow(
+                    destination_code=scenario_line.destination_code,
+                    qty_kg=scenario_line.qty_kg,
+                    # Quantised for the same reason as `value`: §6.2 carries
+                    # both at ten places. A factor read from DECIMAL(20,10)
+                    # already has them, but `FactorBundle`'s missing-factor
+                    # fallback is `Decimal('0')` at scale zero, so a line
+                    # whose metric has no row would otherwise put a bare
+                    # `"0"` on the wire beside its neighbour's
+                    # `"1.9000000000"`.
+                    upstream=upstream.quantize(METRIC_SCALE),
+                    downstream=downstream.quantize(METRIC_SCALE),
+                    value=value.quantize(METRIC_SCALE),
+                )
+            )
+        metrics[spec.code] = MetricResult(
+            metric_code=spec.code,
+            unit=spec.unit,
+            display_precision=spec.display_precision,
+            total=total.quantize(METRIC_SCALE),
+            by_destination=tuple(rows),
+        )
+
+    return ScenarioResult(
+        total_kg=sum((row.qty_kg for row in lines), Decimal("0")),
+        metrics=metrics,
+        # Not computed yet: the §3 interpolation rule for `label` and §4.2's
+        # requirement that the rolled-up equivalence be derived from the
+        # rolled-up metric total are a piece of their own.
+        equivalences=(),
+    )
+
+
+def net_benefit(
+    current: ScenarioResult, alternative: ScenarioResult
+) -> dict[str, Decimal]:
+    """§4.2. Per metric, `current.total - alternative.total`. Only metric
+    codes present on both sides are included. Applied at both levels."""
+    return {
+        code: metric.total - alternative.metrics[code].total
+        for code, metric in current.metrics.items()
+        if code in alternative.metrics
+    }
+
+
+# ---------- Internals ----------
+
+
+def _resolve_food_category(code: str | None, bundle: FactorBundle) -> str:
+    """§3, §6.2: `None` means the standard mix, and it is the engine that
+    resolves it. The resolved code is then checked like any other, so a
+    bundle with no `is_standard_mix` row fails loudly rather than looking up
+    the empty string and drawing zero from every factor table."""
+    resolved = bundle.standard_mix_code() if code is None else code
+    if not bundle.has_food_category(resolved):
+        if code is None:
+            raise UnknownCodeError(
+                "food_category was null and this factor set has no standard mix"
+            )
+        raise UnknownCodeError(f"unknown food_category: {code!r}")
+    return resolved
+
+
+def _constant_bindings(bundle: FactorBundle, gwp_horizon: int) -> dict[str, Decimal]:
+    """§4.3's `const_<CODE>` variables, plus the `const_GWP_CH4` binding.
+
+    Every constant in the bundle is bound, not only the ones a shipped
+    formula happens to reference: the variable set is a property of the
+    factor set, and a staff member editing an expression in the panel against
+    `admin/expressions.py`'s whitelist must find the same names available
+    here.
+
+    `const_GWP_CH4` is bound only when the horizon's own constant exists. A
+    formula naming it against a bundle that carries neither `GWP_CH4_20` nor
+    `GWP_CH4_100` raises `FormulaError` from the evaluator rather than
+    `UnknownConstantError`; §4.4 maps both to `FORMULA_ERROR` (500), so the
+    two are indistinguishable at the API boundary.
+    """
+    bindings = {f"const_{code}": value for code, value in bundle.constants.items()}
+    horizon_code = f"{GWP_CH4}_{gwp_horizon}"
+    if horizon_code in bundle.constants:
+        bindings[f"const_{GWP_CH4}"] = bundle.constant(horizon_code)
+    return bindings
+
+
+def _totals(entries: tuple[EntryResult, ...]) -> CalculationTotals:
+    """§4.2's roll-up table, computed here and never in `api/`.
+
+    An entry with no alternative contributes its **current** figures to the
+    rolled-up alternative (§3 rule 3), so its contribution to net benefit is
+    exactly zero and the two sides stay mass-conserving. Excluding it would
+    make the alternative lighter than the current scenario and inflate the
+    headline benefit -- the precise failure the dual-scenario design exists
+    to prevent.
+    """
+    has_alternative = any(entry.alternative is not None for entry in entries)
+
+    current = _roll_up(tuple(entry.current for entry in entries))
+    alternative = (
+        _roll_up(
+            tuple(
+                entry.alternative if entry.alternative is not None else entry.current
+                for entry in entries
+            )
+        )
+        if has_alternative
+        else None
+    )
+    return CalculationTotals(
         current=current,
         alternative=alternative,
-        net_benefit=net_benefit
+        # Computed on the rolled-up scenarios, not summed from the per-entry
+        # net_benefit maps -- one computation is one rounding.
+        net_benefit=net_benefit(current, alternative) if alternative else None,
+    )
+
+
+def _roll_up(scenarios: tuple[ScenarioResult, ...]) -> ScenarioResult:
+    metrics: dict[str, MetricResult] = {}
+    for scenario in scenarios:
+        for code, metric in scenario.metrics.items():
+            running = metrics[code].total if code in metrics else Decimal("0")
+            metrics[code] = MetricResult(
+                metric_code=code,
+                unit=metric.unit,
+                display_precision=metric.display_precision,
+                total=running + metric.total,
+                # §3 rule 2: the same destination can appear under several
+                # entries drawing different upstream factors, so a cross-entry
+                # destination breakdown has no single correct aggregation
+                # rule. The serialiser omits the key when this is empty.
+                by_destination=(),
+            )
+    return ScenarioResult(
+        total_kg=sum((scenario.total_kg for scenario in scenarios), Decimal("0")),
+        metrics=metrics,
+        equivalences=(),
     )

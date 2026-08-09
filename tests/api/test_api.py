@@ -298,7 +298,19 @@ async def test_rate_limit_response_has_envelope_and_retry_after_and_ignores_forw
     assert response.headers["retry-after"] == "37"
     assert response.json()["error"]["code"] == "RATE_LIMITED"
     _assert_shape(response.json(), _fixture("errors/rate_limited.json"))
-    assert limiter.key == "get:127.0.0.1"
+    # The connection address, not the forwarded one - and as the §2.3
+    # fingerprint of it rather than the address itself, which is what this
+    # assertion read before the two layers were reconciled onto one counter.
+    # The limiter's dict outlives the request that filled it, so a raw address
+    # in a key is an address held in memory; `admin/protection.py` already
+    # keyed on the fingerprint while this layer did not (§6.5's open item).
+    from db.blocklist import ip_fingerprint
+
+    from tests.support.sqlite import API_TEST_SECRET_KEY
+
+    assert limiter.key == f"get:{ip_fingerprint('127.0.0.1', secret_key=API_TEST_SECRET_KEY)}"
+    assert limiter.key != f"get:{ip_fingerprint('203.0.113.9', secret_key=API_TEST_SECRET_KEY)}"
+    assert "127.0.0.1" not in limiter.key
 
 
 async def test_framework_http_errors_also_use_the_contract_envelope(app):

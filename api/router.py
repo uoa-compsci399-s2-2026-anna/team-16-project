@@ -7,18 +7,19 @@ import io
 import zipfile
 from typing import Any
 
-from fastapi import APIRouter, Depends, Request
+from fastapi import APIRouter, Request
 from fastapi.responses import Response
 
 from api.engine_adapter import EngineAdapter
 from api.errors import (
     ApiProblem,
     ContractJSONResponse,
-    blocked_problem,
     engine_problem,
 )
 from api.schemas import CalculatePayload, bundle_row_count, entry_rule_problems
 from api.serialization import wire
+from db.blocklist import ip_fingerprint
+from db.detection import client_ip
 from db.errors import (
     FactorSetNotFoundError,
     FactorSetStateError,
@@ -35,37 +36,38 @@ from db.repository import (
     upsert_submission,
 )
 
-def _reject_blocked_callers(request: Request) -> None:
-    """§9.2, checked before anything else and on every endpoint under
-    `/api/v1/`, `GET` included.
-
-    A router-level dependency rather than a line in `calculate()` because
-    FastAPI solves dependencies before it validates the request body, which
-    is what "before request validation" has to mean in practice: a blocked
-    caller must not be able to read the taxonomy out of the API's own
-    validation messages.
-
-    The lookup itself stays outside `api/`. `db.blocklist.is_blocked` needs
-    the ORM and a derived HMAC key, and `api/` imports only
-    `db.repository`, `db.errors` and `db.session`; the composition root
-    injects a callable the same way it injects `staff_authenticator`. When
-    none is configured there is no blocklist and every caller passes.
-    """
-    check = getattr(request.app.state, "blocklist_check", None)
-    if check is not None and check(request):
-        raise blocked_problem()
-
-
-router = APIRouter(prefix="/api/v1", dependencies=[Depends(_reject_blocked_callers)])
-
-
-def _client_ip(request: Request) -> str:
-    return request.client.host if request.client else "unknown"
+#: §9.2's blocklist check is **not** here. It was a router-level `Depends`,
+#: which FastAPI solves only once a request has matched a route - so
+#: `/api/v1/does-not-exist` answered 404 while every live path answered 403,
+#: handing a blocked caller a working route scanner. It is now middleware in
+#: `api/app.py`, which runs ahead of routing and therefore covers dead paths
+#: too. Re-adding a dependency here would also mean two `is_blocked` lookups
+#: per request, and §9.2 costs one query on purpose.
+router = APIRouter(prefix="/api/v1")
 
 
 def _limit(request: Request, group: str, limit: int) -> None:
+    """§6.5, keyed on the §2.3 fingerprint and never on an address.
+
+    The counter's dict outlives the request that filled it, so a raw address in
+    a key is an address this system holds in memory - which §2.3 has always
+    been read as covering, and which `admin/protection.py` already honoured
+    while this layer did not (§6.5's own open item). Both layers now key the
+    same way, on the same HMAC, derived from the same `SECRET_KEY`.
+
+    **A caller with no address is skipped, not bucketed.** This used to build
+    its key from the literal string `"unknown"`, which is a live dict key: every
+    client-less caller shared one bucket, so the first of them to exceed the
+    limit rate-limited all the rest. That is the same defect the empty-string
+    key was in `admin/protection.py`, and it is fixed the same way - there is no
+    address here to measure, so there is nothing to measure.
+    """
+    ip = client_ip(request, trusted_proxy=request.app.state.trusted_proxy)
+    if ip is None:
+        return
+    fingerprint = ip_fingerprint(ip, secret_key=request.app.state.secret_key)
     allowed, retry_after = request.app.state.rate_limiter.allow(
-        f"{group}:{_client_ip(request)}", limit
+        f"{group}:{fingerprint}", limit
     )
     if not allowed:
         raise ApiProblem(

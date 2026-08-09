@@ -295,6 +295,16 @@ def seed(db):
         ])
 
 
+#: The `SECRET_KEY` every app built by the `app` fixture derives its §2.3
+#: blocklist fingerprint and its §6.5 rate-limit key from. Passed explicitly
+#: rather than left to `os.getenv`, so that this suite never depends on a
+#: developer's `.env` being present — `api.app.create_app` now requires a
+#: secret key the same way it requires a database URL, because an API that
+#: cannot compute a fingerprint is an API where a block made in the panel
+#: silently does nothing.
+API_TEST_SECRET_KEY = "test-secret-key-not-used-anywhere-real"
+
+
 @pytest.fixture
 def app(sqlite_engine):
     from api.app import create_app
@@ -304,7 +314,11 @@ def app(sqlite_engine):
         seed(db)
         db.commit()
 
-    app = create_app(database_url="sqlite+pysqlite:///:memory:", engine_adapter=FakeEngineAdapter())
+    app = create_app(
+        database_url="sqlite+pysqlite:///:memory:",
+        secret_key=API_TEST_SECRET_KEY,
+        engine_adapter=FakeEngineAdapter(),
+    )
     original_engine = app.state.session_factory.kw["bind"]
     app.state.session_factory.configure(bind=sqlite_engine)
     original_engine.dispose()

@@ -504,7 +504,7 @@ facts about the deployment that this code cannot establish for itself.
 | ID | Item | Blocks |
 | --- | --- | --- |
 | O-1 | When the client will supply real emissions factors (hard dependency) | Stage 6 |
-| O-2 | Definition of the cost metric: beyond the waste levy, is the value of the wasted food itself included, and at cost price or retail price? | A, E |
+| O-2 | Definition of the cost metric: beyond the waste levy, is the value of the wasted food itself included, and at cost price or retail price? **Read the note below before resolving it to a non-zero value — it is O-7 again, in the constant dimension.** | A, E |
 | O-3 | Sources for New Zealand equivalence factors (kilometres driven, meal equivalents, showers) | A, D |
 | O-4 | Any localisation beyond language (units, date formats) | C, D |
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
@@ -512,6 +512,18 @@ facts about the deployment that this code cannot establish for itself.
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
+
+### O-2 is O-7 again, in the constant dimension — read this before setting `FOOD_VALUE_PER_KG`
+
+The shipped `cost` formula is `qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)`. The two factor terms are now offset for a prevented line — `prevention` has an upstream row at zero (O-7) and downstream rows at zero. **The constant term is not, and structurally cannot be.** A constant is bound once per formula from the factor set; it has no destination to vary by, so a `prevention` line carries `qty_kg × FOOD_VALUE_PER_KG` exactly as the wasted line it replaced does, and `net_benefit.cost` nets it to **zero**.
+
+That is wrong in the same direction and for the same reason as O-7: preventing the waste saves the entire value of the food, and the calculator would report none of it. Today it is harmless only because O-2 is unresolved and `FOOD_VALUE_PER_KG = 0`, which is also why **no test would catch it** — `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` asserts `upstream`, not the line value, and deliberately so (`mass`'s formula is `qty_kg`, so a prevented line must still weigh what it weighs).
+
+**The fix needs no schema change, because O-7 already made it.** Model the food's value as an **upstream factor** on the `cost` metric rather than as a constant: it is a property of having produced the food, which is what upstream means, it varies by `(sector, food_category)` — which is exactly how `factor_upstream` is keyed, and a single `FOOD_VALUE_PER_KG` cannot express that a kilogram of dairy and a kilogram of vegetables are not worth the same — and `prevention`'s zero row then offsets it automatically, through the same lookup and with no new rule to remember. The `cost` formula collapses back to the default `qty_kg * (upstream + downstream)` and the constant is deleted.
+
+So: **resolving O-2 to a non-zero food value means moving it out of `constant` and into `factor_upstream`, not raising the constant.** If it is raised in place instead, the same 78.9%-shaped understatement returns on the metric the client is most likely to quote, and nothing in the suite will say so.
+
+Recorded here, while the connection is visible, rather than as a separate open item: it is not a defect today and filing it as one would imply work that should not be done until O-2 is answered.
 
 ## O-7 — `prevention` and the upstream factor — **CLOSED 2026-08-09**
 

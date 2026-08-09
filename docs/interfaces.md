@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.8 draft)"
+date: "2026-08-09 (v1.9 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,21 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.9 — 2026-08-09 (publishing refuses to reopen O-7, **affects B and E**)
+
+**v1.8 made `prevention`'s offset a property of the data, and data can stop being true.** A `(sector, food_category, metric)` given a general upstream row with no `prevention` counterpart reverts to pre-v1.8 behaviour **for that tuple alone** — and that is harder to catch than O-7 was, because O-7 was wrong everywhere and this is wrong for one sector while every other sector on the same results page is right. It arrives with no error, no warning and nothing in the log: a staff member adds a sector to a draft, publishes, and sees exactly what they expected.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`publish_factor_set` gains a second refusal condition and §5.2 now states both.** Publishing is refused, naming the offending tuples, when any `(sector, food_category, metric)` in the target set has a general upstream row and no `prevention` row. **Publish rather than the upstream-factor form**, for two reasons that both matter: it is the single transactional choke point, and a form-level guard cannot see a row that has not been written yet — it would refuse the general row for the sake of a `prevention` row the staff member was about to add next. **`rollback_to` is deliberately exempt**: a set archived before v1.8 will legitimately fail the check, and refusing an emergency rollback over a completeness rule is a worse failure than the one the rule prevents | §5.2 | **B, E** |
+| 2 | **`find_missing_prevention_upstream(session, factor_set_id)` is named in §5.2** because it has two callers in two layers. The query lives in `db/repository.py`; `admin/factor_lifecycle.py`'s publish — **the copy the panel actually calls**, until §5.2's two implementations are unified — imports it and raises `LifecycleError` instead. Two copies of a rule drift, and the copy that stops matching is the one nobody notices; the same reasoning `db/types.PREVENTION_CODE` was given one home for | §5.2 | **B, E** |
+
+> **No fixture, request or response shape changes.** A and C and D have nothing to do. The one thing E should know is the new refusal message, which names the tuples — "something is incomplete" would leave a staff member to find it among roughly 270 rows.
+>
+> **Recorded in `architecture.md` §10 rather than here: O-2 is O-7 again, in the constant dimension.** `cost`'s formula carries `const_FOOD_VALUE_PER_KG`, a constant is bound once per formula and has no destination to vary by, so a prevented line carries the full food value and `net_benefit.cost` nets it to zero. Harmless only while O-2 leaves the constant at zero — and **no test would catch it**, because the O-7 fixture check asserts `upstream` rather than the line value, deliberately (`mass`'s formula is `qty_kg`, so a prevented line must still weigh what it weighs). The fix needs no schema change: model the food's value as an upstream factor, which is what it is and which varies by `(sector, food_category)` as a single constant cannot, and v1.8's column offsets it automatically.
+>
+> **Still open after this revision.** **O-1** remains the hard blocker. **O-2 is now the one to read carefully before answering** — see above. O-7 stays closed. Carried forward unchanged: `landfill_diverted` as a real `metric` row, the container-preset input, `gwpHorizon`'s missing control, and the positive/negative colour pair.
 
 ### v1.8 — 2026-08-09 (O-7 closes, **affects A, B and E**)
 
@@ -1163,13 +1178,35 @@ def load_factor_bundle(session, factor_set_id: int | None = None) -> FactorBundl
     **Only a `published` set is cached (v1.4).** A draft or archived set is
     rebuilt on every load."""
 
+def find_missing_prevention_upstream(
+        session, factor_set_id: int) -> list[tuple[str, str, str]]:
+    """Which (sector, food_category, metric) tuples of this set would still
+    charge a prevented line its full upstream factor (§2.2, open item O-7).
+
+    A tuple qualifies when it has a general upstream row (destination NULL)
+    and no row for `prevention`. Returns codes, not ids (§1.1), sorted, so a
+    caller can put them straight into a message a human has to act on. An
+    empty list is the healthy state. Empty also when the taxonomy has no
+    `prevention` destination at all — that is an unseeded database rather
+    than an incomplete factor set, and it is
+    admin/taxonomy_rules.check_prevention_intact's to refuse."""
+
 def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     """Within one transaction: archive the current published set, publish the
     target, write an audit_log entry, invalidate the cache. Rolls back if the
-    'at most one published' invariant would be violated."""
+    'at most one published' invariant would be violated.
+
+    **Also refuses, naming the tuples, when find_missing_prevention_upstream
+    is non-empty (v1.9).** Publishing is where this is checked because it is
+    the single transactional choke point; a form-level guard cannot see a row
+    that has not been written yet."""
 
 def rollback_to(session, factor_set_id: int, actor: str) -> None:
-    """Restores an archived version to published. Same semantics as publish."""
+    """Restores an archived version to published. Same semantics as publish,
+    **except the O-7 completeness check, which rollback deliberately does not
+    apply** — a set archived before v1.8 will legitimately fail it, and
+    refusing an emergency rollback over a completeness rule is a worse failure
+    than the one the rule prevents."""
 
 def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int:
     """Deep-copies a version into a new draft (all factors, constants,
@@ -1202,6 +1239,16 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 > goes and the other is imported. `admin/` may import from `db/`, never the
 > reverse. Cache invalidation is the repository's half and is not implemented
 > in the admin copy.
+>
+> **This duplication is why v1.9's O-7 check is enforced twice and written
+> once.** The panel calls the `admin/` copy and nothing outside its own tests
+> calls the repository's, so a guard placed only in `db/repository.py` would
+> leave the staff path — the only path a human takes — entirely unguarded,
+> while a guard placed only in `admin/` would vanish the day the two are
+> unified. `find_missing_prevention_upstream` lives in `db/repository.py` and
+> the `admin/` copy imports it, which is the legal direction; each raises its
+> own layer's exception type. When the implementations merge, one call site
+> goes and the query does not move.
 
 ## 5.3 Submissions
 

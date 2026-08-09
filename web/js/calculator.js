@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { state, setState, resetCalculator } from './state.js'
+import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
 import { massToKg } from './units.js'
 import { buttonRow, escapeHtml, formatNumber, slug } from './view.js'
 import { downloadResults, renderResults } from './results.js'
@@ -166,24 +166,23 @@ async function submitCalculation() {
   if (Date.now() < state.rateLimitedUntil) return
   setState({ loading: true, error: null, errorCode: null, fieldErrors: {} })
   try {
+    // §6.2: the whole submission travels in one call. One request per entry would let
+    // §5.3's token upsert overwrite every entry but the last, cost N× the rate limit,
+    // and leave the earlier entries persisted when a later one fails.
     const entries = [...state.entries, draftEntry()]
-    const results = []
-    let token = state.token
-    for (const entry of entries) {
-      const payload = {
-        token: token || null,
+    const response = await calculate({
+      token: state.token || null,
+      gwp_horizon: state.gwpHorizon,
+      entries: entries.map(entry => ({
         sector: entry.sector,
         food_category: entry.foodCategory || null,
-        gwp_horizon: state.gwpHorizon,
         current: buildLines(entry),
         alternative: null,
-      }
-      const response = await calculate(payload)
-      token = response.token || token
-      results.push({ entry, response })
-    }
+      })),
+    })
+    const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ result: { entry_results: results }, token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {} })
+    setState({ result: { ...response, entry_results: entryResultsFrom(entries, response) }, token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {} })
   } catch (error) {
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })

@@ -29,6 +29,31 @@ export const state = {
   improvementError: null,
 }
 
+/**
+ * Pairs the entries the user typed with the per-entry results §6.2 returns, which
+ * preserve request order. Each paired `response` is the shape the rendering modules
+ * already consume — one entry's `current` / `alternative` / `net_benefit`, plus the
+ * submission-level `factor_set` they read `is_mock` and `version_label` from.
+ *
+ * Temporary adapter: `state.result` also carries the whole response, so once the
+ * rendering modules read `totals` and `entries` directly this helper goes away.
+ *
+ * @param {Array<object>} entries Draft entries, in the order they were sent
+ * @param {object} response The §6.2 response
+ * @returns {Array<{entry: object, response: object}>}
+ */
+export function entryResultsFrom(entries, response) {
+  return entries.map((entry, index) => ({
+    entry,
+    response: {
+      ...(response.entries?.[index] || {}),
+      factor_set: response.factor_set,
+      factor_source: response.factor_source,
+      gwp_horizon: response.gwp_horizon,
+    },
+  }))
+}
+
 const subscribers = new Set()
 
 export function setState(patch) {

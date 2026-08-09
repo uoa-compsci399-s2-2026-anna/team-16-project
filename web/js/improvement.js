@@ -1,5 +1,5 @@
 import { calculate } from './api.js'
-import { setState } from './state.js'
+import { setState, entryResultsFrom } from './state.js'
 import { escapeHtml, formatNumber } from './view.js'
 
 const number = value => Number(value) || 0
@@ -82,23 +82,23 @@ export async function compareImprovement(state) {
   }
   setState({ improvementLoading: true, improvementError: null, improvementResult: null })
   try {
+    // §6.2: one call for the whole submission. The per-entry loop this replaced re-sent
+    // `current` and `alternative` under the same token, so §5.3's upsert left the stored
+    // row holding the last entry's improvement scenario alone.
     const entries = [...state.entries, currentEntry(state)]
-    const comparisons = []
-    let token = state.token
-    for (const entry of entries) {
-      const response = await calculate({
-        token: token || null,
+    const response = await calculate({
+      token: state.token || null,
+      gwp_horizon: state.gwpHorizon,
+      entries: entries.map(entry => ({
         sector: entry.sector,
         food_category: entry.foodCategory || null,
-        gwp_horizon: state.gwpHorizon,
         current: currentLines(entry),
         alternative: improvedLines(entry, state.improvedAllocations),
-      })
-      token = response.token || token
-      comparisons.push({ entry, response })
-    }
+      })),
+    })
+    const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ improvementLoading: false, improvementResult: { comparisons }, token })
+    setState({ improvementLoading: false, improvementResult: { ...response, comparisons: entryResultsFrom(entries, response) }, token })
     requestAnimationFrame(() => document.getElementById('comparison-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   } catch (error) {
     setState({ improvementLoading: false, improvementError: error.message || 'The improvement comparison could not be completed.' })

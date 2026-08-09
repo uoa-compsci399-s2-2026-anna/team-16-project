@@ -360,7 +360,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | `co2e`, `ch4`, `water`, `cost`, `mass` |
 | `name` | VARCHAR(128) | NOT NULL | |
 | `unit` | VARCHAR(32) | NOT NULL | Internal unit, e.g. `kg CO2e` |
-| `display_unit` | VARCHAR(32) | NULL | Falls back to `unit` when null |
+| `display_unit` | VARCHAR(32) | NULL | Falls back to `unit` when null. **A presentation variant of `unit` at the same scale, never a different scale — see §6.1** |
 | `display_precision` | TINYINT | NOT NULL, DEFAULT 2 | Decimal places |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
@@ -1321,6 +1321,12 @@ Called once on page load to build every dropdown and input row.
   ]
 }
 ```
+
+> **`display_unit` is a presentation variant of `unit` at the same scale. It is never a different scale, and nothing anywhere converts between the two.** A typographic difference — `kg CO₂e` against `kg CO2e` — is what the column is for. It is not a unit conversion, and the example above is written with the two identical for that reason.
+>
+> **The rule is forced by §7.6.1 rather than chosen.** Every figure the front end prints comes from the API, and the only arithmetic it may perform is unit conversion on what the *user typed*, in `units.js`. So there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label: the number would simply be relabelled, and every greenhouse-gas figure on the page would read a thousand times too small. §6.2 returns each metric total in `unit`, and a consumer that has both should prefer the `unit` travelling with the figure.
+>
+> **This was live in the fixtures.** `tests/fixtures/taxonomy.json` and `admin/seed.py` carried `t CO2e` against `kg CO2e`, `kL` against `L` and `t` against `kg` until 2026-08-09, and C's results table rendered "3,993 t CO2e" and "1,530,000 kL" one section below the same two figures labelled correctly. Both were corrected; the seed matters more than the fixture, because it is what ships to the database. **If a metric should be reported in tonnes, that is the metric's `unit` and the formula produces tonnes** — a metric's scale is a property of its formula, which is data (§2.1), not of a label.
 
 ## 6.2 `POST /api/v1/calculate`
 

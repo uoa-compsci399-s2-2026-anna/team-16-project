@@ -104,9 +104,9 @@ jobs:
           --health-start-period 30s
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@v6
         with:
           # 3.11 because that is what the images run (python:3.11-slim, pinned
           # by digest in docker/*.Dockerfile). Testing on a different minor
@@ -166,9 +166,31 @@ jobs:
           with conn.cursor() as cur:
               cur.execute("SET GLOBAL character_set_server = 'utf8mb4'")
               cur.execute("SET GLOBAL collation_server = 'utf8mb4_unicode_ci'")
-              cur.execute("SELECT VERSION(), @@character_set_server, @@collation_server")
-              print("MySQL ready:", cur.fetchone())
+              # @@GLOBAL., NOT the bare name. A bare `@@collation_server`
+              # resolves the SESSION copy, which was initialised from the old
+              # global when this connection opened and does not change under
+              # `SET GLOBAL` - so it reports utf8mb4_0900_ai_ci here however
+              # well the statement above worked, and a genuinely failed SET
+              # would look identical. This read is the only thing standing
+              # between "the settings match the developer's machine" and
+              # "someone believes they do".
+              cur.execute(
+                  "SELECT VERSION(), @@GLOBAL.character_set_server,"
+                  " @@GLOBAL.collation_server"
+              )
+              version, charset, collation = cur.fetchone()
           conn.close()
+
+          print(f"MySQL {version}: server charset {charset}, collation {collation}")
+          expected = ("utf8mb4", "utf8mb4_unicode_ci")
+          if (charset, collation) != expected:
+              sys.exit(
+                  "The MySQL service does not match docker-compose.yml's server "
+                  f"settings: got {(charset, collation)}, expected {expected}. "
+                  "Every scratch database a test creates without an explicit "
+                  "CHARACTER SET inherits these, so CI would be running against "
+                  "a different collation than every developer machine."
+              )
           PY
 
       - name: pytest
@@ -216,7 +238,7 @@ jobs:
             runner: ubuntu-24.04-arm
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Log in to GHCR
         # Not on pull requests: a PR builds to verify and pushes nothing. On a
@@ -420,6 +442,34 @@ jobs:
           set -u
           SHA="${GITHUB_SHA:0:7}"
 
+          # Reads an OCI image index off stdin and prints its real platforms,
+          # sorted and comma-separated. Used to read each published tag back
+          # out of the registry - see the call site below for why that is not
+          # the same thing as reporting what was pushed.
+          #
+          # Written to a file rather than inlined so the quoting stays legible
+          # inside a shell loop inside a YAML block scalar, and so it can be
+          # exercised outside CI.
+          cat > "$RUNNER_TEMP/platforms.py" <<'PY'
+          import json
+          import sys
+
+          index = json.load(sys.stdin)
+          manifests = index.get("manifests")
+          if manifests is None:
+              # Not an index at all. imagetools create always produces one, so
+              # this means something other than this workflow moved the tag.
+              print("(a single manifest, not an index)")
+          else:
+              platforms = sorted({
+                  "{}/{}".format(p.get("os", "?"), p.get("architecture", "?"))
+                  for p in (m.get("platform") or {} for m in manifests)
+                  # buildx attestations ride in the index as unknown/unknown.
+                  if p.get("os", "unknown") != "unknown"
+              })
+              print(", ".join(platforms))
+          PY
+
           # THE MOVING TAG. `alpha` means "the head of main", and nothing else
           # is allowed to claim it: a run on a packaging branch gets a
           # branch-derived moving tag instead, so the mechanism is exercised
@@ -460,13 +510,15 @@ jobs:
                 archs="${archs}${archs:+, }linux/${arch}"
               else
                 missing="${missing}${missing:+ }${arch}"
-                case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
               fi
             done
 
             if [ -z "$sources" ]; then
               echo "::error title=Nothing to publish::kaicalc-${name} has no architecture image for ${SHA}. Neither build reached the registry."
               echo "| \`kaicalc-${name}\` | **NONE PUBLISHED** | none - both architectures failed |" >> "$GITHUB_STEP_SUMMARY"
+              for arch in $missing; do
+                case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
+              done
               FAILED=1
               continue
             fi
@@ -477,11 +529,50 @@ jobs:
               -t "${repo}:${MOVING}" \
               $sources
 
-            if [ -n "$missing" ]; then
-              echo "::warning title=Single-architecture tag::kaicalc-${name}:${MOVING} contains ${archs} only. Missing: ${missing}."
-              echo "| \`kaicalc-${name}\` | \`${SHA}\`, \`${MOVING}\` | **${archs} ONLY** - ${missing} missing |" >> "$GITHUB_STEP_SUMMARY"
+            # READ THE PUBLISHED TAG BACK OUT OF THE REGISTRY.
+            #
+            # Everything above this line is what this job INTENDED to publish.
+            # This is what a client will actually pull, and it is what the
+            # summary below reports - because the failure this whole design
+            # exists to prevent is a tag that claims more architectures than it
+            # holds, and a summary written from intent could state exactly that
+            # claim while being wrong. `unknown/unknown` entries are buildx
+            # attestation manifests, not platforms.
+            published="$(
+              docker buildx imagetools inspect "${repo}:${MOVING}" --raw \
+              | python3 "$RUNNER_TEMP/platforms.py"
+            )"
+
+            if [ "$published" != "$archs" ]; then
+              # Intent and registry disagree. Not fatal - the registry wins,
+              # both in the table and in what counts as missing below - but it
+              # means something merged the sources differently than assumed,
+              # and that is worth an annotation rather than a silent shrug.
+              echo "::warning title=Manifest read-back disagrees::kaicalc-${name}:${MOVING} was built from [${archs}] but the registry reports [${published}]. The registry is authoritative."
+            fi
+
+            # WHAT IS MISSING IS DECIDED BY THE READ-BACK, not by which arch
+            # tags happened to exist a few lines earlier. Deciding it from the
+            # sources would let the table say "linux/amd64 only" while the note
+            # underneath it said both architectures were present - the two
+            # halves of one summary contradicting each other, which is worse
+            # than either being wrong on its own.
+            absent=""
+            for arch in amd64 arm64; do
+              case "$published" in
+                *"linux/${arch}"*) ;;
+                *)
+                  absent="${absent}${absent:+ }${arch}"
+                  case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
+                  ;;
+              esac
+            done
+
+            if [ -n "$absent" ]; then
+              echo "::warning title=Single-architecture tag::kaicalc-${name}:${MOVING} contains ${published} only. Missing: ${absent}."
+              echo "| \`kaicalc-${name}\` | \`${SHA}\`, \`${MOVING}\` | **${published} ONLY** - ${absent} missing |" >> "$GITHUB_STEP_SUMMARY"
             else
-              echo "| \`kaicalc-${name}\` | \`${SHA}\`, \`${MOVING}\` | ${archs} |" >> "$GITHUB_STEP_SUMMARY"
+              echo "| \`kaicalc-${name}\` | \`${SHA}\`, \`${MOVING}\` | ${published} |" >> "$GITHUB_STEP_SUMMARY"
             fi
           done
 
@@ -497,7 +588,7 @@ jobs:
               echo "> \`no matching manifest for linux/<arch> in the manifest list entries\`"
               echo "> - at pull time, on their machine, long after this run and with"
               echo "> nothing on the tag to warn them. Open the **image-build-failures**"
-              echo "> artefact on this run: it contains ${logs}, which say why."
+              echo "> artefact on this run. It contains ${logs} - that is where the reason is."
             else
               echo "> Every tag above contains **both** linux/amd64 and linux/arm64."
               echo "> No failure log artefact was produced, which is itself the"

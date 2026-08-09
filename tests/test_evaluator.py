@@ -13,9 +13,14 @@ from decimal import Decimal
 
 import pytest
 
-from admin.expressions import ExpressionError, validate_expression
+from admin.expressions import (
+    BASE_VARIABLES,
+    PERMITTED_FUNCTIONS,
+    ExpressionError,
+    validate_expression,
+)
 from engine.errors import FormulaError
-from engine.evaluator import evaluate
+from engine.evaluator import ARITY, SAFE_FUNCTIONS, evaluate
 
 # ---------------------------------------------------------------------------
 # A's original seven. Extended, not replaced.
@@ -530,3 +535,169 @@ def test_an_unbound_name_is_the_other_half_of_that_line():
     assert _panel_accepts("qty_kg * const_LEVY_NZD_PER_T")
     with pytest.raises(FormulaError):
         evaluate("qty_kg * const_LEVY_NZD_PER_T", {"qty_kg": Decimal("1")})
+
+
+# ---------------------------------------------------------------------------
+# 6. The corpus is hand-written, so it cannot see a name added on one side.
+# ---------------------------------------------------------------------------
+#
+# `AGREEMENT_CASES` above is a list somebody typed. It covers every operator
+# and every node type because those are closed sets that were enumerated once,
+# but the *function* whitelist and the *variable* whitelist are open sets that
+# each module declares for itself — and a name added to one declaration and not
+# the other is invisible to a fixed corpus.
+#
+# This is not hypothetical. Adding `pow` to `engine/evaluator.py`'s
+# `SAFE_FUNCTIONS` and `ARITY` leaves the whole corpus above reporting zero
+# divergences, while the engine happily evaluates `pow(qty_kg, 2)` — the
+# "engine runs something the panel calls illegal" direction that
+# `engine/evaluator.py`'s own docstring names, reachable from `dry_run.bundle`
+# (§6.2.1) without passing the panel at all.
+#
+# The fix is in two parts, and both are needed. Comparing the sets catches the
+# name; generating a case per name means a new function is *exercised* rather
+# than merely counted, so a name present in both declarations but implemented
+# differently still fails.
+
+
+def test_the_two_whitelists_name_the_same_functions():
+    """§4.3 lists four functions and both modules must offer exactly those.
+
+    `ARITY` is included because it is the third declaration: a function in
+    `SAFE_FUNCTIONS` with no `ARITY` entry raises `KeyError` inside `_call`,
+    which reaches a public request as a bare 500 rather than a `FormulaError`.
+    """
+    assert set(SAFE_FUNCTIONS) == set(PERMITTED_FUNCTIONS), (
+        "the engine and the panel offer different functions: engine-only "
+        f"{sorted(set(SAFE_FUNCTIONS) - set(PERMITTED_FUNCTIONS))}, panel-only "
+        f"{sorted(set(PERMITTED_FUNCTIONS) - set(SAFE_FUNCTIONS))}"
+    )
+    assert set(ARITY) == set(SAFE_FUNCTIONS), (
+        "every permitted function needs an ARITY entry or _call raises "
+        f"KeyError: {sorted(set(SAFE_FUNCTIONS) ^ set(ARITY))}"
+    )
+    assert set(SAFE_FUNCTIONS) == {"min", "max", "abs", "round"}, (
+        "§4.3 lists exactly these four; adding one is a contract change"
+    )
+
+
+#: Every call shape a function name can appear in, generated rather than
+#: typed. Zero, one, two and three arguments cover every `ARITY` bound in the
+#: table, and the two-argument form uses a literal so that `round`'s
+#: `ndigits` rule is exercised alongside everything else.
+_CALL_SHAPES = ("{name}()", "{name}(qty_kg)", "{name}(qty_kg, 2)",
+                "{name}(qty_kg, upstream, downstream)")
+
+
+@pytest.mark.parametrize(
+    "expression",
+    [
+        shape.format(name=name)
+        for name in sorted(set(SAFE_FUNCTIONS) | set(PERMITTED_FUNCTIONS) | set(ARITY))
+        for shape in _CALL_SHAPES
+    ],
+)
+def test_every_declared_function_is_exercised_in_both_modules(expression):
+    """One case per (name, arity), derived from the declarations themselves.
+
+    A function added to either whitelist arrives here automatically with four
+    cases, so the corpus grows with the language instead of lagging behind it —
+    which is the whole failure this section exists to close.
+    """
+    panel, engine = _panel_accepts(expression), _engine_accepts(expression)
+
+    assert panel == engine, (
+        f"{expression!r}: the panel {'accepts' if panel else 'refuses'} it and "
+        f"the engine {'accepts' if engine else 'refuses'} it."
+    )
+
+
+def _engine_line_variables(constant_codes, gwp_horizon=100):
+    """The names the **engine** actually binds on a line, observed rather than
+    assumed.
+
+    There is no constant in `engine/calculate.py` listing them — they are
+    literal keys in the dict it builds — so this asks the evaluator: a formula
+    naming something unbound fails with a `reason` that ends `Available: a, b,
+    c.`, and that list is the binding set exactly as the formula would have
+    seen it. Reading it back is the only way to compare the engine's variables
+    with `BASE_VARIABLES` without a second declaration that could itself drift.
+    """
+    import re
+
+    from engine.bundle import FactorBundle
+    from engine.calculate import calculate_scenario
+    from engine.types import ScenarioLine
+
+    bundle = FactorBundle.from_json({
+        "version_label": "AGREEMENT", "is_mock": True,
+        "sectors": [{"code": "s"}],
+        "food_categories": [{"code": "f", "is_standard_mix": True}],
+        "destination_groups": [{"code": "g"}],
+        "destinations": [{"code": "d", "group": "g"}],
+        "metrics": [{"code": "m", "unit": "u", "display_precision": 1}],
+        "constants": [
+            {"code": code, "value": "1.0000000000"} for code in constant_codes
+        ],
+        "formulas": [{"metric": "m", "expression": "no_such_variable"}],
+        "upstream": [], "downstream": [], "equivalences": [],
+    })
+
+    with pytest.raises(FormulaError) as excinfo:
+        calculate_scenario(
+            (ScenarioLine(destination_code="d", qty_kg=Decimal("1")),),
+            "s", "f", bundle, gwp_horizon,
+        )
+
+    match = re.search(r"Available: (.+)\.$", excinfo.value.reason)
+    assert match, excinfo.value.reason
+    return {name.strip() for name in match.group(1).split(",")}
+
+
+def test_the_engine_binds_exactly_the_names_the_panel_permits():
+    """§4.3's variable table, from both sides.
+
+    `admin/expressions.py` declares `BASE_VARIABLES` and adds `const_<CODE>`
+    per constant row; `engine/calculate.py` binds `qty_kg`, `upstream`,
+    `downstream`, every `const_<CODE>` and the special `const_GWP_CH4`. The
+    two sets must be identical, and nothing asserted that until now — the
+    corpus above can only catch a variable the panel permits and the engine
+    refuses, never the reverse, because a name the engine binds and the panel
+    does not is simply a name nobody thought to type into a list.
+
+    **This is the direction that matters for `dry_run.bundle`** (§6.2.1),
+    which reaches the engine without passing the panel at all.
+    """
+    codes = ["GWP_CH4_20", "GWP_CH4_100", "LEVY_NZD_PER_T"]
+    panel_permits = set(BASE_VARIABLES) | {f"const_{code}" for code in codes}
+
+    assert _engine_line_variables(codes) == panel_permits
+
+
+def test_const_gwp_ch4_is_bound_at_both_horizons_and_nowhere_else():
+    """§4.3's special binding, checked as a *name* rather than as a value.
+
+    The horizon changes which constant `const_GWP_CH4` resolves to and must
+    never change the set of names a formula may use — a formula that was legal
+    at 100 years and illegal at 20 would be a factor set that fails for half
+    its requests.
+    """
+    codes = ["GWP_CH4_20", "GWP_CH4_100"]
+
+    assert _engine_line_variables(codes, 20) == _engine_line_variables(codes, 100)
+
+
+def test_const_gwp_ch4_is_absent_when_neither_horizon_constant_exists():
+    """The one case where the two sets legitimately differ, recorded so that
+    the equality above is not read as unconditional.
+
+    A bundle carrying neither `GWP_CH4_20` nor `GWP_CH4_100` binds no
+    `const_GWP_CH4`, while the panel offers it from `BASE_VARIABLES`
+    regardless. That is a *configuration* disagreement of the same kind as
+    `test_an_unbound_name_is_the_other_half_of_that_line` — the panel cannot
+    know which constants a future factor set will carry — and §4.4 maps the
+    resulting `FormulaError` and `UnknownConstantError` both to
+    `FORMULA_ERROR` (500), so they are indistinguishable at the API boundary.
+    """
+    assert "const_GWP_CH4" not in _engine_line_variables(["LEVY_NZD_PER_T"])
+    assert "const_GWP_CH4" in BASE_VARIABLES

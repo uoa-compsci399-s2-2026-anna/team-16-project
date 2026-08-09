@@ -271,7 +271,16 @@ async function submitCalculation() {
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
     const errorStep = error.code === 'VALIDATION_ERROR' ? 3 : error.code === 'UNKNOWN_CODE' ? 0 : state.step
     setState({ loading: false, error: publicError(error), errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep })
-    if (error.code === 'RATE_LIMITED') setTimeout(() => setState({ rateLimitedUntil: 0 }), 60000)
+    // Clearing the deadline without clearing the banner re-enabled Calculate underneath a
+    // paragraph still telling the user to wait 60 seconds — the button and the copy saying
+    // opposite things, with the copy the more believable of the two. The banner only goes if
+    // it is still the rate-limit one: another failure may have replaced it inside the minute,
+    // and that message is about something the wait does not fix.
+    if (error.code === 'RATE_LIMITED') {
+      setTimeout(() => setState(state.errorCode === 'RATE_LIMITED'
+        ? { rateLimitedUntil: 0, error: null, errorCode: null }
+        : { rateLimitedUntil: 0 }), 60000)
+    }
   }
 }
 

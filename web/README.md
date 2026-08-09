@@ -72,6 +72,14 @@ adding one of:
 &mockError=no_published_factor_set
 ```
 
+> **Do not run a client demo on `?mock=1`.** Mock mode re-derives only the mass figures from
+> what you type; every impact figure is the fixture's, cycled by entry index. **Enter 5 kg and
+> the page will tell you 4,449 kg CO2e.** That is correct behaviour for a fixture server and
+> it is documented in `docs/interfaces.md` §7.1, but in front of the client it is a number
+> that cannot be walked back. Demo against the real API with the mock **factor set** loaded —
+> the figures are still placeholders, but they are placeholders the engine computed from what
+> was actually entered, and the placeholder banner says so on screen.
+
 > **The document root has to be an ancestor of both `web/` and `tests/`.** The fixture URL is
 > resolved against `api.js`'s own module URL (`web/js/` → `../../tests/fixtures/`), so it
 > follows the page wherever it is served from — but a browser clamps `../` at the origin

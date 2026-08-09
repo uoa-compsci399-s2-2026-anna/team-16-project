@@ -117,11 +117,13 @@ function metricCell(row, code, taxonomy) {
   return `${formatNumber(number(cell.total), Number(cell.display_precision ?? definition?.display_precision ?? 2))} ${escapeHtml(metricUnit(cell, definition))}`
 }
 
-function breakdownTable(section, tabLabel, taxonomy) {
-  // Bar width only. This is the width of a bar relative to the widest bar beside it, not a
-  // figure printed on the page — the percentage-of-total that stood here was a number the
+const widestRow = rows => rows.reduce((max, row) => Math.max(max, Number.isFinite(row.kilograms) ? Math.abs(row.kilograms) : 0), 0)
+
+function breakdownTable(section, tabLabel, taxonomy, widest) {
+  // Bar width only. This is a bar's width relative to the widest bar on the tab — scaled
+  // across every section, so two per-entry sections stay comparable to each other — and not
+  // a figure printed on the page. The percentage-of-total that stood here was a number the
   // engine never produced, and §6.2 defines no share for an entry or a destination.
-  const widest = section.rows.reduce((max, row) => Math.max(max, Number.isFinite(row.kilograms) ? Math.abs(row.kilograms) : 0), 0)
   const bars = section.rows.map(row => {
     const width = widest && Number.isFinite(row.kilograms) ? Math.min(Math.abs(row.kilograms) / widest * 100, 100) : 0
     return `<div class="bar-row"><div><strong>${escapeHtml(row.label)}</strong><span>${formatNumber(row.kilograms, 2)} kg</span></div><div class="bar-track"><span style="width:${width}%"></span></div></div>`
@@ -136,9 +138,10 @@ function breakdownSection(state, entryResults) {
   const allBreakdowns = breakdowns(entryResults, state.taxonomy)
   const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
   const current = allBreakdowns[active]
+  const scale = current.sections ? widestRow(current.sections.flatMap(section => section.rows)) : 0
   const panel = current.unavailable
     ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
-    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, TAB_LABELS[active], state.taxonomy)).join('')}`
+    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, TAB_LABELS[active], state.taxonomy, scale)).join('')}`
   return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">Breakdown by category</h2><p>Explore how the recorded waste is distributed.</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="Waste breakdown">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${label}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 

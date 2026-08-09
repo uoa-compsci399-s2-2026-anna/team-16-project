@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.6 draft)"
+date: "2026-08-09 (v1.7 draft)"
 ---
 
 # 0. How to Use This Document
@@ -27,6 +27,26 @@ This document defines **what every person's code receives and what it returns.**
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
 
+### v1.7 — 2026-08-09 (the change that was made without a row, **affects B, C, D and E**)
+
+**Change 1 is a §2.1 and §6.1 ruling that has been in the code and the fixtures since 2026-08-09 and in this change log nowhere.** §0's process is document, notify, fixture — and the change log *is* the notify step. A rule that only exists in a commit message has been applied to `tests/fixtures/taxonomy.json` and `admin/seed.py` without being announced to the two people who consume them, and v1.6's own closing note then asserted the opposite, that §1–§6 were untouched and the fixtures were clean. **A false "nothing changed" is worse than no note**: it tells a reader not to look.
+
+The rest are the four defects and three omissions the whole-branch review turned up in `web/`. None changes a wire shape.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`display_unit` is a presentation variant of `unit` at the same scale, never a different scale, and nothing anywhere converts between the two.** `tests/fixtures/taxonomy.json` and `admin/seed.py` both carried `t CO2e` against a `unit` of `kg CO2e`, `kL` against `L`, and `t` against `kg`. **§7.6.1 is what makes that unfixable rather than merely wrong**: the front end performs no arithmetic on an API figure, so there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label — the number is relabelled and every greenhouse-gas figure on the page reads a thousand times too small. It was live: C's results table rendered "3,993 t CO2e" and "1,530,000 kL" one section below the same two figures labelled correctly. The column is for a typographic variant — `kg CO₂e` against `kg CO2e` — which is how §6.1's example is written, with the two identical. **If a metric should be reported in tonnes, that is the metric's `unit` and the formula produces tonnes**: scale is a property of a formula, which is data (§2.1), not of a label. Corrected in **both** the fixture and the seed, and the seed is the half that matters, because it is what ships to the database. Ruled in §2.1 and §6.1 on 2026-08-09; **recorded here, which is the step that was missed** | §2.1, §6.1, §10 | **B, D, E** |
+| 2 | **§7.2 gains `entryResultsFrom(entries, response)`, the one export §7 still did not name.** It is imported by `calculator.js` and its output is read by `results.js`, so it is already a cross-module call — which is the definition §0 gives of what this document governs. Documented with the distinction a consumer has to get right: cross-entry figures come from `result.totals`, per-entry figures from `result.entry_results`, and never a sum over the latter (§7.6.1) | §7.2 | **C, D, E** |
+| 3 | **`improvement.js` interpolated `destination.code` into `for="…"` and `id="…"` through neither `escapeHtml` nor `slug`** — the only unescaped interpolation left on the branch. `destination.code` is `VARCHAR(64)` with no pattern constraint in `db/`, `api/` or `admin/`, and staff edit it through §8.1's generic CRUD, so a code containing a double quote breaks the attribute on a **public** page. Fixed with `slug`, which `calculator.js` already uses for the identical case. Recorded rather than fixed quietly because it names a standing hazard: **§7.3a's escaping guarantee holds only for values that pass through `view.js`**, and a taxonomy `code` reads as safe while being staff-authored content on a public page, exactly like the `formula.expression` §7.3a already calls out | §7.3a | **C, D, E** |
+| 4 | **§7.6 rule 3's 375px baseline was being met at 375px and broken between 481px and 849px.** `.results-page`'s −80px bleed sat outside every media query while its `.wide` counterpart existed only at ≥850px and its reset only at ≤480px, so in the band between them the results page was pulled 80px past a container with 20px of padding: 60px off the left edge, unreachable in LTR, plus horizontal body scroll. **A tablet is the likeliest non-desktop demo device.** Written into the section because "mobile-first, baseline 375px" reads as a floor and is not one — a layout can pass at the baseline and at desktop and fail in between, and only a rule that says so will get the middle checked | §7.6 | **C, D** |
+| 5 | **The stylesheet asked for seven weights the project does not have, and now asks for two.** Self-hosting (v1.6 change 10) replaced a five-weight CDN request with the two static faces the brand authorises — Geologica Bold and Kumbh Sans Regular — leaving 500, 600, 750, 800 and 900 with no face behind them. `font-synthesis: weight` kept them looking bold by synthesising; collapsing every declaration to 400 or 700 makes them bold **and** removes the synthesis, and `font-synthesis: none` is back. The brand-correct answer and the technically clean one were the same answer. **A weight that is not 400 or 700 now requires a font file to go with it** | §7.6 | **C, D, E** |
+| 6 | **`RATE_LIMITED`'s 60-second timer cleared the deadline and not the banner**, so Calculate re-enabled underneath a paragraph still telling the user to wait 60 seconds — the button and the copy saying opposite things, with the copy the more believable of the two. The banner is now cleared with the deadline, but only if it is still the rate-limit banner: another failure may have replaced it inside the minute, and that message is about something the wait does not fix. §9.2's `BLOCKED` rule is the same shape and was already right; this was the one code with a timed recovery and no matching copy reset | §9, §7.3a | **B, C** |
+| 7 | **`web/README.md` now says not to run a client demo on `?mock=1`.** §7.1 documents that mock mode re-derives only the mass figures and serves every impact figure from the fixture, cycled by entry index — so **a user who enters 5 kg is shown 4,449 kg CO2e**. That is correct behaviour for a fixture server and a catastrophic thing to put in front of the client, and the file the team actually opens said nothing about it. The instruction is to demo against the real API with the mock **factor set**: the figures are still placeholders, but they are placeholders the engine computed from what was entered, and the mandatory banner (§7.6.2) says so on screen | §7.1 | **all** |
+
+> **Change 1 is the only one that touches a fixture, and the fixture was already changed** — this row is the announcement, not a new edit. Nothing in this revision alters a request or response shape.
+>
+> **Still open after this revision.** Unchanged: **O-1** (real emissions factors, the hard blocker), **O-7** (on A's critical path), `landfill_diverted` as a real `metric` row, the container-preset input (v1.6 change 4), and `gwpHorizon`, which still has no control. The positive/negative colour pair stays partly open on the same terms as v1.6. Recorded and **deliberately not fixed here**, because each is a refactor rather than a correction: `main.js` shows the taxonomy-failure screen's raw `error.message` because `publicError` is not exported from `calculator.js`; an all-`standard_mix` submission renders "no food category data was provided", which is untrue; and `.stage-fieldset.has-error` and `.destination-list.has-error` are dead as written, because `has-error` is only ever applied to `.form-field`.
+
 ### v1.6 — 2026-08-09 (§7 caught up with the front-end branch, **affects C, D and E**)
 
 **Every row here is §7 describing code that no longer exists.** The `integrate/frontend` branch removed thirteen violations of §7.6 over six tasks, and §7 was written from a survey of the branch *before* them — so the section D and E are told to read before consuming C's modules has spent a week telling them that `formatNumber` has a rounding gap it does not have, that `results.js` hard-codes three metric columns it no longer names, and that `compareImprovement` takes one argument when it takes two. **A stale §7 is not a cosmetic problem: it is a second implementation.** §7.3a exists so D and E use C's one `escapeHtml` instead of each writing their own, and a reader who finds the described module and the real module disagreeing has no reason to trust either.
@@ -49,7 +69,7 @@ Two rows are not corrections. Row 9 settles an ambiguity nobody had ruled on, an
 | 12 | **`compareImprovement(state)` takes two arguments.** The second is `calculator.js`'s `publicError` — §9's code-to-copy map — passed in rather than imported, because `calculator.js` already imports this module and the import back would be a cycle. Without it the improvement panel showed raw backend prose for the codes the main flow words carefully, and §9.1 rules that a public `FORMULA_ERROR` never echoes the expression or its location. A wrong arity in a section whose purpose is to be called from D's and E's code is the cheapest possible defect to introduce and among the more annoying to diagnose | §7.3a | **C, D, E** |
 | 13 | **`improvementValidation`'s tolerance was a percentage-point tolerance where §6.2's is an absolute 0.010 kg**, and §7.3a described neither. 0.01 percentage points is 0.15 kg on a 1,500 kg entry — fifteen times the limit — so the panel enabled Compare on a submission the server then refused with a 400, **for the whole submission**, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. Two consequences are recorded with it: the seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so the rounding remainder goes to the largest share; and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3, because step 4 deliberately permits allocating less than the total and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario | §7.3a | **B, C** |
 
-> **Nothing in §1–§6 or §8–§10 changed.** This revision touches §7 only, plus §7.6's new rule 7. No request or response shape moved, so `tests/fixtures/` is untouched and no fixture needed regenerating — the §0 process still applies, and the "notify the team" step is the load-bearing one here, because D and E are the readers this section exists for.
+> **Corrected in v1.7 — the two sentences that stood here were false.** They read "Nothing in §1–§6 or §8–§10 changed" and "`tests/fixtures/` is untouched", and both were written from this revision's own edits rather than from the branch's. The `display_unit` same-scale ruling had already changed **§2.1**, **§6.1**, `tests/fixtures/taxonomy.json` and `admin/seed.py`, with no change-log row anywhere. See **v1.7 change 1**, which is that row. What is true of *this* revision's own edits: they touch §7 only, plus §7.6's new rule 7, and moved no request or response shape.
 >
 > **Still open after this revision.** **O-1** (real emissions factors) remains the hard blocker and **O-7** is still on A's critical path. Carried forward and unchanged: `landfill_diverted` as a real `metric` row (the client's). The **positive/negative semantic colour pair**, carried since v1.2, is *partly* closed — change 9 fixes the four classes, their arrows and their brand colours for the calculator page, and D can adopt them as they stand — but whether the client wants Kale-and-Beetroot for better-and-worse, rather than a green-and-red pair the brand does not contain, has still not been asked. New and unclosed: **the container-preset input (change 4)**, which needs a ruling on the two-decimal rule before `toKg` can be wired to anything, and **`gwpHorizon`**, which still has no control.
 
@@ -1748,6 +1768,23 @@ export function subscribe(fn);
 
 /** Clears the sessionStorage token and returns to the intro step. */
 export function resetCalculator();
+
+/**
+ * Pairs the entries the user typed with the per-entry results §6.2 returns, which
+ * preserve request order. Each paired `response` is one entry's `current` /
+ * `alternative` / `net_benefit` plus the submission-level `factor_set`,
+ * `factor_source` and `gwp_horizon`, which the rendering modules read
+ * `is_mock` and `version_label` from.
+ *
+ * `state.result` carries both this and the whole response, so a consumer reads
+ * cross-entry figures from `result.totals` (§7.6.1) and per-entry figures from
+ * `result.entry_results` — never a sum over the latter.
+ *
+ * @param {Array<object>} entries   Draft entries, in the order they were sent
+ * @param {object} response         The §6.2 response
+ * @returns {Array<{entry: object, response: object}>}
+ */
+export function entryResultsFrom(entries, response);
 ```
 
 Keys, grouped. **This is C's shape and the contract has adopted it**; the previous ten-key object in this section was a proposal that her code superseded.
@@ -2011,7 +2048,7 @@ Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embe
 
 1. **The front end performs no impact calculation.** Apart from unit conversion in `units.js`, every number comes from the API. This includes cross-entry totals: read `totals` and `net_benefit` from §6.2, never a sum over `entries[]`.
 2. **When `is_mock` is true, the warning banner is mandatory** and cannot be dismissed. This covers **every results view and every export**, and it must be conditional on `is_mock` rather than unconditional — an export that always carries the placeholder disclaimer becomes an export that disclaims real data the day real factors are published, which is the more damaging direction of the same bug.
-3. The calculator page is **mobile-first**, baseline width 375px.
+3. The calculator page is **mobile-first**, baseline width 375px. **The baseline is not a floor — check the band between the breakpoints.** A layout can pass at 375px and at desktop and fail in between: `.results-page`'s −80px bleed had its reset at ≤480px and its desktop counterpart at ≥850px and nothing in between, so from 481px to 849px the results page sat 60px off the left edge with the body scrolling sideways. A tablet is the likeliest non-desktop device a demo runs on.
 4. After every successful calculation, write the returned `token` back to `sessionStorage`.
 5. **Iterate over metrics and equivalences; never hard-code their codes.** A view that lists `['co2e','water','cost']` silently omits the metric a staff member added, and adding a metric is meant to cost one `INSERT` and one formula (§2.1).
 6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show. The sign classes and the arrow convention are in §7.3a under `improvement.js`; use those four classes rather than a second set.

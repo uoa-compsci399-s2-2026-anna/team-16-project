@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-10 (v1.10 draft)"
+date: "2026-08-10 (v1.11 draft)"
 ---
 
 # 0. How to Use This Document
@@ -27,9 +27,22 @@ This document defines **what every person's code receives and what it returns.**
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
 
+### v1.11 — 2026-08-10 (the O-7 guard checks the value, and one fixture edit gets the row it should have had, **affects B and E**)
+
+**v1.9's guard refused a *missing* `prevention` upstream row and never looked at what the row said.** A staff member satisfied it completely with a `prevention` row at 1.9 — the same value as the general row — and reopened O-7 for that tuple with no error, no warning and nothing in the log. It is a worse position than the absent row, because both callers' messages already told the staff member to add one "at 0": a set that failed the existence check got fixed, and a set that passed it looked finished. The code did not enforce its own sentence.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`find_missing_prevention_upstream` now reports a tuple whose `prevention` upstream row exists but is non-zero**, not only one where the row is absent. The query gains `value_per_kg = 0` on its covering subquery; the return shape, the sort and the two callers are unchanged, so `publish_factor_set` in both `db/repository.py` and `admin/factor_lifecycle.py` tighten together — which is the whole reason v1.9 gave the query one home. **Zero is a modelling decision, not a default**: prevented food was never produced, so there is no upstream burden to attribute, and any other value is a claim nothing in the system supports. There is no tolerance and no "small enough" — one unit in the last place `DECIMAL(20,10)` carries is refused. Both messages now say "no `prevention` upstream row at 0 — either it is missing or it carries a non-zero value" | §5.2 | **B, E** |
+| 2 | **`tests/fixtures/factors.json`'s `prevention`/`co2e` downstream `source_note` was corrected and no change-log row was written for it.** The note still said `prevention` is not a whole offset and that a prevention figure must not be quoted — forty lines below the v1.8 rows that made it false, in the one file §10 calls a public export. Content only; no shape, no number and no key moved, which is exactly why it slipped through, and it is the same class as the v1.7 entry this document already calls out as "the change that was made without a row" | §10 | **B, E** |
+
+> **This is the first entry in the sequence that changes a refusal a staff member can hit.** A draft that publishes today may stop publishing tomorrow, and that is the intent: the sets it now refuses are sets that would have shipped a partial offset. `rollback_to` stays exempt for v1.9's reason — a set archived before v1.8 will legitimately fail the check, and refusing an emergency rollback over a completeness rule is a worse failure than the one the rule prevents.
+>
+> **No request shape, no response shape, no engine signature, no front-end module. A, C and D have nothing to do.** The fixtures already satisfy the tightened rule: every `prevention` upstream row in `factors.json` and in `tests/support/sqlite.py`'s seed is at zero, so no fixture changes with this either.
+
 ### v1.10 — 2026-08-10 (the golden suite lands, and three descriptions catch up with the code, **affects A**)
 
-**Nothing computes differently in this revision.** Every change below either describes what was already built or writes down a rule the code has been following with nothing behind it — which is precisely the category that goes unrecorded, because none of it breaks a test and none of it moves a fixture. The suite §10.1 has specified since v0.2 now exists: eight cases, `tests/test_golden.py` as the runner, and the first two built from the response fixtures rather than from the engine, so at least one case is a cross-check between two implementations rather than a recording of one.
+**Nothing computes differently in this revision.** Every change below either describes what was already built or writes down a rule the code has been following with nothing behind it — which is precisely the category that goes unrecorded, because none of it breaks a test and none of it moves a fixture. The suite §10.1 has specified since v0.2 now exists: `tests/golden/test_golden.py` as the runner, and the first two cases built from the response fixtures rather than from the engine, so at least one case is a cross-check between two implementations rather than a recording of one.
 
 | # | Change | Section | Affects |
 | --- | --- | --- | --- |
@@ -1213,10 +1226,12 @@ def load_factor_bundle(session, factor_set_id: int | None = None) -> FactorBundl
 def find_missing_prevention_upstream(
         session, factor_set_id: int) -> list[tuple[str, str, str]]:
     """Which (sector, food_category, metric) tuples of this set would still
-    charge a prevented line its full upstream factor (§2.2, open item O-7).
+    charge a prevented line an upstream factor (§2.2, open item O-7).
 
     A tuple qualifies when it has a general upstream row (destination NULL)
-    and no row for `prevention`. Returns codes, not ids (§1.1), sorted, so a
+    and **no `prevention` row at zero** — whether the row is absent or
+    carries a non-zero value. Existence is not the rule; the value is
+    (v1.11). Returns codes, not ids (§1.1), sorted, so a
     caller can put them straight into a message a human has to act on. An
     empty list is the healthy state. Empty also when the taxonomy has no
     `prevention` destination at all — that is an unseeded database rather
@@ -2570,13 +2585,17 @@ Both matter, and neither substitutes for the other. The shape check proves the A
 Under `tests/golden/`, three files per case, and the directory name says what the case is for:
 
 ```
-case_03_prevention_whole_offset/
-  bundle.json     a fixed factor set          <- shape defined in §10.2
-  request.json    a fixed request             <- §3 CalculationRequest, as JSON
-  expected.json   the expected full CalculationResult   <- §3, as JSON
+tests/golden/
+  test_golden.py                 the runner
+  case_03_prevention_whole_offset/
+    bundle.json     a fixed factor set          <- shape defined in §10.2
+    request.json    a fixed request             <- §3 CalculationRequest, as JSON
+    expected.json   the expected full CalculationResult   <- §3, as JSON
 ```
 
-Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover. `tests/test_golden.py` discovers `case_*/`, loads the three files, calls `calculate()` and compares.
+Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover. `tests/golden/test_golden.py` discovers `case_*/`, loads the three files, calls `calculate()` and compares.
+
+**The runner lives beside the cases** so that `pytest tests/golden` means what everyone will assume it means. It was `tests/test_golden.py` for one commit, and `pytest tests/golden` then collected zero tests and reported green — which put the guard against a renamed case directory inside a module the obvious command never loaded.
 
 **`request.json` and `expected.json` are §3's domain objects, not §6.2's wire shapes.** Field for field: `sector_code` and `food_category_code` rather than `sector` and `food_category`, `destination_code` rather than `destination`, `source_metric_code` rather than `source_metric`, `by_destination` present and empty at the totals level rather than omitted, and a `total_kg` on `totals.alternative` for which §6.2's single hoisted `totals.total_kg` has no room. A golden case written against §6.2's body would certify `api/engine_adapter.py` as well as the engine, and a hoist or an omitted key there would then read as an engine defect. Decimals are strings (§1.2) rendered as `format(value, "f")` — the same rendering `api/serialization.wire()` performs, so `"0.0000000000"` and `"0"` are different answers in a golden file exactly as they are on the wire.
 

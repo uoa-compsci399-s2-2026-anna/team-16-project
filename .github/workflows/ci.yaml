@@ -1,25 +1,35 @@
 # CI: the test suite against a real MySQL 8, then the alpha images.
 #
-# TWO THINGS THIS FILE EXISTS TO GUARANTEE, neither of which a human can be
+# TWO THINGS THIS PIPELINE EXISTS TO GUARANTEE, neither of which a human can be
 # relied on to do:
 #
 #   1. That the suite runs against MySQL 8 and not something that merely
-#      accepts the same SQL. `pytest -m "not db"` skips the half of the suite
-#      that is about the database that ships, which is the half that cannot be
-#      proven any other way - see the `test` job's comments.
+#      accepts the same SQL - see .github/workflows/_test.yaml.
 #   2. That the images stay free of tests/, docs/, Journal/ and .superpowers/.
-#      That has been checked twice by hand, both times by someone who thought
-#      to look, and it is one forgotten .dockerignore line away from being
-#      false. See `assert the images ship no repository debris` below.
+#      That was checked twice by hand, both times by someone who thought to
+#      look, and it is one forgotten .dockerignore line away from being false.
+#      See the hygiene step in .github/workflows/_build-images.yaml.
+#
+# WHERE THE WORK ACTUALLY LIVES. This file is a sequence of calls; the three
+# jobs it calls are shared verbatim with release.yaml:
+#
+#   _test.yaml             the suite against MySQL 8
+#   _build-images.yaml     the two independent per-architecture builds
+#   _publish-manifest.yaml the multi-architecture tags, and the read-back
+#
+# That is deliberate. Two copies of a `docker build` loop drift, and the copy
+# that drifts is the release one, because nobody watches it. A release now runs
+# the same tests, builds through the same steps and publishes through the same
+# assembly as every push to main.
 #
 # ARCHITECTURE. amd64 and arm64 are built as two independent, mutually
 # non-fatal jobs, and a third job assembles the multi-architecture tag from
 # whichever of them actually reached the registry. This repository is PRIVATE,
 # so `ubuntu-24.04-arm` is billed by the minute out of an allowance nobody has
 # measured; a run that cannot schedule arm64 must still ship a usable amd64
-# image rather than shipping nothing. Nothing here is gated behind a variable:
-# the try-and-report shape covers both "we have arm minutes" and "we ran out
-# on the 12th" with no one editing this file.
+# image rather than shipping nothing. Nothing is gated behind a variable: the
+# try-and-report shape covers both "we have arm minutes" and "we ran out on the
+# 12th" with no one editing these files.
 
 name: CI
 
@@ -32,7 +42,7 @@ on:
       # help, because GitHub only offers manual dispatch for a workflow that
       # already exists on the DEFAULT branch. A workflow that has never run is
       # not finished. The moving tag is branch-derived off main (see
-      # `moving_tag` in the manifest job), so `alpha` never points at anything
+      # `moving_tag` in the `version` job), so `alpha` never points at anything
       # that is not on main.
       - 'build/**'
   pull_request:
@@ -49,434 +59,26 @@ permissions:
   contents: read
   packages: write        # GHCR, through GITHUB_TOKEN. No new secret is added.
 
-env:
-  # ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project/kaicalc-{api,admin,web}
-  #
-  # Namespaced under the repository rather than bare under the organisation:
-  # GITHUB_TOKEN is always permitted to create and write a package in its own
-  # repository's namespace, whereas `ghcr.io/<org>/<name>` can collide with a
-  # package another repository in the organisation already owns and fail at
-  # push time with a permission error that reads like a token problem.
-  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
-
 jobs:
 
   # ===========================================================================
-  # The suite, against MySQL 8.
+  # What this run calls itself.
   # ===========================================================================
-  test:
-    name: Tests (MySQL 8)
+  version:
+    name: Derive the alpha version and tags
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-
-    services:
-      # A REAL MySQL 8, not SQLite and not `-m "not db"`.
-      #
-      # ENUM, VARBINARY and DATETIME all behave differently on SQLite; the two
-      # functional COALESCE unique indexes (contract 2.2, 2.3) do not exist
-      # there at all, so tests/test_mysql_integration.py would prove nothing;
-      # and a MySQL CHECK violation surfaces as OperationalError rather than
-      # IntegrityError, which this suite asserts directly. Skipping the `db`
-      # marker would leave exactly the assertions that are about the shipped
-      # database unrun, and green.
-      #
-      # Credentials, database name and PORT are the root docker-compose.yml's,
-      # because tests/conftest.py hardcodes
-      # `mysql+pymysql://root:devroot@127.0.0.1:3307/` and creates its own
-      # scratch databases through it. Matching them means `python -m pytest` is
-      # the same command here and on a developer's machine.
-      mysql:
-        image: mysql:8.0
-        env:
-          MYSQL_ROOT_PASSWORD: devroot
-          MYSQL_DATABASE: kaicalc
-          MYSQL_USER: kaicalc
-          MYSQL_PASSWORD: devpass
-        ports:
-          # 3307 on the runner, 3306 in the container - the same mapping
-          # docker-compose.yml uses, and the port tests/conftest.py names.
-          - 3307:3306
-        options: >-
-          --health-cmd "mysqladmin ping -h 127.0.0.1 -pdevroot"
-          --health-interval 5s
-          --health-timeout 3s
-          --health-retries 30
-          --health-start-period 30s
-
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      sha_tag: ${{ steps.derive.outputs.sha_tag }}
+      moving_tag: ${{ steps.derive.outputs.moving_tag }}
     steps:
       - uses: actions/checkout@v5
 
-      - uses: actions/setup-python@v6
-        with:
-          # 3.11 because that is what the images run (python:3.11-slim, pinned
-          # by digest in docker/*.Dockerfile). Testing on a different minor
-          # version to the one that ships is testing something else.
-          python-version: '3.11'
-          cache: pip
-          cache-dependency-path: pyproject.toml
-
-      - name: Install the package and its dev extra
-        # `-e` is deliberate and safe HERE, unlike in an image: the PEP 660
-        # editable backend drops [tool.setuptools.data-files], so an editable
-        # install has no <prefix>/share/kaicalc - but the tests that run
-        # Alembic (tests/test_migrations.py, tests/test_mysql_integration.py)
-        # load `Config("alembic.ini")` relative to the checkout, which is
-        # present. The images build a real wheel; see docker/api.Dockerfile.
+      - id: derive
         run: |
-          python -m pip install --upgrade pip
-          pip install -e ".[dev]"
-
-      - name: Wait for MySQL, and match the local server defaults
-        # Two jobs in one step.
-        #
-        # (1) The service health check is `mysqladmin ping`, which answers
-        #     before the server is done initialising the data directory on a
-        #     cold start; connecting for real is the only check that means
-        #     anything.
-        #
-        # (2) docker-compose.yml starts MySQL with
-        #     `--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`.
-        #     A GitHub `services:` block cannot pass a command to the container,
-        #     so the same two settings are applied as globals instead. This is
-        #     not cosmetic: tests/test_migrations.py creates
-        #     `kaicalc_migrationtest` with NO explicit charset, so it inherits
-        #     whatever the server default is - utf8mb4_0900_ai_ci out of the
-        #     box here, utf8mb4_unicode_ci on every developer machine. A
-        #     collation difference between CI and the desk is the kind of
-        #     divergence that produces a failure nobody can reproduce.
-        run: |
-          python - <<'PY'
-          import sys, time
-          import pymysql
-
-          last = None
-          for attempt in range(60):
-              try:
-                  conn = pymysql.connect(
-                      host="127.0.0.1", port=3307, user="root", password="devroot",
-                      connect_timeout=5,
-                  )
-                  break
-              except Exception as exc:      # noqa: BLE001 - any failure is "not up yet"
-                  last = exc
-                  time.sleep(2)
-          else:
-              sys.exit(f"MySQL never accepted a connection on 127.0.0.1:3307: {last}")
-
-          with conn.cursor() as cur:
-              cur.execute("SET GLOBAL character_set_server = 'utf8mb4'")
-              cur.execute("SET GLOBAL collation_server = 'utf8mb4_unicode_ci'")
-              # @@GLOBAL., NOT the bare name. A bare `@@collation_server`
-              # resolves the SESSION copy, which was initialised from the old
-              # global when this connection opened and does not change under
-              # `SET GLOBAL` - so it reports utf8mb4_0900_ai_ci here however
-              # well the statement above worked, and a genuinely failed SET
-              # would look identical. This read is the only thing standing
-              # between "the settings match the developer's machine" and
-              # "someone believes they do".
-              cur.execute(
-                  "SELECT VERSION(), @@GLOBAL.character_set_server,"
-                  " @@GLOBAL.collation_server"
-              )
-              version, charset, collation = cur.fetchone()
-          conn.close()
-
-          print(f"MySQL {version}: server charset {charset}, collation {collation}")
-          expected = ("utf8mb4", "utf8mb4_unicode_ci")
-          if (charset, collation) != expected:
-              sys.exit(
-                  "The MySQL service does not match docker-compose.yml's server "
-                  f"settings: got {(charset, collation)}, expected {expected}. "
-                  "Every scratch database a test creates without an explicit "
-                  "CHARACTER SET inherits these, so CI would be running against "
-                  "a different collation than every developer machine."
-              )
-          PY
-
-      - name: pytest
-        # No `-m` selector and no `-n`. The whole suite, one process.
-        #
-        # NOT parallelised on purpose: tests/admin's fixtures commit against
-        # one shared database and delete by prefix in teardown, and two runs
-        # overlapping on one database deadlock on those files. Each CI run gets
-        # a MySQL service container of its own, so runs cannot collide with
-        # each other - but a `-n auto` inside one run would recreate exactly
-        # that overlap.
-        run: python -m pytest
-
-  # ===========================================================================
-  # The two architecture builds. Independent by construction.
-  # ===========================================================================
-  #
-  # A matrix rather than two copied jobs: with `fail-fast: false` each leg is
-  # scheduled, run and reported on its own, which is the requirement ("one
-  # architecture must never sink the other"), and one copy of the body means
-  # the two cannot drift - the failure mode docker/api.Dockerfile and
-  # docker/admin.Dockerfile already have to warn about in prose.
-  #
-  # `continue-on-error: true` keeps a failed leg from failing the workflow. The
-  # manifest job below does NOT read these jobs' results to decide what to
-  # publish; it asks the registry. A job result is a claim, a pushed tag is a
-  # fact, and the two differ precisely in the cases this design is for.
-  build:
-    name: Build ${{ matrix.arch }}
-    needs: test
-    runs-on: ${{ matrix.runner }}
-    continue-on-error: true
-    timeout-minutes: 45
-    strategy:
-      fail-fast: false
-      matrix:
-        include:
-          - arch: amd64
-            runner: ubuntu-latest
-          - arch: arm64
-            # Billed by the minute on a private repository, out of an
-            # allowance this organisation has not measured. If this leg cannot
-            # be scheduled at all, that is a handled outcome, not a broken run
-            # - the manifest job publishes amd64 alone and says so.
-            runner: ubuntu-24.04-arm
-
-    steps:
-      - uses: actions/checkout@v5
-
-      - name: Log in to GHCR
-        # Not on pull requests: a PR builds to verify and pushes nothing. On a
-        # fork PR the token is read-only anyway, so a login step there would
-        # fail for a reason that has nothing to do with the change under review.
-        if: github.event_name != 'pull_request'
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build the three images
-        # Plain `docker build`, natively, on a runner of this architecture -
-        # no QEMU and no cross-build. Emulated arm64 builds of a pip install
-        # take twenty minutes and occasionally produce a different wheel set.
-        #
-        # NO BUILD ARGUMENTS. docker/compose.yaml passes none either, and the
-        # reproducibility work in task 2 lives inside the Dockerfiles:
-        # docker/constraints.txt pins 40 packages and all three bases are
-        # pinned by MANIFEST-LIST digest (manifest-list specifically, so arm64
-        # resolves the same index). If CI passed different arguments than
-        # compose does, the thing CI tests would not be the thing that ships.
-        #
-        # Output is teed so the failure step below has something to put in the
-        # log artefact.
-        run: |
-          # -e as well as pipefail: without it the loop would carry on past a
-          # broken image and the step would report only the LAST build's
-          # status, which is the one way this step could go green while an
-          # image failed to build.
           set -euo pipefail
-          for spec in api:docker/api.Dockerfile \
-                      admin:docker/admin.Dockerfile \
-                      web:docker/web.Dockerfile; do
-            name="${spec%%:*}"
-            file="${spec#*:}"
-            echo "::group::docker build ${name} (${{ matrix.arch }})"
-            docker build -f "$file" -t "kaicalc-${name}:ci" . 2>&1 \
-              | tee -a "$RUNNER_TEMP/build.log"
-            echo "::endgroup::"
-          done
-
-      - name: Assert the images ship no repository debris
-        # THE GUARANTEE THIS WHOLE PLAN EXISTS TO PROVIDE, finally automated.
-        #
-        # The images are a deliverable the client may run, and the client is
-        # not the audience for tests/, docs/, Journal/ or .superpowers/. Until
-        # now that rested on .dockerignore plus two manual checks. A `COPY . .`
-        # added in a hurry is exactly the change nobody reviews for this.
-        #
-        # Run as uid 0 (`--user 0:0`): the images run as an unprivileged user
-        # and an unprivileged `find /` reports "Permission denied" on /root and
-        # a handful of /var paths, which is both noise and a blind spot in the
-        # one check that has to see everything.
-        #
-        # `-not -path "*/site-packages/*/*"` is load-bearing. Third-party
-        # distributions genuinely ship directories called `tests` - greenlet,
-        # qrcode and certifi all do in these images - so an unscoped find is
-        # three false positives that would teach the next person to ignore this
-        # step. The pattern excludes anything at least one level INSIDE a
-        # package directory, and deliberately not site-packages itself: a
-        # top-level `site-packages/tests` would be a real regression in the
-        # wheel's package list (pyproject.toml declares exactly admin, api, db,
-        # engine) and is still reported.
-        #
-        # The positive assertion at the end matters as much as the negative
-        # one: a find over an empty or wrongly-built root filesystem also
-        # prints nothing.
-        run: |
-          set -eu
-          fail=0
-          for name in api admin web; do
-            echo "::group::hygiene: kaicalc-${name}"
-            hits="$(docker run --rm --user 0:0 --entrypoint sh "kaicalc-${name}:ci" -c '
-              find / -xdev \
-                \( -name tests -o -name docs -o -name Journal -o -name .superpowers \
-                   -o -name .git -o -name pytest.ini -o -name conftest.py \
-                   -o -name CLAUDE.md -o -name project.md \) \
-                -not -path "*/site-packages/*/*" \
-                -not -path "*/dist-packages/*/*" \
-                -print
-            ')"
-            if [ -n "$hits" ]; then
-              # Newlines are folded out of the annotation: a raw newline
-              # truncates a GitHub annotation at the first line, which would
-              # show one offending path and hide the rest. The full list is
-              # printed to the log immediately below it either way.
-              echo "::error title=Repository debris in kaicalc-${name}::$(printf '%s' "$hits" | tr '\n' ' ')"
-              printf '%s\n' "$hits"
-              # Also into the file the failure artefact is built from. Without
-              # this the artefact would carry only docker build output and the
-              # offending paths would live in the job log alone - which is the
-              # thing the artefact exists so that nobody has to go and read.
-              {
-                echo "--- hygiene failure: repository debris in kaicalc-${name} ---"
-                printf '%s\n' "$hits"
-              } >> "$RUNNER_TEMP/build.log"
-              fail=1
-            else
-              echo "clean"
-            fi
-            echo "::endgroup::"
-          done
-
-          # Prove the filesystem the find walked was the right one.
-          for name in api admin; do
-            docker run --rm --entrypoint sh "kaicalc-${name}:ci" -c \
-              'python -c "import admin, api, db, engine"' >/dev/null
-          done
-          docker run --rm --user 0:0 --entrypoint sh kaicalc-web:ci -c \
-            'test -f /usr/share/nginx/html/index.html'
-          echo "all three images carry what they should and nothing they should not"
-
-          exit "$fail"
-
-      - name: Push the architecture-specific tags
-        # ONE TAG PER ARCHITECTURE, `<short-sha>-<arch>`. These are not the
-        # tags anyone is meant to pull; they are the evidence the manifest job
-        # reads to decide what actually exists. Keeping them in the registry
-        # afterwards is deliberate - "which architectures made it" stays
-        # answerable months later without reading a workflow log.
-        if: github.event_name != 'pull_request'
-        run: |
-          set -eu
           SHA="${GITHUB_SHA:0:7}"
-          for name in api admin web; do
-            target="${IMAGE_PREFIX}/kaicalc-${name}:${SHA}-${{ matrix.arch }}"
-            docker tag "kaicalc-${name}:ci" "$target"
-            docker push "$target"
-            echo "pushed $target"
-          done
-
-      - name: Record what went wrong
-        # THE EVIDENCE IS AN ARTEFACT WHOSE PRESENCE MEANS FAILURE. On success
-        # this step does not run and nothing is written; an absent log means
-        # that architecture built. Symmetrical for amd64 and arm64 - neither is
-        # privileged, because "the one we assumed would work" is exactly the
-        # one whose silent absence would be shipped.
-        #
-        # `if: failure()` still runs after the step that failed, which a job
-        # -level `continue-on-error` on its own does not give you.
-        if: failure()
-        run: |
-          {
-            echo "ARCHITECTURE ${{ matrix.arch }} DID NOT SHIP"
-            echo
-            echo "commit    : ${GITHUB_SHA}"
-            echo "job       : Build ${{ matrix.arch }} on ${{ matrix.runner }}"
-            echo "run       : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "attempt   : ${GITHUB_RUN_ATTEMPT}"
-            echo
-            echo "The likely causes, in the order worth checking:"
-            echo "  - the arm64 runner allowance is exhausted, or this private"
-            echo "    repository is not entitled to ubuntu-24.04-arm at all"
-            echo "    (the job log says so before any step runs);"
-            echo "  - a genuine build error, in which case it is below;"
-            echo "  - the hygiene assertion found repository debris in an"
-            echo "    image, in which case the offending paths are below."
-            echo
-            echo "--- last 200 lines of the build and hygiene output ---"
-            tail -n 200 "$RUNNER_TEMP/build.log" 2>/dev/null \
-              || echo "(none: the job failed before docker build ran)"
-          } > "${{ matrix.arch }}.log"
-          cat "${{ matrix.arch }}.log"
-
-      - name: Upload the failure log
-        if: failure()
-        uses: actions/upload-artifact@v4
-        with:
-          name: build-detail-${{ matrix.arch }}
-          path: ${{ matrix.arch }}.log
-          retention-days: 30
-
-  # ===========================================================================
-  # The multi-architecture tag, assembled from whatever survived.
-  # ===========================================================================
-  manifest:
-    name: Publish the alpha tag
-    needs: [test, build]
-    # `always()` so a failed or never-scheduled arm64 leg does not skip this
-    # job - that is the whole point. But NOT unconditional: the tests must have
-    # passed, and a pull request publishes nothing.
-    if: always() && needs.test.result == 'success' && github.event_name != 'pull_request'
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-
-    steps:
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Collect any failure detail the build jobs left behind
-        # Best effort. If neither leg failed there is nothing to download, and
-        # download-artifact errors on an empty pattern - hence the guard.
-        continue-on-error: true
-        uses: actions/download-artifact@v4
-        with:
-          pattern: build-detail-*
-          path: incoming
-          merge-multiple: true
-
-      - name: Assemble the manifests and say what is in them
-        id: assemble
-        run: |
-          set -u
-          SHA="${GITHUB_SHA:0:7}"
-
-          # Reads an OCI image index off stdin and prints its real platforms,
-          # sorted and comma-separated. Used to read each published tag back
-          # out of the registry - see the call site below for why that is not
-          # the same thing as reporting what was pushed.
-          #
-          # Written to a file rather than inlined so the quoting stays legible
-          # inside a shell loop inside a YAML block scalar, and so it can be
-          # exercised outside CI.
-          cat > "$RUNNER_TEMP/platforms.py" <<'PY'
-          import json
-          import sys
-
-          index = json.load(sys.stdin)
-          manifests = index.get("manifests")
-          if manifests is None:
-              # Not an index at all. imagetools create always produces one, so
-              # this means something other than this workflow moved the tag.
-              print("(a single manifest, not an index)")
-          else:
-              platforms = sorted({
-                  "{}/{}".format(p.get("os", "?"), p.get("architecture", "?"))
-                  for p in (m.get("platform") or {} for m in manifests)
-                  # buildx attestations ride in the index as unknown/unknown.
-                  if p.get("os", "unknown") != "unknown"
-              })
-              print(", ".join(platforms))
-          PY
 
           # THE MOVING TAG. `alpha` means "the head of main", and nothing else
           # is allowed to claim it: a run on a packaging branch gets a
@@ -488,186 +90,82 @@ jobs:
             MOVING="$(printf '%s' "${GITHUB_REF#refs/heads/}" \
                       | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-')"
           fi
-          echo "moving_tag=$MOVING" >> "$GITHUB_OUTPUT"
-          echo "sha_tag=$SHA" >> "$GITHUB_OUTPUT"
 
-          MISSING_ANY=""
-          FAILED=0
+          # THE ALPHA VERSION: `<base>.dev0+<short-sha>`.
+          #
+          # Two properties, both required, and the obvious `<base>+<short-sha>`
+          # only gives one of them.
+          #
+          #   * It cannot be mistaken for a release. `1.0.0.dev0+9a3f21c` is
+          #     nobody's idea of a shipped version, and it names the commit it
+          #     came from.
+          #   * It sorts BELOW the release. This is the part a bare local
+          #     segment gets backwards: PEP 440 orders a local version ABOVE
+          #     the public version it decorates, so `1.0.0+9a3f21c` > `1.0.0`
+          #     and an alpha wheel sitting beside a release in one directory
+          #     would be the one pip picked. `.dev0` is what puts it behind:
+          #     `1.0.0.dev0+9a3f21c` < `1.0.0`.
+          #
+          # The base is read from pyproject.toml rather than written here, so
+          # there is still exactly one place a version number is spelled out.
+          BASE="$(python3 -c '
+          import tomllib
+          with open("pyproject.toml","rb") as fh:
+              print(tomllib.load(fh)["project"]["version"])
+          ')"
+          case "$BASE" in
+            *dev*|*+*)
+              echo "::error title=pyproject version is not a base version::pyproject.toml says ${BASE}. The base version must be a plain N.N.N; the .dev0+sha suffix is added here, not committed."
+              exit 1
+              ;;
+          esac
+          VERSION="${BASE}.dev0+${SHA}"
 
-          {
-            echo "## Alpha images for \`${SHA}\`"
-            echo
-            echo "Moving tag: \`${MOVING}\`"
-            echo
-            echo "| image | tags | architectures IN THE TAG |"
-            echo "| --- | --- | --- |"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$SHA"         >> "$GITHUB_OUTPUT"
+          echo "moving_tag=$MOVING"   >> "$GITHUB_OUTPUT"
+          echo "alpha version ${VERSION}; tags ${SHA}, ${MOVING}"
 
-          for name in api admin web; do
-            repo="${IMAGE_PREFIX}/kaicalc-${name}"
-            sources=""
-            archs=""
-            missing=""
+  # ===========================================================================
+  # The suite, against MySQL 8.
+  # ===========================================================================
+  test:
+    name: Suite
+    uses: ./.github/workflows/_test.yaml
 
-            # ASK THE REGISTRY, not the job results. A job marked
-            # continue-on-error reports ambiguously and a never-scheduled job
-            # reports nothing at all; a tag either resolves or it does not.
-            for arch in amd64 arm64; do
-              if docker buildx imagetools inspect "${repo}:${SHA}-${arch}" >/dev/null 2>&1; then
-                sources="${sources} ${repo}:${SHA}-${arch}"
-                archs="${archs}${archs:+, }linux/${arch}"
-              else
-                missing="${missing}${missing:+ }${arch}"
-              fi
-            done
+  # ===========================================================================
+  # The two architecture builds. Independent by construction.
+  # ===========================================================================
+  build:
+    name: Images
+    needs: [version, test]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_build-images.yaml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      arch_tag_prefix: ${{ needs.version.outputs.sha_tag }}
+      # A pull request builds to verify and publishes nothing.
+      push: ${{ github.event_name != 'pull_request' }}
 
-            if [ -z "$sources" ]; then
-              echo "::error title=Nothing to publish::kaicalc-${name} has no architecture image for ${SHA}. Neither build reached the registry."
-              echo "| \`kaicalc-${name}\` | **NONE PUBLISHED** | none - both architectures failed |" >> "$GITHUB_STEP_SUMMARY"
-              for arch in $missing; do
-                case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
-              done
-              FAILED=1
-              continue
-            fi
-
-            # shellcheck disable=SC2086
-            docker buildx imagetools create \
-              -t "${repo}:${SHA}" \
-              -t "${repo}:${MOVING}" \
-              $sources
-
-            # READ THE PUBLISHED TAG BACK OUT OF THE REGISTRY.
-            #
-            # Everything above this line is what this job INTENDED to publish.
-            # This is what a client will actually pull, and it is what the
-            # summary below reports - because the failure this whole design
-            # exists to prevent is a tag that claims more architectures than it
-            # holds, and a summary written from intent could state exactly that
-            # claim while being wrong. `unknown/unknown` entries are buildx
-            # attestation manifests, not platforms.
-            published="$(
-              docker buildx imagetools inspect "${repo}:${MOVING}" --raw \
-              | python3 "$RUNNER_TEMP/platforms.py"
-            )"
-
-            # Into the log as well as the summary. A step summary is the nicer
-            # place to read this and the wrong place to grep it from six months
-            # later, when the question is "what was in the tag we gave them?"
-            echo "READ BACK ${repo}:${MOVING} -> ${published}"
-
-            if [ "$published" != "$archs" ]; then
-              # Intent and registry disagree. Not fatal - the registry wins,
-              # both in the table and in what counts as missing below - but it
-              # means something merged the sources differently than assumed,
-              # and that is worth an annotation rather than a silent shrug.
-              echo "::warning title=Manifest read-back disagrees::kaicalc-${name}:${MOVING} was built from [${archs}] but the registry reports [${published}]. The registry is authoritative."
-            fi
-
-            # WHAT IS MISSING IS DECIDED BY THE READ-BACK, not by which arch
-            # tags happened to exist a few lines earlier. Deciding it from the
-            # sources would let the table say "linux/amd64 only" while the note
-            # underneath it said both architectures were present - the two
-            # halves of one summary contradicting each other, which is worse
-            # than either being wrong on its own.
-            absent=""
-            for arch in amd64 arm64; do
-              case "$published" in
-                *"linux/${arch}"*) ;;
-                *)
-                  absent="${absent}${absent:+ }${arch}"
-                  case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
-                  ;;
-              esac
-            done
-
-            if [ -n "$absent" ]; then
-              echo "::warning title=Single-architecture tag::kaicalc-${name}:${MOVING} contains ${published} only. Missing: ${absent}."
-              echo "| \`kaicalc-${name}\` | \`${SHA}\`, \`${MOVING}\` | **${published} ONLY** - ${absent} missing |" >> "$GITHUB_STEP_SUMMARY"
-            else
-              echo "| \`kaicalc-${name}\` | \`${SHA}\`, \`${MOVING}\` | ${published} |" >> "$GITHUB_STEP_SUMMARY"
-            fi
-          done
-
-          echo "missing_arches=${MISSING_ANY}" >> "$GITHUB_OUTPUT"
-
-          {
-            echo
-            if [ -n "$MISSING_ANY" ]; then
-              logs=""
-              for a in $MISSING_ANY; do logs="${logs}${logs:+, }\`${a}.log\`"; done
-              echo "> **These tags do NOT contain every architecture.** Absent: \`${MISSING_ANY}\`."
-              echo "> A client on an absent architecture running \`docker pull\` gets"
-              echo "> \`no matching manifest for linux/<arch> in the manifest list entries\`"
-              echo "> - at pull time, on their machine, long after this run and with"
-              echo "> nothing on the tag to warn them. Open the **image-build-failures**"
-              echo "> artefact on this run. It contains ${logs} - that is where the reason is."
-            else
-              echo "> Every tag above contains **both** linux/amd64 and linux/arm64."
-              echo "> No failure log artefact was produced, which is itself the"
-              echo "> statement that both architectures built."
-            fi
-            echo
-            echo "Pull, for example:"
-            echo '```'
-            echo "docker pull ${IMAGE_PREFIX}/kaicalc-api:${MOVING}"
-            echo '```'
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          exit "$FAILED"
-
-      - name: Write a log for every architecture that is not in the tag
-        # THE ONE PLACE THE ARTEFACT IS AUTHORED. The build jobs upload their
-        # own detail, but they cannot cover the case that matters most here - a
-        # leg that was never scheduled runs no steps at all, so it can upload
-        # nothing. This step works from what the registry does not contain, so
-        # "the runner refused the job" and "the build broke" produce the same
-        # visible outcome: a file named after the architecture that did not
-        # ship.
-        #
-        # `always()` so this still runs when the step above exited non-zero
-        # because an image got no architectures at all.
-        if: always() && steps.assemble.outputs.missing_arches != ''
-        run: |
-          set -eu
-          mkdir -p failure-logs
-          for arch in ${{ steps.assemble.outputs.missing_arches }}; do
-            {
-              echo "=============================================================="
-              echo " ${arch} IS NOT IN THE PUBLISHED TAGS FOR ${GITHUB_SHA:0:7}"
-              echo "=============================================================="
-              echo
-              echo "This file exists BECAUSE that architecture did not ship."
-              echo "On a healthy run no such file is produced at all."
-              echo
-              echo "commit          : ${GITHUB_SHA}"
-              echo "moving tag      : ${{ steps.assemble.outputs.moving_tag }}"
-              echo "build job result: ${{ needs.build.result }} (aggregate over both legs)"
-              echo "run             : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-              echo
-              echo "No ${IMAGE_PREFIX}/kaicalc-*:${GITHUB_SHA:0:7}-${arch} tag exists"
-              echo "in the registry, so the manifests above were built without it."
-              echo
-              if [ -f "incoming/${arch}.log" ]; then
-                echo "--- detail uploaded by the Build ${arch} job ---"
-                cat "incoming/${arch}.log"
-              else
-                echo "The Build ${arch} job uploaded no detail of its own. That"
-                echo "almost always means it never started a step - i.e. the"
-                echo "runner was never allocated. Open the run above and read the"
-                echo "'Build ${arch}' job's own annotation; for a private"
-                echo "repository the usual cause is that the ${arch} hosted-runner"
-                echo "allowance is exhausted or was never enabled."
-              fi
-            } > "failure-logs/${arch}.log"
-            echo "--- failure-logs/${arch}.log ---"
-            cat "failure-logs/${arch}.log"
-          done
-
-      - name: Upload the failure logs
-        if: always() && steps.assemble.outputs.missing_arches != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: image-build-failures
-          path: failure-logs/
-          retention-days: 90
+  # ===========================================================================
+  # The multi-architecture tag, assembled from whatever survived.
+  # ===========================================================================
+  manifest:
+    name: Alpha tag
+    needs: [version, test, build]
+    # `always()` so a failed or never-scheduled arm64 leg does not skip this
+    # job - that is the whole point. But NOT unconditional: the tests must have
+    # passed, and a pull request publishes nothing.
+    if: always() && needs.test.result == 'success' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_publish-manifest.yaml
+    with:
+      arch_tag_prefix: ${{ needs.version.outputs.sha_tag }}
+      tags: ${{ needs.version.outputs.sha_tag }} ${{ needs.version.outputs.moving_tag }}
+      heading: >-
+        Alpha images for `${{ needs.version.outputs.sha_tag }}`
+        (kaicalc ${{ needs.version.outputs.version }})

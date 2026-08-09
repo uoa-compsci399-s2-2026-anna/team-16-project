@@ -1,0 +1,324 @@
+# Assemble the multi-architecture tags from whatever actually reached the
+# registry, then SAY WHAT IS IN THEM by reading them back out of it.
+#
+# ONE COPY, TWO CALLERS - ci.yaml publishes `<short-sha>` plus a moving tag,
+# release.yaml publishes `X.Y.Z` plus `latest`. The difference between those
+# two is a list of tag names, and nothing else; everything about how the index
+# is assembled, how a missing architecture is detected and how the failure
+# artefact is authored is identical, so it lives here once.
+#
+# THE INVARIANT THIS FILE EXISTS FOR: the summary must never claim more
+# architectures than the published tag holds. Task 3 shipped a draft that
+# described the architectures it had gathered SOURCES for - which is precisely
+# the false claim a bad multi-architecture tag makes, in the very summary
+# written to prevent it. Every number below is read back from the registry
+# after the push.
+
+name: Publish the multi-architecture tags
+
+on:
+  workflow_call:
+    inputs:
+      arch_tag_prefix:
+        description: >-
+          The tag stem the build jobs pushed: `<prefix>-amd64`,
+          `<prefix>-arm64`. These are the sources this job merges.
+        required: true
+        type: string
+      tags:
+        description: >-
+          Space-separated final tags to publish, most specific first - e.g.
+          `abc1234 alpha` or `1.2.0 latest`. Every tag points at one index, so
+          the read-back below inspects the first and the rest are aliases of
+          it.
+        required: true
+        type: string
+      heading:
+        description: Title for the step summary, e.g. "Alpha images for abc1234".
+        required: true
+        type: string
+    outputs:
+      missing_arches:
+        description: >-
+          Space-separated architectures absent from at least one published tag,
+          decided by the registry read-back. Empty when every tag is complete.
+        value: ${{ jobs.manifest.outputs.missing_arches }}
+      published:
+        description: >-
+          The platforms the FIRST published tag actually holds, as read back
+          from the registry (e.g. "linux/amd64, linux/arm64").
+        value: ${{ jobs.manifest.outputs.published }}
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  manifest:
+    name: Publish the tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    outputs:
+      missing_arches: ${{ steps.assemble.outputs.missing_arches }}
+      published: ${{ steps.assemble.outputs.published }}
+
+    steps:
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Collect any failure detail the build jobs left behind
+        # Best effort. If neither leg failed there is nothing to download, and
+        # download-artifact errors on an empty pattern - hence the guard.
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          pattern: build-detail-*
+          path: incoming
+          merge-multiple: true
+
+      - name: Assemble the manifests and say what is in them
+        id: assemble
+        env:
+          PREFIX: ${{ inputs.arch_tag_prefix }}
+          TAGS: ${{ inputs.tags }}
+          HEADING: ${{ inputs.heading }}
+        run: |
+          set -u
+
+          # Reads an OCI image index off stdin and prints its real platforms,
+          # sorted and comma-separated. Used to read each published tag back
+          # out of the registry - see the call site below for why that is not
+          # the same thing as reporting what was pushed.
+          #
+          # Written to a file rather than inlined so the quoting stays legible
+          # inside a shell loop inside a YAML block scalar, and so it can be
+          # exercised outside CI.
+          cat > "$RUNNER_TEMP/platforms.py" <<'PY'
+          import json
+          import sys
+
+          index = json.load(sys.stdin)
+          manifests = index.get("manifests")
+          if manifests is None:
+              # Not an index at all. imagetools create always produces one, so
+              # this means something other than this workflow moved the tag.
+              print("(a single manifest, not an index)")
+          else:
+              platforms = sorted({
+                  "{}/{}".format(p.get("os", "?"), p.get("architecture", "?"))
+                  for p in (m.get("platform") or {} for m in manifests)
+                  # buildx attestations ride in the index as unknown/unknown.
+                  if p.get("os", "unknown") != "unknown"
+              })
+              print(", ".join(platforms))
+          PY
+
+          # The first tag is the specific, immutable one (`<sha>`, `1.2.0`) and
+          # the rest are moving aliases (`alpha`, `latest`). They are created
+          # in one `imagetools create` call and therefore all resolve to one
+          # index, so reading the first back is a statement about all of them.
+          READBACK_TAG="$(printf '%s' "$TAGS" | awk '{print $1}')"
+
+          # `\`a\`, \`b\`` for the summary table. Built with a plain loop
+          # rather than a printf inside a command substitution: a backtick in
+          # a printf FORMAT string has to be escaped, and the escaping that
+          # survives single quotes inside `$( )` inside a YAML block scalar is
+          # not the escaping anyone predicts. Double quotes here make `\``
+          # simply a backtick.
+          TAGCELL=""
+          for t in $TAGS; do
+            TAGCELL="${TAGCELL}${TAGCELL:+, }\`${t}\`"
+          done
+
+          MISSING_ANY=""
+          FIRST_PUBLISHED=""
+          FAILED=0
+
+          {
+            echo "## ${HEADING}"
+            echo
+            echo "Tags: ${TAGCELL}"
+            echo
+            echo "| image | tags | architectures IN THE TAG |"
+            echo "| --- | --- | --- |"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          for name in api admin web; do
+            repo="${IMAGE_PREFIX}/kaicalc-${name}"
+            sources=""
+            archs=""
+            missing=""
+
+            # ASK THE REGISTRY, not the build jobs' results. A job marked
+            # continue-on-error reports ambiguously and a never-scheduled job
+            # reports nothing at all; a tag either resolves or it does not.
+            for arch in amd64 arm64; do
+              if docker buildx imagetools inspect "${repo}:${PREFIX}-${arch}" >/dev/null 2>&1; then
+                sources="${sources} ${repo}:${PREFIX}-${arch}"
+                archs="${archs}${archs:+, }linux/${arch}"
+              else
+                missing="${missing}${missing:+ }${arch}"
+              fi
+            done
+
+            if [ -z "$sources" ]; then
+              echo "::error title=Nothing to publish::kaicalc-${name} has no architecture image for ${PREFIX}. Neither build reached the registry."
+              echo "| \`kaicalc-${name}\` | **NONE PUBLISHED** | none - both architectures failed |" >> "$GITHUB_STEP_SUMMARY"
+              for arch in $missing; do
+                case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
+              done
+              FAILED=1
+              continue
+            fi
+
+            targets=""
+            for t in $TAGS; do
+              targets="${targets} -t ${repo}:${t}"
+            done
+
+            # shellcheck disable=SC2086
+            docker buildx imagetools create $targets $sources
+
+            # READ THE PUBLISHED TAG BACK OUT OF THE REGISTRY.
+            #
+            # Everything above this line is what this job INTENDED to publish.
+            # This is what a client will actually pull, and it is what the
+            # summary below reports - because the failure this whole design
+            # exists to prevent is a tag that claims more architectures than it
+            # holds, and a summary written from intent could state exactly that
+            # claim while being wrong. `unknown/unknown` entries are buildx
+            # attestation manifests, not platforms.
+            published="$(
+              docker buildx imagetools inspect "${repo}:${READBACK_TAG}" --raw \
+              | python3 "$RUNNER_TEMP/platforms.py"
+            )"
+            [ -n "$FIRST_PUBLISHED" ] || FIRST_PUBLISHED="$published"
+
+            # Into the log as well as the summary. A step summary is the nicer
+            # place to read this and the wrong place to grep it from six months
+            # later, when the question is "what was in the tag we gave them?"
+            echo "READ BACK ${repo}:${READBACK_TAG} -> ${published}"
+
+            if [ "$published" != "$archs" ]; then
+              # Intent and registry disagree. Not fatal - the registry wins,
+              # both in the table and in what counts as missing below - but it
+              # means something merged the sources differently than assumed,
+              # and that is worth an annotation rather than a silent shrug.
+              echo "::warning title=Manifest read-back disagrees::kaicalc-${name}:${READBACK_TAG} was built from [${archs}] but the registry reports [${published}]. The registry is authoritative."
+            fi
+
+            # WHAT IS MISSING IS DECIDED BY THE READ-BACK, not by which arch
+            # tags happened to exist a few lines earlier. Deciding it from the
+            # sources would let the table say "linux/amd64 only" while the note
+            # underneath it said both architectures were present - the two
+            # halves of one summary contradicting each other, which is worse
+            # than either being wrong on its own.
+            absent=""
+            for arch in amd64 arm64; do
+              case "$published" in
+                *"linux/${arch}"*) ;;
+                *)
+                  absent="${absent}${absent:+ }${arch}"
+                  case " $MISSING_ANY " in *" $arch "*) ;; *) MISSING_ANY="${MISSING_ANY}${MISSING_ANY:+ }${arch}";; esac
+                  ;;
+              esac
+            done
+
+            if [ -n "$absent" ]; then
+              echo "::warning title=Single-architecture tag::kaicalc-${name}:${READBACK_TAG} contains ${published} only. Missing: ${absent}."
+              echo "| \`kaicalc-${name}\` | ${TAGCELL} | **${published} ONLY** - ${absent} missing |" >> "$GITHUB_STEP_SUMMARY"
+            else
+              echo "| \`kaicalc-${name}\` | ${TAGCELL} | ${published} |" >> "$GITHUB_STEP_SUMMARY"
+            fi
+          done
+
+          echo "missing_arches=${MISSING_ANY}" >> "$GITHUB_OUTPUT"
+          echo "published=${FIRST_PUBLISHED}" >> "$GITHUB_OUTPUT"
+
+          {
+            echo
+            if [ -n "$MISSING_ANY" ]; then
+              logs=""
+              for a in $MISSING_ANY; do logs="${logs}${logs:+, }\`${a}.log\`"; done
+              echo "> **These tags do NOT contain every architecture.** Absent: \`${MISSING_ANY}\`."
+              echo "> A client on an absent architecture running \`docker pull\` gets"
+              echo "> \`no matching manifest for linux/<arch> in the manifest list entries\`"
+              echo "> - at pull time, on their machine, long after this run and with"
+              echo "> nothing on the tag to warn them. Open the **image-build-failures**"
+              echo "> artefact on this run. It contains ${logs} - that is where the reason is."
+            else
+              echo "> Every tag above contains **both** linux/amd64 and linux/arm64."
+              echo "> No failure log artefact was produced, which is itself the"
+              echo "> statement that both architectures built."
+            fi
+            echo
+            echo "Pull, for example:"
+            echo '```'
+            echo "docker pull ${IMAGE_PREFIX}/kaicalc-api:${READBACK_TAG}"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+          exit "$FAILED"
+
+      - name: Write a log for every architecture that is not in the tag
+        # THE ONE PLACE THE ARTEFACT IS AUTHORED. The build jobs upload their
+        # own detail, but they cannot cover the case that matters most here - a
+        # leg that was never scheduled runs no steps at all, so it can upload
+        # nothing. This step works from what the registry does not contain, so
+        # "the runner refused the job" and "the build broke" produce the same
+        # visible outcome: a file named after the architecture that did not
+        # ship.
+        #
+        # `always()` so this still runs when the step above exited non-zero
+        # because an image got no architectures at all.
+        if: always() && steps.assemble.outputs.missing_arches != ''
+        run: |
+          set -eu
+          mkdir -p failure-logs
+          for arch in ${{ steps.assemble.outputs.missing_arches }}; do
+            {
+              echo "=============================================================="
+              echo " ${arch} IS NOT IN THE PUBLISHED TAGS (${{ inputs.tags }})"
+              echo "=============================================================="
+              echo
+              echo "This file exists BECAUSE that architecture did not ship."
+              echo "On a healthy run no such file is produced at all."
+              echo
+              echo "commit          : ${GITHUB_SHA}"
+              echo "tags            : ${{ inputs.tags }}"
+              echo "run             : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              echo
+              echo "No ${IMAGE_PREFIX}/kaicalc-*:${{ inputs.arch_tag_prefix }}-${arch} tag"
+              echo "exists in the registry, so the manifests above were built"
+              echo "without it."
+              echo
+              if [ -f "incoming/${arch}.log" ]; then
+                echo "--- detail uploaded by the Build ${arch} job ---"
+                cat "incoming/${arch}.log"
+              else
+                echo "The Build ${arch} job uploaded no detail of its own. That"
+                echo "almost always means it never started a step - i.e. the"
+                echo "runner was never allocated. Open the run above and read the"
+                echo "'Build ${arch}' job's own annotation; for a private"
+                echo "repository the usual cause is that the ${arch} hosted-runner"
+                echo "allowance is exhausted or was never enabled."
+              fi
+            } > "failure-logs/${arch}.log"
+            echo "--- failure-logs/${arch}.log ---"
+            cat "failure-logs/${arch}.log"
+          done
+
+      - name: Upload the failure logs
+        if: always() && steps.assemble.outputs.missing_arches != ''
+        uses: actions/upload-artifact@v4
+        with:
+          name: image-build-failures
+          path: failure-logs/
+          retention-days: 90

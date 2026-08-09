@@ -1,0 +1,116 @@
+# Write one version string into pyproject.toml, before anything builds.
+#
+# WHY THIS IS AN ACTION AND NOT TEN LINES IN TWO PLACES. The release publishes
+# a wheel AND three images, and the images build their own wheel internally
+# (`pip wheel .` in docker/api.Dockerfile's build stage). Those are two
+# independent build paths from one source tree. If they stamped the version
+# differently - or if one of them stopped stamping - a release would ship
+# `kaicalc-1.2.0-py3-none-any.whl` on the release page beside an image whose
+# `pip show kaicalc` says 1.0.0, and nothing anywhere would raise. One
+# implementation, two call sites.
+#
+# It edits the working tree rather than passing a build argument, because
+# docker/*.Dockerfile take NO build arguments on purpose: docker/compose.yaml
+# passes none either, and CI must build the thing that ships. The build context
+# is the repository root, so the edited pyproject.toml is what `COPY
+# pyproject.toml` picks up.
+#
+# The edit is never committed. It exists for the length of one job.
+
+name: Stamp the package version
+description: >-
+  Rewrite [project].version in pyproject.toml so the wheel, the sdist and the
+  three images all carry the same version. Fails rather than guessing.
+
+inputs:
+  version:
+    description: >-
+      The exact PEP 440 version to write. Not derived here - the caller decides
+      whether this is a release (1.2.0) or an alpha (1.0.0.dev0+abc1234).
+    required: true
+
+outputs:
+  previous:
+    description: The version that was in pyproject.toml before this ran.
+    value: ${{ steps.stamp.outputs.previous }}
+
+runs:
+  using: composite
+  steps:
+    - id: stamp
+      shell: bash
+      env:
+        STAMP_VERSION: ${{ inputs.version }}
+      run: |
+        set -euo pipefail
+        python3 - <<'PY'
+        import os
+        import pathlib
+        import re
+        import sys
+
+        want = os.environ["STAMP_VERSION"]
+
+        # PEP 440, restricted to the two shapes this project produces: a
+        # release (1.2.0) and an alpha (1.0.0.dev0+abc1234). Validated HERE as
+        # well as at the workflow's own entry point, because this action is the
+        # last thing standing between a typo and a published artefact - and the
+        # alpha string is COMPUTED rather than typed, so it has no human check
+        # in front of it at all.
+        if not re.fullmatch(r"\d+\.\d+\.\d+(\.dev\d+)?(\+[0-9a-z.]+)?", want):
+            sys.exit(
+                f"Refusing to stamp {want!r}: not a version this project "
+                "produces. Expected N.N.N, optionally .devN, optionally "
+                "+<local>."
+            )
+
+        path = pathlib.Path("pyproject.toml")
+        text = path.read_text(encoding="utf-8")
+
+        # Anchored to the start of a line and to the `version = "..."` spelling
+        # pyproject.toml actually uses. `count=1` plus the substitution-count
+        # check below is the whole safety argument: a pyproject that grows a
+        # second `version = ` line (a tool table, say) would match twice and is
+        # reported rather than half-edited.
+        pattern = re.compile(r'(?m)^version = "([^"]+)"$')
+        found = pattern.findall(text)
+        if len(found) != 1:
+            sys.exit(
+                "Expected exactly one top-level `version = \"...\"` line in "
+                f"pyproject.toml, found {len(found)}. Refusing to edit."
+            )
+
+        previous = found[0]
+        path.write_text(pattern.sub(f'version = "{want}"', text, count=1),
+                        encoding="utf-8")
+
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as fh:
+            fh.write(f"previous={previous}\n")
+
+        print(f"pyproject.toml version: {previous} -> {want}")
+        PY
+
+        # Read the file back through a TOML parser rather than trusting the
+        # substitution above. The lesson from task 3, applied twice in this
+        # plan already: a check that reads back its own intention is not a
+        # check. `tomllib` is standard library on 3.11+, and the runner's
+        # python3 is at least that.
+        python3 - <<'PY'
+        import os
+        import sys
+        import tomllib
+
+        with open("pyproject.toml", "rb") as fh:
+            data = tomllib.load(fh)
+
+        got = data["project"]["version"]
+        want = os.environ["STAMP_VERSION"]
+        if got != want:
+            sys.exit(
+                f"pyproject.toml parses as version {got!r} after stamping "
+                f"{want!r}. The edit did not take."
+            )
+        print(f"verified: pyproject.toml parses as version {got}")
+        PY
+      # STAMP_VERSION is read by the second heredoc as well; `env:` on the step
+      # covers both.

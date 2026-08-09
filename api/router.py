@@ -7,12 +7,17 @@ import io
 import zipfile
 from typing import Any
 
-from fastapi import APIRouter, Request
+from fastapi import APIRouter, Depends, Request
 from fastapi.responses import Response
 
 from api.engine_adapter import EngineAdapter
-from api.errors import ApiProblem, ContractJSONResponse, engine_problem
-from api.schemas import CalculatePayload, bundle_row_count
+from api.errors import (
+    ApiProblem,
+    ContractJSONResponse,
+    blocked_problem,
+    engine_problem,
+)
+from api.schemas import CalculatePayload, bundle_row_count, entry_rule_problems
 from api.serialization import wire
 from db.errors import (
     FactorSetNotFoundError,
@@ -30,7 +35,28 @@ from db.repository import (
     upsert_submission,
 )
 
-router = APIRouter(prefix="/api/v1")
+def _reject_blocked_callers(request: Request) -> None:
+    """§9.2, checked before anything else and on every endpoint under
+    `/api/v1/`, `GET` included.
+
+    A router-level dependency rather than a line in `calculate()` because
+    FastAPI solves dependencies before it validates the request body, which
+    is what "before request validation" has to mean in practice: a blocked
+    caller must not be able to read the taxonomy out of the API's own
+    validation messages.
+
+    The lookup itself stays outside `api/`. `db.blocklist.is_blocked` needs
+    the ORM and a derived HMAC key, and `api/` imports only
+    `db.repository`, `db.errors` and `db.session`; the composition root
+    injects a callable the same way it injects `staff_authenticator`. When
+    none is configured there is no blocklist and every caller passes.
+    """
+    check = getattr(request.app.state, "blocklist_check", None)
+    if check is not None and check(request):
+        raise blocked_problem()
+
+
+router = APIRouter(prefix="/api/v1", dependencies=[Depends(_reject_blocked_callers)])
 
 
 def _client_ip(request: Request) -> str:
@@ -92,17 +118,37 @@ def _authenticate_dry_run(request: Request) -> str:
     return actor
 
 
+def _dry_run_header(request: Request) -> bool:
+    """§6.2's `X-Dry-Run`, read as a boolean rather than as one magic string.
+
+    `false` means "not a dry run" and must not be a 400: it is the value a
+    client sends when it templates the header unconditionally, and refusing
+    it rejects a request that asked for exactly the default behaviour. The
+    match is case-insensitive because HTTP header *values* have no case
+    convention and `TRUE` is not a different instruction. Anything else is
+    still refused, so a typo does not silently persist a staff dry run.
+    """
+    header = request.headers.get("X-Dry-Run")
+    if header is None:
+        return False
+    value = header.strip().lower()
+    if value in {"true", "false"}:
+        return value == "true"
+    raise ApiProblem(400, "VALIDATION_ERROR", "X-Dry-Run must be true or false")
+
+
 @router.post("/calculate")
 def calculate(payload: CalculatePayload, request: Request) -> ContractJSONResponse:
     _limit(request, "post-calculate", 120)
-    header = request.headers.get("X-Dry-Run")
-    if header is not None and header != "true":
-        raise ApiProblem(400, "VALIDATION_ERROR", "X-Dry-Run must be true when supplied")
-    dry_run = header is not None
+    dry_run = _dry_run_header(request)
     if payload.dry_run is not None and not dry_run:
         raise ApiProblem(400, "VALIDATION_ERROR", "dry_run requires X-Dry-Run: true")
     if dry_run:
         _authenticate_dry_run(request)
+
+    problems = entry_rule_problems(payload)
+    if problems:
+        raise ApiProblem(400, "VALIDATION_ERROR", "Request validation failed", problems)
 
     adapter = _engine(request)
     factor_source = "published"
@@ -153,9 +199,14 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
         if factor_set_id is None:
             raise ApiProblem(500, "INTERNAL_ERROR", "Published factor set was not resolved")
         try:
+            # A token that resolves to nothing is treated as absent by
+            # `upsert_submission` and a new one is minted (§6.2), which is
+            # why the field is a plain string: a stale `sessionStorage`
+            # value from an earlier deployment is not a request the user
+            # can act on.
             _, token = upsert_submission(
                 request.state.db,
-                str(payload.token) if payload.token else None,
+                payload.token or None,
                 engine_request,
                 factor_set_id,
             )

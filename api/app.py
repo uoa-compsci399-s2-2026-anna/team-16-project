@@ -35,6 +35,7 @@ def create_app(
     database_url: str | None = None,
     engine_adapter: EngineAdapter | None = None,
     staff_authenticator: Callable[[Request], str] | None = None,
+    blocklist_check: Callable[[Request], bool] | None = None,
 ) -> FastAPI:
     database_url = database_url or os.getenv("DATABASE_URL")
     if not database_url:
@@ -43,6 +44,13 @@ def create_app(
     app.state.session_factory = create_session_factory(database_url)
     app.state.engine_adapter = engine_adapter or DefaultEngineAdapter()
     app.state.staff_authenticator = staff_authenticator
+    #: §9.2's blocklist lookup, injected rather than imported: `db.blocklist`
+    #: needs the ORM and the HKDF-derived fingerprint key, and `api/`
+    #: imports only `db.repository`, `db.errors` and `db.session`. When E's
+    #: app mounts this router it passes a callable closing over
+    #: `db.blocklist.is_blocked` and its own settings. None means no
+    #: blocklist is configured and every caller passes.
+    app.state.blocklist_check = blocklist_check
     app.state.rate_limiter = FixedWindowRateLimiter()
 
     @app.middleware("http")

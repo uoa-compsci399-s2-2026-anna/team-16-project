@@ -10,20 +10,43 @@ from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 
+#: `details` omitted and `details` explicitly null are different envelopes.
+#: Every ordinary error carries `[]`; §9.2's `BLOCKED` carries `null`, and
+#: with a plain `details or []` that value was unrepresentable, so the rule
+#: could not be satisfied at all rather than merely being unimplemented.
+_UNSET: Any = object()
+
+#: §9.2. Fixed, and it never varies: the refusal must not say which rule
+#: fired, when the block expires, or that a blocklist exists - that is a free
+#: tuning signal for whoever is probing. Staff read the reason and the expiry
+#: on /admin/ip-block/list and in `audit_log`.
+BLOCKED_MESSAGE = (
+    "This request was refused. If you believe this is an error, "
+    "contact the Kai Commitment team."
+)
+
+
 class ApiProblem(Exception):
     def __init__(
         self,
         status: int,
         code: str,
         message: str,
-        details: list[dict[str, Any]] | None = None,
+        details: list[dict[str, Any]] | None = _UNSET,
         headers: dict[str, str] | None = None,
     ) -> None:
         self.status = status
         self.code = code
         self.message = message
-        self.details = details or []
+        self.details = [] if details is _UNSET else details
         self.headers = headers
+
+
+def blocked_problem() -> ApiProblem:
+    """§9.2's 403. Distinct from `RATE_LIMITED` on purpose: a retry will never
+    succeed, and a front end that treated the two the same would poll a
+    blocked caller against the API forever."""
+    return ApiProblem(403, "BLOCKED", BLOCKED_MESSAGE, None)
 
 
 class ContractJSONResponse(JSONResponse):
@@ -66,15 +89,38 @@ async def http_error_handler(
     )
 
 
+def bracket_path(loc: tuple[Any, ...]) -> str:
+    """Pydantic's `loc` in the form §9 puts on the wire.
+
+    `("body", "entries", 0, "current", 1, "qty_kg")` becomes
+    `entries[0].current[1].qty_kg`, which is what a front end building a
+    lookup key from its own render loop writes. Pydantic's own rendering is
+    `entries.0.current.1.qty_kg`; neither is wrong, but if the API emits one
+    and the client looks up the other, field-level highlighting simply never
+    binds - no error, no console warning, and the user only ever sees the
+    generic banner.
+    """
+    parts: list[str] = []
+    for position, item in enumerate(loc):
+        if position == 0 and item == "body":
+            continue
+        if isinstance(item, int):
+            parts.append(f"[{item}]")
+        elif parts:
+            parts.append(f".{item}")
+        else:
+            parts.append(str(item))
+    return "".join(parts) or "body"
+
+
 async def validation_handler(
     _request: Request, exc: RequestValidationError
 ) -> JSONResponse:
     details = []
     for error in exc.errors():
-        loc = [str(item) for item in error.get("loc", ()) if item != "body"]
         details.append(
             {
-                "field": ".".join(loc) or "body",
+                "field": bracket_path(tuple(error.get("loc", ()))),
                 "issue": error.get("type", "invalid"),
                 "message": error.get("msg", "Invalid value"),
             }

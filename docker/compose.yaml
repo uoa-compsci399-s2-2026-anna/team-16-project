@@ -58,7 +58,12 @@ services:
   #   docker compose -f docker/compose.yaml exec db mysql -ukaicalc -p kaicalc
   # -------------------------------------------------------------------------
   db:
-    image: mysql:8.0
+    # Pinned by digest for the same reason the Dockerfiles pin theirs: a
+    # floating tag means the database a client starts in six months is not the
+    # one this was verified against, and a MySQL point release that changes a
+    # default is exactly the kind of thing nobody attributes correctly. YAML
+    # does have end-of-line comments, so the human tag can sit inline here.
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b   # mysql:8.0
     container_name: kaicalc-stack-db
     restart: unless-stopped
     environment:
@@ -156,6 +161,12 @@ services:
       # See docker/nginx-proxy-headers.conf for the full argument. False while
       # the direct `ports:` below are published; flip it and remove them
       # together, never one without the other.
+      #
+      # THE COST OF LEAVING IT FALSE IS NOT ABSTRACT. api/router.py allows 600
+      # GETs and 120 calculates per hour, keyed on the caller's address - and
+      # behind this proxy every caller IS the proxy, so those become 600 and
+      # 120 SITE-WIDE per hour rather than per visitor. In production the
+      # pairing below is required, not a refinement.
       PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
     volumes:
       - secret:/var/lib/kaicalc
@@ -248,10 +259,16 @@ services:
     container_name: kaicalc-web
     restart: unless-stopped
     depends_on:
+      # BOTH must be resolvable before nginx starts, not just reachable. nginx
+      # resolves an upstream host once, at configuration load, and refuses to
+      # start at all if either name is unknown ("host not found in upstream").
+      # `admin` waits on service_healthy rather than service_started for that
+      # reason - a container that exists but has not bound its port yet is
+      # resolvable, but a container that has failed to start is not.
       api:
         condition: service_healthy
       admin:
-        condition: service_started
+        condition: service_healthy
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

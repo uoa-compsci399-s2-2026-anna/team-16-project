@@ -20,7 +20,16 @@
 # ---------------------------------------------------------------------------
 # Stage 1 - build the wheel
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim AS build
+# Pinned by DIGEST, with the human tag in the trailing comment so this stays
+# readable - and it has to be the line ABOVE, not a trailing `# tag` on the
+# FROM itself: Dockerfile has no end-of-line comments, and the parser reads
+# one as extra arguments ("FROM requires either one or three arguments").
+# A floating tag means the image a client builds in six months is
+# not the image verified in the task 2 report, with nothing to signal the
+# difference. The digest is a manifest-list digest, so multi-architecture
+# resolution still works - task 3's arm64 build resolves the same index.
+# python:3.11-slim
+FROM python@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff AS build
 
 WORKDIR /src
 
@@ -50,7 +59,8 @@ RUN pip wheel --no-deps --no-cache-dir --wheel-dir /wheels .
 # ---------------------------------------------------------------------------
 # Stage 2 - runtime
 # ---------------------------------------------------------------------------
-FROM python:3.11-slim AS runtime
+# python:3.11-slim
+FROM python@sha256:90744cff8f32887f075c47d747a173ff333e9e98801667af93c357fa9f5e28ff AS runtime
 
 # PYTHONUNBUFFERED is load-bearing, not hygiene. Python block-buffers stdout
 # when it is a pipe, which is what `docker compose logs` gives it. Without
@@ -68,7 +78,13 @@ RUN groupadd --system --gid 10001 kaicalc \
  && useradd --system --uid 10001 --gid kaicalc --home-dir /app --shell /usr/sbin/nologin kaicalc
 
 COPY --from=build /wheels/*.whl /tmp/wheels/
-RUN pip install --no-cache-dir /tmp/wheels/*.whl && rm -rf /tmp/wheels
+# --constraint pins every transitive version to the set frozen from the build
+# this report verified. pyproject.toml states floors (`fastapi>=0.115`); this
+# says which version was actually tested. Without it the resolver picks
+# whatever is newest on PyPI on build day. See docker/constraints.txt.
+COPY docker/constraints.txt /tmp/constraints.txt
+RUN pip install --no-cache-dir --constraint /tmp/constraints.txt /tmp/wheels/*.whl \
+ && rm -rf /tmp/wheels /tmp/constraints.txt
 
 WORKDIR /app
 

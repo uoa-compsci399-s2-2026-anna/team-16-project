@@ -8,10 +8,28 @@ import { compareImprovement, openImprovement, resetImprovement, updateImprovemen
 const STEPS = ['Supply-chain stage', 'Food type', 'Waste amount', 'Destinations', 'Review', 'Results']
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
+// Destination amounts are entered to two decimal places, so two sums that agree to
+// two decimal places are equal as far as the user is concerned. Binary floating point
+// does not agree: 0.1 + 0.2 > 0.3. Same tolerance as improvement.js's 100% check.
+const ALLOCATION_EPSILON = 0.01
+const exceedsTotal = (allocated, total) => allocated - total > ALLOCATION_EPSILON
+const remainingAmount = (total, allocated) => (Math.abs(total - allocated) <= ALLOCATION_EPSILON ? 0 : total - allocated)
+
+// crypto.randomUUID() is [SecureContext] and so is undefined over plain http:// to a
+// LAN IP. crypto.getRandomValues() is not. These ids never leave the browser.
+function randomId() {
+  if (typeof crypto.randomUUID === 'function') return crypto.randomUUID()
+  const bytes = crypto.getRandomValues(new Uint8Array(16))
+  bytes[6] = (bytes[6] & 0x0f) | 0x40
+  bytes[8] = (bytes[8] & 0x3f) | 0x80
+  const hex = [...bytes].map(byte => byte.toString(16).padStart(2, '0')).join('')
+  return `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+}
+
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
 const selected = (items, code) => items.find(item => item.code === code)
 const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => destination.code !== 'prevention')
-const createLine = (destination, qtyInput = '') => ({ id: crypto.randomUUID(), destination, qtyInput })
+const createLine = (destination, qtyInput = '') => ({ id: randomId(), destination, qtyInput })
 const amountToKg = amount => massToKg(amount, state.totalUnit)
 const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : amountToKg(line.qtyInput).toFixed(3) }))
 const allocatedAmount = lines => lines.reduce((sum, line) => sum + (Number(line.qtyInput) || 0), 0)
@@ -41,7 +59,7 @@ function foodStep() {
   const categories = sorted(state.taxonomy.food_categories)
   return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">Step 2 · Optional</p><h1 id="food-title">What type of food waste are you measuring?</h1><p class="section-intro">Choose one category if you know it, or continue without selecting an option.</p><fieldset class="choice-fieldset"><legend class="sr-only">Food type</legend><div class="simple-choice-list">${categories.map(category => {
     const isSelected = state.foodCategory === category.code
-    return `<label class="simple-choice ${isSelected ? 'selected' : ''}"><input type="radio" name="food-category" value="${escapeHtml(category.code)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(category.name)}</strong>${category.is_standard_mix ? '<small>Recommended if you do not separate food waste by category</small>' : ''}</span>${isSelected ? '<span class="selected-label" aria-hidden="true">✓ Selected</span>' : ''}</label>`
+    return `<label class="simple-choice ${isSelected ? 'selected' : ''}"><input id="food-category-${slug(category.code)}" type="radio" name="food-category" value="${escapeHtml(category.code)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(category.name)}</strong>${category.is_standard_mix ? '<small>Recommended if you do not separate food waste by category</small>' : ''}</span>${isSelected ? '<span class="selected-label" aria-hidden="true">✓ Selected</span>' : ''}</label>`
   }).join('')}</div></fieldset>${state.foodCategory ? '<button type="button" class="text-button" data-action="clear-food">Clear optional selection</button>' : ''}${buttonRow(0)}</section>`
 }
 
@@ -50,7 +68,7 @@ function amountStep() {
 }
 
 function destinationRows() {
-  const allocationExcess = allocatedAmount(state.current) > Number(state.totalAmount || 0)
+  const allocationExcess = exceedsTotal(allocatedAmount(state.current), Number(state.totalAmount || 0))
   return state.current.map((line, index) => {
     const destination = selected(state.taxonomy.destinations, line.destination)
     const fieldPath = `current[${index}].qty_kg`
@@ -62,10 +80,10 @@ function destinationRows() {
 function destinationStep() {
   const total = Number(state.totalAmount) || 0
   const allocated = allocatedAmount(state.current)
-  const summaryInvalid = allocated > total || state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
+  const summaryInvalid = exceedsTotal(allocated, total) || state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const canContinue = allocated > 0 && !summaryInvalid && !state.current.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))
   return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">Step 4</p><h1 id="destination-title">Where did the food waste go?</h1><p class="section-intro">Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.</p>
-    <div class="allocation-summary ${summaryInvalid ? 'invalid' : ''}" id="current-summary" aria-live="polite"><div><span>Total waste</span><strong>${formatNumber(total, 2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Allocated</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Remaining</span><strong data-summary="remaining">${formatNumber(total - allocated, 2)} ${escapeHtml(state.totalUnit)}</strong></div></div>
+    <div class="allocation-summary ${summaryInvalid ? 'invalid' : ''}" id="current-summary" aria-live="polite"><div><span>Total waste</span><strong>${formatNumber(total, 2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Allocated</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Remaining</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(state.totalUnit)}</strong></div></div>
     <div class="destination-list">${destinationRows()}</div>
     <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${buttonRow(2, 'Continue', !canContinue, 'continue')}</section>`
 }
@@ -117,7 +135,7 @@ function validateCurrentStep() {
     if (lines.some(line => line.qtyInput !== '' && (Number(line.qtyInput) < 0 || !Number.isFinite(Number(line.qtyInput))))) return 'Destination amounts must be zero or greater.'
     if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return 'Enter destination amounts to no more than two decimal places.'
     const sum = allocatedAmount(lines)
-    if (sum > total) return `Allocated waste exceeds total waste by ${(sum - total).toFixed(2)} ${state.totalUnit === 'kilograms' ? 'kg' : 'tonnes'}.`
+    if (exceedsTotal(sum, total)) return `Allocated waste exceeds total waste by ${(sum - total).toFixed(2)} ${state.totalUnit === 'kilograms' ? 'kg' : 'tonnes'}.`
   }
   return ''
 }
@@ -183,16 +201,16 @@ function updateLine(control) {
   const sum = allocatedAmount(state.current)
   const summary = document.getElementById('current-summary')
   const hasNegative = state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
-  summary?.classList.toggle('invalid', sum > total || hasNegative)
+  summary?.classList.toggle('invalid', exceedsTotal(sum, total) || hasNegative)
   if (summary) {
     summary.querySelector('[data-summary="allocated"]').textContent = `${sum.toFixed(2)} ${state.totalUnit}`
-    summary.querySelector('[data-summary="remaining"]').textContent = `${(total - sum).toFixed(2)} ${state.totalUnit}`
+    summary.querySelector('[data-summary="remaining"]').textContent = `${remainingAmount(total, sum).toFixed(2)} ${state.totalUnit}`
   }
   const error = validateCurrentStep()
   document.getElementById('allocation-error').textContent = error
   document.querySelectorAll('.destination-row').forEach(row => row.classList.remove('invalid'))
   document.querySelectorAll('.destination-row input').forEach(input => input.removeAttribute('aria-invalid'))
-  if (sum > total || Number(control.value) < 0) {
+  if (exceedsTotal(sum, total) || Number(control.value) < 0) {
     control.closest('.destination-row')?.classList.add('invalid')
     control.setAttribute('aria-invalid', 'true')
   }
@@ -201,7 +219,7 @@ function updateLine(control) {
 }
 
 function loadEntry(entry) {
-  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, current: entry.current.map(line => ({ ...line, id: crypto.randomUUID() })), alternative: [], step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
+  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, current: entry.current.map(line => ({ ...line, id: randomId() })), alternative: [], step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
 }
 
 function clearDraft() {

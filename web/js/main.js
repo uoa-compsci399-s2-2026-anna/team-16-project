@@ -16,10 +16,21 @@ async function loadTaxonomy({ preserveError = false } = {}) {
   }
 }
 
+// render() replaces main.innerHTML wholesale, so every re-render detaches whatever the
+// user had focused. Moving focus to <main> is right on a step transition and wrong on
+// every other setState: arrow-keying a radio group fires change -> setState -> re-render,
+// and the focus call then throws the keyboard user out of the group. On a same-step
+// re-render, put focus back on the element that had it.
+let focusedStep = null
+
 subscribe(() => {
+  const activeId = main.contains(document.activeElement) ? document.activeElement.id : null
+  const stepChanged = state.step !== focusedStep
+  focusedStep = state.step
   renderChrome()
   render(main)
-  main.focus({ preventScroll: true })
+  if (stepChanged) main.focus({ preventScroll: true })
+  else if (activeId !== null) (document.getElementById(activeId) || main).focus({ preventScroll: true })
 })
 
 bindCalculator(main, loadTaxonomy)

@@ -1,0 +1,84 @@
+# What never goes into an image.
+#
+# Written BEFORE the Dockerfiles, and deliberately so. The build context for
+# every image in docker/ is the repository root, so anything not excluded here
+# is uploaded to the daemon and is a candidate for a stray `COPY . .` to pick
+# up. An image that quietly ships the test suite, the planning notes and the
+# marking journal is the failure this file exists to prevent - the images are
+# a deliverable the client may run, and the client is not the audience for
+# .superpowers/ or Journal/.
+#
+# The Dockerfiles name their sources explicitly rather than copying the whole
+# context, so this file is the second line of defence, not the only one. Both
+# are kept: a `COPY . .` added in a hurry six months from now is exactly the
+# change nobody will review for this.
+
+# --- Version control and tooling metadata ---
+.git/
+.gitignore
+.gitattributes
+.github/
+.vscode/
+.idea/
+.superpowers/
+.claude/
+
+# --- Tests. Not shipped: the wheel is the deliverable, the suite is not. ---
+tests/
+pytest.ini
+.pytest_cache/
+htmlcov/
+.coverage
+.coverage.*
+
+# --- Documentation and course material ---
+docs/
+Journal/
+README.md
+CLAUDE.md
+project.md
+*.pptx
+*.docx
+*.pdf
+
+# --- Python build and cache output ---
+# `**/` is load-bearing: a bare `__pycache__/` matches only the context root,
+# because Docker matches these patterns against the whole relative path rather
+# than against each path component. Without it every package directory would
+# ship its own bytecode - compiled by whichever Python the developer happens to
+# run (3.12 here) into an image whose interpreter is 3.11.
+**/__pycache__/
+**/*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.mypy_cache/
+.ruff_cache/
+.tox/
+venv/
+.venv/
+env/
+
+# --- Secrets and local configuration ---
+# .env is git-ignored and machine-local. A container gets its configuration
+# from the environment (docker/compose.yaml), never from a baked-in file, and
+# an image carrying a developer's SECRET_KEY would hand every later deployment
+# the same one.
+.env
+.env.*
+!.env.example
+
+# --- Local development state ---
+docker-compose.yml
+*.log
+*.sqlite
+*.sqlite3
+*.db
+.DS_Store
+Thumbs.db
+
+# --- iCloud / editor debris ---
+*.icloud
+* 2.*
+*~

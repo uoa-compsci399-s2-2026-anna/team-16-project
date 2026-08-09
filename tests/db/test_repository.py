@@ -20,6 +20,7 @@ from db.models import (
     utcnow,
 )
 from db.repository import (
+    build_bundle_data,
     clone_factor_set,
     get_public_stats,
     get_published_factor_set_id,
@@ -190,6 +191,26 @@ def test_factor_bundle_cache_is_partitioned_and_explicitly_invalidated(seeded_se
     assert built == ["MOCK-v0", "DRAFT-v1", "DRAFT-v1", "MOCK-v0"]
 
 
+def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
+    """Contract §10.2 (v1.8): every `upstream[]` row publishes a `destination`,
+    `null` for the generic row that applies to every destination.
+
+    Without the key the engine cannot implement §4.1's exact-destination-then-
+    generic-then-zero order at all, and O-7 stays open no matter what the
+    database holds — `prevention`'s zero row would be loaded, keyed on the same
+    tuple as the general row, and one of the two would win at random.
+    """
+    data = build_bundle_data(seeded_session, get_published_factor_set_id(seeded_session))
+    rows = {row["destination"]: row for row in data["upstream"]}
+
+    assert set(rows) == {None, "prevention"}, data["upstream"]
+    assert rows[None]["value_per_kg"] == "1.9000000000"
+    #: O-7: prevented waste was never produced, so its upstream is zero.
+    assert Decimal(rows["prevention"]["value_per_kg"]) == 0
+    #: §1.1 - `code` crosses the layer boundary, never a primary key.
+    assert all("destination_id" not in row for row in data["upstream"])
+
+
 def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_session):
     published_id = get_published_factor_set_id(seeded_session)
     clone_id = clone_factor_set(seeded_session, published_id, "CLONE-v1", "alice")
@@ -207,6 +228,20 @@ def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_ses
     assert seeded_session.scalar(
         select(func.count()).select_from(Constant).where(Constant.factor_set_id == clone_id)
     ) == 1
+    #: A row count alone cannot see a column the clone drops. `destination_id`
+    #: is the one that matters: lose it and every cloned set's `prevention`
+    #: rows collapse onto the general row, reopening O-7 on the next publish —
+    #: and clone-edit-publish is the recommended staff workflow (§5.2), so the
+    #: defect would arrive on the first real factor set rather than this one.
+    assert seeded_session.scalars(
+        select(FactorUpstream.destination_id)
+        .where(FactorUpstream.factor_set_id == clone_id)
+        .order_by(FactorUpstream.destination_id.is_(None))
+    ).all() == seeded_session.scalars(
+        select(FactorUpstream.destination_id)
+        .where(FactorUpstream.factor_set_id == published_id)
+        .order_by(FactorUpstream.destination_id.is_(None))
+    ).all()
 
     publish_factor_set(seeded_session, clone_id, "alice")
     assert get_published_factor_set_id(seeded_session) == clone_id

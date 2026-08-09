@@ -124,14 +124,22 @@ _FACTORIES = {
         forbidden=["9007"],
     ),
     FactorUpstream: _case(
+        #: Carries a destination, which since v1.8 is the nullable column that
+        #: distinguishes `prevention`'s zero row from the general row it
+        #: overrides (O-7). A factory that left it None would exercise only
+        #: the branch that existed before.
         lambda: FactorUpstream(
             id=9008, value_per_kg=Decimal("1"),
             sector=Sector(code="up_sector", name="S"),
             food_category=FoodCategory(code="up_cat", name="C"),
+            destination=Destination(
+                code="up_dest", name="UD",
+                group=DestinationGroup(code="g1", name="G1", is_waste=False),
+            ),
             metric=Metric(code="up_metric", name="M", unit="kg"),
             factor_set=FactorSet(version_label="fs1"),
         ),
-        identifying=["up_sector", "up_cat", "up_metric"],
+        identifying=["up_sector", "up_cat", "up_dest", "up_metric"],
         forbidden=["9008"],
     ),
     FactorDownstream: _case(

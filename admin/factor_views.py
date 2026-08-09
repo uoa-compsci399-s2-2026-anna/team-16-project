@@ -169,22 +169,50 @@ def _refuse_delete_from_non_draft(view: AuditedModelView, model: type, pk: str) 
 
 
 class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
+    """`destination` may be left empty, and almost always should be.
+
+    Empty means "every destination for this sector, food category and metric"
+    — producing a kilogram of dairy costs what it costs whatever later becomes
+    of it. The column exists so that `prevention` can carry a row of its own at
+    zero (open item O-7): food that was never wasted was never produced, so
+    none of the upstream burden is attributable to it, and without that row the
+    calculator understates the benefit of wasting less by most of its value.
+
+    The same shape as `FactorDownstreamAdmin.food_category` below, and the form
+    must present it the same way: an optional select, not a required one.
+    """
+
     name = "Upstream factor"
     name_plural = "Upstream factors"
     category = _CATEGORY
     icon = "fa-solid fa-seedling"
 
     column_list = [FactorUpstream.factor_set, FactorUpstream.sector,
-                   FactorUpstream.food_category, FactorUpstream.metric,
+                   FactorUpstream.food_category, FactorUpstream.destination,
+                   FactorUpstream.metric,
                    FactorUpstream.value_per_kg, FactorUpstream.data_quality]
     column_details_list = [FactorUpstream.factor_set, FactorUpstream.sector,
-                           FactorUpstream.food_category, FactorUpstream.metric,
+                           FactorUpstream.food_category,
+                           FactorUpstream.destination, FactorUpstream.metric,
                            FactorUpstream.value_per_kg,
                            FactorUpstream.data_quality, FactorUpstream.source_note]
     form_columns = [FactorUpstream.factor_set, FactorUpstream.sector,
-                    FactorUpstream.food_category, FactorUpstream.metric,
+                    FactorUpstream.food_category, FactorUpstream.destination,
+                    FactorUpstream.metric,
                     FactorUpstream.value_per_kg, FactorUpstream.data_quality,
                     FactorUpstream.source_note]
+    #: Rendered by sqladmin's `_macros.html` under the field. Without it the
+    #: blank option reads as an unfinished form rather than as the answer.
+    form_args = {
+        "destination": {
+            "description": (
+                "Leave blank unless this factor is specific to one destination "
+                "— blank means it applies to every destination. The one row "
+                "that is not blank is 'prevention' at zero: prevented waste "
+                "was never produced, so it carries no upstream burden."
+            ),
+        },
+    }
     column_filters = [
         ForeignKeyFilter(FactorUpstream.factor_set_id, FactorSet.version_label,
                          title="Factor set"),

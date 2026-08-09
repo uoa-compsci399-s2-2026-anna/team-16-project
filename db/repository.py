@@ -232,10 +232,17 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
     if factor_set is None:
         raise FactorSetNotFoundError(f"Unknown factor set id: {factor_set_id}")
     taxonomy = get_taxonomy_for_bundle(session)
+    #: The outer join on Destination is the O-7 half of §2.2 (v1.8):
+    #: `destination_id` is nullable and NULL means "every destination", so an
+    #: inner join here would publish only the `prevention` overrides and drop
+    #: every general row — the exact inverse of the bug O-7 closed, and just as
+    #: silent. `factor_downstream` outer-joins FoodCategory for the same reason.
     upstream = session.execute(
-        select(FactorUpstream, Sector.code, FoodCategory.code, Metric.code)
+        select(FactorUpstream, Sector.code, FoodCategory.code, Destination.code,
+               Metric.code)
         .join(Sector, FactorUpstream.sector_id == Sector.id)
         .join(FoodCategory, FactorUpstream.food_category_id == FoodCategory.id)
+        .outerjoin(Destination, FactorUpstream.destination_id == Destination.id)
         .join(Metric, FactorUpstream.metric_id == Metric.id)
         .where(FactorUpstream.factor_set_id == factor_set_id)
     ).all()
@@ -279,12 +286,17 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
             {
                 "sector": sector,
                 "food_category": food,
+                #: §2.2/§10.2 (v1.8): `null` is a legal value meaning "every
+                #: destination", not a missing field, and must survive both
+                #: directions of the round trip — §4.1's lookup order is exact
+                #: destination, then this row, then zero.
+                "destination": destination,
                 "metric": metric,
                 "value_per_kg": str(x.value_per_kg),
                 "source_note": x.source_note,
                 "data_quality": x.data_quality,
             }
-            for x, sector, food, metric in upstream
+            for x, sector, food, destination, metric in upstream
         ],
         "downstream": [
             {
@@ -480,7 +492,14 @@ def clone_factor_set(
     session.add(clone)
     session.flush()
     copy_specs = (
-        (FactorUpstream, ("sector_id", "food_category_id", "metric_id", "value_per_kg")),
+        #: `destination_id` is in this tuple because leaving it out is how O-7
+        #: comes back. Clone-edit-publish is the recommended staff workflow
+        #: (§5.2), so a clone that dropped the column would collapse every
+        #: `prevention` zero onto its general row on the first real factor set
+        #: — and the clone would still have the right row *count*, which is all
+        #: the older half of test_clone_is_deep asserted.
+        (FactorUpstream, ("sector_id", "food_category_id", "destination_id",
+                          "metric_id", "value_per_kg")),
         (FactorDownstream, ("destination_id", "food_category_id", "metric_id", "value_per_kg")),
         (Constant, ("code", "value", "unit", "note")),
         (Formula, ("metric_id", "expression", "notes")),

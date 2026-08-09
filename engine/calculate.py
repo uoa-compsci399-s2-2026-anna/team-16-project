@@ -25,6 +25,13 @@ happen *inside* the per-line loop -- it is the same edit as the summation
 above, which is why open item O-7 and the `lines[0]` defect were fixed
 together.
 
+**Equivalences are data too.** They are read from `bundle.equivalences()` in
+exactly the same way, and no equivalence code appears here either. §4.2
+requires the rolled-up equivalence to be derived from the *rolled-up metric
+total* rather than summed from the per-entry ones -- the conversion is linear
+so the two agree mathematically, but `Decimal` has finite precision and one
+computation is one rounding.
+
 **Every lookup on `FactorBundle` falls back to `Decimal('0')`, so this module
 checks the codes itself.** Zero is the right answer for a missing *factor*
 (§4.1) and a catastrophic one for a missing *code*: an unknown sector would
@@ -34,7 +41,7 @@ otherwise produce a calculation of zero that reads as a real result. The
 
 from __future__ import annotations
 
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 
 from engine.bundle import FactorBundle
 from engine.errors import UnknownCodeError
@@ -45,6 +52,7 @@ from engine.types import (
     CalculationResult,
     CalculationTotals,
     EntryResult,
+    EquivalenceResult,
     MetricResult,
     ScenarioLine,
     ScenarioResult,
@@ -63,6 +71,13 @@ METRIC_SCALE = Decimal("0.0000000001")
 GWP_CH4 = "GWP_CH4"
 
 LEGAL_HORIZONS = (20, 100)
+
+#: §2.2 and §3 rule 5: the *only* placeholder `label_template` carries.
+#: `label_template` is staff-authored (§8.1), so it is never passed to
+#: `str.format` -- a template containing any other brace sequence would either
+#: raise or interpolate something a staff member did not intend. A plain
+#: `str.replace` copies every other character verbatim, which is the rule.
+VALUE_PLACEHOLDER = "{value}"
 
 
 def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationResult:
@@ -115,7 +130,7 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
         factor_set_version=bundle.version_label,
         is_mock=bundle.is_mock,
         gwp_horizon=request.gwp_horizon,
-        totals=_totals(tuple(entries)),
+        totals=_totals(tuple(entries), bundle),
         entries=tuple(entries),
     )
 
@@ -203,10 +218,7 @@ def calculate_scenario(
     return ScenarioResult(
         total_kg=sum((row.qty_kg for row in lines), Decimal("0")),
         metrics=metrics,
-        # Not computed yet: the §3 interpolation rule for `label` and §4.2's
-        # requirement that the rolled-up equivalence be derived from the
-        # rolled-up metric total are a piece of their own.
-        equivalences=(),
+        equivalences=_equivalences(metrics, bundle),
     )
 
 
@@ -262,7 +274,9 @@ def _constant_bindings(bundle: FactorBundle, gwp_horizon: int) -> dict[str, Deci
     return bindings
 
 
-def _totals(entries: tuple[EntryResult, ...]) -> CalculationTotals:
+def _totals(
+    entries: tuple[EntryResult, ...], bundle: FactorBundle
+) -> CalculationTotals:
     """§4.2's roll-up table, computed here and never in `api/`.
 
     An entry with no alternative contributes its **current** figures to the
@@ -274,13 +288,14 @@ def _totals(entries: tuple[EntryResult, ...]) -> CalculationTotals:
     """
     has_alternative = any(entry.alternative is not None for entry in entries)
 
-    current = _roll_up(tuple(entry.current for entry in entries))
+    current = _roll_up(tuple(entry.current for entry in entries), bundle)
     alternative = (
         _roll_up(
             tuple(
                 entry.alternative if entry.alternative is not None else entry.current
                 for entry in entries
-            )
+            ),
+            bundle,
         )
         if has_alternative
         else None
@@ -294,7 +309,9 @@ def _totals(entries: tuple[EntryResult, ...]) -> CalculationTotals:
     )
 
 
-def _roll_up(scenarios: tuple[ScenarioResult, ...]) -> ScenarioResult:
+def _roll_up(
+    scenarios: tuple[ScenarioResult, ...], bundle: FactorBundle
+) -> ScenarioResult:
     metrics: dict[str, MetricResult] = {}
     for scenario in scenarios:
         for code, metric in scenario.metrics.items():
@@ -313,5 +330,84 @@ def _roll_up(scenarios: tuple[ScenarioResult, ...]) -> ScenarioResult:
     return ScenarioResult(
         total_kg=sum((scenario.total_kg for scenario in scenarios), Decimal("0")),
         metrics=metrics,
-        equivalences=(),
+        # §4.2: derived from the metric totals **this function just rolled
+        # up**, not from `scenario.equivalences`. Adding the per-entry values
+        # would be a second place a headline number is produced, and the two
+        # disagree in the last place whenever a per-entry product rounds.
+        equivalences=_equivalences(metrics, bundle),
     )
+
+
+def _equivalences(
+    metrics: dict[str, MetricResult], bundle: FactorBundle
+) -> tuple[EquivalenceResult, ...]:
+    """§2.2, §3 rule 5, §4.2. One `EquivalenceResult` per active equivalence
+    in the bundle, in `sort_order` (which `FactorBundle.equivalences()`
+    already applies), converted from the metric total it names.
+
+    `value = source metric total x value_per_unit`, quantised to the
+    contract's ten places for the same reason every other decimal on the wire
+    is: the raw product carries twenty.
+
+    An equivalence naming a metric absent from `metrics` is **skipped**
+    rather than raising. `validate()` (§4.1) reports a dangling
+    `source_metric` as a bundle problem, which is where that belongs; a
+    calculation over a bundle carrying an equivalence for a metric it does
+    not compute drops the equivalence, exactly as `net_benefit` includes only
+    metric codes present on both sides.
+    """
+    results: list[EquivalenceResult] = []
+    for spec in bundle.equivalences():
+        source = metrics.get(spec.source_metric_code)
+        if source is None:
+            continue
+        value = (source.total * spec.value_per_unit).quantize(METRIC_SCALE)
+        results.append(
+            EquivalenceResult(
+                code=spec.code,
+                label=_interpolate(spec.label_template, value),
+                value=value,
+                source_metric_code=spec.source_metric_code,
+            )
+        )
+    return tuple(results)
+
+
+def _interpolate(template: str, value: Decimal) -> str:
+    """§3 rule 5. `{value}` is substituted; everything else in the template is
+    copied verbatim.
+
+    **This is the engine's job and not the browser's** (§7.6 rule 1): rounding
+    is arithmetic, and a client that formatted the label itself would be a
+    second place a number is turned into the figure a user reads -- one the
+    golden suite could not cover.
+    """
+    return template.replace(VALUE_PLACEHOLDER, _whole_units(value))
+
+
+def _whole_units(value: Decimal) -> str:
+    """§3 rule 5's number format: no decimal places, `ROUND_HALF_UP`, a comma
+    every three digits, a leading `-` when negative.
+
+    Three details are deliberate.
+
+    **`ROUND_HALF_UP` is passed explicitly.** `Decimal`'s default context
+    rounds half to *even*, so `2.5` would become `2` and `4.5` would become
+    `4`. No fixture value lands on a half, so nothing in the fixture set can
+    tell the two modes apart -- which is precisely why the mode is written
+    out here and pinned by a test of its own.
+
+    **`to_integral_value` rather than `quantize(Decimal("1"))`.** The former
+    is exact at any magnitude; the latter raises `InvalidOperation` once the
+    integral part exceeds the context precision.
+
+    **A value that rounds to zero from below prints `0`, never `-0`.**
+    `Decimal("-0.4")` rounds to `Decimal("-0")`, and "-0 km" reads as a bug on
+    a results page. §3 gives negatives a leading `-` because a metric total
+    can genuinely be negative when a downstream offset dominates; a magnitude
+    that rounds away is not that case.
+    """
+    whole = value.to_integral_value(rounding=ROUND_HALF_UP)
+    if whole.is_zero():
+        whole = abs(whole)
+    return format(whole, ",")

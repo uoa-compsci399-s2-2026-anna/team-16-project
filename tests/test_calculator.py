@@ -586,6 +586,287 @@ def test_net_benefit_covers_every_metric(bundle):
     assert result.entries[0].net_benefit["mass"] == Decimal("0.0000000000")
 
 
+# ---------------------------------------------------------- equivalences
+#
+# Two things have to be right, and they fail in different ways. The **value**
+# is §4.2's roll-up rule: the totals-level figure is derived from the
+# rolled-up metric total, never summed from the per-entry ones. The **label**
+# is §3 rule 5, a format the fixture set invented to match §6.2's samples and
+# which nothing in the tree re-derived until this section -- `_assert_shape`
+# compares types, so a label reading "Equivalent to driving 18596.8200000000
+# km" is a well-formed string of the right type in the right key.
+
+
+def one_metric_bundle(equivalences, formula="qty_kg"):
+    """A bundle whose only metric is the mass in kilograms, so that a test can
+    choose the exact `value` an equivalence has to convert and format. The
+    factor rows in `BUNDLE_JSON` name metrics this document does not carry;
+    the engine iterates `bundle.metrics` and never reads them."""
+    document = copy.deepcopy(BUNDLE_JSON)
+    document["metrics"] = [
+        {"code": "mass", "unit": "kg", "display_precision": 1, "sort_order": 10}
+    ]
+    document["formulas"] = [{"metric": "mass", "expression": formula}]
+    document["equivalences"] = equivalences
+    return FactorBundle.from_json(document)
+
+
+def equivalence_for(qty, value_per_unit="1.0000000000", template="{value}", formula="qty_kg"):
+    """The single `EquivalenceResult` a one-line scenario of `qty` produces."""
+    loaded = one_metric_bundle(
+        [
+            {
+                "code": "eq",
+                "source_metric": "mass",
+                "value_per_unit": value_per_unit,
+                "label_template": template,
+                "sort_order": 10,
+            }
+        ],
+        formula=formula,
+    )
+    return scenario(loaded, (line("landfill", qty),)).equivalences[0]
+
+
+def test_an_equivalence_is_converted_from_the_metric_total_it_names(bundle):
+    """§2.2: `value = metric total x value_per_unit`. 1000 x (1.9 + 0.99) is
+    2890 kg CO2e, and 2890 x 4.18 is 12,080.2 km."""
+    result = scenario(bundle, (line("landfill", "1000.000"),))
+
+    assert len(result.equivalences) == 1
+    item = result.equivalences[0]
+    assert item.code == "km_driven"
+    assert item.source_metric_code == "co2e"
+    assert item.value == Decimal("12080.2000000000")
+    assert item.label == "Equivalent to driving 12,080 km"
+
+
+def test_an_equivalence_added_to_the_bundle_needs_no_code_change(bundle):
+    """The real test of "equivalences are data", written the same way as the
+    metric one: a *row* is added, the way a staff member adds one, and
+    nothing in `engine/` is touched between the two calls below."""
+    document = copy.deepcopy(BUNDLE_JSON)
+    document["equivalences"].append(
+        {
+            "code": "meals",
+            "source_metric": "ch4",
+            "value_per_unit": "2.0000000000",
+            "label_template": "About {value} meals",
+            "sort_order": 20,
+        }
+    )
+    widened = FactorBundle.from_json(document)
+    assert widened.validate() == []
+
+    before = scenario(bundle, (line("landfill", "1000.000"),))
+    after = scenario(widened, (line("landfill", "1000.000"),))
+
+    assert [item.code for item in before.equivalences] == ["km_driven"]
+    #: Present, in `sort_order`, converting from a metric the first
+    #: equivalence does not name, with its own template.
+    assert [item.code for item in after.equivalences] == ["km_driven", "meals"]
+    added = after.equivalences[1]
+    assert added.source_metric_code == "ch4"
+    #: 1000 x 0.027 x 28 = 756 kg CH4, doubled.
+    assert added.value == Decimal("1512.0000000000")
+    assert added.label == "About 1,512 meals"
+    #: The equivalence that was already there is untouched by the new row.
+    assert after.equivalences[0] == before.equivalences[0]
+
+
+#: The three equivalence codes §2.2 names and `admin/seed.py` ships.
+SHIPPED_EQUIVALENCE_CODES = ("km_driven", "meals", "showers")
+
+
+@pytest.mark.parametrize("code", SHIPPED_EQUIVALENCE_CODES)
+def test_no_equivalence_code_appears_in_the_engine(code):
+    """Equivalences are data on exactly the same terms as metrics."""
+    literal = re.compile(f"""['"]{re.escape(code)}['"]""")
+    for path in sorted(Path(__file__).resolve().parents[1].joinpath("engine").glob("*.py")):
+        source = path.read_text(encoding="utf-8")
+        assert not literal.search(source), (
+            f"{path.name} names the equivalence {code!r}. Equivalences are data: "
+            "adding one must mean inserting a row, never editing a call site."
+        )
+
+
+def test_an_equivalence_naming_a_metric_the_bundle_does_not_compute_is_skipped():
+    """`validate()` (§4.1) reports a dangling `source_metric`, which is where
+    that belongs. A calculation drops the equivalence rather than raising
+    `KeyError` -- the same rule `net_benefit` follows for a metric present on
+    only one side."""
+    loaded = one_metric_bundle(
+        [
+            {
+                "code": "eq",
+                "source_metric": "co2e",
+                "value_per_unit": "1.0000000000",
+                "label_template": "{value}",
+                "sort_order": 10,
+            }
+        ]
+    )
+    assert loaded.validate() != []
+    assert scenario(loaded, (line("landfill", "1000.000"),)).equivalences == ()
+
+
+# --------------------------------------- the value: §4.2's roll-up rule
+
+
+def test_the_totals_equivalence_is_derived_from_the_rolled_up_metric_total(bundle):
+    result = calculate(
+        CalculationRequest(
+            entries=(
+                dairy_entry((line("landfill", "1000.000"),)),
+                dairy_entry((line("compost", "500.000"),)),
+            )
+        ),
+        bundle,
+    )
+    rolled_up = result.totals.current.metrics["co2e"].total
+    assert result.totals.current.equivalences[0].value == (
+        rolled_up * Decimal("4.1800000000")
+    )
+
+
+def test_the_totals_equivalence_is_not_summed_from_the_per_entry_ones():
+    """§4.2. The conversion is linear, so the two agree mathematically -- but
+    `Decimal` has finite precision and one computation is one rounding.
+
+    Two entries of 1e-10 kg against a factor of 0.5. Each entry's product is
+    5e-11, which is half of the last place the wire carries and quantises
+    away to zero; the rolled-up total of 2e-10 converts to a clean 1e-10.
+    Summing the per-entry values gives **zero** where the correct answer is
+    0.0000000001. The gap is one unit in the last place here because that is
+    what a contrived case can isolate; on real figures it is the same
+    arithmetic.
+    """
+    loaded = one_metric_bundle(
+        [
+            {
+                "code": "eq",
+                "source_metric": "mass",
+                "value_per_unit": "0.5000000000",
+                "label_template": "{value}",
+                "sort_order": 10,
+            }
+        ]
+    )
+    tiny = (line("landfill", "0.0000000001"),)
+    result = calculate(
+        CalculationRequest(entries=(dairy_entry(tiny), dairy_entry(tiny))), loaded
+    )
+
+    per_entry = [entry.current.equivalences[0].value for entry in result.entries]
+    assert per_entry == [Decimal("0.0000000000"), Decimal("0.0000000000")]
+
+    totals = result.totals.current.equivalences[0].value
+    assert totals == result.totals.current.metrics["mass"].total * Decimal("0.5")
+    assert totals == Decimal("0.0000000001")
+    #: The implementation this pins out: summing what the engine already
+    #: computed, one level down.
+    assert totals != sum(per_entry, Decimal("0"))
+
+
+def test_an_equivalence_value_carries_the_contracted_ten_places(bundle):
+    """§1.2. `total x value_per_unit` is a twenty-place product; the wire
+    carries ten, and an exact zero must still carry them -- `wire()` renders
+    `Decimal("0E-10")` as `"0.0000000000"` only because the scale is there."""
+    result = scenario(
+        bundle,
+        (line("prevention", "800.000"),),
+        sector="primary_production",
+        food_category="vegetables",
+    )
+    zero = result.equivalences[0]
+    assert zero.value == Decimal("0")
+    assert zero.value.as_tuple().exponent == -10
+    assert zero.label == "Equivalent to driving 0 km"
+
+    nonzero = scenario(bundle, (line("landfill", "1000.000"),)).equivalences[0]
+    assert nonzero.value.as_tuple().exponent == -10
+
+
+# ------------------------------------------- the label: §3's rule 5
+
+
+@pytest.mark.parametrize(
+    "qty,expected",
+    [
+        #: Half-even -- `Decimal`'s default, and what `quantize(Decimal("1"))`
+        #: would silently apply -- rounds both of these DOWN, to 2 and 4.
+        ("5.000", "3"),
+        ("9.000", "5"),
+        #: Above and below the half, where the two modes agree.
+        ("4.800", "2"),
+        ("5.200", "3"),
+    ],
+)
+def test_the_label_rounds_half_up_and_not_half_even(qty, expected):
+    """§3 rule 5, and the one part of it **no fixture pins**: no value in the
+    set lands on a half, so both rounding modes pass the fixture comparison
+    and only one of them is the contract. Halved quantities put the value
+    exactly on 2.5 and 4.5, which is where the modes part company."""
+    item = equivalence_for(qty, value_per_unit="0.5000000000")
+    assert item.label == expected
+
+
+@pytest.mark.parametrize(
+    "qty,expected",
+    [
+        ("0.000", "0"),
+        ("999.000", "999"),
+        ("1000.000", "1,000"),
+        ("18596.820", "18,597"),
+        ("1234567.500", "1,234,568"),
+    ],
+)
+def test_the_label_groups_thousands_with_commas(qty, expected):
+    """§3 rule 5: a comma every three digits, and no decimal point -- there is
+    no fractional part to separate."""
+    assert equivalence_for(qty).label == expected
+
+
+@pytest.mark.parametrize(
+    "qty,expected",
+    [
+        #: A metric total can be negative when a downstream offset dominates.
+        ("1234567.500", "-1,234,568"),
+        ("2.500", "-3"),
+    ],
+)
+def test_a_negative_value_keeps_its_sign_and_its_grouping(qty, expected):
+    assert equivalence_for(qty, formula="0 - qty_kg").label == expected
+
+
+def test_a_value_that_rounds_to_zero_from_below_is_not_minus_zero():
+    """`Decimal("-0.4")` rounds to `Decimal("-0")`, and "-0 km" reads as a bug
+    on a results page. The sign belongs to values that are actually negative."""
+    item = equivalence_for("0.400", formula="0 - qty_kg")
+    assert item.value == Decimal("-0.4000000000")
+    assert item.label == "0"
+
+
+def test_everything_but_the_placeholder_is_copied_verbatim():
+    """§2.2 and §3 rule 5. `label_template` is staff-authored (§8.1) and must
+    never behave as a format string: `{value}` is the only substitution, and
+    any other brace sequence is literal text. `str.format` would raise on the
+    unmatched brace below, and `"{home}"` would raise `KeyError` -- both in
+    front of a user, from a field a staff member typed."""
+    item = equivalence_for("3.000", template="~ {value} km/yr {home} {not_a_field} { }")
+    assert item.label == "~ 3 km/yr {home} {not_a_field} { }"
+
+
+def test_a_template_with_no_placeholder_is_left_alone():
+    assert equivalence_for("3.000", template="A fixed sentence").label == (
+        "A fixed sentence"
+    )
+
+
+def test_the_placeholder_is_substituted_wherever_it_appears():
+    assert equivalence_for("3.000", template="{value} and {value}").label == "3 and 3"
+
+
 def test_the_engine_is_a_pure_function(bundle):
     request = CalculationRequest(
         entries=(dairy_entry((line("landfill", "1000.000"),), (line("compost", "1000.000"),)),)

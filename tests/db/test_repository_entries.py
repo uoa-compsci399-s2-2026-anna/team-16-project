@@ -54,15 +54,31 @@ def _request(*entries, gwp_horizon=100):
 
 
 def _extra_taxonomy(db):
-    """The seed carries one sector and one destination; five entries need more."""
+    """Top the seed up to five sectors, food categories and destinations.
+
+    Idempotent on `code`, like `admin/seed.py`. It used to create every row
+    unconditionally, which worked only while the SQLite seed carried one
+    sector and one destination; the seed now covers what
+    `tests/fixtures/calculate_request.json` needs, so four of these codes
+    already exist and creating them again is a UNIQUE violation rather than a
+    top-up.
+    """
     group = db.scalar(select(DestinationGroup))
+
+    def missing(model, codes):
+        present = set(
+            db.scalars(select(model.code).where(model.code.in_(codes))).all()
+        )
+        return [code for code in codes if code not in present]
+
     db.add_all(
         [Sector(code=code, name=code.title())
-         for code in ("retail", "hospitality", "primary_production", "distribution")]
+         for code in missing(Sector, ("retail", "hospitality", "primary_production",
+                                      "distribution"))]
         + [FoodCategory(code=code, name=code.title())
-           for code in ("meat", "bakery", "vegetables")]
+           for code in missing(FoodCategory, ("meat", "bakery", "vegetables"))]
         + [Destination(group_id=group.id, code=code, name=code.title())
-           for code in ("compost", "prevention")]
+           for code in missing(Destination, ("compost", "prevention"))]
     )
     db.flush()
 

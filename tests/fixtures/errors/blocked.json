@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "BLOCKED",
+    "message": "This request was refused. If you believe this is an error, contact the Kai Commitment team.",
+    "details": null
+  }
+}

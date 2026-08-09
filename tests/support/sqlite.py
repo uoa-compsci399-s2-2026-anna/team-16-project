@@ -28,6 +28,7 @@ on SQLite, which is why B isolated it in the first place.
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -41,6 +42,7 @@ from db.models import (
     Constant,
     Destination,
     DestinationGroup,
+    Equivalence,
     FactorDownstream,
     FactorSet,
     FactorSetStatus,
@@ -49,6 +51,7 @@ from db.models import (
     Formula,
     Metric,
     Sector,
+    UnitPreset,
 )
 from db.repository import invalidate_factor_bundle
 
@@ -256,19 +259,109 @@ def seeded_session(sqlite_engine):
 
 
 def seed(db):
-    group = DestinationGroup(code="disposal", name="Disposal", is_waste=True)
-    sector = Sector(code="processing", name="Processing")
-    standard = FoodCategory(code="standard_mix", name="Standard mix", is_standard_mix=True)
-    dairy = FoodCategory(code="dairy", name="Dairy")
-    metric = Metric(code="co2e", name="Greenhouse gas", unit="kg CO2e", display_precision=1)
-    db.add_all([group, sector, standard, dairy, metric])
+    """A taxonomy wide enough to POST `tests/fixtures/calculate_request.json`.
+
+    It was three codes — `processing`, `dairy`, `landfill` — until the
+    canonical fixture set landed. A fixture the contract tests cannot send to
+    the API is a fixture nothing checks, and §10 makes those files the
+    executable form of the contract: the request sample now spans two sectors,
+    two food categories and five destinations across all three MfE groups,
+    including `prevention`, so the seed has to know those codes or every
+    fixture-driven assertion degrades into a 400.
+
+    Codes, names, groups and sort orders are `admin/seed.py`'s — the shipped
+    New Zealand taxonomy — abridged to the rows the fixtures use. Deliberately
+    *not* invented here: `code` is the cross-layer identifier (§1.1), and a
+    test seed that spells a destination differently from the production seed
+    proves the API works against codes no deployment will ever hold.
+    """
+    reuse = DestinationGroup(code="reuse", name="Reuse", is_waste=False, sort_order=10)
+    recovery = DestinationGroup(
+        code="recycle_recovery", name="Recycle and recovery", is_waste=True, sort_order=20
+    )
+    disposal = DestinationGroup(
+        code="disposal", name="Disposal", is_waste=True, sort_order=30
+    )
+    sector = Sector(code="processing", name="Processing and manufacturing", sort_order=20)
+    primary = Sector(code="primary_production", name="Primary production", sort_order=10)
+    hospitality = Sector(
+        code="consumer_hospitality", name="Hospitality", sort_order=50
+    )
+    standard = FoodCategory(
+        code="standard_mix",
+        name="Mixed food waste (composition unknown)",
+        is_standard_mix=True,
+        sort_order=5,
+    )
+    vegetables = FoodCategory(code="vegetables", name="Vegetables", sort_order=20)
+    dairy = FoodCategory(code="dairy", name="Dairy", sort_order=60)
+    metric = Metric(
+        code="co2e",
+        name="Greenhouse gases",
+        unit="kg CO2e",
+        display_precision=1,
+        sort_order=10,
+    )
+    db.add_all([
+        reuse, recovery, disposal,
+        sector, primary, hospitality,
+        standard, vegetables, dairy,
+        metric,
+    ])
     db.flush()
-    landfill = Destination(group_id=group.id, code="landfill", name="Landfill")
+    landfill = Destination(
+        group_id=disposal.id, code="landfill", name="Landfill", sort_order=110
+    )
+    destinations = [
+        landfill,
+        Destination(
+            group_id=reuse.id,
+            code="prevention",
+            name="Prevented — waste avoided",
+            sort_order=5,
+        ),
+        Destination(
+            group_id=reuse.id, code="animal_feed", name="Animal feed", sort_order=30
+        ),
+        Destination(
+            group_id=recovery.id,
+            code="compost",
+            name="Composting (aerobic digestion)",
+            sort_order=40,
+        ),
+        Destination(
+            group_id=recovery.id,
+            code="anaerobic_digestion",
+            name="Anaerobic digestion",
+            sort_order=50,
+        ),
+        Destination(
+            group_id=recovery.id,
+            code="not_harvested",
+            name="Not harvested or ploughed in",
+            sort_order=70,
+        ),
+    ]
+    #: §6.1 carries `unit_presets`, and the canonical `taxonomy.json` is no
+    #: longer allowed to leave that array empty, so the contract test needs a
+    #: row to compare against.
+    preset = UnitPreset(
+        code="bucket_20l_full",
+        label="20 L bucket (full)",
+        food_category_id=None,
+        kg_per_unit=Decimal("6.0000"),
+    )
     published = FactorSet(
-        version_label="MOCK-v0", status=FactorSetStatus.published, is_mock=True
+        version_label="MOCK-v0",
+        status=FactorSetStatus.published,
+        is_mock=True,
+        #: §6.3 exports `published_at`, and `factors.json` carries a timestamp
+        #: there. A published set with no publication date is not a state the
+        #: lifecycle produces (§5.2), so the seed should not model one.
+        published_at=datetime(2026, 8, 5, 2, 0, tzinfo=timezone.utc),
     )
     draft = FactorSet(version_label="DRAFT-v1", status=FactorSetStatus.draft, is_mock=True)
-    db.add_all([landfill, published, draft])
+    db.add_all([*destinations, preset, published, draft])
     db.flush()
     for factor_set in (published, draft):
         db.add_all([
@@ -286,11 +379,33 @@ def seed(db):
                 metric_id=metric.id,
                 value_per_kg=Decimal("0.99"),
             ),
+            FactorDownstream(
+                factor_set_id=factor_set.id,
+                destination_id=landfill.id,
+                #: The generic row of §2.2: null food_category means "every
+                #: category that has none of its own". `factors.json` publishes
+                #: the pair, so the export has both to serialise.
+                food_category_id=None,
+                metric_id=metric.id,
+                value_per_kg=Decimal("0.70"),
+            ),
             Constant(factor_set_id=factor_set.id, code="GWP_CH4_100", value=Decimal("28")),
             Formula(
                 factor_set_id=factor_set.id,
                 metric_id=metric.id,
                 expression="qty_kg * (upstream + downstream)",
+            ),
+            #: §6.3 publishes `equivalences`, and an all-empty export is what
+            #: made the methodology page render "No published formulas were
+            #: returned" in every demo.
+            Equivalence(
+                factor_set_id=factor_set.id,
+                code="km_driven",
+                name="Kilometres driven",
+                source_metric_id=metric.id,
+                value_per_unit=Decimal("4.18"),
+                label_template="Equivalent to driving {value} km",
+                sort_order=10,
             ),
         ])
 

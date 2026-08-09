@@ -3,6 +3,7 @@ from httpx import ASGITransport, AsyncClient
 import io
 import json
 import zipfile
+from decimal import Decimal
 from pathlib import Path
 
 from sqlalchemy import func, select, update
@@ -13,7 +14,11 @@ FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
 
 def _fixture(name):
-    return json.loads((FIXTURES / name).read_text())
+    #: Explicitly UTF-8. `read_text()` uses the process's locale encoding,
+    #: which is GBK on a Chinese Windows install and cp1252 on a Western one,
+    #: and the fixtures carry em dashes throughout the taxonomy prose. The
+    #: files are UTF-8 on every branch; only the reader was ambiguous.
+    return json.loads((FIXTURES / name).read_text(encoding="utf-8"))
 
 
 def _body(current, alternative=None, **extra):
@@ -29,17 +34,66 @@ def _body(current, alternative=None, **extra):
     return {"entries": [entry], **extra}
 
 
-def _assert_shape(actual, expected):
+#: Response objects whose *keys* are taxonomy codes rather than contract
+#: field names. §6.2's `metrics` is keyed by `metric.code` and `net_benefit`
+#: by the same, and "metrics are data, not code" means the key set is a
+#: property of the deployment's `metric` table, not of the contract: a fixture
+#: published from a five-metric factor set and a test app seeded with one
+#: metric are both valid §6.2 bodies. Comparing key sets here would assert
+#: that every deployment configures the same metrics.
+_CODE_KEYED = {"metrics", "net_benefit"}
+
+
+def _assert_shape(actual, expected, path="$", *, in_list=False):
+    """Assert a live response has the fixture's shape.
+
+    Three things this checks that the key-set comparison it replaces did not,
+    each of which let a real defect through:
+
+    * **Every** array element is checked, not element zero alone.
+    * Scalars must agree on JSON type, so a decimal that arrives as a number
+      instead of a string (§1.2) fails here rather than in a browser.
+    * Null and not-null must agree outside arrays, so §9.2's `details: null`
+      cannot silently become the `[]` every other error fixture carries.
+
+    Nullability is tolerated *inside* arrays because one element cannot stand
+    for the nullability of the rest: `factor_downstream.food_category` is null
+    on the generic rows and set on the specific ones, in one array (§2.2).
+    """
+    key = path.rsplit(".", 1)[-1]
     if isinstance(expected, dict):
-        assert isinstance(actual, dict)
-        assert actual.keys() == expected.keys()
-        for key in expected:
-            _assert_shape(actual[key], expected[key])
+        assert isinstance(actual, dict), f"{path}: expected an object, got {actual!r}"
+        if key in _CODE_KEYED:
+            assert actual, f"{path}: code-keyed map is empty"
+            if expected:
+                template = next(iter(expected.values()))
+                for code, value in actual.items():
+                    _assert_shape(value, template, f"{path}.{code}", in_list=in_list)
+            return
+        assert actual.keys() == expected.keys(), (
+            f"{path}: keys differ. "
+            f"missing={sorted(expected.keys() - actual.keys())} "
+            f"unexpected={sorted(actual.keys() - expected.keys())}"
+        )
+        for name in expected:
+            _assert_shape(actual[name], expected[name], f"{path}.{name}", in_list=in_list)
     elif isinstance(expected, list):
-        assert isinstance(actual, list)
+        assert isinstance(actual, list), f"{path}: expected an array, got {actual!r}"
         if expected:
-            assert actual
-            _assert_shape(actual[0], expected[0])
+            assert actual, f"{path}: fixture carries rows, response carries none"
+            for index, item in enumerate(actual):
+                _assert_shape(item, expected[0], f"{path}[{index}]", in_list=True)
+    elif expected is None or actual is None:
+        if not in_list:
+            assert (actual is None) == (expected is None), (
+                f"{path}: fixture has {expected!r}, response has {actual!r} — "
+                "null and not-null are different contracts here (§9.2)"
+            )
+    else:
+        assert type(actual) is type(expected), (
+            f"{path}: expected {type(expected).__name__}, "
+            f"got {type(actual).__name__} ({actual!r})"
+        )
 
 pytestmark = pytest.mark.asyncio
 
@@ -52,8 +106,21 @@ async def test_taxonomy_contract(app):
     async with await _client(app) as client:
         response = await client.get("/api/v1/taxonomy")
     assert response.status_code == 200
-    assert response.json()["factor_set"] == {"version_label": "MOCK-v0", "is_mock": True}
-    assert response.json()["destinations"][0]["code"] == "landfill"
+    body = response.json()
+    assert body["factor_set"] == {"version_label": "MOCK-v0", "is_mock": True}
+    #: Ordered by sort_order, so `prevention` (5) leads and `landfill` (110)
+    #: trails. Asserted as a property rather than as `destinations[0]`, which
+    #: only held while the seed carried a single destination.
+    destinations = {row["code"]: row for row in body["destinations"]}
+    assert destinations["landfill"]["group"] == "disposal"
+    assert [row["code"] for row in body["destinations"]] == sorted(
+        destinations, key=lambda code: destinations[code]["sort_order"]
+    )
+    #: §10: without a `prevention` destination in a non-waste group, neither
+    #: the mass-conserving offset nor the non-waste half of the MfE taxonomy
+    #: can be demonstrated at all.
+    groups = {row["code"]: row for row in body["destination_groups"]}
+    assert groups[destinations["prevention"]["group"]]["is_waste"] is False
 
 
 async def test_public_calculation_persists_and_returns_token(app):
@@ -355,30 +422,118 @@ async def test_unknown_code_and_missing_published_have_contract_errors(app):
     )
 
 
+def _request_from(fixture_name):
+    """Rebuild the request that produced a calculate response fixture.
+
+    §10 names no `calculate_request_single.json`, so the single-scenario
+    fixture's request is derived from the fixture itself: every line it was
+    calculated from is in `by_destination`. Posting that back is what proves
+    the fixture describes a request the API will actually accept.
+    """
+    fixture = _fixture(fixture_name)
+    entries = []
+    for entry in fixture["entries"]:
+        body = {"sector": entry["sector"], "food_category": entry["food_category"]}
+        for scenario in ("current", "alternative"):
+            if entry[scenario] is None:
+                body[scenario] = None
+                continue
+            metric = next(iter(entry[scenario]["metrics"].values()))
+            body[scenario] = [
+                {"destination": row["destination"], "qty_kg": row["qty_kg"]}
+                for row in metric["by_destination"]
+            ]
+        entries.append(body)
+    return {"gwp_horizon": fixture["gwp_horizon"], "entries": entries}
+
+
 async def test_contract_fixtures_have_the_same_top_level_shapes(app):
     cases = (
         ("taxonomy.json", "get", "/api/v1/taxonomy", None),
-        ("factors.json", "get", "/api/v1/factors", None),
-        ("stats.json", "get", "/api/v1/stats", None),
         (
             "calculate_response.json",
             "post",
             "/api/v1/calculate",
-            _body(
-                [{"destination": "landfill", "qty_kg": "10"}],
-                alternative=[{"destination": "landfill", "qty_kg": "10"}],
-            ),
+            _fixture("calculate_request.json"),
         ),
         (
             "calculate_response_single.json",
             "post",
             "/api/v1/calculate",
-            _body([{"destination": "landfill", "qty_kg": "1"}]),
+            _request_from("calculate_response_single.json"),
         ),
     )
     async with await _client(app) as client:
         for fixture_name, method, path, payload in cases:
             expected = _fixture(fixture_name)
             response = await client.request(method, path, json=payload)
-            assert response.status_code == 200, response.text
-            _assert_shape(response.json(), expected)
+            assert response.status_code == 200, f"{fixture_name}: {response.text}"
+            _assert_shape(response.json(), expected, f"{fixture_name}$")
+
+
+@pytest.mark.xfail(
+    strict=True,
+    reason=(
+        "Contract v1.3 change 13 requires GET /factors to carry `source_note` "
+        "and `data_quality` on every upstream and downstream row and "
+        "`source_note` on every equivalence, present-and-null rather than "
+        "omitted, because §6.3 is the only public surface where a factor can "
+        "say whether it was measured or borrowed. The columns exist "
+        "(admin/factor_models.py) and the admin panel edits them, but "
+        "db/repository.py's build_bundle_data does not select them, so the "
+        "export publishes the values with the provenance stripped. The fixture "
+        "is written to the contract; this marker comes off when the repository "
+        "catches up, and `strict` means it fails the moment it does."
+    ),
+)
+async def test_factors_fixture_matches_the_published_export(app):
+    async with await _client(app) as client:
+        response = await client.get("/api/v1/factors")
+    assert response.status_code == 200, response.text
+    _assert_shape(response.json(), _fixture("factors.json"), "factors.json$")
+
+
+async def test_stats_fixture_shape_holds_against_a_populated_database(app):
+    """`stats.json` needs submissions behind it or it checks nothing.
+
+    An empty database returns three empty arrays, which the shape check passes
+    vacuously — that is how a fixture of all zeros survived long enough for D
+    to have nothing to build the statistics page against. Six submissions are
+    posted first: five of the two-entry canonical request, which puts every
+    bucket it touches at or above the default threshold of 5, and one single
+    -entry submission in a third sector, which lands below the threshold and
+    is therefore merged into `other` (§5.4).
+    """
+    dual = _fixture("calculate_request.json")
+    single = _request_from("calculate_response_single.json")
+    async with await _client(app) as client:
+        for _ in range(5):
+            posted = await client.post("/api/v1/calculate", json=dual)
+            assert posted.status_code == 200, posted.text
+        posted = await client.post("/api/v1/calculate", json=single)
+        assert posted.status_code == 200, posted.text
+        response = await client.get("/api/v1/stats")
+
+    assert response.status_code == 200, response.text
+    body = response.json()
+    _assert_shape(body, _fixture("stats.json"), "stats.json$")
+
+    assert body["total_calculations"] == 6
+    # §5.4: buckets count entries, not submissions, so the two figures differ
+    # by design and the fixture must not present them as if they did not.
+    assert sum(bucket["count"] for bucket in body["by_sector"]) == 11
+    codes = {bucket["code"]: bucket for bucket in body["by_sector"]}
+    assert codes["other"]["count"] == 1, "the below-threshold sector must merge"
+    assert "consumer_hospitality" not in codes, "a suppressed bucket must not be named"
+    # §6.4 says the shares "sum to 1", and `stats.json` sums to exactly
+    # 1.0000. The live figure does not always: `_bucketise` quantizes each
+    # share independently to four places, so three buckets of 5/11, 5/11 and
+    # 1/11 come to 0.9999. The gap is bounded by one ulp per bucket and is
+    # asserted as such rather than papered over — a chart legend built on the
+    # fixture will read 100%, and against the API it can read 99.99%.
+    shares = [Decimal(bucket["share"]) for bucket in body["by_sector"]]
+    assert abs(sum(shares) - Decimal("1")) <= Decimal("0.0001") * len(shares)
+    # `prevention` is an alternative-scenario destination. It must never reach
+    # a public statistic, because it is by construction waste that did not
+    # happen (§5.4).
+    assert "prevention" not in {b["code"] for b in body["by_destination"]}

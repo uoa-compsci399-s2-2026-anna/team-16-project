@@ -116,6 +116,13 @@ admin = [
 #
 # run.sh / run.ps1 `migrate` finds whichever of the two exists. See the
 # resolution order in those scripts.
+#
+# WARNING FOR ANY CONTAINER BUILD: `pip install -e .` installs NONE of this.
+# setuptools' PEP 660 editable backend drops data-files entirely - there is no
+# <prefix>/share/kaicalc at all after an editable install. It goes unnoticed
+# locally only because the launcher probes $ROOT/alembic.ini first and finds
+# the checkout's copy. An image built on `pip install -e .` and then stripped
+# of its source tree has no migrations. Build images with `pip install .`.
 [tool.setuptools.data-files]
 "share/kaicalc" = ["alembic.ini"]
 "share/kaicalc/alembic" = [

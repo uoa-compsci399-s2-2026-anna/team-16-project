@@ -471,28 +471,21 @@ async def test_contract_fixtures_have_the_same_top_level_shapes(app):
             _assert_shape(response.json(), expected, f"{fixture_name}$")
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason=(
-        "Contract v1.3 change 13 requires GET /factors to carry `source_note` "
-        "and `data_quality` on every upstream and downstream row and "
-        "`source_note` on every equivalence, present-and-null rather than "
-        "omitted, because §6.3 is the only public surface where a factor can "
-        "say whether it was measured or borrowed. The columns exist "
-        "(admin/factor_models.py) and the admin panel edits them, but "
-        "db/repository.py's build_bundle_data does not select them, so the "
-        "export publishes the values with the provenance stripped. The fixture "
-        "is written to the contract; this marker comes off when the repository "
-        "catches up, and `strict` means it fails the moment it does. "
-        "Second, smaller gap in the same direction, recorded here rather than "
-        "left silent: the export's equivalence rows carry `name` and "
-        "`sort_order`, which §6.3's sample response does not show. The fixture "
-        "carries them because they are what the endpoint actually sends and "
-        "`name` is useful to D, but §6.3 should either list them or the export "
-        "should stop sending them. Contract question, not a code defect."
-    ),
-)
 async def test_factors_fixture_matches_the_published_export(app):
+    """§6.3, including the provenance v1.1 added the columns for.
+
+    This carried a strict xfail until contract v1.4: `build_bundle_data` did
+    not select `source_note` or `data_quality`, so the export published every
+    value with its provenance stripped — the one combination v1.1's rationale
+    rules out, since it removes the defence and keeps the exposure. The
+    fixture was written to the contract rather than to the code, so removing
+    the marker is what proves the repository caught up.
+
+    v1.4 also settled the smaller question in the same direction: the
+    equivalence rows' `name` and `sort_order` are now listed in §6.3 rather
+    than removed from the export, because §10.2's bundle shape requires both
+    and this dictionary is the projection both surfaces are built from.
+    """
     async with await _client(app) as client:
         response = await client.get("/api/v1/factors")
     assert response.status_code == 200, response.text

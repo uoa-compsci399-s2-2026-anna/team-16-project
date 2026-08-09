@@ -8,7 +8,7 @@ import threading
 import uuid
 from collections.abc import Callable
 from dataclasses import replace
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
 from typing import Any
 
@@ -194,6 +194,19 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
 
 
 def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
+    """One projection, two consumers: §10.2's `bundle.json` and §6.3's export.
+
+    `source_note` and `data_quality` are selected here rather than only in
+    `get_factor_export` because the export is built from this dictionary and
+    there is no second projection to add them to. §6.3 **requires** both on
+    every upstream and downstream row and `source_note` on every equivalence,
+    present-and-null rather than omitted, so a consumer can tell "no
+    provenance recorded" from "this endpoint does not report provenance";
+    §10.2 makes the same keys **optional and ignored** in a bundle, so
+    carrying them costs the engine nothing. Publishing the values and dropping
+    their provenance is the one combination v1.1 added the columns to prevent:
+    it removes the defence and keeps the exposure.
+    """
     factor_set = session.get(FactorSet, factor_set_id)
     if factor_set is None:
         raise FactorSetNotFoundError(f"Unknown factor set id: {factor_set_id}")
@@ -247,6 +260,8 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "food_category": food,
                 "metric": metric,
                 "value_per_kg": str(x.value_per_kg),
+                "source_note": x.source_note,
+                "data_quality": x.data_quality,
             }
             for x, sector, food, metric in upstream
         ],
@@ -256,6 +271,8 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "food_category": food,
                 "metric": metric,
                 "value_per_kg": str(x.value_per_kg),
+                "source_note": x.source_note,
+                "data_quality": x.data_quality,
             }
             for x, destination, food, metric in downstream
         ],
@@ -266,6 +283,7 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "source_metric": metric,
                 "value_per_unit": str(x.value_per_unit),
                 "label_template": x.label_template,
+                "source_note": x.source_note,
                 "sort_order": x.sort_order,
             }
             for x, metric in equivalences
@@ -338,12 +356,33 @@ def load_factor_bundle(
     *,
     bundle_factory: BundleFactory | None = None,
 ) -> Any:
+    """§5.2's per-set cache. **Only a published set is cached** (v1.4).
+
+    §5.2 requires a slot per `factor_set_id` so that staff dry-running a
+    draft can never evict the published bundle or, worse, serve draft factors
+    to a public request. Caching the draft as well satisfies that literally
+    and breaks the thing the draft slot exists to support: the panel's CRUD
+    screens write `factor_upstream`, `constant` and `formula` rows directly
+    and have no reason to call `invalidate_factor_bundle` — only the
+    lifecycle transitions do — so the first dry run of a draft pins that
+    draft's numbers for the lifetime of the process. A staff member then
+    edits a factor, re-runs the dry run, sees the old figure, and has no way
+    to tell that from a formula that ignores their column. Not caching it is
+    the cheaper of the two fixes and the only one that does not put a
+    repository hook into all eleven admin views; a draft is dry-run by one
+    person at a time, so there is no load argument on the other side.
+    """
     factor_set_id = factor_set_id or get_published_factor_set_id(session)
     factory = bundle_factory or _default_bundle_factory
     with _cache_lock:
         if factor_set_id in _bundle_cache:
             return _bundle_cache[factor_set_id]
     bundle = factory(build_bundle_data(session, factor_set_id))
+    # `build_bundle_data` has already loaded this row into the identity map,
+    # so the status check costs no second round trip.
+    factor_set = session.get(FactorSet, factor_set_id)
+    if factor_set is None or factor_set.status is not FactorSetStatus.published:
+        return bundle
     with _cache_lock:
         return _bundle_cache.setdefault(factor_set_id, bundle)
 
@@ -767,7 +806,23 @@ def _json_safe(value: Any) -> Any:
     if isinstance(value, Decimal):
         return str(value)
     if isinstance(value, datetime):
-        return value.isoformat() + ("Z" if value.tzinfo is None else "")
+        # §1.3: always UTC, always the `Z` designator. This used to append
+        # "Z" to a naive value and leave an aware one alone, so the same
+        # column serialised two ways — `2026-08-09T03:00:00Z` when it came
+        # back naive off MySQL and `2026-08-09T03:00:00+00:00` when it was
+        # still the aware object `utcnow()` produced. Both are the same
+        # instant and neither is malformed, which is why nothing failed;
+        # `audit_log` is simply not a table anyone should have to normalise
+        # timestamps out of after the fact. A non-UTC aware value was worse
+        # than inconsistent — it kept its own offset and claimed §1.3
+        # compliance. `api/serialization.wire()` has always done this
+        # correctly, and cannot be reused: `db/` may not import `api/`.
+        aware = (
+            value.replace(tzinfo=timezone.utc)
+            if value.tzinfo is None
+            else value.astimezone(timezone.utc)
+        )
+        return aware.isoformat().replace("+00:00", "Z")
     # `date` is checked after `datetime` because datetime subclasses it. This
     # branch came from admin/audit.py's `_encode`, which handled a plain date
     # where this function would otherwise have fallen through to deepcopy and

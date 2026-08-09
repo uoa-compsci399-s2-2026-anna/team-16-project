@@ -73,8 +73,19 @@ def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
     # Lines now hang off the entry, so "this submission's lines" is a join
     # rather than a column. Counting the whole table would also pass here --
     # and would keep passing if the rebuild started leaking orphans.
-    assert {line.qty_kg for line in _lines_of(seeded_session, submission_id)} == {
-        Decimal("20.000"), Decimal("30.000")
+    #
+    # `(scenario, qty_kg)` pairs, not a set of quantities: `_request("20",
+    # "30")` puts 20 kg in `current` and 30 kg in `alternative`, and a set of
+    # quantities alone is satisfied by a rebuild that writes them under the
+    # wrong scenario. §1.4 gives `scenario` exactly two values and §5.4 reads
+    # `current` only, so swapping them silently halves or doubles every
+    # public statistic without changing anything this test could see.
+    assert {
+        (line.scenario, line.qty_kg)
+        for line in _lines_of(seeded_session, submission_id)
+    } == {
+        (Scenario.current, Decimal("20.000")),
+        (Scenario.alternative, Decimal("30.000")),
     }
     assert seeded_session.scalar(select(func.count()).select_from(SubmissionLine)) == 2
 
@@ -108,6 +119,39 @@ def test_audit_redacts_secrets_and_serialises_decimal(seeded_session):
     assert row.after_json["nested"]["amount"] == "1.20"
 
 
+def test_audit_timestamps_are_utc_with_a_z_designator(seeded_session):
+    """§1.3: always UTC, always `Z`, whichever kind of datetime arrives.
+
+    `_json_safe` used to append "Z" to a naive value and leave an aware one
+    untouched, so one column serialised two ways depending on whether the
+    object had been round-tripped through MySQL. A non-UTC aware value kept
+    its own offset and still went into the table as though it complied.
+    Three kinds in one payload, because the defect is only visible when the
+    outputs are compared against each other.
+    """
+    from datetime import datetime, timezone
+
+    nzst = timezone(timedelta(hours=12))
+    write_audit(
+        seeded_session,
+        "alice",
+        "update",
+        "factor_set",
+        1,
+        None,
+        {
+            "naive": datetime(2026, 8, 9, 3, 0, 0),
+            "utc": datetime(2026, 8, 9, 3, 0, 0, tzinfo=timezone.utc),
+            "local": datetime(2026, 8, 9, 15, 0, 0, tzinfo=nzst),
+        },
+    )
+    seeded_session.flush()
+    row = seeded_session.scalar(select(AuditLog))
+    assert row.after_json["naive"] == "2026-08-09T03:00:00Z"
+    assert row.after_json["utc"] == "2026-08-09T03:00:00Z"
+    assert row.after_json["local"] == "2026-08-09T03:00:00Z"
+
+
 def test_factor_bundle_cache_is_partitioned_and_explicitly_invalidated(seeded_session):
     published_id = get_published_factor_set_id(seeded_session)
     draft_id = seeded_session.scalar(
@@ -125,10 +169,25 @@ def test_factor_bundle_cache_is_partitioned_and_explicitly_invalidated(seeded_se
     assert draft is not first
     assert built == ["MOCK-v0", "DRAFT-v1"]
 
+    # v1.4: a draft is never cached, so a second dry run of it rebuilds.
+    # The panel's CRUD screens write factor rows directly and never call
+    # invalidate_factor_bundle -- only publish/rollback do -- so a cached
+    # draft would show a staff member their pre-edit numbers for the lifetime
+    # of the process, which is indistinguishable from a formula that ignores
+    # the column they just changed. Asserting `is not` rather than the build
+    # count alone: a cache that returned an equal-but-rebuilt object would
+    # still be serving stale factors.
+    draft_again = load_factor_bundle(seeded_session, draft_id, bundle_factory=factory)
+    assert draft_again is not draft
+    assert built == ["MOCK-v0", "DRAFT-v1", "DRAFT-v1"]
+    # ...and rebuilding the draft has not disturbed the published slot, which
+    # is what §5.2's per-set partitioning is for.
+    assert load_factor_bundle(seeded_session, published_id, bundle_factory=factory) is first
+
     invalidate_factor_bundle(published_id)
     rebuilt = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
     assert rebuilt is not first
-    assert built == ["MOCK-v0", "DRAFT-v1", "MOCK-v0"]
+    assert built == ["MOCK-v0", "DRAFT-v1", "DRAFT-v1", "MOCK-v0"]
 
 
 def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_session):

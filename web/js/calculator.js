@@ -374,7 +374,10 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)
     if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementResult: null, improvementError: null })
-    if (action === 'compare-improvement') compareImprovement(state)
+    // §9's code-to-copy map travels with the call. `improvement.js` cannot import it —
+    // this module already imports that one — and without it the improvement panel showed
+    // raw backend prose for the codes the main flow words carefully.
+    if (action === 'compare-improvement') compareImprovement(state, publicError)
     if (action === 'retry' && !blocked()) retryTaxonomy()
     if (action === 'view-methodology') window.location.href = './methodology.html'
     if (['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {

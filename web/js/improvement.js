@@ -146,7 +146,20 @@ function improvedLines(entry, allocations) {
   return Object.entries(allocations).filter(([, percentage]) => typed(percentage) > 0).map(([destination, percentage]) => ({ destination, qty_kg: (totalKg * typed(percentage) / 100).toFixed(3) }))
 }
 
-export async function compareImprovement(state) {
+/**
+ * Runs the comparison request and stores its result, or its message, on the state.
+ *
+ * `toPublicMessage` is `calculator.js`'s `publicError` — §9's code-to-copy map — passed in
+ * rather than imported, because `calculator.js` already imports this module and the import
+ * back would be a cycle. This panel set `improvementError: error.message`, so a
+ * `FORMULA_ERROR` or a `NO_PUBLISHED_FACTOR_SET` showed raw backend prose here while the
+ * main flow showed C's user copy for the same code, and §9.1 rules that a public
+ * `FORMULA_ERROR` never echoes the expression or its location.
+ *
+ * @param {object} state
+ * @param {(error: Error & {code?: string}) => string} [toPublicMessage]
+ */
+export async function compareImprovement(state, toPublicMessage = error => error.message || 'The improvement comparison could not be completed.') {
   const validationError = improvementValidation(state)
   if (validationError) {
     setState({ improvementError: validationError })
@@ -176,7 +189,7 @@ export async function compareImprovement(state) {
     setState({ improvementLoading: false, improvementResult: response, token })
     requestAnimationFrame(() => document.getElementById('comparison-results')?.scrollIntoView({ behavior: 'smooth', block: 'start' }))
   } catch (error) {
-    setState({ improvementLoading: false, improvementError: error.message || 'The improvement comparison could not be completed.' })
+    setState({ improvementLoading: false, improvementError: toPublicMessage(error) })
   }
 }
 

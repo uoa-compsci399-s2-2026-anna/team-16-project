@@ -23,13 +23,15 @@
   font-family: "Kumbh Sans", Helvetica, Arial, sans-serif;
   color: #003223;
   background: #fff;
-  /* The brand supplies one weight per family — Geologica **Bold**, Kumbh Sans **Regular** —
-     so the CDN's 500/600/700/800/900 no longer have a real face behind them. `none` would
-     have silently flattened every bold label on the page back to regular; `weight` lets the
-     browser synthesise the heavier weights and keeps the hierarchy. Style and small-caps
-     synthesis stay off. Replacing this with real weight files is the correct fix if the
-     client supplies them. */
-  font-synthesis: weight;
+  /* `none` is safe because this stylesheet asks for **400 and 700 only**, and those are
+     exactly the two faces above — Geologica Bold and Kumbh Sans Regular, which is the pair
+     the brand guidelines authorise and the only pair we have. The CDN request it replaced
+     asked for 500, 600, 750, 800 and 900 as well, so seven of the eight weights in this file
+     had no real face behind them: with `none` they would have flattened to the nearest
+     available weight, and with `weight` they would all have been synthetic. Collapsing the
+     stylesheet is both the brand-correct answer and the synthesis-free one.
+     **Do not reintroduce a weight that is not 400 or 700 without adding the font file.** */
+  font-synthesis: none;
   text-rendering: optimizeLegibility;
   --kai-kale: #003223;
   --kai-white: #fff;
@@ -190,7 +192,7 @@ p { line-height: 1.65; }
   margin-bottom: 12px;
   color: var(--orange);
   font-size: 0.78rem;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: 0.11em;
   text-transform: uppercase;
 }
@@ -288,7 +290,7 @@ p { line-height: 1.65; }
 }
 .check-list { margin: 0; padding: 0; list-style: none; }
 .check-list li { position: relative; margin: 14px 0; padding-left: 32px; line-height: 1.5; }
-.check-list li::before { content: '✓'; position: absolute; left: 0; color: var(--green); font-weight: 900; }
+.check-list li::before { content: '✓'; position: absolute; left: 0; color: var(--green); font-weight: 700; }
 .privacy-note { margin: 16px 0 0; color: var(--muted); font-size: 0.92rem; }
 
 .button {
@@ -297,7 +299,7 @@ p { line-height: 1.65; }
   border-radius: 10px;
   padding: 11px 20px;
   font-family: var(--font-body);
-  font-weight: 600;
+  font-weight: 700;
 }
 .button-primary { color: #fff; background: var(--green-dark); box-shadow: 0 3px 10px rgba(0, 50, 35, 0.12); }
 .button-primary:hover:not(:disabled) { background: var(--green-dark); box-shadow: 0 5px 16px rgba(0, 50, 35, 0.16); }
@@ -317,7 +319,7 @@ p { line-height: 1.65; }
 }
 
 .form-field { margin: 25px 0; }
-.form-field label { display: block; margin-bottom: 8px; font-weight: 600; }
+.form-field label { display: block; margin-bottom: 8px; font-weight: 700; }
 .required { color: var(--kai-orange); font-size: 0.8rem; }
 .field-hint { margin: -2px 0 8px; color: var(--muted); font-size: 0.92rem; }
 .field-error { margin: 8px 0 0; color: var(--error); font-weight: 700; }
@@ -345,7 +347,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   padding: 0;
   font-size: clamp(1.3rem, 3vw, 1.65rem);
   line-height: 1.3;
-  font-weight: 800;
+  font-weight: 700;
   letter-spacing: -0.02em;
 }
 .stage-fieldset > .field-hint { max-width: 720px; margin: 10px 0 22px; font-size: 1rem; }
@@ -479,7 +481,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .destination-row { padding: 17px 20px; display: grid; grid-template-columns: minmax(220px, 1fr) minmax(260px, 0.8fr); align-items: center; gap: 24px; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
 .destination-row:last-child { border-bottom: 0; }
 .destination-row label { display: grid; gap: 4px; font-weight: 700; line-height: 1.35; }
-.destination-row small { color: var(--muted); font-weight: 500; }
+.destination-row small { color: var(--muted); font-weight: 400; }
 .destination-row.invalid { background: rgba(255, 80, 50, 0.055); }
 .destination-row.invalid input { border-color: var(--error); box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.1); }
 .amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
@@ -487,8 +489,8 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .review-destinations { margin: 10px 0 0; }
 .review-destinations div { padding: 10px 0; display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); }
 .review-destinations dt { display: grid; gap: 3px; }
-.review-destinations dt small { color: var(--muted); font-weight: 500; }
-.review-destinations dd { margin: 0; font-weight: 750; }
+.review-destinations dt small { color: var(--muted); font-weight: 400; }
+.review-destinations dd { margin: 0; font-weight: 700; }
 
 .section-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
 .section-heading-row h2 { margin-bottom: 10px; }
@@ -523,14 +525,14 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .result-card:nth-child(2)::before { background: var(--orange); }
 .result-card:nth-child(3)::before, .result-card:nth-child(4)::before { background: var(--blueberry); }
 .result-card.primary-result { color: #fff; background: var(--green-dark); border-color: var(--green-dark); }
-.result-label { margin-bottom: 10px; color: var(--muted); font-weight: 600; }
+.result-label { margin-bottom: 10px; color: var(--muted); font-weight: 700; }
 .primary-result .result-label, .primary-result .result-note { color: var(--mint); }
-.result-value { margin-bottom: 12px; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1.2; font-weight: 800; }
+.result-value { margin-bottom: 12px; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1.2; font-weight: 700; }
 .result-note { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
 
 .equivalent-grid { display: grid; gap: 14px; margin-top: 24px; }
 .equivalent-grid article { padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
-.equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 800; }
+.equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 700; }
 .equivalent-grid h3 { margin-bottom: 7px; }
 .equivalent-grid p { margin: 0; color: var(--muted); font-size: 0.92rem; }
 /* ---------------------------------------------------------------------------------------
@@ -547,7 +549,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    thing that may apply them. A figure that merely happens to be negative is `.value-negative`
    below and carries no arrow, because it is a quantity rather than a movement.
    --------------------------------------------------------------------------------------- */
-.change-down, .change-up, .change-none { font-weight: 800; }
+.change-down, .change-up, .change-none { font-weight: 700; }
 .change-down::before { content: '↓ '; }   /* saved    — positive net_benefit */
 .change-up::before { content: '↑ '; }     /* increase — negative net_benefit */
 .change-none::before { content: '— '; }
@@ -559,7 +561,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    metric total may be, and that negative total is the reuse-and-offset result the calculator
    exists to show. `formatNumber` already prints the minus sign; this makes it read as an
    offset rather than as a small number. No arrow — see the ruling above. */
-.value-negative { color: var(--error); font-weight: 800; }
+.value-negative { color: var(--error); font-weight: 700; }
 .breakdown-tabs { margin-top: 24px; display: flex; gap: 6px; border-bottom: 1px solid var(--border); overflow-x: auto; }
 .breakdown-tabs button { min-height: 50px; padding: 10px 15px; border: 0; border-bottom: 2px solid transparent; color: var(--muted); background: transparent; font-weight: 700; white-space: nowrap; }
 .breakdown-tabs button:hover { color: var(--green-dark); background: rgba(223, 248, 237, 0.3); }
@@ -574,17 +576,17 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .bar-track span { height: 100%; display: block; border-radius: inherit; background: var(--blueberry); }
 .table-scroll { overflow-x: auto; }
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
-caption { margin-bottom: 10px; text-align: left; font-weight: 800; }
+caption { margin-bottom: 10px; text-align: left; font-weight: 700; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
 thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
-tbody th { font-weight: 750; }
+tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
 .result-actions .button-primary { margin-left: auto; }
 .methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-left: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }
 .methodology-compact h2 { margin-bottom: 8px; font-size: 1.25rem; }
 .methodology-compact > p { margin: 4px 0; color: var(--muted); }
 .methodology-compact details { margin-top: 12px; }
-.methodology-compact summary { min-height: 44px; display: flex; align-items: center; color: var(--green-dark); font-weight: 800; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
+.methodology-compact summary { min-height: 44px; display: flex; align-items: center; color: var(--green-dark); font-weight: 700; cursor: pointer; text-decoration: underline; text-underline-offset: 3px; }
 .methodology-compact details div { margin-top: 8px; padding-top: 12px; border-top: 1px solid var(--border); }
 .methodology-compact details p { margin-bottom: 8px; }
 
@@ -596,7 +598,7 @@ tbody th { font-weight: 750; }
 .improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr); gap: 24px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
 .improvement-allocation-row:last-child { border-bottom: 0; }
 .improvement-allocation-row > div:first-child { display: grid; gap: 4px; }
-.improvement-allocation-row label { font-weight: 800; }
+.improvement-allocation-row label { font-weight: 700; }
 .improvement-allocation-row span { color: var(--muted); }
 .improvement-control { display: grid; grid-template-columns: minmax(120px, 1fr) 118px; gap: 16px; align-items: center; }
 .improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }

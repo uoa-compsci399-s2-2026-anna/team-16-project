@@ -67,9 +67,9 @@ def test_no_module_under_api_imports_sqlalchemy():
     layer (`db.blocklist`, `db.detection`), which is allowed — they are the
     same layer. Importing the ORM directly is not, and is what this pins.
     """
-    for path in sorted((REPO_ROOT / "api").glob("*.py")):
+    for path in sorted((REPO_ROOT / "api").rglob("*.py")):
         source = path.read_text(encoding="utf-8").lower()
-        assert "sqlalchemy" not in source, path.name
+        assert "sqlalchemy" not in source, path.relative_to(REPO_ROOT).as_posix()
 
 
 # --- `client_ip`, on the request path -------------------------------------
@@ -81,9 +81,20 @@ class _FakeClient:
 
 
 class _FakeRequest:
-    """The two attributes `client_ip` reads. A hand-built stand-in rather than
-    a real `starlette.requests.Request` so that this file — like the module it
-    tests — needs nothing outside the standard library to run."""
+    """The two attributes `client_ip` reads.
+
+    A hand-built stand-in rather than a real `starlette.requests.Request`
+    because `client_ip` only ever touches `.client` and `.headers`, and the
+    interesting combinations (a malformed address, no address at all) are ones
+    no real ASGI server would send and httpx's `ASGITransport` fixes for a
+    whole transport. `db/detection.py` imports Starlette under `TYPE_CHECKING`
+    only, so nothing here needs a web framework — but note that it is *not*
+    standard-library-only at runtime: it imports `db.blocklist`, which pulls in
+    SQLAlchemy and `cryptography`. §8.3's rationale for the move rested on the
+    stdlib-only property, and that property no longer holds in full; what
+    survives it, and what actually mattered, is that nothing in the module
+    needs `admin/` (pinned above).
+    """
 
     def __init__(self, *, client: str | None = None, headers: dict | None = None):
         self.client = _FakeClient(client) if client is not None else None

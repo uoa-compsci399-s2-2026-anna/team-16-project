@@ -21,6 +21,7 @@ Two properties are worth more than the rest here:
 """
 
 import json
+import logging
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -208,11 +209,21 @@ async def test_an_unparseable_client_address_is_not_a_500(app, sqlite_engine):
     """§2.3: "Callers on a request path must not let that exception escape."
     `ip_fingerprint` raises `InvalidAddressError` rather than fingerprinting
     nonsense, and this middleware runs ahead of every request — so an address
-    it cannot parse must read as "no address", not as an internal error."""
-    _block(sqlite_engine)
-    async with _client(app, client=("not-an-address", 1)) as client:
-        response = await client.get("/api/v1/taxonomy")
+    it cannot parse must read as "no address", not as an internal error.
 
+    The 403 is asserted alongside the 200 on purpose: a bare "200 for a
+    malformed address" passes just as well with the middleware deleted
+    entirely, which is not what this test claims to prove. The pair says the
+    middleware is live on this app *and* that the malformed address got past
+    it without a 500.
+    """
+    _block(sqlite_engine)
+    async with _client(app) as addressed:
+        refused = await addressed.get("/api/v1/taxonomy")
+    async with _client(app, client=("not-an-address", 1)) as malformed:
+        response = await malformed.get("/api/v1/taxonomy")
+
+    assert refused.status_code == 403, "the middleware is not active on this app"
     assert response.status_code == 200, response.text
 
 
@@ -237,11 +248,21 @@ async def test_a_caller_with_no_address_still_skips_the_blocklist_rather_than_ma
     """Not a fail-open choice so much as a logical impossibility: the blocklist
     is keyed on `HMAC(address)` and there is no address to hash. The
     alternative — inventing a stand-in key — is what gives every addressless
-    caller one shared blocklist entry."""
-    _block(sqlite_engine)
-    async with _client(app, client=None) as client:
-        response = await client.get("/api/v1/taxonomy")
+    caller one shared blocklist entry.
 
+    Asserts the 403 from an addressed caller in the same test, for the same
+    reason as above: on its own the 200 is satisfied by no middleware at all.
+    `api/app.py` warns once per process when this happens, because a
+    deployment where it happens on *every* request (`uvicorn --uds` behind
+    nginx) has both protections silently doing nothing.
+    """
+    _block(sqlite_engine)
+    async with _client(app) as addressed:
+        refused = await addressed.get("/api/v1/taxonomy")
+    async with _client(app, client=None) as clientless:
+        response = await clientless.get("/api/v1/taxonomy")
+
+    assert refused.status_code == 403, "the middleware is not active on this app"
     assert response.status_code == 200, response.text
 
 
@@ -265,3 +286,87 @@ async def test_the_rate_limit_key_is_a_fingerprint_and_never_an_address(app):
     ]
     assert CALLER not in limiter.keys[0]
     assert "unknown" not in limiter.keys[0]
+
+
+# --- The two hazards that have no in-process fix, only a loud warning ------
+#
+# Both are the same defect from two sides: the API is measuring callers by a
+# value the deployment may not be giving it. Skipping a caller with no address
+# is right per request (there is no key) and disastrous in aggregate if it is
+# every request; measuring every caller by a proxy's address is right per
+# request (it is the address this process sees) and collapses §6.5 into one
+# global bucket in aggregate. Neither has an in-process mitigation - the panel
+# survives the second only because `_RATE_EXEMPT_PATHS` keeps its login
+# handshake reachable, and a public API has no login handshake. What is left
+# is a warning an operator cannot miss, so these pin that it is emitted.
+
+
+def _build_app(**kwargs):
+    from api.app import create_app
+
+    return create_app(
+        database_url="sqlite+pysqlite:///:memory:",
+        secret_key=API_TEST_SECRET_KEY,
+        **kwargs,
+    )
+
+
+async def test_an_untrusted_proxy_is_warned_about_at_start_up(caplog):
+    """§6.5's "600 / hour / IP" becomes 600/hour for the whole internet behind
+    a reverse proxy, and one block denies every visitor. `false` is still the
+    correct default - `true` with no proxy overwriting the header lets any
+    caller claim any address, which is worse - so the fix is operational and
+    has to be impossible to miss."""
+    with caplog.at_level(logging.WARNING, logger="api.app"):
+        _build_app(trusted_proxy=False)
+
+    assert len(caplog.records) == 1
+    message = caplog.records[0].getMessage()
+    assert "PROTECTION_TRUSTED_PROXY" in message
+    assert "shared bucket" in message.lower()
+    assert "blocklist entry denies" in message.lower()
+    assert "X-Forwarded-For" in message
+
+
+async def test_a_declared_proxy_is_not_warned_about(caplog):
+    with caplog.at_level(logging.WARNING, logger="api.app"):
+        _build_app(trusted_proxy=True)
+
+    assert caplog.records == []
+
+
+async def test_the_default_app_has_a_blocklist_rather_than_none(app):
+    """`blocklist_check=None` at the constructor means "use the default", not
+    "no blocklist" — it meant the latter before this app had a default, and an
+    API that ships with the blocklist off unless someone remembers to wire it
+    is the failure §2.3 names. Assigning `None` to the built app still disables
+    it, which is what the tests above rely on."""
+    assert app.state.blocklist_check is not None
+
+
+async def test_a_client_less_deployment_is_warned_about_once(app, caplog):
+    """`uvicorn --uds` behind nginx gives every request `scope["client"] is
+    None`, at which point the blocklist and the rate limit are both skipped for
+    every caller and neither raises. Once per process, not per request: a line
+    per request is a log that grows with traffic for a fact that does not
+    change."""
+    with caplog.at_level(logging.WARNING, logger="api.app"):
+        async with _client(app, client=None) as clientless:
+            await clientless.get("/api/v1/taxonomy")
+            first = len(caplog.records)
+            await clientless.get("/api/v1/stats")
+            second = len(caplog.records)
+
+    assert first == 1, [record.getMessage() for record in caplog.records]
+    assert second == 1
+    message = caplog.records[0].getMessage()
+    assert "no client address" in message
+    assert "uds" in message.lower()
+
+
+async def test_an_addressed_caller_produces_no_warning(app, caplog):
+    with caplog.at_level(logging.WARNING, logger="api.app"):
+        async with _client(app) as addressed:
+            await addressed.get("/api/v1/taxonomy")
+
+    assert caplog.records == []

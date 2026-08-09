@@ -12,6 +12,15 @@ Run without them:  python -m pytest -m "not db"
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
+#: B's SQLite fixtures - `sqlite_engine`, `seeded_session` and `app`. Registered
+#: here rather than as a `tests/db/conftest.py` so that a test file's directory
+#: does not silently decide which database engine it runs against: everything
+#: under tests/db/ was otherwise half MySQL (test_blocklist, test_session, on
+#: the fixtures below) and half SQLite. Registration from the root is only
+#: possible because those two fixtures were renamed off `engine`/`session`
+#: during the integration of B's branch - the names this module already uses.
+pytest_plugins = ["tests.support.sqlite"]
 from sqlalchemy import create_engine, text
 from sqlalchemy.orm import sessionmaker
 

@@ -1,17 +1,29 @@
 """B's SQLite fixtures, for the repository and public-API contract tests.
 
-These were `tests/conftest.py` on the `database` branch, where they defined
-fixtures called `engine` and `session`. The repository-wide `tests/conftest.py`
-already defines fixtures of exactly those two names with the opposite
-semantics — a session-scoped MySQL scratch database with per-test transaction
-rollback, rather than a function-scoped in-memory SQLite with a seeded,
-committed session. Both are wanted, and whichever name won, the other suite
-failed outright, so B's are renamed `sqlite_engine` and `seeded_session` and
-scoped to this directory.
+Registered as a pytest plugin from `tests/conftest.py`
+(`pytest_plugins = ["tests.support.sqlite"]`), so `sqlite_engine`,
+`seeded_session` and `app` are available anywhere in the suite regardless of
+which directory a test file sits in.
 
-`tests/test_mysql_integration.py` stays at the top level and stays on real
-MySQL: the COALESCE(food_category_id, 0) functional unique index it proves has
-no meaning on SQLite, which is why B separated it in the first place.
+These were `tests/conftest.py` on the `database` branch, where the first two
+were called `engine` and `session`. The repository-wide `tests/conftest.py`
+defines fixtures of exactly those names with the opposite semantics — a
+session-scoped MySQL scratch database with per-test transaction rollback,
+rather than a function-scoped in-memory SQLite with a seeded, committed
+session. Both are wanted, and whichever name won, the other suite failed
+outright. Renaming B's is what makes registering them from the root possible
+at all; before that, the only way to keep both was to scope hers to a
+subdirectory, which quietly made the directory a test lived in determine
+which database engine it ran against.
+
+**Two engines are in play across this suite, and a test file's location no
+longer tells you which one it uses — its fixtures do.** `sqlite_engine`,
+`seeded_session` and `app` are SQLite and need no Docker. `engine`, `session`,
+`admin_app` and `client` (all in `tests/conftest.py`) are real MySQL.
+
+`tests/test_mysql_integration.py` is separate from both: the
+COALESCE(food_category_id, 0) functional unique index it proves has no meaning
+on SQLite, which is why B isolated it in the first place.
 """
 
 from __future__ import annotations

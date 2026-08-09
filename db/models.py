@@ -53,6 +53,15 @@ from db.base import BIGINT_PK, Base
 # branch was still unmerged when that work was done. Moving them touches all
 # eleven of E's admin views, so it is deliberately out of scope here and should
 # be tracked as follow-up work.
+#
+# **The trap while it lasts.** The full chain is
+# `admin.audit → db.repository → db.models → admin.{models, taxonomy_models,
+# factor_models}`, and it is acyclic only because those three model modules
+# import nothing from `admin.audit`. Adding one such import — an audit helper
+# pulled into a model for convenience, say — closes the cycle, and a circular
+# import fails at collection with an ImportError that stops the whole test
+# suite, exactly like the duplicate-table crash these re-exports replaced. The
+# three model modules must stay leaves.
 from admin.factor_models import (  # noqa: E402
     Constant,
     Equivalence,

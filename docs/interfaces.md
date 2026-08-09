@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.9 draft)"
+date: "2026-08-10 (v1.10 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,23 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.10 — 2026-08-10 (the golden suite lands, and three descriptions catch up with the code, **affects A**)
+
+**Nothing computes differently in this revision.** Every change below either describes what was already built or writes down a rule the code has been following with nothing behind it — which is precisely the category that goes unrecorded, because none of it breaks a test and none of it moves a fixture. The suite §10.1 has specified since v0.2 now exists: eight cases, `tests/test_golden.py` as the runner, and the first two built from the response fixtures rather than from the engine, so at least one case is a cross-check between two implementations rather than a recording of one.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **§10.1 now specifies the two files it only named.** `request.json` and `expected.json` are §3's domain objects rendered as JSON — **not** §6.2's wire shapes — because a golden case written against §6.2 would certify `api/engine_adapter.py` as well as the engine, and a hoist or an omitted key there would then read as an engine defect. Adds the four rules the suite is worth nothing without: self-contained cases, no regenerate mode, a failure that names the case and the metric and both values, and a stated purpose per case. Records where each case's numbers came from, since only the first two can avoid certifying the engine against itself | §10.1 | **A** |
+| 2 | **§4.3 said the evaluator is built on `simpleeval`. It never was** — `engine/evaluator.py` is hand-written over Python's `ast`, and the entry now records that and the four reasons. The load-bearing one: `admin/expressions.py` is its static twin and the two must reach the same verdict on every expression, which is only checkable because both walk the same `ast` objects; when that agreement was first measured it found **eight** disagreements where a hand survey had listed three. Also documents six rules the four-line summary omits, all of them things the panel already enforced. `simpleeval` is dropped from `requirements.txt`, where it was an install nothing imported | §4.3 | **A**, and E should know the twin is now documented |
+| 3 | **§3 rule 5 gains the row for a value that rounds to zero from below.** `Decimal("-0.4")` rounds to `Decimal("-0")` and `format(Decimal("-0"), ",")` is `"-0"`, so the rule as written produced `Equivalent to driving -0 km` on a results page. The engine has normalised it since v1.9; the rule did not exist. **No fixture changes with it** — no fixture value rounds to zero from below — which is exactly why it would otherwise never have been written down, and it is the same position the half-up rule was in | §3 | **A, C, D** |
+| 4 | **§10.2 settles what `tests/fixtures/factors.json` is.** It is a `GET /factors` response, as §10's table has always said, and it is **not** a bundle: it nests `version_label` and `is_mock` inside `factor_set` and carries none of the five taxonomy sections, so `from_json()` refuses it. §10.2 now states that no fixture is a bundle and gives the composition — `taxonomy.json`'s five taxonomy sections plus `factors.json`'s five factor sections plus those two keys hoisted, which is `db/repository.build_bundle_data`'s own projection. A fourteenth fixture holding a pre-composed bundle was rejected: it would be a second copy of every factor row | §10.2 | **A, B** |
+
+> **No request shape, no response shape, no schema and no front-end module signature moves. C and D have nothing to do**, beyond knowing that a label can now read `0` where the underlying `value` is negative — `value` is unchanged and still carries its sign at full precision.
+>
+> **The fixture step of §0's process is a genuine no-op this time, and that is worth stating rather than skipping.** Nothing in `tests/fixtures/` changed, because neither of the two behavioural rules written down here has a fixture that can express it: no fixture value rounds to zero from below, and no fixture value lands on a half. Both are held instead by the golden suite — `case_07_negative_total_and_zero_label` and `case_08_mixed_alternative_rollup` respectively.
+>
+> **Still open after this revision.** **O-1** remains the hard blocker; everything runs on mock factors and the placeholder banner stays mandatory. **O-2 is still the one to read carefully** — see v1.9. O-7 stays closed, and `case_03_prevention_whole_offset` is now the test that keeps it closed: it fails with **96.000** if `factor_upstream`'s destination dimension is removed. Carried forward unchanged: `landfill_diverted` as a real `metric` row, the container-preset input, `gwpHorizon`'s missing control, and the positive/negative colour pair.
 
 ### v1.9 — 2026-08-09 (publishing refuses to reopen O-7, **affects B and E**)
 
@@ -898,6 +915,7 @@ class CalculationResult:
 > | Thousands separator | A comma every three digits: `18,597` |
 > | Decimal separator | Not applicable; there is no fractional part |
 > | Negative values | A leading `-`, same grouping. Possible: a metric total can be negative when a downstream offset dominates (§4.2) |
+> | A value that rounds to zero | `0`, with **no sign**. The row above is for values that are actually negative; a magnitude that rounds away is not one. `Decimal("-0.4")` rounds to `Decimal("-0")` and `format(Decimal("-0"), ",")` is `"-0"`, so without this row the rule as written produces `Equivalent to driving -0 km` on a results page. `value` itself is unaffected and keeps its sign at full precision |
 > | Anything else in the template | Copied **verbatim**. `{value}` is the only placeholder substituted, and any other brace sequence is literal text — `label_template` is staff-authored (§8.1) and must never behave as a format string |
 >
 > `Equivalent to driving {value} km` with `value = Decimal("18596.8200000000")` gives `Equivalent to driving 18,597 km`.
@@ -906,7 +924,7 @@ class CalculationResult:
 >
 > **Why this is A's to produce and not C's.** §7.6 rule 1: the browser computes nothing. Rounding is arithmetic — a client that formatted the label itself would be the second place a number is turned into the figure a user reads, and the golden suite (§10.1) could not cover it. It is also the client's approved wording (§7.3a warns against C's hard-coded equivalence labels for the same reason).
 >
-> **Why it needs stating at all, in these words.** This is a convention that `tests/fixtures/calculate_response.json` instantiated to match §6.2's samples, which show `21,400` and `14,500`. Neither §2.2, §4.3 nor §6.2 defined it, so the fixtures C and D build against carried a format A had no way to know he had to reproduce — and the mismatch would be invisible to every test in the tree: `_assert_shape` compares types, not text, and a `label` reading `Equivalent to driving 18596.8200000000 km` is a well-formed string of the right type in the right key. The half-up rule in particular is **not** pinned by any fixture, because no fixture value lands on a half; it is stated because half-even would silently round `2.5` down and nobody would find out from a test.
+> **Why it needs stating at all, in these words.** This is a convention that `tests/fixtures/calculate_response.json` instantiated to match §6.2's samples, which show `21,400` and `14,500`. Neither §2.2, §4.3 nor §6.2 defined it, so the fixtures C and D build against carried a format A had no way to know he had to reproduce — and the mismatch would be invisible to every test in the tree: `_assert_shape` compares types, not text, and a `label` reading `Equivalent to driving 18596.8200000000 km` is a well-formed string of the right type in the right key. The half-up rule in particular is **not** pinned by any fixture, because no fixture value lands on a half; it is stated because half-even would silently round `2.5` down and nobody would find out from a test. **The round-to-zero row is in the same position and for the same reason** — no fixture value rounds to zero from below, so no fixture changed when the row was added and nothing in `tests/fixtures/` would have forced anyone to write it down. Both rules are held instead by the golden suite (§10.1): `case_08_mixed_alternative_rollup` lands an equivalence on `7210.5`, where half-up and half-even disagree, and `case_07_negative_total_and_zero_label` lands one on `-0.4`.
 
 
 
@@ -1060,7 +1078,9 @@ That signature is illustrative, not contractual. No caller outside `engine/` may
 ```python
 def evaluate_expression(expression: str, variables: dict[str, Decimal]) -> Decimal:
     """
-    Restricted expression evaluation (built on simpleeval).
+    Restricted expression evaluation over Python's own `ast`, in
+    `engine/evaluator.py`. `evaluate` is the implemented name and
+    `evaluate_expression` is an alias for it.
 
     Permitted
       Literals  : decimal numbers
@@ -1077,6 +1097,18 @@ def evaluate_expression(expression: str, variables: dict[str, Decimal]) -> Decim
       division by zero / non-finite result
     """
 ```
+
+> **This is hand-written over `ast`, not built on `simpleeval`, and the change from v1.9 is only that this document now says so.** No library was removed; none was ever imported. Four things were wanted from the evaluator, and three of them are properties of holding the tree yourself.
+>
+> **`admin/expressions.py` is its static twin (§8.1) and the two must reach the same verdict.** The panel validates the text at save time and the engine runs it; an expression one accepts and the other refuses is a formula a staff member saves and the public then receives `FORMULA_ERROR` 500 from. The two are deliberately independent implementations of one language — one walks the tree checking node types, the other walks it computing — and they are only comparable because they are looking at the same `ast` objects. `tests/test_evaluator.py::test_the_panel_and_the_engine_reach_the_same_verdict` runs the panel's whole expression corpus through both. **When that agreement was first measured it found eight disagreements, not the three a hand survey had listed**, and in all eight the panel was right.
+>
+> **§4.4 requires `FormulaError` to carry `line` and `column`.** Every `ast` node already has `lineno` and `col_offset`, so the error is located at the offending token rather than at the whole expression, which is the whole point of §9.1's staff presentation.
+>
+> **Refusal is by default.** `_evaluate_node` names the node types it permits and refuses everything else by falling through, so a construct nobody anticipated is refused rather than admitted. That is what makes the security-boundary argument hold without enumerating what is dangerous.
+>
+> **Arithmetic never leaves `Decimal`.** Operands are `Decimal`, literals are converted without a `float` intermediate, and a non-finite result is refused (§1.2).
+>
+> **Six rules the four lines above do not spell out, all of them things the panel already enforced.** Unary `+` is refused, since §4.3 lists unary minus and nothing else. Keyword arguments are refused — `round(qty_kg, ndigits=2)` was silently dropping the keyword and evaluating `round(qty_kg)`, returning a plausible number from a formula nobody wrote. `round`'s second argument must be a whole-number literal, optionally negated, checked statically on the node rather than coerced from the evaluated value. Arity comes from a table (`min`/`max` at least two, `abs` exactly one, `round` one or two) so the verdict belongs to the whitelist rather than to a CPython builtin's signature. `**`, `%`, `//` and the bitwise and shift operators are refused, `**` because a large exponent can exhaust memory before any timeout notices. And `ast.Constant` covers every Python literal, so strings, bytes, `None` and `bool` are refused by type — `bool` by name, because it is an `int` subclass — and a `float` literal that parses to infinity (`1e999`) is refused before it can propagate as a valid `Decimal('Infinity')` through every subsequent operation.
 
 **Formula scope: an expression computes the contribution of a single line. Summation is performed by the engine.**
 
@@ -2535,22 +2567,50 @@ Both matter, and neither substitutes for the other. The shape check proves the A
 
 ## 10.1 Golden Test Suite (owner: A)
 
-Under `tests/golden/`, three files per case:
+Under `tests/golden/`, three files per case, and the directory name says what the case is for:
 
 ```
-case_01_landfill_dairy/
+case_03_prevention_whole_offset/
   bundle.json     a fixed factor set          <- shape defined in §10.2
-  request.json    a fixed request
-  expected.json   the expected full CalculationResult
+  request.json    a fixed request             <- §3 CalculationRequest, as JSON
+  expected.json   the expected full CalculationResult   <- §3, as JSON
 ```
 
-Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover.
+Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover. `tests/test_golden.py` discovers `case_*/`, loads the three files, calls `calculate()` and compares.
+
+**`request.json` and `expected.json` are §3's domain objects, not §6.2's wire shapes.** Field for field: `sector_code` and `food_category_code` rather than `sector` and `food_category`, `destination_code` rather than `destination`, `source_metric_code` rather than `source_metric`, `by_destination` present and empty at the totals level rather than omitted, and a `total_kg` on `totals.alternative` for which §6.2's single hoisted `totals.total_kg` has no room. A golden case written against §6.2's body would certify `api/engine_adapter.py` as well as the engine, and a hoist or an omitted key there would then read as an engine defect. Decimals are strings (§1.2) rendered as `format(value, "f")` — the same rendering `api/serialization.wire()` performs, so `"0.0000000000"` and `"0"` are different answers in a golden file exactly as they are on the wire.
+
+| Rule | Reason |
+| --- | --- |
+| A case is **self-contained**: its `bundle.json` is the whole factor set, not a reference to a fixture | The engine is a pure function of two documents (§4.2). A case that reached out to `tests/fixtures/` would change its answer when a fixture was corrected, which is how a suite starts failing for reasons that have nothing to do with the engine |
+| **The runner never writes an expected file.** There is no regenerate mode | A runner that can rewrite its own expectations certifies whatever the engine currently does. §10.0's warning applies with more force here than anywhere: a suite certifying the wrong semantics certifies them very convincingly |
+| **A failure names the case, the path, the metric and both values** | A golden failure reading only `assert False` wastes the debugging session it exists to shorten |
+| **Every case states what it is evidence of**, in `_PROVENANCE` in the runner | A case nobody can state the purpose of is the case that gets deleted the first time it fails |
+
+> **Where a case's numbers come from is the whole question, and only the first case can avoid the circle.** `case_01` and `case_02` are derived from `calculate_response.json` and `calculate_response_single.json` — figures produced on B's line from the published formulas, independently of A's engine, so those two cases are a genuine cross-check between two implementations. Every case after them would otherwise be the engine certifying itself, so cases 03 to 08 are **hand-computed**: each is small enough to check on paper, each is designed so that the failure mode it targets changes the answer by an amount nobody could mistake for rounding, and the arithmetic is written out in the task-7 report.
+>
+> **`case_03_prevention_whole_offset` is the one that carries open item O-7.** 800 kg moved from `not_harvested` to `prevention` gives `net_benefit.co2e` of **456.000**, the figure v1.8 recomputed independently. `test_case_03_fails_if_the_upstream_destination_dimension_is_removed` reverts `FactorBundle.upstream()` to its pre-v1.8 behaviour and asserts that the case then fails **with 96.000** — not merely that it fails. A case that only proves today's engine agrees with today's expected file is not evidence that a closed defect stays closed.
 
 ## 10.2 `bundle.json` Shape (owner: A)
 
 One shape, three consumers: the golden suite above, `FactorBundle.from_json()` (§4.1), and the `dry_run.bundle` field of `POST /calculate` (§6.2.1).
 
 It is a **complete, self-contained snapshot** — the taxonomy as well as the factors. §4.1's `has_destination()`, `has_sector()`, `has_food_category()` and `standard_mix_code()` are unimplementable otherwise, and staff must be able to trial a destination or food category that does not yet exist in the database.
+
+> **No file in `tests/fixtures/` is a bundle, and `factors.json` in particular is not one.** §10's table has always called it a `GET /factors` response and that is exactly what it is: it wraps `version_label` and `is_mock` inside a `factor_set` object, and it carries **none** of the five taxonomy sections. Passing it to `from_json()` raises `BundleFormatError` naming the five missing keys — correctly, since a bundle without the taxonomy cannot answer `has_destination()` and would otherwise reject every destination in the request with `UNKNOWN_CODE`. This is not a defect in either file. `db/repository.build_bundle_data` is the projection **both** shapes come from, and §6.3's export is that dictionary with the taxonomy sections dropped and those two keys nested.
+>
+> **A bundle is composed, not fetched**, and the composition is a re-keying with no arithmetic in it:
+>
+> ```
+> bundle.version_label   <- factors.json  .factor_set.version_label
+> bundle.is_mock         <- factors.json  .factor_set.is_mock
+> sectors, food_categories, destination_groups, destinations, metrics
+>                        <- taxonomy.json (the same five keys)
+> constants, formulas, upstream, downstream, equivalences
+>                        <- factors.json  (the same five keys)
+> ```
+>
+> `tests/test_bundle.py::canonical_bundle_json` is that composition, and it is what `tests/golden/case_01_*/bundle.json` and `case_02_*/bundle.json` were built with — so the canonical numbers reach the golden suite without a thirteenth fixture being added and without either existing file having to change shape. **A fourteenth file holding a pre-composed bundle was rejected**: it would be a second copy of every factor row, and the copy that stops matching is the one nobody notices.
 
 ```json
 {

@@ -47,7 +47,7 @@ Recommended mock source: ReFED's published department-level factors. The magnitu
 | ORM | SQLAlchemy 2.x with Alembic migrations | Do not hand-roll a database abstraction layer |
 | Database | MySQL 8 (or PostgreSQL) | Chosen for concurrent writes and operability, not for capacity |
 | Admin panel | `sqladmin` plus custom views | CRUD, search, filtering and permissions out of the box |
-| Expression evaluation | `simpleeval` | Restricted evaluation; blocks attribute access; supports iteration limits |
+| Expression evaluation | Standard library `ast`, hand-written whitelist (`engine/evaluator.py`) | Restricted evaluation; refuses every node type it does not name; located errors from `lineno`/`col_offset`; `admin/expressions.py` is its static twin over the same tree. `simpleeval` was the intended choice through contract v1.9 and was never imported — see `interfaces.md` §4.3 |
 | Testing | `pytest` | The calculation engine must have a golden-test suite |
 
 **No Node.js.** With no front-end framework there is no build tooling, so the stack closes cleanly on Python.

@@ -25,7 +25,11 @@ pyotp>=2.9                 # TOTP
 qrcode>=8.0                # SVG factory only - no Pillow dependency
 
 # --- Calculation engine (module A) ---
-simpleeval>=1.0
+# No dependency. engine/evaluator.py is written over the standard library's
+# `ast` rather than simpleeval, so that admin/expressions.py can be its static
+# twin over the same tree and the two can be held to the same verdict; see
+# docs/interfaces.md 4.3. simpleeval was listed here through v1.9 and never
+# imported.
 
 # --- Config ---
 python-dotenv>=1.0

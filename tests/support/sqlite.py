@@ -75,41 +75,68 @@ class FormulaError(Exception):
 
 
 class FakeEngineAdapter:
+    """Stands in for A's engine, and therefore for §3's domain objects.
+
+    **It straddles the v1.2 boundary on purpose, and that is the state of the
+    integration, not a shortcut.** `make_request` returns the §3 request the
+    repository now writes — a `CalculationRequest` carrying `entries`, each an
+    `EntryInput` with its own sector, food category and scenario lines.
+    `calculate` still returns the pre-v1.2 *wire* result, with `current` and
+    `alternative` at the top level, because `api/schemas.py`, the real
+    `api/engine_adapter.py` and `tests/fixtures/calculate_response*.json` are
+    all still single-entry: reshaping those is Task 4 (§6.2), and this file
+    may not reach into `api/`.
+
+    Mapping the single-entry payload to a one-element `entries` is the correct
+    §3 conversion for a request that carries one entry, so nothing here is
+    faked away — but note that **`api/engine_adapter.py`'s
+    `DefaultEngineAdapter.make_request` still builds the deleted
+    `ScenarioInput`** and would raise against the real engine. These tests
+    inject this adapter, so they cannot see that. Task 4 closes it.
+    """
+
     def bundle_from_json(self, data):
         return FakeBundle(data)
 
     def make_request(self, payload):
-        def scenario(lines):
-            if lines is None:
+        def lines(rows):
+            if rows is None:
                 return None
-            return SimpleNamespace(
-                sector_code=payload.sector,
-                food_category_code=payload.food_category,
-                lines=tuple(
-                    SimpleNamespace(destination_code=x.destination, qty_kg=x.qty_kg)
-                    for x in lines
-                ),
+            return tuple(
+                SimpleNamespace(destination_code=x.destination, qty_kg=x.qty_kg)
+                for x in rows
             )
-        return SimpleNamespace(
-            current=scenario(payload.current),
-            alternative=scenario(payload.alternative),
-            gwp_horizon=payload.gwp_horizon,
+
+        entry = SimpleNamespace(
+            sector_code=payload.sector,
+            food_category_code=payload.food_category,
+            current=lines(payload.current),
+            alternative=lines(payload.alternative),
         )
+        return SimpleNamespace(entries=(entry,), gwp_horizon=payload.gwp_horizon)
 
     def calculate(self, request, bundle):
         if bundle.data.get("_raise_formula"):
             raise FormulaError()
         destinations = {row["code"] for row in bundle.data.get("destinations", [])}
-        for scenario in (request.current, request.alternative):
-            if scenario is None:
-                continue
-            if any(line.destination_code not in destinations for line in scenario.lines):
-                raise UnknownCodeError("unknown destination")
+        for entry in request.entries:
+            for scenario in (entry.current, entry.alternative):
+                if scenario is None:
+                    continue
+                if any(line.destination_code not in destinations for line in scenario):
+                    raise UnknownCodeError("unknown destination")
 
-        def scenario_result(scenario):
-            if scenario is None:
-                return None
-            total = sum((line.qty_kg for line in scenario.lines), Decimal("0"))
+        has_alternative = any(entry.alternative is not None for entry in request.entries)
+
+        def scenario_result(pick):
+            total = sum(
+                (
+                    line.qty_kg
+                    for entry in request.entries
+                    for line in (pick(entry) or ())
+                ),
+                Decimal("0"),
+            )
             return {"total_kg": str(total), "metrics": {}, "equivalences": []}
 
         return {
@@ -118,9 +145,11 @@ class FakeEngineAdapter:
                 "is_mock": bundle.data["is_mock"],
             },
             "gwp_horizon": request.gwp_horizon,
-            "current": scenario_result(request.current),
-            "alternative": scenario_result(request.alternative),
-            "net_benefit": {} if request.alternative is not None else None,
+            "current": scenario_result(lambda entry: entry.current),
+            "alternative": scenario_result(lambda entry: entry.alternative)
+            if has_alternative
+            else None,
+            "net_benefit": {} if has_alternative else None,
         }
 
     def serialize_result(self, result):

@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from db.errors import FactorSetStateError
 from db.models import (
@@ -22,6 +22,7 @@ from db.models import (
 from db.repository import (
     build_bundle_data,
     clone_factor_set,
+    find_missing_prevention_upstream,
     get_public_stats,
     get_published_factor_set_id,
     invalidate_factor_bundle,
@@ -211,6 +212,100 @@ def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     assert all("destination_id" not in row for row in data["upstream"])
 
 
+def test_publish_refuses_a_set_that_would_reopen_o7(seeded_session):
+    """Contract §2.2/§5.2. The offset is data now, so data can un-do it.
+
+    The migration covered every combination that existed and `clone_factor_set`
+    carries the rows through clone-edit-publish, but nothing stops a staff
+    member adding a new `(sector, food_category, metric)` to a draft with no
+    `prevention` counterpart. That one combination silently reverts to
+    pre-v1.8 behaviour — charging a prevented line its full upstream factor —
+    while every other combination on the same results page stays correct,
+    which is *harder* to notice than the original O-7 was.
+
+    The message must name the tuples: "something is incomplete" leaves a staff
+    member to find it among roughly 270 rows.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+    seeded_session.execute(
+        delete(FactorUpstream).where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+    with pytest.raises(FactorSetStateError) as excinfo:
+        publish_factor_set(seeded_session, draft_id, "alice")
+
+    message = str(excinfo.value)
+    assert "processing/dairy/co2e" in message
+    assert "prevention" in message
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_rollback_is_deliberately_not_subject_to_the_o7_check(seeded_session):
+    """The asymmetry is the decision, not an oversight.
+
+    Rollback restores a version that was published before — including one
+    archived before v1.8 existed, which will legitimately fail the
+    completeness check. Refusing an emergency rollback over it would be a
+    worse failure than the one the check prevents.
+    """
+    from db.models import Destination
+
+    published_id = get_published_factor_set_id(seeded_session)
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    publish_factor_set(seeded_session, draft_id, "alice")
+    seeded_session.execute(
+        delete(FactorUpstream).where(
+            FactorUpstream.factor_set_id == published_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+    )
+    seeded_session.flush()
+
+    rollback_to(seeded_session, published_id, "alice")
+
+    assert seeded_session.get(FactorSet, published_id).status == FactorSetStatus.published
+
+
+def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_session):
+    """An unseeded taxonomy is `check_prevention_intact`'s problem, not this
+    function's. Reporting every combination in the set would be noise, and a
+    second rule stated in terms of the same reserved row is a second thing to
+    keep in step."""
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    seeded_session.execute(
+        delete(FactorUpstream).where(FactorUpstream.destination_id.is_not(None))
+    )
+    seeded_session.execute(delete(Destination).where(Destination.code == "prevention"))
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+
 def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_session):
     published_id = get_published_factor_set_id(seeded_session)
     clone_id = clone_factor_set(seeded_session, published_id, "CLONE-v1", "alice")
@@ -233,14 +328,18 @@ def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_ses
     #: rows collapse onto the general row, reopening O-7 on the next publish —
     #: and clone-edit-publish is the recommended staff workflow (§5.2), so the
     #: defect would arrive on the first real factor set rather than this one.
+    #: Ordered by the column itself, not by `is_(None)` — a boolean sorts two
+    #: rows deterministically by luck and stops doing so the moment a factor
+    #: set carries two destination-specific rows, which is a flake nobody
+    #: would enjoy diagnosing.
     assert seeded_session.scalars(
         select(FactorUpstream.destination_id)
         .where(FactorUpstream.factor_set_id == clone_id)
-        .order_by(FactorUpstream.destination_id.is_(None))
+        .order_by(FactorUpstream.destination_id)
     ).all() == seeded_session.scalars(
         select(FactorUpstream.destination_id)
         .where(FactorUpstream.factor_set_id == published_id)
-        .order_by(FactorUpstream.destination_id.is_(None))
+        .order_by(FactorUpstream.destination_id)
     ).all()
 
     publish_factor_set(seeded_session, clone_id, "alice")

@@ -65,7 +65,27 @@ BundleFactory = Callable[[dict[str, Any]], Any]
 #: audit_trail`` for the full argument. §2.3's reasoning for never displaying
 #: the fingerprint applies to /admin/audit exactly as it does to the blocklist
 #: screen.
-REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash", "ip_hmac"}
+#:
+#: ``token`` (``submission.token``, §2.3) is here for the same defence-in-depth
+#: reason as ``ip_hmac``, and ahead of the view that would leak it. §8.2
+#: specifies ``/admin/submissions`` as a record-level moderation screen that
+#: sets ``excluded_from_public``; the moment it is built on
+#: ``AuditedModelView``, ``write_audit`` snapshots the whole row and copies the
+#: **live** session token into ``audit_log`` -- readable by every staff member,
+#: never expired, and out of reach of ``expire_tokens``, which nulls the column
+#: on ``submission`` and knows nothing about copies. §2.3's guarantee is that
+#: the linkage is severed after an hour; a copy in an audit row makes that
+#: false for every moderated submission, permanently. It is not a credential,
+#: but like ``ip_hmac`` it is the one field that ties a stored row back to a
+#: person's browser session, which is precisely what this system promises not
+#: to keep.
+REDACTED_FIELDS = {
+    "password_hash",
+    "mfa_secret_enc",
+    "code_hash",
+    "ip_hmac",
+    "token",
+}
 
 _bundle_cache: dict[int, Any] = {}
 _cache_lock = threading.RLock()
@@ -615,6 +635,28 @@ def _bucketise(
     merged into `other` rather than dropped: dropping it would not remove a
     number from the page, it would inflate every share left on it.
 
+    **`other` is itself subject to the threshold, and clears it by absorbing
+    more.** A single sub-threshold bucket used to be republished verbatim
+    under a new name -- `count: 1` with its exact `total_kg` -- which hid the
+    label and nothing else. Worse in combination than alone: `by_sector.other`
+    and `by_food_category.other` are drawn from the same entries, so an
+    `other` of one entry publishes that user's exact tonnage three times over
+    and the three rows join on sight. So: while `other` exists and is below
+    the threshold, the **smallest visible** bucket is merged into it as well,
+    which raises `other`'s count fastest per bucket surrendered and costs the
+    page the least informative row first.
+
+    **If merging everything still cannot clear the threshold, the breakdown
+    is published empty** -- no buckets at all, `total_calculations` on its
+    own. That is the case of a data set so small that every row in it is
+    identifying, and there is no arrangement of it that is both useful and
+    safe.
+
+    The privacy ruling here overrides the shares property below where the two
+    conflict, but in practice they do not: `other` remains an ordinary bucket
+    carrying every suppressed entry, so the denominator is untouched and the
+    shares still sum to 1. An empty breakdown has no shares to sum.
+
     **The shares sum to exactly 1, and that takes one extra step.** §6.4
     states it as a property a consumer may rely on, but quantizing each share
     independently to four places does not deliver it: three buckets of one
@@ -634,7 +676,7 @@ def _bucketise(
             return Decimal("0")
         return (Decimal(count) / Decimal(total)).quantize(Decimal("0.0001"))
 
-    visible: list[StatsBucket] = []
+    kept: list[tuple[str, str, int, Decimal]] = []
     other_count = 0
     other_kg = Decimal("0")
     for code, label, count, total_kg in ordered:
@@ -642,7 +684,24 @@ def _bucketise(
             other_count += count
             other_kg += _decimal(total_kg)
             continue
-        visible.append(StatsBucket(code, label, count, share(count), _decimal(total_kg)))
+        kept.append((code, label, count, _decimal(total_kg)))
+
+    # `kept` is ordered by descending count, so the smallest visible bucket is
+    # the last one. Pop from the end until `other` clears the threshold.
+    while other_count and other_count < threshold and kept:
+        _, _, count, total_kg = kept.pop()
+        other_count += count
+        other_kg += total_kg
+
+    if other_count and other_count < threshold:
+        # Everything merged and it still does not clear. Publishing `other`
+        # alone would be publishing the whole breakdown under one label.
+        return ()
+
+    visible = [
+        StatsBucket(code, label, count, share(count), total_kg)
+        for code, label, count, total_kg in kept
+    ]
     if other_count:
         visible.append(
             StatsBucket(*OTHER_BUCKET, other_count, share(other_count), other_kg)

@@ -79,7 +79,7 @@
       "code": "processing",
       "label": "Processing and manufacturing",
       "count": 606,
-      "share": "0.3788",
+      "share": "0.3787",
       "total_kg": "486428.625"
     },
     {
@@ -104,18 +104,11 @@
       "total_kg": "150102.562"
     },
     {
-      "code": "consumer_institution",
-      "label": "Institutions",
-      "count": 114,
-      "share": "0.0712",
-      "total_kg": "91506.375"
-    },
-    {
       "code": "other",
       "label": "Other (sample too small)",
-      "count": 4,
-      "share": "0.0025",
-      "total_kg": "3210.750"
+      "count": 118,
+      "share": "0.0738",
+      "total_kg": "94717.125"
     }
   ],
   "by_food_category": [
@@ -162,18 +155,11 @@
       "total_kg": "77058.000"
     },
     {
-      "code": "bakery_grains",
-      "label": "Bakery and grains",
-      "count": 84,
-      "share": "0.0525",
-      "total_kg": "67425.750"
-    },
-    {
       "code": "other",
       "label": "Other (sample too small)",
-      "count": 4,
-      "share": "0.0025",
-      "total_kg": "3210.750"
+      "count": 88,
+      "share": "0.0550",
+      "total_kg": "70636.500"
     }
   ]
 }

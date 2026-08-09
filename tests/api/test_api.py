@@ -167,6 +167,56 @@ async def test_validation_uses_400_envelope(app):
     _assert_shape(response.json(), _fixture("errors/validation_error.json"))
 
 
+async def test_prevention_is_refused_in_a_current_scenario(app):
+    """§6.2, v1.5. Nothing but C's UI enforced this before.
+
+    A current-scenario `prevention` line persists as an ordinary
+    `submission_line` with `scenario = 'current'`, which is exactly what §5.4
+    selects — so it becomes a `by_destination` bucket in the public
+    statistics, and `prevention` is by construction the destination for waste
+    that did not happen. §5.4's scenario predicate is the *other* half of this
+    problem and cannot catch it: it excludes the alternative scenario, and
+    this line is not in the alternative scenario.
+
+    The two halves of the tree that looked like coverage were not:
+    `_check_scenario` had no such rule, and
+    `test_fixture_consistency.py::test_prevention_is_only_ever_an_alternative
+    _destination` asserts it of the fixture. A fixture cannot constrain a
+    caller who is not using it.
+    """
+    async with await _client(app) as client:
+        refused = await client.post(
+            "/api/v1/calculate",
+            json=_body(
+                [
+                    {"destination": "landfill", "qty_kg": "100.000"},
+                    {"destination": "prevention", "qty_kg": "900.000"},
+                ]
+            ),
+        )
+        # The same destination in the alternative is the whole point of it.
+        allowed = await client.post(
+            "/api/v1/calculate",
+            json=_body(
+                [{"destination": "landfill", "qty_kg": "1000.000"}],
+                alternative=[{"destination": "prevention", "qty_kg": "1000.000"}],
+            ),
+        )
+
+    assert refused.status_code == 400, refused.text
+    body = refused.json()
+    assert body["error"]["code"] == "VALIDATION_ERROR"
+    _assert_shape(body, _fixture("errors/validation_error.json"))
+    # §9: the path is located at the scenario that carried the line, not at
+    # the entry, so C can highlight the right half of the form.
+    assert [detail["field"] for detail in body["error"]["details"]] == [
+        "entries[0].current"
+    ]
+    assert "prevention" in body["error"]["details"][0]["message"]
+
+    assert allowed.status_code == 200, allowed.text
+
+
 async def test_public_factors_hide_drafts(app):
     async with await _client(app) as client:
         response = await client.get("/api/v1/factors", params={"version": "DRAFT-v1"})
@@ -195,6 +245,16 @@ async def test_factors_support_json_and_csv_zip(app):
 
 
 async def test_stats_only_expose_persisted_public_calculations(app):
+    """One submission publishes no buckets at all (§5.4, v1.5).
+
+    It used to publish `[{"code": "other", "count": 1, "total_kg": "3.000"}]`
+    — the single calculation republished under a new label, with its exact
+    tonnage, which is a public statement that exactly one calculation exists
+    and what it weighed. `other` is now subject to the threshold like any
+    other bucket, and with nothing left to absorb the breakdown is empty.
+    `total_calculations` still reports, because a count of submissions
+    identifies nobody.
+    """
     async with await _client(app) as client:
         await client.post(
             "/api/v1/calculate",
@@ -207,15 +267,9 @@ async def test_stats_only_expose_persisted_public_calculations(app):
     assert response.status_code == 200
     body = response.json()
     assert body["total_calculations"] == 1
-    assert body["by_destination"] == [
-        {
-            "code": "other",
-            "label": "Other (sample too small)",
-            "count": 1,
-            "share": "1.0000",
-            "total_kg": "3.000",
-        }
-    ]
+    assert body["by_destination"] == []
+    assert body["by_sector"] == []
+    assert body["by_food_category"] == []
 
 
 async def test_dry_run_supports_persisted_and_inline_sources(app):
@@ -502,6 +556,13 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     bucket it touches at or above the default threshold of 5, and one single
     -entry submission in a third sector, which lands below the threshold and
     is therefore merged into `other` (§5.4).
+
+    Eleven entries is a small enough population that v1.5's absorb-until-clear
+    rule fires: the suppressed sector is one entry, so `other` is one, so the
+    smallest visible sector is absorbed as well and `other` reaches six. That
+    is the behaviour worth having under test at this scale — a real deployment
+    sits well above it, and this is the shape the statistics take on the day
+    the calculator opens.
     """
     dual = _fixture("calculate_request.json")
     single = _request_from("calculate_response_single.json")
@@ -522,11 +583,19 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     # by design and the fixture must not present them as if they did not.
     assert sum(bucket["count"] for bucket in body["by_sector"]) == 11
     codes = {bucket["code"]: bucket for bucket in body["by_sector"]}
-    assert codes["other"]["count"] == 1, "the below-threshold sector must merge"
+    assert codes["other"]["count"] == 6, (
+        "the below-threshold sector merges, and `other` then absorbs the "
+        "smallest visible sector to clear the threshold itself"
+    )
     assert "consumer_hospitality" not in codes, "a suppressed bucket must not be named"
-    # §6.4 says the shares "sum to 1", and both the fixture and the API now
-    # deliver exactly that. Buckets of 5/11, 5/11 and 1/11 quantize to 0.9999,
-    # so `_bucketise` assigns the residue; without that step a legend built on
+    # No published bucket may sit below the threshold -- including `other`,
+    # which is the rule v1.5 added. This is the assertion that fails if the
+    # absorb loop is removed, whatever the counts happen to be.
+    threshold = body["suppression_threshold"]
+    for bucket in body["by_sector"]:
+        assert bucket["count"] >= threshold, bucket
+    # §6.4 says the shares "sum to 1", and both the fixture and the API deliver
+    # exactly that; without `_bucketise`'s residue step a legend built on
     # `stats.json` reads 100% and the same legend reads 99.99% live.
     assert sum(Decimal(bucket["share"]) for bucket in body["by_sector"]) == Decimal("1")
     # `prevention` is an alternative-scenario destination. It must never reach

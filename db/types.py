@@ -4,6 +4,23 @@ from dataclasses import dataclass
 from datetime import datetime
 from decimal import Decimal
 
+#: Contract §2.1 and §6.2. The destination expressing "this waste did not
+#: happen". It is the one destination code this system knows by name -- the
+#: taxonomy is otherwise data, not an enum, precisely so the MfE groupings
+#: stay revisable -- and it is reserved because three separate rules are
+#: stated in terms of it: `admin/taxonomy_rules.check_prevention_intact`
+#: refuses to let staff remove it, `api/schemas` refuses it in a *current*
+#: scenario, and §5.4 excludes the alternative scenario from the public
+#: statistics so it can never become a bucket.
+#:
+#: It lives here, in `db/`, rather than in `admin/taxonomy_rules.py` where it
+#: was first written, because `api/` may not import from `admin/` and now
+#: needs it too. `admin/taxonomy_rules.PREVENTION_CODE` re-exports this
+#: object rather than repeating the literal -- v1.3's ruling on
+#: `db/detection.py`, for the same reason: two copies of a rule drift, and
+#: the copy that stops matching is the one nobody notices.
+PREVENTION_CODE = "prevention"
+
 
 @dataclass(frozen=True)
 class SectorSpec:

@@ -24,6 +24,8 @@ from pydantic import (
     model_validator,
 )
 
+from db.types import PREVENTION_CODE
+
 MAX_LINE_QTY = Decimal("10000000")
 MAX_SCENARIO_QTY = Decimal("50000000")
 MAX_SCENARIO_LINES = 20
@@ -92,7 +94,9 @@ def scenario_mass(lines: list[ScenarioLinePayload]) -> Decimal:
     return sum((line.qty_kg for line in lines), Decimal("0"))
 
 
-def _check_scenario(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayload]:
+def _check_scenario(
+    lines: list[ScenarioLinePayload], *, is_current: bool
+) -> list[ScenarioLinePayload]:
     """§6.2's per-scenario, per-entry rules.
 
     An `AfterValidator` on the field rather than a validator on the model, so
@@ -106,10 +110,46 @@ def _check_scenario(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayloa
         raise ValueError("contains a duplicate destination")
     if scenario_mass(lines) > MAX_SCENARIO_QTY:
         raise ValueError("exceeds 50,000,000 kg")
+    if is_current and PREVENTION_CODE in destinations:
+        raise ValueError(
+            f"may not send waste to '{PREVENTION_CODE}': it is the destination "
+            "for waste that did not happen, and belongs in an alternative "
+            "scenario only"
+        )
     return lines
 
 
-ScenarioPayload = Annotated[list[ScenarioLinePayload], AfterValidator(_check_scenario)]
+def _check_current(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayload]:
+    """The current scenario: what is happening now, so `prevention` is illegal.
+
+    Nothing but C's own UI kept `prevention` out of a current scenario until
+    this existed, and the two halves of the system that could have caught it
+    were each doing the opposite job. `_check_scenario` had no rule; §5.4's
+    aggregation filters `scenario = 'current'`, which *admits* such a line
+    rather than excluding it. So a hand-rolled `POST /calculate` carrying a
+    current-scenario `prevention` line persisted, and then surfaced as a
+    `by_destination` bucket in the public statistics - the exact outcome §5.4
+    says must never happen, since `prevention` is by construction waste that
+    did not occur and counting it as real waste roughly doubles the figure
+    §6.4 calls "the cumulative total entered into this tool".
+
+    `tests/api/test_fixture_consistency.py` asserts this of the *fixture*,
+    which is what made it look covered. A fixture cannot constrain a caller.
+    """
+    return _check_scenario(lines, is_current=True)
+
+
+def _check_alternative(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayload]:
+    """The alternative scenario: the what-if, and the only home of `prevention`."""
+    return _check_scenario(lines, is_current=False)
+
+
+CurrentScenarioPayload = Annotated[
+    list[ScenarioLinePayload], AfterValidator(_check_current)
+]
+AlternativeScenarioPayload = Annotated[
+    list[ScenarioLinePayload], AfterValidator(_check_alternative)
+]
 
 
 class DryRunPayload(BaseModel):
@@ -135,8 +175,8 @@ class EntryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     sector: str = Field(min_length=1, max_length=64)
     food_category: str | None = Field(default=None, min_length=1, max_length=64)
-    current: ScenarioPayload = Field(min_length=1)
-    alternative: ScenarioPayload | None = None
+    current: CurrentScenarioPayload = Field(min_length=1)
+    alternative: AlternativeScenarioPayload | None = None
 
 
 class CalculatePayload(BaseModel):

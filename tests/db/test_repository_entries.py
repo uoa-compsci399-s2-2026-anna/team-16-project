@@ -429,12 +429,18 @@ def test_shares_still_sum_to_one_when_the_counts_do_not_divide_cleanly(seeded_se
     """
     _extra_taxonomy(seeded_session)
     factor_set_id = get_published_factor_set_id(seeded_session)
+    # 22 entries: three visible sectors of 5, and two sub-threshold sectors of
+    # 4 and 3 that merge into an `other` of 7. `other` clears the threshold on
+    # its own, so v1.5's absorb-until-clear rule does not fire and this test
+    # stays about the residue. 3 x 0.2273 + 0.3182 = 1.0001, so the residue is
+    # negative here -- worth having, because an implementation that only ever
+    # adds would pass a positive-residue case and fail this one.
     population = (
         [("processing", "dairy")] * 5
         + [("retail", "meat")] * 5
         + [("hospitality", "bakery")] * 5
-        + [("primary_production", "vegetables")]
-        + [("distribution", "meat")]
+        + [("primary_production", "vegetables")] * 4
+        + [("distribution", "meat")] * 3
     )
     for sector, food_category in population:
         upsert_submission(
@@ -445,9 +451,9 @@ def test_shares_still_sum_to_one_when_the_counts_do_not_divide_cleanly(seeded_se
         )
     stats = get_public_stats(seeded_session)
 
-    assert sum(bucket.count for bucket in stats.by_sector) == 17
+    assert sum(bucket.count for bucket in stats.by_sector) == 22
     other = _bucket(stats.by_sector, "other")
-    assert other is not None and other.count == 2
+    assert other is not None and other.count == 7
     assert sum(bucket.share for bucket in stats.by_sector) == Decimal("1")
     # Every share is still the honest quantisation of its own count bar one,
     # which carries the residue -- the correction is a ten-thousandth on the
@@ -456,19 +462,20 @@ def test_shares_still_sum_to_one_when_the_counts_do_not_divide_cleanly(seeded_se
         bucket
         for bucket in stats.by_sector
         if bucket.share
-        != (Decimal(bucket.count) / Decimal(17)).quantize(Decimal("0.0001"))
+        != (Decimal(bucket.count) / Decimal(22)).quantize(Decimal("0.0001"))
     ]
     assert len(carried) == 1
-    assert carried[0].share - (Decimal(5) / Decimal(17)).quantize(
+    assert carried[0].share - (Decimal(7) / Decimal(22)).quantize(
         Decimal("0.0001")
-    ) == Decimal("0.0001")
+    ) == Decimal("-0.0001")
 
 
 def test_suppression_still_merges_small_buckets_into_other(seeded_session):
     """The privacy guarantee, re-proved after the unit of counting moved.
 
-    Five submissions of one sector clear a threshold of 5; the single entry in
-    another sector does not and merges into `other`, server-side.
+    Five submissions of one sector clear a threshold of 5; two other sectors
+    of three and two entries do not, and merge into an `other` of five --
+    which clears the threshold on its own, so the merged bucket is published.
     """
     _extra_taxonomy(seeded_session)
     factor_set_id = get_published_factor_set_id(seeded_session)
@@ -479,29 +486,50 @@ def test_suppression_still_merges_small_buckets_into_other(seeded_session):
             _request(_entry("processing", "dairy", current=(("landfill", "10"),))),
             factor_set_id,
         )
-    upsert_submission(
-        seeded_session,
-        None,
-        _request(_entry("retail", "meat", current=(("compost", "3"),))),
-        factor_set_id,
-    )
+    for _ in range(3):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry("retail", "meat", current=(("compost", "3"),))),
+            factor_set_id,
+        )
+    for _ in range(2):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry("distribution", "meat", current=(("compost", "3"),))),
+            factor_set_id,
+        )
     stats = get_public_stats(seeded_session)
 
     assert stats.suppression_threshold == 5
     assert _bucket(stats.by_sector, "retail") is None
+    assert _bucket(stats.by_sector, "distribution") is None
     assert _bucket(stats.by_sector, "processing").count == 5
     other = _bucket(stats.by_sector, "other")
-    assert other.count == 1
-    assert other.total_kg == Decimal("3.000")
+    assert other.count == 5
+    assert other.total_kg == Decimal("15.000")
     assert other.label == "Other (sample too small)"
-    # The suppressed bucket stays in its breakdown's denominator, so the
+    # The suppressed buckets stay in their breakdown's denominator, so the
     # shares still sum to 1 rather than inflating every surviving share.
     assert sum(bucket.share for bucket in stats.by_sector) == Decimal("1.0000")
     assert _bucket(stats.by_food_category, "unspecified") is None
-    assert _bucket(stats.by_destination, "compost") is None
+    # Suppression is per breakdown, not global: the same ten entries split
+    # five/five across two destinations, so `by_destination` has nothing below
+    # the threshold and carries no `other` at all.
+    assert _bucket(stats.by_destination, "other") is None
+    assert _bucket(stats.by_destination, "compost").count == 5
+    assert _bucket(stats.by_destination, "landfill").count == 5
 
 
 def test_the_unspecified_bucket_is_suppressed_on_the_same_threshold(seeded_session):
+    """`unspecified` is an ordinary bucket: below the threshold it merges.
+
+    Five `dairy` entries clear it; five entries whose user did not break their
+    waste down by type do not, individually -- they are one bucket of two and
+    one of three across two food categories -- so they land in `other`
+    together and `other` clears at five.
+    """
     _extra_taxonomy(seeded_session)
     factor_set_id = get_published_factor_set_id(seeded_session)
     for _ in range(5):
@@ -511,17 +539,108 @@ def test_the_unspecified_bucket_is_suppressed_on_the_same_threshold(seeded_sessi
             _request(_entry("processing", "dairy", current=(("landfill", "10"),))),
             factor_set_id,
         )
+    for _ in range(3):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry("retail", None, current=(("landfill", "1"),))),
+            factor_set_id,
+        )
+    for _ in range(2):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry("distribution", "bakery", current=(("landfill", "1"),))),
+            factor_set_id,
+        )
+    stats = get_public_stats(seeded_session)
+
+    assert _bucket(stats.by_food_category, "unspecified") is None
+    assert _bucket(stats.by_food_category, "bakery") is None
+    assert _bucket(stats.by_food_category, "other").count == 5
+    assert sum(bucket.share for bucket in stats.by_food_category) == Decimal("1.0000")
+
+
+def test_other_absorbs_the_smallest_visible_bucket_until_it_clears(seeded_session):
+    """v1.5: `other` is subject to the threshold like any other bucket.
+
+    Before this rule a single sub-threshold bucket was republished verbatim
+    under a new name -- `count: 1` with its exact `total_kg` -- hiding the
+    label and nothing else. Across breakdowns it was worse than that: the
+    `other` of `by_sector` and the `other` of `by_food_category` are drawn
+    from the same entries, so an `other` of one publishes that user's exact
+    tonnage three times over and the three rows join on sight.
+
+    Here `retail` contributes one entry, below the threshold. `other` is
+    therefore one, still below it, so the **smallest visible** bucket is
+    absorbed as well -- `hospitality` at five rather than `processing` at
+    six, because surrendering the smallest costs the page the least
+    informative row. `other` reaches six and stops; `processing` survives.
+    """
+    _extra_taxonomy(seeded_session)
+    factor_set_id = get_published_factor_set_id(seeded_session)
+    for _ in range(6):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry("processing", "dairy", current=(("landfill", "10"),))),
+            factor_set_id,
+        )
+    for _ in range(5):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry("hospitality", "bakery", current=(("landfill", "2"),))),
+            factor_set_id,
+        )
     upsert_submission(
         seeded_session,
         None,
-        _request(_entry("retail", None, current=(("landfill", "1"),))),
+        _request(_entry("retail", "meat", current=(("landfill", "7"),))),
         factor_set_id,
     )
     stats = get_public_stats(seeded_session)
 
-    assert _bucket(stats.by_food_category, "unspecified") is None
-    assert _bucket(stats.by_food_category, "other").count == 1
-    assert sum(bucket.share for bucket in stats.by_food_category) == Decimal("1.0000")
+    assert _bucket(stats.by_sector, "retail") is None
+    assert _bucket(stats.by_sector, "hospitality") is None, (
+        "the smallest visible bucket must be absorbed to let `other` clear"
+    )
+    assert _bucket(stats.by_sector, "processing").count == 6
+    other = _bucket(stats.by_sector, "other")
+    assert other.count == 6
+    # 5 x 2 kg absorbed plus the 7 kg that was already suppressed. The mass
+    # follows the count: a bucket that stops being published must not leave
+    # its tonnage behind on the page under someone else's label.
+    assert other.total_kg == Decimal("17.000")
+    assert sum(bucket.count for bucket in stats.by_sector) == 12
+    assert sum(bucket.share for bucket in stats.by_sector) == Decimal("1.0000")
+
+
+def test_a_breakdown_that_cannot_clear_the_threshold_publishes_nothing(seeded_session):
+    """v1.5: when even everything merged is below the threshold, publish none.
+
+    Four entries across three sectors. No bucket clears five, and neither does
+    the union of all of them, so there is no arrangement of this breakdown
+    that is both useful and safe -- publishing `other: 4` alone would be
+    publishing the whole data set under one label, with its exact tonnage.
+    `total_calculations` still reports, because it is a count of submissions
+    and identifies nobody.
+    """
+    _extra_taxonomy(seeded_session)
+    factor_set_id = get_published_factor_set_id(seeded_session)
+    for sector in ("processing", "processing", "retail", "hospitality"):
+        upsert_submission(
+            seeded_session,
+            None,
+            _request(_entry(sector, "dairy", current=(("landfill", "10"),))),
+            factor_set_id,
+        )
+    stats = get_public_stats(seeded_session)
+
+    assert stats.total_calculations == 4
+    assert stats.by_sector == ()
+    assert stats.by_food_category == ()
+    assert stats.by_destination == ()
 
 
 def test_statistics_are_decimal_not_float(seeded_session):

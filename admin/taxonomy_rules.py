@@ -14,10 +14,16 @@ from sqlalchemy.orm import Session
 
 from admin.factor_models import FactorSet, FactorSetStatus
 from admin.taxonomy_models import Destination, FoodCategory
+from db.types import PREVENTION_CODE as _PREVENTION_CODE
 
 #: The destination expressing "this waste did not happen". The engine looks
 #: it up by this exact string; it is not configurable.
-PREVENTION_CODE = "prevention"
+#:
+#: Re-exported from `db/types.py` rather than defined here, because `api/`
+#: enforces §6.2's "not in a current scenario" rule against the same string
+#: and may not import from `admin/`. Same object, one definition -- see the
+#: note at its definition.
+PREVENTION_CODE = _PREVENTION_CODE
 
 
 class TaxonomyInvariantError(Exception):

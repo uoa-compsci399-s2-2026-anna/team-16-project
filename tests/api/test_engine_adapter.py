@@ -51,6 +51,16 @@ def _scenario(total_kg, metric, equivalence_value):
 
 
 def _result(*, with_alternative=True):
+    """Two entries of **different** masses, and totals that match neither.
+
+    1500.000 kg and 800.000 kg, rolling up to 2300.000 kg. Deliberate: this
+    stand-in used to give `totals.current.total_kg` and
+    `entries[0].current.total_kg` the same 1500.000, so §3's one defined wire
+    hoist was unpinned at exactly the level it can be got wrong — an adapter
+    that read the first entry's mass instead of the roll-up passed every
+    assertion in this file. Three distinct figures mean only the correct
+    source produces the expected one.
+    """
     current = _scenario(
         "1500.000",
         _metric("3468.0000000000", [_breakdown("landfill", "1200.000", "3468.0000000000")]),
@@ -76,21 +86,49 @@ def _result(*, with_alternative=True):
         alternative=alternative,
         net_benefit=net_benefit,
     )
+    second_current = _scenario(
+        "800.000",
+        _metric("456.0000000000", [_breakdown("not_harvested", "800.000", "456.0000000000")]),
+        "1906.0800000000",
+    )
+    second_alternative = (
+        _scenario(
+            "800.000",
+            _metric(
+                "360.0000000000",
+                [_breakdown("prevention", "800.000", "360.0000000000")],
+            ),
+            "1504.8000000000",
+        )
+        if with_alternative
+        else None
+    )
+    second_net = {"co2e": Decimal("96.0000000000")} if with_alternative else None
+    second_entry = SimpleNamespace(
+        sector_code="primary_production",
+        food_category_code="vegetables",
+        current=second_current,
+        alternative=second_alternative,
+        net_benefit=second_net,
+    )
+    totals_net = (
+        {"co2e": Decimal("2196.0000000000")} if with_alternative else None
+    )
     totals = SimpleNamespace(
-        current=_scenario("1500.000", _metric("3468.0000000000"), "14500.0000000000"),
+        current=_scenario("2300.000", _metric("3924.0000000000"), "16406.0800000000"),
         alternative=_scenario(
-            "1500.000", _metric("1368.0000000000"), "5700.0000000000"
+            "2300.000", _metric("1728.0000000000"), "7204.8000000000"
         )
         if with_alternative
         else None,
-        net_benefit=net_benefit,
+        net_benefit=totals_net,
     )
     return SimpleNamespace(
         factor_set_version="MOCK-v0 — PLACEHOLDER",
         is_mock=True,
         gwp_horizon=100,
         totals=totals,
-        entries=(entry,),
+        entries=(entry, second_entry),
     )
 
 
@@ -112,11 +150,20 @@ def test_factor_source_and_token_are_not_the_engines_to_supply():
 
 
 def test_totals_total_kg_is_hoisted_from_totals_current():
-    """§3: a wire-format hoist, not a fifth field on `CalculationTotals`."""
-    totals = DefaultEngineAdapter().serialize_result(_result())["totals"]
-    assert totals["total_kg"] == Decimal("1500.000")
+    """§3: a wire-format hoist, not a fifth field on `CalculationTotals`.
+
+    The roll-up, **not** the first entry's mass and not a sum computed here:
+    the stand-in's two entries are 1500 and 800, so a hoist from the wrong
+    level produces 1500 and reading the wrong scenario produces nothing
+    2300.000 could be confused with.
+    """
+    body = DefaultEngineAdapter().serialize_result(_result())
+    totals = body["totals"]
+    assert totals["total_kg"] == Decimal("2300.000")
+    assert totals["total_kg"] != body["entries"][0]["current"]["total_kg"]
     assert "total_kg" not in totals["current"]
     assert "total_kg" not in totals["alternative"]
+    assert body["entries"][1]["current"]["total_kg"] == Decimal("800.000")
 
 
 def test_the_hoist_is_the_only_arithmetic_free_reshaping():
@@ -124,10 +171,11 @@ def test_the_hoist_is_the_only_arithmetic_free_reshaping():
     the one the engine produced, unchanged."""
     body = DefaultEngineAdapter().serialize_result(_result())
     assert body["totals"]["current"]["metrics"]["co2e"]["total"] == Decimal(
-        "3468.0000000000"
+        "3924.0000000000"
     )
-    assert body["totals"]["net_benefit"] == {"co2e": Decimal("2100.0000000000")}
+    assert body["totals"]["net_benefit"] == {"co2e": Decimal("2196.0000000000")}
     assert body["entries"][0]["current"]["total_kg"] == Decimal("1500.000")
+    assert body["entries"][1]["net_benefit"] == {"co2e": Decimal("96.0000000000")}
 
 
 def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
@@ -177,8 +225,8 @@ def test_every_decimal_leaves_as_a_string_once_wired():
     """§1.2. `serialize_result` keeps `Decimal`; `wire()` is the one place a
     decimal becomes a JSON string, in both directions of the wire."""
     body = wire(DefaultEngineAdapter().serialize_result(_result()))
-    assert body["totals"]["total_kg"] == "1500.000"
-    assert body["totals"]["net_benefit"]["co2e"] == "2100.0000000000"
+    assert body["totals"]["total_kg"] == "2300.000"
+    assert body["totals"]["net_benefit"]["co2e"] == "2196.0000000000"
     assert (
         body["entries"][0]["current"]["metrics"]["co2e"]["by_destination"][0][
             "downstream"

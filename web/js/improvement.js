@@ -1,5 +1,6 @@
 import { calculate } from './api.js'
 import { setState } from './state.js'
+import { kgString, massToKg } from './units.js'
 import { escapeHtml, formatNumber } from './view.js'
 
 // Display-only coercion of an API decimal string (§7.6.1). `Number(value) || 0` stood here
@@ -13,7 +14,13 @@ const number = value => (value === null || value === undefined || value === '' ?
 const typed = value => Number(value) || 0
 
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
-const lineKg = (entry, line) => typed(line.qtyInput) * (entry.totalUnit === 'tonnes' ? 1000 : 1)
+
+// §7.3: the last `tonnes ? 1000 : 1` outside `units.js`. It was the same conversion
+// `massToKg` performs and `calculator.js` already called, so the front end had two copies of
+// its only arithmetic rule and one of them could be changed without the other. `?? 0`
+// preserves the `typed()` behaviour it replaces: an unparseable box counts as nothing rather
+// than poisoning the running total with NaN.
+const lineKg = (entry, line) => massToKg(line.qtyInput, entry.totalUnit) ?? 0
 const sumQtyKg = lines => lines.reduce((sum, line) => sum + typed(line.qty_kg), 0)
 
 // §6.2 rejects an entry whose two scenarios differ in mass by more than this, and it
@@ -136,7 +143,9 @@ export function improvementValidation(state) {
 }
 
 function currentLines(entry) {
-  return (entry.current || []).filter(line => typed(line.qtyInput) > 0).map(line => ({ destination: line.destination, qty_kg: lineKg(entry, line).toFixed(3) }))
+  // §7.3: `kgString` is the API-ready form of `massToKg`, so the rounding to three decimal
+  // places lives in `units.js` with the conversion rather than beside each caller.
+  return (entry.current || []).filter(line => typed(line.qtyInput) > 0).map(line => ({ destination: line.destination, qty_kg: kgString(line.qtyInput, entry.totalUnit) }))
 }
 
 // The alternative redistributes the mass the entry's *current* scenario describes, not the

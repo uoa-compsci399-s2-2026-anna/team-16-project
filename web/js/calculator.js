@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
-import { massToKg } from './units.js'
+import { kgString, massToKg } from './units.js'
 import { buttonRow, escapeHtml, formatNumber, slug } from './view.js'
 import { downloadResults, renderResults } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
@@ -30,8 +30,12 @@ const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order ||
 const selected = (items, code) => items.find(item => item.code === code)
 const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => destination.code !== 'prevention')
 const createLine = (destination, qtyInput = '') => ({ id: randomId(), destination, qtyInput })
-const amountToKg = amount => massToKg(amount, state.totalUnit)
-const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : amountToKg(line.qtyInput).toFixed(3) }))
+// §7.3: `kgString` is `massToKg(...).toFixed(3)`, and it exists so the rounding to the
+// API's three decimal places happens in `units.js` rather than at each call site. Both
+// sites here spelled it out instead, which is the same defect `kgToTonnes` was added for.
+// A blank row stays blank — `kgString('', unit)` is "0.000", and a row the user has not
+// filled is not a row holding zero.
+const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : kgString(line.qtyInput, state.totalUnit) }))
 const allocatedAmount = lines => lines.reduce((sum, line) => sum + (Number(line.qtyInput) || 0), 0)
 const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.current.some(line => line.qtyInput !== '') || state.result)
 const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, current: state.current.map(line => ({ ...line })) })
@@ -121,7 +125,7 @@ function reviewLines(entry) {
 }
 
 function normaliseEntryLines(entry) {
-  return entry.current.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : massToKg(line.qtyInput, entry.totalUnit).toFixed(3) }))
+  return entry.current.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : kgString(line.qtyInput, entry.totalUnit) }))
 }
 
 function entryCard(entry, index) {
@@ -306,11 +310,11 @@ function updateLine(control) {
 }
 
 function loadEntry(entry) {
-  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, current: entry.current.map(line => ({ ...line, id: randomId() })), alternative: [], step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
+  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
 }
 
 function clearDraft() {
-  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', current: [], alternative: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
 export function render(main) {

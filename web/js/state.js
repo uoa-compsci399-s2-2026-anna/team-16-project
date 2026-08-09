@@ -8,9 +8,12 @@ export const state = {
   gwpHorizon: 100,
   totalAmount: '',
   totalUnit: 'kilograms',
+  // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
+  // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
+  // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
+  // from `improvedAllocations` by `improvement.js`, which never looks at either. A state key
+  // that is initialised and reset but never populated reads as a feature under construction.
   current: [],
-  alternative: [],
-  compareAlternative: false,
   entries: [],
   result: null,
   loading: true,
@@ -75,8 +78,6 @@ export function resetCalculator() {
     totalAmount: '',
     totalUnit: 'kilograms',
     current: [],
-    alternative: [],
-    compareAlternative: false,
     entries: [],
     result: null,
     error: null,

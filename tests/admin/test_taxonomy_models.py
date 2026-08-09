@@ -76,13 +76,18 @@ def test_kg_per_unit_is_a_decimal_not_a_float(session):
 
 def test_a_metric_carries_its_own_display_settings(session):
     """Contract §2.1: adding a metric is one row plus one formula, no code
-    changes. Everything the front end needs to render it lives here."""
+    changes. Everything the front end needs to render it lives here.
+
+    §6.1: `display_unit` is a presentation variant of `unit` at the same scale
+    -- a typographic difference, never a conversion. This test read "t CO2e"
+    against a "kg CO2e" unit until 2026-08-09, which is the one thing the
+    column may not hold, and nothing in the system converts between the two."""
     session.add(Metric(code="co2e", name="Greenhouse gases", unit="kg CO2e",
-                       display_unit="t CO2e", display_precision=1))
+                       display_unit="kg CO₂e", display_precision=1))
     session.flush()
 
     metric = session.scalar(select(Metric))
-    assert (metric.display_unit, metric.display_precision) == ("t CO2e", 1)
+    assert (metric.display_unit, metric.display_precision) == ("kg CO₂e", 1)
 
 
 def test_display_unit_may_be_absent(session):

@@ -23,6 +23,7 @@ from alembic import command
 from alembic.autogenerate import compare_metadata
 from alembic.config import Config
 from alembic.migration import MigrationContext
+from alembic.script import ScriptDirectory
 from sqlalchemy import create_engine, text
 
 import admin.models  # noqa: F401  - registers the tables on Base.metadata
@@ -141,3 +142,29 @@ def test_the_chain_creates_the_functional_index_compare_metadata_cannot_see(
         "the index exists but has no COALESCE key part, so NULLs still compare "
         f"distinct and it does not do its job. Key parts: {rows}"
     )
+
+
+def test_the_chain_has_exactly_one_head_and_exactly_one_root():
+    """No second `down_revision = None`, and no fork.
+
+    From B's `tests/test_migration.py`, generalised off her own revision id
+    and folded in here when her `migrations/` directory was deleted during
+    integration. Her chain and this one were both rooted at
+    `down_revision = None`; merging the two `versions/` directories would have
+    produced two heads, `alembic upgrade head` would have aborted, and
+    `upgrade heads` would have hit `Table 'staff' already exists` — which, MySQL
+    DDL being autocommitting, is only recoverable by dropping the database.
+    This is the cheap, offline guard against that ever being reintroduced: it
+    reads the scripts, so it needs no database and no marker.
+    """
+    script = ScriptDirectory.from_config(Config("alembic.ini"))
+
+    assert len(script.get_heads()) == 1, (
+        f"the migration chain has forked: {script.get_heads()}"
+    )
+    roots = [
+        revision.revision
+        for revision in script.walk_revisions()
+        if revision.down_revision is None
+    ]
+    assert len(roots) == 1, f"more than one initial revision: {roots}"

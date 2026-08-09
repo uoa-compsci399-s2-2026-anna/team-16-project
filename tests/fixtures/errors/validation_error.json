@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": [{"field": "current.0.qty_kg", "issue": "value_error", "message": "Value error, decimal values must be JSON strings"}]
+  }
+}

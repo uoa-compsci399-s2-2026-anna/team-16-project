@@ -1,0 +1,9 @@
+{
+  "factor_set": {"version_label": "MOCK-v0", "is_mock": true},
+  "gwp_horizon": 100,
+  "current": {"total_kg": "1", "metrics": {}, "equivalences": []},
+  "alternative": null,
+  "net_benefit": null,
+  "factor_source": "published",
+  "token": "00000000-0000-4000-8000-000000000000"
+}

@@ -1,4 +1,5 @@
 import { escapeHtml, formatNumber } from './view.js'
+import { kgToTonnes } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
@@ -31,7 +32,7 @@ function summaryCards(totals, taxonomy) {
     return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value">${formatNumber(number(metric.total), precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
   }).join('')
   const totalKg = number(totals.total_kg)
-  return `<article class="result-card primary-result"><p class="result-label">Total food waste</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(totalKg / 1000, 3)} tonnes</p></article>${impactCards}<article class="result-card"><p class="result-label">Percentage waste</p><p class="result-value">Not available</p><p class="result-note">Total food handled data is required.</p></article>`
+  return `<article class="result-card primary-result"><p class="result-label">Total food waste</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes</p></article>${impactCards}<article class="result-card"><p class="result-label">Percentage waste</p><p class="result-value">Not available</p><p class="result-note">Total food handled data is required.</p></article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and
@@ -158,7 +159,7 @@ export function downloadResults(state) {
     const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => `  - ${findByCode(state.taxonomy.destinations, line.destination)?.name || line.destination}: ${typed(line.qtyInput).toFixed(2)} ${entry.totalUnit}`)
     return [`Entry ${index + 1}: ${sector?.name || entry.sector}`, `Food type: ${food?.name || 'Not provided'}`, `Waste amount: ${typed(entry.totalAmount).toFixed(2)} ${entry.totalUnit}`, 'Destinations:', ...destinations, '']
   })
-  const report = ['Food Waste Impact Calculator — Results', '', `Total food waste: ${formatNumber(totalKg, 2)} kg`, `Total food waste: ${formatNumber(totalKg / 1000, 3)} tonnes`, '', ...entryLines, DEMONSTRATION_NOTICE, 'Percentage waste is not available because total food handled data is required.'].join('\n')
+  const report = ['Food Waste Impact Calculator — Results', '', `Total food waste: ${formatNumber(totalKg, 2)} kg`, `Total food waste: ${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes`, '', ...entryLines, DEMONSTRATION_NOTICE, 'Percentage waste is not available because total food handled data is required.'].join('\n')
   const url = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url

@@ -1773,7 +1773,19 @@ export function massToKg(amount, unit);
 /** massToKg(...) fixed to 3 decimal places, i.e. API-ready.
  *  @returns {string|null}  Currently imported by nothing. */
 export function kgString(amount, unit);
+
+/**
+ * Kilograms to tonnes, for display. The only arithmetic §7.6.1 permits on a
+ * figure the API supplied, and therefore the only one of these functions whose
+ * input is an API decimal string rather than something the user typed.
+ * @param {number|string} kilograms
+ * @returns {number}  NaN when the input is not finite, so an absent figure
+ *                    reaches formatNumber() as absent rather than as zero
+ */
+export function kgToTonnes(kilograms);
 ```
+
+> `kgToTonnes` was added on 2026-08-09 for `results.js`, which printed `totals.total_kg / 1000` inline at two sites — the summary card's "2.300 tonnes" note and the same line in the downloaded report. §7.6.1's exception is stated in terms of *this module*, and neither site was in it. It is a one-line function and it exists so the rule reads the same everywhere: **outside `units.js`, nothing divides, multiplies or adds a number the API supplied.** Bar and chart widths scaled against a local maximum are not figures and are not covered by this.
 
 ## 7.3a Calculator Modules (written by C)
 

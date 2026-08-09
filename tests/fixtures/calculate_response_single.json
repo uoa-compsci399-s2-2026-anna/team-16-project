@@ -1,9 +1,63 @@
 {
   "factor_set": {"version_label": "MOCK-v0", "is_mock": true},
   "gwp_horizon": 100,
-  "current": {"total_kg": "1", "metrics": {}, "equivalences": []},
-  "alternative": null,
-  "net_benefit": null,
+  "totals": {
+    "total_kg": "1.000",
+    "current": {
+      "metrics": {
+        "co2e": {
+          "unit": "kg CO2e",
+          "display_precision": 1,
+          "total": "2.8900000000"
+        }
+      },
+      "equivalences": [
+        {
+          "code": "km_driven",
+          "label": "Equivalent to driving 12 km",
+          "value": "12.0000000000",
+          "source_metric": "co2e"
+        }
+      ]
+    },
+    "alternative": null,
+    "net_benefit": null
+  },
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": {
+        "total_kg": "1.000",
+        "metrics": {
+          "co2e": {
+            "unit": "kg CO2e",
+            "display_precision": 1,
+            "total": "2.8900000000",
+            "by_destination": [
+              {
+                "destination": "landfill",
+                "qty_kg": "1.000",
+                "upstream": "1.9000000000",
+                "downstream": "0.9900000000",
+                "value": "2.8900000000"
+              }
+            ]
+          }
+        },
+        "equivalences": [
+          {
+            "code": "km_driven",
+            "label": "Equivalent to driving 12 km",
+            "value": "12.0000000000",
+            "source_metric": "co2e"
+          }
+        ]
+      },
+      "alternative": null,
+      "net_benefit": null
+    }
+  ],
   "factor_source": "published",
   "token": "00000000-0000-4000-8000-000000000000"
 }

@@ -16,6 +16,19 @@ def _fixture(name):
     return json.loads((FIXTURES / name).read_text())
 
 
+def _body(current, alternative=None, **extra):
+    """A §6.2 request body carrying one entry.
+
+    Every payload in this file was written against the pre-v1.2 single-entry
+    shape (`sector` and `current` at the top level). The rules those tests
+    prove are unchanged; only the envelope moved.
+    """
+    entry = {"sector": "processing", "food_category": "dairy", "current": current}
+    if alternative is not None:
+        entry["alternative"] = alternative
+    return {"entries": [entry], **extra}
+
+
 def _assert_shape(actual, expected):
     if isinstance(expected, dict):
         assert isinstance(actual, dict)
@@ -60,7 +73,7 @@ async def test_dry_run_requires_staff_and_does_not_persist(app):
         denied = await client.post(
             "/api/v1/calculate",
             headers={"X-Dry-Run": "true"},
-            json={"sector": "processing", "current": [{"destination": "landfill", "qty_kg": "1"}]},
+            json=_body([{"destination": "landfill", "qty_kg": "1"}]),
         )
         assert denied.status_code == 401
         _assert_shape(denied.json(), _fixture("errors/unauthorized.json"))
@@ -68,7 +81,7 @@ async def test_dry_run_requires_staff_and_does_not_persist(app):
         allowed = await client.post(
             "/api/v1/calculate",
             headers={"X-Dry-Run": "true"},
-            json={"sector": "processing", "current": [{"destination": "landfill", "qty_kg": "1"}]},
+            json=_body([{"destination": "landfill", "qty_kg": "1"}]),
         )
     assert allowed.status_code == 200, allowed.text
     assert allowed.json()["token"] is None
@@ -80,7 +93,7 @@ async def test_validation_uses_400_envelope(app):
     async with await _client(app) as client:
         response = await client.post(
             "/api/v1/calculate",
-            json={"sector": "processing", "current": [{"destination": "landfill", "qty_kg": 1.0}]},
+            json=_body([{"destination": "landfill", "qty_kg": 1.0}]),
         )
     assert response.status_code == 400
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
@@ -118,11 +131,10 @@ async def test_stats_only_expose_persisted_public_calculations(app):
     async with await _client(app) as client:
         await client.post(
             "/api/v1/calculate",
-            json={
-                "sector": "processing",
-                "current": [{"destination": "landfill", "qty_kg": "3.000"}],
-                "alternative": [{"destination": "landfill", "qty_kg": "999.000"}],
-            },
+            json=_body(
+                [{"destination": "landfill", "qty_kg": "3.000"}],
+                alternative=[{"destination": "landfill", "qty_kg": "3.000"}],
+            ),
         )
         response = await client.get("/api/v1/stats")
     assert response.status_code == 200
@@ -141,10 +153,7 @@ async def test_stats_only_expose_persisted_public_calculations(app):
 
 async def test_dry_run_supports_persisted_and_inline_sources(app):
     app.state.staff_authenticator = lambda request: "alice"
-    common = {
-        "sector": "processing",
-        "current": [{"destination": "landfill", "qty_kg": "1"}],
-    }
+    common = _body([{"destination": "landfill", "qty_kg": "1"}])
     inline = {
         "version_label": "INLINE-v1",
         "is_mock": True,
@@ -178,16 +187,16 @@ async def test_dry_run_supports_persisted_and_inline_sources(app):
 
 async def test_dry_run_contract_mismatches_are_rejected(app):
     app.state.staff_authenticator = lambda request: "alice"
-    body = {
-        "sector": "processing",
-        "current": [{"destination": "landfill", "qty_kg": "1"}],
-    }
+    body = _body([{"destination": "landfill", "qty_kg": "1"}])
     async with await _client(app) as client:
         body_without_header = await client.post(
             "/api/v1/calculate", json={**body, "dry_run": {}}
         )
+        # Not "TRUE": §6.2's header match is case-insensitive, so that is a
+        # dry run. An uninterpretable value is still refused rather than
+        # silently persisting a staff calculation.
         invalid_header = await client.post(
-            "/api/v1/calculate", headers={"X-Dry-Run": "TRUE"}, json=body
+            "/api/v1/calculate", headers={"X-Dry-Run": "maybe"}, json=body
         )
         mutually_exclusive = await client.post(
             "/api/v1/calculate",
@@ -227,11 +236,8 @@ async def test_formula_error_only_discloses_details_to_authenticated_staff(app):
         "destinations": [{"code": "landfill"}],
         "_raise_formula": True,
     }
-    payload = {
-        "sector": "processing",
-        "current": [{"destination": "landfill", "qty_kg": "1"}],
-        "dry_run": {"bundle": bundle},
-    }
+    payload = _body([{"destination": "landfill", "qty_kg": "1"}])
+    payload["dry_run"] = {"bundle": bundle}
     async with await _client(app) as client:
         response = await client.post(
             "/api/v1/calculate", headers={"X-Dry-Run": "true"}, json=payload
@@ -263,10 +269,7 @@ async def test_public_formula_error_does_not_disclose_expression(app):
     async with await _client(app) as client:
         response = await client.post(
             "/api/v1/calculate",
-            json={
-                "sector": "processing",
-                "current": [{"destination": "landfill", "qty_kg": "1"}],
-            },
+            json=_body([{"destination": "landfill", "qty_kg": "1"}]),
         )
     assert response.status_code == 500
     assert response.json()["error"] == {
@@ -318,10 +321,7 @@ async def test_unknown_code_and_missing_published_have_contract_errors(app):
     async with await _client(app) as client:
         unknown = await client.post(
             "/api/v1/calculate",
-            json={
-                "sector": "processing",
-                "current": [{"destination": "does_not_exist", "qty_kg": "1"}],
-            },
+            json=_body([{"destination": "does_not_exist", "qty_kg": "1"}]),
         )
     assert unknown.status_code == 400
     assert unknown.json()["error"]["code"] == "UNKNOWN_CODE"
@@ -352,22 +352,16 @@ async def test_contract_fixtures_have_the_same_top_level_shapes(app):
             "calculate_response.json",
             "post",
             "/api/v1/calculate",
-            {
-                "sector": "processing",
-                "current": [{"destination": "landfill", "qty_kg": "10"}],
-                "alternative": [
-                    {"destination": "landfill", "qty_kg": "5"}
-                ],
-            },
+            _body(
+                [{"destination": "landfill", "qty_kg": "10"}],
+                alternative=[{"destination": "landfill", "qty_kg": "10"}],
+            ),
         ),
         (
             "calculate_response_single.json",
             "post",
             "/api/v1/calculate",
-            {
-                "sector": "processing",
-                "current": [{"destination": "landfill", "qty_kg": "1"}],
-            },
+            _body([{"destination": "landfill", "qty_kg": "1"}]),
         ),
     )
     async with await _client(app) as client:

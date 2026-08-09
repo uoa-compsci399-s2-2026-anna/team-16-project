@@ -1,9 +1,105 @@
 {
   "factor_set": {"version_label": "MOCK-v0", "is_mock": true},
   "gwp_horizon": 100,
-  "current": {"total_kg": "10.000", "metrics": {}, "equivalences": []},
-  "alternative": {"total_kg": "5.000", "metrics": {}, "equivalences": []},
-  "net_benefit": {},
+  "totals": {
+    "total_kg": "10.000",
+    "current": {
+      "metrics": {
+        "co2e": {
+          "unit": "kg CO2e",
+          "display_precision": 1,
+          "total": "28.9000000000"
+        }
+      },
+      "equivalences": [
+        {
+          "code": "km_driven",
+          "label": "Equivalent to driving 121 km",
+          "value": "121.0000000000",
+          "source_metric": "co2e"
+        }
+      ]
+    },
+    "alternative": {
+      "metrics": {
+        "co2e": {
+          "unit": "kg CO2e",
+          "display_precision": 1,
+          "total": "19.0000000000"
+        }
+      },
+      "equivalences": [
+        {
+          "code": "km_driven",
+          "label": "Equivalent to driving 79 km",
+          "value": "79.0000000000",
+          "source_metric": "co2e"
+        }
+      ]
+    },
+    "net_benefit": {"co2e": "9.9000000000"}
+  },
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": {
+        "total_kg": "10.000",
+        "metrics": {
+          "co2e": {
+            "unit": "kg CO2e",
+            "display_precision": 1,
+            "total": "28.9000000000",
+            "by_destination": [
+              {
+                "destination": "landfill",
+                "qty_kg": "10.000",
+                "upstream": "1.9000000000",
+                "downstream": "0.9900000000",
+                "value": "28.9000000000"
+              }
+            ]
+          }
+        },
+        "equivalences": [
+          {
+            "code": "km_driven",
+            "label": "Equivalent to driving 121 km",
+            "value": "121.0000000000",
+            "source_metric": "co2e"
+          }
+        ]
+      },
+      "alternative": {
+        "total_kg": "10.000",
+        "metrics": {
+          "co2e": {
+            "unit": "kg CO2e",
+            "display_precision": 1,
+            "total": "19.0000000000",
+            "by_destination": [
+              {
+                "destination": "landfill",
+                "qty_kg": "10.000",
+                "upstream": "1.9000000000",
+                "downstream": "0.0000000000",
+                "value": "19.0000000000"
+              }
+            ]
+          }
+        },
+        "equivalences": [
+          {
+            "code": "km_driven",
+            "label": "Equivalent to driving 79 km",
+            "value": "79.0000000000",
+            "source_metric": "co2e"
+          }
+        ]
+      },
+      "net_benefit": {"co2e": "9.9000000000"}
+    }
+  ],
   "factor_source": "published",
   "token": "00000000-0000-4000-8000-000000000000"
 }

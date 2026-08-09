@@ -1,9 +1,19 @@
 {
-  "sector": "processing",
-  "food_category": "dairy",
+  "token": null,
   "gwp_horizon": 100,
-  "current": [{"destination": "landfill", "qty_kg": "10.000"}],
-  "alternative": null,
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": [{"destination": "landfill", "qty_kg": "10.000"}],
+      "alternative": [{"destination": "landfill", "qty_kg": "10.000"}]
+    },
+    {
+      "sector": "processing",
+      "food_category": null,
+      "current": [{"destination": "landfill", "qty_kg": "5.000"}],
+      "alternative": null
+    }
+  ],
   "dry_run": null
 }
-

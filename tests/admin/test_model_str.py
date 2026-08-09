@@ -39,6 +39,7 @@ import admin.factor_models  # noqa: F401
 import admin.models  # noqa: F401
 import admin.taxonomy_models  # noqa: F401
 import db.blocklist_models  # noqa: F401 - registers ip_block on Base.metadata
+import db.models  # noqa: F401 - registers submission and submission_line
 from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
@@ -49,6 +50,7 @@ from admin.taxonomy_models import (
 )
 from db.base import Base
 from db.blocklist_models import IpBlock
+from db.models import Scenario, Submission, SubmissionLine
 
 ALL_MAPPED_CLASSES = sorted(
     (m.class_ for m in Base.registry.mappers), key=lambda c: c.__name__
@@ -189,6 +191,24 @@ _FACTORIES = {
         ),
         identifying=["line_dest", "12.500"],
         forbidden=["9014"],
+    ),
+    #: db/models.py's two tables, which arrived with B's branch. This module
+    #: collects ALL_MAPPED_CLASSES off Base.registry precisely so that models
+    #: added later show up here automatically, and these two did.
+    Submission: _case(
+        lambda: Submission(
+            id=9016, token="4d0f8e1e-0000-4000-8000-000000000000",
+            created_at=datetime(2026, 1, 1, 12, 0), gwp_horizon=100,
+        ),
+        identifying=["9016", "2026-01-01"],
+        forbidden=["4d0f8e1e-0000-4000-8000-000000000000"],
+    ),
+    SubmissionLine: _case(
+        lambda: SubmissionLine(
+            id=9017, scenario=Scenario.current, qty_kg=Decimal("12.500"),
+        ),
+        identifying=["current", "12.500"],
+        forbidden=["9017"],
     ),
     IpBlock: _case(
         lambda: IpBlock(

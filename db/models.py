@@ -123,6 +123,14 @@ class Submission(Base):
     excluded_from_public: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
     exclusion_reason: Mapped[str | None] = mapped_column(String(255))
 
+    def __str__(self) -> str:
+        #: Required of every mapped model by tests/admin/test_model_str.py.
+        #: This table has no `code`, so the id is the only human handle there
+        #: is; `token` is deliberately not rendered — §2.3 makes it a
+        #: deduplication key for a draft record, not something to display.
+        return f"submission #{self.id} ({self.created_at:%Y-%m-%d})" if self.created_at \
+            else f"submission #{self.id}"
+
 
 class SubmissionLine(Base):
     __tablename__ = "submission_line"
@@ -135,3 +143,10 @@ class SubmissionLine(Base):
     scenario: Mapped[Scenario] = mapped_column(Enum(Scenario), nullable=False)
     destination_id: Mapped[int] = mapped_column(ForeignKey("destination.id"), nullable=False)
     qty_kg: Mapped[Decimal] = mapped_column(Numeric(16, 3), nullable=False)
+
+    def __str__(self) -> str:
+        #: Required of every mapped model by tests/admin/test_model_str.py.
+        #: No `destination` relationship is declared on this table, so the
+        #: scenario and the quantity are what identify the row.
+        scenario = self.scenario.value if isinstance(self.scenario, Scenario) else self.scenario
+        return f"{scenario} {self.qty_kg} kg"

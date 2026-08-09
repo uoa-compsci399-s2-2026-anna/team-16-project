@@ -121,7 +121,17 @@ class AuditLog(Base):
 
     __tablename__ = "audit_log"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: BIGINT on MySQL, but plain INTEGER on SQLite: SQLite only auto-assigns a
+    #: primary key for a column declared exactly `INTEGER`, so a BIGINT primary
+    #: key there is simply NOT NULL with no default and every insert fails. This
+    #: table is now written from two directions — the admin panel against MySQL,
+    #: and B's repository tests against in-memory SQLite (tests/db/conftest.py)
+    #: — so it needs the variant. `with_variant` changes nothing about the MySQL
+    #: DDL, so the migration chain is unaffected.
+    id: Mapped[int] = mapped_column(
+        BigInteger().with_variant(Integer, "sqlite"),
+        primary_key=True, autoincrement=True,
+    )
     at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     action: Mapped[str] = mapped_column(String(32), nullable=False)

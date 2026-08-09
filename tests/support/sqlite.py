@@ -74,25 +74,64 @@ class FormulaError(Exception):
         self.reason = "division by zero"
 
 
+def _scenario_result(lines, *, with_breakdown):
+    """A §3 `ScenarioResult`, with a deliberately trivial `co2e`.
+
+    The single metric's total is the scenario's mass, so no factor
+    arithmetic is faked here — the numbers in these tests are the ones the
+    request carried. What the metric exists for is *shape*: without it the
+    §6.2 body has an empty `metrics` object and nothing exercises the
+    `by_destination` mapping, the `metric_code`/`destination_code` renames,
+    or their omission at the totals level.
+    """
+    total = sum((line.qty_kg for line in lines), Decimal("0"))
+    metric = SimpleNamespace(
+        metric_code="co2e",
+        unit="kg CO2e",
+        display_precision=1,
+        total=total,
+        by_destination=tuple(
+            SimpleNamespace(
+                destination_code=line.destination_code,
+                qty_kg=line.qty_kg,
+                upstream=Decimal("0.0000000000"),
+                downstream=Decimal("0.0000000000"),
+                value=line.qty_kg,
+            )
+            for line in lines
+        )
+        if with_breakdown
+        else (),
+    )
+    return SimpleNamespace(
+        total_kg=total,
+        metrics={"co2e": metric},
+        equivalences=(
+            SimpleNamespace(
+                code="km_driven",
+                label="Equivalent to driving 0 km",
+                value=Decimal("0.0000000000"),
+                source_metric_code="co2e",
+            ),
+        ),
+    )
+
+
 class FakeEngineAdapter:
     """Stands in for A's engine, and therefore for §3's domain objects.
 
-    **It straddles the v1.2 boundary on purpose, and that is the state of the
-    integration, not a shortcut.** `make_request` returns the §3 request the
-    repository now writes — a `CalculationRequest` carrying `entries`, each an
-    `EntryInput` with its own sector, food category and scenario lines.
-    `calculate` still returns the pre-v1.2 *wire* result, with `current` and
-    `alternative` at the top level, because `api/schemas.py`, the real
-    `api/engine_adapter.py` and `tests/fixtures/calculate_response*.json` are
-    all still single-entry: reshaping those is Task 4 (§6.2), and this file
-    may not reach into `api/`.
+    `make_request` returns the §3 request the repository writes — a
+    `CalculationRequest` carrying `entries`, each an `EntryInput` with its
+    own sector, food category and scenario lines — and `calculate` returns
+    the §3 `CalculationResult`: `factor_set_version`, `is_mock`,
+    `gwp_horizon`, `totals` and `entries`, with `by_destination` populated
+    per entry and empty at the totals level (§3 rule 2).
 
-    Mapping the single-entry payload to a one-element `entries` is the correct
-    §3 conversion for a request that carries one entry, so nothing here is
-    faked away — but note that **`api/engine_adapter.py`'s
-    `DefaultEngineAdapter.make_request` still builds the deleted
-    `ScenarioInput`** and would raise against the real engine. These tests
-    inject this adapter, so they cannot see that. Task 4 closes it.
+    **`serialize_result` is not faked.** It delegates to the real
+    `DefaultEngineAdapter`, so every API test that reads a 200 body is
+    exercising the mapping in `api/engine_adapter.py` rather than a
+    hand-written dict that happens to agree with the fixtures. That mapping
+    is the piece with no other production caller until A delivers.
     """
 
     def bundle_from_json(self, data):
@@ -107,13 +146,18 @@ class FakeEngineAdapter:
                 for x in rows
             )
 
-        entry = SimpleNamespace(
-            sector_code=payload.sector,
-            food_category_code=payload.food_category,
-            current=lines(payload.current),
-            alternative=lines(payload.alternative),
+        return SimpleNamespace(
+            entries=tuple(
+                SimpleNamespace(
+                    sector_code=entry.sector,
+                    food_category_code=entry.food_category,
+                    current=lines(entry.current),
+                    alternative=lines(entry.alternative),
+                )
+                for entry in payload.entries
+            ),
+            gwp_horizon=payload.gwp_horizon,
         )
-        return SimpleNamespace(entries=(entry,), gwp_horizon=payload.gwp_horizon)
 
     def calculate(self, request, bundle):
         if bundle.data.get("_raise_formula"):
@@ -128,32 +172,64 @@ class FakeEngineAdapter:
 
         has_alternative = any(entry.alternative is not None for entry in request.entries)
 
-        def scenario_result(pick):
-            total = sum(
-                (
-                    line.qty_kg
-                    for entry in request.entries
-                    for line in (pick(entry) or ())
-                ),
-                Decimal("0"),
+        entries = tuple(
+            SimpleNamespace(
+                sector_code=entry.sector_code,
+                food_category_code=entry.food_category_code,
+                current=_scenario_result(entry.current, with_breakdown=True),
+                alternative=_scenario_result(entry.alternative, with_breakdown=True)
+                if entry.alternative is not None
+                else None,
+                net_benefit=_net_benefit(entry.current, entry.alternative)
+                if entry.alternative is not None
+                else None,
             )
-            return {"total_kg": str(total), "metrics": {}, "equivalences": []}
+            for entry in request.entries
+        )
 
-        return {
-            "factor_set": {
-                "version_label": bundle.data["version_label"],
-                "is_mock": bundle.data["is_mock"],
-            },
-            "gwp_horizon": request.gwp_horizon,
-            "current": scenario_result(lambda entry: entry.current),
-            "alternative": scenario_result(lambda entry: entry.alternative)
+        # §3 rule 3: an entry with no alternative contributes its *current*
+        # lines to the rolled-up alternative, so its net benefit is exactly
+        # zero and the totals stay mass-conserving.
+        current_lines = [line for entry in request.entries for line in entry.current]
+        alternative_lines = [
+            line
+            for entry in request.entries
+            for line in (entry.alternative if entry.alternative is not None else entry.current)
+        ]
+        totals_current = _scenario_result(current_lines, with_breakdown=False)
+        totals_alternative = (
+            _scenario_result(alternative_lines, with_breakdown=False)
+            if has_alternative
+            else None
+        )
+        totals = SimpleNamespace(
+            current=totals_current,
+            alternative=totals_alternative,
+            net_benefit={
+                "co2e": totals_current.metrics["co2e"].total
+                - totals_alternative.metrics["co2e"].total
+            }
             if has_alternative
             else None,
-            "net_benefit": {} if has_alternative else None,
-        }
+        )
+        return SimpleNamespace(
+            factor_set_version=bundle.data["version_label"],
+            is_mock=bundle.data["is_mock"],
+            gwp_horizon=request.gwp_horizon,
+            totals=totals,
+            entries=entries,
+        )
 
     def serialize_result(self, result):
-        return result
+        from api.engine_adapter import DefaultEngineAdapter
+
+        return DefaultEngineAdapter().serialize_result(result)
+
+
+def _net_benefit(current, alternative):
+    mass = sum((line.qty_kg for line in current), Decimal("0"))
+    other = sum((line.qty_kg for line in alternative), Decimal("0"))
+    return {"co2e": mass - other}
 
 
 @pytest.fixture

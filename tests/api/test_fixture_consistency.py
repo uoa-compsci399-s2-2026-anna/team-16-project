@@ -108,17 +108,27 @@ ALL_FIXTURES = sorted(
 def test_every_decimal_is_a_string_at_the_contracted_scale(name):
     """§1.2. JavaScript's Number is a double, so decimals travel as strings."""
     for path, value in walk(load(name)):
-        key = path.rsplit(".", 1)[-1].split("[")[0]
-        if key not in SCALES or value is None:
+        parts = path.split(".")
+        key = parts[-1].split("[")[0]
+        #: `net_benefit` is keyed by metric code, so its values cannot be
+        #: reached by name the way `total` and `qty_kg` can. They are metric
+        #: values and carry the same ten places.
+        if len(parts) > 1 and parts[-2] == "net_benefit":
+            required = 10
+        elif key in SCALES:
+            required = SCALES[key]
+        else:
+            continue
+        if value is None:
             continue
         assert isinstance(value, str), f"{name} {path}: {value!r} is not a string"
         assert "e" not in value.lower(), f"{name} {path}: {value!r} is exponential"
         Decimal(value)  # raises if it is not a decimal at all
         assert "." in value, f"{name} {path}: {value!r} carries no decimal point"
         places = len(value.split(".")[1])
-        assert places == SCALES[key], (
+        assert places == required, (
             f"{name} {path}: {value!r} has {places} decimal places, "
-            f"the contract requires {SCALES[key]}"
+            f"the contract requires {required}"
         )
 
 
@@ -452,6 +462,158 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
                         f"{name}: {code}/{row['destination']} does not equal "
                         f"`{formulas[code]}` applied to the published factors"
                     )
+
+
+@pytest.mark.parametrize(
+    "name", ["calculate_response.json", "calculate_response_single.json"]
+)
+def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, factors):
+    """§4.2. An equivalence is computed **from the rolled-up metric total**,
+    not summed from the per-entry values — the conversion is linear so the two
+    agree mathematically, but one computation is one rounding.
+
+    Until this existed, equivalences were the one class of number in the set
+    that nothing re-derived: `value` and `label` could be changed to anything
+    and the whole suite still passed. That is the same shape of defect as the
+    impossible response body this file was written to catch.
+
+    **The label format is a convention this fixture set invented and the
+    contract does not define**: the interpolated `{value}` is the value
+    rounded to a whole unit with a comma thousands separator ("18,597 km"),
+    matching §6.2's own sample output. A must be told, because the engine has
+    to reproduce it and no section of the contract says so.
+    """
+    fixture = load(name)
+    specs = {row["code"]: row for row in factors["equivalences"]}
+
+    def check(scenario, where):
+        if scenario is None:
+            return
+        assert scenario["equivalences"], f"{where}: no equivalences at all"
+        assert [item["code"] for item in scenario["equivalences"]] == [
+            row["code"] for row in sorted(specs.values(), key=lambda r: r["sort_order"])
+        ], f"{where}: equivalences are not the published set, in sort_order"
+        for item in scenario["equivalences"]:
+            spec = specs[item["code"]]
+            source = item["source_metric"]
+            assert source == spec["source_metric"], f"{where}.{item['code']}"
+            total = Decimal(scenario["metrics"][source]["total"])
+            expected = total * Decimal(spec["value_per_unit"])
+            assert Decimal(item["value"]) == expected, (
+                f"{where}.{item['code']}: value is {item['value']}, but "
+                f"{total} x {spec['value_per_unit']} is {expected}"
+            )
+            shown = f"{expected.quantize(Decimal('1')):,}"
+            assert item["label"] == spec["label_template"].replace("{value}", shown), (
+                f"{where}.{item['code']}: label is {item['label']!r}, the "
+                f"template interpolates to "
+                f"{spec['label_template'].replace('{value}', shown)!r}"
+            )
+
+    for scenario in ("current", "alternative"):
+        check(fixture["totals"][scenario], f"{name} totals.{scenario}")
+    for index, entry in enumerate(fixture["entries"]):
+        for scenario in ("current", "alternative"):
+            check(entry[scenario], f"{name} entries[{index}].{scenario}")
+
+
+def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
+    """`taxonomy.json` must be `admin/seed.py`, not a plausible neighbour.
+
+    Every other check in this file is internal to `tests/fixtures/`, and the
+    live shape test runs against the abridged seed in
+    `tests/support/sqlite.py`. So a *coordinated* rename — `compost` changed
+    to `compost_aerobic_digestion` in the taxonomy, the request, the response
+    and the factors together — passed the entire suite while reintroducing
+    exactly the defect this fixture set was rebuilt to remove: `code` is the
+    cross-layer identifier (§1.1), and a fixture that spells a destination
+    differently from the seed teaches the front end a code no deployment
+    holds. This is the only assertion that reaches outside `tests/fixtures/`.
+    """
+    from admin.seed import (
+        DESTINATION_GROUPS,
+        DESTINATIONS,
+        FOOD_CATEGORIES,
+        METRICS,
+        SECTORS,
+        UNIT_PRESETS,
+    )
+
+    assert {row["code"]: (row["name"], row["sort_order"]) for row in taxonomy["sectors"]} == {
+        code: (name, sort_order) for code, name, sort_order in SECTORS
+    }
+    assert {
+        row["code"]: (row["name"], row["is_standard_mix"], row["sort_order"])
+        for row in taxonomy["food_categories"]
+    } == {
+        code: (name, is_standard_mix, sort_order)
+        for code, name, is_standard_mix, sort_order in FOOD_CATEGORIES
+    }
+    assert {
+        row["code"]: (row["name"], row["is_waste"], row["sort_order"])
+        for row in taxonomy["destination_groups"]
+    } == {
+        code: (name, is_waste, sort_order)
+        for code, name, is_waste, sort_order in DESTINATION_GROUPS
+    }
+    assert {
+        row["code"]: (row["group"], row["name"], row["sort_order"])
+        for row in taxonomy["destinations"]
+    } == {
+        code: (group_code, name, sort_order)
+        for group_code, code, name, sort_order in DESTINATIONS
+    }
+    assert {
+        row["code"]: (
+            row["name"],
+            row["unit"],
+            row["display_unit"],
+            row["display_precision"],
+            row["sort_order"],
+        )
+        for row in taxonomy["metrics"]
+    } == {
+        code: (name, unit, display_unit, precision, sort_order)
+        for code, name, unit, display_unit, precision, sort_order in METRICS
+    }
+    assert {
+        row["code"]: (row["label"], Decimal(row["kg_per_unit"]))
+        for row in taxonomy["unit_presets"]
+    } == {code: (label, kg_per_unit) for code, label, kg_per_unit in UNIT_PRESETS}
+
+
+def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
+    """The same binding, one layer down.
+
+    The taxonomy check above is set equality against the seed; this one covers
+    the request, the response and the factor rows, which name codes directly
+    and would otherwise only ever be checked against the taxonomy file that
+    was renamed alongside them.
+    """
+    from admin.seed import DESTINATIONS, FOOD_CATEGORIES, SECTORS
+
+    sectors = {code for code, _, _ in SECTORS}
+    foods = {code for code, _, _, _ in FOOD_CATEGORIES}
+    destinations = {code for _, code, _, _ in DESTINATIONS}
+
+    for name in (
+        "calculate_request.json",
+        "calculate_response.json",
+        "calculate_response_single.json",
+        "factors.json",
+        "stats.json",
+    ):
+        for path, value in walk(load(name)):
+            key = path.rsplit(".", 1)[-1].split("[")[0]
+            if value is None or not isinstance(value, str):
+                continue
+            if key in {"sector", "destination", "food_category"}:
+                pool = {
+                    "sector": sectors,
+                    "destination": destinations,
+                    "food_category": foods,
+                }[key]
+                assert value in pool, f"{name} {path}: {value!r} is not a seeded code"
 
 
 @pytest.mark.parametrize(

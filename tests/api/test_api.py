@@ -217,6 +217,52 @@ async def test_prevention_is_refused_in_a_current_scenario(app):
     assert allowed.status_code == 200, allowed.text
 
 
+async def test_details_has_exactly_the_two_shapes_section_9_defines(app):
+    """§9, v1.5. Two shapes, and `code` alone decides which.
+
+    The inline-bundle check used to emit a third: `{field, issue}` with no
+    `message`, carrying `FactorBundle.validate()`'s human-readable prose
+    (§4.1) in `issue`. That inverts the two keys — a consumer told to branch
+    on `issue` gets a sentence that changes whenever the engine's wording
+    does, and finds no `message` to display. It now emits the field shape
+    with a stable slug, so a front end needs a branch on `code` and no
+    presence checks at all.
+    """
+    app.state.staff_authenticator = lambda request: "alice"
+    body = _body([{"destination": "landfill", "qty_kg": "1"}])
+    bad_bundle = {
+        "version_label": "INLINE-BAD",
+        "is_mock": True,
+        "_problems": ["upstream row 3 names metric 'co2' which is not in this bundle"],
+    }
+    async with await _client(app) as client:
+        response = await client.post(
+            "/api/v1/calculate",
+            headers={"X-Dry-Run": "true"},
+            json={**body, "dry_run": {"bundle": bad_bundle}},
+        )
+
+    assert response.status_code == 400, response.text
+    error = response.json()["error"]
+    assert error["code"] == "VALIDATION_ERROR"
+    assert error["details"] == [
+        {
+            "field": "dry_run.bundle",
+            "issue": "bundle_invalid",
+            "message": "upstream row 3 names metric 'co2' which is not in this bundle",
+        }
+    ]
+    # Every VALIDATION_ERROR entry carries all three keys, whichever check
+    # produced it -- Pydantic's, §6.2's post-parse rules, or this one.
+    async with await _client(app) as client:
+        pydantic_error = await client.post(
+            "/api/v1/calculate",
+            json=_body([{"destination": "landfill", "qty_kg": 1.0}]),
+        )
+    for detail in pydantic_error.json()["error"]["details"]:
+        assert set(detail) == {"field", "issue", "message"}, detail
+
+
 async def test_public_factors_hide_drafts(app):
     async with await _client(app) as client:
         response = await client.get("/api/v1/factors", params={"version": "DRAFT-v1"})

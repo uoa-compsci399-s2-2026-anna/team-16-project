@@ -166,7 +166,21 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                     400,
                     "VALIDATION_ERROR",
                     "dry_run bundle is internally inconsistent",
-                    [{"field": "dry_run.bundle", "issue": problem} for problem in problems],
+                    # §9's field shape: `issue` is a stable slug and `message`
+                    # carries the prose. `bundle.validate()` returns
+                    # human-readable problems (§4.1), and putting one of those
+                    # in `issue` -- as this did until v1.5 -- inverts the two
+                    # keys: a consumer told to branch on `issue` gets a
+                    # sentence that changes whenever the engine's wording does,
+                    # and finds no `message` to display.
+                    [
+                        {
+                            "field": "dry_run.bundle",
+                            "issue": "bundle_invalid",
+                            "message": problem,
+                        }
+                        for problem in problems
+                    ],
                 )
             factor_source = "inline"
         elif payload.dry_run and payload.dry_run.factor_set_version:

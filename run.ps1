@@ -45,18 +45,43 @@ THREE DEPLOYMENT FACTS THIS SCRIPT IS SHAPED BY
 See .env.example and docs/architecture.md 9.1 / 9.1.1 for the long form.
 #>
 
-[CmdletBinding()]
-param(
-    [Parameter(Position = 0)]
-    [string] $Command = '',
-
-    # Untouched pass-through. ValueFromRemainingArguments keeps --reload,
-    # --workers 4 and friends intact instead of trying to bind them.
-    [Parameter(Position = 1, ValueFromRemainingArguments = $true)]
-    [string[]] $Rest
-)
-
+# NO param() BLOCK, AND NO [CmdletBinding()]. This is deliberate, and it is
+# the difference between this script forwarding arguments and only appearing
+# to.
+#
+# PowerShell binds parameters by unambiguous PREFIX, and it does so before
+# ValueFromRemainingArguments is ever consulted. With a
+# `param($Command, [string[]]$Rest)` block, every one of these went wrong:
+#
+#   .\run.ps1 migrate -c alembic.ini current
+#       -c is a prefix of -Command, so "alembic.ini" bound $Command and the
+#       script exited 2 with "unknown subcommand 'alembic.ini'".
+#
+#   .\run.ps1 api --workers 4 -v
+#       -v is a prefix of CmdletBinding's own -Verbose, so it was consumed
+#       and NEVER REACHED UVICORN. Silently: the server started, one flag
+#       short, with nothing said about it.
+#
+# The hit list was -c and -r (this script's own parameters) plus -v -d -e -w
+# -i -o -p (the common parameters CmdletBinding adds). run.sh forwards all of
+# them, so the two launchers were not equivalent, and the half that failed was
+# the half that failed quietly.
+#
+# The automatic $args variable is populated only when there is no param()
+# block, and it is not subject to any of that binding: it is the raw argument
+# vector. $args[0] is the subcommand, everything after it is forwarded.
 $ErrorActionPreference = 'Stop'
+
+if ($args.Count -gt 0) {
+    $Command = [string] $args[0]
+} else {
+    $Command = ''
+}
+if ($args.Count -gt 1) {
+    $Rest = @($args[1..($args.Count - 1)])
+} else {
+    $Rest = @()
+}
 
 # Directory this script lives in - the application root.
 $Root = Split-Path -Parent $MyInvocation.MyCommand.Path
@@ -122,7 +147,12 @@ function Test-HasFlag {
     return $false
 }
 
-function Invoke-Serve {
+# Builds the argument vector, and does NOT run it. A function that ran uvicorn
+# would have to return its exit code, and in PowerShell a native command's
+# stdout goes to the success stream - so `$code = Invoke-Serve ...` would
+# capture every line uvicorn printed along with the code, and the operator
+# would watch a silent server. The caller runs it and reads $LASTEXITCODE.
+function Get-ServeArgv {
     param([string] $Target, [string] $DefaultPort, [string[]] $Argv)
 
     if ($null -eq $Argv) { $Argv = @() }
@@ -136,15 +166,9 @@ function Invoke-Serve {
     }
 
     # Both apps are factories, not module-level `app` objects.
-    & $Python '-m' 'uvicorn' $Target '--factory' @injected @Argv
-    exit $LASTEXITCODE
+    # The leading comma stops PowerShell unrolling the array on return.
+    return , (@('-m', 'uvicorn', $Target, '--factory') + $injected + $Argv)
 }
-
-# Run from the application root. admin/app.py mounts StaticFiles(directory=
-# "admin/static") and sqladmin's templates_dir="admin/templates" - both
-# relative to the working directory, so the panel only starts from here.
-# python-dotenv also looks for .env from the working directory upwards.
-Set-Location -LiteralPath $Root
 
 # A checkout that has had `pip install -r requirements.txt` run but not
 # `pip install .` has no kaicalc on sys.path; an installed environment has it
@@ -156,32 +180,52 @@ if ($env:PYTHONPATH) {
     $env:PYTHONPATH = $Root
 }
 
-if ($null -eq $Rest) { $Rest = @() }
-
-switch ($Command) {
-    'api' {
-        $port = if ($env:KAICALC_API_PORT) { $env:KAICALC_API_PORT } else { '18000' }
-        Invoke-Serve 'api.app:create_app' $port $Rest
-    }
-    'admin' {
-        $port = if ($env:KAICALC_ADMIN_PORT) { $env:KAICALC_ADMIN_PORT } else { '18001' }
-        Invoke-Serve 'admin.app:create_app' $port $Rest
-    }
-    'migrate' {
-        $ini = Resolve-AlembicIni
-        if ($Rest.Count -eq 0) {
-            & $Python '-m' 'alembic' '-c' $ini 'upgrade' 'head'
-        } else {
-            & $Python '-m' 'alembic' '-c' $ini @Rest
+# Run from the application root, so that .env is found: python-dotenv searches
+# from the working directory upwards, and .env lives here. Nothing else
+# depends on it - admin/app.py resolves its templates and static files
+# relative to its own package directory, so the panel itself starts from
+# anywhere.
+#
+# Push/Pop rather than Set-Location: invoked as `.\run.ps1` this runs in the
+# caller's own session, and leaving their prompt in a directory they did not
+# choose is a rude thing for a launcher to do. The finally block runs on
+# `exit` as well as on a throw.
+$code = 0
+Push-Location -LiteralPath $Root
+try {
+    switch ($Command) {
+        'api' {
+            $port = if ($env:KAICALC_API_PORT) { $env:KAICALC_API_PORT } else { '18000' }
+            $argv = Get-ServeArgv 'api.app:create_app' $port $Rest
+            & $Python @argv
+            $code = $LASTEXITCODE
         }
-        exit $LASTEXITCODE
+        'admin' {
+            $port = if ($env:KAICALC_ADMIN_PORT) { $env:KAICALC_ADMIN_PORT } else { '18001' }
+            $argv = Get-ServeArgv 'admin.app:create_app' $port $Rest
+            & $Python @argv
+            $code = $LASTEXITCODE
+        }
+        'migrate' {
+            $ini = Resolve-AlembicIni
+            if ($Rest.Count -eq 0) {
+                & $Python '-m' 'alembic' '-c' $ini 'upgrade' 'head'
+            } else {
+                & $Python '-m' 'alembic' '-c' $ini @Rest
+            }
+            $code = $LASTEXITCODE
+        }
+        { $_ -in @('', 'help', '-h', '--help') } {
+            Show-Usage
+        }
+        default {
+            [Console]::Error.WriteLine("run.ps1: unknown subcommand '$Command'")
+            [Console]::Error.WriteLine((Show-Usage))
+            $code = 2
+        }
     }
-    { $_ -in @('', 'help', '-h', '--help') } {
-        Show-Usage
-    }
-    default {
-        [Console]::Error.WriteLine("run.ps1: unknown subcommand '$Command'")
-        [Console]::Error.WriteLine((Show-Usage))
-        exit 2
-    }
+} finally {
+    Pop-Location
 }
+
+exit $code

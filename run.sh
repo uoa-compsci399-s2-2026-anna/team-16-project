@@ -153,10 +153,11 @@ if [ $# -gt 0 ]; then
     shift
 fi
 
-# Run from the application root. admin/app.py mounts StaticFiles(directory=
-# "admin/static") and sqladmin's templates_dir="admin/templates" - both
-# relative to the working directory, so the panel only starts from here.
-# python-dotenv also looks for .env from the working directory upwards.
+# Run from the application root, so that .env is found: python-dotenv searches
+# from the working directory upwards, and .env lives here. Nothing else
+# depends on it - admin/app.py resolves its templates and static files
+# relative to its own package directory, so the panel itself starts from
+# anywhere.
 cd "$ROOT"
 
 # A checkout that has had `pip install -r requirements.txt` run but not

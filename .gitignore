@@ -11,6 +11,11 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+
+# Packaging output (pyproject.toml / setuptools). Anchored to the repository
+# root so a future source directory called build/ is not swallowed too.
+/build/
+/dist/
 .env
 .env.*
 !.env.example

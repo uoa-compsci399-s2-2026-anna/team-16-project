@@ -111,6 +111,16 @@ include-package-data = false
 admin = [
     "templates/*.html",
     "templates/brand/*.html",
+    # Added late, and its absence was invisible for a whole task. The five
+    # page-level guidance blocks landed in this directory and the wheel
+    # shipped without them: every screen that includes one - factor sets,
+    # upstream factors, formulas and the dry-run page - raised
+    # TemplateNotFound and returned 500 in the built image, while the whole
+    # test suite passed against the checkout, where the file is simply on
+    # disk. tests/admin/test_packaging.py now fails when any template is not
+    # covered by a pattern here, so the next directory added under
+    # templates/ cannot leave the same way.
+    "templates/brand/guidance/*.html",
     "templates/sqladmin/*.html",
     "static/*.css",
     "static/fonts/*.woff2",

@@ -21,6 +21,7 @@ from admin.accounts import (
     complete_mfa_enrolment,
     create_staff,
     get_staff,
+    pending_totp_device,
     set_password,
 )
 from admin.security import decrypt_totp_secret
@@ -111,9 +112,18 @@ async def _csrf_from(client, path):
 
 
 def _stored_secret(admin_app, username):
+    """The secret of the enrolment in progress.
+
+    Reads the *unconfirmed* `staff_totp_device` row rather than a column on
+    `staff`: contract v1.13 moved TOTP secrets onto their own table so an
+    account can enrol a second phone before losing the first. On this page
+    there is only ever one device - it is the onboarding enrolment - but
+    asking for the pending one is what keeps that true by construction.
+    """
     with admin_app.state.session_factory() as db:
-        staff = get_staff(db, username)
-        return decrypt_totp_secret(staff.mfa_secret_enc, secret_key=SECRET_KEY)
+        device = pending_totp_device(db, username)
+        assert device is not None, "no enrolment in progress for this account"
+        return decrypt_totp_secret(device.secret_enc, secret_key=SECRET_KEY)
 
 
 def _mfa_enrolled(admin_app, username):
@@ -357,7 +367,11 @@ async def test_the_handler_refuses_an_established_session_even_if_the_gate_admit
     assert response.status_code in (302, 307)
     assert not response.headers["location"].rstrip("/").endswith("/admin/enrol")
     with admin_app.state.session_factory() as db:
-        assert get_staff(db, username).mfa_secret_enc is None
+        # No device row at all, confirmed or otherwise. reset_mfa clears the
+        # whole collection, and asserting on the collection rather than on
+        # `mfa_enrolled` is what catches a reset that left a usable secret
+        # behind on a second, unconfirmed row.
+        assert get_staff(db, username).totp_devices == []
 
 
 # --- Behaviour 7 --------------------------------------------------------

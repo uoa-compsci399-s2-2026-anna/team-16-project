@@ -26,7 +26,7 @@ from admin.accounts import UnknownStaffError, create_staff, issue_password, rese
 from admin.audit import write_audit
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
-from admin.models import Staff, StaffRole
+from admin.models import StaffRole, StaffTotpDevice
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
 from admin.seed import seed_taxonomy
 from admin.taxonomy_rules import TaxonomyInvariantError
@@ -126,20 +126,27 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[
     printed output and this docstring are the record. (Contrast
     ``cmd_unblock``, which *is* one person's decision about one row.)
     """
-    accounts = db_session.scalars(
-        select(Staff).where(Staff.mfa_secret_enc.is_not(None))
-    ).all()
+    # Every device row, not every account. Since contract v1.13 the secrets
+    # live on `staff_totp_device` and one account can hold several - a
+    # rotation that walked accounts and re-encrypted "the" secret would
+    # leave every second phone readable only with the old key, which is
+    # precisely the half-rotated state the all-at-once ordering below exists
+    # to prevent. `secret_enc` is NOT NULL, so there is no "has a secret"
+    # predicate left to write: a device row exists because a secret was
+    # minted for it. Unconfirmed devices are included deliberately - an
+    # abandoned scan that is resumed after a rotation must still decrypt.
+    devices = db_session.scalars(select(StaffTotpDevice)).all()
 
     # Decrypt all first; a failure here must leave the table untouched -
     # including the blocklist, which is why the delete below comes after this
     # comprehension rather than before it.
     plaintext = [
-        (staff, decrypt_totp_secret(staff.mfa_secret_enc, secret_key=old_key))
-        for staff in accounts
+        (device, decrypt_totp_secret(device.secret_enc, secret_key=old_key))
+        for device in devices
     ]
 
-    for staff, secret in plaintext:
-        staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
+    for device, secret in plaintext:
+        device.secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
 
     blocks = db_session.scalars(select(IpBlock)).all()
     for row in blocks:

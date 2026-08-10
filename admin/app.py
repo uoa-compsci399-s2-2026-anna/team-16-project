@@ -179,6 +179,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     admin.add_base_view(ChangePasswordView)
     admin.add_base_view(EnrolView)
 
+    # The signed-in account's own security screen. Registered as a base view
+    # rather than beside StaffAdmin because it is not an administrator
+    # screen: `staff` reaches it, and it acts only on the account in the
+    # session. See admin/self_service_view.py's docstring.
+    from admin.self_service_view import SecurityView
+
+    admin.add_base_view(SecurityView)
+
     from admin.dryrun_views import CompareView, DryRunView
 
     admin.add_base_view(DryRunView)

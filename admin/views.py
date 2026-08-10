@@ -24,6 +24,7 @@ from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     get_staff,
+    pending_totp_device,
     set_password,
     unused_recovery_code_count,
 )
@@ -364,7 +365,13 @@ def _enrolment_view_context(
     staff = get_staff(db, username)
     if staff.mfa_enrolled:
         return None
-    if staff.mfa_secret_enc is None:
+    # The *unconfirmed* device, never merely "a device": since contract
+    # v1.13 an account can hold several, and the one this page is finishing
+    # is the one whose enrolled_at is still NULL. Reading any other device's
+    # secret here would render a QR for an authenticator the person already
+    # has, and complete_mfa_enrolment would then refuse the code it produced.
+    device = pending_totp_device(db, username)
+    if device is None:
         try:
             secret, uri = begin_mfa_enrolment(
                 db, username, secret_key=secret_key, issuer=issuer
@@ -373,7 +380,7 @@ def _enrolment_view_context(
             return None
         return {"qr": qr_svg(uri), "secret": secret,
                 "secret_grouped": _grouped(secret)}
-    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
+    secret = decrypt_totp_secret(device.secret_enc, secret_key=secret_key)
     return {
         "qr": qr_svg(
             provisioning_uri(secret, username=staff.username, issuer=issuer)

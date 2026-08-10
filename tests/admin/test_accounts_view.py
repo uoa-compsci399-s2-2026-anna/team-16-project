@@ -345,7 +345,13 @@ async def test_the_details_view_never_renders_a_password_hash(admin_client, enro
 
     assert response.status_code == 200
     assert "password_hash" not in response.text
+    # Both names: `mfa_secret_enc` was the column before contract v1.13 and
+    # `secret_enc` is the one it became. The old name is kept because a
+    # details page that somehow rendered a pre-migration payload would still
+    # be a leak, and because a test that only knows the new name would go
+    # green against a view that had quietly reverted.
     assert "mfa_secret_enc" not in response.text
+    assert "secret_enc" not in response.text
     assert "mfa_last_counter" not in response.text
     assert enrolled_staff.password_hash not in response.text
 
@@ -498,11 +504,21 @@ async def test_an_administrator_cannot_issue_a_password_to_their_own_account(
 
 
 async def test_an_administrator_cannot_reset_their_own_authenticator(
-    admin_client, db_session
+    admin_client, admin_app, db_session
 ):
     """Resetting your own MFA is a second factor that never asks for the
     device."""
     me = admin_client.staff
+
+    # Read through a session of its own that is closed again before the
+    # request goes out. `db_session` must not be touched here: it opens
+    # lazily precisely so that a query issued *after* the request sees the
+    # commit, and a read taken through it now would start a transaction whose
+    # REPEATABLE READ snapshot predates the request - every "unchanged"
+    # assertion below would then hold no matter what the request did.
+    with admin_app.state.session_factory() as db:
+        before = [d.secret_enc for d in get_staff(db, me.username).totp_devices]
+    assert before, "the fixture account should have an enrolled device"
 
     response = await admin_client.get(
         "/admin/staff/action/reset-mfa", params={"pks": me.id}
@@ -511,7 +527,11 @@ async def test_an_administrator_cannot_reset_their_own_authenticator(
     assert response.status_code == 400
 
     staff = get_staff(db_session, me.username)
-    assert staff.mfa_secret_enc == me.mfa_secret_enc
+    # The devices themselves, not just the derived flag. reset_mfa clears
+    # the whole collection, so a refusal that left mfa_enrolled_at set while
+    # emptying staff_totp_device would pass a flag-only assertion and leave
+    # an account that reports itself enrolled with nothing to verify against.
+    assert [d.secret_enc for d in staff.totp_devices] == before
     assert staff.mfa_enrolled is True
     assert staff.session_generation == me.session_generation
     # The recovery codes are the other half of what reset_mfa destroys, and

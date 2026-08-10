@@ -47,6 +47,17 @@ def enrol(session, username: str, secret_key: str) -> str:
     return secret
 
 
+def stored_secret(session, username: str, device_name: str = "Authenticator") -> bytes:
+    """The ciphertext as it sits in the database, for one device.
+
+    Since contract v1.13 an account can hold several, so "the account's
+    secret" is no longer a thing to read - which is exactly what
+    `cmd_rotate_key` had to stop assuming.
+    """
+    staff = get_staff(session, username)
+    return next(d.secret_enc for d in staff.totp_devices if d.name == device_name)
+
+
 def test_create_staff_command_returns_a_usable_initial_password(session):
     username, password = cmd_create_staff(
         session, "alice", "Alice Example", StaffRole.admin, actor="bootstrap"
@@ -121,13 +132,48 @@ def test_rotate_key_reencrypts_every_enrolled_secret(session):
 
     assert rotated == 2
     assert (
-        decrypt_totp_secret(get_staff(session, "alice").mfa_secret_enc, secret_key=NEW_KEY)
+        decrypt_totp_secret(stored_secret(session, "alice"), secret_key=NEW_KEY)
         == secret_a
     )
     assert (
-        decrypt_totp_secret(get_staff(session, "bob").mfa_secret_enc, secret_key=NEW_KEY)
+        decrypt_totp_secret(stored_secret(session, "bob"), secret_key=NEW_KEY)
         == secret_b
     )
+
+
+def test_rotate_key_reencrypts_every_device_not_one_per_account(session):
+    """The count is devices, not accounts, and this is the whole of what
+    v1.13 changed about this command.
+
+    A rotation that walked `staff` rows and re-encrypted "the" secret would
+    leave every *second* phone readable only with the old key - and
+    `cmd_rotate_key`'s decrypt-everything-first ordering could not save it,
+    because the row it never looked at never raised. The operator would be
+    told "Re-encrypted 1 TOTP secret(s)", restart, and discover the failure
+    only when somebody reached for their backup device.
+    """
+    first = enrol(session, "alice", OLD_KEY)
+    second, _uri = begin_mfa_enrolment(
+        session, "alice", secret_key=OLD_KEY,
+        device_name="Backup phone", allow_additional=True,
+    )
+    complete_mfa_enrolment(
+        session, "alice",
+        pyotp.TOTP(second, interval=TOTP_INTERVAL).at(NOW),
+        secret_key=OLD_KEY, now=NOW, device_name="Backup phone",
+    )
+    session.flush()
+
+    rotated, _cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    session.flush()
+
+    assert rotated == 2
+    assert decrypt_totp_secret(
+        stored_secret(session, "alice"), secret_key=NEW_KEY
+    ) == first
+    assert decrypt_totp_secret(
+        stored_secret(session, "alice", "Backup phone"), secret_key=NEW_KEY
+    ) == second
 
 
 def test_rotate_key_skips_accounts_with_no_enrolment(session):
@@ -142,12 +188,12 @@ def test_rotate_key_with_the_wrong_old_key_changes_nothing(session):
     """A half-rotated table would be unrecoverable, so the command must fail
     before writing anything rather than part way through."""
     enrol(session, "alice", OLD_KEY)
-    before = get_staff(session, "alice").mfa_secret_enc
+    before = stored_secret(session, "alice")
 
     with pytest.raises(TotpSecretUndecryptableError):
         cmd_rotate_key(session, old_key="a-completely-wrong-key", new_key=NEW_KEY)
 
-    assert get_staff(session, "alice").mfa_secret_enc == before
+    assert stored_secret(session, "alice") == before
 
 
 def test_rotating_twice_leaves_secrets_readable_with_the_newest_key(session):
@@ -160,7 +206,7 @@ def test_rotating_twice_leaves_secrets_readable_with_the_newest_key(session):
     session.flush()
 
     assert (
-        decrypt_totp_secret(get_staff(session, "alice").mfa_secret_enc, secret_key=third)
+        decrypt_totp_secret(stored_secret(session, "alice"), secret_key=third)
         == secret
     )
 
@@ -189,14 +235,14 @@ def test_rotate_key_writes_nothing_when_one_account_of_several_fails(session):
     enrol(session, "alice", OLD_KEY)
     enrol(session, "bob", "a-third-key-nobody-else-uses")
 
-    before_alice = get_staff(session, "alice").mfa_secret_enc
-    before_bob = get_staff(session, "bob").mfa_secret_enc
+    before_alice = stored_secret(session, "alice")
+    before_bob = stored_secret(session, "bob")
 
     with pytest.raises(TotpSecretUndecryptableError):
         cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
 
-    assert get_staff(session, "alice").mfa_secret_enc == before_alice
-    assert get_staff(session, "bob").mfa_secret_enc == before_bob
+    assert stored_secret(session, "alice") == before_alice
+    assert stored_secret(session, "bob") == before_bob
 
 
 def test_unblock_command_removes_a_block(session):

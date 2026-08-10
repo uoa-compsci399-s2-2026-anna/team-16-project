@@ -83,6 +83,13 @@ BundleFactory = Callable[[dict[str, Any]], Any]
 REDACTED_FIELDS = {
     "password_hash",
     "mfa_secret_enc",
+    #: The column `mfa_secret_enc` became in contract v1.13, when TOTP
+    #: secrets moved off `staff` onto `staff_totp_device` so that an account
+    #: can enrol a second phone before losing the first. The old name is kept
+    #: above rather than replaced: `audit_log` rows written before that
+    #: migration still carry it, and this set is also what a future
+    #: `before_json` reader would consult.
+    "secret_enc",
     "code_hash",
     "ip_hmac",
     "token",

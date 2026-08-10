@@ -24,7 +24,7 @@ from admin.accounts import (
     set_password,
     set_role,
 )
-from admin.models import AuditLog, Staff, StaffRole, utcnow
+from admin.models import AuditLog, Staff, StaffRole, StaffTotpDevice, utcnow
 from admin.security import verify_password
 from admin.totp import TOTP_INTERVAL
 
@@ -296,15 +296,29 @@ def _enrolled(session, username: str):
     """An account with something for reset_mfa to destroy.
 
     The enrolment is hand-set rather than driven through
-    begin/complete_mfa_enrolment - what these tests need is a non-NULL secret
-    and a timestamp to compare against afterwards, and a real TOTP round trip
+    begin/complete_mfa_enrolment - what these tests need is a device row and
+    a timestamp to compare against afterwards, and a real TOTP round trip
     would only make the assertions harder to read. tests/admin/test_enrolment.py
     covers the real path.
+
+    Two devices, not one, since contract v1.13 made that possible. Every
+    caller here is testing something reset_mfa or the self-recovery guard
+    does to an *enrolment*, and an enrolment is now a collection: a reset
+    that removed one device and left the other would satisfy a single-device
+    fixture completely while leaving the account it was aimed at still
+    holding a working second factor.
     """
     create_staff(session, username=username, display_name=username.title())
     session.flush()
     staff = get_staff(session, username)
-    staff.mfa_secret_enc = b"not-a-real-encrypted-secret"
+    staff.totp_devices.append(
+        StaffTotpDevice(name="Authenticator", secret_enc=b"not-a-real-secret-1",
+                        enrolled_at=utcnow(), created_at=utcnow())
+    )
+    staff.totp_devices.append(
+        StaffTotpDevice(name="Backup phone", secret_enc=b"not-a-real-secret-2",
+                        enrolled_at=utcnow(), created_at=utcnow())
+    )
     staff.mfa_enrolled_at = utcnow()
     session.flush()
     return staff
@@ -345,14 +359,14 @@ def test_a_refused_self_issue_writes_no_audit_entry_of_its_own(session):
 def test_resetting_your_own_authenticator_is_refused(session):
     """Resetting MFA is a second factor that never asks for the device."""
     staff = _enrolled(session, "alice")
-    secret_before = staff.mfa_secret_enc
+    secrets_before = [d.secret_enc for d in staff.totp_devices]
     enrolled_before = staff.mfa_enrolled_at
 
     with pytest.raises(SelfRecoveryError):
         reset_mfa(session, "alice", actor="alice")
 
     staff = get_staff(session, "alice")
-    assert staff.mfa_secret_enc == secret_before
+    assert [d.secret_enc for d in staff.totp_devices] == secrets_before
     assert staff.mfa_enrolled_at == enrolled_before
 
 
@@ -392,5 +406,5 @@ def test_the_cli_may_act_on_the_account_it_is_recovering(session):
 
     staff = get_staff(session, "alice")
     assert verify_password(issued, staff.password_hash)
-    assert staff.mfa_secret_enc is None
+    assert staff.totp_devices == []
     assert staff.mfa_enrolled_at is None

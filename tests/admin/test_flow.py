@@ -32,6 +32,7 @@ from admin.accounts import (
     create_staff,
     deactivate_staff,
     get_staff,
+    pending_totp_device,
     set_password,
 )
 from admin.bootstrap import BOOTSTRAP_USERNAMES, ensure_bootstrap_admins
@@ -65,9 +66,18 @@ async def _csrf_from(client, path):
 
 
 def _stored_secret(admin_app, username):
+    """The secret of the enrolment in progress.
+
+    Reads the *unconfirmed* `staff_totp_device` row rather than a column on
+    `staff`: contract v1.13 moved TOTP secrets onto their own table so an
+    account can enrol a second phone before losing the first. On this page
+    there is only ever one device - it is the onboarding enrolment - but
+    asking for the pending one is what keeps that true by construction.
+    """
     with admin_app.state.session_factory() as db:
-        staff = get_staff(db, username)
-        return decrypt_totp_secret(staff.mfa_secret_enc, secret_key=SECRET_KEY)
+        device = pending_totp_device(db, username)
+        assert device is not None, "no enrolment in progress for this account"
+        return decrypt_totp_secret(device.secret_enc, secret_key=SECRET_KEY)
 
 
 @pytest.fixture

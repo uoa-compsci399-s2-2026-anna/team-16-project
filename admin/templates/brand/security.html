@@ -1,0 +1,123 @@
+{% extends "brand/base.html" %}
+{% block title %}Your security{% endblock %}
+{% block content %}
+  <h1>Your security</h1>
+  <p class="secrets-owner"><strong>{{ display_name }}</strong> — {{ username }}</p>
+
+  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
+  {% if notice %}<div class="notice notice--info">{{ notice }}</div>{% endif %}
+
+  {% if enrolling %}
+    {# The enrolment in progress takes over the page. Showing the device list
+       and the password form underneath a QR code invites someone to navigate
+       away from the one thing they cannot come back to: the secret is shown
+       exactly once per re-authenticated request. #}
+    <h2>Set up “{{ enrolling.name }}”</h2>
+    <p class="muted">
+      Scan this with your authenticator app, then enter the six-digit code it
+      shows. Your existing authenticator keeps working throughout.
+    </p>
+    <div>{{ enrolling.qr | safe }}</div>
+    <p class="muted">
+      Cannot scan? Enter this key by hand:
+      <code class="key">{{ enrolling.secret_grouped }}</code>
+    </p>
+    <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="confirm-device">
+      <input type="hidden" name="device_name" value="{{ enrolling.name }}">
+      <label for="code">Code from the new device</label>
+      <input type="text" id="code" name="code" autocomplete="one-time-code"
+             inputmode="numeric" autofocus required>
+      <button type="submit">Confirm this authenticator</button>
+    </form>
+    <p><a href="{{ url_for('admin:view-security') }}">Cancel</a></p>
+
+  {% else %}
+
+    <h2>Authenticators</h2>
+    <p class="muted">
+      Enrol a second device before you need it. If you only have one and lose
+      it, the way back in is a recovery code, or another administrator — and
+      an administrator cannot do it for their own account.
+    </p>
+
+    <ul class="secrets">
+      {% for device in devices %}
+        <li>
+          <strong>{{ device.name }}</strong>
+          {% if device.enrolled %}
+            — in use since {{ device.enrolled_at.strftime('%d %b %Y') }}
+          {% else %}
+            — set-up not finished
+          {% endif %}
+          {% if device.removable %}
+            <form method="post" autocomplete="off">
+              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+              <input type="hidden" name="action" value="remove-device">
+              <input type="hidden" name="device_id" value="{{ device.id }}">
+              <label for="rm-pw-{{ device.id }}">Current password</label>
+              <input type="password" id="rm-pw-{{ device.id }}"
+                     name="current_password" autocomplete="current-password">
+              <label for="rm-code-{{ device.id }}">…or a code from another authenticator</label>
+              <input type="text" id="rm-code-{{ device.id }}" name="current_code"
+                     autocomplete="one-time-code" inputmode="numeric">
+              <button type="submit">Remove {{ device.name }}</button>
+            </form>
+          {% else %}
+            <p class="muted">
+              This is the only authenticator on the account, so it cannot be
+              removed — that would leave the account with a password and
+              nothing else. Add its replacement first.
+            </p>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+
+    {% if at_device_limit %}
+      <p class="muted">
+        This account has the maximum of {{ max_devices }} authenticators.
+        Remove one you no longer use before adding another.
+      </p>
+    {% else %}
+      <h2>Add an authenticator</h2>
+      <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="begin-device">
+        <label for="device_name">Name for the new device</label>
+        <input type="text" id="device_name" name="device_name"
+               placeholder="Backup phone" maxlength="64" required>
+        <label for="add-pw">Current password</label>
+        <input type="password" id="add-pw" name="current_password"
+               autocomplete="current-password">
+        <label for="add-code">…or a code from an authenticator already set up</label>
+        <input type="text" id="add-code" name="current_code"
+               autocomplete="one-time-code" inputmode="numeric">
+        <button type="submit">Add authenticator</button>
+      </form>
+    {% endif %}
+
+    <h2>Change your password</h2>
+    <p class="muted">
+      Your current password is required — a signed-in session is not enough on
+      its own. Changing it signs out every other session using this account.
+    </p>
+    <form method="post" autocomplete="off">
+      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+      <input type="hidden" name="action" value="change-password">
+      <label for="current_password">Current password</label>
+      <input type="password" id="current_password" name="current_password"
+             autocomplete="current-password" required>
+      <label for="password">New password</label>
+      <input type="password" id="password" name="password"
+             autocomplete="new-password" required>
+      <label for="confirm">Confirm new password</label>
+      <input type="password" id="confirm" name="confirm"
+             autocomplete="new-password" required>
+      <button type="submit">Change password</button>
+    </form>
+
+    <p><a href="/admin/">Back to the panel</a></p>
+  {% endif %}
+{% endblock %}

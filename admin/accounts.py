@@ -15,7 +15,13 @@ from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from admin.audit import write_audit
-from admin.models import Staff, StaffRecoveryCode, StaffRole, utcnow
+from admin.models import (
+    Staff,
+    StaffRecoveryCode,
+    StaffRole,
+    StaffTotpDevice,
+    utcnow,
+)
 from admin.security import (
     decrypt_totp_secret,
     encrypt_totp_secret,
@@ -52,6 +58,16 @@ class UnknownStaffError(RuntimeError):
 
 class SelfRecoveryError(RuntimeError):
     """A recovery action was aimed at the account performing it."""
+
+
+class UnknownDeviceError(RuntimeError):
+    """No authenticator with that id **on this account**.
+
+    Deliberately not distinguished from "no such device anywhere". The id of
+    a device belonging to somebody else and the id of one that never existed
+    must produce the same answer, or the error becomes an oracle for which
+    ids are real and whose they are.
+    """
 
 
 def generate_initial_password() -> str:
@@ -327,47 +343,203 @@ class MfaAlreadyEnrolledError(RuntimeError):
     """
 
 
+class LastAuthenticatorError(RuntimeError):
+    """Removing this device would leave the account with no second factor."""
+
+
+class DuplicateDeviceNameError(RuntimeError):
+    """The account already has an authenticator under that name."""
+
+
+#: What the onboarding enrolment calls the first device. Anything the person
+#: has not named themselves has to be called something, and this is what
+#: appears in the authenticator app and on the security screen until they
+#: enrol a second one and give it a name of its own.
+DEFAULT_DEVICE_NAME = "Authenticator"
+
+#: A hard ceiling, so that "enrol another" cannot quietly become an unbounded
+#: list of live secrets on one account. Two phones is the case this exists
+#: for; four leaves room for a tablet and a hardware token without the number
+#: ever being the thing that blocks somebody mid-recovery.
+MAX_TOTP_DEVICES = 4
+
+
+def _sync_mfa_enrolled_at(staff: Staff) -> None:
+    """Keep ``staff.mfa_enrolled_at`` honest about ``staff.totp_devices``.
+
+    ``mfa_enrolled_at`` is derived state (see its own comment in
+    admin/models.py): it exists so that the four onboarding gates in
+    ``admin/backend.py``, ``require_staff_username`` and
+    ``count_usable_admins`` can go on asking one indexed column instead of
+    each growing an EXISTS subquery. Derived state that more than one place
+    writes is derived state that drifts, so **this is the only writer**, and
+    every function below that can add or remove a device ends by calling it.
+
+    It sets the timestamp only on the transition from none to some. An
+    account that enrols a second phone has not become enrolled a second
+    time, and moving the timestamp forward would rewrite when its second
+    factor came into force.
+    """
+    has_enrolled = any(d.enrolled_at is not None for d in staff.totp_devices)
+    if has_enrolled and staff.mfa_enrolled_at is None:
+        staff.mfa_enrolled_at = utcnow()
+    elif not has_enrolled:
+        staff.mfa_enrolled_at = None
+
+
+def _device_label(username: str, device_name: str) -> str:
+    """What the authenticator app shows under the issuer.
+
+    Task 1 established that the issuer names the *system* and the account
+    name distinguishes two administrators of it. A second device on one
+    account needs a third distinction, and it has to be here: both devices
+    carry the same issuer and the same username, so an app listing them
+    would otherwise show two identical entries and the person deleting the
+    lost phone would be guessing which. The default device is left as the
+    bare username so that an account with one authenticator reads exactly as
+    it always has.
+    """
+    if device_name == DEFAULT_DEVICE_NAME:
+        return username
+    return f"{username} ({device_name})"
+
+
+def _pending_device(staff: Staff, name: str) -> "StaffTotpDevice | None":
+    for device in staff.totp_devices:
+        if device.enrolled_at is None and device.name == name:
+            return device
+    return None
+
+
+def pending_totp_device(
+    session: Session, username: str, *, device_name: str = DEFAULT_DEVICE_NAME
+) -> "StaffTotpDevice | None":
+    """The unconfirmed device of that name, or None.
+
+    Exists for the enrolment pages, whose defining property is that an
+    unfinished enrolment is **reused, never re-minted** — see
+    ``admin/views.py::_enrolment_view_context``. Minting a second secret
+    invalidates the QR already sitting on somebody's phone and then blames
+    their device clock for the code that follows.
+    """
+    return _pending_device(get_staff(session, username), device_name)
+
+
+def resume_mfa_enrolment(
+    session: Session,
+    username: str,
+    *,
+    secret_key: str,
+    issuer: str = DEFAULT_ISSUER,
+    device_name: str = DEFAULT_DEVICE_NAME,
+) -> tuple[str, str] | None:
+    """The (secret, URI) of an enrolment already in progress, or None.
+
+    The read-only half of ``begin_mfa_enrolment``: it mints nothing. A page
+    that has to re-render its QR — after a rejected code, an expired form,
+    a refresh — calls this, so that the person's phone keeps the entry it
+    already holds. Minting a second secret there invalidates the code they
+    are looking at and then tells them to check their device clock, which is
+    the one instruction guaranteed to waste their time.
+
+    Living here rather than in the view keeps ``_device_label`` in one
+    place: the label an authenticator shows must be identical on the first
+    render and every re-render, or the app shows two entries for one device.
+    """
+    staff = get_staff(session, username)
+    device = _pending_device(staff, device_name)
+    if device is None:
+        return None
+    secret = decrypt_totp_secret(device.secret_enc, secret_key=secret_key)
+    return secret, provisioning_uri(
+        secret, username=_device_label(staff.username, device_name), issuer=issuer
+    )
+
+
 def begin_mfa_enrolment(
     session: Session,
     username: str,
     *,
     secret_key: str,
     issuer: str = DEFAULT_ISSUER,
+    device_name: str = DEFAULT_DEVICE_NAME,
+    allow_additional: bool = False,
 ) -> tuple[str, str]:
     """Start enrolment: store a fresh encrypted secret, return it and the URI.
 
-    The secret is persisted here, already encrypted, but ``mfa_enrolled_at``
-    stays NULL — so ``mfa_enrolled`` is still False and ``require_staff``
-    still refuses the account. Enrolment completes only once the user produces
-    a correct code, which is the only evidence the authenticator really holds
-    the secret; without that step a mis-scanned QR locks someone out on their
-    next login.
+    The secret is persisted here, already encrypted, on a
+    ``staff_totp_device`` row whose ``enrolled_at`` stays NULL — so
+    ``mfa_enrolled`` is unmoved and ``require_staff`` still refuses an
+    account that has no other device. Enrolment completes only once the user
+    produces a correct code, which is the only evidence the authenticator
+    really holds the secret; without that step a mis-scanned QR locks someone
+    out on their next login.
 
     Persisting it now, rather than handing it back for the caller to carry
     between the two requests, keeps the plaintext secret out of the browser
     entirely — off the form, out of the history, out of any request log.
 
-    Calling this again replaces an unfinished enrolment, which is what should
-    happen when someone abandons the page and starts over. A **finished**
-    enrolment is refused: contract 8.3 puts this page behind the password step
-    alone, since a user with no second factor has to be able to reach it, so
-    an attacker holding only the password would otherwise scan their own QR
-    code, complete the enrolment and hold both factors without ever needing
-    the real owner's authenticator. Re-enrolment is an administrator action
-    and goes through reset_mfa (layer L2) or the CLI (layer L3), both of which
-    clear the enrolment first.
+    Calling this again for the same ``device_name`` replaces that unfinished
+    enrolment's secret, which is what should happen when someone abandons the
+    page and starts over.
+
+    **``allow_additional`` is the whole of the multi-device change at this
+    layer, and its default is False on purpose.** Without it, an account with
+    a finished enrolment is refused: contract §8.3 puts the *onboarding*
+    enrolment page behind the password step alone, since a user with no
+    second factor has to be able to reach it, so an attacker holding only the
+    password would otherwise scan their own QR code, complete the enrolment
+    and hold both factors without ever needing the real owner's
+    authenticator. That reasoning is about a caller that has proved one
+    factor. The self-service security screen has proved two — it sits behind
+    a fully established session, which ``admin/backend.py`` grants only after
+    a second factor — and re-authenticates on top of that, so it passes
+    ``allow_additional=True``. ``admin/views.py``'s EnrolView, the page the
+    guard was written for, does not and must not.
     """
     staff = get_staff(session, username)
-    if staff.mfa_enrolled_at is not None:
+    if staff.mfa_enrolled_at is not None and not allow_additional:
         raise MfaAlreadyEnrolledError(
             f"{username!r} has already enrolled an authenticator. An "
             "administrator must reset it before a new one can be enrolled."
         )
+
+    existing = _pending_device(staff, device_name)
+    if existing is None:
+        # A *confirmed* device under this name is a different case from an
+        # unconfirmed one and must not be overwritten: that would replace a
+        # working phone's secret with one nobody has scanned yet, and the
+        # account would be one removal away from having no usable factor.
+        if any(d.name == device_name for d in staff.totp_devices):
+            raise DuplicateDeviceNameError(
+                f"This account already has an authenticator called "
+                f"{device_name!r}. Give the new one a different name."
+            )
+        if len(staff.totp_devices) >= MAX_TOTP_DEVICES:
+            raise LastAuthenticatorError(
+                f"This account already has {MAX_TOTP_DEVICES} authenticators, "
+                "which is the maximum. Remove one you no longer use first."
+            )
+
     secret = generate_totp_secret()
-    staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=secret_key)
-    staff.mfa_enrolled_at = None
-    staff.mfa_last_counter = None
-    return secret, provisioning_uri(secret, username=staff.username, issuer=issuer)
+    encrypted = encrypt_totp_secret(secret, secret_key=secret_key)
+    if existing is None:
+        staff.totp_devices.append(
+            StaffTotpDevice(
+                name=device_name,
+                secret_enc=encrypted,
+                enrolled_at=None,
+                last_counter=None,
+                created_at=utcnow(),
+            )
+        )
+    else:
+        existing.secret_enc = encrypted
+        existing.last_counter = None
+
+    return secret, provisioning_uri(
+        secret, username=_device_label(staff.username, device_name), issuer=issuer
+    )
 
 
 def complete_mfa_enrolment(
@@ -377,21 +549,33 @@ def complete_mfa_enrolment(
     *,
     secret_key: str,
     now: int,
+    device_name: str = DEFAULT_DEVICE_NAME,
 ) -> list[str]:
     """Finish enrolment and return the one-time recovery codes.
 
-    Reads the secret stored by ``begin_mfa_enrolment``. Raises
-    MfaNotEnrolledError if enrolment was never begun, or if the code does not
-    verify. Recovery codes are returned in plaintext because this is the only
-    moment they exist in readable form; only their hashes are stored.
+    Reads the secret stored by ``begin_mfa_enrolment`` on the device of the
+    same name. Raises MfaNotEnrolledError if enrolment was never begun, or if
+    the code does not verify. Recovery codes are returned in plaintext
+    because this is the only moment they exist in readable form; only their
+    hashes are stored.
+
+    **Recovery codes are minted for the account's first confirmed device
+    only, and the return value is empty for any later one.** They are the
+    account's fallback when *no* authenticator is available (contract §8.3's
+    layer L1), not a per-device credential — minting five more on a second
+    phone would leave the person holding two printed sheets with no way to
+    tell which is current, while the older sheet stayed just as valid. The
+    caller renders the codes when it gets them and says nothing about them
+    when it does not.
     """
     staff = get_staff(session, username)
-    if staff.mfa_secret_enc is None:
+    device = _pending_device(staff, device_name)
+    if device is None:
         raise MfaNotEnrolledError(
             "Enrolment has not been started for this account."
         )
 
-    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
+    secret = decrypt_totp_secret(device.secret_enc, secret_key=secret_key)
     counter = verify_totp(secret, code, now=now)
     if counter is None:
         raise MfaNotEnrolledError(
@@ -399,8 +583,13 @@ def complete_mfa_enrolment(
             "account and that the device clock is correct."
         )
 
-    staff.mfa_enrolled_at = utcnow()
-    staff.mfa_last_counter = counter
+    first = not staff.enrolled_totp_devices
+    device.enrolled_at = utcnow()
+    device.last_counter = counter
+    _sync_mfa_enrolled_at(staff)
+
+    if not first:
+        return []
 
     codes = generate_recovery_codes(RECOVERY_CODE_COUNT)
     for code_value in codes:
@@ -417,30 +606,97 @@ def complete_mfa_enrolment(
 def verify_staff_totp(
     session: Session, username: str, code: str, *, secret_key: str, now: int
 ) -> bool:
-    """Verify a login TOTP and advance the replay counter.
+    """Verify a login TOTP against any enrolled device, advancing its counter.
 
     Raises MfaNotEnrolledError when the account has not enrolled: contract 8.3
     requires that an unenrolled account cannot reach anything, so treating it
     as a plain failed code would hide a state that has to be handled.
 
-    The gate is ``mfa_enrolled``, not the presence of a secret. An enrolment
-    that was begun and abandoned leaves a perfectly usable secret in the row
-    while ``mfa_enrolled_at`` is still NULL; accepting it here would let a
-    half-finished enrolment satisfy the login second factor. Completing an
-    enrolment is the separate job of complete_mfa_enrolment, which reads the
-    secret directly for exactly that reason.
+    The gate is ``enrolled_totp_devices``, never the presence of a secret. An
+    enrolment that was begun and abandoned leaves a perfectly usable secret
+    on a row whose ``enrolled_at`` is still NULL; accepting it here would let
+    a half-finished enrolment satisfy the login second factor. Completing an
+    enrolment is the separate job of complete_mfa_enrolment, which reads that
+    row directly for exactly that reason.
+
+    **Each device carries its own replay counter and only the device that
+    matched has its counter advanced.** A counter shared across devices would
+    be wrong in the direction that locks people out: two phones hold two
+    secrets and emit two different codes for the same time step, so a login
+    on one would push a shared counter past the step the other's current,
+    entirely unused code belongs to, and that code would be refused as a
+    replay for the rest of its life. The failure would surface as "the backup
+    phone does not work", intermittently, only on accounts with two devices.
+
+    A malformed or undecryptable secret on one device does not stop the
+    others being tried: ``verify_totp`` never raises, and returns None for an
+    unusable secret.
     """
     staff = get_staff(session, username)
-    if not staff.mfa_enrolled or staff.mfa_secret_enc is None:
+    devices = staff.enrolled_totp_devices
+    if not devices:
         raise MfaNotEnrolledError(f"{username!r} has not enrolled an authenticator")
 
-    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
-    counter = verify_totp(secret, code, now=now, last_counter=staff.mfa_last_counter)
-    if counter is None:
-        return False
+    for device in devices:
+        secret = decrypt_totp_secret(device.secret_enc, secret_key=secret_key)
+        counter = verify_totp(
+            secret, code, now=now, last_counter=device.last_counter
+        )
+        if counter is not None:
+            device.last_counter = counter
+            return True
+    return False
 
-    staff.mfa_last_counter = counter
-    return True
+
+def list_totp_devices(session: Session, username: str) -> list["StaffTotpDevice"]:
+    """Every device on the account, confirmed or not, in enrolment order."""
+    return list(get_staff(session, username).totp_devices)
+
+
+def remove_totp_device(
+    session: Session, username: str, device_id: int
+) -> "StaffTotpDevice":
+    """Remove one authenticator, returning the row that was removed.
+
+    ``device_id`` is looked up **within the account**, never globally. That
+    is what makes one person's security screen unable to act on another's:
+    an id belonging to somebody else is simply not found here, so the
+    refusal is a property of this function rather than of whichever view
+    happens to call it.
+
+    Refuses to remove the last confirmed device. An account whose only
+    second factor is deleted does not announce itself — it goes on working
+    exactly as before until the next login, at which point ``require_staff``
+    refuses it and the person is sent back through onboarding enrolment.
+    Silently downgrading an account to password-only is the failure this
+    guard exists to stop, and it is the reason the screen offers "remove"
+    beside "add" rather than as a way to start over.
+
+    Recovery codes deliberately do not count as the other factor. They are
+    single-use fallbacks for when no authenticator is to hand (§8.3 layer
+    L1), and five of them run out; an account holding only recovery codes is
+    an account counting down.
+
+    Unconfirmed devices are removable at any time, including the last one —
+    an abandoned scan is not a factor and never was.
+    """
+    staff = get_staff(session, username)
+    device = next((d for d in staff.totp_devices if d.id == device_id), None)
+    if device is None:
+        raise UnknownDeviceError(
+            "That authenticator is not on this account."
+        )
+
+    if device.enrolled_at is not None and len(staff.enrolled_totp_devices) <= 1:
+        raise LastAuthenticatorError(
+            "This is the only authenticator on the account, so removing it "
+            "would leave the account with a password and nothing else. Add "
+            "the replacement first, then remove this one."
+        )
+
+    staff.totp_devices.remove(device)
+    _sync_mfa_enrolled_at(staff)
+    return device
 
 
 def unused_recovery_code_count(session: Session, username: str) -> int:
@@ -495,9 +751,13 @@ def reset_mfa(
     _guard_not_self(
         staff, actor, allow_self=allow_self, what="Resetting the authenticator"
     )
-    staff.mfa_secret_enc = None
-    staff.mfa_enrolled_at = None
-    staff.mfa_last_counter = None
+    # **Every** device, not one of them. This is the reset an administrator
+    # performs on an account they believe is compromised or locked out, and
+    # leaving a second phone enrolled would leave whatever the reset was
+    # meant to remove still holding a working second factor. Cleared through
+    # the relationship for the same reason recovery_codes are below.
+    staff.totp_devices.clear()
+    _sync_mfa_enrolled_at(staff)
     staff.session_generation += 1
     # Clear through the relationship rather than a bulk delete. Staff declares
     # cascade="all, delete-orphan", so this removes the rows AND keeps the

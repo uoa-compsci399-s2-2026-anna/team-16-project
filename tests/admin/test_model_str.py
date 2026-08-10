@@ -44,7 +44,7 @@ from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
 )
-from admin.models import AuditLog, Staff, StaffRecoveryCode
+from admin.models import AuditLog, Staff, StaffRecoveryCode, StaffTotpDevice
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
@@ -77,6 +77,18 @@ _FACTORIES = {
         lambda: StaffRecoveryCode(id=555, staff_id=1, code_hash="SECRET_CODE_HASH_VALUE"),
         identifying=["555"],
         forbidden=["SECRET_CODE_HASH_VALUE"],
+    ),
+    StaffTotpDevice: _case(
+        #: The name is the human identifier here, so the id is `forbidden`
+        #: alongside the secret - two devices are told apart by what their
+        #: owner called them, which is the whole reason the column exists.
+        lambda: StaffTotpDevice(
+            id=666, staff_id=1, name="Backup phone",
+            secret_enc=b"SECRET_TOTP_SECRET_VALUE",
+            enrolled_at=datetime(2026, 3, 4, 5, 6),
+        ),
+        identifying=["Backup phone", "enrolled"],
+        forbidden=["666", "SECRET_TOTP_SECRET_VALUE"],
     ),
     AuditLog: _case(
         lambda: AuditLog(id=1, actor="staff1", action="update",

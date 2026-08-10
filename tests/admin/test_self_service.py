@@ -1,0 +1,763 @@
+"""The signed-in account's own security screen. Contract §8.3.
+
+Everything here drives real HTTP against the running app. That is not
+thoroughness for its own sake: ``admin/accounts_view.py``'s module docstring
+records that sqladmin 0.30 calls a view's ``is_accessible`` only for the
+routes it generates itself, never for a ``@action`` or an ``@expose`` route,
+and this project has already shipped one defect of exactly that shape. A test
+that called ``SecurityView.security()`` directly, or that reached the page
+through a link, would prove nothing about who can POST to the URL.
+
+The account this screen belongs to is read from ``SESSION_KEY`` and nothing
+else, so there is no account id on any form here to aim somewhere else. The
+one identifier that does travel is ``device_id``, and
+``test_one_accounts_screen_cannot_remove_another_accounts_device`` aims it at
+a device belonging to somebody else, by id, at the URL.
+"""
+
+import re
+import time
+import uuid
+
+import pyotp
+import pytest
+import pytest_asyncio
+from sqlalchemy import select, text
+
+from admin.accounts import (
+    RECOVERY_CODE_COUNT,
+    begin_mfa_enrolment,
+    complete_mfa_enrolment,
+    create_staff,
+    get_staff,
+    set_password,
+    verify_staff_totp,
+)
+from admin.models import AuditLog, StaffRole
+from admin.security import verify_password
+from admin.totp import TOTP_INTERVAL
+
+from tests.admin.conftest import SECRET_KEY, _cleanup_staff, _login
+
+pytestmark = [pytest.mark.asyncio, pytest.mark.db]
+
+SECURITY_URL = "/admin/security"
+PASSWORD = "an-adequately-long-password"
+NEW_PASSWORD = "a-different-adequately-long-password"
+
+
+# --- fixtures ---------------------------------------------------------------
+
+
+def _onboard(admin_app, *, role=StaffRole.staff):
+    """A fully onboarded account with exactly one enrolled authenticator.
+
+    Deliberately not conftest's ``_create_onboarded_account``: these tests
+    need the password back in order to re-authenticate with it, and they need
+    the enrolment placed several time steps in the past so that the login
+    below and the re-authentications afterwards do not collide on the replay
+    counter.
+    """
+    username = f"u{uuid.uuid4().hex[:10]}"
+    with admin_app.state.session_factory() as db:
+        create_staff(db, username=username, display_name="Test User", role=role)
+        db.flush()
+        set_password(db, username, PASSWORD)
+        secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
+        enrol_at = int(time.time()) - 20 * TOTP_INTERVAL
+        complete_mfa_enrolment(
+            db, username,
+            pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(enrol_at),
+            secret_key=SECRET_KEY, now=enrol_at,
+        )
+        db.commit()
+        staff = get_staff(db, username)
+    return staff, secret
+
+
+@pytest_asyncio.fixture
+async def me(admin_app, client, monkeypatch):
+    """A logged-in plain `staff` account: the account this screen is for.
+
+    `staff`, not `admin`, on purpose. The screen must work without an
+    administrator role — that is the whole point of it existing — and a
+    fixture that logged in as an administrator would let an accidental
+    admin-only guard pass every test in this file.
+    """
+    staff, secret = _onboard(admin_app, role=StaffRole.staff)
+    try:
+        await _login(client, monkeypatch, username=staff.username,
+                     password=PASSWORD, secret=secret)
+    except BaseException:
+        _cleanup_staff(admin_app, staff)
+        raise
+    client.staff = staff
+    client.secret = secret
+    yield client
+    _cleanup_staff(admin_app, staff)
+
+
+@pytest.fixture
+def db_session(admin_app):
+    """A session opened lazily against the running app's own database.
+
+    SQLAlchemy autobegins on first statement, so a query issued after an HTTP
+    request already committed is a new transaction and sees that commit. A
+    read taken through this session *before* a request would pin a
+    REPEATABLE READ snapshot that predates it and make every "unchanged"
+    assertion hold regardless — see conftest's `_resync`.
+    """
+    with admin_app.state.session_factory() as db:
+        yield db
+
+
+# --- helpers ----------------------------------------------------------------
+
+
+async def _csrf(client):
+    page = await client.get(SECURITY_URL)
+    assert page.status_code == 200, page.status_code
+    match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert match, "no CSRF token rendered on the security page"
+    return match.group(1)
+
+
+async def _post(client, **fields):
+    token = fields.pop("csrf_token", None)
+    if token is None:
+        token = await _csrf(client)
+    return await client.post(
+        SECURITY_URL, data={"csrf_token": token, **fields}, follow_redirects=False
+    )
+
+
+def _devices(db, username):
+    return get_staff(db, username).totp_devices
+
+
+def _fresh_totp(admin_app, username, secret, monkeypatch):
+    """A code the replay counter has not already seen, and the clock to match.
+
+    Every login and every TOTP re-authentication records the step it accepted
+    on that device, so reusing "now" produces a code that is correct and
+    refused. Stepping the whole application's clock forward past the highest
+    counter any of this account's devices holds is what keeps that from being
+    a flaky test rather than a real one.
+    """
+    with admin_app.state.session_factory() as db:
+        highest = max(
+            [d.last_counter or 0 for d in _devices(db, username)] or [0]
+        )
+    now = (max(highest, int(time.time()) // TOTP_INTERVAL) + 2) * TOTP_INTERVAL
+    monkeypatch.setattr(time, "time", lambda: float(now))
+    return pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now)
+
+
+async def _enrol_second_device(client, admin_app, monkeypatch, name="Backup phone"):
+    """Drive the real two-request add-a-device flow. Returns the new secret."""
+    begun = await _post(
+        client, action="begin-device", device_name=name,
+        current_password=PASSWORD,
+    )
+    assert begun.status_code == 200, begun.status_code
+    match = re.search(r'<code class="key">([A-Z2-7 ]+)</code>', begun.text)
+    assert match, "the enrolment page rendered no setup key"
+    secret = match.group(1).replace(" ", "")
+
+    now = int(time.time())
+    monkeypatch.setattr(time, "time", lambda: float(now))
+    confirmed = await _post(
+        client, action="confirm-device", device_name=name,
+        code=pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now),
+    )
+    assert confirmed.status_code == 200, confirmed.text[:400]
+    return secret
+
+
+# --- reachability -----------------------------------------------------------
+
+
+async def test_a_staff_member_reaches_their_own_security_screen(me):
+    """No administrator role. Managing your own second factor is not an
+    administrative act, and requiring one would put it back behind the
+    colleague this screen exists to make unnecessary."""
+    response = await me.get(SECURITY_URL)
+
+    assert response.status_code == 200
+    assert me.staff.username in response.text
+
+
+async def test_a_staff_member_still_cannot_reach_the_account_screen(me):
+    """The other half of the same sentence. /admin/staff is recovery layer
+    L2 - one administrator acting on another - and stays administrator-only.
+    Opening this screen to `staff` must not have opened that one."""
+    response = await me.get("/admin/staff/list")
+
+    assert response.status_code == 403
+
+
+async def test_a_staff_member_cannot_reach_the_account_screens_actions(me):
+    """The URL, not the menu entry. sqladmin registers an @action route
+    wrapped in login_required alone - is_accessible is never consulted for it
+    - so a plain staff session reaching /admin/staff/action/... directly is
+    the thing to prove refused, and it is not proven by the list page's 403.
+    """
+    for slug in ("issue-password", "reset-mfa", "deactivate"):
+        response = await me.get(
+            f"/admin/staff/action/{slug}", params={"pks": me.staff.id}
+        )
+        assert response.status_code == 403, slug
+
+
+async def test_the_screen_is_not_reachable_without_a_session(client):
+    """No SESSION_KEY at all. This path is deliberately absent from
+    _PRE_LOGIN_PAGES, so a pending login - half a login - must not open it
+    either; authenticate()'s ordinary branch refuses both the same way."""
+    response = await client.get(SECURITY_URL, follow_redirects=False)
+
+    assert response.status_code in (302, 307)
+    assert "/admin/login" in response.headers["location"]
+
+
+async def test_a_post_without_a_csrf_token_changes_nothing(me, db_session):
+    response = await me.post(
+        SECURITY_URL,
+        data={"action": "change-password", "current_password": PASSWORD,
+              "password": NEW_PASSWORD, "confirm": NEW_PASSWORD},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 400
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(PASSWORD, staff.password_hash)
+
+
+async def test_an_unrecognised_action_is_refused(me):
+    response = await _post(me, action="reset-mfa")
+
+    assert response.status_code == 400
+
+
+# --- changing your own password ---------------------------------------------
+
+
+async def test_changing_the_password_requires_the_current_one(me, db_session):
+    """The whole point of the screen. A stolen session has already cleared
+    both factors, so the session cookie cannot be what authorises a password
+    change - the current password is the one secret it does not carry."""
+    response = await _post(
+        me, action="change-password",
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert response.status_code == 400
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(PASSWORD, staff.password_hash)
+    assert staff.session_generation == me.staff.session_generation
+
+
+async def test_a_wrong_current_password_changes_nothing(me, db_session):
+    response = await _post(
+        me, action="change-password", current_password="not-the-password",
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert response.status_code == 400
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(PASSWORD, staff.password_hash)
+    assert staff.session_generation == me.staff.session_generation
+
+
+async def test_a_totp_code_is_not_accepted_in_place_of_the_password(
+    me, admin_app, db_session, monkeypatch
+):
+    """A code proves the second factor, and the session presenting it has
+    already cleared the second factor - so it proves nothing the cookie did
+    not. Accepting one here would put the password change back within reach
+    of a stolen session, which is the state this screen exists to close."""
+    code = _fresh_totp(admin_app, me.staff.username, me.secret, monkeypatch)
+
+    response = await _post(
+        me, action="change-password", current_code=code,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert response.status_code == 400
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(PASSWORD, staff.password_hash)
+
+
+async def test_the_current_password_changes_the_password(me, db_session):
+    response = await _post(
+        me, action="change-password", current_password=PASSWORD,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert response.status_code == 200
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(NEW_PASSWORD, staff.password_hash)
+    # Contract §8.3 treats a password change as an eviction. Leaving the
+    # generation alone would make it cosmetic: every other session naming
+    # this account would go on working.
+    assert staff.session_generation == me.staff.session_generation + 1
+
+
+async def test_the_session_that_changed_the_password_survives_it(me):
+    """set_password bumps session_generation, which invalidates the very
+    cookie this request arrived on. Without the re-stamp the person is
+    silently signed out by their own deliberate action, and the next page
+    they open is the login form with nothing explaining why."""
+    changed = await _post(
+        me, action="change-password", current_password=PASSWORD,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+    assert changed.status_code == 200
+
+    after = await me.get(SECURITY_URL, follow_redirects=False)
+
+    assert after.status_code == 200
+
+
+async def test_the_password_rules_are_the_forced_change_pages_rules(me, db_session):
+    """Reused rather than restated, so the two pages cannot drift into
+    telling one person a password is acceptable and another that it is not.
+    The reuse assertion is the one that matters: too short, mismatched, and
+    the password already in force are all refused here too."""
+    for password, confirm in (
+        ("short", "short"),
+        (NEW_PASSWORD, "something-else-entirely"),
+        (PASSWORD, PASSWORD),
+    ):
+        response = await _post(
+            me, action="change-password", current_password=PASSWORD,
+            password=password, confirm=confirm,
+        )
+        assert response.status_code == 400, password
+
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(PASSWORD, staff.password_hash)
+
+
+async def test_a_password_change_is_audited_naming_the_actor(me, db_session):
+    await _post(
+        me, action="change-password", current_password=PASSWORD,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    rows = db_session.scalars(
+        select(AuditLog).where(AuditLog.actor == me.staff.username)
+    ).all()
+    assert [r for r in rows if r.after_json.get("changed") == "password"], rows
+    entry = next(r for r in rows if r.after_json.get("changed") == "password")
+    assert entry.table_name == "staff"
+    assert entry.row_id == me.staff.id
+    # The plaintext and the hash are both absent. audit_log is readable by
+    # every staff member, which is the whole reason §5.5 has a blocklist.
+    assert NEW_PASSWORD not in str(entry.after_json)
+    assert "password_hash" not in entry.after_json
+
+
+# --- adding an authenticator ------------------------------------------------
+
+
+async def test_adding_an_authenticator_requires_re_authentication(me, db_session):
+    response = await _post(me, action="begin-device", device_name="Backup phone")
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 1
+
+
+async def test_a_wrong_password_adds_no_authenticator(me, db_session):
+    response = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password="not-the-password",
+    )
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 1
+
+
+async def test_the_current_password_starts_an_enrolment(me, db_session):
+    response = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    assert response.status_code == 200
+    assert "<svg" in response.text, "no QR code rendered"
+    devices = _devices(db_session, me.staff.username)
+    # Present but unconfirmed. A secret that counted as a factor the moment
+    # it was minted would let anyone who reached this page grant themselves
+    # one without ever proving the device holds it.
+    assert len(devices) == 2
+    pending = next(d for d in devices if d.name == "Backup phone")
+    assert pending.enrolled_at is None
+
+
+async def test_a_code_from_an_existing_device_also_starts_an_enrolment(
+    me, admin_app, db_session, monkeypatch
+):
+    """The other accepted proof. Someone changing phones has their old device
+    to hand and may not have their password memorised - requiring only the
+    password would send them to an administrator for something they can
+    prove themselves."""
+    code = _fresh_totp(admin_app, me.staff.username, me.secret, monkeypatch)
+
+    response = await _post(
+        me, action="begin-device", device_name="Backup phone", current_code=code,
+    )
+
+    assert response.status_code == 200
+    assert len(_devices(db_session, me.staff.username)) == 2
+
+
+async def test_both_authenticators_work_once_the_second_is_confirmed(
+    me, admin_app, db_session, monkeypatch
+):
+    """The property the whole schema change exists for: two phones, both
+    live, so losing one is not a lockout."""
+    second = await _enrol_second_device(me, admin_app, monkeypatch)
+
+    devices = _devices(db_session, me.staff.username)
+    assert len(devices) == 2
+    assert all(d.enrolled_at is not None for d in devices)
+
+    # Verified through the real login path, one step apart so that the first
+    # verification's counter cannot be what refuses the second.
+    with admin_app.state.session_factory() as db:
+        base = (int(time.time()) // TOTP_INTERVAL + 5) * TOTP_INTERVAL
+        assert verify_staff_totp(
+            db, me.staff.username,
+            pyotp.TOTP(me.secret, interval=TOTP_INTERVAL).at(base),
+            secret_key=SECRET_KEY, now=base,
+        )
+        later = base + TOTP_INTERVAL
+        assert verify_staff_totp(
+            db, me.staff.username,
+            pyotp.TOTP(second, interval=TOTP_INTERVAL).at(later),
+            secret_key=SECRET_KEY, now=later,
+        )
+        db.commit()
+
+
+async def test_each_device_carries_its_own_replay_counter(
+    me, admin_app, db_session, monkeypatch
+):
+    """Replay protection is a property of a secret, not of an account. Two
+    phones emit two *different* codes for the same time step, so a shared
+    counter would let a login on one refuse the other's current, entirely
+    unused code for the rest of that step - a lockout that only appears on
+    accounts with two devices, and gets blamed on the phone."""
+    second = await _enrol_second_device(me, admin_app, monkeypatch)
+
+    step = (int(time.time()) // TOTP_INTERVAL + 5) * TOTP_INTERVAL
+    with admin_app.state.session_factory() as db:
+        assert verify_staff_totp(
+            db, me.staff.username,
+            pyotp.TOTP(me.secret, interval=TOTP_INTERVAL).at(step),
+            secret_key=SECRET_KEY, now=step,
+        )
+        # The *same* time step, the other device. A shared counter refuses
+        # this; per-device counters accept it.
+        assert verify_staff_totp(
+            db, me.staff.username,
+            pyotp.TOTP(second, interval=TOTP_INTERVAL).at(step),
+            secret_key=SECRET_KEY, now=step,
+        )
+        db.commit()
+
+
+async def test_the_new_devices_name_reaches_the_authenticator_label(me):
+    """Task 1 put the system in the issuer and the account in the label. A
+    second device on one account needs a third distinction or the app shows
+    two identical entries, and the person deleting the lost phone is
+    guessing which one it is."""
+    response = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    assert response.status_code == 200
+    match = re.search(r'<code class="key">([A-Z2-7 ]+)</code>', response.text)
+    secret = match.group(1).replace(" ", "")
+    from admin.accounts import _device_label
+    from admin.totp import provisioning_uri
+
+    uri = provisioning_uri(
+        secret, username=_device_label(me.staff.username, "Backup phone")
+    )
+    assert "Backup%20phone" in uri or "Backup phone" in uri
+    assert me.staff.username in uri
+    assert "Kai%20Commitment%20Admin" in uri
+
+
+async def test_a_wrong_confirmation_code_keeps_the_same_secret(me, db_session):
+    """The property admin/views.py's enrolment page already holds: a rejected
+    code must re-render the QR already on the person's phone, not mint a
+    second secret and then blame their device clock for the code that
+    follows."""
+    begun = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    first = re.search(r'<code class="key">([A-Z2-7 ]+)</code>', begun.text).group(1)
+
+    rejected = await _post(
+        me, action="confirm-device", device_name="Backup phone", code="000000",
+    )
+
+    assert rejected.status_code == 400
+    again = re.search(r'<code class="key">([A-Z2-7 ]+)</code>', rejected.text).group(1)
+    assert again == first
+    devices = _devices(db_session, me.staff.username)
+    assert next(d for d in devices if d.name == "Backup phone").enrolled_at is None
+
+
+async def test_a_second_device_mints_no_new_recovery_codes(
+    me, admin_app, db_session, monkeypatch
+):
+    """Recovery codes are the account's fallback when *no* authenticator is
+    available, not a per-device credential. Minting five more would leave
+    somebody holding two printed sheets with no way to tell which is
+    current - and the older sheet just as valid as the newer one."""
+    before = db_session.execute(
+        text("SELECT COUNT(*) FROM staff_recovery_code WHERE staff_id = :id"),
+        {"id": me.staff.id},
+    ).scalar()
+    assert before == RECOVERY_CODE_COUNT
+
+    response_text = await _enrol_second_device(me, admin_app, monkeypatch)
+    assert response_text
+
+    db_session.commit()
+    after = db_session.execute(
+        text("SELECT COUNT(*) FROM staff_recovery_code WHERE staff_id = :id"),
+        {"id": me.staff.id},
+    ).scalar()
+    assert after == RECOVERY_CODE_COUNT
+
+
+async def test_two_devices_cannot_share_a_name(me, admin_app, db_session, monkeypatch):
+    """The list has to be readable by the person deciding which phone to
+    remove, and two entries called the same thing make that a guess."""
+    await _enrol_second_device(me, admin_app, monkeypatch)
+
+    response = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 2
+
+
+async def test_adding_a_device_is_audited_naming_the_actor(
+    me, admin_app, db_session, monkeypatch
+):
+    await _enrol_second_device(me, admin_app, monkeypatch)
+
+    rows = db_session.scalars(
+        select(AuditLog).where(
+            AuditLog.actor == me.staff.username,
+            AuditLog.table_name == "staff_totp_device",
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].action == "create"
+    assert rows[0].after_json["name"] == "Backup phone"
+    assert "secret_enc" not in str(rows[0].after_json)
+
+
+# --- removing an authenticator ----------------------------------------------
+
+
+async def test_the_last_authenticator_cannot_be_removed(me, db_session):
+    """Otherwise the account silently downgrades to password-only. Nothing
+    announces it: the session in hand goes on working exactly as before, and
+    the discovery comes at the next login, when require_staff refuses the
+    account and sends it back through onboarding."""
+    device_id = _devices(db_session, me.staff.username)[0].id
+    db_session.commit()
+
+    response = await _post(
+        me, action="remove-device", device_id=device_id,
+        current_password=PASSWORD,
+    )
+
+    assert response.status_code == 400
+    staff = get_staff(db_session, me.staff.username)
+    assert len(staff.totp_devices) == 1
+    assert staff.mfa_enrolled is True
+
+
+async def test_removing_an_authenticator_requires_re_authentication(
+    me, admin_app, db_session, monkeypatch
+):
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    device_id = _devices(db_session, me.staff.username)[0].id
+    db_session.commit()
+
+    response = await _post(me, action="remove-device", device_id=device_id)
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 2
+
+
+async def test_the_first_device_can_be_removed_once_a_second_exists(
+    me, admin_app, db_session, monkeypatch
+):
+    """The lost-phone case end to end, and the reason the table exists."""
+    second = await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    first_id = next(
+        d.id for d in _devices(db_session, me.staff.username)
+        if d.name == "Authenticator"
+    )
+    db_session.commit()
+
+    response = await _post(
+        me, action="remove-device", device_id=first_id, current_password=PASSWORD,
+    )
+
+    assert response.status_code == 200
+    staff = get_staff(db_session, me.staff.username)
+    assert [d.name for d in staff.totp_devices] == ["Backup phone"]
+    assert staff.mfa_enrolled is True
+
+    # The survivor still works, and the removed one no longer does.
+    with admin_app.state.session_factory() as db:
+        step = (int(time.time()) // TOTP_INTERVAL + 8) * TOTP_INTERVAL
+        assert verify_staff_totp(
+            db, me.staff.username,
+            pyotp.TOTP(second, interval=TOTP_INTERVAL).at(step),
+            secret_key=SECRET_KEY, now=step,
+        )
+        assert not verify_staff_totp(
+            db, me.staff.username,
+            pyotp.TOTP(me.secret, interval=TOTP_INTERVAL).at(step + TOTP_INTERVAL),
+            secret_key=SECRET_KEY, now=step + TOTP_INTERVAL,
+        )
+        db.commit()
+
+
+async def test_removing_a_device_evicts_every_other_session(
+    me, admin_app, db_session, monkeypatch
+):
+    """A device is usually removed because it is out of the owner's hands.
+    Leaving other sessions live would leave whoever holds it signed in."""
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    before = get_staff(db_session, me.staff.username).session_generation
+    first_id = next(
+        d.id for d in _devices(db_session, me.staff.username)
+        if d.name == "Authenticator"
+    )
+    db_session.commit()
+
+    response = await _post(
+        me, action="remove-device", device_id=first_id, current_password=PASSWORD,
+    )
+    assert response.status_code == 200
+
+    staff = get_staff(db_session, me.staff.username)
+    assert staff.session_generation == before + 1
+    # ...and the session that did it is not one of them.
+    after = await me.get(SECURITY_URL, follow_redirects=False)
+    assert after.status_code == 200
+
+
+async def test_removing_a_device_is_audited_naming_the_actor(
+    me, admin_app, db_session, monkeypatch
+):
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    first_id = next(
+        d.id for d in _devices(db_session, me.staff.username)
+        if d.name == "Authenticator"
+    )
+    db_session.commit()
+
+    await _post(
+        me, action="remove-device", device_id=first_id, current_password=PASSWORD,
+    )
+
+    rows = db_session.scalars(
+        select(AuditLog).where(
+            AuditLog.actor == me.staff.username,
+            AuditLog.table_name == "staff_totp_device",
+            AuditLog.action == "delete",
+        )
+    ).all()
+    assert len(rows) == 1
+    assert rows[0].row_id == first_id
+    assert rows[0].before_json["name"] == "Authenticator"
+
+
+# --- one account's screen cannot act on another -----------------------------
+
+
+async def test_one_accounts_screen_cannot_remove_another_accounts_device(
+    me, admin_app, db_session, monkeypatch
+):
+    """Aimed at the URL with somebody else's device id, which is the only
+    identifier that travels on any form here - no field names an account, so
+    there is nothing else to try.
+
+    The victim is given two devices first, so the refusal cannot be the
+    last-authenticator guard doing the work by accident. That guard would
+    refuse a single-device account regardless of who asked, and a test built
+    on one would pass against a view with no ownership check at all.
+    """
+    victim, victim_secret = _onboard(admin_app, role=StaffRole.staff)
+    try:
+        with admin_app.state.session_factory() as db:
+            begin_mfa_enrolment(
+                db, victim.username, secret_key=SECRET_KEY,
+                device_name="Backup phone", allow_additional=True,
+            )
+            db.flush()
+            device = next(
+                d for d in get_staff(db, victim.username).totp_devices
+                if d.name == "Backup phone"
+            )
+            at = int(time.time()) - 12 * TOTP_INTERVAL
+            from admin.security import decrypt_totp_secret
+            plain = decrypt_totp_secret(device.secret_enc, secret_key=SECRET_KEY)
+            complete_mfa_enrolment(
+                db, victim.username,
+                pyotp.TOTP(plain, interval=TOTP_INTERVAL).at(at),
+                secret_key=SECRET_KEY, now=at, device_name="Backup phone",
+            )
+            db.commit()
+            victim_ids = [d.id for d in get_staff(db, victim.username).totp_devices]
+        assert len(victim_ids) == 2
+
+        for device_id in victim_ids:
+            response = await _post(
+                me, action="remove-device", device_id=device_id,
+                current_password=PASSWORD,
+            )
+            assert response.status_code == 400, device_id
+
+        with admin_app.state.session_factory() as db:
+            survivors = [d.id for d in get_staff(db, victim.username).totp_devices]
+        assert survivors == victim_ids
+        # And the actor's own devices are untouched too - a refusal that
+        # removed the wrong row would be worse than one that removed none.
+        assert len(_devices(db_session, me.staff.username)) == 1
+        assert victim_secret
+    finally:
+        _cleanup_staff(admin_app, victim)
+
+
+async def test_a_device_id_that_does_not_exist_is_refused_the_same_way(me, db_session):
+    """Same status, same page, as somebody else's id. A different answer for
+    "not yours" and "not real" is an oracle for which ids exist and whose
+    they are."""
+    response = await _post(
+        me, action="remove-device", device_id=99999999, current_password=PASSWORD,
+    )
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 1

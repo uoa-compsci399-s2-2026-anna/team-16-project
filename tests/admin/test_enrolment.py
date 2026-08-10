@@ -69,7 +69,13 @@ def test_begin_enrolment_stores_the_secret_but_does_not_mark_it_enrolled(session
     session.flush()
 
     staff = get_staff(session, "alice")
-    assert staff.mfa_secret_enc is not None
+    # One device row, holding the secret, and not yet confirmed. Asserting
+    # the row exists *and* that enrolled_at is still NULL is what separates
+    # "the secret was persisted" from "the account is now enrolled" - the
+    # two states this function deliberately keeps apart.
+    assert len(staff.totp_devices) == 1
+    assert staff.totp_devices[0].secret_enc is not None
+    assert staff.totp_devices[0].enrolled_at is None
     assert staff.mfa_enrolled is False
 
 
@@ -125,7 +131,7 @@ def test_a_refused_re_enrolment_leaves_the_existing_one_intact(session):
     a new secret or cleared mfa_enrolled_at on its way out, or the account is
     de-enrolled and locked out even though the attempt "failed"."""
     secret = enrolled_account(session)
-    before = get_staff(session, "alice").mfa_secret_enc
+    before = get_staff(session, "alice").totp_devices[0].secret_enc
 
     with pytest.raises(MfaAlreadyEnrolledError):
         begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
@@ -133,7 +139,11 @@ def test_a_refused_re_enrolment_leaves_the_existing_one_intact(session):
 
     staff = get_staff(session, "alice")
     assert staff.mfa_enrolled is True
-    assert staff.mfa_secret_enc == before
+    # No *second* device either. A refusal that appended an unconfirmed row
+    # before raising would leave the account one `allow_additional=True`
+    # caller away from an authenticator it never agreed to.
+    assert len(staff.totp_devices) == 1
+    assert staff.totp_devices[0].secret_enc == before
     assert (
         verify_staff_totp(
             session,
@@ -183,7 +193,7 @@ def test_completing_enrolment_issues_the_agreed_number_of_recovery_codes(session
 def test_the_stored_secret_is_not_the_plaintext_secret(session):
     secret = enrolled_account(session)
 
-    assert get_staff(session, "alice").mfa_secret_enc != secret.encode()
+    assert get_staff(session, "alice").totp_devices[0].secret_enc != secret.encode()
 
 
 def test_a_valid_code_is_accepted_after_enrolment(session):
@@ -302,8 +312,11 @@ def test_resetting_mfa_clears_enrolment_and_all_recovery_codes(session):
 
     staff = get_staff(session, "alice")
     assert staff.mfa_enrolled is False
-    assert staff.mfa_secret_enc is None
-    assert staff.mfa_last_counter is None
+    # Every device, not merely the enrolment flag. A reset that cleared
+    # mfa_enrolled_at and left a device row behind would leave whoever the
+    # reset was aimed at holding a secret that the next `allow_additional`
+    # enrolment path could still confirm.
+    assert staff.totp_devices == []
     assert unused_recovery_code_count(session, "alice") == 0
 
 

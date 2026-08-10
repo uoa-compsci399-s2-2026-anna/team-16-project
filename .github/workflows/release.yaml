@@ -37,19 +37,6 @@ on:
         required: true
         type: string
 
-  # ==========================================================================
-  # TEMPORARY - REMOVED BEFORE THIS BRANCH IS FINISHED. See the DRY RUN note
-  # in the `prepare` job. GitHub only offers manual dispatch for a workflow
-  # that already exists on the DEFAULT branch, so this file cannot be
-  # dispatched until it is merged - and a release workflow first exercised on
-  # the real 1.0.0 is one that has never been tested. This trigger, and the
-  # `|| '<version>'` fallback below, are the only two differences between the
-  # file that gets exercised and the file that ships.
-  # ==========================================================================
-  push:
-    branches:
-      - 'build/**'
-
 # Never cancel a release in flight. `cancel-in-progress: true` would be right
 # for CI and catastrophic here: the window it would interrupt is between
 # `imagetools create` and `gh release create`, which leaves images published
@@ -79,13 +66,17 @@ jobs:
         env:
           # The only place the release version enters this workflow.
           #
-          # DRY RUN, TEMPORARY: the `|| '...'` supplies a version on the push
-          # trigger above, which has no inputs. Both are removed together once
-          # the workflow has been exercised. `0.0.1-rc1` was rejected by the
-          # check below on the previous commit, which is what proves the
-          # fail-early path on a real run; this is the scratch version the full
-          # dry run publishes and then deletes.
-          RAW_VERSION: ${{ inputs.version || '0.0.1' }}
+          # EXERCISED, on this branch, before this line took its final form. A
+          # temporary `push:` trigger plus a `|| '<version>'` fallback here
+          # stood in for the dispatch input across two runs, because GitHub
+          # only offers workflow_dispatch for a workflow already present on the
+          # DEFAULT branch and a release workflow first exercised on the real
+          # 1.0.0 is one that has never been tested. `0.0.1-rc1` was refused by
+          # the check below with every other job skipped; `0.0.1` then went the
+          # whole way - three multi-architecture images, a wheel, an sdist and
+          # the notes on a real release page, since deleted. Those two lines
+          # were the only difference between what ran and what is here.
+          RAW_VERSION: ${{ inputs.version }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

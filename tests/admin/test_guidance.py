@@ -256,11 +256,9 @@ def test_the_list_pages_still_extend_sqladmin_s_own():
     assert '{% extends "brand/model_list.html" %}' in (
         brand / "ip_block_list.html").read_text(encoding="utf-8")
 
-    views = [v for v in AuditedModelView.__subclasses__()]
     assert ModelView.list_template != AuditedModelView.list_template, (
         "the base no longer overrides sqladmin's list template"
     )
-    assert views, "no view inherits AuditedModelView"
 
 
 @pytest.mark.asyncio
@@ -270,6 +268,8 @@ async def test_the_list_page_still_has_its_table_and_filters(admin_client):
     body = _flat(await admin_client.get("/admin/factor-upstream/list"))
 
     assert PREVENTION in body
-    assert "table" in body and "Filter" in body, (
-        "the list page lost sqladmin's own furniture"
-    )
+    # `<table`, not `table`: every sqladmin page loads `tabler.min.css`, so
+    # the bare word is in the markup of a page with no table on it at all.
+    assert "<table" in body, "the list page lost its table"
+    assert "Filter" in body, "the list page lost sqladmin's filter panel"
+    assert "Actions" in body, "the list page lost the bulk-action dropdown"

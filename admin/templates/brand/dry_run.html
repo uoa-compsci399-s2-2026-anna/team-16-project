@@ -62,9 +62,13 @@
     </select>
     <p class="muted">
       Where the line's waste goes, which decides its downstream factor.
-      Prevention is in this list too, and a line sent there should come back
-      at zero on every metric except mass — if it does not, an upstream
-      factor is missing its prevention row.
+      <em>Prevented — waste avoided</em> is in this list because it is a
+      destination like any other, but it cannot be used on this page: what
+      you enter here is one line of a <em>current</em> scenario, and
+      prevention is waste that did not happen, which only ever belongs in a
+      what-if. Choosing it is refused, with a validation error naming
+      <code>current</code>. To watch a prevention line compute, use the
+      public calculator, which sends both scenarios.
     </p>
 
     <label for="qty_kg">Quantity (kg)</label>

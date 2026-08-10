@@ -35,7 +35,7 @@ pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 STEPS = [
     "Change the password you were issued",
     "Enrol an authenticator, and keep a way back in",
-    "Find the numbers the calculator is answering",
+    "Find the numbers the calculator is using",
     "Run one calculation, to see the system answer",
 ]
 

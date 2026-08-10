@@ -123,6 +123,11 @@ admin = [
     "templates/brand/guidance/*.html",
     "templates/sqladmin/*.html",
     "static/*.css",
+    # The security screen's dialogs are a plain ES module, and a wheel built
+    # without this line ships a page whose Add, Remove and Change-password
+    # buttons do nothing - the same failure as the guidance templates above,
+    # one directory over, and just as invisible from the checkout.
+    "static/*.js",
     "static/fonts/*.woff2",
 ]
 

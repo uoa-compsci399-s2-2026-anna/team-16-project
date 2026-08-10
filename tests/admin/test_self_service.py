@@ -18,6 +18,7 @@ a device belonging to somebody else, by id, at the URL.
 import re
 import time
 import uuid
+from datetime import datetime, timezone
 
 import httpx
 import pyotp
@@ -160,6 +161,36 @@ def _fresh_totp(admin_app, username, secret, monkeypatch):
     now = (max(highest, int(time.time()) // TOTP_INTERVAL) + 2) * TOTP_INTERVAL
     monkeypatch.setattr(time, "time", lambda: float(now))
     return pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now)
+
+
+def _text(html: str) -> str:
+    """Tags stripped and whitespace collapsed: what a person actually reads.
+
+    Every assertion in the section below goes through this rather than
+    searching the raw body. This project has twice shipped a regression that
+    every "the string is present" test passed - 87 field descriptions rendered
+    invisible by a widget's CSS class, and five guidance blocks absent from the
+    wheel - and a substring search over markup cannot tell the difference
+    between a word in a table cell and the same word in an attribute.
+    """
+    return re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html)).strip()
+
+
+def _element(html: str, pattern: str) -> str:
+    match = re.search(pattern, html, re.S)
+    assert match, f"no match for {pattern!r}"
+    return match.group(0)
+
+
+def _device_rows(html: str) -> list[list[str]]:
+    """The authenticator table's body rows, cell by readable cell."""
+    table = _element(html, r'<table class="devices">.*?</table>')
+    rows = re.findall(r"<tr>(.*?)</tr>", table, re.S)
+    assert len(rows) >= 2, "the table rendered no body rows"
+    return [
+        [_text(cell) for cell in re.findall(r"<t[hd][^>]*>(.*?)</t[hd]>", row, re.S)]
+        for row in rows[1:]  # rows[0] is the header
+    ]
 
 
 async def _enrol_second_device(client, admin_app, monkeypatch, name="Backup phone"):
@@ -1064,4 +1095,282 @@ async def test_the_device_ceiling_is_refused_at_the_url(
     assert "only authenticator" not in response.text
     db_session.commit()
     assert len(_devices(db_session, me.staff.username)) == MAX_TOTP_DEVICES
+
+
+# --- the shape of the screen ------------------------------------------------
+#
+# The screen was rebuilt around the operations rather than around the fields.
+# Everything below asserts what a person can read and reach, not that a string
+# exists somewhere in the body - see _text.
+
+
+async def test_the_authenticators_are_a_numbered_table(
+    me, admin_app, db_session, monkeypatch
+):
+    """One row per device, numbered 1, 2, 3 down the page.
+
+    The numbering is a real column, not a list marker: the Remove dialog names
+    the same numbers, so the two have to be read together by somebody deciding
+    which phone to remove.
+    """
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    with admin_app.state.session_factory() as db:
+        devices = _devices(db, me.staff.username)
+        expected = [
+            (
+                d.name,
+                d.created_at.strftime("%d %b %Y"),
+                # The derivation, written out here rather than imported: the
+                # counter is a TOTP time step and TOTP_INTERVAL is its width.
+                # A test that called the view's own helper would agree with it
+                # about a wrong column just as readily.
+                datetime.fromtimestamp(
+                    d.last_counter * TOTP_INTERVAL, tz=timezone.utc
+                ).replace(tzinfo=None).strftime("%d %b %Y, %H:%M"),
+                d.enrolled_at.strftime("%d %b %Y"),
+            )
+            for d in devices
+        ]
+
+    rows = _device_rows((await me.get(SECURITY_URL)).text)
+
+    assert len(rows) == 2
+    assert [row[0] for row in rows] == ["1", "2"]
+    for row, (name, added, used, enrolled) in zip(rows, expected):
+        assert row[1] == name
+        assert row[2] == added
+        assert row[3] == used
+        assert row[4] == f"In use since {enrolled}"
+
+
+async def test_a_device_that_has_never_been_used_says_so(me):
+    """`last_counter` NULL is the ordinary state of an enrolment begun and not
+    finished, and it must not render as an epoch date or as a blank cell."""
+    begun = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    assert begun.status_code == 200
+
+    rows = _device_rows((await me.get(SECURITY_URL)).text)
+
+    assert len(rows) == 2
+    assert rows[1][1] == "Backup phone"
+    assert rows[1][3] == "Never used"
+    assert rows[1][4] == "Set-up not finished"
+
+
+async def test_add_and_remove_are_above_the_table_and_not_inside_a_row(
+    me, admin_app, db_session, monkeypatch
+):
+    """Actions on the list, not a control repeated in every row.
+
+    A per-row Remove asks somebody to choose and act in one press. Above the
+    table it is: press Remove, choose which, then prove who you are.
+    """
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    body = (await me.get(SECURITY_URL)).text
+
+    add = body.index('id="add-authenticator"')
+    remove = body.index('id="remove-authenticator"')
+    table = body.index('<table class="devices">')
+    assert add < table, "Add is not above the table"
+    assert remove < table, "Remove is not above the table"
+
+    rows = _element(body, r"<tbody>.*?</tbody>")
+    assert "<form" not in rows, rows
+    assert "<button" not in rows, rows
+    assert "current_password" not in rows, rows
+
+
+async def test_each_dialog_has_an_accessible_name_and_a_button_that_names_it(me):
+    """Not "the words appear in the body".
+
+    A dialog with no accessible name announces itself as "dialog" and nothing
+    else, and a button that does not reference the dialog it opens is a button
+    whose relationship exists only in the stylesheet.
+    """
+    body = (await me.get(SECURITY_URL)).text
+
+    for dialog_id, button_id in (
+        ("dialog-add", "add-authenticator"),
+        ("dialog-remove", "remove-authenticator"),
+        ("dialog-password", "change-password"),
+    ):
+        tag = _element(body, rf'<dialog id="{dialog_id}"[^>]*>')
+        labelled_by = re.search(r'aria-labelledby="([^"]+)"', tag)
+        assert labelled_by, tag
+
+        # The element it names exists, is a heading, and has words in it.
+        heading = _element(
+            body, rf'<h2 id="{labelled_by.group(1)}"[^>]*>.*?</h2>'
+        )
+        assert len(_text(heading)) > 3, heading
+
+        opener = _element(body, rf'<button[^>]*id="{button_id}"[^>]*>')
+        assert 'type="button"' in opener, opener
+        assert f'aria-controls="{dialog_id}"' in opener, opener
+        assert f'data-dialog="{dialog_id}"' in opener, opener
+
+
+async def test_the_dialog_module_is_a_module_and_is_actually_served(me):
+    """The tag is right *and* the file is there.
+
+    A `<script>` tag naming a file the panel does not serve is a page whose
+    buttons do nothing, and it looks identical in the markup to one that
+    works - which is the shape of the failure that shipped five guidance
+    blocks in a wheel that did not contain them.
+    """
+    body = (await me.get(SECURITY_URL)).text
+    tag = _element(body, r"<script[^>]*security\.js[^>]*>")
+    assert 'type="module"' in tag, tag
+    assert "defer" in tag, tag
+
+    served = await me.get("/admin/static/security.js")
+
+    assert served.status_code == 200, served.status_code
+    assert "showModal" in served.text
+
+
+async def test_the_enrolment_dialog_is_open_without_javascript(me):
+    """The one step whose secret is shown exactly once per re-authenticated
+    request. It is server-rendered with `open` in the markup, so the QR is on
+    screen with the module blocked, missing or still loading; the module only
+    upgrades it to a modal."""
+    begun = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    assert begun.status_code == 200
+    tag = _element(begun.text, r'<dialog id="dialog-enrol"[^>]*>')
+    assert re.search(r"\bopen\b", tag), tag
+    # It has no opener, so it names where the keyboard goes when it closes.
+    assert 'data-return-focus="add-authenticator"' in tag, tag
+    dialog = _element(begun.text, r'<dialog id="dialog-enrol".*?</dialog>')
+    assert "<svg" in dialog, "the QR is not inside the dialog"
+
+
+async def test_a_refused_action_comes_back_inside_its_own_dialog(me):
+    """A modal dialog covers the page behind it, so a message printed there is
+    a message nobody reads. The refusal has to be where the person is."""
+    refused = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password="not-the-password",
+    )
+
+    assert refused.status_code == 400
+    tag = _element(refused.text, r'<dialog id="dialog-add"[^>]*>')
+    assert re.search(r"\bopen\b", tag), tag
+    dialog = _element(refused.text, r'<dialog id="dialog-add".*?</dialog>')
+    assert "not the current password" in _text(dialog), _text(dialog)
+
+
+async def test_the_remove_dialog_numbers_its_choices_as_the_table_does(
+    me, admin_app, db_session, monkeypatch
+):
+    """The chooser lives in the dialog, because Remove needs a target and the
+    table is a list rather than a set of controls."""
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    db_session.commit()
+    with admin_app.state.session_factory() as db:
+        ids = [d.id for d in _devices(db, me.staff.username)]
+    body = (await me.get(SECURITY_URL)).text
+
+    dialog = _element(body, r'<dialog id="dialog-remove".*?</dialog>')
+    for number, device_id in enumerate(ids, start=1):
+        option = _element(
+            dialog, rf'<label class="choose__option" for="remove-{device_id}".*?</label>'
+        )
+        assert _text(option).startswith(f"{number} —"), _text(option)
+        assert 'name="device_id"' in option, option
+        assert f'value="{device_id}"' in option, option
+        assert 'type="radio"' in option, option
+
+
+async def test_the_only_authenticator_is_explained_rather_than_hidden(me):
+    """The refusal is a rule, and it says so. A control that is simply absent
+    reads as a bug, and this property survived the rebuild."""
+    dialog = _element(
+        (await me.get(SECURITY_URL)).text, r'<dialog id="dialog-remove".*?</dialog>'
+    )
+
+    readable = _text(dialog)
+    assert "only authenticator on the account" in readable, readable
+    assert "Authenticator is the only" in readable, readable
+    # ...and there is nothing to select, because there is nothing removable.
+    assert 'name="device_id"' not in dialog, dialog
+
+
+async def test_the_requirements_did_not_move_when_the_prompt_did(
+    me, admin_app, db_session, monkeypatch
+):
+    """The rebuild is a rearrangement of *when* the prompt appears.
+
+    The change-password dialog asks for the current password and offers no
+    code field at all, and a code alone is still refused at the URL -
+    `_reauthenticate(..., password_only=True)`. A session presenting a code
+    has already cleared the second factor, so a code proves nothing the cookie
+    did not; the current password is the one secret a stolen session does not
+    carry.
+    """
+    dialog = _element(
+        (await me.get(SECURITY_URL)).text, r'<dialog id="dialog-password".*?</dialog>'
+    )
+    assert 'name="action" value="change-password"' in dialog, dialog
+    assert 'name="current_password"' in dialog, dialog
+    # No code field in this dialog: it is not an accepted proof here, and a
+    # field that is refused on submission is worse than no field.
+    assert 'name="current_code"' not in dialog, dialog
+
+    code = _fresh_totp(admin_app, me.staff.username, me.secret, monkeypatch)
+    refused = await _post(
+        me, action="change-password", current_code=code,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert refused.status_code == 400
+    assert verify_password(
+        PASSWORD, get_staff(db_session, me.staff.username).password_hash
+    )
+
+    # The add and remove dialogs, by contrast, take either - and the code is
+    # offered first, which is what Step 3 asked for. Remove needs something it
+    # is allowed to remove before it renders a form at all.
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    for dialog_id in ("dialog-add", "dialog-remove"):
+        markup = _element(
+            (await me.get(SECURITY_URL)).text, rf'<dialog id="{dialog_id}".*?</dialog>'
+        )
+        assert 'name="current_code"' in markup, dialog_id
+        assert 'name="current_password"' in markup, dialog_id
+        assert markup.index('name="current_code"') < markup.index(
+            'name="current_password"'
+        ), dialog_id
+
+
+async def test_the_password_section_states_its_own_age(me, db_session):
+    """"Last changed on ⟨date⟩", read out of the audit trail.
+
+    This account was created and given a password by the service layer
+    directly, which writes no audit entry, so the honest answer at first is
+    that there is no record - never `created_at`, and never today. A change
+    made through the screen then puts a real date there.
+    """
+    before = _text((await me.get(SECURITY_URL)).text)
+    assert "Last changed: not recorded" in before, before
+    assert "Last changed on" not in before, before
+
+    changed = await _post(
+        me, action="change-password", current_password=PASSWORD,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert changed.status_code == 200
+    after = _text(changed.text)
+    today = datetime.now(timezone.utc).strftime("%d %b %Y")
+    assert f"Last changed on {today}" in after, after
+    assert "not recorded" not in after, after
 

@@ -58,6 +58,7 @@ account that can see this menu entry has already passed.
 """
 
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 
 from sqladmin import BaseView, expose
@@ -76,6 +77,7 @@ from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     get_staff,
+    last_password_change,
     remove_totp_device,
     resume_mfa_enrolment,
     set_password,
@@ -86,7 +88,7 @@ from admin.auth import SESSION_KEY, stamp_session
 from admin.csrf import check_token, issue_token
 from admin.runtime import get_runtime
 from admin.security import verify_password
-from admin.totp import qr_svg
+from admin.totp import TOTP_INTERVAL, qr_svg
 from admin.views import MIN_PASSWORD_LENGTH, _grouped, _password_problem
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -95,6 +97,30 @@ templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 #: VARCHAR(64); a longer value would be truncated by MySQL in non-strict mode
 #: and rejected outright in strict mode, and neither reads as an explanation.
 MAX_DEVICE_NAME_LENGTH = 64
+
+
+def _last_used(last_counter: int | None) -> datetime | None:
+    """When an authenticator last proved itself. **Derived, not stored.**
+
+    There is no ``last_used_at`` column and this task deliberately did not add
+    one. ``staff_totp_device.last_counter`` already holds the TOTP time step of
+    the last code that device had accepted — it is the replay guard — and
+    ``admin/totp.py::TOTP_INTERVAL`` is the width of a step, so the product is
+    the instant of that acceptance **to within one step**, thirty seconds. Read
+    it as "about then", never as a timestamp somebody recorded: a code accepted
+    at 09:41:29 and one accepted at 09:41:01 land on the same value.
+
+    NULL means no code from this device has ever been accepted, which is the
+    ordinary state of an enrolment that was begun and never confirmed.
+
+    Naive UTC, matching ``admin/models.py::utcnow`` and contract §1.3, so that
+    every datetime this page renders is the same kind of object.
+    """
+    if last_counter is None:
+        return None
+    return datetime.fromtimestamp(
+        last_counter * TOTP_INTERVAL, tz=timezone.utc
+    ).replace(tzinfo=None)
 
 
 class SecurityView(BaseView):
@@ -124,6 +150,9 @@ class SecurityView(BaseView):
                     "enrolled": d.enrolled_at is not None,
                     "enrolled_at": d.enrolled_at,
                     "created_at": d.created_at,
+                    # Derived from the replay counter, not stored. See
+                    # _last_used: accurate to one thirty-second step.
+                    "last_used": _last_used(d.last_counter),
                     # Rendered as "the only one" rather than hiding the
                     # button. A disabled control with no explanation reads
                     # as a bug; the refusal is a rule and should say so.
@@ -135,9 +164,22 @@ class SecurityView(BaseView):
             "max_devices": MAX_TOTP_DEVICES,
             "at_device_limit": len(staff.totp_devices) >= MAX_TOTP_DEVICES,
             "min_password_length": MIN_PASSWORD_LENGTH,
+            # Passed rather than written into the template, for the same
+            # reason min_password_length is: the number the field enforces
+            # cannot then drift from the number the handler enforces.
+            "max_device_name_length": MAX_DEVICE_NAME_LENGTH,
+            # Read out of the audit trail rather than off a column - see
+            # admin/accounts.py::last_password_change for why there is no
+            # `password_changed_at` and what None honestly means.
+            "password_changed_at": last_password_change(db, staff),
             "error": None,
             "notice": None,
             "enrolling": None,
+            # Which dialog the page should open with, and nothing more than
+            # that: purely presentational. A refused submission has to come
+            # back inside the dialog it was made in, because a modal dialog
+            # covers a message printed on the page behind it.
+            "open_dialog": None,
         }
         context.update(extra)
         return context
@@ -288,7 +330,9 @@ class SecurityView(BaseView):
 
         if problem is not None:
             db.rollback()
-            context = self._context(db, username, error=problem)
+            context = self._context(
+                db, username, error=problem, open_dialog="password"
+            )
             return self._page(request, context, status_code=400)
 
         set_password(db, username, new)
@@ -358,7 +402,7 @@ class SecurityView(BaseView):
 
         if problem is not None:
             db.rollback()
-            context = self._context(db, username, error=problem)
+            context = self._context(db, username, error=problem, open_dialog="add")
             return self._page(request, context, status_code=400)
 
         # Committed before the QR is rendered. begin_mfa_enrolment persists
@@ -374,6 +418,7 @@ class SecurityView(BaseView):
                 "qr": qr_svg(uri),
                 "secret_grouped": _grouped(secret),
             },
+            open_dialog="enrol",
         )
         return self._page(request, context)
 
@@ -426,6 +471,7 @@ class SecurityView(BaseView):
                     "qr": qr_svg(uri),
                     "secret_grouped": _grouped(secret),
                 },
+                open_dialog="enrol",
             )
             return self._page(request, context, status_code=400)
 
@@ -474,7 +520,7 @@ class SecurityView(BaseView):
 
         if problem is not None:
             db.rollback()
-            context = self._context(db, username, error=problem)
+            context = self._context(db, username, error=problem, open_dialog="remove")
             return self._page(request, context, status_code=400)
 
         # The eviction (session_generation) is bumped by remove_totp_device

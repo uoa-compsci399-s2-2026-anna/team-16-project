@@ -1,107 +1,266 @@
 {% extends "brand/base.html" %}
 {% block title %}Your security{% endblock %}
-{% block content %}
-  <h1>Your security</h1>
-  <p class="secrets-owner"><strong>{{ display_name }}</strong> — {{ username }}</p>
 
-  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
-  {% if notice %}<div class="notice notice--info">{{ notice }}</div>{% endif %}
+{# Plain ES module, deferred, no inline script - the panel may grow a CSP and
+   an inline handler is the first thing such a policy refuses. Everything the
+   module does is an upgrade: the page is readable and the enrolment step is
+   completable without it. #}
+{% block head %}
+  <script type="module" src="/admin/static/security.js" defer></script>
+{% endblock %}
 
-  {% if enrolling %}
-    {# The enrolment in progress takes over the page. Showing the device list
-       and the password form underneath a QR code invites someone to navigate
-       away from the one thing they cannot come back to: the secret is shown
-       exactly once per re-authenticated request. #}
-    <h2>Set up “{{ enrolling.name }}”</h2>
-    <p class="muted">
-      Scan this with your authenticator app, then enter the six-digit code it
-      shows. Your existing authenticator keeps working throughout.
-    </p>
-    <div>{{ enrolling.qr | safe }}</div>
-    <p class="muted">
-      Cannot scan? Enter this key by hand:
-      <code class="key">{{ enrolling.secret_grouped }}</code>
-    </p>
-    <form method="post" autocomplete="off">
-      <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-      <input type="hidden" name="action" value="confirm-device">
-      <input type="hidden" name="device_name" value="{{ enrolling.name }}">
-      <label for="code">Code from the new device</label>
-      <input type="text" id="code" name="code" autocomplete="one-time-code"
-             inputmode="numeric" autofocus required>
-      <button type="submit">Confirm this authenticator</button>
-    </form>
-    <p><a href="{{ url_for('admin:view-security') }}">Cancel</a></p>
+{# This page overrides `shell` rather than `content`: it is a settings screen,
+   not a gate, and the centred 32rem card on a full-bleed Kale ground belongs
+   to the login gauntlet. See brand/base.html. #}
+{% block shell %}
+<main class="page">
 
-  {% else %}
+  <header class="page__head">
+    <div class="page__mark" aria-hidden="true"></div>
+    <h1>Your security</h1>
+    <p class="page__who"><strong>{{ display_name }}</strong> — {{ username }}</p>
+  </header>
 
-    <h2>Authenticators</h2>
+  {# A refused submission comes back inside the dialog it was made in: a modal
+     dialog covers the page, so a message printed behind it is a message
+     nobody reads. Only an error belonging to no dialog is shown here. #}
+  {% if error and not open_dialog %}
+    <div class="notice notice--error" role="alert">{{ error }}</div>
+  {% endif %}
+  {% if notice %}<div class="notice notice--info" role="status">{{ notice }}</div>{% endif %}
+
+  <section class="panel" aria-labelledby="authenticators-heading">
+    <h2 id="authenticators-heading">Authenticators</h2>
     <p class="muted">
       Enrol a second device before you need it. If you only have one and lose
       it, the way back in is a recovery code, or another administrator — and
       an administrator cannot do it for their own account.
     </p>
 
-    <ul class="secrets">
-      {% for device in devices %}
-        <li>
-          <strong>{{ device.name }}</strong>
-          {% if device.enrolled %}
-            — in use since {{ device.enrolled_at.strftime('%d %b %Y') }}
-          {% else %}
-            — set-up not finished
-          {% endif %}
-          {% if device.removable %}
-            <form method="post" autocomplete="off">
-              <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
-              <input type="hidden" name="action" value="remove-device">
-              <input type="hidden" name="device_id" value="{{ device.id }}">
-              <label for="rm-pw-{{ device.id }}">Current password</label>
-              <input type="password" id="rm-pw-{{ device.id }}"
-                     name="current_password" autocomplete="current-password">
-              <label for="rm-code-{{ device.id }}">…or a code from another authenticator</label>
-              <input type="text" id="rm-code-{{ device.id }}" name="current_code"
-                     autocomplete="one-time-code" inputmode="numeric">
-              <button type="submit">Remove {{ device.name }}</button>
-            </form>
-          {% else %}
-            <p class="muted">
-              This is the only authenticator on the account, so it cannot be
-              removed — that would leave the account with a password and
-              nothing else. Add its replacement first.
-            </p>
-          {% endif %}
-        </li>
-      {% endfor %}
-    </ul>
+    {# Add and Remove are actions on the list, so they sit above the list.
+       A Remove button repeated in every row asks the person to decide and act
+       in one press; here they press Remove, then choose which, then prove who
+       they are - which is the order every account-security page they have
+       used before puts those three steps in. #}
+    <div class="actions">
+      <button type="button" id="add-authenticator" class="button"
+              data-dialog="dialog-add" aria-haspopup="dialog"
+              aria-controls="dialog-add">Add authenticator</button>
+      <button type="button" id="remove-authenticator" class="button button--danger"
+              data-dialog="dialog-remove" aria-haspopup="dialog"
+              aria-controls="dialog-remove">Remove authenticator</button>
+    </div>
+
+    {# A wide table scrolls inside its own container rather than making the
+       page scroll sideways. #}
+    <div class="table-scroll">
+      <table class="devices">
+        <caption class="sr-only">
+          The authenticators on this account, numbered as they are numbered in
+          the Remove dialog.
+        </caption>
+        <thead>
+          <tr>
+            <th scope="col" class="devices__num">#</th>
+            <th scope="col">Name</th>
+            <th scope="col">Added</th>
+            <th scope="col">Last used</th>
+            <th scope="col">Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for device in devices %}
+            <tr>
+              <th scope="row" class="devices__num">{{ loop.index }}</th>
+              <td>{{ device.name }}</td>
+              <td>{{ device.created_at.strftime('%d %b %Y') }}</td>
+              <td>
+                {%- if device.last_used -%}
+                  {{ device.last_used.strftime('%d %b %Y, %H:%M') }}
+                {%- else -%}
+                  Never used
+                {%- endif -%}
+              </td>
+              <td>
+                {%- if device.enrolled -%}
+                  In use since {{ device.enrolled_at.strftime('%d %b %Y') }}
+                {%- else -%}
+                  Set-up not finished
+                {%- endif -%}
+              </td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <p class="muted">
+      Times are UTC, and “last used” is taken from the code each device last
+      had accepted, so it is accurate to the nearest half minute.
+    </p>
+  </section>
+
+  <section class="panel" aria-labelledby="password-heading">
+    <h2 id="password-heading">Password</h2>
+    <p class="panel__fact">
+      {% if password_changed_at %}
+        Last changed on {{ password_changed_at.strftime('%d %b %Y') }}.
+      {% else %}
+        Last changed: not recorded.
+      {% endif %}
+    </p>
+    {% if not password_changed_at %}
+      <p class="muted">
+        Nothing in the trail records a change for this account, which is what a
+        record from before the panel began keeping one looks like. Changes made
+        from now on are recorded and will show here.
+      </p>
+    {% endif %}
+    <div class="actions">
+      <button type="button" id="change-password" class="button"
+              data-dialog="dialog-password" aria-haspopup="dialog"
+              aria-controls="dialog-password">Change password</button>
+    </div>
+  </section>
+
+  <p><a href="/admin/">Back to the panel</a></p>
+
+  <!-- Add an authenticator ------------------------------------------------->
+  <dialog id="dialog-add" class="dialog" aria-labelledby="dialog-add-title"
+          data-return-focus="add-authenticator"
+          {% if open_dialog == 'add' %}open{% endif %}>
+    <h2 id="dialog-add-title">Add an authenticator</h2>
+    {% if open_dialog == 'add' and error %}
+      <div class="notice notice--error" role="alert">{{ error }}</div>
+    {% endif %}
 
     {% if at_device_limit %}
-      <p class="muted">
+      <p>
         This account has the maximum of {{ max_devices }} authenticators.
         Remove one you no longer use before adding another.
       </p>
+      <div class="dialog__actions">
+        <button type="button" class="button" data-close-dialog>Close</button>
+      </div>
     {% else %}
-      <h2>Add an authenticator</h2>
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="begin-device">
-        <label for="device_name">Name for the new device</label>
-        <input type="text" id="device_name" name="device_name"
-               placeholder="Backup phone" maxlength="64" required>
-        <label for="add-pw">Current password</label>
-        <input type="password" id="add-pw" name="current_password"
-               autocomplete="current-password">
-        <label for="add-code">…or a code from an authenticator already set up</label>
-        <input type="text" id="add-code" name="current_code"
-               autocomplete="one-time-code" inputmode="numeric">
-        <button type="submit">Add authenticator</button>
+        <label for="add-device-name">Name for the new device</label>
+        <input type="text" id="add-device-name" name="device_name"
+               placeholder="Backup phone" maxlength="{{ max_device_name_length }}"
+               data-initial-focus required>
+
+        {# The code first, the password beneath it. Both are accepted and both
+           must stay accepted: admin/self_service_view.py::_reauthenticate
+           takes either for this action, and removing the password option
+           would be a narrowing rather than the rearrangement this screen is.
+           Somebody changing phones has the old device in their hand and may
+           never have memorised the password. #}
+        <fieldset class="proof">
+          <legend>Confirm it is you</legend>
+          <label for="add-code">Code from an authenticator already set up</label>
+          <input type="text" id="add-code" name="current_code"
+                 autocomplete="one-time-code" inputmode="numeric">
+          <label for="add-pw">…or your current password</label>
+          <input type="password" id="add-pw" name="current_password"
+                 autocomplete="current-password">
+        </fieldset>
+
+        <div class="dialog__actions">
+          <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+          <button type="submit" class="button">Add authenticator</button>
+        </div>
       </form>
     {% endif %}
+  </dialog>
 
-    <h2>Change your password</h2>
+  <!-- Remove an authenticator ---------------------------------------------->
+  {% set locked = devices | rejectattr('removable') | list %}
+  {% set removable = devices | selectattr('removable') | list %}
+  <dialog id="dialog-remove" class="dialog" aria-labelledby="dialog-remove-title"
+          data-return-focus="remove-authenticator"
+          {% if open_dialog == 'remove' %}open{% endif %}>
+    <h2 id="dialog-remove-title">Remove an authenticator</h2>
+    {% if open_dialog == 'remove' and error %}
+      <div class="notice notice--error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    {% if removable %}
+      <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="remove-device">
+
+        {# Numbered exactly as the table numbers them, from the same loop
+           index over the same list, so the two read together. #}
+        <fieldset class="choose">
+          <legend>Which one</legend>
+          {% for device in devices %}
+            {% if device.removable %}
+              <label class="choose__option" for="remove-{{ device.id }}">
+                <input type="radio" id="remove-{{ device.id }}" name="device_id"
+                       value="{{ device.id }}"
+                       {% if loop.first %}data-initial-focus{% endif %} required>
+                <span>{{ loop.index }} — {{ device.name }}</span>
+              </label>
+            {% endif %}
+          {% endfor %}
+        </fieldset>
+
+        {# Same two proofs, same order, as adding one. #}
+        <fieldset class="proof">
+          <legend>Confirm it is you</legend>
+          <label for="remove-code">Code from an authenticator on this account</label>
+          <input type="text" id="remove-code" name="current_code"
+                 autocomplete="one-time-code" inputmode="numeric">
+          <label for="remove-pw">…or your current password</label>
+          <input type="password" id="remove-pw" name="current_password"
+                 autocomplete="current-password">
+        </fieldset>
+
+        <div class="dialog__actions">
+          <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+          <button type="submit" class="button button--danger">Remove authenticator</button>
+        </div>
+      </form>
+    {% else %}
+      <div class="dialog__actions">
+        <button type="button" class="button" data-close-dialog>Close</button>
+      </div>
+    {% endif %}
+
+    {# The refusal is explained rather than expressed as a control that does
+       nothing. A device nobody can remove is listed here saying why, which is
+       the property the previous screen had and this one keeps. #}
+    {% if locked %}
+      <p class="muted">
+        {{ locked[0].name }} is the only authenticator on the account, so it
+        cannot be removed — that would leave the account with a password and
+        nothing else. Add its replacement first, then remove this one.
+      </p>
+    {% endif %}
+  </dialog>
+
+  <!-- Change your password -------------------------------------------------->
+  {# The current password, and only the current password. The plan's Step 4
+     said "confirm with a TOTP code, then set the new password"; implementing
+     that literally would let a stolen session change the password with a
+     code, and the session presenting a code has already cleared the second
+     factor - so a code proves nothing the cookie did not, while the current
+     password is the one secret a stolen session does not carry. See
+     admin/self_service_view.py::_reauthenticate. What moved is where the
+     prompt appears. What is required has not moved at all. #}
+  <dialog id="dialog-password" class="dialog"
+          aria-labelledby="dialog-password-title"
+          data-return-focus="change-password"
+          {% if open_dialog == 'password' %}open{% endif %}>
+    <h2 id="dialog-password-title">Change your password</h2>
+    {% if open_dialog == 'password' and error %}
+      <div class="notice notice--error" role="alert">{{ error }}</div>
+    {% endif %}
     <p class="muted">
       Your current password is required — a signed-in session is not enough on
-      its own. Changing it signs out every other session using this account.
+      its own, and a code from your authenticator is not a substitute for it.
+      Changing it signs out every other session using this account.
     </p>
     {# No autocomplete="off" here, and a username field below, for the reason
        brand/change_password.html gives at length: without them the browser
@@ -118,7 +277,7 @@
              autocomplete="username" readonly tabindex="-1" aria-hidden="true">
       <label for="current_password">Current password</label>
       <input type="password" id="current_password" name="current_password"
-             autocomplete="current-password" required>
+             autocomplete="current-password" data-initial-focus required>
       <label for="password">New password</label>
       <input type="password" id="password" name="password"
              autocomplete="new-password" minlength="{{ min_password_length }}"
@@ -130,9 +289,51 @@
       <label for="confirm">Confirm new password</label>
       <input type="password" id="confirm" name="confirm"
              autocomplete="new-password" required>
-      <button type="submit">Change password</button>
+      <div class="dialog__actions">
+        <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+        <button type="submit" class="button">Change password</button>
+      </div>
     </form>
+  </dialog>
 
-    <p><a href="/admin/">Back to the panel</a></p>
+  <!-- Finish setting up a new authenticator --------------------------------->
+  {# Server-rendered and `open` in the markup, so the QR is on screen with no
+     JavaScript at all: this is the one step whose secret is shown exactly
+     once per re-authenticated request, and it must not depend on a script
+     loading. The module upgrades it to a modal for the trap and the backdrop.
+     It has no opener to return focus to, which is why it names one. #}
+  {% if enrolling %}
+    <dialog id="dialog-enrol" class="dialog dialog--wide"
+            aria-labelledby="dialog-enrol-title"
+            data-return-focus="add-authenticator" open>
+      <h2 id="dialog-enrol-title">Set up “{{ enrolling.name }}”</h2>
+      {% if error %}
+        <div class="notice notice--error" role="alert">{{ error }}</div>
+      {% endif %}
+      <p class="muted">
+        Scan this with your authenticator app, then enter the six-digit code it
+        shows. Your existing authenticator keeps working throughout.
+      </p>
+      <div class="qr">{{ enrolling.qr | safe }}</div>
+      <p class="muted">
+        Cannot scan? Enter this key by hand:
+        <code class="key">{{ enrolling.secret_grouped }}</code>
+      </p>
+      <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="confirm-device">
+        <input type="hidden" name="device_name" value="{{ enrolling.name }}">
+        <label for="code">Code from the new device</label>
+        <input type="text" id="code" name="code" autocomplete="one-time-code"
+               inputmode="numeric" data-initial-focus autofocus required>
+        <div class="dialog__actions">
+          <a class="button button--quiet"
+             href="{{ url_for('admin:view-security') }}">Cancel</a>
+          <button type="submit" class="button">Confirm this authenticator</button>
+        </div>
+      </form>
+    </dialog>
   {% endif %}
+
+</main>
 {% endblock %}

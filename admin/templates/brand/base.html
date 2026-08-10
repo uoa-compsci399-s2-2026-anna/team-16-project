@@ -5,13 +5,27 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Kai Commitment{% endblock %} — Kai Commitment</title>
   <link rel="stylesheet" href="/admin/static/brand.css">
+  {% block head %}{% endblock %}
 </head>
 <body>
+  {# The default shell is the login gauntlet's: one centred card on a Kale
+     ground. Five pages depend on it exactly as it is - login, verify, enrol,
+     change_password, low_codes - so it stays the default and nothing about it
+     moves.
+
+     `shell` exists because one page is not a gate. /admin/security is a
+     settings screen a signed-in person visits on purpose, and wearing the
+     gate's clothes it read as an alarm rather than a page. A template that
+     overrides this block supplies its own body layout and simply does not use
+     `content`; every other template overrides `content` and never sees this
+     block at all. #}
+  {% block shell %}
   <main class="gate">
     <div class="gate__card">
       <div class="gate__mark" aria-hidden="true"></div>
       {% block content %}{% endblock %}
     </div>
   </main>
+  {% endblock %}
 </body>
 </html>

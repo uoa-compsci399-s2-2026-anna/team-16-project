@@ -68,6 +68,145 @@ h1, h2, h3 {
   padding: 2rem;
 }
 
+/* ---------------------------------------------------------------------------
+   The page layout, for screens that are not gates.
+
+   /admin/security is a settings screen somebody opens on purpose, and it read
+   as an alarm while it wore `.gate`: a 32rem card marooned on a full-bleed
+   Kale field is the login gauntlet's shape, and the shape is most of what a
+   person reads before they read a word. Light ground, a page-shaped column,
+   sections that look like sections.
+   --------------------------------------------------------------------------- */
+.page {
+  /* Wider than --measure, which is the width of a login form and not of a
+     five-column table. */
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+.page__head { margin-bottom: 1.5rem; }
+.page__who { margin: 0.25rem 0 0; }
+
+/* The half-circle, at the small end of the guidelines' single-use scale: this
+   is a page header rather than a card, so it sits beside the heading's weight
+   instead of above a centred one. */
+.page__mark {
+  width: 3rem; height: 1.5rem;
+  border-radius: 3rem 3rem 0 0;
+  background: var(--pea);
+  margin-bottom: 0.75rem;
+}
+
+.panel {
+  border: 2px solid var(--kale);
+  border-radius: var(--radius-card);
+  padding: 1.25rem 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.panel__fact { font-weight: 700; margin: 0 0 0.75rem; }
+
+/* Actions on a list, above the list. */
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
+
+/* A wide table scrolls inside its own container. The page itself must never
+   scroll sideways - at 320px this is five columns of dates, and the
+   alternative is a horizontal scrollbar on the whole document. */
+.table-scroll { overflow-x: auto; }
+
+.devices {
+  width: 100%;
+  border-collapse: collapse;
+  /* Below this the columns wrap into unreadable stacks; past it the container
+     above scrolls instead. */
+  min-width: 34rem;
+}
+.devices caption { text-align: left; }
+.devices th, .devices td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  border-bottom: 1px solid rgba(0, 50, 35, 0.2);
+  vertical-align: top;
+}
+.devices thead th {
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  border-bottom: 2px solid var(--kale);
+  white-space: nowrap;
+}
+/* The number the owner asked for is a column, not a list marker, so it is
+   scoped as a row header and sized like one. */
+.devices__num { width: 2.5rem; }
+
+/* ---------------------------------------------------------------------------
+   Dialogs. Contained over the page, never a takeover.
+   --------------------------------------------------------------------------- */
+dialog.dialog {
+  border: 2px solid var(--kale);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  /* Contained: it is a panel over the current page, and the page stays
+     visible around it. The viewport clamp is what keeps that true at 320px. */
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: min(85vh, 44rem);
+  overflow-y: auto;
+  background: var(--white);
+  color: var(--ink);
+}
+/* The QR code needs more room than a form does. */
+dialog.dialog--wide { width: min(34rem, calc(100vw - 2rem)); }
+dialog.dialog h2 { margin-top: 0; }
+dialog.dialog::backdrop {
+  /* Kale at partial opacity: the page behind stays legible, which is the
+     difference between a dialog and a takeover. */
+  background: rgba(0, 50, 35, 0.55);
+}
+.dialog__actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+}
+/* Radio and proof groups: a fieldset's default border and padding fight the
+   card it sits in. */
+.dialog fieldset {
+  border: 0;
+  border-top: 2px solid var(--kale);
+  padding: 0.75rem 0 0;
+  margin: 1.25rem 0 0;
+}
+.dialog legend {
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  padding: 0 0.5rem 0 0;
+}
+.choose__option { display: flex; gap: 0.5rem; align-items: baseline; font-weight: 400; }
+.choose__option input { margin: 0; }
+.qr { margin: 0.5rem 0; }
+
+/* Buttons. `button` already carries the Kale ground; these are the two
+   variants this screen needs. Orange is the brand's danger colour and takes
+   white text, per the guidelines' dark-ground rule. */
+.button--danger { background: var(--orange); color: var(--white); }
+.button--danger:hover { background: var(--beetroot); }
+.button--quiet {
+  background: var(--white);
+  color: var(--kale);
+  border: 2px solid var(--kale);
+}
+.button--quiet:hover { background: var(--lavender); color: var(--kale); }
+/* The enrolment dialog's Cancel is a link, because it navigates rather than
+   closing something - it has to work with no JavaScript. It still has to look
+   like the button beside it. */
+a.button {
+  display: inline-block;
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  border-radius: var(--radius);
+  padding: 0.65rem 1.4rem;
+  text-decoration: none;
+}
+a:focus-visible, button:focus-visible {
+  outline: 3px solid var(--blueberry);
+  outline-offset: 1px;
+}
+
 /* The hand-entered TOTP key. The view groups it in fours; this gives the
    groups room to read as groups rather than one 32-character run. */
 code.key {

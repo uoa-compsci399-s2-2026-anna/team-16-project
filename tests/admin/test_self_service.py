@@ -704,11 +704,21 @@ async def test_one_accounts_screen_cannot_remove_another_accounts_device(
     identifier that travels on any form here - no field names an account, so
     there is nothing else to try.
 
-    The victim is given two devices first, so the refusal cannot be the
-    last-authenticator guard doing the work by accident. That guard would
-    refuse a single-device account regardless of who asked, and a test built
-    on one would pass against a view with no ownership check at all.
+    **Both accounts hold two devices, and that is what makes this test
+    real.** Written with the actor holding only one, it passed against a
+    `remove_totp_device` that looked devices up *globally* - the mutation was
+    caught by the actor's own last-authenticator guard (`len(my enrolled
+    devices) <= 1`) and returned the same 400 for a completely different
+    reason. Giving the actor a second device takes that guard out of the
+    picture, so the only thing left that can refuse is the ownership scope.
+    The victim gets a second one for the mirror-image reason: their own last
+    device would be refused by that guard no matter who asked.
     """
+    await _enrol_second_device(me, admin_app, monkeypatch, name="My second phone")
+    db_session.commit()
+    assert len(_devices(db_session, me.staff.username)) == 2
+    db_session.commit()
+
     victim, victim_secret = _onboard(admin_app, role=StaffRole.staff)
     try:
         with admin_app.state.session_factory() as db:
@@ -745,7 +755,8 @@ async def test_one_accounts_screen_cannot_remove_another_accounts_device(
         assert survivors == victim_ids
         # And the actor's own devices are untouched too - a refusal that
         # removed the wrong row would be worse than one that removed none.
-        assert len(_devices(db_session, me.staff.username)) == 1
+        db_session.commit()
+        assert len(_devices(db_session, me.staff.username)) == 2
         assert victim_secret
     finally:
         _cleanup_staff(admin_app, victim)

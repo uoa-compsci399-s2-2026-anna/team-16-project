@@ -48,12 +48,28 @@ on:
   pull_request:
   workflow_dispatch:
 
-# One run per ref. Two overlapping runs would be two pytest processes against
-# two MySQL service containers, which is fine - but the arm64 minutes are not
-# worth spending twice on a branch someone is pushing to repeatedly.
+# One run per ref.
+#
+# CANCELLATION IS LIMITED TO PULL REQUESTS, and that is the whole subtlety
+# here. A PR builds to verify and pushes nothing, so interrupting one costs a
+# rebuild and nothing else - which is where the arm64 minutes were worth saving
+# on a branch somebody is pushing to repeatedly.
+#
+# On a push, cancelling can land in the same `imagetools create` -> push window
+# that release.yaml protects with `cancel-in-progress: false`, and for the same
+# reason: a run killed mid-publish leaves the moving tag torn, pointing at one
+# architecture or at nothing. The blast radius is only ever a disposable alpha
+# tag that the very next run republishes - but "it heals itself shortly" is not
+# a property worth relying on when the alternative is queueing.
+#
+# So pushes QUEUE instead. The group is per-ref, so a second push waits for the
+# first rather than running beside it - which also keeps two pytest processes
+# off one database, the deadlock tests/admin's shared-database fixtures hit
+# when two runs overlap. Each run does get its own MySQL service container, so
+# that was already safe, but queueing makes it safe by construction.
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 permissions:
   contents: read

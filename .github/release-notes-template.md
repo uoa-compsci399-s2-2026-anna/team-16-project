@@ -7,7 +7,7 @@
   can silently destroy data, silently disable a security control, or silently
   publish placeholder numbers as if they were real is stated HERE, in full, in
   the text - not linked. A link to docs/architecture.md is a link they will
-  not open, and the four facts below are the four that fail quietly.
+  not open, and the five facts below are the five that fail quietly.
 
   Keep it in this file rather than in a heredoc inside the workflow: it is
   prose the team will want to edit, and .github/ is excluded by .dockerignore,
@@ -156,8 +156,12 @@ nobody can enter.
 **Anyone putting TLS in front must set it to `true`**, at the same time as
 removing the direct `ports:` blocks in fact 3. Over HTTPS, leaving it false is
 what lets a single plain-HTTP navigation on the admin origin hand a live staff
-session to anyone watching the network. Both applications log a warning at
-start-up while it is false; that warning is the only thing that will remind you.
+session to anyone watching the network.
+
+The setting belongs to the admin panel — the public API holds no session — and
+the panel logs a warning at start-up for as long as it is false. That warning
+is the only thing that will remind you, so it is worth reading
+`docker compose logs admin` once after any change to the front of the stack.
 
 ### 5. The emissions factors in this release are placeholders
 
@@ -169,9 +173,14 @@ the engine's canonical test case, not from published New Zealand data.
 That factor set is flagged `is_mock = true`, and while it is, the placeholder
 warning banner on every results view and every export is **mandatory and
 non-dismissible**. Do not remove it, do not make it dismissible, and do not
-publish a screenshot of a result without it. Replacing the factors is a data
-task in the admin panel — clone the set, edit it, publish it, and turn
-`is_mock` off — and requires no code change and no new release.
+publish a screenshot of a result without it.
+
+Replacing the factors is a data task in the admin panel and needs no code
+change and no new release: clone the published set into a new draft, edit the
+factors, turn `is_mock` off **on the draft**, then publish it. In that order —
+the panel refuses to change `is_mock` on a set that is already published,
+precisely so that nobody can switch the banner off while the numbers
+underneath are still placeholders.
 
 ---
 
@@ -201,6 +210,12 @@ run the system.**
 * **The cost metric is waste levy and disposal cost only** (O-2). Whether the
   value of the wasted food itself is included, and at what price, is
   unresolved; the food-value constant defaults to zero.
+* **The unit presets are placeholder conversions too** (O-6). The bucket and
+  wheelie-bin sizes that convert a volume to kilograms have not been measured
+  by the client. Every one of those rows says so in its `source_note`, but
+  they sit in front of the mock-data banner rather than behind it: a visitor
+  entering "three wheelie bins" is converted by an estimate. Replace them
+  before the calculator is published.
 * **No deployment has run behind a real reverse proxy.** The
   `X-Forwarded-For` handling in fact 3 is correct by construction and verified
   against a test upstream, not in production.

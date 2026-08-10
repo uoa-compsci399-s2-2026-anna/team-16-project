@@ -124,7 +124,11 @@ h1, h2, h3 {
 .devices th, .devices td {
   text-align: left;
   padding: 0.5rem 0.75rem;
+  /* Kale at a fifth, from the token rather than a fourth hex literal for the
+     same colour. The rgba() line is the fallback for a browser without
+     color-mix and is the same value; both are #003223. */
   border-bottom: 1px solid rgba(0, 50, 35, 0.2);
+  border-bottom-color: color-mix(in srgb, var(--kale) 20%, transparent);
   vertical-align: top;
 }
 .devices thead th {
@@ -156,7 +160,17 @@ dialog.dialog--wide { width: min(34rem, calc(100vw - 2rem)); }
 dialog.dialog h2 { margin-top: 0; }
 dialog.dialog::backdrop {
   /* Kale at partial opacity: the page behind stays legible, which is the
-     difference between a dialog and a takeover. */
+     difference between a dialog and a takeover. Same value twice - the first
+     is the fallback where color-mix is unsupported, and #003223 is
+     rgb(0, 50, 35).
+
+     Deliberately NOT var(--kale) or a color-mix over it. ::backdrop only
+     began inheriting custom properties from its originating element
+     recently, and where it does not, `var(--kale)` resolves to nothing and
+     the declaration is invalid *at computed-value time* - which discards the
+     fallback declaration above it as well and leaves the backdrop
+     transparent. A dropped colour here is not cosmetic: the backdrop is what
+     says the page behind the dialog is inert. */
   background: rgba(0, 50, 35, 0.55);
 }
 .dialog__actions {

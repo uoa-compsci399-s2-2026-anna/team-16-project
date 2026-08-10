@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-10 (v1.12 draft)"
+date: "2026-08-10 (v1.13 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,15 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.13 — 2026-08-10 (raised by E, affects B)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New table `staff_totp_device`; `staff.mfa_secret_enc` and `staff.mfa_last_counter` are dropped** (migration `0010`, which backfills every existing secret, confirmed or not). One secret column holds one phone, so "enrol a new authenticator" could only mean "replace the one you have" — impossible once the phone is gone. That left an administrator reset as the only way back from a lost device, and v1.12 made that administrator necessarily *somebody else*, so a lost phone became a lockout waiting on a colleague. An account may now enrol several devices and verification tries each. **`last_counter` is per device and must stay so:** two phones emit different codes for the same time step, so a shared counter would refuse the other phone's current, unused code as a replay — a lockout that appears only on two-device accounts. `staff.mfa_enrolled_at` **stays**, as documented derived state, so the onboarding gates and the two-administrator floor keep reading one indexed column. | §2.4 |
+| 2 | **`REDACTED_FIELDS` gains `secret_enc`.** The old name is kept alongside it: `audit_log` rows written before `0010` still carry `mfa_secret_enc`. Anyone who copied the set by value now redacts one field too few. | §5.5 |
+| 3 | **`rotate-key` re-encrypts every device row, not one secret per account.** A rotation that walked `staff` would leave every *second* phone readable only with the old key, report success, and fail silently until somebody reached for their backup device. | §8.3 |
+| 4 | **New screen `/admin/security`, reachable by any signed-in account including `staff`.** It restores what v1.12 removed — changing your own password, alone — through a path that re-proves who is asking: the current password for a password change (a TOTP code is deliberately *not* accepted there), and the password or an existing code for adding or removing a device. Recovery layer **L0** is added to the ladder: a second authenticator enrolled *before* the first is lost. | §8.3 |
 
 ### v1.12 — 2026-08-10 (raised by E, affects B and D)
 
@@ -798,9 +807,7 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 | `role` | ENUM(`admin`, `staff`) | NOT NULL, DEFAULT `staff` | |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 | `must_change_password` | BOOLEAN | NOT NULL, DEFAULT TRUE | Set on creation and on an administrator reset |
-| `mfa_secret_enc` | VARBINARY(255) | NULL | TOTP secret, encrypted at rest; NULL means not yet enrolled |
-| `mfa_enrolled_at` | DATETIME | NULL | |
-| `mfa_last_counter` | BIGINT | NULL | Last accepted TOTP time step; blocks replay within the window |
+| `mfa_enrolled_at` | DATETIME | NULL | When the account's second factor came into force. **Derived state:** true exactly when `staff_totp_device` holds at least one row with `enrolled_at` set. Kept as a column so the onboarding gates, `require_staff()` and the two-administrator floor go on reading one indexed value; `admin/accounts.py` is its only writer |
 | `created_at` | DATETIME | NOT NULL | |
 | `created_by` | VARCHAR(64) | NULL | |
 | `last_login_at` | DATETIME | NULL | |
@@ -816,9 +823,28 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 | `used_at` | DATETIME | NULL | Single use |
 | `created_at` | DATETIME | NOT NULL | |
 
+### `staff_totp_device`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `staff_id` | INT | FK → `staff.id`, NOT NULL, ON DELETE CASCADE | |
+| `name` | VARCHAR(64) | NOT NULL | What the person called this device. Reaches the `otpauth://` label, so two devices on one account are distinguishable in the authenticator app |
+| `secret_enc` | VARBINARY(255) | NOT NULL | TOTP secret, encrypted at rest. NOT NULL: a row exists because a secret was minted for it |
+| `enrolled_at` | DATETIME | NULL | NULL means an enrolment begun and not confirmed — a QR displayed, never proved. Such a row is resumable and is **never** accepted as a second factor |
+| `last_counter` | BIGINT | NULL | Last accepted TOTP time step for **this device**; blocks replay within the window |
+| `created_at` | DATETIME | NOT NULL | |
+| | UNIQUE (`staff_id`, `name`) | | One name per account; everybody's first phone may share a name across accounts |
+
+> **Why an account may hold several, and why the counter is per row.** One column holds one phone, so "enrol a new authenticator" could only ever mean "replace the one you have" — impossible once the phone is gone, which left another administrator resetting your MFA as the only way back. §8.3's self-recovery rule makes that administrator necessarily somebody else, so a lost phone with one device enrolled is a lockout waiting on a colleague's availability. Enrolling a second device *before* losing the first is the only fix that does not depend on one.
+>
+> `last_counter` **must not** be shared across an account's devices. TOTP replay protection is a property of a secret: two phones hold two secrets and emit two *different* codes for the same time step, so a shared counter would let a login on one device push the counter past the step the other's current, entirely unused code belongs to — and that code would be refused as a replay for the rest of its life. The symptom is "the backup phone does not work", intermittently, only on accounts with two devices.
+
+> **Recovery codes are minted for an account's first confirmed device only.** They are the account-level fallback for when *no* authenticator is available (§8.3, layer L1), not a per-device credential. Minting five more on a second phone would leave somebody holding two printed sheets with no way to tell which is current — and the older sheet just as valid as the newer one.
+
 > **Recovery codes are hashed with SHA-256, not bcrypt, and this is deliberate.** bcrypt is slow in order to resist brute force against low-entropy human-chosen passwords. A recovery code is a high-entropy string we generate ourselves, so brute force is already infeasible and a slow hash buys nothing but latency.
 
-> `mfa_secret_enc` is encrypted with a **sub-key derived from `SECRET_KEY` via HKDF-SHA256** (`info=b"totp-secret-encryption"`), not with `SECRET_KEY` itself — that key already signs session cookies, and reusing one key for two purposes is a defect waiting to happen. This protects the case where a database dump leaks on its own, which is the common one: a committed backup, a misconfigured export. It does not protect against losing the database and the key together.
+> `staff_totp_device.secret_enc` is encrypted with a **sub-key derived from `SECRET_KEY` via HKDF-SHA256** (`info=b"totp-secret-encryption"`), not with `SECRET_KEY` itself — that key already signs session cookies, and reusing one key for two purposes is a defect waiting to happen. This protects the case where a database dump leaks on its own, which is the common one: a committed backup, a misconfigured export. It does not protect against losing the database and the key together.
 >
 > **Consequence: rotating `SECRET_KEY` invalidates every enrolled TOTP secret.** A rotation command (§8.3) must decrypt with the old key and re-encrypt with the new one. Without it, the day the client decides to rotate their key is the day nobody can log in.
 
@@ -1422,7 +1448,7 @@ class PublicStats:
 ## 5.5 Audit
 
 ```python
-REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash",
+REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "secret_enc", "code_hash",
                    "ip_hmac", "token"}
 
 def write_audit(session, actor: str, action: str, table_name: str,
@@ -2269,6 +2295,24 @@ mfa_enrolled_at set    ->  access granted
 
 **While `mfa_enrolled_at IS NULL`, every route except the password-change and enrolment pages is refused, `require_staff()` included.** Without that, enrolment is advisory — a user can navigate straight past it by typing a URL.
 
+### The account's own security screen — `/admin/security` (owner: E)
+
+**Not an administrator screen.** Any signed-in account reaches it, `staff` included, and it acts only on the account named in the session — no form here carries a username or an account id. A `staff` member must be able to manage their own security without asking anyone; `/admin/staff` stays administrator-only.
+
+It exists because §8.3's self-recovery rule removed the only way to change one's own credentials alone: `issue_password` and `reset_mfa` are refused against the actor's own account, and `/admin/change-password` opens only while `must_change_password` is set, so it is the forced-change page and not a self-service one.
+
+| Action | Requires |
+| --- | --- |
+| Change the password | **The current password.** A TOTP code is *not* accepted — the session presenting it has already cleared the second factor, so a code proves nothing the cookie did not, while the current password is the one secret a stolen session does not carry |
+| Add an authenticator | The current password, **or** a code from a device already enrolled |
+| Remove an authenticator | The same, **and** it must not be the last confirmed device |
+
+Every one of the three writes an `audit_log` entry naming the actor. Changing the password and removing a device each bump `session_generation` — a credential change ends every other session — and each re-stamps the acting session, which did the thing deliberately and is not what is being evicted.
+
+**The last confirmed device cannot be removed.** An account whose only second factor is deleted does not announce it: the session in hand goes on working exactly as before, and the discovery comes at the next login when `require_staff()` refuses the account. Recovery codes do not count as the other factor — they are single-use, there are five, and an account holding only those is counting down.
+
+Re-authentication failures are charged to the **same throttle** as the login steps, for the reason given just below: this page accepts a six-digit code from a caller who by construction already holds a session.
+
 Implementation notes: `pyotp` with `valid_window=1` (±30 s clock drift); `qrcode` with the SVG factory, which avoids a Pillow dependency; initial passwords and recovery codes from `secrets`, never `random`.
 
 ### Login throttling
@@ -2283,6 +2327,7 @@ The project builds no email capability, so there is no reset link. Three layers,
 
 | Layer | Mechanism | Covers |
 | --- | --- | --- |
+| L0 | A second authenticator enrolled in advance at `/admin/security` | Lost phone, **before** it is lost; needs no second person and spends nothing |
 | L1 | 5 single-use recovery codes issued at enrolment | Lost or wiped authenticator; needs no second person |
 | L2 | Another administrator resets MFA and issues a random password | Recovery codes also lost |
 | L3 | `python -m admin.cli reset-mfa <username>` on the server | Every administrator locked out |
@@ -2355,7 +2400,7 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
 | `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
-| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change — **and clear `ip_block`**, because an HMAC cannot be re-keyed; it reports how many blocks were cleared and that they must be re-applied |
+| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `staff_totp_device.secret_enc` after a `SECRET_KEY` change — **every device row, not one per account**, or every second phone is left readable only with the old key — **and clear `ip_block`**, because an HMAC cannot be re-keyed; it reports how many blocks were cleared and that they must be re-applied |
 | `python -m admin.cli unblock <address>` | E-8's own break-glass: remove a block from the server when the panel itself is unreachable because of it. Rejects a value that is not a single IP address rather than silently doing nothing |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 

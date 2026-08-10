@@ -1,0 +1,41 @@
+{% extends "brand/base.html" %}
+{% block title %}Block an address{% endblock %}
+{% block content %}
+  <h1>Block an address</h1>
+  <p class="muted">
+    For an attack in progress, with no CDN or upstream firewall in front of
+    this panel to stop it. The address is never stored — only a keyed hash
+    of it — and never appears again once you leave this page.
+  </p>
+  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
+  <form method="post" autocomplete="off">
+    <label for="address">Address</label>
+    <input type="text" id="address" name="address" autofocus required
+           placeholder="203.0.113.9">
+    <p class="muted">
+      One IPv4 or IPv6 address — no port, no range, no leading zeroes.
+      <strong>This panel cannot tell you what to type here.</strong> It never
+      stores or displays a caller's address, by design, so the value has to
+      come from outside: your hosting platform's or reverse proxy's access
+      log, or an alert from whoever can see the traffic.
+    </p>
+    <label for="reason">Reason</label>
+    <textarea id="reason" name="reason" required rows="2"></textarea>
+    <p class="muted">
+      This is what the blocklist screen and the audit log show in place of
+      the address, so do not write the address itself here — doing so
+      would defeat the reason only a hash of it is stored.
+    </p>
+    <label for="minutes">Duration, in minutes (optional)</label>
+    <input type="number" id="minutes" name="minutes" min="1" step="1"
+           placeholder="Leave blank for no expiry">
+    <p class="muted">
+      Blank means permanent, until unblocked by hand. Blocking an address
+      that is already blocked replaces its reason and duration — leaving
+      this blank on a re-block removes any expiry the earlier block had,
+      rather than extending it.
+    </p>
+    <button type="submit">Block</button>
+  </form>
+  <p><a href="{{ list_url }}">Back to IP blocks</a></p>
+{% endblock %}

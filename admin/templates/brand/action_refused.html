@@ -3,10 +3,8 @@
 {% block content %}
   <h1>Action refused</h1>
   <div class="notice notice--error">{{ message }}</div>
-  <p>
-    The panel keeps at least two active administrators. With no email system
-    to recover through, one administrator is one lost phone away from a panel
-    nobody can enter.
-  </p>
-  <p><a href="{{ next_url }}">Back to accounts</a></p>
+  {% if explanation %}
+  <p>{{ explanation }}</p>
+  {% endif %}
+  <p><a href="{{ next_url }}">{{ link_text }}</a></p>
 {% endblock %}

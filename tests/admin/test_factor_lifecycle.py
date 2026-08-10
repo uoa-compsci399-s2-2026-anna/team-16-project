@@ -1,0 +1,446 @@
+"""Contract §5.2. Clone, edit, publish — the recommended staff path.
+
+Uses `_committed_session` directly rather than the plain rolled-back
+`session` fixture from tests/conftest.py: `populated_set` and friends
+(tests/admin/conftest.py) are built through `_committed_session`, and doing
+every read, write and assertion here on that same session keeps the whole
+test on one connection, so nothing depends on a second connection observing
+a commit that never happens — see tests/admin/conftest.py's own docstring
+for why that distinction matters.
+
+Every clone label used below is "e6-clone"-prefixed, not the "2026-Q4" the
+brief this file was written from actually uses. `clone_factor_set` never
+commits (proven by `test_clone_never_commits`), so nothing here leaks
+today - but `_cleanup_e6_rows` only matches `version_label LIKE 'e6-%'`, and
+a "2026-Q4" row that *did* leak (the day a regression adds a stray commit)
+would sit outside that net forever, silently poisoning every later run of
+`test_a_duplicate_label_is_refused`.
+"""
+
+from decimal import Decimal
+
+import pytest
+from sqlalchemy import func, select
+
+from admin.factor_lifecycle import (
+    LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
+    rollback_to,
+)
+from admin.factor_models import (
+    Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
+    FactorUpstream, Formula,
+)
+from admin.models import utcnow
+from tests.admin.conftest import _add_formula
+
+pytestmark = pytest.mark.db
+
+
+def test_a_clone_copies_every_child_row(_committed_session, populated_set):
+    """All four child kinds, or the clone is not a version of anything."""
+    session = _committed_session
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+    session.flush()
+
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
+        source_count = session.scalar(
+            select(func.count()).select_from(model)
+            .where(model.factor_set_id == populated_set.id)
+        )
+        clone_count = session.scalar(
+            select(func.count()).select_from(model)
+            .where(model.factor_set_id == new_id)
+        )
+        assert clone_count == source_count > 0, f"{model.__tablename__} not copied"
+
+
+def test_a_clone_is_always_a_draft(_committed_session, populated_set):
+    """Even cloning the published set. Two published rows is the one thing
+    §2.2 forbids outright, and a clone that inherited `published` would
+    create exactly that."""
+    session = _committed_session
+    populated_set.status = FactorSetStatus.published
+    session.flush()
+
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, new_id).status is FactorSetStatus.draft
+
+
+def test_a_clone_does_not_inherit_publication_stamps(_committed_session, populated_set):
+    """published_at and published_by describe an event that happened to the
+    source, not to the copy. Carrying them over would make the audit trail
+    claim a version was published before it existed."""
+    session = _committed_session
+    populated_set.published_at = utcnow()
+    populated_set.published_by = "someone"
+    session.flush()
+
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+    session.flush()
+
+    clone = session.get(FactorSet, new_id)
+    assert clone.published_at is None
+    assert clone.published_by is None
+
+
+def test_the_clone_and_the_source_are_independent(_committed_session, populated_set):
+    """Editing the copy is the whole point. If the rows were shared, the
+    first edit to a draft would change the published numbers.
+
+    `session.expire_all()` before the second read forces it back to the
+    database rather than the identity map: without it, a buggy
+    re-parenting implementation (moving the source's own row onto the
+    clone instead of copying it) would make `source_row` come back `None`
+    and this test would die on `AttributeError` on the line below rather
+    than on the assertion actually meant to catch that bug. Comparing
+    against the value captured *before* the clone runs, rather than only
+    asserting `!= 99.0`, additionally catches an implementation that
+    mutates the source to some other placeholder rather than leaving it
+    alone.
+    """
+    session = _committed_session
+    original_value = session.scalar(
+        select(FactorUpstream.value_per_kg)
+        .where(FactorUpstream.factor_set_id == populated_set.id)
+    )
+
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+    session.flush()
+
+    clone_row = session.scalar(
+        select(FactorUpstream).where(FactorUpstream.factor_set_id == new_id)
+    )
+    clone_row.value_per_kg = Decimal("99.0")
+    session.flush()
+    session.expire_all()
+
+    source_row = session.scalar(
+        select(FactorUpstream).where(FactorUpstream.factor_set_id == populated_set.id)
+    )
+    assert source_row is not None
+    assert source_row.value_per_kg == original_value
+    assert source_row.value_per_kg != Decimal("99.0")
+
+
+def test_a_clone_copies_every_column_value(_committed_session, populated_set):
+    """Row counts (test_a_clone_copies_every_child_row, above) cannot tell a
+    real deep copy from one that only copies the NOT NULL columns and drops
+    every optional one - `source_note`, `data_quality`, `unit`, `note`,
+    `notes`, `sort_order`, `active`. `_make_set` (tests/admin/conftest.py)
+    deliberately gives every optional column a non-default value so this
+    comparison has something to catch.
+    """
+    from admin.audit import row_to_dict
+
+    session = _committed_session
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+    session.flush()
+
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
+        source_row = session.scalar(
+            select(model).where(model.factor_set_id == populated_set.id)
+        )
+        clone_row = session.scalar(
+            select(model).where(model.factor_set_id == new_id)
+        )
+        source_fields = {
+            key: value for key, value in row_to_dict(source_row).items()
+            if key not in ("id", "factor_set_id")
+        }
+        clone_fields = {
+            key: value for key, value in row_to_dict(clone_row).items()
+            if key not in ("id", "factor_set_id")
+        }
+        assert clone_fields == source_fields, f"{model.__tablename__} column mismatch"
+
+
+def test_clone_never_commits(_committed_session, populated_set):
+    """Module docstring, admin/factor_lifecycle.py: "never commits — the
+    caller owns the transaction." Proven by rolling back right after the
+    call: a version that committed internally would leave the clone
+    findable even after this rollback undoes everything else."""
+    session = _committed_session
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+
+    session.rollback()
+
+    assert session.get(FactorSet, new_id) is None
+
+
+def test_a_duplicate_label_is_refused(_committed_session, populated_set):
+    """version_label is UNIQUE, so this would fail at the database anyway —
+    but as an IntegrityError the staff member cannot act on. Refuse it with
+    a message that says what to do."""
+    session = _committed_session
+    with pytest.raises(LifecycleError) as excinfo:
+        clone_factor_set(session, populated_set.id, populated_set.version_label,
+                         actor="kim")
+
+    assert populated_set.version_label in str(excinfo.value)
+
+
+def test_an_empty_label_is_refused(_committed_session, populated_set):
+    session = _committed_session
+    with pytest.raises(LifecycleError):
+        clone_factor_set(session, populated_set.id, "   ", actor="kim")
+
+
+def test_cloning_a_set_that_does_not_exist_is_refused(_committed_session):
+    session = _committed_session
+    with pytest.raises(LifecycleError):
+        clone_factor_set(session, 9999, "e6-clone", actor="kim")
+
+
+def test_a_clone_is_audited(_committed_session, populated_set):
+    """Contract §8.1. An @action route gets no auditing from the base class,
+    so the service function writes its own."""
+    from admin.models import AuditLog
+
+    session = _committed_session
+    new_id = clone_factor_set(session, populated_set.id, "e6-clone", actor="kim")
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == new_id)
+    )
+    assert entry is not None
+    assert entry.actor == "kim"
+    assert entry.action == "create"
+
+
+# --- Task 3: publish and roll back ------------------------------------------
+
+
+def test_publishing_archives_the_previous_published_set(_committed_session, two_sets):
+    """§2.2's invariant is maintained by the transition itself, not by
+    asking the staff member to archive the old one first."""
+    session = _committed_session
+    live, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.archived
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.published
+
+
+def test_publishing_stamps_who_and_when(_committed_session, two_sets):
+    """These columns are deliberately absent from the edit form (E-5), so
+    this is the only thing that may write them."""
+    session = _committed_session
+    _, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    published = session.get(FactorSet, draft.id)
+    assert published.published_by == "kim"
+    assert published.published_at is not None
+
+
+def test_publishing_the_first_set_needs_no_predecessor(_committed_session, one_draft):
+    """A fresh deployment has nothing published — §9's
+    NO_PUBLISHED_FACTOR_SET is the designed response to that state, so
+    reaching it is normal, not an error."""
+    session = _committed_session
+    publish_factor_set(session, one_draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.published
+
+
+def test_publishing_a_set_with_a_broken_formula_is_refused(_committed_session, two_sets):
+    """The whole point of publishing being a distinct step.
+
+    A formula can become unrunnable without anyone editing it — deleting the
+    constant it references does it (E-5). Publishing is the last moment the
+    calculator is still working, so it is the right place to check.
+    """
+    session = _committed_session
+    _, draft = two_sets
+    _add_formula(session, draft, "qty_kg * const_GONE")
+
+    with pytest.raises(LifecycleError) as excinfo:
+        publish_factor_set(session, draft.id, actor="kim")
+
+    assert "const_GONE" in str(excinfo.value)
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
+
+
+def test_publishing_an_already_published_set_is_refused(_committed_session, two_sets):
+    session = _committed_session
+    live, _ = two_sets
+
+    with pytest.raises(LifecycleError):
+        publish_factor_set(session, live.id, actor="kim")
+
+
+def test_publishing_refuses_when_two_are_already_published(_committed_session, two_sets):
+    """§5.2: "Rolls back if the invariant would be violated." A pre-existing
+    violation must be refused rather than quietly half-fixed — the operator
+    needs to choose which one survives."""
+    session = _committed_session
+    live, draft = two_sets
+    draft.status = FactorSetStatus.published
+    session.flush()
+    # "e6-" prefixed, not the brief's literal "third" - _cleanup_e6_rows
+    # (tests/admin/conftest.py) only ever matches that prefix, and a bare
+    # "third" factor_set row would leak past every future test run.
+    third = FactorSet(version_label="e6-third", status=FactorSetStatus.draft,
+                      is_mock=True)
+    session.add(third)
+    session.flush()
+
+    with pytest.raises(LifecycleError):
+        publish_factor_set(session, third.id, actor="kim")
+
+
+def test_rollback_restores_an_archived_set(_committed_session, two_sets):
+    """Also covers what test_both_transitions_are_audited (below) does not:
+    that name notwithstanding, it only ever drives publish_factor_set, so
+    nothing previously proved rollback_to's own audit verb ("rollback", not
+    "publish" - contract §2.3's action list distinguishes the two) or that
+    it stamps the row it actually changed."""
+    from admin.models import AuditLog
+
+    session = _committed_session
+    live, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    rollback_to(session, live.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.published
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.archived
+
+    actions = {
+        (e.row_id, e.action)
+        for e in session.scalars(
+            select(AuditLog).where(AuditLog.table_name == "factor_set")
+        ).all()
+    }
+    assert (live.id, "rollback") in actions
+    assert (draft.id, "archive") in actions
+
+
+def test_rollback_refuses_a_draft(_committed_session, two_sets):
+    """Rollback restores something that was live before. A draft has never
+    been live, and publishing it is a different decision with a different
+    audit meaning."""
+    session = _committed_session
+    _, draft = two_sets
+
+    with pytest.raises(LifecycleError):
+        rollback_to(session, draft.id, actor="kim")
+
+
+def test_both_transitions_are_audited(_committed_session, two_sets):
+    from admin.models import AuditLog
+
+    session = _committed_session
+    live, draft = two_sets
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    actions = {
+        (e.row_id, e.action)
+        for e in session.scalars(
+            select(AuditLog).where(AuditLog.table_name == "factor_set")
+        ).all()
+    }
+    assert (draft.id, "publish") in actions
+    assert (live.id, "archive") in actions
+
+
+# --- Fix wave: archive_factor_set -------------------------------------------
+#
+# Removing `status` from FactorSetAdmin.form_columns closed a real bypass but
+# also left publish_factor_set/rollback_to as the only two ways any set ever
+# reached `archived` - always as a side effect of promoting a different one.
+# That leaves no way to take the calculator offline when the live factors
+# need pulling and nothing else is ready to publish in their place.
+# archive_factor_set is that route: archive a set directly, promoting
+# nothing.
+
+
+def test_archiving_a_draft_marks_it_archived(_committed_session, one_draft):
+    session = _committed_session
+    archive_factor_set(session, one_draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.archived
+
+
+def test_archiving_the_published_set_is_allowed(_committed_session, two_sets):
+    """Archiving the only published set, leaving nothing published, is
+    exactly 'take the calculator offline' - contract §9's
+    NO_PUBLISHED_FACTOR_SET (503, 'calculator under maintenance') is the
+    designed response to that state, so reaching it on purpose is a
+    supported operation, not an error this function should refuse."""
+    session = _committed_session
+    live, _ = two_sets
+    archive_factor_set(session, live.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.archived
+
+
+def test_archiving_an_already_archived_set_is_refused(_committed_session, two_sets):
+    """Nothing changes, so a fresh audit 'archive' entry over an unchanged
+    row would misrepresent the trail the same way re-publishing an already
+    published set would (test_publishing_an_already_published_set_is_refused,
+    above)."""
+    session = _committed_session
+    live, _ = two_sets
+    archive_factor_set(session, live.id, actor="kim")
+    session.flush()
+
+    with pytest.raises(LifecycleError):
+        archive_factor_set(session, live.id, actor="kim")
+
+
+def test_archiving_a_set_that_does_not_exist_is_refused(_committed_session):
+    session = _committed_session
+    with pytest.raises(LifecycleError):
+        archive_factor_set(session, 9999, actor="kim")
+
+
+def test_archive_never_commits(_committed_session, one_draft):
+    """Module docstring, admin/factor_lifecycle.py: every function here
+    leaves the transaction to its caller - proven the same way
+    test_clone_never_commits (above) proves it for clone_factor_set.
+
+    Commits `one_draft` itself first, unlike test_clone_never_commits: that
+    test only ever checks that its own new row is gone after rollback, but
+    this one needs `one_draft` itself to survive the rollback so there is a
+    row left to re-read - and `_make_set` (tests/admin/conftest.py) only
+    flushes its fixtures, it never commits them, so without this the
+    rollback below would undo the fixture's own insert too and
+    session.get(...) would come back None for a reason that has nothing to
+    do with archive_factor_set.
+    """
+    session = _committed_session
+    session.commit()
+
+    archive_factor_set(session, one_draft.id, actor="kim")
+    session.rollback()
+
+    assert session.get(FactorSet, one_draft.id).status is FactorSetStatus.draft
+
+
+def test_archive_is_audited(_committed_session, one_draft):
+    from admin.models import AuditLog
+
+    session = _committed_session
+    archive_factor_set(session, one_draft.id, actor="kim")
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == one_draft.id,
+                               AuditLog.action == "archive")
+    )
+    assert entry is not None
+    assert entry.actor == "kim"

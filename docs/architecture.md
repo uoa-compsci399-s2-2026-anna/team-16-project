@@ -510,6 +510,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
+| O-8 | **Interface translation. Nothing here is promised** — the shape below is a sketch pending the client's word, and dropping it entirely is a likely outcome. Sibling of O-4. See below. | Client, C, D, E |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
@@ -563,3 +564,49 @@ Recorded here, while the connection is visible, rather than as a separate open i
 ### What stays open behind it
 
 The claim is now enforced by data, and data can stop enforcing it. A `(sector, food_category, metric)` given a general upstream row with no `prevention` counterpart silently reverts to the old behaviour for that tuple, and nothing in the panel refuses it — a staff member adding a new sector to a draft is the realistic path. `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` holds the fixtures to it, and the migration covers everything that existed on the day; a panel-side guard is the follow-up, and it is small.
+
+## O-8 — interface translation — **OPEN, and unpromised**
+
+Recorded so the shape of the question survives the conversation that produced it. **No commitment is made here.** CLAUDE.md and §1.1's scope list both place te reo Māori bilingual support outside this project, the client has not asked for translation, and dropping this item entirely is a likely and acceptable outcome. It is written down because two of its decisions are cheap now and expensive later, not because the work is agreed.
+
+### The boundary the owner drew, and why it is the right one
+
+**Static text is translated. Anything staff can edit is not** — what a staff member types in English is what every visitor sees, in every language.
+
+That line is drawn where it is because the alternative does not survive contact with operations. `destination`, `food_category`, `sector`, `metric` and `unit_preset` rows are the things the panel exists to let staff change; a translated copy of each would fall out of date the first time somebody renames one, and nobody would know whose job it was to fix. A calculator showing a stale translation of a category name is worse than one showing the English the staff member actually wrote.
+
+So: the interface chrome, the step instructions, the button labels, the error copy, the methodology prose — translated. The taxonomy, the factor provenance notes, the version labels — not.
+
+### Three places English leaks through that boundary anyway
+
+1. **`equivalence.label_template` is a whole sentence, not a label.** It ships as `"Equivalent to driving {value} km"`, it is staff-editable, and it renders on the most prominent card of the results page. Under the rule above it stays English in every language.
+
+   **This is the one worth changing regardless of whether O-8 proceeds**, and changing it is cheap only until O-1 lands: split the column into a unit fragment staff own (`"{value} km"`) and a static prefix the language pack owns. After real factors arrive, the same change is a migration over client data.
+
+2. **`details[].field`'s companion `message` is composed by the API.** Top-level errors are already fine — `web/js/api.js`'s `publicError()` branches on the §9 `code` and renders its own copy, so the envelope's English never reaches a visitor. Field-level messages are the exception, and they were only recently wired through to the user deliberately (they carry the specific reason a row was rejected). Translating them means the API returns a code plus parameters and the front end composes the sentence.
+
+3. **`metric.unit`.** `kg CO2e`, `L` and `NZD` need no translation; `kg` has local spellings in some scripts. Low risk, and the rule as drawn leaves it alone.
+
+### te reo Māori should not be machine translated with the other thirty
+
+This is not a technical objection.
+
+Te reo Māori is an official language of New Zealand under the Māori Language Act 1987. Machine translation for it is trained on very little data and is unreliable in ways that are not obvious to a non-speaker. The client is a New Zealand trust, the deliverable carries a te reo word in its own name — **Kai** Commitment — and the project sponsor is a former Prime Minister's Chief Science Advisor.
+
+Bad te reo on a public New Zealand government-adjacent tool is not read as a rough translation. It is read as carelessness about the language, and it is the kind of thing that gets pointed out publicly.
+
+**If O-8 proceeds:** English hand-written; te reo Māori translated by a person, which is a question to put to the client because a trust at this level usually has that resource or knows who does; the remaining languages machine translated **and labelled as such in the language switcher**. If a human te reo translation is not available, shipping no te reo is the better answer than shipping a machine one.
+
+### One implementation route is closed
+
+**Runtime translation through an external service is out of the question.** This site's stated position is that it stores nothing about a visitor; sending the page a visitor is reading to a third-party translation API contradicts §2.3's whole argument and the statistics page's own restraint about what may be claimed. If O-8 proceeds it is static language packs, fetched at runtime the same way `?mock=1` already fetches fixtures — which also keeps the no-build-step decision intact.
+
+### Timing, if it is going to happen at all
+
+**D has not started.** The statistics and content pages will add the next batch of user-facing copy, and its wording is the most constrained on the project — §6.4's rule that the subject is the calculator and never New Zealand. Building the key mechanism before she writes means she writes against it; building it afterwards means revisiting exactly the copy that is most delicate to revisit.
+
+Roughly 150 translatable strings exist in `web/js` today, concentrated in `calculator.js` (67), `results.js` (35) and `improvement.js` (27). The two HTML files are 33 and 18 lines — this front end builds its pages in JavaScript, so the work is in the modules rather than in templates.
+
+### The admin panel is a separate question, and probably a no
+
+`sqladmin` renders its own templates; translating them means overriding or forking them. The panel has five users, all in New Zealand, working in English. Unless the client asks, this is effort better spent on the field-level help in O-9.

@@ -47,9 +47,16 @@ FORMULA = "it found eight disagreements"
 DRY_RUN = "twenty calculations that never happened"
 
 #: Blocks that no ModelView declares, with the template that includes them.
-#: `DryRunView` is a `BaseView` with a hand-written template, so its block is
-#: included directly rather than through `guidance_blocks`.
-HAND_INCLUDED = {"dry_run_purpose.html": "brand/dry_run.html"}
+#: `DryRunView` and `GettingStartedView` are `BaseView`s with hand-written
+#: templates, so their blocks are included directly rather than through
+#: `guidance_blocks`.
+HAND_INCLUDED = {
+    "dry_run_purpose.html": "brand/dry_run.html",
+    # The first-run walkthrough (tests/admin/test_getting_started.py covers
+    # what it says and that the index links it; this file's orphan test is
+    # what notices if its page stops including it at all).
+    "getting-started.html": "brand/getting_started.html",
+}
 
 
 @pytest.fixture

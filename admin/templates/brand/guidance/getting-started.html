@@ -1,0 +1,126 @@
+{# The first-run walkthrough. Included by brand/getting_started.html, which
+   is the whole of GettingStartedView's page (admin/getting_started_view.py),
+   and linked from the panel index (templates/sqladmin/index.html).
+
+   A block rather than a page so that it sits in the same directory as the
+   other five and is covered by test_guidance.py's orphan test - see
+   HAND_INCLUDED there, which is the same arrangement dry_run_purpose.html
+   has.
+
+   **This page is deliberately short, and every step ends by sending the
+   reader somewhere else.** Task 4 wrote 87 field descriptions and Task 5
+   wrote five page-level blocks; anything explained twice is a second copy
+   to keep true. If a step here starts explaining the factor-set lifecycle,
+   it belongs on the factor-set screen instead.
+
+   **Steps 1 and 2 are already done by the time anyone can read this, and
+   the copy says so rather than pretending otherwise.** AdminAuth refuses
+   every panel URL until the issued password has been replaced and one
+   authenticator is enrolled (admin/backend.py), so the index - and this
+   page with it - is unreachable before then. What is left of those two
+   steps is the part the panel does *not* force: keeping the recovery codes,
+   and a second device.
+
+   Pinned by tests/admin/test_getting_started.py. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div style="max-width: 78ch;">
+        <h3 class="card-title">Four things, in this order</h3>
+        <p>
+          The first two are about getting into this panel safely, and nothing
+          else here is safe to do before they are done — which is why the
+          panel made you do most of them before it would show you this page.
+        </p>
+
+        <ol>
+          <li>
+            <p><strong>Change the password you were issued.</strong> Done
+            already: no other screen opens until that password has been
+            replaced, so if you are reading this, yours has been.</p>
+            <p>
+              The reason it is forced is that the password you were first
+              given was printed into the log of the job that set this system
+              up, and it is still sitting there. It was never a secret. If
+              somebody else set the account up and handed it to you already
+              working, then they know the password you are using now — change
+              it on
+              <a href="{{ url_for('admin:view-security') }}">Your security</a>.
+            </p>
+          </li>
+
+          <li>
+            <p><strong>Enrol an authenticator, and keep a way back in.</strong>
+            The first authenticator is done already too — nobody gets in
+            without one. Two things the panel did not make you do:</p>
+            <p>
+              <strong>Keep the five recovery codes.</strong> They were shown
+              once, on the page straight after the QR code, and nothing can
+              show them again. This system sends no email and has no “forgot
+              password” link, so those codes are the only way back in that
+              does not need somebody else. If you did not save them, another
+              administrator can reset your authenticator and start you over;
+              this panel refuses to let an account reset its own, so it has to
+              be somebody else.
+            </p>
+            <p>
+              <strong>Set up a second device now, before you need it.</strong>
+              <a href="{{ url_for('admin:view-security') }}">Your security</a>
+              → Add an authenticator. It takes a minute, both devices keep
+              working, and it is the difference between a lost phone being an
+              inconvenience and being a phone call to whoever else holds an
+              account.
+            </p>
+          </li>
+
+          <li>
+            <p><strong>Find the numbers the calculator is answering
+            with.</strong>
+            <a href="{{ url_for('admin:list', identity='factor-set') }}">Factor
+            sets</a>. At most one row is ever marked Published, and that is the
+            one every visitor's calculation uses; the rest are drafts or
+            archived.</p>
+            <p>
+              Look at <strong>Mock data</strong> on that published row. It is
+              ticked today. The factors in this system are placeholders — the
+              right shape and the wrong values — and while that tick is on,
+              every result the public sees and every file they export carries
+              a warning saying so, which they cannot dismiss.
+            </p>
+            <p>
+              That screen explains the rest, and it is worth reading before
+              changing anything there: what draft, published and archived
+              mean, why a published set's numbers are never edited in place,
+              and what has to happen when the real factors arrive.
+            </p>
+          </li>
+
+          <li>
+            <p><strong>Run one calculation, to see the system answer.</strong>
+            <a href="{{ url_for('admin:view-try_scenario') }}">Try a
+            scenario</a>. Take the values it offers you and press Run.</p>
+            <p>
+              Numbers coming back mean the whole chain works: this panel
+              reached the calculation service, which read the published factor
+              set out of the database and worked through its formulas. If it
+              says instead that the service could not be reached, the
+              calculator is down and this panel is not — which is worth
+              knowing on your first day rather than on a day something depends
+              on it.
+            </p>
+          </li>
+        </ol>
+
+        <h3 class="card-title">Then look around</h3>
+        <p>
+          Every box on every form has a line under it saying what it is for,
+          and the screens where the order of things matters carry a block like
+          this one at the top. Between them they are the whole of what this
+          panel writes down, so a screen that looks unexplained probably is
+          not.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

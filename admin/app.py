@@ -173,6 +173,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         calc_client=HttpCalculateClient(base_url=settings.api_base_url),
     )
 
+    # Registered first, and that is the whole of why it is here rather than
+    # further down: sqladmin builds the menu in registration order
+    # (`_build_menu`), so this puts "Getting started" at the top of the
+    # navigation instead of below fourteen model screens. The panel index
+    # links it as well (templates/sqladmin/index.html) - a first-run
+    # walkthrough that has to be looked for is not one.
+    from admin.getting_started_view import GettingStartedView
+
+    admin.add_base_view(GettingStartedView)
+
     from admin.views import ChangePasswordView, EnrolView, VerifyView
 
     admin.add_base_view(VerifyView)

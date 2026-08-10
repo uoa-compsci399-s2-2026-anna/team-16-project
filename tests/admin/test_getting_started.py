@@ -44,6 +44,29 @@ def _flat(response) -> str:
     return re.sub(r"\s+", " ", response.text)
 
 
+def _below_the_menu(response, marker: str) -> str:
+    """The page from `marker` onward - which is everything after the menu.
+
+    **Two assertions in this file passed for the wrong reason without this,
+    and mutation testing is the only reason that is known.** sqladmin's
+    layout renders the whole navigation before the content block, and the
+    navigation contains a link to every screen - including
+    `/admin/getting-started` and `/admin/security`. So `"/admin/security" in
+    body` is true of every page in this panel, and replacing this page's own
+    links with `#` left both tests green. It is the same shape as Task 5's
+    `"table" in body`, which was true of every sqladmin page because they all
+    load `tabler.min.css`.
+
+    Slicing at a phrase that only the card carries is what makes the
+    assertions be about the card. The marker itself is asserted, so a
+    rewrite that removes it fails here rather than silently widening the
+    slice to the whole page.
+    """
+    body = _flat(response)
+    assert marker in body, f"the page no longer carries {marker!r}"
+    return body[body.index(marker):]
+
+
 async def test_the_walkthrough_renders(admin_client):
     response = await admin_client.get("/admin/getting-started")
 
@@ -76,12 +99,17 @@ async def test_it_sends_the_reader_to_the_three_screens_it_names(admin_client):
     rather than emitting an empty href), so the assertion that matters is
     that the *hrefs are still there* - a rewrite that drops one leaves a step
     telling somebody to go to a screen without saying where it is.
-    """
-    body = _flat(await admin_client.get("/admin/getting-started"))
 
-    assert "/admin/security" in body, "step 2 no longer links Your security"
-    assert "/admin/factor-set/list" in body, "step 3 no longer links Factor sets"
-    assert "/admin/try" in body, "step 4 no longer links Try a scenario"
+    Asserted below the menu, which carries a link to all three of these on
+    every page in the panel - see `_below_the_menu`.
+    """
+    card = _below_the_menu(
+        await admin_client.get("/admin/getting-started"), "Four things, in this order"
+    )
+
+    assert "/admin/security" in card, "step 2 no longer links Your security"
+    assert "/admin/factor-set/list" in card, "step 3 no longer links Factor sets"
+    assert "/admin/try" in card, "step 4 no longer links Try a scenario"
 
 
 async def test_the_panel_index_links_it(admin_client):
@@ -92,13 +120,17 @@ async def test_the_panel_index_links_it(admin_client):
     puts this link on it is one file in a directory of template overrides,
     and the thing most likely to happen to it is a refactor that restores
     sqladmin's own.
+
+    Asserted on the card and not on the page: the menu links this from every
+    screen, so `"/admin/getting-started" in body` is true of an index that
+    has had its card removed entirely. That mutation survived until this
+    test was written this way.
     """
     response = await admin_client.get("/admin/")
 
     assert response.status_code == 200
-    body = _flat(response)
-    assert "/admin/getting-started" in body, "the panel index no longer links it"
-    assert "Getting started" in body
+    card = _below_the_menu(response, "New here?")
+    assert "/admin/getting-started" in card, "the panel index no longer links it"
 
 
 async def test_it_is_in_the_navigation_of_every_page(admin_client):

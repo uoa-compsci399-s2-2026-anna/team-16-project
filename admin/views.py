@@ -36,6 +36,7 @@ from admin.auth import (
     authenticate_totp,
     stamp_session,
 )
+from admin.audit import write_audit
 from admin.backend import (
     PENDING_SESSION_KEY,
     _pending_login_from_session,
@@ -295,6 +296,29 @@ class ChangePasswordView(BaseView):
             if problem is None:
                 set_password(db, username, new)
                 enrolled = staff.mfa_enrolled
+                # This page used to write nothing, on the reasoning that it
+                # runs mid-onboarding, before an actor exists in any
+                # meaningful sense. That was wrong twice over. `username` is
+                # an actor - it names the account whose password this is, and
+                # nobody else could have reached the page - and this is the
+                # page every account passes through on first login, so for a
+                # fresh account the trail carried no record of the only
+                # password change that ever happened. The security screen's
+                # "last changed on ..." line reads this trail, and without
+                # this entry it could only ever say "not recorded" for an
+                # account that had in fact just chosen its password.
+                #
+                # Same shape as the self-service entry, minus its
+                # `self_service` marker, which is what tells the two apart.
+                # No plaintext and no hash: naming the field is enough to say
+                # what happened, and `password_hash` is in write_audit's
+                # REDACTED_FIELDS besides.
+                write_audit(
+                    db, actor=username, action="update", table_name="staff",
+                    row_id=staff.id, before=None,
+                    after={"username": username, "changed": "password",
+                           "self_service": False},
+                )
                 db.commit()
                 if not enrolled:
                     target = "admin:view-enrol"

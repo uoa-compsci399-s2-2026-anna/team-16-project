@@ -10,12 +10,14 @@ transaction as the change it describes.
 
 import secrets
 import string
+from datetime import datetime
 
 from sqlalchemy import func, select
 from sqlalchemy.orm import Session
 
 from admin.audit import write_audit
 from admin.models import (
+    AuditLog,
     Staff,
     StaffRecoveryCode,
     StaffRole,
@@ -259,6 +261,50 @@ def set_password(session: Session, username: str, new_password: str) -> None:
     staff.password_hash = hash_password(new_password)
     staff.must_change_password = False
     staff.session_generation += 1
+
+
+def last_password_change(session: Session, staff: Staff) -> datetime | None:
+    """When this account's password was last changed, or None if unknown.
+
+    **Read out of the audit trail, because there is no column for it and this
+    task deliberately did not add one.** A ``password_changed_at`` column means
+    a migration, a second writer to keep in step with every path that sets a
+    password, and a value that is wrong the moment one of them forgets. Every
+    password change is already an ``audit_log`` row naming the staff row it
+    changed; the date is a read away.
+
+    Two shapes count, and both are here because both exist in the trail:
+
+    * ``after_json["changed"] == "password"`` — what the self-service screen
+      and ``admin/views.py::ChangePasswordView`` write.
+    * a ``password_hash`` key — what ``issue_password`` writes. The value lands
+      redacted by ``write_audit``; the key surviving is what says a password
+      was replaced.
+
+    **None means "no record", and the caller must say exactly that.** It is not
+    "never changed" and it must never be rendered as ``created_at`` or as
+    today: rows written before the forced-change page learned to audit itself
+    genuinely have no entry, and a confidently wrong date on a security screen
+    is worse than an honest gap.
+
+    Rows are read newest-first and the first match wins. The scan is over one
+    account's ``staff``-table entries only, which is a handful of rows for the
+    life of an account — JSON predicates differ between MySQL and SQLite, and
+    this module is imported by both.
+    """
+    rows = session.scalars(
+        select(AuditLog)
+        .where(
+            AuditLog.table_name == "staff",
+            AuditLog.row_id == staff.id,
+        )
+        .order_by(AuditLog.at.desc(), AuditLog.id.desc())
+    )
+    for row in rows:
+        after = row.after_json or {}
+        if after.get("changed") == "password" or "password_hash" in after:
+            return row.at
+    return None
 
 
 def issue_password(

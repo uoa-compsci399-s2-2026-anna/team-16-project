@@ -8,14 +8,17 @@ import time
 
 import pyotp
 import pytest
+from sqlalchemy import select
 
 from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     create_staff,
     get_staff,
+    last_password_change,
     set_password,
 )
+from admin.models import AuditLog
 from admin.totp import TOTP_INTERVAL
 from admin.views import MIN_PASSWORD_LENGTH
 
@@ -209,6 +212,56 @@ async def test_a_valid_change_clears_the_flag_and_sends_an_unenrolled_account_to
     assert response.status_code == 302
     assert response.headers["location"].endswith("/admin/enrol")
     assert _must_change_password(admin_app, username) is False
+
+
+async def test_the_change_is_recorded_in_the_audit_trail(
+    admin_app, client, not_onboarded
+):
+    """This page wrote nothing until now, and the gap was not academic.
+
+    It is the page every account passes through on first login, so for a fresh
+    account the trail held no record of the only password change that had ever
+    happened - and /admin/security's "last changed on ⟨date⟩" reads that trail.
+    The reason given for writing nothing was that no actor exists in any
+    meaningful sense mid-onboarding; `current_username` identifies one, and it
+    is the only account that could have reached this page.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/change-password")
+
+    response = await client.post(
+        "/admin/change-password",
+        data={
+            "password": "a-brand-new-password",
+            "confirm": "a-brand-new-password",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    with admin_app.state.session_factory() as db:
+        staff = get_staff(db, username)
+        rows = db.scalars(
+            select(AuditLog).where(
+                AuditLog.actor == username, AuditLog.table_name == "staff"
+            )
+        ).all()
+        assert len(rows) == 1, rows
+        entry = rows[0]
+        assert entry.action == "update"
+        assert entry.row_id == staff.id
+        assert entry.after_json["changed"] == "password"
+        # Not the self-service screen. The trail says which page did it.
+        assert entry.after_json["self_service"] is False
+        # Neither the plaintext nor the hash: audit_log is readable by every
+        # staff member.
+        assert "a-brand-new-password" not in str(entry.after_json)
+        assert "password_hash" not in entry.after_json
+
+        # ...and this is the row the security screen's date comes from.
+        assert last_password_change(db, staff) == entry.at
 
 
 # --- Behaviour 4 -------------------------------------------------------------

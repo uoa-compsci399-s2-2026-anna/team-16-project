@@ -121,6 +121,12 @@ async def test_every_choice_on_the_form_explains_itself(admin_client):
     every greenhouse-gas figure, and the quantity has a precision limit
     inherited from the public API.
 
+    All six, not only those four, and that came out of reading the rendered
+    page rather than the source. Sector and Destination each sit directly
+    above another control, so a paragraph explaining only the second of the
+    pair reads as if it might belong to both - the ambiguity is invisible in
+    the template and obvious on screen.
+
     Asserted on the distinguishing phrase rather than the whole paragraph, so
     rewording the copy does not fail this while deleting it does.
     """
@@ -131,6 +137,8 @@ async def test_every_choice_on_the_form_explains_itself(admin_client):
         "the case most worth checking",      # food category
         "several times more heavily",        # methane horizon
         "Three decimal places at most",      # quantity
+        "decide the upstream factor",        # sector
+        "decides its downstream factor",     # destination
     ):
         assert phrase in body, f"the dry-run form no longer explains: {phrase}"
 

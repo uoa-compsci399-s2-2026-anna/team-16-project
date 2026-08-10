@@ -28,6 +28,11 @@
         <option value="{{ sector.code }}">{{ sector.name }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Which stage of the supply chain the line is attributed to. It, and the
+      food category below, are what decide the upstream factor this run picks
+      up.
+    </p>
 
     <label for="food_category">Food category</label>
     <select id="food_category" name="food_category">
@@ -59,6 +64,12 @@
         <option value="{{ destination.code }}">{{ destination.name }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Where the line's waste goes, which decides its downstream factor.
+      Prevention is in this list too, and a line sent there should come back
+      at zero on every metric except mass — if it does not, an upstream
+      factor is missing its prevention row.
+    </p>
 
     <label for="qty_kg">Quantity (kg)</label>
     <input type="text" id="qty_kg" name="qty_kg" required value="1000.000">

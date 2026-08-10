@@ -47,6 +47,15 @@ on:
         required: false
         default: true
         type: boolean
+      ref:
+        description: >-
+          Commit to build. Empty means the ref the run started from, which is
+          what CI wants. release.yaml passes the VERSION BUMP COMMIT, so that
+          the images are built from the exact tree the tag names - the one
+          whose pyproject.toml already carries the released version.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -91,6 +100,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
 
       - name: Log in to GHCR
         # Not on pull requests: a PR builds to verify and pushes nothing. On a

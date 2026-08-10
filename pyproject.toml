@@ -4,7 +4,24 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "kaicalc"
-version = "1.0.0"
+# THE VERSION OF THIS TREE, and the repository is where it lives.
+#
+# 0.0.0 because nothing has been released yet, and that is the only honest
+# thing an unreleased tree can say. The 1.0.0 that stood here was picked
+# arbitrarily when the package was first made installable; it claimed a release
+# that had not happened, and it would have gone on claiming it while real
+# releases moved past it.
+#
+# THIS LINE IS MAINTAINED BY THE RELEASE, NOT BY HAND. `.github/workflows/
+# release.yaml` writes the released version here, commits it to the default
+# branch and tags that commit, so the tag always points at a tree carrying the
+# version the tag names. Editing it manually is not forbidden, but it will be
+# overwritten by the next release and it is not how a version gets recorded.
+#
+# Alpha builds never touch it: CI derives `<this>.dev0+<short-sha>` per build,
+# which sorts BELOW this version in PEP 440 and so can never be mistaken for,
+# or preferred over, a release.
+version = "0.0.0"
 description = "Kai Commitment food waste impact calculator - New Zealand impact calculator API, calculation engine and staff admin panel"
 # No `readme`: README.md is the course template and is git-ignored in this
 # tree, so it is neither ours to describe the package with nor reliably present.

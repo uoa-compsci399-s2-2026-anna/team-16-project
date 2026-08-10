@@ -15,6 +15,18 @@ name: Tests against MySQL 8
 
 on:
   workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit to test. Empty means the ref the run started from, which is
+          what CI wants. release.yaml passes the VERSION BUMP COMMIT, because
+          that - not the commit the operator dispatched from - is the tree the
+          tag points at and the tree the images are built from. Testing a
+          different commit to the one being published would make this job a
+          statement about something nobody ships.
+        required: false
+        default: ''
+        type: string
 
 permissions:
   contents: read
@@ -80,6 +92,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
 
       - uses: actions/setup-python@v6
         with:

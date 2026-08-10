@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-07 (v1.1 draft)"
+date: "2026-08-08 (v0.12 draft)"
 ---
 
 # 0. How to Use This Document
@@ -25,28 +25,37 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
-### v1.1 — 2026-08-07 (raised by E, **affects B**)
-
-Made while planning the factor screens, on the principle that the last thing to arrive should not be the thing that forces a migration.
+### v0.13 — 2026-08-09 (raised by E, **affects B, C and D**)
 
 | # | Change | Section |
 | --- | --- | --- |
-| 1 | `factor_upstream` and `factor_downstream` each gain `source_note` and `data_quality`, both nullable. The client has not supplied real factors, and the Otago 2025 baseline says data quality varies by an order of magnitude across the supply chain — primary-production loss rates are largely borrowed from Australian figures. `is_mock` is all-or-nothing and cannot express "these forty rows are solid and those twelve are borrowed". The columns exist now, empty, so real data arrives as an import rather than a migration. `data_quality` is free text, not an enum, for the same reason the destination groupings are a table. | §2.2 |
-| 2 | `equivalence` gains `source_note`. Open item O-3 — the New Zealand sources for km driven, meal equivalents and showers are unsettled, and an equivalence with no stated basis is the figure most likely to be challenged in public. | §2.2 |
+| 1 | Added the `ip_block` schema table — columns, types and constraints — which §8.3 previously named without defining. **B needs this for the migration**, and the `CHAR(64)` / UNIQUE choices are load-bearing rather than incidental. | §2.3 |
+| 2 | Added the `BLOCKED` (403) error code and its envelope, with `details` fixed at `null` and a `message` that never varies. Previously undefined, so B would have had to invent a code and C and D would each have handled it differently — and would likely have retried it as though it were `RATE_LIMITED`, which never succeeds. | §9, §9.2 |
+| 3 | Stated that addresses are normalised inside `ip_fingerprint` (`ipaddress.ip_address(x).compressed`) and that unparseable input raises `InvalidAddressError` rather than being hashed. **B's middleware must not let that exception escape** on the request path. Before this, `" 203.0.113.9"`, `203.0.113.09` and the several spellings of one IPv6 address each fingerprinted differently from what the middleware computes, so a block appeared on the screen and stopped nobody, with nothing failing anywhere. | §2.3 |
+| 4 | Replaced §8.3's "auditing is the caller's job" instruction — which, as written, told the API layer to do something the layering rule forbids — with an honest reconciliation item: `write_audit` lives in `admin/`, `api/` may not import it, so an API-side block cannot audit itself today. Named the resolution (move `write_audit`/`row_to_dict` to `db/`, where §5.5 already says they belong) and named B as the owner of the decision. Same for `looks_automated`, `RequestRate` and `_client_ip`, which are in `admin/` and which B's middleware needs: recommendation recorded, decision hers, and stated plainly as unresolved rather than pretending otherwise. | §8.3 |
+| 5 | Stated that `python -m admin.cli rotate-key` now clears `ip_block`. An HMAC cannot be re-keyed, so every block previously survived a documented, supported `SECRET_KEY` rotation as an unreachable row that `is_blocked` never matched and `unblock` could never remove. | §2.3, §8.3 |
+| 6 | Stated that `/admin/login` and `/admin/verify` are exempt from the rate limit (and from that check only). Behind a proxy with `PROTECTION_TRUSTED_PROXY` false — the shipped arrangement — every caller shared one bucket and refused requests were counted, so 1 request/second from any unauthenticated caller locked every administrator out remotely. | §8.3 |
+| 7 | Recorded that nothing in this system ever shows staff a caller's address, so the manual-block form cannot supply its own input — it has to come from a proxy or platform access log. Worth confirming such a log exists before an incident. | §8.3 |
 
-### v1.0 — 2026-08-07 (raised by E from reviews of B's and C's branches, **affects A, B and C**)
+### v0.12 — 2026-08-08 (raised by E, affects E only)
 
-The first revision driven by reading other people's code rather than by writing the panel. Four of the five come from a real defect found on a branch.
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Documented E-8's blocklist as an explicit, named exception to "no IP address, no user agent, no fingerprint of any kind is stored" — an HMAC of an address, keyed on `SECRET_KEY` with a named `info` string (`kaicalc-blocklist-v1`), stored only for an address a staff member or the automatic protection has blocked. | §2.3 |
+| 2 | Corrected §8.3's "Blocklist" paragraph, which predated E-8 and described a table (`ip_blocklist`, CIDR-keyed, storing nothing) that does not match what was actually built (`ip_block`, HMAC-keyed). Left uncorrected, it directly contradicted the new §2.3 text added by this same version. | §8.3 |
+| 3 | Added the blocklist screen (`/admin/ip-block/list`, `/admin/ip-block/block`, the `unblock` action) and the `python -m admin.cli unblock <address>` operational command — the server-side way back in for an administrator who has blocked the address they are sitting behind, since the blocklist check exempts no one, not even an authenticated staff session. | §8.3 |
 
-| # | Change | Section | Affects |
-| --- | --- | --- | --- |
-| 1 | **A submission now carries one or more `entries`**, each a `(sector, food_category)` pair with its own scenario lines. The response carries engine-computed `totals` alongside per-entry results. Found by reviewing C's branch against B's: C's multi-entry UI sent one `POST` per entry sharing one session token, and §5.3's token upsert overwrote each row with the next — a five-row calculation persisted one row, while the client added the per-entry results together in JavaScript. The client now computes nothing; a multi-stage business is one submission and one request. | §2.3, §6.2 | **A, B, C** |
-| 2 | **`UNIQUE` containing a nullable column does not prevent duplicates in MySQL.** NULLs compare distinct, so `factor_downstream`'s generic `food_category_id IS NULL` rows could duplicate without limit and the fallback lookup would pick one nondeterministically — wrong numbers, no error, nothing in the logs. A functional index over `COALESCE(food_category_id, 0)` is now required. **Raised by B during implementation**, with an integration test proving it. | §2.2, §2.3 | **B** |
-| 3 | **`details[].field` is a bracket-indexed path** (`entries[0].current[1].qty_kg`), not Pydantic's native `loc` form. The two fixture sets on the team had already chosen different formats, and a mismatch makes field-level highlighting fail silently — the user only ever sees the generic banner. | §9 | **B, C** |
-| 4 | `qty_kg` is limited to 3 decimal places, and the rule is now written down. B enforced it; it was in no version of this document, and `unit_preset.kg_per_unit` is `DECIMAL(12,4)`, so a container preset times a non-integer count lands on 4 places and returns a 400 the user cannot act on. | §6.2 | **B, C** |
-| 5 | A `token` that does not resolve to a live submission is treated as absent and a new one is minted, rather than returning `VALIDATION_ERROR`. A stale `sessionStorage` value from an earlier deployment must not break the calculator. | §6.2 | **B** |
+### v0.11 — 2026-08-08 (raised by E, affects E only)
 
-> **Still open after this revision:** §7's module list does not match what C actually built — `view.js`, `calculator.js`, `results.js`, `improvement.js`, `main.js` and `methodology.js` are not named there, and `view.js` in particular holds the shared escaping and formatting primitives that D and E will otherwise reimplement. C to supply the JSDoc; E to fold it in.
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Corrected §8.2's description of the pre-publish comparison view to match what was actually built: the published and draft values are shown side by side, per metric, with no difference computed — not "old value, new value and change" and not "differenced client-side" (both stale, from before Decision 6 was applied to this view). The stale wording claimed a client-side subtraction that would have put a number in front of staff no server-side calculation produced. **The same sentence exists on the unmerged `docs/contract-v1.0` branch (PR #10, v1.1) and needs the same correction there** — this change only touches the copy in this tree. | §8.2 |
+
+### v0.10 — 2026-08-08 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | Added `comparison_scenario` and `comparison_scenario_line`. §8.2 named the pre-publish comparison view's standard scenarios as staff-editable but never defined where they live; these two tables are it, with their own CRUD screens under a new "Comparison" category. | §2.2a, §8.2 |
 
 ### v0.9 — 2026-08-07 (raised by E, affects E only)
 
@@ -210,6 +219,22 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
+> **Where the taxonomy invariants are enforced.** "Exactly one row must be
+> TRUE" and the existence of `prevention` are statements about a table, not a
+> column, so neither is a database constraint. Both are checked in
+> `admin/taxonomy_rules.py`, called from `AuditedModelView`'s
+> `validate_before_commit` hook — inside the transaction that is about to
+> commit, before the audit entries are written. A refused change rolls back
+> the row and its audit entry together. This placement is deliberate:
+> `sqladmin`'s generic edit path never calls a service function, so a check
+> that lives only in one is bypassed by the edit form.
+>
+> **"Exactly one row must be TRUE" means exactly one *active* row.** The
+> check counts `is_standard_mix = TRUE AND active = TRUE`; a deactivated
+> standard mix does not count towards the one, because it is as unusable to
+> the engine as a missing one. Two rows may hold `is_standard_mix = TRUE` at
+> once as long as only one of them is `active`.
+
 ### `metric`
 
 | Column | Type | Constraints | Notes |
@@ -253,6 +278,15 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `notes` | TEXT | NULL | Provenance of the data |
 
 **Constraint: at most one row may have `status = 'published'` at any time.** Enforced transactionally in the repository layer.
+
+> **Where this is enforced.** In `admin/taxonomy_rules.py`'s
+> `check_single_published_set`, called from `AuditedModelView`'s
+> `validate_before_commit` hook — inside the transaction that is about to
+> commit, after the flush so it sees the pending change, and before any audit
+> row is written so a refusal leaves no record claiming it happened. The
+> publish and rollback actions of §8.2 will additionally take `SELECT ... FOR
+> UPDATE` over the table, because two staff members publishing different
+> drafts at the same moment is a race this hook alone cannot settle.
 
 ### `factor_upstream`
 
@@ -334,6 +368,34 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
+## 2.2a Comparison Scenarios
+
+The standard test scenarios §8.2's pre-publish comparison view runs. A scenario is a saved `POST /calculate` request minus the factor set: a sector, a food category, a horizon and a set of destination lines. Rows, not a constant, per §8.2 — hard-coding them would reintroduce "change the code to change the configuration."
+
+### `comparison_scenario`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `code` | VARCHAR(64) | UNIQUE, NOT NULL | |
+| `name` | VARCHAR(128) | NOT NULL | |
+| `sector_id` | INT | FK, NOT NULL | |
+| `food_category_id` | INT | FK, NULL | Null means the standard mix — the same reading §6.2 gives the field |
+| `gwp_horizon` | SMALLINT | NOT NULL, DEFAULT 100 | `20` or `100`, per §6.2 |
+| `sort_order` | INT | NOT NULL, DEFAULT 0 | |
+| `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+### `comparison_scenario_line`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `scenario_id` | INT | FK → `comparison_scenario.id`, NOT NULL, ON DELETE CASCADE | |
+| `destination_id` | INT | FK, NOT NULL | |
+| `qty_kg` | DECIMAL(16,3) | NOT NULL | |
+
+> Unlike the taxonomy tables, a scenario may be deleted through the panel: it is a staff member's own saved test case, referenced by nothing else in the schema, so deleting one strands no historical result.
+
 ## 2.3 Submissions
 
 ### `submission`
@@ -352,11 +414,75 @@ UNIQUE(`factor_set_id`, `metric_id`)
 
 **No IP address, no user agent, no fingerprint of any kind is stored.**
 
-`sector_id` and `food_category_id` live on `submission_entry`, not here: one submission carries several, each with its own factors.
+> **One exception, added deliberately in E-8.** The `ip_block` table stores an
+> HMAC of an address — never the address — under a key derived from
+> `SECRET_KEY`, and only for callers a staff member or the automatic
+> protection has blocked. A database taken on its own yields no list of who
+> visited. Nothing else is persisted: user agents, headers and paths are read
+> within a request and forgotten. **Browser fingerprinting was considered and
+> rejected** — ineffective against the traffic this defends against, and the
+> highest privacy risk of the options.
+>
+> **One blocklist, owned by `db/`.** `ip_block` and the block/unblock/query
+> functions live in `db/blocklist.py`, not in `admin/`. There is one list, and
+> both callers read it: the API layer applies it to public traffic, the admin
+> panel applies it to itself and provides the screen that manages it. Both
+> derive the HMAC key from the same `SECRET_KEY` with
+> `info = b"kaicalc-blocklist-v1"` — the same address must produce the same
+> fingerprint on both sides, or a block applied in the panel silently fails to
+> hold at the API.
+>
+> **Addresses are normalised before they are fingerprinted, inside
+> `ip_fingerprint`.** `db.blocklist.normalise_ip` canonicalises through
+> `ipaddress.ip_address(x).compressed`, so `" 203.0.113.9"`,
+> `2001:db8:0:0:0:0:0:1` and `2001:db8::1` all reach the same row. It is inside
+> `ip_fingerprint` deliberately, so every caller — the API layer, the panel,
+> the CLI — inherits it without asking. An unparseable value raises
+> `db.blocklist.InvalidAddressError` (a `ValueError` subclass) rather than being
+> hashed: a fingerprint of nonsense writes a row that matches no caller and
+> that `unblock` cannot remove either. **Callers on a request path must not let
+> that exception escape** — `admin/protection.py`'s `_client_ip` normalises the
+> connection address itself and treats an unusable one as "no address"; B's
+> middleware needs the same guard.
+>
+> **Rotating `SECRET_KEY` clears the blocklist.** An HMAC cannot be re-keyed the
+> way an encrypted TOTP secret can — there is no plaintext address left to
+> re-fingerprint from, which is the property this whole design wanted. So
+> `python -m admin.cli rotate-key` deletes every `ip_block` row and reports how
+> many, rather than leaving rows that `is_blocked` would never match and
+> `unblock` could never remove. Blocks must be re-applied after a rotation.
+>
+> Auditing: `db/blocklist.py` writes no audit entry. See §8.3's "Blocklist"
+> section for who writes one today, and for the reconciliation item this
+> creates for the API layer.
 
-### `submission_entry`
+### `ip_block`
 
-One `(sector, food_category)` pair within a submission. A food business has waste at more than one point in the supply chain, and each point draws a different upstream factor, so they cannot share one set of lines.
+Owned by B's layer (`db/`), built by E — see §8.3's "Blocklist" and the note
+above. No foreign keys: a block is not owned by a staff row, and it must
+survive the account of whoever made it being deleted.
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | Never leaves the server; the panel selects rows by it, no API exposes it |
+| `ip_hmac` | CHAR(64) | UNIQUE, NOT NULL | HMAC-SHA256 of the normalised address, hex. `CHAR`, not `VARCHAR` — always exactly 64 characters. UNIQUE is what makes `block_ip` an upsert rather than a source of duplicates |
+| `reason` | TEXT | NOT NULL | Free text, shown on the screen and in `audit_log` **in place of** the address |
+| `created_at` | DATETIME | NOT NULL | Naive UTC (§1.3). Not refreshed by a re-block — see below |
+| `created_by` | VARCHAR(64) | NOT NULL | Staff username, or `cli`. Overwritten by a re-block |
+| `expires_at` | DATETIME | NULL | NULL means it does not expire. `is_blocked` filters on this in SQL |
+
+> A re-block of the same address updates `reason`, `created_by` and
+> `expires_at` in place and leaves `created_at` alone, so the two can name
+> different people at different times. The panel labels them "First blocked"
+> and "Most recently blocked by" rather than "when" and "who" for that reason
+> (`admin/blocklist_views.py`). A re-block with no duration also clears any
+> existing `expires_at` — blank means permanent, not "leave as it was".
+
+> Expired rows are filtered, never pruned. At this scale that is fine; a
+> scheduled job can own it later, alongside the `submission.token` expiry job
+> (§2.3).
+
+### `submission_line`
 
 | Column | Type | Constraints | Notes |
 | --- | --- | --- | --- |
@@ -739,6 +865,13 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
     recommended path for staff edits: clone, edit, publish."""
 ```
 
+> **Where these live today.** `admin/factor_lifecycle.py`, not
+> `db/repository.py`. The admin panel needs them and the repository
+> implementation is on an unmerged branch; when it lands, one implementation
+> goes and the other is imported. `admin/` may import from `db/`, never the
+> reverse. Cache invalidation is the repository's half and is not implemented
+> in the admin copy.
+
 ## 5.3 Submissions
 
 ```python
@@ -866,9 +999,13 @@ Called once on page load to build every dropdown and input row.
 
 **Calculates and persists. One call equals one submission** (Decision 8).
 
-**A submission carries one or more entries.** A food business has waste at more than one point in the supply chain, and each point has its own sector, its own food category and therefore its own upstream factor — so they cannot be folded into a single set of lines. Each entry is one `(sector, food_category)` pair with its own scenario lines.
-
-> **Why the whole submission travels in one call.** The alternative — one request per entry — breaks three things at once. `token` keys an upsert (§5.3), so the second entry would overwrite the first and only the last would survive. The client would have to add the per-entry results together itself, which puts an impact number in the browser that the engine never produced and that no golden case can cover (Decision 6). And one user action would cost N requests against a 120/hour limit. **Every number the user sees is computed server-side, including the totals across entries.**
+> This section is v0.10 and its request body is flat (one `sector` /
+> `food_category` / `current` per call). A multi-entry `entries` array is
+> proposed as v1.1 on the unmerged `docs/contract-v1.0` branch (PR #10),
+> fixing a one-POST-per-entry front end whose shared session token had each
+> call's upsert overwrite the previous entry's row. Not yet reconciled into
+> this file — the admin panel's dry-run client (`admin/calc_client.py`,
+> `admin/dryrun_views.py`) already builds to v1.1.
 
 **Request**
 
@@ -1258,15 +1395,15 @@ Requirements: list views must offer search and filtering.
 
 | View | Path | Function |
 | --- | --- | --- |
-| Factor sets | `/admin/factor-sets` | Clone, publish, roll back; shows draft/published/archived state |
+| Factor sets | `/admin/factor-sets` | Clone, publish, archive, roll back; shows draft/published/archived state. **`status` is not on the edit form** — these four actions are the only way it changes, so each one takes `SELECT ... FOR UPDATE`, revalidates the set's formulas where relevant, stamps `published_at` / `published_by`, and writes its own audit entry. Archiving the currently published set is permitted and takes the calculator offline: `NO_PUBLISHED_FACTOR_SET` (503) is the designed response to having none |
 | Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
-| Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show old value, new value and change per metric. The last gate before publishing. |
+| Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
 | Audit log | `/admin/audit` | Read-only, filterable by actor, time and table |
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
-The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — differenced client-side. The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent.
+The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — shown side by side, **not** differenced. Decision 6 puts every impact number server-side, in exactly one place; `POST /api/v1/calculate` computes `net_benefit` only for a current-versus-alternative comparison made *within one call*, and has no concept of a difference between two separate calls made at two different `factor_set_version`s. Subtracting the two response strings in the view or the template would put a number in front of staff that no server-side calculation ever produced, which is exactly what Decision 6 forbids — so the page renders both values, plainly labelled, and says in words that no difference is shown. Whether `POST /api/v1/calculate` should grow a two-version diff so this page can show one is open (raised in the E7 task report; not yet assigned an owner). The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent. They live in `comparison_scenario` / `comparison_scenario_line` (§2.2a), edited through their own CRUD screens like every other §8.1 table.
 
 Because a dry-run request body is a `bundle` plus a scenario, the dry-run view can offer a **Save as regression case** action that writes `tests/golden/case_NN/{bundle,request,expected}.json` (§10.1) directly from a run staff considers worth keeping. Tuning factors then produces golden cases as a by-product rather than requiring them to be authored separately.
 
@@ -1387,7 +1524,8 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
 | `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
-| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change |
+| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change — **and clear `ip_block`**, because an HMAC cannot be re-keyed; it reports how many blocks were cleared and that they must be re-applied |
+| `python -m admin.cli unblock <address>` | E-8's own break-glass: remove a block from the server when the panel itself is unreachable because of it. Rejects a value that is not a single IP address rather than silently doing nothing |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 
 One module with subcommands rather than three separate module entry points: `python -m admin.cli --help` then lists every operational command in one place, which is what the handover documentation needs, and settings loading and session construction are written once rather than three times.
@@ -1396,7 +1534,27 @@ The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without 
 
 ### Blocklist
 
-An `ip_blocklist(id, cidr, reason, created_at, created_by)` table plus middleware, used to block sources of junk submissions, **never to identify ordinary users.** The middleware reads the connecting address and stores nothing.
+**Corrected in v0.12 — the previous paragraph here (`ip_blocklist(id, cidr, reason, created_at, created_by)`, "the middleware ... stores nothing") predates E-8 and described the wrong table under the wrong name.** §2.3 is now the authoritative description of what is actually built: the real table is `ip_block(id, ip_hmac, reason, created_at, created_by, expires_at)`, keyed on a 64-character HMAC of the address rather than a CIDR, and it does store something — a fingerprint, never the address itself. Storing nothing at all derived from the address was considered and rejected here, for a different reason than §2.3's own "browser fingerprinting rejected" callout (see below): an operator needs to be able to *remove* a specific block, which requires recomputing the same fingerprint for the same address again on request, not merely detecting a one-time match — a construction with no stored, comparable value cannot support that.
+
+> **Three things this document calls "fingerprint," and they are not the same thing.** §2.3's "no fingerprint of any kind is stored" and "browser fingerprinting was considered and rejected" both refer to a *browser* fingerprint — a persistent quasi-identifier built from device/header characteristics, rejected there as ineffective against the traffic it would defend against and the highest privacy risk of the options considered. The `ip_hmac` fingerprint described in this section is a different construction entirely — a keyed HMAC of a single known address, not a browser characteristic — kept specifically *because* an operator needs to recompute and compare it, which is exactly the property that made the browser kind unacceptable. Do not read §2.3's rejection of browser fingerprinting as covering this one; it doesn't, and the two are evaluated on different grounds.
+
+`db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. It never writes to the blocklist itself.
+
+The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in a table every staff member can read.
+
+**Where an operator gets an address to type into that form.** Nowhere in this system — and that is worth stating, because the form otherwise reads as more capable than the panel is. Nothing here ever shows staff a caller's address: §2.3 forbids storing one, and the panel deliberately does not log one either. The address has to come from outside: the reverse proxy's or hosting platform's own access log, an alert from the host, or a report from someone who can see the traffic. The form's purpose is to *apply* an address an operator already has in hand from one of those, during an incident, with no CDN or upstream firewall available to do it for them. Anyone planning to rely on this screen should confirm the deployment keeps a proxy access log at all, before an incident rather than during one.
+
+> **Known reconciliation item for the `db/` merge — not an instruction that can be followed today.** §2.3 says auditing is the caller's job, and §5.5 says audit writing belongs to the repository layer. Neither is true of the code as built: `write_audit` lives in `admin/audit.py`, and `api/` may not import `admin/` (CLAUDE.md's layering rule, AST-pinned by `tests/db/test_blocklist.py`). So an API-side automatic block cannot write an audit entry at all as things stand, and "the caller audits" is executable for the admin panel and the CLI only. This is a consequence of E building the blocklist in B's layer while B's repository was on an unmerged branch, the same way the factor-set lifecycle was, and it is E's to declare rather than B's to discover.
+>
+> **Resolution when the two branches merge:** `write_audit` and `row_to_dict` move to `db/` (which is where §5.5 already says they belong), `admin/audit.py` becomes a re-export or is deleted, and only then does the "caller audits" instruction become executable from `api/`. Until that happens, an API-side block writes no audit entry and `/admin/audit` will not show it. **Owner of the decision: B**, as owner of `db/` and the repository layer; E's part is done and the note above is the handover.
+>
+> **The same unresolved split applies to three more names.** `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` are all in `admin/` and are all things B's public-traffic middleware needs. They were built there because `admin/` is where E's stage lived, not because that is where they belong: `detection.py` imports nothing outside the standard library and `_client_ip` imports nothing outside Starlette, so neither has any reason to sit above the layering boundary. **Recommendation:** move `detection.py` to `db/` or to a new shared module and leave `admin/protection.py` importing it, rather than have `api/` duplicate the header-marker list and the sliding-window counter — two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. `_client_ip` should move with it. **This is genuinely unresolved, and B decides it**, since a move changes a file in her layer; E's recommendation is on record here so that the alternative (duplication) is a choice someone made rather than the default nobody discussed. Note also that `RequestRate` is per-process, so under more than one worker the effective limit is multiplied by the worker count — the API's own rate limiting (§6.5) is a separate problem and E has not solved it.
+
+**The one case this whole design is built around not causing:** an administrator blocks the address they are sitting behind, and the block itself now stands between them and every page that would let them undo it — including the login page, because the blocklist check has no exemption. `python -m admin.cli unblock <address>` (above) is the only way back short of editing the database by hand, and is the reason that command exists at all.
+
+`ProtectionMiddleware` also carries a stateless header check and a per-address rate limit (`PROTECTION_MAX_REQUESTS_PER_MINUTE`), both configurable and both able to be turned off in one place: `PROTECTION_ENABLED=false` disables the blocklist, the header check and the rate limit together, with no finer-grained switch — the documented escape hatch for a false-positive lockout that is not a blocklist entry. **It needs no code change, but it does need a process restart**: settings are read once, by `load_settings()` at start-up. See `docs/architecture.md` §9.1.1 for the operational detail, the `PROTECTION_TRUSTED_PROXY` warning, the four recovery paths, and this design's explicit limits.
+
+**`/admin/login` and `/admin/verify` are exempt from the rate limit** — and from that check only; the blocklist and the header check still apply to both. Behind a reverse proxy with `PROTECTION_TRUSTED_PROXY` false (which is the shipped arrangement, since TLS is terminated upstream and trusting `X-Forwarded-For` without a proxy that overwrites it would let any caller forge any address) every caller arrives as the proxy's own address and shares one rate-limit bucket, and refused requests are counted too — so without this exemption one request a second from any unauthenticated caller kept that bucket permanently over the limit and answered 429 to every unauthenticated request in the deployment, the login pages included. The authenticated-staff exemption cannot rescue that, because it needs the session only those two pages mint. Login attempts are still throttled per account by `LOGIN_MAX_FAILURES`/`LOGIN_LOCKOUT_MINUTES`, which is the check that actually defends a credential-stuffing run.
 
 ## 8.4 Staff Authentication Interface (owner: E, consumed by B)
 
@@ -1451,6 +1609,7 @@ Every non-2xx response uses one envelope:
 | 400 | `VALIDATION_ERROR` | Missing field, out of bounds, duplicate destination, malformed dry-run bundle | Highlight the offending field |
 | 400 | `UNKNOWN_CODE` | A code in the request does not exist | Re-fetch the taxonomy and prompt a refresh |
 | 401 | `UNAUTHORIZED` | `X-Dry-Run: true` without a valid staff session | Redirect to `/admin/login` |
+| 403 | `BLOCKED` | The caller's address is on the blocklist (`db.blocklist.is_blocked`, §2.3) | Show the `message` and stop. **Do not retry, and do not offer a retry button** |
 | 429 | `RATE_LIMITED` | Rate limit exceeded | Ask the user to retry later; disable the button for 60s |
 | 500 | `FORMULA_ERROR` | A staff-configured formula is invalid | See below |
 | 503 | `NO_PUBLISHED_FACTOR_SET` | No factor set has been published | Show "calculator under maintenance" |
@@ -1465,6 +1624,37 @@ Every non-2xx response uses one envelope:
 | Authenticated dry run | `details` carries `expression`, `line`, `column` and `reason` from the `FormulaError` (§4.4) |
 
 Withholding the location from the public protects staff-authored configuration from disclosure. Withholding it from the staff member who is at that moment editing the formula would make the editor unusable — they cannot fix what they are not told.
+
+## 9.2 `BLOCKED` (403)
+
+Defined here so that B does not have to invent a code and C and D do not each
+handle it differently. Distinct from `RATE_LIMITED` on purpose: `RATE_LIMITED`
+means "too fast, try again", and the front end is told to re-enable the button
+after 60 seconds. `BLOCKED` means a staff member decided this caller should not
+be served, and a retry will never succeed — a front end that treated the two
+the same would poll a blocked caller against the API forever.
+
+```json
+{
+  "error": {
+    "code": "BLOCKED",
+    "message": "This request was refused. If you believe this is an error, contact the Kai Commitment team.",
+    "details": null
+  }
+}
+```
+
+**`details` is always `null`, and `message` never varies.** The refusal must not
+say which rule fired, when the block expires, or that a blocklist exists at all
+— the same reasoning `admin/protection.py`'s bare `"Refused."` body records: a
+caller being refused is not owed the rule it broke, because that is a free
+tuning signal for whoever is probing. Staff read the reason and the expiry on
+`/admin/ip-block/list` and in `audit_log`.
+
+**The block is checked before anything else**, including request validation, so
+a blocked caller cannot use the API's own error messages to probe the
+taxonomy — and, being a single indexed lookup on `ip_hmac`, it costs one query.
+It applies to every endpoint under `/api/v1/`, `GET` included.
 
 ---
 

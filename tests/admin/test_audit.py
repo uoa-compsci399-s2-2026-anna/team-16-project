@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import select
 
-from admin.audit import write_audit
+from admin.audit import row_to_dict, write_audit
 from admin.models import AuditLog
 
 pytestmark = pytest.mark.db
@@ -80,3 +80,36 @@ def test_a_rolled_back_change_leaves_no_audit_record(session):
     session.rollback()
 
     assert session.scalar(select(AuditLog)) is None
+
+
+def test_an_ip_fingerprint_is_redacted_from_the_audit_trail(session):
+    """Defence in depth for §2.3's exception.
+
+    No current caller writes `ip_hmac` into an audit payload:
+    admin/blocklist_views.py hand-builds both of its payloads from four named
+    columns, and `IpBlockAdmin` sets can_create/can_edit/can_delete all False
+    so `row_to_dict` is never reached for that model. But that is three class
+    flags and two hand-built dicts standing between a 64-character
+    fingerprint and a table every staff member can read - flip `can_delete`
+    to True and `AuditedModelView`'s own listener writes it there, widening
+    the audience from administrators only to all staff. This pins the last
+    line of defence.
+    """
+    from db.blocklist import ip_fingerprint
+    from db.blocklist_models import IpBlock
+
+    fingerprint = ip_fingerprint("203.0.113.9", secret_key="a-key-for-this-test")
+    row = IpBlock(ip_hmac=fingerprint, reason="scripted traffic",
+                  created_by="kim")
+    session.add(row)
+    session.flush()
+
+    write_audit(session, actor="kim", action="delete", table_name="ip_block",
+                row_id=row.id, before=row_to_dict(row), after=None)
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "ip_block")
+    )
+    assert entry.before_json["ip_hmac"] == "[redacted]"
+    assert fingerprint not in str(entry.before_json)

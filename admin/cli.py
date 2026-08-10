@@ -6,11 +6,14 @@ Contract: docs/interfaces.md 8.3, "Operational commands".
     python -m admin.cli reset-mfa <username>
     python -m admin.cli issue-password <username>
     python -m admin.cli rotate-key --old <key> --new <key>
+    python -m admin.cli unblock <address>
 
 These are the break-glass paths that outlive the project team: bootstrapping
 the first administrator, recovery layer L3 when every administrator is locked
-out, and re-encrypting TOTP secrets after a SECRET_KEY change. They are
-covered by tests rather than only exercised by hand for that reason.
+out, re-encrypting TOTP secrets after a SECRET_KEY change, and (E-8) the way
+back in for an administrator who has blocked the address they are sitting
+behind. They are covered by tests rather than only exercised by hand for
+that reason.
 """
 
 import argparse
@@ -20,10 +23,15 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from admin.accounts import UnknownStaffError, create_staff, issue_password, reset_mfa
+from admin.audit import write_audit
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
 from admin.models import Staff, StaffRole
 from admin.security import decrypt_totp_secret, encrypt_totp_secret
+from admin.seed import seed_taxonomy
+from admin.taxonomy_rules import TaxonomyInvariantError
+from db.blocklist import InvalidAddressError, ip_fingerprint, unblock_ip
+from db.blocklist_models import IpBlock
 from db.session import create_session_factory
 
 
@@ -62,19 +70,47 @@ def cmd_issue_password(db_session: Session, username: str) -> str:
     return issue_password(db_session, username, actor="cli")
 
 
-def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
-    """Re-encrypt every stored TOTP secret under a new SECRET_KEY.
+def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[int, int]:
+    """Re-encrypt every stored TOTP secret, and clear the blocklist, under a
+    new SECRET_KEY. Returns (secrets re-encrypted, blocks cleared).
 
     Decrypts everything before writing anything. A partial rotation would
     leave some secrets readable only with the old key and some only with the
     new one, with no key that opens the whole table — unrecoverable without
     resetting every account.
+
+    **Why the blocklist is cleared rather than re-keyed.** ``SECRET_KEY`` also
+    derives the HMAC key `ip_block.ip_hmac` is computed under
+    (``db/blocklist.py``'s ``BLOCKLIST_INFO``). A TOTP secret can be carried
+    across a rotation because it is *encrypted* — decryptable with the old
+    key, re-encryptable with the new one. A fingerprint cannot: an HMAC is
+    one-way, so with the plaintext address gone there is nothing to
+    re-fingerprint from. That is the whole point of storing it that way
+    (§2.3), and it is why re-keying is not an option here.
+
+    So every `ip_block` row survives a rotation as an unreachable value:
+    ``is_blocked`` computes a fingerprint under the new key and matches
+    nothing, ``python -m admin.cli unblock`` cannot remove the row either
+    (it recomputes the same new-key fingerprint to find it), and the panel
+    goes on listing it as though it were in force. **An unreachable row that
+    silently stops blocking is worse than no row** — it is a protection an
+    operator believes they have and does not. Deleting them makes the
+    consequence of a rotation visible and actionable: the caller prints how
+    many were cleared and says they must be re-applied.
+
+    No audit entry is written for the deletion. ``write_audit`` stamps an
+    ``actor``, and every row here is being removed by a key change rather
+    than by a person's decision about any particular one; the operator's own
+    printed output and this docstring are the record. (Contrast
+    ``cmd_unblock``, which *is* one person's decision about one row.)
     """
     accounts = db_session.scalars(
         select(Staff).where(Staff.mfa_secret_enc.is_not(None))
     ).all()
 
-    # Decrypt all first; a failure here must leave the table untouched.
+    # Decrypt all first; a failure here must leave the table untouched -
+    # including the blocklist, which is why the delete below comes after this
+    # comprehension rather than before it.
     plaintext = [
         (staff, decrypt_totp_secret(staff.mfa_secret_enc, secret_key=old_key))
         for staff in accounts
@@ -83,7 +119,59 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> int:
     for staff, secret in plaintext:
         staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
 
-    return len(plaintext)
+    blocks = db_session.scalars(select(IpBlock)).all()
+    for row in blocks:
+        db_session.delete(row)
+
+    return len(plaintext), len(blocks)
+
+
+def cmd_unblock(db_session: Session, address: str, *, secret_key: str) -> bool:
+    """Recovery layer for E-8's blocklist: the server-side way back in.
+
+    Exists for the case the whole stage is designed around not causing: an
+    administrator blocks the address they are sitting behind.
+    ``ProtectionMiddleware`` (admin/protection.py) refuses the blocklist
+    check ahead of every other rule, with no exemption even for an
+    authenticated staff session, so there is no page left to click - the
+    panel itself is unreachable. There is no email system either, so
+    without this command the only way back would be editing the database
+    by hand. Returns whether a block was actually removed, so the caller
+    can tell "nothing to do" from "done".
+
+    Looks the row up first, by the same fingerprint ``unblock_ip`` will
+    recompute, purely so the audit entry below can name what was removed -
+    ``unblock_ip`` itself (db/blocklist.py) returns only a bool and writes
+    no audit entry, by design: auditing is the caller's job. The CLI
+    audits with ``actor="cli"``, the same convention this module's own
+    ``cmd_issue_password``/``issue_password`` pairing already uses for a
+    write made from the server rather than through a staff session.
+    """
+    fp = ip_fingerprint(address, secret_key=secret_key)
+    row = db_session.scalar(select(IpBlock).where(IpBlock.ip_hmac == fp))
+    if row is None:
+        return False
+
+    before = {
+        "reason": row.reason,
+        "created_by": row.created_by,
+        "created_at": row.created_at,
+        "expires_at": row.expires_at,
+    }
+    row_id = row.id
+
+    removed = unblock_ip(db_session, address, actor="cli", secret_key=secret_key)
+    if removed:
+        write_audit(
+            db_session, actor="cli", action="delete", table_name="ip_block",
+            row_id=row_id, before=before, after=None,
+        )
+    return removed
+
+
+def cmd_seed_taxonomy(db_session: Session) -> dict[str, int]:
+    """Load the NZ taxonomy into an empty or partially populated database."""
+    return seed_taxonomy(db_session)
 
 
 def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
@@ -143,8 +231,19 @@ def _build_parser() -> argparse.ArgumentParser:
     rotate.add_argument("--old", required=True)
     rotate.add_argument("--new", required=True)
 
+    unblock = sub.add_parser(
+        "unblock", help="Remove a block from an address (E-8's escape hatch)"
+    )
+    unblock.add_argument("address")
+
     sub.add_parser(
         "bootstrap", help="Create the initial administrator accounts if none exist"
+    )
+
+    sub.add_parser(
+        "seed-taxonomy",
+        help="Load the NZ food loss and waste taxonomy into an empty or "
+        "partially populated database",
     )
 
     return parser
@@ -186,16 +285,57 @@ def main(argv: list[str] | None = None) -> int:
             print(f"  Password: {password}")
             print("  They must change it at their next login. Hand it over in person.")
         elif args.command == "rotate-key":
-            count = cmd_rotate_key(db_session, old_key=args.old, new_key=args.new)
+            count, cleared = cmd_rotate_key(
+                db_session, old_key=args.old, new_key=args.new
+            )
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
+            if cleared:
+                print(
+                    f"Cleared {cleared} IP block(s). A block is stored as an "
+                    "HMAC of the address under a key derived from SECRET_KEY, "
+                    "and an HMAC cannot be re-keyed - the rows would have "
+                    "survived the rotation matching nobody, and could not "
+                    "have been removed with `unblock` either. Re-apply any "
+                    "that are still needed from /admin/ip-block/block."
+                )
             print("Update SECRET_KEY in .env and restart the application.")
+        elif args.command == "unblock":
+            try:
+                removed = cmd_unblock(
+                    db_session, args.address, secret_key=settings.secret_key
+                )
+            except InvalidAddressError as exc:
+                # An operator reaching for this command is usually locked out
+                # and in a hurry. Without this branch a mistyped address left
+                # them staring at an ipaddress traceback from four frames
+                # down, which reads like the command is broken rather than
+                # like the argument is. Echoing the address back is safe here
+                # and nowhere else: this is their own terminal, not a page
+                # every staff member can read.
+                print(f"{args.address!r} is not a valid address. {exc}")
+                return 1
+            db_session.commit()
+            if removed:
+                print(f"Unblocked {args.address}.")
+            else:
+                print(f"No block found for {args.address}. Nothing to do.")
         elif args.command == "bootstrap":
             created = ensure_bootstrap_admins(db_session)
             db_session.commit()
             if not created:
                 print("Administrator accounts already exist. Nothing to do.")
             report_bootstrap_result(created)
+        elif args.command == "seed-taxonomy":
+            try:
+                created = cmd_seed_taxonomy(db_session)
+            except TaxonomyInvariantError as exc:
+                print(f"Refused to seed: {exc}")
+                return 1
+            db_session.commit()
+            print("Seeded the taxonomy.")
+            for table, count in created.items():
+                print(f"  {table:<18}{count:>2} created")
 
     return 0
 

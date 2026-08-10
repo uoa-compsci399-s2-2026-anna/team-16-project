@@ -1,0 +1,9 @@
+{% extends "sqladmin/list.html" %}
+{% block model_menu_bar %}
+<div class="ms-3 d-inline-block">
+  <a href="{{ url_for('admin:view-ip-block-block_form') }}" class="btn btn-primary">
+    {{ _("Block an address") }}
+  </a>
+</div>
+{{ super() }}
+{% endblock %}

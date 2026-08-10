@@ -115,9 +115,12 @@ button {
 }
 button:hover { background: var(--blueberry); }
 
-.notice        { padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; }
-.notice--error { background: var(--orange); color: var(--white); }
-.notice--info  { background: var(--banana); color: var(--kale); }
+.notice          { padding: 0.75rem 1rem; border-radius: var(--radius); margin-bottom: 1rem; }
+.notice--error   { background: var(--orange); color: var(--white); }
+.notice--info    { background: var(--banana); color: var(--kale); }
+/* The mandatory, non-dismissible mock-data banner (contract §2.2): Banana
+   ground takes Kale text per the brand guidelines' light-ground rule. */
+.notice--warning { background: var(--banana); color: var(--kale); font-weight: bold; }
 
 /* One-time secrets: initial passwords, recovery codes. */
 .secrets {

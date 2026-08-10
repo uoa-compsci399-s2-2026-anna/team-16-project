@@ -42,7 +42,26 @@ jobs:
       # scratch databases through it. Matching them means `python -m pytest` is
       # the same command here and on a developer's machine.
       mysql:
-        image: mysql:8.0
+        # PINNED BY DIGEST, and by the SAME digest docker/compose.yaml uses.
+        #
+        # A floating `mysql:8.0` here was the reproducibility argument applied
+        # to the deliverable but not to the gate standing in front of it. The
+        # images pin their bases by digest and docker/constraints.txt pins 40
+        # packages, all so that the thing verified today is the thing a client
+        # builds in six months - and then the suite that decides whether any of
+        # it ships ran against whatever `8.0` happened to mean that morning. A
+        # MySQL point release that changes a default is exactly the kind of
+        # thing nobody attributes correctly, and it would arrive as a test
+        # failure on an unrelated pull request.
+        #
+        # Same digest as the deployment, deliberately: this suite's whole claim
+        # is that it ran against the database that ships. Change the two
+        # together or the claim quietly stops being true.
+        #
+        # (The root docker-compose.yml - the developer convenience the suite
+        # uses locally - still floats. Lower stakes, and not this file's to
+        # change; noted so the next person pinning it knows where the pair is.)
+        image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b   # mysql:8.0
         env:
           MYSQL_ROOT_PASSWORD: devroot
           MYSQL_DATABASE: kaicalc

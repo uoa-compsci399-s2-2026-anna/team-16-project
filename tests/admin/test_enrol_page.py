@@ -345,7 +345,7 @@ async def test_the_handler_refuses_an_established_session_even_if_the_gate_admit
 
     # The eviction: an administrator resets this account's MFA mid-session.
     with admin_app.state.session_factory() as db:
-        reset_mfa(db, username)
+        reset_mfa(db, username, actor="admin")
         db.commit()
 
     monkeypatch.setattr(

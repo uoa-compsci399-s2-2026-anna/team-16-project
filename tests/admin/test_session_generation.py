@@ -79,7 +79,7 @@ def test_an_mfa_reset_invalidates_the_session_that_predates_it(
     session_data = {}
     stamp_session(session_data, enrolled_staff)
 
-    reset_mfa(session, enrolled_staff.username)
+    reset_mfa(session, enrolled_staff.username, actor="admin")
     session.flush()
 
     with pytest.raises(StaffAuthRequired):

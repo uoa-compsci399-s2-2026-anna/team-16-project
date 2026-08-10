@@ -89,6 +89,29 @@ def test_issue_password_command_returns_a_working_password(session):
     assert staff.must_change_password is True
 
 
+def test_the_cli_can_recover_an_account_that_happens_to_be_named_cli(session):
+    """The CLI's exemption from the self-recovery guard is the `allow_self`
+    argument its two commands pass (admin/cli.py), not the accident that the
+    actor string it stamps - "cli" - differs from every username.
+
+    `staff.username` is a plain VARCHAR with no reserved values, so an account
+    really can be called `cli`. Layer L3 exists precisely for the case where
+    nobody can log in to recover it through the panel, and an exemption that
+    quietly stopped applying to one username would fail at exactly that
+    moment. Both commands are driven here because they take the exemption
+    separately.
+    """
+    enrol(session, "cli", OLD_KEY)
+
+    password = cmd_issue_password(session, "cli")
+    cmd_reset_mfa(session, "cli")
+    session.flush()
+
+    staff = get_staff(session, "cli")
+    assert verify_password(password, staff.password_hash)
+    assert staff.mfa_enrolled is False
+
+
 def test_rotate_key_reencrypts_every_enrolled_secret(session):
     secret_a = enrol(session, "alice", OLD_KEY)
     secret_b = enrol(session, "bob", OLD_KEY)

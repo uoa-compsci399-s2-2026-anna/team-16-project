@@ -9,6 +9,7 @@ from sqlalchemy import select
 
 from admin.accounts import (
     LastAdministratorsError,
+    SelfRecoveryError,
     UnknownStaffError,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
@@ -18,10 +19,12 @@ from admin.accounts import (
     deactivate_staff,
     generate_initial_password,
     get_staff,
+    issue_password,
+    reset_mfa,
     set_password,
     set_role,
 )
-from admin.models import Staff, StaffRole, utcnow
+from admin.models import AuditLog, Staff, StaffRole, utcnow
 from admin.security import verify_password
 from admin.totp import TOTP_INTERVAL
 
@@ -279,3 +282,115 @@ def test_deactivating_an_administrator_is_allowed_once_three_are_usable(session)
     session.flush()
 
     assert count_usable_admins(session) == 2
+
+
+# --- No recovery action may be aimed at the actor's own account ------------
+#
+# The guard lives here, beside the two-administrator floor, rather than in
+# admin/accounts_view.py, because the view is not the only caller: admin/cli.py
+# reaches the same two functions, and so will anything added later. A guard in
+# the view is a guard on one of the paths.
+
+
+def _enrolled(session, username: str):
+    """An account with something for reset_mfa to destroy.
+
+    The enrolment is hand-set rather than driven through
+    begin/complete_mfa_enrolment - what these tests need is a non-NULL secret
+    and a timestamp to compare against afterwards, and a real TOTP round trip
+    would only make the assertions harder to read. tests/admin/test_enrolment.py
+    covers the real path.
+    """
+    create_staff(session, username=username, display_name=username.title())
+    session.flush()
+    staff = get_staff(session, username)
+    staff.mfa_secret_enc = b"not-a-real-encrypted-secret"
+    staff.mfa_enrolled_at = utcnow()
+    session.flush()
+    return staff
+
+
+def test_issuing_yourself_a_password_is_refused(session):
+    """Issuing a password is a password change that never asks for the
+    current one. Aimed at yourself it is the first half of a takeover from a
+    stolen session, not recovery."""
+    create_staff(session, username="alice", display_name="Alice Example")
+    session.flush()
+    before = get_staff(session, "alice")
+    hash_before = before.password_hash
+    generation_before = before.session_generation
+
+    with pytest.raises(SelfRecoveryError):
+        issue_password(session, "alice", actor="alice")
+
+    staff = get_staff(session, "alice")
+    assert staff.password_hash == hash_before
+    assert staff.session_generation == generation_before
+
+
+def test_a_refused_self_issue_writes_no_audit_entry_of_its_own(session):
+    """issue_password audits the change it makes. A refused call makes no
+    change, so it must leave no entry claiming one - the refusal is recorded
+    by the caller that turned it away (admin/accounts_view.py), which knows
+    it was a refusal."""
+    create_staff(session, username="alice", display_name="Alice Example")
+    session.flush()
+
+    with pytest.raises(SelfRecoveryError):
+        issue_password(session, "alice", actor="alice")
+
+    assert session.scalars(select(AuditLog)).all() == []
+
+
+def test_resetting_your_own_authenticator_is_refused(session):
+    """Resetting MFA is a second factor that never asks for the device."""
+    staff = _enrolled(session, "alice")
+    secret_before = staff.mfa_secret_enc
+    enrolled_before = staff.mfa_enrolled_at
+
+    with pytest.raises(SelfRecoveryError):
+        reset_mfa(session, "alice", actor="alice")
+
+    staff = get_staff(session, "alice")
+    assert staff.mfa_secret_enc == secret_before
+    assert staff.mfa_enrolled_at == enrolled_before
+
+
+def test_the_self_check_folds_case_the_way_a_username_does(session):
+    """Usernames are stored casefolded (_normalise_username), and the actor
+    string arrives from a session cookie that was written at login. A guard
+    comparing the two raw would be defeated by typing one capital letter into
+    the login form."""
+    create_staff(session, username="alice", display_name="Alice Example")
+    session.flush()
+
+    with pytest.raises(SelfRecoveryError):
+        issue_password(session, "alice", actor="  Alice  ")
+
+
+def test_another_administrator_is_the_case_these_actions_exist_for(session):
+    """The guard must not turn the feature off. A colleague acting on a
+    locked-out account is recovery layer L2 itself."""
+    create_staff(session, username="alice", display_name="Alice Example")
+    session.flush()
+
+    issued = issue_password(session, "alice", actor="bob")
+    session.flush()
+
+    assert verify_password(issued, get_staff(session, "alice").password_hash)
+
+
+def test_the_cli_may_act_on_the_account_it_is_recovering(session):
+    """Layer L3. The exemption is a parameter the caller passes, not a
+    consequence of the CLI reaching a different function - see
+    admin/cli.py's own comment for why it is the one caller that gets it."""
+    staff = _enrolled(session, "alice")
+
+    issued = issue_password(session, "alice", actor="alice", allow_self=True)
+    reset_mfa(session, "alice", actor="alice", allow_self=True)
+    session.flush()
+
+    staff = get_staff(session, "alice")
+    assert verify_password(issued, staff.password_hash)
+    assert staff.mfa_secret_enc is None
+    assert staff.mfa_enrolled_at is None

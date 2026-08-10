@@ -50,6 +50,10 @@ class UnknownStaffError(RuntimeError):
     """No account with that username."""
 
 
+class SelfRecoveryError(RuntimeError):
+    """A recovery action was aimed at the account performing it."""
+
+
 def generate_initial_password() -> str:
     """Generate a one-time initial password.
 
@@ -159,6 +163,45 @@ def _guard_admin_floor(session: Session, staff: Staff) -> None:
         )
 
 
+def _guard_not_self(staff: Staff, actor: str, *, allow_self: bool, what: str) -> None:
+    """Refuse a recovery action aimed at the account performing it.
+
+    ``issue_password`` and ``reset_mfa`` are contract 8.3's recovery layer L2:
+    what one administrator does *for* a colleague who cannot act for
+    themselves. Each one deliberately skips the proof the ordinary path
+    demands — issuing a password never asks for the current one, resetting an
+    enrolment never asks for the device. That is the point when the person
+    holding the account is locked out, and it is a privilege escalation when
+    they are not: a stolen session issues itself a password, resets the
+    authenticator, enrols its own, and now holds both factors outright,
+    having produced neither at any point. Every step of that is audited,
+    which reports the takeover and does not prevent it.
+
+    The floor above (``_guard_admin_floor``) rests on the same reading of
+    8.3 from the other side: two administrators exist so that each is the
+    other's recovery path. An action a single administrator can apply to
+    themselves has quietly removed the second party from a procedure whose
+    entire value is that a second party was involved.
+
+    Comparison is through ``_normalise_username`` on both sides. ``username``
+    is stored casefolded and ``actor`` arrives from a session cookie written
+    at login, so comparing the two raw would let one capital letter through.
+
+    ``allow_self`` is the exemption, and it is a parameter rather than a
+    property of where the guard sits: see ``admin/cli.py``, the one caller
+    that passes it.
+    """
+    if allow_self:
+        return
+    if _normalise_username(actor) != staff.username:
+        return
+    raise SelfRecoveryError(
+        f"{what} is a recovery action another administrator performs for you, "
+        f"and it cannot be applied to your own account ({staff.username}). "
+        "Ask the other administrator."
+    )
+
+
 def create_staff(
     session: Session,
     *,
@@ -202,13 +245,22 @@ def set_password(session: Session, username: str, new_password: str) -> None:
     staff.session_generation += 1
 
 
-def issue_password(session: Session, username: str, *, actor: str) -> str:
+def issue_password(
+    session: Session, username: str, *, actor: str, allow_self: bool = False
+) -> str:
     """Replace an account's password with a random one it must then change.
 
     Contract §8.3, recovery layer L2: this is half of what an administrator
     does to a compromised or locked-out colleague (reset_mfa is the other
     half). The plaintext is returned to be read out once and handed over out
     of band - there is no email system, deliberately.
+
+    Refuses when ``actor`` names the account being acted on, unless
+    ``allow_self`` says otherwise - see ``_guard_not_self``. The guard runs
+    before anything is written, so a refused call leaves the row and the
+    audit trail exactly as it found them; the caller that was turned away is
+    the one that records the attempt, since only it knows the attempt was
+    refused rather than made.
 
     Distinct from set_password, which clears must_change_password because the
     user chose that password themselves. An issued password is a temporary
@@ -219,6 +271,7 @@ def issue_password(session: Session, username: str, *, actor: str) -> str:
     directly since the row is already loaded at that point.
     """
     staff = get_staff(session, username)
+    _guard_not_self(staff, actor, allow_self=allow_self, what="Issuing a password")
     password = generate_initial_password()
     staff.password_hash = hash_password(password)
     staff.must_change_password = True
@@ -421,14 +474,27 @@ def consume_recovery_code(session: Session, username: str, code: str) -> bool:
     return False
 
 
-def reset_mfa(session: Session, username: str) -> None:
+def reset_mfa(
+    session: Session, username: str, *, actor: str, allow_self: bool = False
+) -> None:
     """Clear enrolment and every recovery code.
 
     Contract 8.3 recovery layers L2 (another administrator) and L3 (the
     server-side CLI) both land here. The account is forced back through
     enrolment on its next login.
+
+    ``actor`` is taken for ``_guard_not_self`` alone - this function writes no
+    audit entry of its own, and its callers snapshot ``mfa_enrolled_at``
+    themselves before it mutates the row. It is keyword-only and **required**
+    on purpose: a default would mean a caller that forgot it silently skipped
+    the guard, which is the failure mode the guard exists to close. A caller
+    that genuinely has no acting session says so with ``allow_self=True``,
+    visibly, at the call site.
     """
     staff = get_staff(session, username)
+    _guard_not_self(
+        staff, actor, allow_self=allow_self, what="Resetting the authenticator"
+    )
     staff.mfa_secret_enc = None
     staff.mfa_enrolled_at = None
     staff.mfa_last_counter = None

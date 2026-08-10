@@ -5,6 +5,17 @@ one administrator restoring another's access in person. Everything it does
 is destructive to someone's access, so every action is audited and the
 two-administrator floor is enforced on every path.
 
+**"Another administrator" is a requirement, not a description.** Both
+recovery actions skip a proof the ordinary path demands - issuing a password
+never asks for the current one, resetting an enrolment never asks for the
+device - and that is safe only because the person performing them is not the
+person being recovered. Aimed at the actor's own account they are the two
+halves of a takeover from a stolen session, so ``admin/accounts.py`` refuses
+them there. The refusal lives in the service layer, not here: ``admin/cli.py``
+reaches the same two functions, and a guard in this file would be a guard on
+one of the paths. This file's job is to turn that refusal into a page and to
+record the attempt (``_refuse_self_recovery``).
+
 Two things about sqladmin 0.30, verified against the installed package
 (``sqladmin/application.py``) rather than assumed, that shape this file:
 
@@ -47,6 +58,7 @@ from sqladmin.filters import OperationColumnFilter
 
 from admin.accounts import (
     LastAdministratorsError,
+    SelfRecoveryError,
     UnknownStaffError,
     deactivate_staff,
     get_staff,
@@ -153,6 +165,68 @@ class StaffAdmin(AuditedModelView, model=Staff):
     def _list_url(self, request):
         return request.url_for("admin:list", identity=self.identity)
 
+    async def _refuse(self, request, message, explanation, status_code=400):
+        return await self.templates.TemplateResponse(
+            request, "brand/action_refused.html",
+            {
+                "message": message,
+                "explanation": explanation,
+                "next_url": self._list_url(request),
+                "link_text": "Back to accounts",
+            },
+            status_code=status_code,
+        )
+
+    #: Shown beside every self-recovery refusal. The message from
+    #: SelfRecoveryError says what was refused; this says why, in the terms
+    #: the person reading it will be thinking in - they are almost certainly
+    #: not an attacker, they are an administrator who selected their own row.
+    _SELF_RECOVERY_EXPLANATION = (
+        "These are recovery actions one administrator performs for another. "
+        "Applied to your own account they would replace your password without "
+        "asking for the current one, and clear your authenticator without "
+        "asking for the device - so anyone holding your session could take the "
+        "account over outright. Ask the other administrator to do it for you."
+    )
+
+    async def _refuse_self_recovery(self, request, session, exc, *, actor, staff_id, slug):
+        """Undo the batch, record the attempt, and show the refusal.
+
+        The rollback comes first and discards any row the same request had
+        already acted on - the same choice ``deactivate_action`` makes for the
+        two-administrator floor, and the right one here: a password issued to
+        a colleague earlier in the selection would never be rendered on the
+        page this request now returns, leaving that account holding a
+        credential nobody read out.
+
+        The audit entry is written *after* the rollback, and committed, so
+        that undoing the change does not also undo the record of the attempt.
+        A refusal is worth a row precisely because the successful case has
+        one: a self-aimed recovery action that left no trace at all would be
+        the only thing an administrator reading the trail could not see.
+
+        ``action="refuse"`` is a value contract §2.3's ``audit_log.action``
+        note does not list. That note is already behind the code - it lists
+        ``create``/``update``/``delete``/``publish``/``rollback`` while
+        ``admin/factor_lifecycle.py`` has written ``archive`` since E-6 - and
+        the column is a plain VARCHAR(32), so nothing rejects it. It is
+        recorded as needing a contract revision rather than fixed here,
+        because §2.3 is shared with B's API layer and a unilateral edit is
+        the specific thing this project's contract rule forbids. The
+        alternative, reusing ``update``, would put a row in the trail
+        claiming a change that was refused.
+        """
+        session.rollback()
+        write_audit(
+            session, actor=actor, action="refuse", table_name="staff",
+            row_id=staff_id, before=None,
+            after={"refused": slug, "reason": "self-recovery"},
+        )
+        session.commit()
+        return await self._refuse(
+            request, str(exc), self._SELF_RECOVERY_EXPLANATION
+        )
+
     @action(
         name="issue-password",
         label="Issue a new password",
@@ -174,7 +248,13 @@ class StaffAdmin(AuditedModelView, model=Staff):
                 # issue_password writes its own audit entry (admin/accounts.py) -
                 # the plaintext never passes through this view's own
                 # write_audit call, which is what keeps it out of the trail.
-                password = issue_password(session, staff.username, actor=actor)
+                try:
+                    password = issue_password(session, staff.username, actor=actor)
+                except SelfRecoveryError as exc:
+                    return await self._refuse_self_recovery(
+                        request, session, exc,
+                        actor=actor, staff_id=staff.id, slug="issue-password",
+                    )
                 issued.append((staff.username, password))
             session.commit()
         return await self.templates.TemplateResponse(
@@ -206,7 +286,13 @@ class StaffAdmin(AuditedModelView, model=Staff):
                     "username": staff.username,
                     "mfa_enrolled_at": staff.mfa_enrolled_at,
                 }
-                reset_mfa(session, staff.username)
+                try:
+                    reset_mfa(session, staff.username, actor=actor)
+                except SelfRecoveryError as exc:
+                    return await self._refuse_self_recovery(
+                        request, session, exc,
+                        actor=actor, staff_id=staff.id, slug="reset-mfa",
+                    )
                 write_audit(
                     session, actor=actor, action="update", table_name="staff",
                     row_id=staff.id, before=before,
@@ -233,20 +319,12 @@ class StaffAdmin(AuditedModelView, model=Staff):
                     deactivate_staff(session, staff.username)
                 except LastAdministratorsError as exc:
                     session.rollback()
-                    return await self.templates.TemplateResponse(
-                        request, "brand/action_refused.html",
-                        {
-                            "message": str(exc),
-                            "explanation": (
-                                "The panel keeps at least two active administrators. "
-                                "With no email system to recover through, one "
-                                "administrator is one lost phone away from a panel "
-                                "nobody can enter."
-                            ),
-                            "next_url": self._list_url(request),
-                            "link_text": "Back to accounts",
-                        },
-                        status_code=400,
+                    return await self._refuse(
+                        request, str(exc),
+                        "The panel keeps at least two active administrators. "
+                        "With no email system to recover through, one "
+                        "administrator is one lost phone away from a panel "
+                        "nobody can enter.",
                     )
                 write_audit(
                     session, actor=actor, action="update", table_name="staff",

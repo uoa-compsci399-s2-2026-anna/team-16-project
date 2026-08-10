@@ -25,6 +25,7 @@ from sqlalchemy import bindparam as sa_bindparam
 from sqlalchemy import select, text
 
 from admin.accounts import (
+    RECOVERY_CODE_COUNT,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     create_staff,
@@ -444,6 +445,186 @@ async def test_a_staff_member_cannot_issue_a_password_via_the_action_url(
     )
 
     assert response.status_code == 403
+
+
+# --- Nobody recovers their own account -----------------------------------
+#
+# Contract §8.3's recovery layer L2 is "another administrator". Both actions
+# below exist because the account's owner *cannot* act: issuing a password
+# replaces a password nobody knows any more, resetting MFA clears a binding
+# to a device nobody holds any more. Aimed at the actor's own account they
+# stop being recovery and become the two steps of a takeover - a stolen
+# session issues itself a password, resets the authenticator, enrols its own,
+# and holds the account outright, having needed neither the password nor the
+# device at any point. The audit trail records that faithfully and prevents
+# none of it.
+#
+# Every test here drives the @action URL rather than the list page. sqladmin
+# 0.30 registers those routes through `Admin.add_route` with `login_required`
+# alone (application.py's `_handle_action_decorated_func`), so a guard that
+# only ever showed up on /admin/staff/list would leave the URL itself open -
+# the same shape as the defect this file's
+# `test_a_staff_member_cannot_issue_a_password_via_the_action_url` already
+# pins for the role check.
+#
+# `admin_client.staff` is the pre-request snapshot every "unchanged"
+# assertion below compares against. It is deliberately *not* re-read through
+# `db_session` before the request: MySQL's REPEATABLE READ would then hand
+# every later query in the same test that same pre-request snapshot, and an
+# assertion that the row is unchanged would hold no matter what the request
+# did (see conftest's `_resync` for the same trap).
+
+
+async def test_an_administrator_cannot_issue_a_password_to_their_own_account(
+    admin_client, db_session
+):
+    """Issuing yourself a password is a password change that never asks for
+    the current one."""
+    me = admin_client.staff
+
+    response = await admin_client.get(
+        "/admin/staff/action/issue-password", params={"pks": me.id}
+    )
+
+    assert response.status_code == 400
+    # The refusal page, not the credential page. A refusal that still rendered
+    # a password would have issued one.
+    assert 'class="key"' not in response.text
+
+    staff = get_staff(db_session, me.username)
+    assert staff.password_hash == me.password_hash
+    assert staff.must_change_password is False
+    assert staff.session_generation == me.session_generation
+
+
+async def test_an_administrator_cannot_reset_their_own_authenticator(
+    admin_client, db_session
+):
+    """Resetting your own MFA is a second factor that never asks for the
+    device."""
+    me = admin_client.staff
+
+    response = await admin_client.get(
+        "/admin/staff/action/reset-mfa", params={"pks": me.id}
+    )
+
+    assert response.status_code == 400
+
+    staff = get_staff(db_session, me.username)
+    assert staff.mfa_secret_enc == me.mfa_secret_enc
+    assert staff.mfa_enrolled is True
+    assert staff.session_generation == me.session_generation
+    # The recovery codes are the other half of what reset_mfa destroys, and
+    # the half a "the enrolment is still there" assertion would miss.
+    assert len(staff.recovery_codes) == RECOVERY_CODE_COUNT
+
+
+async def test_a_refused_self_recovery_is_recorded(admin_client, db_session):
+    """A refusal is worth a row of its own. The successful case is audited,
+    so an attempt that was turned away leaving no trace is the one thing the
+    trail would not show - and a self-aimed recovery action is exactly what
+    an administrator reading it later wants to see.
+    """
+    await admin_client.get(
+        "/admin/staff/action/reset-mfa", params={"pks": admin_client.staff.id}
+    )
+
+    entry = db_session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "staff").order_by(AuditLog.id.desc())
+    )
+    assert entry is not None
+    assert entry.action == "refuse"
+    assert entry.actor == admin_client.staff.username
+    assert entry.row_id == admin_client.staff.id
+    assert entry.after_json["refused"] == "reset-mfa"
+
+
+async def test_a_selection_containing_the_actor_refuses_the_whole_batch(
+    admin_client, db_session, enrolled_staff
+):
+    """`pks` is a comma-separated list, so an administrator can select their
+    own row alongside a colleague's. The colleague's password must not be
+    issued either: it would have been shown on a page this request never
+    renders, so the account would be left holding a credential nobody read
+    out. Same choice `deactivate_action` already makes for the
+    two-administrator floor - one refusal aborts the selection.
+    """
+    response = await admin_client.get(
+        "/admin/staff/action/issue-password",
+        params={"pks": f"{enrolled_staff.id},{admin_client.staff.id}"},
+    )
+
+    assert response.status_code == 400
+    colleague = get_staff(db_session, enrolled_staff.username)
+    assert colleague.password_hash == enrolled_staff.password_hash
+    assert colleague.session_generation == enrolled_staff.session_generation
+
+
+async def test_the_screen_offers_no_fourth_action(admin_client):
+    """Three actions, all accounted for: issue-password and reset-mfa are
+    guarded against self-application by admin.accounts, deactivate by the
+    two-administrator floor in the same module.
+
+    Walks the MRO's own ``__dict__`` rather than ``inspect.getmembers`` so an
+    action added to a *base* class is caught too - `AuditedModelView` is
+    shared with every other screen in the panel, and an action added there
+    would appear on this one without anyone editing this file.
+    """
+    from admin.accounts_view import StaffAdmin
+
+    slugs = {
+        member._slug
+        for klass in StaffAdmin.__mro__
+        for member in vars(klass).values()
+        if hasattr(member, "_slug")
+    }
+
+    assert slugs == {"issue-password", "reset-mfa", "deactivate"}
+
+
+async def test_an_administrator_cannot_weaken_their_own_row_through_the_edit_form(
+    admin_client, db_session
+):
+    """The companion to the floor test below, aimed at the actor's own row.
+
+    `can_edit = False` closes the generic form for every row, so this is
+    already covered - but it is covered by a class attribute one line long
+    that a later task could plausibly flip to make `display_name` editable,
+    and the fields that would come with it (`role`, `is_active`) are exactly
+    the two an account must not be able to change on itself. This pins the
+    property rather than the attribute.
+    """
+    me = admin_client.staff
+
+    get_form = await admin_client.get(f"/admin/staff/edit/{me.id}")
+    post_form = await admin_client.post(
+        f"/admin/staff/edit/{me.id}",
+        data={"display_name": me.display_name, "role": StaffRole.staff.value},
+        follow_redirects=False,
+    )
+
+    assert get_form.status_code == 403
+    assert post_form.status_code == 403
+    staff = get_staff(db_session, me.username)
+    assert staff.role is StaffRole.admin
+    assert staff.is_active is True
+
+
+async def test_the_generic_delete_route_is_closed(admin_client, db_session):
+    """sqladmin registers DELETE /{identity}/delete with a `pks` query
+    parameter, separately from the actions above and from the edit form.
+    `can_delete = False` refuses it; asserted here because deleting your own
+    row is the third way an account could act on itself, and it is reached by
+    neither of the two routes the tests above cover.
+    """
+    me = admin_client.staff
+
+    response = await admin_client.request(
+        "DELETE", "/admin/staff/delete", params={"pks": me.id}
+    )
+
+    assert response.status_code == 403
+    assert get_staff(db_session, me.username).is_active is True
 
 
 async def test_the_generic_edit_form_cannot_bypass_the_admin_floor(

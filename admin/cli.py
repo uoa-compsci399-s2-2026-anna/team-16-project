@@ -59,15 +59,37 @@ def cmd_create_staff(
     return staff.username, password
 
 
+# Both recovery commands below pass `allow_self=True` to admin/accounts.py's
+# self-recovery guard. This is the one exemption from it, and it is
+# deliberate.
+#
+# The guard refuses `issue_password`/`reset_mfa` aimed at the account
+# performing them, because from a stolen session that pair is a complete
+# account takeover rather than recovery. That reasoning needs an account
+# performing them. Here there is none: layer L3 is what layer L2 (the panel,
+# one administrator recovering another) falls back to when *every*
+# administrator is locked out and there is no second party left to be, and
+# whoever runs it already holds shell access to the server and the database
+# behind it. A guard here would refuse the last way back in while stopping an
+# attacker who, by definition, no longer needs this command for anything.
+#
+# Passed explicitly rather than left to fall out of `actor="cli"` never
+# matching a username. It would, today, for every username except `cli`
+# itself - `staff.username` is a plain VARCHAR with no reserved values, so
+# that account can exist, and the only command able to recover it would be
+# the one that refused. An exemption nobody wrote down is an accident that
+# reads like a decision; this one is a decision.
+
+
 def cmd_reset_mfa(db_session: Session, username: str) -> None:
     """Recovery layer L3: clear an enrolment from the server."""
-    reset_mfa(db_session, username)
+    reset_mfa(db_session, username, actor="cli", allow_self=True)
 
 
 def cmd_issue_password(db_session: Session, username: str) -> str:
     """Recovery layer L3: issue a password from the server when no
     administrator can. Returns the plaintext, shown once."""
-    return issue_password(db_session, username, actor="cli")
+    return issue_password(db_session, username, actor="cli", allow_self=True)
 
 
 def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[int, int]:

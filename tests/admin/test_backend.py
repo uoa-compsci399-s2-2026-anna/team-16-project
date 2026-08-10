@@ -1059,7 +1059,7 @@ def _evict_l2(admin_app, username: str) -> str:
     """
     new_password = generate_initial_password()
     with admin_app.state.session_factory() as db:
-        reset_mfa(db, username)
+        reset_mfa(db, username, actor="admin")
         set_password(db, username, new_password)
         db.commit()
     return new_password

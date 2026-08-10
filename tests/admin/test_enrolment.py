@@ -297,7 +297,7 @@ def test_resetting_mfa_clears_enrolment_and_all_recovery_codes(session):
     """The administrator reset path, contract 8.3 layer L2."""
     enrolled_account(session)
 
-    reset_mfa(session, "alice")
+    reset_mfa(session, "alice", actor="admin")
     session.flush()
 
     staff = get_staff(session, "alice")
@@ -309,7 +309,7 @@ def test_resetting_mfa_clears_enrolment_and_all_recovery_codes(session):
 
 def test_a_reset_account_can_enrol_again(session):
     enrolled_account(session)
-    reset_mfa(session, "alice")
+    reset_mfa(session, "alice", actor="admin")
     session.flush()
 
     secret, _ = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
@@ -334,7 +334,7 @@ def test_resetting_mfa_leaves_no_stale_recovery_codes_on_the_relationship(sessio
     staff = get_staff(session, "alice")
     assert len(staff.recovery_codes) == RECOVERY_CODE_COUNT  # force the load
 
-    reset_mfa(session, "alice")
+    reset_mfa(session, "alice", actor="admin")
     session.flush()
 
     assert staff.recovery_codes == []

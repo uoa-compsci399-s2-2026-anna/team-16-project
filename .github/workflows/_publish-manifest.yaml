@@ -107,17 +107,38 @@ jobs:
           index = json.load(sys.stdin)
           manifests = index.get("manifests")
           if manifests is None:
-              # Not an index at all. imagetools create always produces one, so
-              # this means something other than this workflow moved the tag.
-              print("(a single manifest, not an index)")
-          else:
-              platforms = sorted({
-                  "{}/{}".format(p.get("os", "?"), p.get("architecture", "?"))
-                  for p in (m.get("platform") or {} for m in manifests)
-                  # buildx attestations ride in the index as unknown/unknown.
-                  if p.get("os", "unknown") != "unknown"
-              })
-              print(", ".join(platforms))
+              # NOT AN INDEX AT ALL, so no platform can be read from it.
+              #
+              # `imagetools create` produces a manifest list even from a single
+              # source, so this means something other than this workflow moved
+              # the tag. EXIT NON-ZERO rather than printing a placeholder: the
+              # caller treats a failed read-back as fatal, and a placeholder
+              # string would sail through its emptiness check and then be
+              # printed on a release page as if it were an architecture list.
+              #
+              # If this ever fires on a legitimate single-architecture run, the
+              # fix is to teach this script to resolve a lone manifest's
+              # platform out of its config blob - NOT to downgrade this to a
+              # warning. Publishing a tag whose contents nobody could read is
+              # the thing this file exists to prevent.
+              sys.exit(
+                  "read-back failed: this tag is a single manifest, not an "
+                  "image index, so its platforms cannot be enumerated"
+              )
+
+          platforms = sorted({
+              "{}/{}".format(p.get("os", "?"), p.get("architecture", "?"))
+              for p in (m.get("platform") or {} for m in manifests)
+              # buildx attestations ride in the index as unknown/unknown.
+              if p.get("os", "unknown") != "unknown"
+          })
+          if not platforms:
+              # An index holding nothing but attestations. Same reasoning.
+              sys.exit(
+                  "read-back failed: the index carries no real platform, only "
+                  "attestation manifests"
+              )
+          print(", ".join(platforms))
           PY
 
           # The first tag is the specific, immutable one (`<sha>`, `1.2.0`) and
@@ -183,8 +204,24 @@ jobs:
               targets="${targets} -t ${repo}:${t}"
             done
 
+            # THE PUSH ITSELF CAN FAIL, AND IT IS NOT `set -e` THAT CATCHES IT.
+            #
+            # This script deliberately runs WITHOUT `-e`, so that one broken
+            # image still lets the other two be reported in one summary rather
+            # than the run dying on the first of them. The price is that every
+            # command that matters has to be checked by hand, and this is one
+            # of them: both per-architecture tags can be in the registry and
+            # the merge can still fail (a registry 5xx, a token that expired
+            # mid-job, a rate limit). Unchecked, the read-back below would then
+            # inspect a tag that was never written.
+            #
             # shellcheck disable=SC2086
-            docker buildx imagetools create $targets $sources
+            if ! docker buildx imagetools create $targets $sources; then
+              echo "::error title=Manifest not created::kaicalc-${name}: imagetools create failed for [${TAGS}] even though [${archs}] were in the registry. The tags for this image are NOT what this run intended."
+              echo "| \`kaicalc-${name}\` | ${TAGCELL} | **NOT PUBLISHED** - the merge failed |" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=1
+              continue
+            fi
 
             # READ THE PUBLISHED TAG BACK OUT OF THE REGISTRY.
             #
@@ -195,10 +232,34 @@ jobs:
             # holds, and a summary written from intent could state exactly that
             # claim while being wrong. `unknown/unknown` entries are buildx
             # attestation manifests, not platforms.
+            #
+            # "I LOOKED AND IT IS ABSENT" AND "I COULD NOT LOOK" ARE NOT THE
+            # SAME ANSWER, and until this check existed they produced the same
+            # one. A failed inspect left `published` empty, the loop below then
+            # marked BOTH architectures absent - a statement about the registry
+            # made without reading it - and the job still exited 0, because
+            # `FAILED` was only ever set when neither source tag existed. A
+            # release would have been cut on top of that: `publish` needs only
+            # that this job succeeded, so the page would have advertised three
+            # images that 404 while its architecture line degraded to a shrug.
+            #
+            # An empty read-back is therefore fatal for this image, and fatal
+            # BEFORE the absent/missing arithmetic below, so that nothing
+            # downstream describes architectures nobody verified.
+            readback_status=0
             published="$(
+              set -o pipefail
               docker buildx imagetools inspect "${repo}:${READBACK_TAG}" --raw \
               | python3 "$RUNNER_TEMP/platforms.py"
-            )"
+            )" || readback_status=$?
+
+            if [ "$readback_status" -ne 0 ] || [ -z "$published" ]; then
+              echo "::error title=Read-back failed::kaicalc-${name}:${READBACK_TAG} was pushed but could not be read back out of the registry (status ${readback_status}). This run cannot say which architectures the tag holds, so it does not claim any."
+              echo "| \`kaicalc-${name}\` | ${TAGCELL} | **UNVERIFIED** - the tag could not be read back |" >> "$GITHUB_STEP_SUMMARY"
+              FAILED=1
+              continue
+            fi
+
             [ -n "$FIRST_PUBLISHED" ] || FIRST_PUBLISHED="$published"
 
             # Into the log as well as the summary. A step summary is the nicer

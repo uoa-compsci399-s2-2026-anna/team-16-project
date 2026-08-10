@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.5 draft)"
+date: "2026-08-09 (v1.7 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,52 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.7 — 2026-08-09 (the change that was made without a row, **affects B, C, D and E**)
+
+**Change 1 is a §2.1 and §6.1 ruling that has been in the code and the fixtures since 2026-08-09 and in this change log nowhere.** §0's process is document, notify, fixture — and the change log *is* the notify step. A rule that only exists in a commit message has been applied to `tests/fixtures/taxonomy.json` and `admin/seed.py` without being announced to the two people who consume them, and v1.6's own closing note then asserted the opposite, that §1–§6 were untouched and the fixtures were clean. **A false "nothing changed" is worse than no note**: it tells a reader not to look.
+
+The rest are the four defects and three omissions the whole-branch review turned up in `web/`. None changes a wire shape.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`display_unit` is a presentation variant of `unit` at the same scale, never a different scale, and nothing anywhere converts between the two.** `tests/fixtures/taxonomy.json` and `admin/seed.py` both carried `t CO2e` against a `unit` of `kg CO2e`, `kL` against `L`, and `t` against `kg`. **§7.6.1 is what makes that unfixable rather than merely wrong**: the front end performs no arithmetic on an API figure, so there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label — the number is relabelled and every greenhouse-gas figure on the page reads a thousand times too small. It was live: C's results table rendered "3,993 t CO2e" and "1,530,000 kL" one section below the same two figures labelled correctly. The column is for a typographic variant — `kg CO₂e` against `kg CO2e` — which is how §6.1's example is written, with the two identical. **If a metric should be reported in tonnes, that is the metric's `unit` and the formula produces tonnes**: scale is a property of a formula, which is data (§2.1), not of a label. Corrected in **both** the fixture and the seed, and the seed is the half that matters, because it is what ships to the database. Ruled in §2.1 and §6.1 on 2026-08-09; **recorded here, which is the step that was missed** | §2.1, §6.1, §10 | **B, D, E** |
+| 2 | **§7.2 gains `entryResultsFrom(entries, response)`, the one export §7 still did not name.** It is imported by `calculator.js` and its output is read by `results.js`, so it is already a cross-module call — which is the definition §0 gives of what this document governs. Documented with the distinction a consumer has to get right: cross-entry figures come from `result.totals`, per-entry figures from `result.entry_results`, and never a sum over the latter (§7.6.1) | §7.2 | **C, D, E** |
+| 3 | **`improvement.js` interpolated `destination.code` into `for="…"` and `id="…"` through neither `escapeHtml` nor `slug`** — the only unescaped interpolation left on the branch. `destination.code` is `VARCHAR(64)` with no pattern constraint in `db/`, `api/` or `admin/`, and staff edit it through §8.1's generic CRUD, so a code containing a double quote breaks the attribute on a **public** page. Fixed with `slug`, which `calculator.js` already uses for the identical case. Recorded rather than fixed quietly because it names a standing hazard: **§7.3a's escaping guarantee holds only for values that pass through `view.js`**, and a taxonomy `code` reads as safe while being staff-authored content on a public page, exactly like the `formula.expression` §7.3a already calls out | §7.3a | **C, D, E** |
+| 4 | **§7.6 rule 3's 375px baseline was being met at 375px and broken between 481px and 849px.** `.results-page`'s −80px bleed sat outside every media query while its `.wide` counterpart existed only at ≥850px and its reset only at ≤480px, so in the band between them the results page was pulled 80px past a container with 20px of padding: 60px off the left edge, unreachable in LTR, plus horizontal body scroll. **A tablet is the likeliest non-desktop demo device.** Written into the section because "mobile-first, baseline 375px" reads as a floor and is not one — a layout can pass at the baseline and at desktop and fail in between, and only a rule that says so will get the middle checked | §7.6 | **C, D** |
+| 5 | **The stylesheet asked for seven weights the project does not have, and now asks for two.** Self-hosting (v1.6 change 10) replaced a five-weight CDN request with the two static faces the brand authorises — Geologica Bold and Kumbh Sans Regular — leaving 500, 600, 750, 800 and 900 with no face behind them. `font-synthesis: weight` kept them looking bold by synthesising; collapsing every declaration to 400 or 700 makes them bold **and** removes the synthesis, and `font-synthesis: none` is back. The brand-correct answer and the technically clean one were the same answer. **A weight that is not 400 or 700 now requires a font file to go with it** | §7.6 | **C, D, E** |
+| 6 | **`RATE_LIMITED`'s 60-second timer cleared the deadline and not the banner**, so Calculate re-enabled underneath a paragraph still telling the user to wait 60 seconds — the button and the copy saying opposite things, with the copy the more believable of the two. The banner is now cleared with the deadline, but only if it is still the rate-limit banner: another failure may have replaced it inside the minute, and that message is about something the wait does not fix. §9.2's `BLOCKED` rule is the same shape and was already right; this was the one code with a timed recovery and no matching copy reset | §9, §7.3a | **B, C** |
+| 7 | **`web/README.md` now says not to run a client demo on `?mock=1`.** §7.1 documents that mock mode re-derives only the mass figures and serves every impact figure from the fixture, cycled by entry index — so **a user who enters 5 kg is shown 4,449 kg CO2e**. That is correct behaviour for a fixture server and a catastrophic thing to put in front of the client, and the file the team actually opens said nothing about it. The instruction is to demo against the real API with the mock **factor set**: the figures are still placeholders, but they are placeholders the engine computed from what was entered, and the mandatory banner (§7.6.2) says so on screen | §7.1 | **all** |
+
+> **Change 1 is the only one that touches a fixture, and the fixture was already changed** — this row is the announcement, not a new edit. Nothing in this revision alters a request or response shape.
+>
+> **Still open after this revision.** Unchanged: **O-1** (real emissions factors, the hard blocker), **O-7** (on A's critical path), `landfill_diverted` as a real `metric` row, the container-preset input (v1.6 change 4), and `gwpHorizon`, which still has no control. The positive/negative colour pair stays partly open on the same terms as v1.6. Recorded and **deliberately not fixed here**, because each is a refactor rather than a correction: `main.js` shows the taxonomy-failure screen's raw `error.message` because `publicError` is not exported from `calculator.js`; an all-`standard_mix` submission renders "no food category data was provided", which is untrue; and `.stage-fieldset.has-error` and `.destination-list.has-error` are dead as written, because `has-error` is only ever applied to `.form-field`.
+
+### v1.6 — 2026-08-09 (§7 caught up with the front-end branch, **affects C, D and E**)
+
+**Every row here is §7 describing code that no longer exists.** The `integrate/frontend` branch removed thirteen violations of §7.6 over six tasks, and §7 was written from a survey of the branch *before* them — so the section D and E are told to read before consuming C's modules has spent a week telling them that `formatNumber` has a rounding gap it does not have, that `results.js` hard-codes three metric columns it no longer names, and that `compareImprovement` takes one argument when it takes two. **A stale §7 is not a cosmetic problem: it is a second implementation.** §7.3a exists so D and E use C's one `escapeHtml` instead of each writing their own, and a reader who finds the described module and the real module disagreeing has no reason to trust either.
+
+Two rows are not corrections. Row 9 settles an ambiguity nobody had ruled on, and row 10 adds a constraint the branch had already broken once.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **§7.1's mock-mode blockquote described the rewrite it was asking for as still owed.** It required the mock path to move to the `entries` / `totals` shape and to "serve the fixture as written"; it has moved, and it **cannot** serve the fixture as written — `mass` and the whole `totals` roll-up are functions of a request whose entry count a static file cannot know. Stated as it is, with the licence named as `mockRequest`'s alone, because the sentence a reader takes from a stale requirement is that mock mode is untrustworthy in ways it is not, and the sentence they need is which two figures are browser-derived | §7.1 | **C, D, E** |
+| 2 | **§7.1's "known defect" on the fixture path was fixed and replaced by a different one that no version stated.** The absolute `fetch('/tests/fixtures/…')` is gone — the URL now resolves against the module's own URL, so it follows the page. What survives is structural and unfixable in JavaScript: a browser clamps `../` at the origin root, so **the document root must be an ancestor of both `web/` and `tests/`**, and FastAPI serving `web/` as the static root makes every mock call 404. Recorded with an owner (**B**, a dev-only mount) because all three of C, D and E develop in mock mode and would each rediscover it separately | §7.1 | **B, C, D, E** |
+| 3 | **§7.2's key table is now exhaustive, and says so.** `state.alternative` and `state.compareAlternative` were on the object and in neither the table nor any reader: initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, read by nothing. Removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one rather than into `improvedAllocations`, which is where the live one is | §7.2 | **C** |
+| 4 | **§7.2's `unitPreset` / `unitCount` requirement now states what building it costs**, because "not built" was hiding a decision. `toKg` returns kilograms at **three** decimal places and `calculator.js` validates `totalAmount` at **two**, so a preset whose `kg_per_unit` is not a whole number produces a total the form then refuses. Every `kg_per_unit` in `tests/fixtures/taxonomy.json` is integral and the column is `DECIMAL(12,4)`, so the collision is invisible on the fixture and certain on real data. **This is why `toKg` is still imported by nothing and was not wired up in this revision** — it needs a ruling on what a user may type, not a refactor | §7.2, §7.3 | **B, C** |
+| 5 | **§7.2's fast-path exception claimed a drift wider than the one that exists.** The typed and re-rendered paths no longer disagree about server-supplied field errors — `updateLine` clears them, deliberately, because blanking or filling a row changes which lines the request carries and the server's line positions stop meaning what they meant. What remains is narrower and still real: on a negative amount `updateLine` marks only the row being typed in while `destinationRows` marks every negative row. An overstated warning and an understated one fail the same way — the reader stops believing the section | §7.2 | **C, D** |
+| 6 | **§7.3 said `tonnes ? 1000 : 1` was duplicated at six sites. It is duplicated at none.** The last of them — `improvement.js`'s `lineKg`, the denominator of every allocation percentage — now calls `massToKg`, and the three sites that rounded a conversion to the API's three decimal places call `kgString`, which the section described as imported by nothing. §7.3's rule is that the front end's arithmetic can be audited in one file, and a rule observed at five of six sites is worth less than none, because a reader who checks one site concludes it holds. The section now states the auditable form of the rule: **a `*`, `/` or `.toFixed()` on a mass anywhere else in `web/` is a defect on sight** | §7.3 | **C, D** |
+| 7 | **§7.3a's `formatNumber` JSDoc and its "known gap" described opposite behaviours, and both were wrong.** The signature said `{maximumFractionDigits: precision}` and the note beneath said a cost of `825.00` therefore renders as "825"; the function sets **both** bounds and has since 2026-08-09, and it clamps the digits to Intl's legal 0–20 because `display_precision` arrives from the database and an out-of-range value makes `toLocaleString` throw a `RangeError` that would take out the whole render rather than one figure. Added in its place is the precondition the calling modules actually depend on: `Number('')` is `0`, so a `\|\| 0` on an API figure makes absent, malformed and zero the same figure on screen, and every caller maps absent to `NaN` so that `formatNumber` prints "Not available" | §7.3a | **C, D, E** |
+| 8 | **§7.3a's `results.js` and `calculator.js` notes were both to-do lists for work that is done.** The client-side aggregation layer, the hard-coded `CO₂e / Cost / Water` columns and the three hard-coded equivalence labels are gone; `aggregateResults` and `differenceData` no longer exist. So are all three of `calculator.js`'s silent field-binding failures — the `field` format, the index mismatch, and a third the section never named: `fieldErrorMap` stored the **envelope's** message against every field, so a correctly bound row would still have read "Request validation failed" and discarded the only prose that said what was wrong with that row. Replaced by what the modules now are, plus the two things a reader will otherwise re-litigate: why `mass` may be named in both modules without breaching §7.6.5, and why a bar width is not a figure | §7.3a | **C, D** |
+| 9 | **Ruled: the arrow beside a comparison figure shows the direction of the impact, not the sign of the number.** An up arrow beside "1,104.0 kg CO2e saved" reads as "better" to one person and "went up" to another, and nothing in this document had ever said which. `net_benefit` is `current − alternative` (§3), so a positive net benefit is a saving, the impact fell, and the arrow points **down**. The ambiguity had a structural cause worth naming: `.value-negative` was carrying two different statements — "this change moved the wrong way" and "this quantity is below zero, because a destination offsets more than it costs" — so no single arrow could be right for both. They are now two sets of classes, tabulated in §7.3a, and `.value-negative` deliberately carries **no** arrow because `formatNumber` already prints the minus sign and a quantity is not a movement. §7.6.6 sends D to the same four classes so the statistics page does not grow a second convention | §7.3a, §7.6 | **C, D** |
+| 10 | **New rule §7.6.7: no page may request an asset from a third-party host at runtime.** `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to Google before the first paint — on a calculator whose privacy position is §2.3's and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The two brand faces were already in `admin/static/fonts/` and are now in `web/assets/fonts/` as well. **The rule is written down because §7.4 is the next place it would break:** that section tells D to return a Chart.js instance and says nothing about where Chart.js comes from, and the one-line CDN `<script>` is the documented way to add it | §7.6, §7.4 | **C, D, E** |
+| 11 | **§7.3a's `main.js` "known defect" was fixed in the first task of the branch, and the fix is now a requirement rather than an implementation detail.** `main.focus()` after every `setState` ejected a keyboard user from the sector radio group, so step 1 could not be passed without a mouse. Both halves of the replacement are stated, because the obvious half is not sufficient: focus moves to `<main>` on a **step transition** and returns to the element that had it, by `id`, on a **same-step** re-render — merely scoping the focus call leaves the user on `<body>`, which is worse than where they started | §7.3a | **C** |
+| 12 | **`compareImprovement(state)` takes two arguments.** The second is `calculator.js`'s `publicError` — §9's code-to-copy map — passed in rather than imported, because `calculator.js` already imports this module and the import back would be a cycle. Without it the improvement panel showed raw backend prose for the codes the main flow words carefully, and §9.1 rules that a public `FORMULA_ERROR` never echoes the expression or its location. A wrong arity in a section whose purpose is to be called from D's and E's code is the cheapest possible defect to introduce and among the more annoying to diagnose | §7.3a | **C, D, E** |
+| 13 | **`improvementValidation`'s tolerance was a percentage-point tolerance where §6.2's is an absolute 0.010 kg**, and §7.3a described neither. 0.01 percentage points is 0.15 kg on a 1,500 kg entry — fifteen times the limit — so the panel enabled Compare on a submission the server then refused with a 400, **for the whole submission**, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. Two consequences are recorded with it: the seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so the rounding remainder goes to the largest share; and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3, because step 4 deliberately permits allocating less than the total and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario | §7.3a | **B, C** |
+
+> **Corrected in v1.7 — the two sentences that stood here were false.** They read "Nothing in §1–§6 or §8–§10 changed" and "`tests/fixtures/` is untouched", and both were written from this revision's own edits rather than from the branch's. The `display_unit` same-scale ruling had already changed **§2.1**, **§6.1**, `tests/fixtures/taxonomy.json` and `admin/seed.py`, with no change-log row anywhere. See **v1.7 change 1**, which is that row. What is true of *this* revision's own edits: they touch §7 only, plus §7.6's new rule 7, and moved no request or response shape.
+>
+> **Still open after this revision.** **O-1** (real emissions factors) remains the hard blocker and **O-7** is still on A's critical path. Carried forward and unchanged: `landfill_diverted` as a real `metric` row (the client's). The **positive/negative semantic colour pair**, carried since v1.2, is *partly* closed — change 9 fixes the four classes, their arrows and their brand colours for the calculator page, and D can adopt them as they stand — but whether the client wants Kale-and-Beetroot for better-and-worse, rather than a green-and-red pair the brand does not contain, has still not been asked. New and unclosed: **the container-preset input (change 4)**, which needs a ruling on the two-decimal rule before `toKg` can be wired to anything, and **`gwpHorizon`**, which still has no control.
 
 ### v1.5 — 2026-08-09 (from the whole-branch review, **affects B, C, D and E**)
 
@@ -360,7 +406,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | `co2e`, `ch4`, `water`, `cost`, `mass` |
 | `name` | VARCHAR(128) | NOT NULL | |
 | `unit` | VARCHAR(32) | NOT NULL | Internal unit, e.g. `kg CO2e` |
-| `display_unit` | VARCHAR(32) | NULL | Falls back to `unit` when null |
+| `display_unit` | VARCHAR(32) | NULL | Falls back to `unit` when null. **A presentation variant of `unit` at the same scale, never a different scale — see §6.1** |
 | `display_precision` | TINYINT | NOT NULL, DEFAULT 2 | Decimal places |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
@@ -1322,6 +1368,12 @@ Called once on page load to build every dropdown and input row.
 }
 ```
 
+> **`display_unit` is a presentation variant of `unit` at the same scale. It is never a different scale, and nothing anywhere converts between the two.** A typographic difference — `kg CO₂e` against `kg CO2e` — is what the column is for. It is not a unit conversion, and the example above is written with the two identical for that reason.
+>
+> **The rule is forced by §7.6.1 rather than chosen.** Every figure the front end prints comes from the API, and the only arithmetic it may perform is unit conversion on what the *user typed*, in `units.js`. So there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label: the number would simply be relabelled, and every greenhouse-gas figure on the page would read a thousand times too small. §6.2 returns each metric total in `unit`, and a consumer that has both should prefer the `unit` travelling with the figure.
+>
+> **This was live in the fixtures.** `tests/fixtures/taxonomy.json` and `admin/seed.py` carried `t CO2e` against `kg CO2e`, `kL` against `L` and `t` against `kg` until 2026-08-09, and C's results table rendered "3,993 t CO2e" and "1,530,000 kL" one section below the same two figures labelled correctly. Both were corrected; the seed matters more than the fixture, because it is what ships to the database. **If a metric should be reported in tonnes, that is the metric's `unit` and the formula produces tonnes** — a metric's scale is a property of its formula, which is data (§2.1), not of a label.
+
 ## 6.2 `POST /api/v1/calculate`
 
 **Calculates and persists. One call equals one submission** (Decision 8).
@@ -1650,7 +1702,7 @@ Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or 
 
 # 7. Front-End Modules (owners: C and D)
 
-ES modules, no build step. Located in `web/js/`.
+ES modules, no build step. Located in `web/js/`. `web/README.md` is the operational companion to this section — how to run the front end, and how to run it against the fixtures with no backend — and this document is the authority where the two disagree.
 
 **Eleven modules, nine of them C's and built.** Until v1.2 this section named five and described two of those inaccurately — six real modules were absent, including `view.js`, which holds the escaping and formatting primitives D and E would otherwise each reimplement. The signatures below are transcribed from the branch, not proposed for it. Where C's code and the old contract disagreed on shape, **the contract has changed to match her code** and says so at the point of change; where a contract requirement is genuinely unmet, it is marked **Not built** and stays a requirement.
 
@@ -1698,9 +1750,9 @@ export async function getFactors(opts = {});
 
 Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stats` → `stats.json`, `POST /calculate` → `calculate_response.json`.
 
-> **Current behaviour, not a requirement — do not reimplement this.** The mock path re-synthesises the `mass` metric from the request body in JavaScript before returning the fixture. It is simulating a server rather than violating §7.6, but it means the numbers on screen in a mock demo were computed in the browser, which is the one property mock mode should not have in common with a bug. It must be rewritten when the fixtures move to the `entries` / `totals` shape (§10), and the rewrite should **serve the fixture as written** rather than deriving anything from the request.
+> **Current behaviour, not a requirement — do not reimplement this.** The mock path was rewritten for the `entries` / `totals` shape on 2026-08-09 and now reproduces §6.2 end to end: one request carrying `entries[]`, one response carrying `totals` beside a per-entry result in request order. It still **derives** two things in JavaScript rather than serving them verbatim — the `mass` metric, which is an identity (`value === qty_kg`, §4.3) and not a formula, and the `totals` roll-up, including the rule that an entry with no `alternative` contributes its current figures to the alternative side. Neither can come from a static file, because both are functions of a request whose entry count the fixture cannot know. Every other figure is the fixture's own. **This is `mockRequest`'s licence and nothing else's** — no module outside it may derive an impact figure (§7.6.1), and the numbers on screen in a mock demo are still partly browser-computed, which is the one property mock mode should not share with a bug.
 
-**Known defect, not a contract question:** the fixture path is absolute from the site root (`fetch('/tests/fixtures/…')`). That works under `python3 -m http.server` at the repo root and breaks the moment FastAPI serves `web/` as the static root — which breaks C, D and E simultaneously, because all three develop in mock mode.
+**Mock mode constrains the document root, and this is not fixable in JavaScript.** The fixture URL is resolved against this module's own URL (`new URL('../../tests/fixtures/', import.meta.url)`), so it follows the page wherever the site is served from — that much was a real defect and is fixed. What remains is structural: a browser clamps `../` at the origin root, so the root **must be an ancestor of both `web/` and `tests/`**. `python3 -m http.server` at the repository root satisfies it; FastAPI serving `web/` as the static root does not, and every mock call 404s. C, D and E all develop in mock mode, so **B owns a dev-only static mount that exposes `tests/fixtures/`**; until it exists, mock mode runs only under the plain HTTP server.
 
 ## 7.2 `state.js` (written by C)
 
@@ -1716,6 +1768,23 @@ export function subscribe(fn);
 
 /** Clears the sessionStorage token and returns to the intro step. */
 export function resetCalculator();
+
+/**
+ * Pairs the entries the user typed with the per-entry results §6.2 returns, which
+ * preserve request order. Each paired `response` is one entry's `current` /
+ * `alternative` / `net_benefit` plus the submission-level `factor_set`,
+ * `factor_source` and `gwp_horizon`, which the rendering modules read
+ * `is_mock` and `version_label` from.
+ *
+ * `state.result` carries both this and the whole response, so a consumer reads
+ * cross-entry figures from `result.totals` (§7.6.1) and per-entry figures from
+ * `result.entry_results` — never a sum over the latter.
+ *
+ * @param {Array<object>} entries   Draft entries, in the order they were sent
+ * @param {object} response         The §6.2 response
+ * @returns {Array<{entry: object, response: object}>}
+ */
+export function entryResultsFrom(entries, response);
 ```
 
 Keys, grouped. **This is C's shape and the contract has adopted it**; the previous ten-key object in this section was a proposal that her code superseded.
@@ -1732,16 +1801,18 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
+> **The table above is exhaustive as of 2026-08-09.** `alternative: []` and `compareAlternative: false` were also on the object — initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, and **read by nothing.** The alternative scenario is built from `improvedAllocations` by `improvement.js`, which never looks at either. Both are removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one.
+
 **Still requirements, and still unmet:**
 
-- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission.
+- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission. **What it will cost, so the next person is not surprised:** `toKg` returns kilograms at **three** decimal places (§7.3, API-ready) and `calculator.js` validates `totalAmount` against `/^\d+(\.\d{1,2})?$/`, so a preset whose `kg_per_unit` is not a whole number produces a total the form then refuses. `unit_preset.kg_per_unit` is `DECIMAL(12,4)` (§2.1) and every value in `tests/fixtures/taxonomy.json` happens to be integral, so the collision is invisible on the current fixture and certain on real data. Building the input therefore requires a decision — either the two-decimal rule moves, or the preset writes a rounded amount and `units.js` gains the rounding — and it is a decision about what a user is allowed to type, not a refactor.
 - **`gwpHorizon` is set to 100 at initialisation and no control ever writes it.** §6.2 makes the horizon user-selectable between 20 and 100; a stated requirement is currently unmet and invisible on screen.
 
-> **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths have already drifted: the typed path and the re-rendered path apply **different validity rules to the same field**. Any change to a validation rule has to be made in both.
+> **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths **apply different validity rules to the same field**. As of 2026-08-09 the divergence is narrower than it was and is not zero: on a negative amount `updateLine` marks only the row being typed in, while `destinationRows` marks every negative row on the screen; and `destinationRows` additionally marks a row named by `state.fieldErrors`, which `updateLine` clears on the first keystroke because blanking or filling a row changes which lines the request would carry, so the server's line positions stop meaning what they meant. Any change to a validation rule has to be made in both.
 
 ## 7.3 `units.js` (written by C)
 
-**All front-end mass arithmetic belongs in this module.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It currently is not — `tonnes ? 1000 : 1` is duplicated at six sites across `results.js` and `improvement.js`, which is not a correctness bug today and defeats the rule.
+**All front-end mass arithmetic belongs in this module, and as of 2026-08-09 all of it is here.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It was not — `tonnes ? 1000 : 1` and `.toFixed(3)` were spelled out at six sites across `results.js`, `improvement.js` and `calculator.js` while `calculator.js` also called this module for the same conversion, so the front end held two copies of its only arithmetic rule and either could be changed without the other. The last of them moved here in the same revision that added `kgToTonnes`. **A `*`, `/` or `.toFixed()` on a mass anywhere else in `web/` is now a defect on sight.**
 
 ```js
 /**
@@ -1753,7 +1824,8 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
  *                             ready to send to the API
  * @throws {Error}             presetCode does not exist, or the product is
  *                             not finite
- * ** Currently imported by nothing — see §7.2, the preset input is not built. **
+ * ** Still imported by nothing — see §7.2, the preset input is not built, and
+ *    the note there states what building it costs. **
  */
 export function toKg(count, presetCode, presets);
 
@@ -1761,13 +1833,31 @@ export function toKg(count, presetCode, presets);
  * @param {number|string} amount
  * @param {'kilograms'|'tonnes'} unit
  * @returns {number|null}  null when amount is not finite
+ * Imported by calculator.js (the review step's kg figure) and improvement.js
+ * (lineKg, which is every allocation percentage's denominator).
  */
 export function massToKg(amount, unit);
 
 /** massToKg(...) fixed to 3 decimal places, i.e. API-ready.
- *  @returns {string|null}  Currently imported by nothing. */
+ *  @returns {string|null}  null when massToKg returns null.
+ *  Imported by calculator.js (both line-normalising helpers) and
+ *  improvement.js (currentLines). Note that kgString('', unit) is "0.000":
+ *  a row the user has not filled is not a row holding zero, so the two
+ *  callers that render blank rows keep their own '' check. */
 export function kgString(amount, unit);
+
+/**
+ * Kilograms to tonnes, for display. The only arithmetic §7.6.1 permits on a
+ * figure the API supplied, and therefore the only one of these functions whose
+ * input is an API decimal string rather than something the user typed.
+ * @param {number|string} kilograms
+ * @returns {number}  NaN when the input is not finite, so an absent figure
+ *                    reaches formatNumber() as absent rather than as zero
+ */
+export function kgToTonnes(kilograms);
 ```
+
+> `kgToTonnes` was added on 2026-08-09 for `results.js`, which printed `totals.total_kg / 1000` inline at two sites — the summary card's "2.300 tonnes" note and the same line in the downloaded report. §7.6.1's exception is stated in terms of *this module*, and neither site was in it. It is a one-line function and it exists so the rule reads the same everywhere: **outside `units.js`, nothing divides, multiplies or adds a number the API supplied.** Bar and chart widths scaled against a local maximum are not figures and are not covered by this.
 
 ## 7.3a Calculator Modules (written by C)
 
@@ -1781,8 +1871,17 @@ Six modules that no version of §7 named. Transcribed from the branch.
 /** &, <, >, " and ' -> entities. Safe for text and double-quoted attributes. */
 export function escapeHtml(value = '');
 
-/** Number(value).toLocaleString('en-NZ', {maximumFractionDigits: precision});
- *  returns 'Not available' for a non-finite input. */
+/** An API figure printed at the metric's own precision. toLocaleString('en-NZ')
+ *  with `precision` as BOTH minimumFractionDigits and maximumFractionDigits, so
+ *  825.00 at display_precision 2 prints "825.00" rather than "825" one row above
+ *  "1,204.50" in the same column of money.
+ *
+ *  `precision` arrives from the database (§2.1 metric.display_precision), not
+ *  from this file, so it is clamped to Intl's legal 0-20: an out-of-range value
+ *  makes toLocaleString throw a RangeError, which would take out the whole
+ *  render rather than one figure.
+ *
+ *  Returns 'Not available' for a non-finite input — see the note below. */
 export function formatNumber(value, precision = 2);
 
 /** lower-case, non-alphanumerics -> '-', trimmed. For DOM ids and class names. */
@@ -1795,7 +1894,9 @@ export function buttonRow(backStep, label = 'Continue', disabled = false, action
 
 > **Precondition, stated because D and E will now depend on it:** `escapeHtml` does not escape backticks or `/`, so it is safe only in **double-quoted** attribute contexts and in text. Every attribute in C's branch is double-quoted. An unquoted attribute breaks the guarantee silently.
 >
-> **Known gap:** `formatNumber` sets no `minimumFractionDigits`, so a cost of exactly `825.00` renders as "825" at `display_precision: 2`. §6.1 supplies `display_precision` for both bounds.
+> **Precondition on `formatNumber`, and the reason the calling modules coerce their own inputs:** `Number(null)`, `Number('')` and `Number(undefined)` are `0`, `0` and `NaN`, so a plain `Number(value) || 0` makes "the engine did not return this metric", "this value is malformed" and "this value is zero" the same figure on screen. Every caller in `results.js` and `improvement.js` therefore maps absent to `NaN` before calling in, and `formatNumber` renders that as "Not available". **An absent figure has to read as absent** — a `|| 0` on an API figure is the defect this guards.
+>
+> The v1.2 "known gap" — `formatNumber` setting no `minimumFractionDigits` — **is closed**; the JSDoc above is the current behaviour.
 
 ### `calculator.js` — the wizard
 
@@ -1816,30 +1917,39 @@ export function bindCalculator(main, retryTaxonomy);
 
 `data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `retry`, `view-methodology`.
 
-Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `publicError(error)` maps a §9 code to user copy; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `submitCalculation()` issues the request.
+Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **`prevention` is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — `prevention` is how the alternative scenario expresses waste avoided (§2.1), and offering it as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting.
 >
-> **Two defects here are contract-relevant.** `fieldErrorMap` keys on the raw `details[].field` string while the render loop looks up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never binds; and the index is the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differ whenever any destination is left empty, which is the normal case. Both fail silently: no error, no console warning, the user sees only the generic banner. The index half is a bug under any `field` format.
+> **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftFieldPaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies and roots it at `entries[state.entries.length]`, because the draft entry travels last.
+>
+> **`api/errors.py::bracket_path` is the server half of that agreement** and `tests/api/test_api_entries.py` asserts the exact string, so both ends of the `field` format are pinned by a test in one tree.
 
 ### `results.js` — the results screen
 
 ```js
-/** The step-5 screen: mock banner (when any response has factor_set.is_mock),
- *  impact summary cards, tangible equivalents, a three-tab breakdown
- *  (stage / destination / food), a methodology-and-limitations block naming
- *  the factor version, action buttons, and the improvement panel.
+/** The step-5 screen: placeholder banner (conditional on the submission-level
+ *  factor_set.is_mock, §7.6.2), impact summary cards read from totals.current,
+ *  tangible equivalents printed as the engine worded them, a three-tab
+ *  breakdown (stage / destination / food) built per entry from entries[], a
+ *  methodology-and-limitations block naming the factor version, action buttons,
+ *  and the improvement panel.
  *  @returns {string} HTML */
 export function renderResults(state);
 
 /** Builds a plain-text report and triggers a Blob download as
- *  'food-waste-impact-results.txt'. */
+ *  'food-waste-impact-results.txt'. Carries the placeholder notice only when
+ *  factor_set.is_mock, and always the factor version (§7.6.2). */
 export function downloadResults(state);
 ```
 
-> Most of this module is currently a client-side aggregation layer that sums engine-computed metric totals, equivalence values and destination rows across entries. **All of it is deleted** by reading `totals` and `net_benefit` from §6.2 instead; the destination tab is rebuilt per entry per the ruling in §6.2. What survives is `summaryCards` (which already iterates metrics correctly), the tab/table/bar markup, and the download plumbing.
+> **The client-side aggregation layer is gone.** This module summed engine-computed metric totals, equivalence values and destination rows across entries; the two largest numbers on the page were numbers the engine never produced. It now reads `totals` and `net_benefit` from §6.2, and the destination tab is rendered per entry per the ruling there. `aggregateResults` and `differenceData` no longer exist.
 >
-> Two hard-codings must go with it: the breakdown table hard-codes the columns `CO₂e / Cost / Water`, and the equivalence list hard-codes its own labels for `km_driven` / `meals` / `showers`, discarding the `label` the API renders from `label_template`. Both defeat the promise that a new metric or equivalence costs one `INSERT` (§2.1), and the second overrides the client's approved wording with C's.
+> The two hard-codings went with it: the breakdown columns are collected from the response's own key order (which §4.1 already sorts by `sort_order`), and the equivalence list prints `label` — the sentence the engine interpolated from `label_template` — rather than three English labels of its own for three hard-coded codes.
+>
+> **`mass` is named in this module, and that is not a §7.6.5 violation.** Rule 5 exists because a view listing `['co2e','water','cost']` *omits* the metric a staff member inserted; every metric the response carries still appears here. `mass` is held out of the impact cards and the breakdown columns because §3 hoists it — its formula is `qty_kg` (§4.3), so `scenario.total_kg` and `by_destination[].qty_kg` are the same figure, and it is already on screen as the primary card and the "Waste amount" column. `improvement.js` holds it out for a different reason, stated there. Both are single-code exclusions with a stated cause, not lists.
+>
+> **Bar widths are not figures.** A bar is scaled against the widest bar on the tab, across every section so two per-entry sections stay comparable, and no width is printed. §6.2 defines no share for an entry or a destination, so the percentage-of-total that used to sit beside each bar was a number the engine never produced.
 
 ### `improvement.js` — the alternative scenario
 
@@ -1852,20 +1962,44 @@ export function resetImprovement(state);
 export function updateImprovementInput(control, state);
 export function allocationTotal(allocations);
 export function improvementValidation(state);         // '' when valid
-export async function compareImprovement(state);
+/** @param {object} state
+ *  @param {(e: Error & {code?: string}) => string} [toPublicMessage]
+ *  calculator.js's publicError — §9's code-to-copy map — PASSED IN rather than
+ *  imported, because calculator.js already imports this module and the import
+ *  back would be a cycle. Without it this panel showed raw backend prose for
+ *  the codes the main flow words carefully, and §9.1 rules that a public
+ *  FORMULA_ERROR never echoes the expression or its location. */
+export async function compareImprovement(state, toPublicMessage);
 export function ImprovementScenario(state);           // collapsed CTA or open panel
 export function ComparisonResults(state);             // '' until a comparison exists
 ```
 
-> **Charts must render negative values.** `downstream` may be negative (§2.2) and a metric total therefore may be too, but the comparison bars currently apply `Math.abs()` to their widths, so −500 and +500 draw identically. The reuse-and-offset story is the client's headline message and it is currently invisible. The `.value-positive` / `.value-negative` / `.value-zero` CSS already exists in the stylesheet and is referenced by nothing.
+> **Charts must render negative values, and these do.** `downstream` may be negative (§2.2) and a metric total therefore may be too. `Math.abs()` stood on both comparison-bar widths, so a −500 kg CO2e offset drew a bar identical to +500 and the reuse-and-offset story — the client's headline message — was invisible. A group containing a negative value now draws against a **centred zero line**: each bar takes at most half the track and grows right from the centre when positive, left when negative, and a group with no negative value keeps the full-width left-anchored bar so the common case is unchanged.
+>
+> **The arrow shows the direction of the impact, not the sign of the number.** This was ambiguous — an up arrow beside "1,104.0 kg CO2e saved" reads as "better" to one person and "went up" to another — and is now ruled. `net_benefit` is `current − alternative` (§3), so a positive net benefit is a saving, the impact fell, and the arrow points **down**. The two meanings that were sharing one class are now two sets:
+>
+> | Class | Applied by | Meaning | Mark |
+> | --- | --- | --- | --- |
+> | `.change-down` | `signClass()`, on `net_benefit > 0` | the impact fell — a saving | ↓, Kale |
+> | `.change-up` | `signClass()`, on `net_benefit < 0` | the impact rose | ↑, Beetroot |
+> | `.change-none` | `signClass()`, on \|`net_benefit`\| < 1e-9 | no change | —, muted |
+> | `.value-negative` | `results.js` and `scenarioValue()` | this **quantity** is below zero | no arrow, Beetroot |
+>
+> **`.value-negative` carries no arrow deliberately.** `formatNumber` already prints the minus sign, and a quantity is not a movement. D's charts (§7.4) should use the same four classes rather than a second set. Nothing marks an ordinary positive quantity: a green mark against every figure on the page is decoration, not a signal.
+>
+> **`mass` is held out of the comparison lists** because §6.2 requires an entry's two scenarios to describe the same mass, so its `net_benefit` is zero by construction — "Mass: No change" on every comparison, in a list whose subject is what changed. Same exclusion as `results.js`, different reason.
+>
+> **The mass check is §6.2's own rule, applied in kilograms.** `improvementValidation` compared allocation percentages to within ±0.01 **percentage points**, which is a different rule at every tonnage: 0.01 points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's absolute 0.010 kg limit, so the panel enabled Compare on a submission the server then refused with a 400 — for the whole submission, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. The seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so `currentAllocationPercentages` gives the rounding remainder to the largest share, and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3 — step 4 deliberately permits allocating less than the total, and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario.
 >
 > The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. **Settled in v1.2, in C's favour:** §6.2's mass-conservation rule is derived from exactly this behaviour and its 0.010 kg tolerance is 20 lines × 0.0005 kg, so the drift this module produces is accepted rather than rejected — but only because §6.2 also caps a scenario at 20 lines per entry. The worst case sits on the boundary, and the comparison is `<=`. If that cap ever rises, this allocation must round to a running remainder instead.
 
 ### `main.js` — entry point for `index.html`
 
-No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`, binds the header home and "Clear all data" buttons, defines `loadTaxonomy({preserveError})` (also passed to `bindCalculator` as the `UNKNOWN_CODE` reload path), and performs the first render and taxonomy fetch.
+No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`, binds the header home and "Clear all data" buttons, defines `loadTaxonomy({preserveError})` (also passed to `bindCalculator` as the `UNKNOWN_CODE` reload path), and performs the first render and taxonomy fetch. It does **not** retry the taxonomy on load; the retry is the user's, through the `retry` action on the failure screen.
 
-> **Known defect:** it calls `main.focus()` after *every* `setState`. Arrow-key navigation inside the sector radio group fires `change` → full re-render → focus yanked to `<main>`, so a keyboard-only user cannot get past step 1. This undoes a substantial and otherwise well-built accessibility layer.
+> **The focus policy, which is now a requirement rather than an implementation detail.** `render()` replaces `main.innerHTML` wholesale, so every re-render detaches whatever the user had focused. This module called `main.focus()` after *every* `setState`, so arrow-keying the sector radio group fired `change` → full re-render → focus yanked to `<main>`, and a keyboard-only user could not get past step 1.
+>
+> Moving focus to `<main>` is right on a **step transition** and wrong on every other `setState`. On a **same-step** re-render, focus goes back to the element that had it, looked up by `id` — which is why the food-category radios needed ids. Scoping the focus call alone is not sufficient and was the first attempted fix: the focused radio is detached regardless, so the keyboard user lands on `<body>` instead of `<main>`, which is worse. Any change here has to preserve both halves.
 
 ### `methodology.js` — entry point for `methodology.html`
 
@@ -1914,10 +2048,11 @@ Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embe
 
 1. **The front end performs no impact calculation.** Apart from unit conversion in `units.js`, every number comes from the API. This includes cross-entry totals: read `totals` and `net_benefit` from §6.2, never a sum over `entries[]`.
 2. **When `is_mock` is true, the warning banner is mandatory** and cannot be dismissed. This covers **every results view and every export**, and it must be conditional on `is_mock` rather than unconditional — an export that always carries the placeholder disclaimer becomes an export that disclaims real data the day real factors are published, which is the more damaging direction of the same bug.
-3. The calculator page is **mobile-first**, baseline width 375px.
+3. The calculator page is **mobile-first**, baseline width 375px. **The baseline is not a floor — check the band between the breakpoints.** A layout can pass at 375px and at desktop and fail in between: `.results-page`'s −80px bleed had its reset at ≤480px and its desktop counterpart at ≥850px and nothing in between, so from 481px to 849px the results page sat 60px off the left edge with the body scrolling sideways. A tablet is the likeliest non-desktop device a demo runs on.
 4. After every successful calculation, write the returned `token` back to `sessionStorage`.
 5. **Iterate over metrics and equivalences; never hard-code their codes.** A view that lists `['co2e','water','cost']` silently omits the metric a staff member added, and adding a metric is meant to cost one `INSERT` and one formula (§2.1).
-6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show.
+6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show. The sign classes and the arrow convention are in §7.3a under `improvement.js`; use those four classes rather than a second set.
+7. **No page may request an asset from a third-party host at runtime.** Fonts, scripts, stylesheets, icons and images are served from this origin. `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to a third party before the first paint — on a calculator whose stated privacy position is §2.3's, and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The brand fonts are in `web/assets/fonts/`. **This binds §7.4:** Chart.js is self-hosted, never loaded from a CDN.
 
 ---
 

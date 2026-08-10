@@ -83,11 +83,20 @@ FOOD_CATEGORIES = [
 
 METRICS = [
     # (code, name, unit, display_unit, display_precision, sort_order)
-    ("co2e", "Greenhouse gases", "kg CO2e", "t CO2e", 1, 10),
+    #
+    # `display_unit` is a presentation variant of `unit` AT THE SAME SCALE
+    # (§6.1) -- a typographic difference, never a conversion. These rows read
+    # "t CO2e", "kL" and "t" until 2026-08-09, against totals the engine
+    # returns in kg and L, and nothing in the system converts between the two:
+    # the front end performs no arithmetic on an API figure (§7.6.1), so the
+    # label alone would have made every greenhouse-gas figure read a thousand
+    # times too small. If a metric should be reported in tonnes, that is its
+    # `unit` and the formula produces tonnes.
+    ("co2e", "Greenhouse gases", "kg CO2e", "kg CO₂e", 1, 10),
     ("ch4", "Methane", "kg CH4", None, 1, 20),
-    ("water", "Water", "L", "kL", 0, 30),
+    ("water", "Water", "L", "L", 0, 30),
     ("cost", "Cost", "NZD", None, 0, 40),
-    ("mass", "Mass", "kg", "t", 1, 50),
+    ("mass", "Mass", "kg", "kg", 1, 50),
 ]
 
 _PLACEHOLDER = (

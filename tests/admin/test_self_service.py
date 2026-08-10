@@ -19,12 +19,14 @@ import re
 import time
 import uuid
 
+import httpx
 import pyotp
 import pytest
 import pytest_asyncio
 from sqlalchemy import select, text
 
 from admin.accounts import (
+    MAX_TOTP_DEVICES,
     RECOVERY_CODE_COUNT,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
@@ -35,9 +37,15 @@ from admin.accounts import (
 )
 from admin.models import AuditLog, StaffRole
 from admin.security import verify_password
+from admin.self_service_view import MAX_DEVICE_NAME_LENGTH
 from admin.totp import TOTP_INTERVAL
 
-from tests.admin.conftest import SECRET_KEY, _cleanup_staff, _login
+from tests.admin.conftest import (
+    _BROWSER_HEADERS,
+    SECRET_KEY,
+    _cleanup_staff,
+    _login,
+)
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.db]
 
@@ -772,3 +780,217 @@ async def test_a_device_id_that_does_not_exist_is_refused_the_same_way(me, db_se
 
     assert response.status_code == 400
     assert len(_devices(db_session, me.staff.username)) == 1
+
+
+# --- the shared login throttle ----------------------------------------------
+#
+# `_reauthenticate` calls `is_locked` and `record_failure`, and before these
+# tests existed **deleting both survived the entire suite**. That is the one
+# genuinely security-relevant behaviour on a screen whose whole purpose is
+# proving identity: without the counter a stolen session gets an unthrottled
+# oracle for the account's own password, and a 10^6 search against the TOTP
+# field. The throttle is in-memory, so the failure path's `db.rollback()` does
+# not undo a recorded failure - which is what makes it testable here at all.
+
+
+def _max_failures(admin_app):
+    return admin_app.state.settings.login_max_failures
+
+
+async def test_repeated_wrong_passwords_lock_the_screen(me, admin_app, db_session):
+    """`record_failure` proven: without it the counter never reaches the
+    threshold and the correct password below is simply accepted."""
+    for _ in range(_max_failures(admin_app)):
+        r = await _post(
+            me, action="change-password", current_password="not-the-password",
+            password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+        )
+        assert r.status_code == 400
+
+    # The CORRECT password now, which is what separates a lockout from a
+    # sixth ordinary rejection.
+    r = await _post(
+        me, action="change-password", current_password=PASSWORD,
+        password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+    )
+
+    assert r.status_code == 400
+    assert "Too many failed attempts" in r.text
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(PASSWORD, staff.password_hash), "the change went through"
+
+
+async def test_the_lock_also_closes_the_add_device_path(me, admin_app, db_session):
+    """`is_locked` is consulted on every action, not only the one that
+    recorded the failures. A lock that covered the password form alone would
+    leave the TOTP field - the 10^6 search - wide open beside it."""
+    for _ in range(_max_failures(admin_app)):
+        await _post(
+            me, action="change-password", current_password="not-the-password",
+            password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+        )
+
+    r = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    assert r.status_code == 400
+    assert "Too many failed attempts" in r.text
+    assert len(_devices(db_session, me.staff.username)) == 1
+
+
+async def test_wrong_codes_and_wrong_passwords_share_one_counter(me, admin_app):
+    """Contract 8.3: one counter across both proofs. Two counters would
+    double the allowance for anyone willing to alternate, which is the
+    cheapest thing in the world for a script to do."""
+    half = _max_failures(admin_app) // 2
+    for _ in range(half):
+        await _post(
+            me, action="begin-device", device_name="Backup phone",
+            current_password="not-the-password",
+        )
+    for _ in range(_max_failures(admin_app) - half):
+        await _post(
+            me, action="begin-device", device_name="Backup phone",
+            current_code="000000",
+        )
+
+    r = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    assert r.status_code == 400
+    assert "Too many failed attempts" in r.text
+
+
+async def test_the_counter_is_the_login_counter(me, admin_app):
+    """Not a second, screen-local one. Sharing it is what makes contract
+    8.3's guarantee true, and it is also the cost recorded in the task
+    report - an attacker on a stolen session can lock the owner out of
+    logging in. Pinned either way, so the trade-off cannot change silently.
+    """
+    for _ in range(_max_failures(admin_app)):
+        await _post(
+            me, action="change-password", current_password="not-the-password",
+            password=NEW_PASSWORD, confirm=NEW_PASSWORD,
+        )
+
+    fresh = httpx.AsyncClient(
+        transport=httpx.ASGITransport(app=admin_app),
+        base_url="http://testserver", follow_redirects=False,
+    )
+    try:
+        login = await fresh.post(
+            "/admin/login",
+            data={"username": me.staff.username, "password": PASSWORD},
+            headers=_BROWSER_HEADERS,
+        )
+    finally:
+        await fresh.aclose()
+
+    # A correct password, refused: 302 would mean the password step passed.
+    assert login.status_code != 302
+
+
+async def test_a_successful_re_authentication_does_not_clear_the_counter(
+    me, admin_app
+):
+    """`throttle.clear` is for a *completed login* only, and admin/throttle.py
+    says so. Clearing here would let anyone holding the password alternate a
+    correct re-authentication with guesses and never reach the threshold -
+    the exact attack one shared counter exists to stop."""
+    for _ in range(_max_failures(admin_app) - 1):
+        await _post(
+            me, action="begin-device", device_name="Backup phone",
+            current_password="not-the-password",
+        )
+
+    # One success in the middle.
+    ok = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    assert ok.status_code == 200
+
+    # One more failure now tips it over, which it can only do if the success
+    # above left the earlier failures in place.
+    await _post(
+        me, action="begin-device", device_name="Another phone",
+        current_password="not-the-password",
+    )
+    r = await _post(
+        me, action="begin-device", device_name="Another phone",
+        current_password=PASSWORD,
+    )
+
+    assert r.status_code == 400
+    assert "Too many failed attempts" in r.text
+
+
+# --- the limits this task invented ------------------------------------------
+
+
+async def test_a_device_name_longer_than_the_column_is_refused(me, db_session):
+    """MAX_DEVICE_NAME_LENGTH matches staff_totp_device.name's VARCHAR(64).
+    Unenforced, MySQL either truncates silently (non-strict) or raises a
+    DataError this page has no handler for (strict), and neither reads as an
+    explanation to the person who pasted something long."""
+    response = await _post(
+        me, action="begin-device", device_name="x" * (MAX_DEVICE_NAME_LENGTH + 1),
+        current_password=PASSWORD,
+    )
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 1
+
+
+async def test_a_device_name_exactly_at_the_limit_is_accepted(me, db_session):
+    """The boundary in the other direction, so the rule cannot be satisfied
+    by refusing everything."""
+    name = "y" * MAX_DEVICE_NAME_LENGTH
+
+    response = await _post(
+        me, action="begin-device", device_name=name, current_password=PASSWORD,
+    )
+
+    assert response.status_code == 200
+    devices = _devices(db_session, me.staff.username)
+    assert any(d.name == name for d in devices)
+
+
+async def test_an_empty_device_name_is_refused(me, db_session):
+    """A device nobody named cannot be told from the one beside it, which is
+    the whole reason the column exists."""
+    response = await _post(
+        me, action="begin-device", device_name="   ", current_password=PASSWORD,
+    )
+
+    assert response.status_code == 400
+    assert len(_devices(db_session, me.staff.username)) == 1
+
+
+async def test_the_device_ceiling_is_refused_at_the_url(
+    me, admin_app, db_session, monkeypatch
+):
+    """The service layer's ceiling proven through the screen, and proven to
+    say the right thing: TooManyDevicesError, not the "this is your only
+    authenticator" message whose condition is its opposite."""
+    for i in range(MAX_TOTP_DEVICES - 1):
+        await _enrol_second_device(me, admin_app, monkeypatch, name=f"Phone {i}")
+    db_session.commit()
+    assert len(_devices(db_session, me.staff.username)) == MAX_TOTP_DEVICES
+    db_session.commit()
+
+    response = await _post(
+        me, action="begin-device", device_name="One too many",
+        current_password=PASSWORD,
+    )
+
+    assert response.status_code == 400
+    assert "maximum" in response.text
+    assert "only authenticator" not in response.text
+    db_session.commit()
+    assert len(_devices(db_session, me.staff.username)) == MAX_TOTP_DEVICES
+

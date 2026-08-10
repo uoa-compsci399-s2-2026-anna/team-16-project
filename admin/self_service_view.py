@@ -64,6 +64,7 @@ from admin.accounts import (
     DuplicateDeviceNameError,
     LastAuthenticatorError,
     MfaNotEnrolledError,
+    TooManyDevicesError,
     UnknownDeviceError,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
@@ -342,7 +343,10 @@ class SecurityView(BaseView):
                     # EnrolView must never pass it.
                     allow_additional=True,
                 )
-            except (DuplicateDeviceNameError, LastAuthenticatorError) as exc:
+            except (DuplicateDeviceNameError, TooManyDevicesError) as exc:
+                # NOT LastAuthenticatorError: begin_mfa_enrolment cannot
+                # raise it, and catching it here would render "this is your
+                # only authenticator" for an account that has too many.
                 problem = str(exc)
 
         if problem is not None:
@@ -466,11 +470,13 @@ class SecurityView(BaseView):
             context = self._context(db, username, error=problem)
             return self._page(request, context, status_code=400)
 
-        # Removing an authenticator is a credential change, so it ends every
-        # session the way set_password and reset_mfa do. The usual reason a
-        # device is removed is that it is out of the owner's hands, and
-        # leaving other sessions live would leave whoever holds it signed in.
-        staff.session_generation += 1
+        # The eviction (session_generation) is bumped by remove_totp_device
+        # itself, not here - see its docstring. This view is one caller of
+        # two and a half: admin/cli.py already reaches every other account
+        # mutation, and eviction living in a view would mean a device removed
+        # from the server did not end the sessions, on precisely the path
+        # where the reason for removing it is that the phone is in somebody
+        # else's hands.
         write_audit(
             db, actor=staff.username, action="delete",
             table_name="staff_totp_device", row_id=removed_id,

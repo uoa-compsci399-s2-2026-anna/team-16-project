@@ -347,6 +347,19 @@ class LastAuthenticatorError(RuntimeError):
     """Removing this device would leave the account with no second factor."""
 
 
+class TooManyDevicesError(RuntimeError):
+    """The account already holds MAX_TOTP_DEVICES authenticators.
+
+    Deliberately *not* LastAuthenticatorError, which it briefly reused. The
+    two are opposite conditions - too few second factors against too many -
+    and ``_remove_device`` catches LastAuthenticatorError to render the
+    "this is your only authenticator" refusal. Sharing the class meant a
+    caller that hit the ceiling could be shown a message telling it the
+    account had no second factor left, which is the reverse of the truth and
+    the kind of wrong answer somebody acts on.
+    """
+
+
 class DuplicateDeviceNameError(RuntimeError):
     """The account already has an authenticator under that name."""
 
@@ -398,10 +411,22 @@ def _device_label(username: str, device_name: str) -> str:
     lost phone would be guessing which. The default device is left as the
     bare username so that an account with one authenticator reads exactly as
     it always has.
+
+    **The device name goes in the account half, never in the issuer.**
+    Putting it in the issuer reads better - `Kai Commitment Admin — Backup
+    phone` - and breaks the grouping Task 1 exists to create: authenticators
+    group by issuer, so one account's two devices would land in two separate
+    groups, which is the problem Task 1 solved, reintroduced one level down.
+
+    The separator is a middle dot rather than parentheses because the app
+    renders `issuer:account` as `issuer (account)`, so a parenthesised
+    account nests: `Kai Commitment Admin (walker (Backup phone))`. With the
+    dot it reads `Kai Commitment Admin (walker · Backup phone)` - same
+    grouping, same information, one level of brackets.
     """
     if device_name == DEFAULT_DEVICE_NAME:
         return username
-    return f"{username} ({device_name})"
+    return f"{username} · {device_name}"
 
 
 def _pending_device(staff: Staff, name: str) -> "StaffTotpDevice | None":
@@ -516,7 +541,7 @@ def begin_mfa_enrolment(
                 f"{device_name!r}. Give the new one a different name."
             )
         if len(staff.totp_devices) >= MAX_TOTP_DEVICES:
-            raise LastAuthenticatorError(
+            raise TooManyDevicesError(
                 f"This account already has {MAX_TOTP_DEVICES} authenticators, "
                 "which is the maximum. Remove one you no longer use first."
             )
@@ -679,6 +704,17 @@ def remove_totp_device(
 
     Unconfirmed devices are removable at any time, including the last one —
     an abandoned scan is not a factor and never was.
+
+    **Bumps ``session_generation``, here rather than in the caller.** Removing
+    an authenticator is a credential change, and this module is where every
+    other one lives (``set_password``, ``issue_password``, ``deactivate_staff``,
+    ``reset_mfa``) precisely so that no entry point can perform one without the
+    eviction. The usual reason a device is removed is that it is out of the
+    owner's hands; a caller that removed the row and left the sessions live
+    would leave whoever holds the phone signed in. Removing an *unconfirmed*
+    device bumps it too — the value of the invariant is that it holds without
+    the caller having to reason about which case it is in, and an extra
+    generation costs one re-stamp.
     """
     staff = get_staff(session, username)
     device = next((d for d in staff.totp_devices if d.id == device_id), None)
@@ -696,6 +732,7 @@ def remove_totp_device(
 
     staff.totp_devices.remove(device)
     _sync_mfa_enrolled_at(staff)
+    staff.session_generation += 1
     return device
 
 

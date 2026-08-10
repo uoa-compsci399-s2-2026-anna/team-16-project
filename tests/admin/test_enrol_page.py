@@ -522,3 +522,42 @@ async def test_the_recovery_codes_page_names_the_system_and_the_account(
     assert done.status_code == 200
     assert "Kai Commitment Admin" in done.text
     assert username in done.text
+
+
+async def test_a_rejected_code_re_renders_a_byte_identical_qr(
+    admin_app, client, owes_enrolment
+):
+    """Not merely the same secret - the same *image*.
+
+    The existing secret assertions cannot see a **label** that changed between
+    the first render and the second, and a changed label is a different
+    `otpauth://` URI, which an authenticator adds as a *second entry* rather
+    than recognising as the one it already holds.
+
+    To be exact about what this does and does not prove today. Until v1.13
+    this page built its resume URI from a bare `staff.username` while
+    `begin_mfa_enrolment` built its mint URI from
+    `_device_label(username, DEFAULT_DEVICE_NAME)`. Those two produce the
+    *same string*, so this test would not have failed on that drift and does
+    not claim to have caught it - the drift was latent, waiting on the default
+    device's label acquiring a rule the resume path did not share. What this
+    pins is the property that made it latent rather than live: the mint path
+    and the resume path render one image. `test_the_default_devices_label_is_
+    the_bare_username` in test_enrolment.py pins the label's value itself,
+    which is the half this cannot see.
+    """
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+
+    first = await client.get("/admin/enrol")
+    before = re.search(r'<path d="([^"]+)"', first.text).group(1)
+
+    rejected = await client.post(
+        "/admin/enrol",
+        data={"csrf_token": await _csrf_from(client, "/admin/enrol"), "code": "000000"},
+    )
+
+    assert rejected.status_code == 400
+    after = re.search(r'<path d="([^"]+)"', rejected.text).group(1)
+    assert after == before
+

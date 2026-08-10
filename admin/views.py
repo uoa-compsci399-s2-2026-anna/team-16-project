@@ -24,7 +24,7 @@ from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     get_staff,
-    pending_totp_device,
+    resume_mfa_enrolment,
     set_password,
     unused_recovery_code_count,
 )
@@ -43,8 +43,8 @@ from admin.backend import (
 from admin.csrf import check_token, issue_token
 from admin.models import utcnow
 from admin.runtime import get_runtime
-from admin.security import BCRYPT_MAX_BYTES, decrypt_totp_secret, verify_password
-from admin.totp import provisioning_uri, qr_svg
+from admin.security import BCRYPT_MAX_BYTES, verify_password
+from admin.totp import qr_svg
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
@@ -347,9 +347,10 @@ def _enrolment_view_context(
     Minting here rather than only in the GET handler is also what keeps a
     POST with no prior GET off the 500 path: nothing enforces the browser's
     GET-then-POST order, and curl, a scripted login, a scanner, or a
-    replayed request can all arrive with mfa_secret_enc still NULL. Handing
-    decrypt_totp_secret a None raises TypeError, an unhandled 500 on the
-    page that fronts the takeover guard.
+    replayed request can all arrive with no device row at all. Since v1.13
+    that case is a `resume_mfa_enrolment` returning None rather than a
+    `decrypt_totp_secret(None)` raising TypeError, but the branch that
+    answers it is the same one and is still required.
 
     Returns None when the account is already fully enrolled, which the
     caller turns into a redirect. That is E-1's account-takeover guard
@@ -365,29 +366,31 @@ def _enrolment_view_context(
     staff = get_staff(db, username)
     if staff.mfa_enrolled:
         return None
-    # The *unconfirmed* device, never merely "a device": since contract
-    # v1.13 an account can hold several, and the one this page is finishing
-    # is the one whose enrolled_at is still NULL. Reading any other device's
-    # secret here would render a QR for an authenticator the person already
-    # has, and complete_mfa_enrolment would then refuse the code it produced.
-    device = pending_totp_device(db, username)
-    if device is None:
+    # Resume first, mint only if there is nothing to resume. Both branches go
+    # through admin/accounts.py so that the otpauth:// label is built in one
+    # place: this branch used to pass a bare `staff.username` while
+    # begin_mfa_enrolment passed `_device_label(username, DEFAULT_DEVICE_NAME)`.
+    # Identical output today - the default device's label *is* the bare
+    # username - and two entries on the person's phone the moment that stops
+    # being true, because a re-render after a rejected code would encode a
+    # different label from the one they scanned.
+    #
+    # `resume` finds the *unconfirmed* device, never merely "a device": since
+    # contract v1.13 an account can hold several, and the one this page is
+    # finishing is the one whose enrolled_at is still NULL. Reading any other
+    # device's secret would render a QR for an authenticator the person
+    # already has, and complete_mfa_enrolment would refuse the code it made.
+    resumed = resume_mfa_enrolment(db, username, secret_key=secret_key, issuer=issuer)
+    if resumed is None:
         try:
-            secret, uri = begin_mfa_enrolment(
+            resumed = begin_mfa_enrolment(
                 db, username, secret_key=secret_key, issuer=issuer
             )
         except MfaAlreadyEnrolledError:
             return None
-        return {"qr": qr_svg(uri), "secret": secret,
-                "secret_grouped": _grouped(secret)}
-    secret = decrypt_totp_secret(device.secret_enc, secret_key=secret_key)
-    return {
-        "qr": qr_svg(
-            provisioning_uri(secret, username=staff.username, issuer=issuer)
-        ),
-        "secret": secret,
-        "secret_grouped": _grouped(secret),
-    }
+    secret, uri = resumed
+    return {"qr": qr_svg(uri), "secret": secret,
+            "secret_grouped": _grouped(secret)}
 
 
 class EnrolView(BaseView):

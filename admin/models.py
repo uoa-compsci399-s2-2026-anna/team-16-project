@@ -119,8 +119,10 @@ class Staff(Base):
 
     def __str__(self) -> str:
         #: username, never id - a staff member is identified by how they log
-        #: in, and no other column here is safe to show (password_hash and
-        #: mfa_secret_enc are secrets).
+        #: in, and no other column here is safe to show (password_hash is a
+        #: secret; the TOTP secret is no longer a column of this table at all
+        #: since v1.13, and StaffTotpDevice.__str__ withholds it for the same
+        #: reason).
         return self.username
 
 

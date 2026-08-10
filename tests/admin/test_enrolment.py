@@ -7,14 +7,20 @@ import pyotp
 import pytest
 
 from admin.accounts import (
+    MAX_TOTP_DEVICES,
     RECOVERY_CODE_COUNT,
+    DuplicateDeviceNameError,
+    LastAuthenticatorError,
     MfaAlreadyEnrolledError,
     MfaNotEnrolledError,
+    TooManyDevicesError,
+    UnknownDeviceError,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     consume_recovery_code,
     create_staff,
     get_staff,
+    remove_totp_device,
     reset_mfa,
     unused_recovery_code_count,
     verify_staff_totp,
@@ -352,3 +358,203 @@ def test_resetting_mfa_leaves_no_stale_recovery_codes_on_the_relationship(sessio
 
     assert staff.recovery_codes == []
     assert unused_recovery_code_count(session, "alice") == 0
+
+
+# --- multi-device service surface (contract v1.13) --------------------------
+
+
+def add_device(session, username: str, name: str, *, at: int = NOW) -> str:
+    """Enrol one additional, confirmed device. Returns its secret."""
+    secret, _ = begin_mfa_enrolment(
+        session, username, secret_key=SECRET_KEY,
+        device_name=name, allow_additional=True,
+    )
+    complete_mfa_enrolment(
+        session, username, code_for(secret, at // TOTP_INTERVAL),
+        secret_key=SECRET_KEY, now=at, device_name=name,
+    )
+    session.flush()
+    return secret
+
+
+def test_removing_a_device_evicts_sessions_from_the_service_layer(session):
+    """The eviction belongs to admin/accounts.py, not to whichever caller
+    happens to be removing the device.
+
+    This module's own docstring makes admin/accounts.py the only module that
+    mutates ``staff``, and every other credential change here
+    (set_password, issue_password, deactivate_staff, reset_mfa) bumps
+    ``session_generation`` itself for exactly that reason. Written for the
+    caller that does not exist yet: a ``kaicalc remove-device`` would
+    otherwise remove the row and leave every session live - on precisely the
+    path where the reason for removing a device is that the phone is in
+    somebody else's hands. Driven through the service function directly, so
+    an eviction that moved back into the view fails here with the HTTP tests
+    still green.
+    """
+    enrolled_account(session)
+    add_device(session, "alice", "Backup phone", at=NOW + 10 * TOTP_INTERVAL)
+    before = get_staff(session, "alice").session_generation
+    device_id = get_staff(session, "alice").totp_devices[0].id
+
+    remove_totp_device(session, "alice", device_id)
+    session.flush()
+
+    assert get_staff(session, "alice").session_generation == before + 1
+
+
+def test_removing_an_unconfirmed_device_evicts_too(session):
+    """The invariant is worth more than the saved generation. A caller must
+    not have to work out which case it is in for the eviction to hold."""
+    enrolled_account(session)
+    begin_mfa_enrolment(
+        session, "alice", secret_key=SECRET_KEY,
+        device_name="Abandoned scan", allow_additional=True,
+    )
+    session.flush()
+    before = get_staff(session, "alice").session_generation
+    device_id = next(
+        d.id for d in get_staff(session, "alice").totp_devices
+        if d.name == "Abandoned scan"
+    )
+
+    remove_totp_device(session, "alice", device_id)
+    session.flush()
+
+    assert get_staff(session, "alice").session_generation == before + 1
+
+
+def test_an_account_may_not_exceed_the_device_ceiling(session):
+    """MAX_TOTP_DEVICES is a rule, not a number, and this is what makes it
+    one. Without a test, raising or deleting the limit changes nothing that
+    anything checks."""
+    enrolled_account(session)
+    for i in range(MAX_TOTP_DEVICES - 1):
+        add_device(session, "alice", f"Device {i}",
+                   at=NOW + (i + 2) * 10 * TOTP_INTERVAL)
+    assert len(get_staff(session, "alice").totp_devices) == MAX_TOTP_DEVICES
+
+    with pytest.raises(TooManyDevicesError):
+        begin_mfa_enrolment(
+            session, "alice", secret_key=SECRET_KEY,
+            device_name="One too many", allow_additional=True,
+        )
+
+
+def test_the_ceiling_does_not_raise_the_last_authenticator_error(session):
+    """The two are opposite conditions - too many second factors against too
+    few - and admin/self_service_view.py catches LastAuthenticatorError to
+    render "this is your only authenticator". Sharing the class showed
+    somebody at the ceiling a message saying their account had no second
+    factor left, which is the reverse of the truth."""
+    enrolled_account(session)
+    for i in range(MAX_TOTP_DEVICES - 1):
+        add_device(session, "alice", f"Device {i}",
+                   at=NOW + (i + 2) * 10 * TOTP_INTERVAL)
+
+    with pytest.raises(TooManyDevicesError) as caught:
+        begin_mfa_enrolment(
+            session, "alice", secret_key=SECRET_KEY,
+            device_name="One too many", allow_additional=True,
+        )
+
+    assert not isinstance(caught.value, LastAuthenticatorError)
+    assert "maximum" in str(caught.value)
+
+
+def test_a_refused_ceiling_leaves_the_existing_devices_untouched(session):
+    """A refusal that appended the row before raising would put the account
+    one commit away from holding a device it never confirmed."""
+    enrolled_account(session)
+    for i in range(MAX_TOTP_DEVICES - 1):
+        add_device(session, "alice", f"Device {i}",
+                   at=NOW + (i + 2) * 10 * TOTP_INTERVAL)
+    before = [d.name for d in get_staff(session, "alice").totp_devices]
+
+    with pytest.raises(TooManyDevicesError):
+        begin_mfa_enrolment(
+            session, "alice", secret_key=SECRET_KEY,
+            device_name="One too many", allow_additional=True,
+        )
+    session.flush()
+
+    assert [d.name for d in get_staff(session, "alice").totp_devices] == before
+
+
+def test_a_device_id_from_another_account_is_not_found(session):
+    """The scope is a property of this function, not of its callers - which
+    is what stops a second caller added later from having to remember."""
+    enrolled_account(session, "alice")
+    enrolled_account(session, "bob")
+    add_device(session, "bob", "Bob backup", at=NOW + 10 * TOTP_INTERVAL)
+    bob_device = get_staff(session, "bob").totp_devices[0].id
+
+    with pytest.raises(UnknownDeviceError):
+        remove_totp_device(session, "alice", bob_device)
+    session.flush()
+
+    assert len(get_staff(session, "bob").totp_devices) == 2
+
+
+def test_a_confirmed_device_name_cannot_be_reused(session):
+    """Overwriting a confirmed device's secret would replace a working phone
+    with one nobody has scanned, leaving the account one removal from having
+    no usable factor."""
+    enrolled_account(session)
+    add_device(session, "alice", "Backup phone", at=NOW + 10 * TOTP_INTERVAL)
+    before = get_staff(session, "alice").totp_devices[1].secret_enc
+
+    with pytest.raises(DuplicateDeviceNameError):
+        begin_mfa_enrolment(
+            session, "alice", secret_key=SECRET_KEY,
+            device_name="Backup phone", allow_additional=True,
+        )
+    session.flush()
+
+    assert get_staff(session, "alice").totp_devices[1].secret_enc == before
+
+
+def test_the_default_devices_label_is_the_bare_username(session):
+    """Task 1 put the system in the issuer and the account in the label, and
+    an account with one authenticator must go on reading exactly that.
+
+    Pinned because `_device_label` is now on the onboarding path too:
+    admin/views.py used to build this URI from a bare `staff.username` while
+    `begin_mfa_enrolment` built it from `_device_label(..., DEFAULT)`. The two
+    agreed by coincidence, and consolidating them is only safe if something
+    holds the consolidated value still. Without this test, making
+    `_device_label` unconditional - so the first device becomes
+    `alice (Authenticator)` - changes what every new enrolment shows on the
+    phone with the whole suite green.
+    """
+    create_staff(session, username="alice", display_name="Alice Example")
+    session.flush()
+
+    _secret, uri = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
+
+    assert "/Kai%20Commitment%20Admin:alice?" in uri
+    assert "Authenticator" not in uri
+
+
+def test_an_additional_devices_label_carries_its_own_name(session):
+    """The other half: two devices on one account share an issuer and a
+    username, so without the name the app shows two identical entries and the
+    person deleting the lost phone is guessing which."""
+    from urllib.parse import unquote
+
+    enrolled_account(session)
+
+    _secret, uri = begin_mfa_enrolment(
+        session, "alice", secret_key=SECRET_KEY,
+        device_name="Backup phone", allow_additional=True,
+    )
+
+    label = unquote(uri.split("?")[0])
+    assert "alice" in label
+    assert "Backup phone" in label
+    #: The name goes in the ACCOUNT half, never the issuer - authenticators
+    #: group by issuer, so a name there would split one account's two devices
+    #: into two groups, which is the problem Task 1 solved one level down.
+    assert "issuer=Kai%20Commitment%20Admin" in uri
+    assert label.endswith("Backup phone")
+

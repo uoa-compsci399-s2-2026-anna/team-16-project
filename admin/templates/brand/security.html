@@ -71,8 +71,13 @@
         <tbody>
           {% for device in devices %}
             <tr>
-              <th scope="row" class="devices__num">{{ loop.index }}</th>
-              <td>{{ device.name }}</td>
+              {# The number is a cell, and the *name* is the row header. A
+                 row headed "1" makes a screen reader announce "1" before
+                 every cell in the row, which is the number twice and the
+                 device not at all; the name is what identifies the row to
+                 somebody deciding which phone to remove. #}
+              <td class="devices__num">{{ device.number }}</td>
+              <th scope="row">{{ device.name }}</th>
               <td>{{ device.created_at.strftime('%d %b %Y') }}</td>
               <td>
                 {%- if device.last_used -%}
@@ -190,19 +195,24 @@
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="remove-device">
 
-        {# Numbered exactly as the table numbers them, from the same loop
-           index over the same list, so the two read together. #}
+        {# Numbered from `device.number`, which the table renders too, so the
+           two read together however this list is filtered.
+
+           This loop runs over `removable`, not over `devices` with a test
+           inside it: keyed on `loop.first` of the outer list, the initial
+           focus landed on the first device whether or not it was one of the
+           options - and an account with one confirmed authenticator and an
+           unfinished enrolment behind it is exactly that case, so a
+           server-reopened dialog would have opened with nothing focused. #}
         <fieldset class="choose">
           <legend>Which one</legend>
-          {% for device in devices %}
-            {% if device.removable %}
-              <label class="choose__option" for="remove-{{ device.id }}">
-                <input type="radio" id="remove-{{ device.id }}" name="device_id"
-                       value="{{ device.id }}"
-                       {% if loop.first %}data-initial-focus{% endif %} required>
-                <span>{{ loop.index }} — {{ device.name }}</span>
-              </label>
-            {% endif %}
+          {% for device in removable %}
+            <label class="choose__option" for="remove-{{ device.id }}">
+              <input type="radio" id="remove-{{ device.id }}" name="device_id"
+                     value="{{ device.id }}"
+                     {% if loop.first %}data-initial-focus{% endif %} required>
+              <span>{{ device.number }} — {{ device.name }}</span>
+            </label>
           {% endfor %}
         </fieldset>
 

@@ -80,6 +80,13 @@ for (const dialog of serverOpened) {
   }
   const returnTo = document.getElementById(dialog.dataset.returnFocus || "");
   if (returnTo) {
-    dialog.addEventListener("close", () => returnTo.focus());
+    /* `once` because the argument above is about **this** opening, the one
+     * the page performed. Close it and press the button to open it again and
+     * the browser now has an opener to restore focus to, so a listener that
+     * survived would run alongside the browser's own restoration for every
+     * later open. They aim at the same element today and nothing would look
+     * wrong - which is exactly why this would be left in place while the
+     * comment above it stopped being true. */
+    dialog.addEventListener("close", () => returnTo.focus(), { once: true });
   }
 }

@@ -1133,10 +1133,21 @@ async def test_the_authenticators_are_a_numbered_table(
             for d in devices
         ]
 
-    rows = _device_rows((await me.get(SECURITY_URL)).text)
+    body = (await me.get(SECURITY_URL)).text
+    rows = _device_rows(body)
 
     assert len(rows) == 2
     assert [row[0] for row in rows] == ["1", "2"]
+
+    # The *name* is each row's header, not its number. A row headed "1" makes
+    # a screen reader announce "1" before every cell in that row - the number
+    # twice and the device not at all.
+    tbody = _element(body, r"<tbody>.*?</tbody>")
+    headers = [_text(c) for c in re.findall(
+        r'<th scope="row"[^>]*>(.*?)</th>', tbody, re.S
+    )]
+    assert headers == [name for name, _, _, _ in expected], headers
+
     for row, (name, added, used, enrolled) in zip(rows, expected):
         assert row[1] == name
         assert row[2] == added
@@ -1267,6 +1278,15 @@ async def test_a_refused_action_comes_back_inside_its_own_dialog(me):
     dialog = _element(refused.text, r'<dialog id="dialog-add".*?</dialog>')
     assert "not the current password" in _text(dialog), _text(dialog)
 
+    # ...and *only* there. The page-level banner is suppressed when a dialog
+    # is carrying the message, which is the whole job of the
+    # `{% if error and not open_dialog %}` gate: printed in both places, the
+    # copy on the page sits behind the backdrop, where it is announced to a
+    # screen reader and invisible to everyone else. Asserting the message is
+    # inside the dialog cannot see that; this can.
+    outside = _text(re.sub(r"<dialog\b.*?</dialog>", " ", refused.text, flags=re.S))
+    assert "not the current password" not in outside, outside
+
 
 async def test_the_remove_dialog_numbers_its_choices_as_the_table_does(
     me, admin_app, db_session, monkeypatch
@@ -1288,6 +1308,33 @@ async def test_the_remove_dialog_numbers_its_choices_as_the_table_does(
         assert 'name="device_id"' in option, option
         assert f'value="{device_id}"' in option, option
         assert 'type="radio"' in option, option
+
+
+async def test_the_chooser_focuses_a_choice_it_actually_offers(me):
+    """The arrangement that catches a `loop.first` taken over the wrong list.
+
+    One confirmed authenticator, which cannot be removed, plus an unfinished
+    enrolment, which can. The first *device* is therefore not the first
+    *option*, so an initial focus keyed on the device list marks nothing at
+    all - and a Remove dialog the server reopens after a refusal then opens
+    with the keyboard nowhere. The numbering has to keep counting devices
+    even so, or the dialog and the table stop agreeing.
+    """
+    begun = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    assert begun.status_code == 200
+
+    dialog = _element(
+        (await me.get(SECURITY_URL)).text, r'<dialog id="dialog-remove".*?</dialog>'
+    )
+
+    options = re.findall(r'<label class="choose__option".*?</label>', dialog, re.S)
+    assert len(options) == 1, options
+    # The unfinished enrolment is the second device, and says so.
+    assert _text(options[0]).startswith("2 — Backup phone"), _text(options[0])
+    assert "data-initial-focus" in options[0], options[0]
 
 
 async def test_the_only_authenticator_is_explained_rather_than_hidden(me):
@@ -1335,6 +1382,14 @@ async def test_the_requirements_did_not_move_when_the_prompt_did(
     assert verify_password(
         PASSWORD, get_staff(db_session, me.staff.username).password_hash
     )
+    # The status code alone does not say *why*. A throttle lock, a CSRF
+    # expiry and a malformed form all answer 400 with the password equally
+    # unchanged, so a test asserting only that would pass against a page
+    # that had stopped requiring the password and started failing for some
+    # other reason entirely. This is `_reauthenticate`'s password_only
+    # branch, named, inside the dialog the person is looking at.
+    refusal = _text(_element(refused.text, r'<dialog id="dialog-password".*?</dialog>'))
+    assert "Enter your current password to confirm this change." in refusal, refusal
 
     # The add and remove dialogs, by contrast, take either - and the code is
     # offered first, which is what Step 3 asked for. Remove needs something it

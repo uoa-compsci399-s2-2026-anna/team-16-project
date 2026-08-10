@@ -45,12 +45,12 @@ import pyotp
 import pytest
 import pytest_asyncio
 from sqlalchemy import bindparam as sa_bindparam
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from admin.accounts import (
     begin_mfa_enrolment, complete_mfa_enrolment, create_staff, get_staff, set_password,
 )
-from admin.models import StaffRole
+from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
 
@@ -176,6 +176,49 @@ def _cleanup_staff(admin_app, *staff_rows):
             )
             db.execute(text("DELETE FROM staff WHERE id = :id"), {"id": staff.id})
         db.commit()
+
+
+def _cleanup_staff_named(admin_app, *usernames):
+    """``_cleanup_staff`` for a fixture that holds a username, not a row.
+
+    Several files build their accounts with ``create_staff`` and keep only the
+    name. Each grew its own teardown, and every one of those copies kept the
+    ``actor`` predicate and dropped the ``table_name``/``row_id`` one - which
+    is the predicate that catches an entry written **against** these staff rows
+    by a *different* actor, the shape ``admin/accounts.py::issue_password``
+    writes when one administrator acts on another. Five weaker copies of the
+    block that exists to stop audit rows leaking between files is how the
+    leak comes back, so the deletion itself stays written once, above, and
+    this only resolves names to rows.
+
+    A name with no row is not an error: these teardowns also run *before* a
+    walk, to clear anything an interrupted earlier run left behind, and a
+    bootstrap account may legitimately not exist yet. There is no id to key
+    the second predicate on in that case, and no staff row to delete, so the
+    actor predicate is all there is - and all there can be.
+    """
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        rows = {
+            username: db.scalar(
+                select(Staff).where(Staff.username == username)
+            )
+            for username in usernames
+        }
+
+    found = [row for row in rows.values() if row is not None]
+    if found:
+        _cleanup_staff(admin_app, *found)
+
+    missing = [username for username, row in rows.items() if row is None]
+    if missing:
+        with factory() as db:
+            for username in missing:
+                db.execute(
+                    text("DELETE FROM audit_log WHERE actor = :username"),
+                    {"username": username},
+                )
+            db.commit()
 
 
 @pytest_asyncio.fixture

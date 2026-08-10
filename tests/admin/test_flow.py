@@ -42,6 +42,8 @@ from admin.security import decrypt_totp_secret
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
 
+from tests.admin.conftest import _cleanup_staff_named
+
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 SECRET_KEY = "test-secret-key-not-used-anywhere-real"
@@ -93,27 +95,16 @@ def clean_bootstrap_slate(admin_app):
     would then pass (or fail) for a reason that has nothing to do with the
     onboarding gate it is meant to be driving.
     """
-    factory = admin_app.state.session_factory
-
     def _delete():
-        with factory() as db:
-            # The audit entries first, and keyed on the actor. These walks
-            # drive the real change-password page, which records its change
-            # now that an actor is identified there, and audit_log has no
-            # foreign key to staff - so deleting the account alone leaves the
-            # entry behind in the one shared test database. That poisons
-            # test_modelviews.py and test_taxonomy_rules.py, which assert
-            # over the whole table, and only when the directory runs as a
-            # whole. See tests/admin/conftest.py::_cleanup_staff.
-            db.execute(
-                text("DELETE FROM audit_log WHERE actor IN (:a, :b)"),
-                {"a": BOOTSTRAP_USERNAMES[0], "b": BOOTSTRAP_USERNAMES[1]},
-            )
-            db.execute(
-                text("DELETE FROM staff WHERE username IN (:a, :b)"),
-                {"a": BOOTSTRAP_USERNAMES[0], "b": BOOTSTRAP_USERNAMES[1]},
-            )
-            db.commit()
+        # The audit entries as well as the rows, through the shared teardown.
+        # These walks drive the real change-password page, which records its
+        # change now that an actor is identified there, and audit_log has no
+        # foreign key to staff - so deleting the account alone leaves the entry
+        # behind in the one shared test database, where test_modelviews.py and
+        # test_taxonomy_rules.py read the whole table. It runs before the walk
+        # as well as after, which is why the helper tolerates a name with no
+        # row.
+        _cleanup_staff_named(admin_app, *BOOTSTRAP_USERNAMES)
 
     _delete()
     yield
@@ -138,11 +129,7 @@ def owes_enrolment(admin_app):
         set_password(db, username, "a-long-enough-password")
         db.commit()
     yield username, "a-long-enough-password"
-    with factory() as db:
-        # The audit entries too, keyed on the actor - see the fixture above.
-        db.execute(text("DELETE FROM audit_log WHERE actor = :u"), {"u": username})
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 @pytest.fixture
@@ -173,11 +160,7 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        # The audit entries too, keyed on the actor - see the fixture above.
-        db.execute(text("DELETE FROM audit_log WHERE actor = :u"), {"u": username})
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 # --- Walk 1: the full gauntlet from a bootstrapped, account-less database ---
@@ -471,12 +454,7 @@ async def test_walk4_a_half_onboarded_account_cannot_reach_any_panel_url_by_typi
         )
         assert change_password.status_code == 200
     finally:
-        with factory() as db:
-            db.execute(
-                text("DELETE FROM audit_log WHERE actor = :u"), {"u": username}
-            )
-            db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-            db.commit()
+        _cleanup_staff_named(admin_app, username)
 
 
 # --- Walk 5: deactivation mid-session refuses the very next request --------

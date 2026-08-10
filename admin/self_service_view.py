@@ -146,6 +146,15 @@ class SecurityView(BaseView):
             "devices": [
                 {
                     "id": d.id,
+                    # The 1, 2, 3 the screen shows, assigned here rather than
+                    # from a template loop index. The table and the Remove
+                    # dialog's chooser are two different loops over two
+                    # different lists - the second is filtered to what may be
+                    # removed - so a per-loop index would number them
+                    # differently the moment one device is unremovable, and
+                    # the whole point of the numbering is that the two read
+                    # together.
+                    "number": number,
                     "name": d.name,
                     "enrolled": d.enrolled_at is not None,
                     "enrolled_at": d.enrolled_at,
@@ -158,7 +167,7 @@ class SecurityView(BaseView):
                     # as a bug; the refusal is a rule and should say so.
                     "removable": d.enrolled_at is None or len(confirmed) > 1,
                 }
-                for d in staff.totp_devices
+                for number, d in enumerate(staff.totp_devices, start=1)
             ],
             "device_count": len(staff.totp_devices),
             "max_devices": MAX_TOTP_DEVICES,
@@ -418,6 +427,11 @@ class SecurityView(BaseView):
                 "qr": qr_svg(uri),
                 "secret_grouped": _grouped(secret),
             },
+            # `enrolling` is what renders that dialog; this only suppresses the
+            # page-level banner behind it, so an error belonging to the dialog
+            # is printed once, inside it, rather than also on the page the
+            # modal covers. Not dead code - deleting it prints the message
+            # somewhere nobody can read it.
             open_dialog="enrol",
         )
         return self._page(request, context)

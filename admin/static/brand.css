@@ -122,6 +122,19 @@ button:hover { background: var(--blueberry); }
    ground takes Kale text per the brand guidelines' light-ground rule. */
 .notice--warning { background: var(--banana); color: var(--kale); font-weight: bold; }
 
+/* Page-level guidance: what this screen is for, and in what order to do
+   things. The Kale rule down the left is the same signal the four
+   guidance blocks on the sqladmin screens carry as a Tabler
+   `card-status-start` (admin/templates/brand/guidance/), so the reader
+   meets one kind of block across the whole panel rather than two. */
+.guidance {
+  border-left: 4px solid var(--kale);
+  padding-left: 1rem;
+  margin-bottom: 1.75rem;
+}
+.guidance h2 { font-size: 1.15rem; }
+.guidance p:last-child { margin-bottom: 0; }
+
 /* One-time secrets: initial passwords, recovery codes. */
 .secrets {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;

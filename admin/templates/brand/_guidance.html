@@ -1,0 +1,20 @@
+{# Every page-level guidance block the view being rendered declares.
+
+   Included by brand/model_list.html, brand/model_create.html and
+   brand/model_edit.html, which are what AuditedModelView's list_template /
+   create_template / edit_template point at - so a view says *what* it
+   explains (`guidance_blocks` on the class) and never *where* it appears.
+
+   `model_view` is in the template context on all three of sqladmin's
+   list/create/edit routes (sqladmin/application.py builds it for each), and
+   the loop renders nothing at all for the eleven views that declare no
+   blocks.
+
+   These are page-level explanations, not field help. A field description
+   says what one box means and lives in `form_args` (see
+   tests/admin/test_field_help.py); a block here explains a *sequence* - the
+   order to do things in, and what goes silently wrong if you do them in
+   another order. tests/admin/test_guidance.py holds each one to its page. #}
+{% for guidance_block in model_view.guidance_blocks %}
+{% include guidance_block %}
+{% endfor %}

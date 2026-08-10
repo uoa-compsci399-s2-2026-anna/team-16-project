@@ -8,3 +8,8 @@
 {{ super() }}
 {% include "brand/_field_help_css.html" %}
 {% endblock %}
+
+{% block content %}
+{% include "brand/_guidance.html" %}
+{{ super() }}
+{% endblock %}

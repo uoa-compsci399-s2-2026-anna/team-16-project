@@ -1,0 +1,102 @@
+{# Declared by FormulaAdmin.guidance_blocks (admin/factor_views.py).
+
+   Contract §4.3 (the variable table, the two whitelists and the eight
+   divergences the agreement test found) and docs/architecture.md §4.2 and
+   §4.4. The `expression` field below says what the language is; this block
+   says where each value comes from, why the horizon is never named in a
+   formula, and why the check at Save is a real one.
+
+   The refusals listed are the ones that surprise people, not the whole
+   grammar: admin/expressions.py is the authority. `ndigits` is there
+   because it is the one that was silently accepted and quietly wrong.
+   Pinned by tests/admin/test_guidance.py. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div style="max-width: 78ch;">
+        <h3 class="card-title">Writing a formula</h3>
+        <p>
+          A formula is worked out once for every line a visitor enters — one food
+          category going to one destination — with four kinds of value available
+          to it:
+        </p>
+        <ul>
+          <li>
+            <code>qty_kg</code> — what the visitor entered for that line, in
+            kilograms.
+          </li>
+          <li>
+            <code>upstream</code> — from the Upstream factors screen, for this
+            line's sector, food category and metric. A row naming the line's
+            destination wins; otherwise the row with a blank destination applies;
+            if there is neither, it is zero.
+          </li>
+          <li>
+            <code>downstream</code> — from the Downstream factors screen, for
+            this line's destination, food category and metric, with the same
+            fallback to the row with a blank food category and the same zero if
+            nothing matches. It may be negative: animal feed displaces feed that
+            would otherwise have been grown, so that route is a genuine credit.
+          </li>
+          <li>
+            <code>const_…</code> — any row on the Constants screen belonging to
+            this same factor set, written as <code>const_</code> followed by its
+            code. Constants belong to a factor set, so a formula can be valid in
+            one version and not in another.
+          </li>
+        </ul>
+        <p>
+          <strong>Write <code>const_GWP_CH4</code>, never
+          <code>const_GWP_CH4_100</code>.</strong> Methane traps far more heat in
+          its first twenty years than its hundred-year average suggests, so the
+          greenhouse-gas answer depends on the period you count over — and the
+          visitor chooses which. <code>const_GWP_CH4</code> is whichever of the
+          two they picked. A formula that names a horizon returns the same figure
+          for both choices, and nothing reports it: the visitor's choice simply
+          stops doing anything.
+        </p>
+        <p>
+          <strong>Write one line's contribution and stop.</strong> The calculator
+          adds the lines up itself, and a formula can never see any line but its
+          own. The usual expression is
+          <code>qty_kg * (upstream + downstream)</code>.
+        </p>
+        <p>
+          <strong>A formula this panel accepts is one the calculator can
+          run.</strong> Two separate pieces of code read these expressions: this
+          panel checks the text when you press Save, and the calculator works it
+          out on every visitor's request. They were written independently, and a
+          test puts the same formulas through both and fails if they disagree —
+          the first time it ran, it found eight disagreements. That is why saving
+          is a real check and not a courtesy. A formula that gets past this screen
+          will not break in front of a visitor.
+        </p>
+        <p>Saving is refused, naming the line and column, for:</p>
+        <ul>
+          <li>
+            arithmetic beyond <code>+ - * /</code>, brackets and a leading minus.
+            Powers (<code>**</code>), <code>%</code> and <code>//</code> are all
+            refused;
+          </li>
+          <li>
+            a name the calculator does not have — a mistyped
+            <code>upstrem</code>, or a constant that is not in this factor set;
+          </li>
+          <li>
+            any function but <code>min</code>, <code>max</code>,
+            <code>abs</code> and <code>round</code>. <code>round(qty_kg, 2)</code>
+            is accepted; <code>round(qty_kg, ndigits=2)</code> is refused, because
+            it was once accepted and quietly ignored the <code>2</code>,
+            returning a believable number from a formula nobody had written;
+          </li>
+          <li>
+            quoted text, true and false, and anything that reaches inside a value
+            with a dot or a square bracket. Decimal points in numbers are of
+            course fine.
+          </li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>

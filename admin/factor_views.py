@@ -216,6 +216,12 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     category = _CATEGORY
     icon = "fa-solid fa-seedling"
 
+    #: The `destination` description below says what a blank destination
+    #: means; this says what happens at publish time when a general row has
+    #: no `prevention` counterpart, and what the refusal message is asking
+    #: for. See admin/modelviews.py's `guidance_blocks`.
+    guidance_blocks = ["brand/guidance/prevention_zero.html"]
+
     column_list = [FactorUpstream.factor_set, FactorUpstream.sector,
                    FactorUpstream.food_category, FactorUpstream.destination,
                    FactorUpstream.metric,
@@ -655,6 +661,11 @@ class FormulaAdmin(AuditedModelView, model=Formula):
     category = _CATEGORY
     icon = "fa-solid fa-square-root-variable"
 
+    #: Where each value in an expression comes from, why a formula never
+    #: names a methane horizon, and why the check at Save is one the engine
+    #: will agree with. See admin/modelviews.py's `guidance_blocks`.
+    guidance_blocks = ["brand/guidance/writing_a_formula.html"]
+
     column_list = [Formula.factor_set, Formula.metric, Formula.expression]
     column_details_list = [Formula.factor_set, Formula.metric, Formula.expression,
                            Formula.notes]
@@ -851,6 +862,16 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     name_plural = "Factor sets"
     category = _CATEGORY
     icon = "fa-solid fa-layer-group"
+
+    #: The two sequences this screen is the whole of: clone-edit-publish
+    #: (and what rollback and archive do), and how the placeholder-data
+    #: warning is turned off when the real factors arrive. Both are things
+    #: the four action buttons and the `is_mock` tick can only half say.
+    #: See admin/modelviews.py's `guidance_blocks`.
+    guidance_blocks = [
+        "brand/guidance/factor_set_lifecycle.html",
+        "brand/guidance/mock_data.html",
+    ]
 
     # Every submission stamps the set it was calculated against, so a
     # deleted set strands every historical result naming it. Archiving is

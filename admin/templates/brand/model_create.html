@@ -1,6 +1,10 @@
-{# sqladmin's own create page, plus the one style rule that lets a checkbox
-   field's description be read. See brand/_field_help_css.html for the
-   defect it works around and why it is a style rule.
+{# sqladmin's own create page, plus two things it does not have:
+
+   1. the one style rule that lets a checkbox field's description be read -
+      see brand/_field_help_css.html for the defect it works around and why
+      it is a style rule;
+   2. whatever page-level guidance the view declares - see
+      brand/_guidance.html.
 
    Extends rather than replaces: every block sqladmin defines is inherited
    untouched, and `{{ super() }}` keeps the library's own head_css - which
@@ -11,4 +15,9 @@
 {% block head_css %}
 {{ super() }}
 {% include "brand/_field_help_css.html" %}
+{% endblock %}
+
+{% block content %}
+{% include "brand/_guidance.html" %}
+{{ super() }}
 {% endblock %}

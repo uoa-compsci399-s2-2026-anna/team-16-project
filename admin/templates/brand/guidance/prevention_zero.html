@@ -1,0 +1,63 @@
+{# Declared by FactorUpstreamAdmin.guidance_blocks (admin/factor_views.py).
+
+   Open item O-7, closed 2026-08-09: docs/architecture.md §10 has the full
+   account, including the 78.9% figure this block rounds to "about
+   four-fifths". The publish-time refusal is
+   db/repository.find_missing_prevention_upstream, raised by
+   admin/factor_lifecycle.publish_factor_set - and deliberately not by
+   rollback_to, which is the last paragraph here.
+
+   Written as the consequence a reader meets rather than a rule they must
+   remember, per §10's own note. The `destination` field on the form below
+   explains what a blank destination means; this block explains what happens
+   at publish time and what to do about it. Pinned by
+   tests/admin/test_guidance.py. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div style="max-width: 78ch;">
+        <h3 class="card-title">Every general row needs a <code>prevention</code> row at zero</h3>
+        <p>
+          Upstream impact is the impact of having grown, made and moved the food.
+          It happens before anything is thrown away, so it does not depend on
+          where the waste eventually goes. Food that was never wasted, though,
+          was never produced, and none of that impact belongs to it. That is what
+          the destination <code>prevention</code> means here: not somewhere the
+          food went, but waste that did not happen. Its upstream row is zero.
+        </p>
+        <p>
+          Miss one and nothing looks wrong. The calculator goes on charging
+          prevented food for production that never took place, and reports a
+          smaller benefit for preventing waste than for composting it — the
+          opposite of the point this calculator exists to make. On the numbers
+          loaded today, the part left out is about four-fifths of the benefit.
+        </p>
+        <p>
+          <strong>You will meet this as a refusal rather than as a rule to
+          remember.</strong> Publishing a factor set is refused while any
+          combination of sector, food category and metric has a general row and
+          no <code>prevention</code> row at zero to go with it. The message lists
+          the combinations, in that order. Add one upstream row for each —
+          Destination <code>prevention</code>, Value per kg <code>0</code> — and
+          publish again.
+        </p>
+        <p>
+          A <code>prevention</code> row that exists but is not zero counts as
+          missing. The check reads the value, not the row.
+        </p>
+        <p>
+          The usual way to arrive here is adding something to a draft: a new
+          sector, a new food category or a new metric multiplies out into general
+          rows, and every one of them needs its own zero.
+        </p>
+        <p>
+          Rolling back to an archived set does not apply this check. A set
+          archived before the rule existed will fail it, and refusing an
+          emergency rollback over an incomplete table would be worse than the
+          mistake the rule prevents.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

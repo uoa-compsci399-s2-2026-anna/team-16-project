@@ -2,11 +2,7 @@
 {% block title %}Try a scenario{% endblock %}
 {% block content %}
   <h1>Try a scenario</h1>
-  <p class="muted">
-    Sends one line to the calculation service with <code>X-Dry-Run:
-    true</code>. Nothing here is saved, and it never reaches the public
-    statistics — run this as many times as tuning a formula takes.
-  </p>
+  {% include "brand/guidance/dry_run_purpose.html" %}
   <form method="post" autocomplete="off">
     <label for="factor_set">Factor set</label>
     <select id="factor_set" name="factor_set">

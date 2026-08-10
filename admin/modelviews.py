@@ -262,6 +262,27 @@ class AuditedModelView(ModelView):
     create_template = "brand/model_create.html"
     edit_template = "brand/model_edit.html"
 
+    #: sqladmin's own list page, extended the same way, so that a view can
+    #: declare `guidance_blocks` below and have them appear on all three of
+    #: its routes without knowing which template renders which.
+    #: `brand/ip_block_list.html` extends this rather than
+    #: `sqladmin/list.html` for that reason.
+    list_template = "brand/model_list.html"
+
+    #: Page-level explanations to render above the table and above the form,
+    #: as template paths under `templates/brand/guidance/`. Empty here, so
+    #: the eleven views that declare none render exactly what they always
+    #: did.
+    #:
+    #: **Not field help.** A description in `form_args` explains one box and
+    #: is required of every editable field (tests/admin/test_field_help.py).
+    #: A block here explains a *sequence*: the order operations have to
+    #: happen in, and what goes silently wrong - wrong numbers rather than an
+    #: error message - when they happen in another order. Four of them exist
+    #: today; tests/admin/test_guidance.py holds each to its page and refuses
+    #: a block that is written but never shown.
+    guidance_blocks: list[str] = []
+
     def __init__(self) -> None:
         super().__init__()
         # sqladmin's Admin.add_model_view sets the *class* attribute

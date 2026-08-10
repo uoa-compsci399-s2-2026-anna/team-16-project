@@ -1,0 +1,65 @@
+{# Declared by FactorSetAdmin.guidance_blocks (admin/factor_views.py).
+
+   Open item O-1: the client has not supplied real emissions factors, so
+   everything runs on placeholders and the banner is mandatory and
+   non-dismissible (contract §2.2, §7.6.2 - web/js/calculator.js,
+   results.js, improvement.js and methodology.js each render it from
+   `factor_set.is_mock`).
+
+   The procedure at the end is the one this panel's owners will need first
+   and the one nothing else in the tree writes down. Pinned by
+   tests/admin/test_guidance.py. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div style="max-width: 78ch;">
+        <h3 class="card-title">Placeholder numbers, and the warning that goes with them</h3>
+        <p>
+          The calculator is running on placeholder factors. They are the right
+          shape and the wrong values, and nothing calculated from them is a
+          scientific result.
+        </p>
+        <p>
+          <strong>Mock data</strong> on a factor set is what says so. While it is
+          ticked on the published set, every results page, the methodology page
+          and every file a visitor exports carries a warning they cannot dismiss.
+          Untick it and all of those disappear together — this one tick is the
+          only thing holding them up.
+        </p>
+        <p><strong>When the client supplies the real factors:</strong></p>
+        <ol>
+          <li>
+            Clone the published set. The clone is a draft, and it is still ticked
+            as mock.
+          </li>
+          <li>
+            Replace the numbers in the draft — upstream factors, downstream
+            factors, constants, equivalences. Put the source of each figure in
+            its Source note as you go: that text is published alongside the
+            factors themselves, and it is the only place the calculator can say
+            where a number came from.
+          </li>
+          <li>
+            Untick Mock data on the draft, once every number in it is real. It is
+            all or nothing — the warning cannot say that forty rows are measured
+            and twelve are still borrowed. The Data quality box on each row is
+            where that belongs.
+          </li>
+          <li>
+            Run Try a scenario against the draft, and Compare with published,
+            before publishing anything.
+          </li>
+          <li>
+            Publish. The warning stops appearing for the public at that moment.
+          </li>
+        </ol>
+        <p>
+          The one sequence to avoid is unticking Mock data on a half-finished
+          draft and publishing it to see how it looks: the public sees it too,
+          with placeholder numbers and nothing on the page saying so.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

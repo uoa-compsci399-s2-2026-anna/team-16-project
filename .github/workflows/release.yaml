@@ -46,6 +46,17 @@ on:
         required: true
         type: string
 
+  # ==========================================================================
+  # TEMPORARY - REMOVED BEFORE THIS BRANCH IS FINISHED, together with the
+  # `|| '0.0.1'` fallback and the RELEASE_BRANCH override below. Three lines,
+  # and they are the only differences between the file that gets exercised and
+  # the file that ships. See the dry-run note on RELEASE_BRANCH for why the
+  # bump cannot be rehearsed against the default branch today.
+  # ==========================================================================
+  push:
+    branches:
+      - 'build/**'
+
 # Never cancel a release in flight. `cancel-in-progress: true` would be right
 # for CI and catastrophic here: the window it would interrupt is between
 # `imagetools create` and `gh release create`, which leaves images published
@@ -75,7 +86,17 @@ env:
   #
   # Derived, not hardcoded: `main` today, and correct on its own if the
   # repository is ever renamed or the default changes.
-  RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+  #
+  # DRY RUN, TEMPORARY - reverts to the line above before this branch is done.
+  # The bump cannot be rehearsed against the real default branch today: `main`
+  # has no pyproject.toml at all (it is 205 commits behind and predates the
+  # packaging work), so the bump would stop at the "nothing to bump" guard, and
+  # even past it there are no Dockerfiles there to build. Pointing this at a
+  # scratch branch cut from the packaging branch exercises the entire path -
+  # bump, commit, push, tag that commit, build from it, publish - with a
+  # different branch name and nothing else changed. The scratch branch, the
+  # tag and the release are all deleted afterwards.
+  RELEASE_BRANCH: release-dryrun
 
 jobs:
 
@@ -104,7 +125,9 @@ jobs:
           # whole way - three multi-architecture images, a wheel, an sdist and
           # the notes on a real release page, since deleted. Those two lines
           # were the only difference between what ran and what is here.
-          RAW_VERSION: ${{ inputs.version }}
+          # DRY RUN, TEMPORARY: the `|| '0.0.1'` supplies a version on the push
+          # trigger above, which has no inputs. Removed with it.
+          RAW_VERSION: ${{ inputs.version || '0.0.1' }}
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail

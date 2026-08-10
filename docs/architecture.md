@@ -563,7 +563,11 @@ Recorded here, while the connection is visible, rather than as a separate open i
 
 ### What stays open behind it
 
-The claim is now enforced by data, and data can stop enforcing it. A `(sector, food_category, metric)` given a general upstream row with no `prevention` counterpart silently reverts to the old behaviour for that tuple, and nothing in the panel refuses it — a staff member adding a new sector to a draft is the realistic path. `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` holds the fixtures to it, and the migration covers everything that existed on the day; a panel-side guard is the follow-up, and it is small.
+The claim is now enforced by data, and data can stop enforcing it. A `(sector, food_category, metric)` given a general upstream row with no `prevention` counterpart silently reverts to the old behaviour for that tuple — a staff member adding a new sector to a draft is the realistic path.
+
+**Three things now hold it.** `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` holds the fixtures to it. The migration covered everything that existed on the day. And **publication is refused** if any tuple is missing its `prevention` row: `find_missing_prevention_upstream` in `db/repository.py`, enforced by both `publish_factor_set` implementations, naming the offending tuples in the message.
+
+That last one closes the gap this paragraph originally described as an open follow-up. It also means the rule is now something a staff member meets as a refusal rather than a convention they are trusted to remember — which is why the field-level help on the upstream screen states it as a consequence and not as advice. If that guard is ever relaxed, this section and that help text both become untrue.
 
 ## O-8 — interface translation — **OPEN, and unpromised**
 

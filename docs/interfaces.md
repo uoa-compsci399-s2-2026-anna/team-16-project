@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-10 (v1.11 draft)"
+date: "2026-08-10 (v1.12 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,12 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.12 — 2026-08-10 (raised by E, affects B and D)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | `audit_log.action`'s enumeration gained `archive` and `refuse`. **Both were already being written and neither was listed.** `archive` has been written by `factor_lifecycle.py` since E-6; `refuse` is new, and records an attempt that was rejected rather than a change that happened — a self-targeted `issue-password` or `reset-mfa`, which the service layer now refuses because they are recovery actions meant for *another* administrator to perform and become a privilege escalation applied to oneself. Anyone reading the audit trail and branching on the documented five would have silently dropped rows; anyone adding a CHECK constraint from this table would have rejected writes the application makes. | §2.3 |
 
 ### v1.11 — 2026-08-10 (the O-7 guard checks the value, and one fixture edit gets the row it should have had, **affects B and E**)
 
@@ -769,7 +775,7 @@ row, and it must survive the account of whoever made it being deleted.
 | `id` | BIGINT | PK, AI | |
 | `at` | DATETIME | NOT NULL | |
 | `actor` | VARCHAR(128) | NOT NULL | Staff username |
-| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `delete` / `publish` / `rollback` |
+| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `delete` / `publish` / `rollback` / `archive` / `refuse` |
 | `table_name` | VARCHAR(64) | NOT NULL | |
 | `row_id` | BIGINT | NULL | |
 | `before_json` | JSON | NULL | |

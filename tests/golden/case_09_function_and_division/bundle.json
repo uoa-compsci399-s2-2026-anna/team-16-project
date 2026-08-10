@@ -1,0 +1,59 @@
+{
+  "version_label": "GOLDEN-case-09",
+  "is_mock": true,
+
+  "sectors": [
+    { "code": "processing", "name": "Processing / Manufacturing", "sort_order": 20 }
+  ],
+  "food_categories": [
+    { "code": "standard_mix", "name": "Standard mix", "is_standard_mix": true, "sort_order": 0 },
+    { "code": "dairy", "name": "Dairy", "is_standard_mix": false, "sort_order": 60 }
+  ],
+  "destination_groups": [
+    { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 30 }
+  ],
+  "destinations": [
+    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 120 }
+  ],
+  "metrics": [
+    { "code": "co2e", "name": "Greenhouse gases", "unit": "kg CO2e",
+      "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 10 },
+    { "code": "water", "name": "Water", "unit": "L",
+      "display_unit": "L", "display_precision": 0, "sort_order": 30 },
+    { "code": "cost", "name": "Cost", "unit": "NZD",
+      "display_unit": null, "display_precision": 0, "sort_order": 40 }
+  ],
+
+  "constants": [
+    { "code": "LEVY_NZD_PER_T", "value": "60.0000000000", "unit": "NZD / tonne",
+      "note": "The New Zealand waste disposal levy, quoted per tonne as the published figure is. The formula divides by 1000 rather than the constant being pre-converted, so that the number a staff member types matches the number the legislation states." }
+  ],
+  "formulas": [
+    { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)",
+      "notes": "The default shape, present for contrast." },
+    { "metric": "water", "expression": "min(qty_kg * upstream, 500000)",
+      "notes": "A cap, which is the shape a staff member reaches for first after the default. The cap BINDS on this case's quantity - the uncapped value is 1259190 - so a min() that returned its first argument would fail here." },
+    { "metric": "cost", "expression": "round(qty_kg * (upstream + downstream + const_LEVY_NZD_PER_T / 1000), 2)",
+      "notes": "Every part of section 4.3's language the other eight cases never touch: a function call, a division, and a constant inside a parenthesised sub-expression. round(x, 2) in particular is what the admin panel advertises, so it is the first thing staff will type." }
+  ],
+  "upstream": [
+    { "sector": "processing", "food_category": "dairy", "destination": null,
+      "metric": "co2e", "value_per_kg": "1.9000000000" },
+    { "sector": "processing", "food_category": "dairy", "destination": null,
+      "metric": "water", "value_per_kg": "1020.0000000000" },
+    { "sector": "processing", "food_category": "dairy", "destination": null,
+      "metric": "cost", "value_per_kg": "0.0123456789",
+      "source_note": "Ten significant places on purpose: without them the product has nothing below the second decimal and round(x, 2) would be indistinguishable from no rounding at all." }
+  ],
+  "downstream": [
+    { "destination": "landfill", "food_category": "dairy",
+      "metric": "co2e", "value_per_kg": "0.9900000000" },
+    { "destination": "landfill", "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0350000000" }
+  ],
+  "equivalences": [
+    { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km", "sort_order": 10 }
+  ]
+}

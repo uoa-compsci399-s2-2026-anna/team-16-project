@@ -1,0 +1,13 @@
+{
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector_code": "processing",
+      "food_category_code": "dairy",
+      "current": [
+        { "destination_code": "landfill", "qty_kg": "1234.500" }
+      ],
+      "alternative": null
+    }
+  ]
+}

@@ -47,7 +47,7 @@ Recommended mock source: ReFED's published department-level factors. The magnitu
 | ORM | SQLAlchemy 2.x with Alembic migrations | Do not hand-roll a database abstraction layer |
 | Database | MySQL 8 (or PostgreSQL) | Chosen for concurrent writes and operability, not for capacity |
 | Admin panel | `sqladmin` plus custom views | CRUD, search, filtering and permissions out of the box |
-| Expression evaluation | `simpleeval` | Restricted evaluation; blocks attribute access; supports iteration limits |
+| Expression evaluation | Standard library `ast`, hand-written whitelist (`engine/evaluator.py`) | Restricted evaluation; refuses every node type it does not name; located errors from `lineno`/`col_offset`; `admin/expressions.py` is its static twin over the same tree. `simpleeval` was the intended choice through contract v1.9 and was never imported — see `interfaces.md` §4.3 |
 | Testing | `pytest` | The calculation engine must have a golden-test suite |
 
 **No Node.js.** With no front-end framework there is no build tooling, so the stack closes cleanly on Python.
@@ -121,14 +121,16 @@ A scenario is `(sector, food_category, [(destination, qty_kg), ...])`.
 
 > `net_benefit[metric] = current[metric].total − alternative[metric].total`
 
-> **Read O-7 before you rely on the paragraph above.** The mass-conservation half is true and is enforced (`interfaces.md` §6.2's 0.010 kg rule). **The "100% offset, matching ReFED" half is not true of the data model as it stands**: only `prevention`'s *downstream* factors are zero, and the model has no way to zero an upstream one — `factor_upstream` is keyed on `(sector, food_category, metric)` and cannot see the destination, so a line moved to `prevention` keeps its entry's full upstream factor. On the shipped mock factors that leaves 79% of the benefit of preventing waste out of the answer, in the direction of understating the client's headline story. §10's **O-7** states the three options and who decides. This cross-reference exists so that nobody reads the paragraph above, believes it, and builds on it — it was believed for four contract revisions.
+> **This paragraph became true on 2026-08-09, and the sentence before that date is worth knowing.** For five contract revisions "whose factors are all zero" described only the *downstream* half: `factor_upstream` was keyed on `(sector, food_category, metric)`, could not see the destination, and therefore applied the entry's full upstream factor to a line sent to `prevention`. On the shipped mock factors that left 79% of the benefit of preventing waste out of the answer, one-directionally, on the client's headline claim. **O-7 closed it** — `factor_upstream` gained a nullable `destination_id`, so `prevention` now carries its own upstream row at zero and both terms of `line_value` vanish for a prevented line. §10's O-7 records what was done and what was rejected. The claim is now enforced by data rather than asserted by prose, which means it can also be *un*-enforced by data: a `(sector, food_category, metric)` given a general upstream row and no `prevention` counterpart silently reverts to the old behaviour for that tuple. `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what notices.
 
 ## 4.2 Upstream / Downstream Split
 
 Following ReFED's two-part model:
 
-- **upstream** — impacts accrued through production, storage and transport up to the point of reference; varies by `(sector, food_category)`.
+- **upstream** — impacts accrued through production, storage and transport up to the point of reference; varies by `(sector, food_category)`, and **may optionally be overridden for one destination** (O-7). The destination is nullable and null is the normal case: producing a kilogram of dairy costs what it costs whatever later becomes of it. The one row that overrides it is `prevention` at zero — food that was never wasted was never produced. Lookup order: exact destination, then the null row, then zero.
 - **downstream** — impacts of disposal or redistribution; varies by `(destination, food_category)`. **Some destinations are negative** (an offset), so charts must render negative values correctly.
+
+Note what this split does **not** do: it does not put the destination into the formula. `line_value = f(qty_kg, upstream, downstream, const_*)` has exactly the shape it had before O-7 — only the value bound to `upstream` changes, because the destination is resolved in the *lookup* rather than applied in the evaluator. That is the property that made the schema option cheaper than the line-variable option, and it is the reason `interfaces.md` §4.3's variable table and `admin/expressions.py`'s `BASE_VARIABLES` were untouched by the change.
 
 ## 4.3 Formula Scope
 
@@ -502,40 +504,62 @@ facts about the deployment that this code cannot establish for itself.
 | ID | Item | Blocks |
 | --- | --- | --- |
 | O-1 | When the client will supply real emissions factors (hard dependency) | Stage 6 |
-| O-2 | Definition of the cost metric: beyond the waste levy, is the value of the wasted food itself included, and at cost price or retail price? | A, E |
+| O-2 | Definition of the cost metric: beyond the waste levy, is the value of the wasted food itself included, and at cost price or retail price? **Read the note below before resolving it to a non-zero value — it is O-7 again, in the constant dimension.** | A, E |
 | O-3 | Sources for New Zealand equivalence factors (kilometres driven, meal equivalents, showers) | A, D |
 | O-4 | Any localisation beyond language (units, date formats) | C, D |
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
-| O-7 | **`prevention` is not the 100% offset §4.1 claims.** Only its downstream factors are zero; a prevented line keeps its entry's full upstream factor, which is the larger term for most food categories. See below — this one must be settled before A writes the engine. | **A (blocking), B, E** |
+| ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
-## O-7 — `prevention` and the upstream factor
+### O-2 is O-7 again, in the constant dimension — read this before setting `FOOD_VALUE_PER_KG`
 
-**What is true.** `factor_upstream` is keyed on `(sector, food_category, metric)`. It has no destination column and cannot acquire one from `interfaces.md` §4.3's line variables, which carry `qty_kg`, `upstream`, `downstream` and the constants — neither the destination nor its group. So `line_value = qty_kg * (upstream + downstream)` applies the entry's upstream factor to every line in the entry, including a line sent to `prevention`. Setting `prevention`'s downstream factors to zero, which the data does, zeroes only the second term.
+The shipped `cost` formula is `qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)`. The two factor terms are now offset for a prevented line — `prevention` has an upstream row at zero (O-7) and downstream rows at zero. **The constant term is not, and structurally cannot be.** A constant is bound once per formula from the factor set; it has no destination to vary by, so a `prevention` line carries `qty_kg × FOOD_VALUE_PER_KG` exactly as the wasted line it replaced does, and `net_benefit.cost` nets it to **zero**.
 
-**What §4.1 claims.** All factors zero; a 100% offset; parity with ReFED, which treats prevented waste as avoiding the production impact as well as the disposal impact.
+That is wrong in the same direction and for the same reason as O-7: preventing the waste saves the entire value of the food, and the calculator would report none of it. Today it is harmless only because O-2 is unresolved and `FOOD_VALUE_PER_KG = 0`, which is also why **no test would catch it** — `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` asserts `upstream`, not the line value, and deliberately so (`mass`'s formula is `qty_kg`, so a prevented line must still weigh what it weighs).
+
+**The fix needs no schema change, because O-7 already made it.** Model the food's value as an **upstream factor** on the `cost` metric rather than as a constant: it is a property of having produced the food, which is what upstream means, it varies by `(sector, food_category)` — which is exactly how `factor_upstream` is keyed, and a single `FOOD_VALUE_PER_KG` cannot express that a kilogram of dairy and a kilogram of vegetables are not worth the same — and `prevention`'s zero row then offsets it automatically, through the same lookup and with no new rule to remember. The `cost` formula collapses back to the default `qty_kg * (upstream + downstream)` and the constant is deleted.
+
+So: **resolving O-2 to a non-zero food value means moving it out of `constant` and into `factor_upstream`, not raising the constant.** If it is raised in place instead, the same 78.9%-shaped understatement returns on the metric the client is most likely to quote, and nothing in the suite will say so.
+
+Recorded here, while the connection is visible, rather than as a separate open item: it is not a defect today and filing it as one would imply work that should not be done until O-2 is answered.
+
+## O-7 — `prevention` and the upstream factor — **CLOSED 2026-08-09**
+
+**What was wrong.** `factor_upstream` was keyed on `(sector, food_category, metric)`. It had no destination column and could not acquire one from `interfaces.md` §4.3's line variables, which carry `qty_kg`, `upstream`, `downstream` and the constants — neither the destination nor its group. So `line_value = qty_kg * (upstream + downstream)` applied the entry's upstream factor to every line in the entry, including a line sent to `prevention`. Setting `prevention`'s downstream factors to zero, which the data did, zeroed only the second term. §4.1 meanwhile claimed all factors zero, a 100% offset, parity with ReFED — which treats prevented waste as avoiding the production impact as well as the disposal impact.
 
 **The size of the gap, measured on `tests/fixtures/`.** 800 kg of `not_harvested` vegetables from `primary_production`, moved to `prevention` in the alternative:
 
 | | Current | Alternative | `net_benefit.co2e` |
 | --- | --- | --- | --- |
 | As built | 800 × (0.45 + 0.12) = 456.0 | 800 × (0.45 + 0.00) = 360.0 | **96.0** |
-| As §4.1 describes | 456.0 | 0.0 | **456.0** |
+| As §4.1 describes, and as built since | 456.0 | 800 × (0.00 + 0.00) = 0.0 | **456.0** |
 
-**79% of the benefit is missing**, and upstream is the larger of the two terms for most categories, so this is representative rather than a worst case.
+**78.9% of the benefit was missing**, and upstream is the larger of the two terms for most categories, so this was representative rather than a worst case. The failure was one-directional — `prevention` systematically *understated*, never overstated — so `interfaces.md` §6.2's anti-inflation argument was never affected (mass conservation is a property of the request), but the client's headline message, that not wasting food in the first place beats every disposal route, came out as the weakest number on the results page. A user who tried "what if we prevented this" saw a smaller improvement than composting it.
 
-**The failure is one-directional, and it lands on the worst number to get wrong.** `prevention` is systematically *understated*, never overstated — so `interfaces.md` §6.2's anti-inflation argument survives intact (mass conservation is a property of the request, and this does not touch it), but the client's headline message, that not wasting food in the first place beats every disposal route, comes out as the weakest number on the results page. A user who tries "what if we prevented this" sees a smaller improvement than composting it.
+### The ruling
 
-**Three options. None is expressible in the data as it stands** — a pure formula cannot do it, because `downstream(prevention) = −upstream` would have to vary by sector and `factor_downstream` has no sector column.
+**Option 2, in its `factor_upstream` form: a nullable `destination_id`.** NULL means "applies to every destination for this `(sector, food_category, metric)`", so the lookup order becomes exact destination, then the NULL row, then zero — the pattern `factor_downstream.food_category_id` already used, and the fallback shape `FactorBundle.downstream()` already implements. Every upstream row written before the change keeps meaning exactly what it meant.
 
-| Option | What changes | Cost | Whose call |
-| --- | --- | --- | --- |
-| **1. Documentation only** | Restate §4.1 as "`prevention`'s **downstream** factors are zero"; drop the ReFED-parity claim; say plainly on the methodology page that prevention is credited with avoided disposal only | Cheapest. No code, no schema, no migration | **The client's.** It changes what the calculator is described as measuring, and the description is the client's public position, not ours |
-| **2. Schema** | A destination (or destination-group) dimension on `factor_upstream`, or an upstream multiplier column on `destination` | Crosses A, B and E: migration, admin screens, bundle shape, `interfaces.md` §2.2 and §10.2 | A and B, with E for the panel |
-| **3. One new line variable** | Derive `prevented` from `destination_group.is_waste` (or a flag on `destination`) and expose it to §4.3, making the default formula `qty_kg * (upstream * (1 - prevented) + downstream)` | One variable, one formula edit, no new table. Keeps "metrics are data, not code" and adds no aggregation to §4.3 | A, with a `interfaces.md` §4.3 contract change |
+| Option | Verdict |
+| --- | --- |
+| **1. Documentation only** — restate §4.1 as downstream-only and drop the ReFED-parity claim | **Rejected.** It was the only free option and the only one nobody on this team could choose alone, because it changes what the client is told the calculator measures |
+| **2. Schema** — a destination dimension on `factor_upstream`, *or* an upstream multiplier on `destination` | **Chosen, in the first form.** The multiplier form was rejected separately: it would have applied the multiplier in the engine rather than resolving it in the lookup, putting a piece of the impact formula back into Python, and would have forced `FactorBundle.destinations` from a `set[str]` into a mapping |
+| **3. One new line variable** — derive `prevented` and make the default formula `qty_kg * (upstream * (1 - prevented) + downstream)` | **Rejected**, and this reverses the recommendation this section carried before it was settled. It adds a fifth line variable, changes the default formula, and requires `admin/expressions.py`'s `BASE_VARIABLES` to gain a member in lockstep with the engine's evaluator — two whitelists, written by two people, that must agree or the panel accepts formulas the engine rejects. The configurability argument in its favour turns out to cut the other way: under option 2 the offset is a **row**, which is data staff can edit, where under option 3 it is a term in an expression that the default formula has to carry |
 
-**Option 3 is the only route that keeps the configurability invariant** and is the one to prefer if the answer is "yes, prevention should avoid upstream too". Option 1 is the only one that is free, and it is the one nobody on this team may choose alone.
+**What did not change, which is the point.** `line_value = f(qty_kg, upstream, downstream, const_*)` keeps its exact shape; only the value bound to `upstream` changes, because the destination is resolved in the lookup. The evaluator, §4.3's line-variable table, the formula language and `BASE_VARIABLES` were all untouched, so **no panel/engine divergence was introduced.**
 
-**This must be settled before A writes the engine.** The golden suite (`interfaces.md` §10.1) bakes in whichever answer is taken, and that suite is the team's only evidence at handover that the calculator computes correctly — a suite that certifies the wrong semantics certifies them very convincingly.
+### What was done
+
+- `alembic/versions/0009_upstream_destination.py`: the nullable column, the widened `UNIQUE(factor_set_id, sector_id, food_category_id, destination_id, metric_id)`, and — because MySQL compares NULLs as distinct inside a UNIQUE key and would otherwise admit unlimited duplicate generic rows — the functional unique index `uq_factor_upstream_generic` over `COALESCE(destination_id, 0)`, written by hand and verified against `information_schema`. This is the third appearance of the trap B first found on `factor_downstream`.
+- A data backfill in the same migration: every `(factor_set, sector, food_category, metric)` with a general row gains a `prevention` row at zero, with the reasoning in `source_note` — prevented waste was never produced, so no upstream burden is attributable to it.
+- `db/repository.py`: `build_bundle_data` publishes `destination` on every upstream row (`null` for the generic case), and `clone_factor_set` copies `destination_id` — without which the recommended clone-edit-publish workflow would reopen this item on the first real factor set.
+- `admin/factor_views.py`: the upstream screen gains the destination column and a form hint saying that blank means every destination.
+- `tests/fixtures/factors.json` and `calculate_response.json`: the canonical fixtures had 96.000 baked in as the correct answer. The response fixture was regenerated from the published factors rather than hand-edited, and the only bytes that changed are the ones this item causes.
+
+**`interfaces.md` v1.8** carries the contract half: §2.2's column and lookup order, §4.1's `upstream()` signature, §10.2's `bundle.json` key.
+
+### What stays open behind it
+
+The claim is now enforced by data, and data can stop enforcing it. A `(sector, food_category, metric)` given a general upstream row with no `prevention` counterpart silently reverts to the old behaviour for that tuple, and nothing in the panel refuses it — a staff member adding a new sector to a draft is the realistic path. `tests/api/test_fixture_consistency.py::test_prevention_is_a_whole_offset_upstream_as_well_as_down` holds the fixtures to it, and the migration covers everything that existed on the day; a panel-side guard is the follow-up, and it is small.

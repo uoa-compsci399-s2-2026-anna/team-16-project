@@ -1,0 +1,87 @@
+{
+  "factor_set_version": "GOLDEN-case-05",
+  "is_mock": true,
+  "gwp_horizon": 20,
+  "totals": {
+    "current": {
+      "total_kg": "1200.000",
+      "metrics": {
+        "co2e": {
+          "metric_code": "co2e",
+          "unit": "kg CO2e",
+          "display_precision": 1,
+          "total": "3468.0000000000",
+          "by_destination": []
+        },
+        "ch4": {
+          "metric_code": "ch4",
+          "unit": "kg CH4",
+          "display_precision": 1,
+          "total": "2721.6000000000",
+          "by_destination": []
+        }
+      },
+      "equivalences": [
+        {
+          "code": "km_driven",
+          "label": "Equivalent to driving 14,496 km",
+          "value": "14496.2400000000",
+          "source_metric_code": "co2e"
+        }
+      ]
+    },
+    "alternative": null,
+    "net_benefit": null
+  },
+  "entries": [
+    {
+      "sector_code": "processing",
+      "food_category_code": "dairy",
+      "current": {
+        "total_kg": "1200.000",
+        "metrics": {
+          "co2e": {
+            "metric_code": "co2e",
+            "unit": "kg CO2e",
+            "display_precision": 1,
+            "total": "3468.0000000000",
+            "by_destination": [
+              {
+                "destination_code": "landfill",
+                "qty_kg": "1200.000",
+                "upstream": "1.9000000000",
+                "downstream": "0.9900000000",
+                "value": "3468.0000000000"
+              }
+            ]
+          },
+          "ch4": {
+            "metric_code": "ch4",
+            "unit": "kg CH4",
+            "display_precision": 1,
+            "total": "2721.6000000000",
+            "by_destination": [
+              {
+                "destination_code": "landfill",
+                "qty_kg": "1200.000",
+                "upstream": "0.0000000000",
+                "downstream": "0.0270000000",
+                "value": "2721.6000000000"
+              }
+            ]
+          }
+        },
+        "equivalences": [
+          {
+            "code": "km_driven",
+            "label": "Equivalent to driving 14,496 km",
+            "value": "14496.2400000000",
+            "source_metric_code": "co2e"
+          }
+        ]
+      },
+      "alternative": null,
+      "net_benefit": null
+    }
+  ]
+}

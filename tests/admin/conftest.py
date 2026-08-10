@@ -363,9 +363,23 @@ def _cleanup_e6_rows(admin_app) -> None:
                 {"ids": factor_set_ids},
             )
 
+        #: `destination` is matched by its *group* as well as by its own code.
+        #: A test needing the reserved `prevention` row (contract §2.1 fixes
+        #: that literal, so it cannot carry an "e6_" prefix) hangs it off an
+        #: "e6_" group — tests/admin/test_factor_lifecycle.py's O-7 publish
+        #: guard test does exactly that. Without this clause the destination
+        #: survives the sweep and the *group* delete below then fails on its
+        #: foreign key, leaving both behind for every later run.
+        _EXTRA_MATCH = {
+            "destination": (
+                " OR group_id IN (SELECT id FROM destination_group "
+                "WHERE code LIKE 'e6\\_%' ESCAPE '\\\\')"
+            ),
+        }
         for table in ("metric", "destination", "sector", "food_category"):
             ids = db.execute(
-                text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'")
+                text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'"
+                     + _EXTRA_MATCH.get(table, ""))
             ).scalars().all()
             if ids:
                 db.execute(

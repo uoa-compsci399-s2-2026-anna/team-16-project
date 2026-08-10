@@ -11,7 +11,16 @@ def wire(value: Any) -> Any:
     if is_dataclass(value):
         return wire(asdict(value))
     if isinstance(value, Decimal):
-        return str(value)
+        # `format(..., "f")` rather than `str()`. §1.2 says a decimal travels
+        # as a decimal string, and `str(Decimal("0E-10"))` is `"0E-10"` --
+        # scientific notation, which is a well-formed JSON string of the
+        # right type in the right key and therefore invisible to every shape
+        # check in the tree. It is not a rare case: an exact zero quantised
+        # to the contracted ten places is what *every* `prevention` line
+        # produces (open item O-7), so the calculator's flagship result was
+        # the one that carried it. `Number("0E-10")` happens to be 0, but the
+        # figure reaches a report and a CSV export as text.
+        return format(value, "f")
     if isinstance(value, datetime):
         aware = value.replace(tzinfo=timezone.utc) if value.tzinfo is None else value.astimezone(timezone.utc)
         return aware.isoformat().replace("+00:00", "Z")

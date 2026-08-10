@@ -107,6 +107,33 @@ def test_the_high_volume_views_page_at_a_workable_size(view):
     assert view.page_size >= 50
 
 
+@pytest.mark.parametrize(
+    "view, field",
+    [
+        (FactorUpstreamAdmin, "destination"),
+        (FactorDownstreamAdmin, "food_category"),
+    ],
+)
+def test_the_nullable_scope_columns_are_editable(view, field):
+    """Both factor tables carry one nullable "applies to everything" foreign
+    key (§2.2), and staff cannot set what the form does not show.
+
+    `factor_upstream.destination` is the O-7 one: it is the only way to give
+    `prevention` an upstream row of its own at zero, and without that row the
+    calculator understates the benefit of wasting less by most of its value.
+    """
+    assert field in {getattr(c, "key", c) for c in view.form_columns}
+    assert field in {getattr(c, "key", c) for c in view.column_list}
+
+
+def test_the_upstream_destination_field_explains_that_blank_means_every():
+    """A blank optional select reads as an unfinished form unless it says
+    otherwise, and the blank is the correct answer for almost every row."""
+    description = FactorUpstreamAdmin.form_args["destination"]["description"]
+    assert "blank" in description.lower()
+    assert "every destination" in description.lower()
+
+
 # --- Fixtures ---------------------------------------------------------
 #
 # admin_client, staff_client, session and _resync now come from

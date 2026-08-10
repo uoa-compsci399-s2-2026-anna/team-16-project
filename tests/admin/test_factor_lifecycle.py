@@ -268,6 +268,111 @@ def test_publishing_a_set_with_a_broken_formula_is_refused(_committed_session, t
     assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
 
 
+def test_publishing_a_set_whose_prevention_upstream_is_missing_is_refused(
+    _committed_session, taxonomy_for_factors, two_sets,
+):
+    """Open item O-7's second half, and the one the panel had to catch.
+
+    The migration gave every factor combination that existed a `prevention`
+    upstream row at zero, and `clone_factor_set` carries them through the
+    recommended clone-edit-publish path. What neither covers is a staff member
+    adding a *new* `(sector, food_category, metric)` to a draft: its general
+    upstream row resolves for every destination including `prevention`, so a
+    prevented line is charged the full upstream impact and that one
+    combination silently reverts to pre-v1.8 behaviour.
+
+    **That is harder to spot than the original O-7 was.** O-7 was wrong
+    everywhere, so any check of any number found it; this is wrong for one
+    sector while every other sector on the same results page is right, and it
+    arrives with no error, no warning and nothing in the log.
+
+    Publish is the right place, not the upstream-factor form: it is the single
+    transactional choke point, and a form-level guard cannot see a row that has
+    not been written yet — it would refuse the general row for the sake of a
+    `prevention` row the staff member was about to add next.
+
+    `prevention` is committed under the "e6_" destination group rather than
+    with an "e6_" code of its own: contract §2.1 fixes the literal, and
+    `_cleanup_e6_rows` sweeps destinations by group for exactly this case.
+    """
+    from admin.taxonomy_models import Destination
+
+    session = _committed_session
+    _, draft = two_sets
+    session.add(Destination(group_id=taxonomy_for_factors.destination.group_id,
+                            code="prevention", name="Prevented — waste avoided"))
+    session.flush()
+
+    with pytest.raises(LifecycleError) as excinfo:
+        publish_factor_set(session, draft.id, actor="kim")
+
+    message = str(excinfo.value)
+    #: The tuples are named, or the staff member is told something is wrong
+    #: and left to find which of ~270 rows it is.
+    assert "e6_processing/e6_dairy/e6_co2e" in message
+    assert "prevention" in message
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
+
+
+def test_publishing_succeeds_once_the_prevention_row_is_added(
+    _committed_session, taxonomy_for_factors, two_sets,
+):
+    """The other half of the guard: it must refuse an incomplete set and then
+    get out of the way. A check that cannot be satisfied is an outage.
+    """
+    from admin.taxonomy_models import Destination
+
+    session = _committed_session
+    _, draft = two_sets
+    prevention = Destination(group_id=taxonomy_for_factors.destination.group_id,
+                             code="prevention", name="Prevented — waste avoided")
+    session.add(prevention)
+    session.flush()
+    session.add(FactorUpstream(
+        factor_set_id=draft.id,
+        sector_id=taxonomy_for_factors.sector.id,
+        food_category_id=taxonomy_for_factors.category.id,
+        destination_id=prevention.id,
+        metric_id=taxonomy_for_factors.metric.id,
+        value_per_kg=Decimal("0.0000000000"),
+        source_note="Prevented waste was never produced.",
+        data_quality="definitional",
+    ))
+    session.flush()
+
+    publish_factor_set(session, draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.published
+
+
+def test_rollback_is_not_blocked_by_an_incomplete_prevention_set(
+    _committed_session, taxonomy_for_factors, two_sets,
+):
+    """Deliberately asymmetric with publish above.
+
+    Rollback is the "put the calculator back to a state that worked"
+    operation, and a set archived before v1.8 will legitimately fail the O-7
+    completeness check. Refusing an emergency rollback over a completeness rule
+    would be a worse failure than the one the rule prevents — so the guard is
+    on publish only, and this is what says so on purpose rather than by
+    omission.
+    """
+    from admin.taxonomy_models import Destination
+
+    session = _committed_session
+    live, draft = two_sets
+    session.add(Destination(group_id=taxonomy_for_factors.destination.group_id,
+                            code="prevention", name="Prevented — waste avoided"))
+    live.status = FactorSetStatus.archived
+    session.flush()
+
+    rollback_to(session, live.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, live.id).status is FactorSetStatus.published
+
+
 def test_publishing_an_already_published_set_is_refused(_committed_session, two_sets):
     session = _committed_session
     live, _ = two_sets

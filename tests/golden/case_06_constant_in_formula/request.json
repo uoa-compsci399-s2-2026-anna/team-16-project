@@ -1,0 +1,13 @@
+{
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector_code": "consumer_household",
+      "food_category_code": null,
+      "current": [
+        { "destination_code": "landfill", "qty_kg": "250.000" }
+      ],
+      "alternative": null
+    }
+  ]
+}

@@ -312,14 +312,15 @@ def seed(db):
     landfill = Destination(
         group_id=disposal.id, code="landfill", name="Landfill", sort_order=110
     )
+    prevention = Destination(
+        group_id=reuse.id,
+        code="prevention",
+        name="Prevented — waste avoided",
+        sort_order=5,
+    )
     destinations = [
         landfill,
-        Destination(
-            group_id=reuse.id,
-            code="prevention",
-            name="Prevented — waste avoided",
-            sort_order=5,
-        ),
+        prevention,
         Destination(
             group_id=reuse.id, code="animal_feed", name="Animal feed", sort_order=30
         ),
@@ -369,8 +370,24 @@ def seed(db):
                 factor_set_id=factor_set.id,
                 sector_id=sector.id,
                 food_category_id=dairy.id,
+                #: The generic row of §2.2 (v1.8): null destination means
+                #: "every destination that has none of its own".
+                destination_id=None,
                 metric_id=metric.id,
                 value_per_kg=Decimal("1.9"),
+            ),
+            #: O-7. `prevention` is a 100% offset, and it is *this* row that
+            #: makes it one: food that was never wasted was never produced,
+            #: so none of the upstream burden is attributable to it. Without
+            #: it a line moved to `prevention` kept the full 1.9 and the
+            #: calculator understated the benefit of wasting less.
+            FactorUpstream(
+                factor_set_id=factor_set.id,
+                sector_id=sector.id,
+                food_category_id=dairy.id,
+                destination_id=prevention.id,
+                metric_id=metric.id,
+                value_per_kg=Decimal("0"),
             ),
             FactorDownstream(
                 factor_set_id=factor_set.id,

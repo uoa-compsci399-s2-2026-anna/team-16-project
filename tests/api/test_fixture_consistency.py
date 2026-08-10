@@ -196,6 +196,11 @@ def test_factor_rows_reference_the_taxonomy(taxonomy, factors):
     for row in factors["upstream"]:
         assert row["sector"] in sectors
         assert row["food_category"] in foods
+        #: §2.2 (v1.8): null means "every destination", and it is a legal key
+        #: value rather than a missing field — `in row` is asserted separately
+        #: because `row.get("destination")` would pass on a row that omits it.
+        assert "destination" in row
+        assert row["destination"] is None or row["destination"] in destinations
         assert row["metric"] in metrics
         assert "source_note" in row and "data_quality" in row  # §6.3
     for row in factors["downstream"]:
@@ -311,6 +316,75 @@ def test_every_entry_conserves_mass_between_its_scenarios(request_fixture):
     assert len(seen) == len(request_fixture["entries"]), "duplicate (sector, food_category)"
 
 
+def test_prevention_is_a_whole_offset_upstream_as_well_as_down(factors):
+    """Open item O-7, and the reason `factor_upstream.destination_id` exists.
+
+    `docs/architecture.md` §4.1 says `prevention`'s factors are all zero — a
+    100% offset — and that this is what stops `net_benefit` being inflated by
+    simply assuming less waste. Until v1.8 only the *downstream* half of that
+    was expressible: upstream was keyed on (sector, food_category, metric) and
+    could not see the destination, so a line moved to `prevention` kept the
+    entry's full upstream factor. On this fixture set, 800 kg of
+    `not_harvested` moved to `prevention` yielded a `net_benefit.co2e` of
+    96.000 where a true offset yields 456.000 — 78.9% of the benefit missing,
+    always in the same direction, on the client's headline claim.
+
+    The schema alone does not close it; the rows do. Every general upstream row
+    needs a `prevention` counterpart at zero, and this is what says so.
+    """
+    general = {(row["sector"], row["food_category"], row["metric"])
+               for row in factors["upstream"] if row["destination"] is None}
+    prevention = {(row["sector"], row["food_category"], row["metric"]): row
+                  for row in factors["upstream"]
+                  if row["destination"] == "prevention"}
+
+    assert general, "no general upstream rows at all"
+    missing = general - set(prevention)
+    assert not missing, (
+        "these (sector, food_category, metric) tuples have a general upstream "
+        "factor but no `prevention` row, so a line moved to `prevention` still "
+        f"carries their full upstream burden: {sorted(missing)}"
+    )
+    for key, row in prevention.items():
+        assert Decimal(row["value_per_kg"]) == 0, f"{key} prevents at {row['value_per_kg']}"
+        #: §2.2's rationale for source_note: a zero is the number most likely
+        #: to be read as missing data rather than as a decision.
+        assert row["source_note"], f"{key} states no basis for its zero"
+
+    for row in factors["downstream"]:
+        if row["destination"] == "prevention":
+            assert Decimal(row["value_per_kg"]) == 0, row
+
+
+def test_the_prevention_lines_of_the_response_draw_no_upstream(response_fixture):
+    """The other half of O-7, at the surface C and D build against.
+
+    A `prevention` line whose `upstream` is not zero is the defect back, and it
+    would be visible in the results table before it was visible anywhere else.
+    """
+    seen = 0
+    for entry in response_fixture["entries"]:
+        for scenario in ("current", "alternative"):
+            if entry[scenario] is None:
+                continue
+            for code, metric in entry[scenario]["metrics"].items():
+                for row in metric["by_destination"]:
+                    if row["destination"] != "prevention":
+                        continue
+                    seen += 1
+                    assert Decimal(row["upstream"]) == 0, (
+                        f"entries[].{scenario}.{code}: a prevention line draws "
+                        f"upstream {row['upstream']}, so it is not the 100% "
+                        "offset architecture.md 4.1 describes"
+                    )
+                    #: The *line value* is deliberately not asserted to be
+                    #: zero. `mass`'s formula is `qty_kg`, so a prevention line
+                    #: still weighs 800 kg — as it must, or the two scenarios
+                    #: would stop conserving mass and the offset would be a
+                    #: disappearance instead. Zero factors, not zero mass.
+    assert seen, "the canonical response has no prevention line to check"
+
+
 @pytest.mark.parametrize(
     "name", ["calculate_response.json", "calculate_response_single.json"]
 )
@@ -320,8 +394,18 @@ def test_a_destinations_factors_do_not_change_between_scenarios(name):
     `landfill` carried `downstream: "0.9900000000"` under `current` and
     `"0.0000000000"` under `alternative` in the same entry. A downstream factor
     is a property of `(destination, food_category, metric)` (§2.2) and an
-    upstream factor of `(sector, food_category, metric)`; neither knows which
-    scenario it is being read for.
+    upstream factor of `(sector, food_category, destination, metric)`; neither
+    knows which scenario it is being read for.
+
+    **The destination joined the upstream key in v1.8** (open item O-7). Before
+    it did, this test asserted that one entry reported a single upstream factor
+    across every destination in both of its scenarios — which was true of the
+    schema and was exactly the assumption that made `prevention` impossible to
+    express, since a 100% offset means `prevention` drawing a *different*
+    upstream factor from the rest of the entry. The check keeps its teeth
+    because a destination appearing in both scenarios of one entry — the
+    canonical fixture's `animal_feed` does — must still report the same
+    upstream in both.
     """
     fixture = load(name)
     downstream_seen = {}
@@ -332,7 +416,8 @@ def test_a_destinations_factors_do_not_change_between_scenarios(name):
                 continue
             for metric_code, metric in entry[scenario]["metrics"].items():
                 for row in metric["by_destination"]:
-                    up_key = (metric_code, entry["sector"], entry["food_category"])
+                    up_key = (metric_code, entry["sector"], entry["food_category"],
+                              row["destination"])
                     assert upstream_seen.setdefault(up_key, row["upstream"]) == row[
                         "upstream"
                     ], f"{name}: upstream differs within one entry for {up_key}"
@@ -416,12 +501,15 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
         row["code"] for row in taxonomy["food_categories"] if row["is_standard_mix"]
     )
 
-    def upstream(sector, food, metric):
-        for row in factors["upstream"]:
-            if (row["sector"], row["food_category"], row["metric"]) == (
-                sector, food, metric
-            ):
-                return Decimal(row["value_per_kg"])
+    def upstream(sector, food, destination, metric):
+        #: §2.2 (v1.8): exact destination first, then the generic row
+        #: (destination null), then zero — the same three-step
+        #: `downstream` below has always used for food_category.
+        for candidate in (destination, None):
+            for row in factors["upstream"]:
+                if (row["sector"], row["food_category"], row["destination"],
+                        row["metric"]) == (sector, food, candidate, metric):
+                    return Decimal(row["value_per_kg"])
         return Decimal("0")
 
     def downstream(destination, food, metric):
@@ -442,7 +530,7 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
             for code, metric in entry[scenario]["metrics"].items():
                 assert code in formulas, f"{code} has no published formula"
                 for row in metric["by_destination"]:
-                    up = upstream(entry["sector"], food, code)
+                    up = upstream(entry["sector"], food, row["destination"], code)
                     down = downstream(row["destination"], food, code)
                     assert Decimal(row["upstream"]) == up, (
                         f"{name}: {code}/{row['destination']} reports upstream "

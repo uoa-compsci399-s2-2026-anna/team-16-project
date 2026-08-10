@@ -4,7 +4,7 @@ from types import SimpleNamespace
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import delete, func, select
 
 from db.errors import FactorSetStateError
 from db.models import (
@@ -20,7 +20,9 @@ from db.models import (
     utcnow,
 )
 from db.repository import (
+    build_bundle_data,
     clone_factor_set,
+    find_missing_prevention_upstream,
     get_public_stats,
     get_published_factor_set_id,
     invalidate_factor_bundle,
@@ -190,6 +192,299 @@ def test_factor_bundle_cache_is_partitioned_and_explicitly_invalidated(seeded_se
     assert built == ["MOCK-v0", "DRAFT-v1", "DRAFT-v1", "MOCK-v0"]
 
 
+def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
+    """Contract §10.2 (v1.8): every `upstream[]` row publishes a `destination`,
+    `null` for the generic row that applies to every destination.
+
+    Without the key the engine cannot implement §4.1's exact-destination-then-
+    generic-then-zero order at all, and O-7 stays open no matter what the
+    database holds — `prevention`'s zero row would be loaded, keyed on the same
+    tuple as the general row, and one of the two would win at random.
+    """
+    data = build_bundle_data(seeded_session, get_published_factor_set_id(seeded_session))
+    rows = {row["destination"]: row for row in data["upstream"]}
+
+    assert set(rows) == {None, "prevention"}, data["upstream"]
+    assert rows[None]["value_per_kg"] == "1.9000000000"
+    #: O-7: prevented waste was never produced, so its upstream is zero.
+    assert Decimal(rows["prevention"]["value_per_kg"]) == 0
+    #: §1.1 - `code` crosses the layer boundary, never a primary key.
+    assert all("destination_id" not in row for row in data["upstream"])
+
+
+def _seam_request(sector, food_category, current, alternative=None):
+    from engine.types import CalculationRequest, EntryInput, ScenarioLine
+
+    def lines(rows):
+        return tuple(
+            ScenarioLine(destination_code=code, qty_kg=Decimal(qty)) for code, qty in rows
+        )
+
+    return CalculationRequest(
+        entries=(
+            EntryInput(
+                sector_code=sector,
+                food_category_code=food_category,
+                current=lines(current),
+                alternative=None if alternative is None else lines(alternative),
+            ),
+        )
+    )
+
+
+def test_the_default_bundle_factory_reaches_the_real_engine(seeded_session):
+    """**The seam this branch exists to close, and until now it had no test.**
+
+    `_default_bundle_factory` -> `build_bundle_data` -> `FactorBundle.from_json`
+    -> `calculate` is the production path of every public calculation, and
+    every test that touches either end stubs the other: `tests/api/` injects a
+    `FakeEngineAdapter`, and every other test in this file passes an explicit
+    `bundle_factory`. So the one call with **no** `bundle_factory` — the call
+    the API actually makes — was exercised by hand and by nothing else.
+
+    **If `build_bundle_data` ever stops emitting one of `from_json`'s twelve
+    required keys, nothing in the suite goes red and every public calculation
+    returns 500.** That is not hypothetical: Task 3 found `from_json` parsing a
+    three-key upstream shape while the repository emitted four, and found it by
+    accident. This is the test that would have caught it.
+
+    The two figures are chosen to exercise both halves of the projection:
+
+    - 10 kg of `processing`/`dairy` to `landfill` is 10 x (1.9 + 0.99) = 28.9,
+      and moving it to `prevention` gives 0 — the whole offset, through the
+      real `destination_id` column rather than a hand-built bundle.
+    - 1000 kg of `primary_production`/`vegetables` to `landfill` is
+      1000 x (0 + 0.70) = 700.0: an absent upstream row falling back to zero
+      (§4.1) and the **generic** `food_category IS NULL` downstream row being
+      selected for a category that has no row of its own. Neither of those
+      resolutions exists anywhere in `build_bundle_data`; both are properties
+      of the two documents lining up.
+    """
+    from engine.calculate import calculate
+
+    bundle = load_factor_bundle(seeded_session)
+
+    assert bundle.validate() == []
+
+    prevented = calculate(
+        _seam_request(
+            "processing", "dairy", [("landfill", "10")], [("prevention", "10")]
+        ),
+        bundle,
+    )
+    assert prevented.entries[0].current.metrics["co2e"].total == Decimal("28.9")
+    assert prevented.entries[0].alternative.metrics["co2e"].total == Decimal("0")
+    assert prevented.entries[0].net_benefit["co2e"] == Decimal("28.9")
+
+    generic = calculate(
+        _seam_request("primary_production", "vegetables", [("landfill", "1000")]),
+        bundle,
+    )
+    row = generic.entries[0].current.metrics["co2e"].by_destination[0]
+    assert (row.upstream, row.downstream) == (Decimal("0"), Decimal("0.7"))
+    assert generic.entries[0].current.metrics["co2e"].total == Decimal("700.0")
+
+
+def test_publish_refuses_a_set_that_would_reopen_o7(seeded_session):
+    """Contract §2.2/§5.2. The offset is data now, so data can un-do it.
+
+    The migration covered every combination that existed and `clone_factor_set`
+    carries the rows through clone-edit-publish, but nothing stops a staff
+    member adding a new `(sector, food_category, metric)` to a draft with no
+    `prevention` counterpart. That one combination silently reverts to
+    pre-v1.8 behaviour — charging a prevented line its full upstream factor —
+    while every other combination on the same results page stays correct,
+    which is *harder* to notice than the original O-7 was.
+
+    The message must name the tuples: "something is incomplete" leaves a staff
+    member to find it among roughly 270 rows.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+    seeded_session.execute(
+        delete(FactorUpstream).where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+    with pytest.raises(FactorSetStateError) as excinfo:
+        publish_factor_set(seeded_session, draft_id, "alice")
+
+    message = str(excinfo.value)
+    assert "processing/dairy/co2e" in message
+    assert "prevention" in message
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_publish_refuses_a_prevention_row_that_is_present_but_not_zero(seeded_session):
+    """**The guard checks the value, not the row's existence**, and this is the
+    case that tells the two apart.
+
+    An existence check is satisfied completely by a `prevention` upstream row
+    at 1.9 — the same value as the general row — which is O-7 reopened for that
+    tuple with one extra step and no error, no warning and nothing in the log.
+    It is a worse position than the absent row, because both callers' messages
+    tell a staff member to add a row "at 0", so a set that fails an existence
+    check gets fixed and a set that passes it looks finished.
+
+    The value is a modelling decision (`architecture.md` §4.1, and the
+    `source_note` on the shipped rows): prevented food was never produced, so
+    there is no upstream burden to attribute. Any other value is a claim
+    nothing in the system supports, so anything but zero is refused — not only
+    a value equal to the general row's.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+    seeded_session.execute(
+        FactorUpstream.__table__.update()
+        .where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+        .values(value_per_kg=Decimal("1.9000000000"))
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+    with pytest.raises(FactorSetStateError) as excinfo:
+        publish_factor_set(seeded_session, draft_id, "alice")
+
+    assert "processing/dairy/co2e" in str(excinfo.value)
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_a_prevention_row_just_above_zero_is_refused_too(seeded_session):
+    """One unit in the last place DECIMAL(20,10) carries. The check is
+    `== 0`, not "small enough" — there is no tolerance to tune and no value
+    below which a partial offset becomes acceptable."""
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    seeded_session.execute(
+        FactorUpstream.__table__.update()
+        .where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+        .values(value_per_kg=Decimal("0.0000000001"))
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+
+
+def test_both_callers_of_the_o7_guard_refuse_the_same_non_zero_row(seeded_session):
+    """§5.2 and v1.9: the query has one home in `db/` and two callers, and the
+    panel calls `admin/factor_lifecycle.publish_factor_set`, not this module's.
+    A value rule enforced in only one of them leaves the staff path — the one
+    the failure description is written about — unguarded."""
+    from admin.factor_lifecycle import LifecycleError
+    from admin.factor_lifecycle import publish_factor_set as panel_publish
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    seeded_session.execute(
+        FactorUpstream.__table__.update()
+        .where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+        .values(value_per_kg=Decimal("1.9000000000"))
+    )
+    seeded_session.flush()
+
+    with pytest.raises(LifecycleError) as excinfo:
+        panel_publish(seeded_session, draft_id, actor="alice")
+
+    assert "processing/dairy/co2e" in str(excinfo.value)
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_rollback_is_deliberately_not_subject_to_the_o7_check(seeded_session):
+    """The asymmetry is the decision, not an oversight.
+
+    Rollback restores a version that was published before — including one
+    archived before v1.8 existed, which will legitimately fail the
+    completeness check. Refusing an emergency rollback over it would be a
+    worse failure than the one the check prevents.
+    """
+    from db.models import Destination
+
+    published_id = get_published_factor_set_id(seeded_session)
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "prevention")
+    )
+    publish_factor_set(seeded_session, draft_id, "alice")
+    seeded_session.execute(
+        delete(FactorUpstream).where(
+            FactorUpstream.factor_set_id == published_id,
+            FactorUpstream.destination_id == prevention_id,
+        )
+    )
+    seeded_session.flush()
+
+    rollback_to(seeded_session, published_id, "alice")
+
+    assert seeded_session.get(FactorSet, published_id).status == FactorSetStatus.published
+
+
+def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_session):
+    """An unseeded taxonomy is `check_prevention_intact`'s problem, not this
+    function's. Reporting every combination in the set would be noise, and a
+    second rule stated in terms of the same reserved row is a second thing to
+    keep in step."""
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    seeded_session.execute(
+        delete(FactorUpstream).where(FactorUpstream.destination_id.is_not(None))
+    )
+    seeded_session.execute(delete(Destination).where(Destination.code == "prevention"))
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+
 def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_session):
     published_id = get_published_factor_set_id(seeded_session)
     clone_id = clone_factor_set(seeded_session, published_id, "CLONE-v1", "alice")
@@ -207,6 +502,24 @@ def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_ses
     assert seeded_session.scalar(
         select(func.count()).select_from(Constant).where(Constant.factor_set_id == clone_id)
     ) == 1
+    #: A row count alone cannot see a column the clone drops. `destination_id`
+    #: is the one that matters: lose it and every cloned set's `prevention`
+    #: rows collapse onto the general row, reopening O-7 on the next publish —
+    #: and clone-edit-publish is the recommended staff workflow (§5.2), so the
+    #: defect would arrive on the first real factor set rather than this one.
+    #: Ordered by the column itself, not by `is_(None)` — a boolean sorts two
+    #: rows deterministically by luck and stops doing so the moment a factor
+    #: set carries two destination-specific rows, which is a flake nobody
+    #: would enjoy diagnosing.
+    assert seeded_session.scalars(
+        select(FactorUpstream.destination_id)
+        .where(FactorUpstream.factor_set_id == clone_id)
+        .order_by(FactorUpstream.destination_id)
+    ).all() == seeded_session.scalars(
+        select(FactorUpstream.destination_id)
+        .where(FactorUpstream.factor_set_id == published_id)
+        .order_by(FactorUpstream.destination_id)
+    ).all()
 
     publish_factor_set(seeded_session, clone_id, "alice")
     assert get_published_factor_set_id(seeded_session) == clone_id

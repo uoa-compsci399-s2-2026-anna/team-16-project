@@ -1,0 +1,53 @@
+{
+  "version_label": "GOLDEN-case-03",
+  "is_mock": true,
+
+  "sectors": [
+    { "code": "primary_production", "name": "Primary production", "sort_order": 10 }
+  ],
+  "food_categories": [
+    { "code": "standard_mix", "name": "Standard mix", "is_standard_mix": true, "sort_order": 0 },
+    { "code": "vegetables", "name": "Vegetables", "is_standard_mix": false, "sort_order": 30 }
+  ],
+  "destination_groups": [
+    { "code": "reuse", "name": "Reuse", "is_waste": false, "sort_order": 10 },
+    { "code": "recycle_recovery", "name": "Recycling and recovery", "is_waste": true, "sort_order": 20 }
+  ],
+  "destinations": [
+    { "code": "prevention", "name": "Prevention", "group": "reuse", "sort_order": 10 },
+    { "code": "not_harvested", "name": "Not harvested", "group": "recycle_recovery", "sort_order": 80 }
+  ],
+  "metrics": [
+    { "code": "co2e", "name": "Greenhouse gases", "unit": "kg CO2e",
+      "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 10 },
+    { "code": "mass", "name": "Mass", "unit": "kg",
+      "display_unit": "kg", "display_precision": 1, "sort_order": 50 }
+  ],
+
+  "constants": [],
+  "formulas": [
+    { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": "" },
+    { "metric": "mass", "expression": "qty_kg",
+      "notes": "The one metric a reader can check by hand, and the one that must NOT go to zero on a prevented line: prevented food still weighs what it weighs, so mass conservation stays visible." }
+  ],
+  "upstream": [
+    { "sector": "primary_production", "food_category": "vegetables", "destination": null,
+      "metric": "co2e", "value_per_kg": "0.4500000000",
+      "source_note": "The general row. Every destination for this (sector, food_category, metric) draws it unless a destination-specific row exists." },
+    { "sector": "primary_production", "food_category": "vegetables", "destination": "prevention",
+      "metric": "co2e", "value_per_kg": "0.0000000000",
+      "source_note": "Open item O-7, contract v1.8. Prevented food was never produced, so no upstream burden is attributable to it. Deleting this row is what this case exists to catch: it takes net_benefit.co2e from 456.000 to 96.000." }
+  ],
+  "downstream": [
+    { "destination": "not_harvested", "food_category": null,
+      "metric": "co2e", "value_per_kg": "0.1200000000" },
+    { "destination": "prevention", "food_category": null,
+      "metric": "co2e", "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction. Waste that did not happen has no destination impact." }
+  ],
+  "equivalences": [
+    { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km", "sort_order": 10 }
+  ]
+}

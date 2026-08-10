@@ -100,6 +100,10 @@ def test_a_specific_and_a_generic_downstream_row_coexist(session):
 
 
 def test_an_upstream_factor_is_unique_per_combination(session):
+    """Both rows leave `destination_id` NULL, which is the generic case — so
+    since v1.8 this is the functional index below doing the work, not the
+    declared UNIQUE. It stays here as the canary: delete
+    `uq_factor_upstream_generic` and this is the first test to notice."""
     fs, metric = _set(session), _metric(session)
     sector = Sector(code="processing", name="Processing")
     cat = FoodCategory(code="dairy", name="Dairy")
@@ -114,6 +118,106 @@ def test_an_upstream_factor_is_unique_per_combination(session):
 
     with pytest.raises(IntegrityError):
         session.flush()
+
+
+def _upstream_prereqs(session):
+    """A (sector, food_category) pair, and a `prevention` destination."""
+    from admin.taxonomy_models import Destination, DestinationGroup
+
+    sector = Sector(code="primary_production", name="Primary production")
+    cat = FoodCategory(code="vegetables", name="Vegetables")
+    group = DestinationGroup(code="reuse", name="Reuse", is_waste=False)
+    session.add_all([sector, cat, group])
+    session.flush()
+    prevention = Destination(group_id=group.id, code="prevention",
+                             name="Prevented — waste avoided")
+    session.add(prevention)
+    session.flush()
+    return sector, cat, prevention
+
+
+def test_two_generic_upstream_rows_are_refused(session):
+    """Contract §2.2 (v1.8), and the same trap B found on `factor_downstream`.
+
+    `destination_id` is nullable — NULL means "every destination for this
+    (sector, food_category, metric)" — and MySQL treats NULLs as distinct
+    inside a UNIQUE key, so the declared UNIQUE is silent on exactly the rows
+    it most needs to guard. Two of them would make the upstream fallback pick
+    one nondeterministically: the same input returning different numbers, with
+    nothing in the logs. The functional index over COALESCE(destination_id, 0)
+    is what actually enforces it."""
+    fs, metric = _set(session), _metric(session)
+    sector, cat, _ = _upstream_prereqs(session)
+    session.add(FactorUpstream(
+        factor_set_id=fs.id, sector_id=sector.id, food_category_id=cat.id,
+        destination_id=None, metric_id=metric.id, value_per_kg=Decimal("0.45"),
+    ))
+    session.flush()
+    session.add(FactorUpstream(
+        factor_set_id=fs.id, sector_id=sector.id, food_category_id=cat.id,
+        destination_id=None, metric_id=metric.id, value_per_kg=Decimal("0.90"),
+    ))
+
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_two_upstream_rows_for_the_same_destination_are_refused(session):
+    """The declared UNIQUE's own job, once `destination_id` is not NULL."""
+    fs, metric = _set(session), _metric(session)
+    sector, cat, prevention = _upstream_prereqs(session)
+    for value in ("0", "0.45"):
+        session.add(FactorUpstream(
+            factor_set_id=fs.id, sector_id=sector.id, food_category_id=cat.id,
+            destination_id=prevention.id, metric_id=metric.id,
+            value_per_kg=Decimal(value),
+        ))
+
+    with pytest.raises(IntegrityError):
+        session.flush()
+
+
+def test_a_destination_specific_and_a_generic_upstream_row_coexist(session):
+    """The lookup order is exact destination, then the NULL row, then zero —
+    so both must be insertable for the same (sector, food_category, metric).
+
+    This pair is O-7: `prevention` carries an upstream row of its own at zero,
+    and every other destination falls through to the general one. Without it a
+    line moved to `prevention` kept its full upstream burden and the calculator
+    understated the benefit of wasting less by most of its value."""
+    fs, metric = _set(session), _metric(session)
+    sector, cat, prevention = _upstream_prereqs(session)
+    session.add_all([
+        FactorUpstream(
+            factor_set_id=fs.id, sector_id=sector.id, food_category_id=cat.id,
+            destination_id=None, metric_id=metric.id,
+            value_per_kg=Decimal("0.4500000000"),
+        ),
+        FactorUpstream(
+            factor_set_id=fs.id, sector_id=sector.id, food_category_id=cat.id,
+            destination_id=prevention.id, metric_id=metric.id,
+            value_per_kg=Decimal("0.0000000000"),
+        ),
+    ])
+    session.flush()
+
+    rows = session.scalars(select(FactorUpstream)).all()
+    assert len(rows) == 2
+    assert {row.destination_id for row in rows} == {None, prevention.id}
+
+
+def test_an_upstream_row_is_generic_by_default(session):
+    """`destination_id` is nullable and defaults to NULL, so every upstream row
+    written before v1.8 keeps meaning exactly what it meant: every destination."""
+    fs, metric = _set(session), _metric(session)
+    sector, cat, _ = _upstream_prereqs(session)
+    session.add(FactorUpstream(
+        factor_set_id=fs.id, sector_id=sector.id, food_category_id=cat.id,
+        metric_id=metric.id, value_per_kg=Decimal("0.45"),
+    ))
+    session.flush()
+
+    assert session.scalar(select(FactorUpstream)).destination_id is None
 
 
 def test_a_constant_is_unique_per_set(session):

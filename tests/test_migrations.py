@@ -61,6 +61,7 @@ def migrated_engine(database_url_root):
 _FUNCTIONAL_INDEXES = {
     "uq_factor_downstream_generic",   # §2.2, alembic/versions/0005_factors.py
     "uq_submission_entry_generic",    # §2.3, alembic/versions/0008_submissions.py
+    "uq_factor_upstream_generic",     # §2.2, alembic/versions/0009_upstream_destination.py
 }
 
 
@@ -82,6 +83,12 @@ def _include_object(object_, name, type_, reflected, compare_to):
     an index to remove). Either way, comparing this one index is not
     meaningful with the installed SQLAlchemy version, so it is excluded here
     rather than left to produce a permanent false positive.
+
+    `admin/factor_models.py`'s `uq_factor_upstream_generic` (contract §2.2,
+    v1.8) is the third instance: `factor_upstream.destination_id` is nullable
+    for the same reason `factor_downstream.food_category_id` is, and carries
+    the same trap. Excluded for the same reason and pinned by the same
+    information_schema assertion below.
 
     `db/models.py`'s `uq_submission_entry_generic` (contract §2.3) is the same
     construct on `submission_entry` and is excluded for the same reason — B's
@@ -131,6 +138,12 @@ def test_the_migration_chain_matches_the_models(migrated_engine):
             "one user's single 'no category breakdown' answer can be stored "
             "twice for the same sector, and §5.4's by_sector aggregation "
             "counts it twice in the public statistics",
+        ),
+        (
+            "factor_upstream", "uq_factor_upstream_generic",
+            "a second generic upstream row inserts happily and the upstream "
+            "fallback introduced for O-7 becomes nondeterministic — the same "
+            "input returning a different net benefit run to run",
         ),
     ],
     ids=lambda value: value if value.startswith("uq_") else None,

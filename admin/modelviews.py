@@ -249,6 +249,19 @@ class AuditedModelView(ModelView):
        does not capture from an ORM cascade.
     """
 
+    #: sqladmin's own create and edit pages, extended with one style rule.
+    #: Set here rather than on each of the fourteen subclasses because the
+    #: defect it works around is a property of sqladmin's checkbox widget,
+    #: not of any one screen: `BooleanInputWidget` hard-codes `h-100` on the
+    #: switch wrapper, which pushes the field's own description outside its
+    #: column, where the next row draws over it. Every boolean field on this
+    #: panel - `is_mock`, `is_waste`, `is_standard_mix` and every `active` -
+    #: was explaining itself invisibly until this existed. See
+    #: `admin/templates/brand/_field_help_css.html` for the full account and
+    #: for what to delete when sqladmin fixes it.
+    create_template = "brand/model_create.html"
+    edit_template = "brand/model_edit.html"
+
     def __init__(self) -> None:
         super().__init__()
         # sqladmin's Admin.add_model_view sets the *class* attribute

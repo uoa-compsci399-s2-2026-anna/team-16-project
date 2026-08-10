@@ -235,6 +235,89 @@ def test_every_editable_field_has_a_description(registered_views):
     )
 
 
+def test_a_checkbox_description_is_not_drawn_over(registered_views):
+    """A description nobody can read is not a description.
+
+    sqladmin 0.30's ``BooleanInputWidget`` hard-codes ``h-100`` on the switch
+    wrapper, so the ``<small>`` beneath it falls outside its own column and
+    the next form row - or the card's button bar - paints over it. Confirmed
+    in a browser before it was fixed: the whole of ``is_standard_mix``'s
+    "exactly one active category" rule was hidden behind the Sort Order
+    input.
+
+    Nothing caught this, and nothing could have: the coverage test above was
+    green throughout, because the description was present in the markup the
+    entire time. It is the exact failure this project has recorded thirteen
+    times - a test true for a reason that is not the reason anyone cares
+    about - and the only thing that found it was opening the page.
+
+    So this asserts on the fix rather than on the markup: every view with a
+    boolean field on its form renders through the template pair carrying the
+    override. Asserting the rule is *in* the page would be the stronger test
+    and needs a rendered response; this is the class-level half, and the
+    browser is the other.
+    """
+    from sqlalchemy import Boolean
+
+    offenders = []
+    for view in registered_views:
+        if not _has_form(view):
+            continue
+        has_checkbox = any(
+            isinstance(prop.columns[0].type, Boolean)
+            for name in _editable_fields(view)
+            for prop in [view._mapper.attrs.get(name)]
+            if isinstance(prop, ColumnProperty)
+        )
+        if not has_checkbox:
+            continue
+        if (view.create_template != "brand/model_create.html"
+                or view.edit_template != "brand/model_edit.html"):
+            offenders.append(view.identity)
+
+    assert not offenders, (
+        "these screens have a checkbox field but do not render through the "
+        "templates that make its description visible, so that description is "
+        f"drawn over by the next row: {offenders}"
+    )
+
+
+@pytest.mark.db
+@pytest.mark.asyncio
+async def test_the_checkbox_fix_survives_all_the_way_to_the_page(
+    admin_client, one_draft, _committed_session
+):
+    """The other half of the test above, and the half that would actually
+    have caught the bug.
+
+    The class-level check only proves two attributes hold the right template
+    names. A template that stopped extending sqladmin's, an ``{% include %}``
+    pointing at a file somebody renamed, or a ``head_css`` block that lost
+    its ``{{ super() }}`` would all leave those attributes correct and the
+    page broken again - which is the same shape of wrong-reason pass this
+    file exists to keep out.
+
+    Both routes, because sqladmin renders create and edit from two separate
+    templates and only one of them being fixed is the likelier failure than
+    neither.
+    """
+    for path in ("/admin/food-category/create", "/admin/factor-set/create"):
+        body = (await admin_client.get(path)).text
+        assert ".form-switch.h-100" in body, f"{path} lost the override"
+        # `{{ super() }}` still present: the library's own stylesheets have
+        # to survive alongside it, or the page renders unstyled.
+        assert "css/tabler.min.css" in body, f"{path} lost sqladmin's own CSS"
+
+    # `one_draft` only flushes (tests/admin/conftest.py's `_make_set`), and
+    # `admin_client` reaches the app through a different connection
+    # entirely, so an uncommitted row is a 404 on every one of its requests.
+    _committed_session.commit()
+    edit = await admin_client.get(f"/admin/factor-set/edit/{one_draft.id}")
+    assert edit.status_code == 200
+    assert ".form-switch.h-100" in edit.text, "the edit page lost the override"
+    assert "css/tabler.min.css" in edit.text, "the edit page lost sqladmin's own CSS"
+
+
 def test_a_description_is_not_the_label_again(registered_views):
     """Help text that restates the field name teaches staff to stop reading.
 

@@ -1,0 +1,41 @@
+{# Makes a checkbox field's description visible. Included by
+   brand/model_create.html and brand/model_edit.html, which are what
+   AuditedModelView's create_template/edit_template point at.
+
+   The defect. sqladmin 0.30's BooleanInputWidget (sqladmin/widgets.py, line
+   169) wraps every checkbox in a hard-coded
+
+       <div class="form-switch d-flex align-items-center h-100">
+
+   `h-100` is `height: 100%` of the surrounding `.col-sm-10`, whose own
+   height is content-driven - so the switch claims the whole column and the
+   `<small class="text-muted">` sqladmin renders underneath it is pushed
+   outside the column box entirely, contributing no height. The next form
+   row, or the card's own button bar, then draws straight over it.
+
+   Nothing showed this until 2026-08-10, because until then exactly one
+   field on this panel carried a description and it was a select. The moment
+   every field explains itself, fourteen boolean fields explain themselves
+   invisibly - `is_mock`, `is_waste`, `is_standard_mix` and every `active`
+   among them, which is to say four of the most consequential settings in
+   the panel. Verified in a browser against the live stack: on
+   /admin/food-category/create the whole of `is_standard_mix`'s rule
+   ("exactly one active category must carry it") was overdrawn by the Sort
+   Order input, and on /admin/metric/create `active`'s description ran under
+   the Save buttons.
+
+   Why a stylesheet rule and not a fixed widget. The class comes from a
+   library widget, not from a template, so the alternatives are overriding
+   `form_overrides` for every boolean column on fourteen views, or forking
+   sqladmin's own `_macros.html`. Both are larger, and both have to be
+   revisited on every sqladmin upgrade. This is a two-line override on a
+   template that extends the library's rather than replacing it - the same
+   shape as `brand/ip_block_list.html`, which already extends
+   `sqladmin/list.html` for the same kind of reason.
+
+   Delete this the day sqladmin stops emitting `h-100` there; the rule is
+   scoped tightly enough (`.form-group.row` ancestor, `.form-switch.h-100`)
+   that it changes nothing else if it outlives the bug. #}
+<style>
+  .form-group.row .form-switch.h-100 { height: auto !important; }
+</style>

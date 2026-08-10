@@ -1,0 +1,14 @@
+{# sqladmin's own create page, plus the one style rule that lets a checkbox
+   field's description be read. See brand/_field_help_css.html for the
+   defect it works around and why it is a style rule.
+
+   Extends rather than replaces: every block sqladmin defines is inherited
+   untouched, and `{{ super() }}` keeps the library's own head_css - which
+   loads Tabler, select2, flatpickr and each form field's own media - ahead
+   of the override. #}
+{% extends "sqladmin/create.html" %}
+
+{% block head_css %}
+{{ super() }}
+{% include "brand/_field_help_css.html" %}
+{% endblock %}

@@ -4,7 +4,9 @@ Nothing below this module knows about the others; this is the only place
 they are wired together.
 """
 
+import logging
 from contextlib import asynccontextmanager
+from pathlib import Path
 
 from fastapi import FastAPI
 from sqladmin import Admin
@@ -19,6 +21,51 @@ from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
 from db.session import create_session_factory
+
+#: This package's own directory. Both the static files and the templates live
+#: inside it and are shipped as package data, so they are located relative to
+#: this file and never relative to the working directory - an installed
+#: package has no idea where the process was started from, and a panel that
+#: only starts from one directory is a panel that cannot be installed.
+#:
+#: admin/views.py and admin/dryrun_views.py have always resolved their
+#: Jinja2Templates this way; the two mounts below were the outliers, and
+#: `create_app()` from any other directory raised
+#: "RuntimeError: Directory 'admin/static' does not exist".
+_PACKAGE_DIR = Path(__file__).parent
+
+logger = logging.getLogger(__name__)
+
+#: Logged once at start-up when the staff session cookie is being issued
+#: without the `Secure` attribute. The counterpart to
+#: `api/app.py`'s `_UNTRUSTED_PROXY_WARNING`, and it exists for the same
+#: reason: a setting whose safe value had to be relaxed for one environment
+#: must not be silent in the one it was not relaxed for.
+#:
+#: The concrete case this is written for. The shipped container arrangement
+#: (docker/compose.yaml) sets `SESSION_HTTPS_ONLY=false`, because out of the
+#: box the panel is served over plain http and a `Secure` cookie is one the
+#: browser accepts and then never sends back - the login form takes the
+#: password and returns to the login form, a panel nobody can enter. That
+#: relaxation is correct for a first run and wrong the moment TLS is in
+#: front, and an operator who fronts this with TLS and never reads
+#: compose.yaml would keep the weakened cookie indefinitely with nothing
+#: anywhere saying so.
+#:
+#: A warning and not a refusal, exactly like the API's: there is no value
+#: this could be defaulted to that is right in both environments, so the
+#: hazard is operational and the only thing to do about it is to make it
+#: impossible to miss.
+_INSECURE_SESSION_COOKIE_WARNING = (
+    "SESSION_HTTPS_ONLY is false, so the staff session cookie is issued "
+    "WITHOUT the Secure attribute and a browser will send it over plain "
+    "http. That cookie carries admin access. This is the correct setting "
+    "only where the panel is genuinely served over http - local development, "
+    "or a first container run before TLS is arranged. Behind TLS it means one "
+    "http:// navigation on the admin origin hands over a live staff session, "
+    "including to anyone on the same network. Set SESSION_HTTPS_ONLY=true as "
+    "soon as TLS terminates in front of this panel."
+)
 
 
 def create_app(settings: Settings | None = None) -> FastAPI:
@@ -70,6 +117,13 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # counter every time and never lock anything.
     app.state.throttle = build_throttle(settings)
 
+    # Emitted here rather than in the lifespan hook so that it also reaches
+    # anything that builds an app without running one - and unconditionally on
+    # the value, never on whether a proxy is detected, because this process
+    # cannot tell whether TLS terminates in front of it.
+    if not settings.session_https_only:
+        logger.warning(_INSECURE_SESSION_COOKIE_WARNING)
+
     # Global, and installed on the *outer* app - not passed into Admin()'s
     # own ``middlewares=`` list. Either placement runs before sqladmin's
     # inner SessionMiddleware (see admin/protection.py's module docstring
@@ -93,7 +147,9 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # ordering first: both static-file tests failed with 404. Mounting the
     # static files before constructing Admin() fixes it.
     app.mount(
-        "/admin/static", StaticFiles(directory="admin/static"), name="brand-static"
+        "/admin/static",
+        StaticFiles(directory=str(_PACKAGE_DIR / "static")),
+        name="brand-static",
     )
 
     admin = Admin(
@@ -101,7 +157,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_maker=session_factory,
         base_url="/admin",
         title="Kai Commitment",
-        templates_dir="admin/templates",
+        templates_dir=str(_PACKAGE_DIR / "templates"),
         authentication_backend=AdminAuth(settings=settings, app=app),
     )
 

@@ -511,6 +511,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
 | O-8 | **Interface translation. Nothing here is promised** — the shape below is a sketch pending the client's word, and dropping it entirely is a likely outcome. Sibling of O-4. See below. | Client, C, D, E |
+| O-9 | **`/admin/try` cannot succeed in a deployed system.** `api.app:create_app` takes a `staff_authenticator` and nothing in production supplies one, so every dry run answers `UNAUTHORIZED` and contract §8.2 is inert. Found by running a walkthrough against a clean stack, not by any test — the only callers that pass one are two API test files. See below. | B, E |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
@@ -614,3 +615,22 @@ Roughly 150 translatable strings exist in `web/js` today, concentrated in `calcu
 ### The admin panel is a separate question, and probably a no
 
 `sqladmin` renders its own templates; translating them means overriding or forking them. The panel has five users, all in New Zealand, working in English. Unless the client asks, this is effort better spent on the field-level help in O-9.
+
+
+## O-9 — the dry-run authenticator was never wired — **OPEN**
+
+`POST /api/v1/calculate` accepts `X-Dry-Run: true` from a staff member, and the panel's `/admin/try` screen is built on it. `api.app:create_app` takes a `staff_authenticator` callable to decide who that staff member is. **Nothing in production passes one.** `run.sh` serves `api.app:create_app` bare; the only code that supplies the argument is `tests/api/test_api.py` and `tests/api/test_api_entries.py`, each injecting a lambda.
+
+So every dry run in a deployed system answers `UNAUTHORIZED`, and §8.2 — tuning a formula against real numbers without persisting anything, and the pre-publish comparison built beside it — does not work at all.
+
+**Why no test caught it.** The tests supply exactly the thing production lacks. That is the failure mode worth naming: a test double that fills a gap rather than standing in for something real reports success on a path nobody has ever run. The panel's own tests reach the screen and stop at the API boundary; the API's tests reach the endpoint with an authenticator already injected. Neither one crosses the seam where the wiring is missing.
+
+**Why it is not fixed here.** The question is not how to pass an argument. It is **who may run an unpersisted calculation against published factors**, and how the API — which may not import `admin/` — satisfies itself that a caller is staff. That is a contract decision spanning B's layer and E's, and the honest options differ in what they cost:
+
+- a shared signed token minted by the panel and verified by the API, which needs a secret both already have and a decision about expiry;
+- an internal network boundary, which makes the guarantee a deployment property rather than a code one and would have to be stated as such;
+- moving the dry run into the panel against its own engine import, which duplicates a calculation path the whole architecture exists to keep singular.
+
+**The first is most likely right** — both processes already derive keys from one `SECRET_KEY` with pinned `info` strings, and the blocklist fingerprint proves the pattern works across the boundary. It is recorded rather than chosen because §8.2 belongs to E and the endpoint belongs to B.
+
+Until it is settled, staff have no way to test a formula except by publishing it — which is exactly the risk the dry-run screen was designed to remove.

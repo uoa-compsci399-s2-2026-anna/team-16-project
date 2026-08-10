@@ -147,3 +147,28 @@ button:hover { background: var(--blueberry); }
 .secrets li { margin: 0.25rem 0; }
 
 .muted { font-size: 0.9rem; opacity: 0.75; }
+
+/* In the DOM, off the screen. Same declaration and same name as
+   web/css/styles.css's .sr-only, so the project has one convention for this
+   and not two.
+
+   The change-password forms carry a readonly username field in this class,
+   which is the documented way to let a password manager offer to *update* the
+   stored credential instead of saving a second one - without a username a
+   change-password form is indistinguishable from a signup. Two details are
+   load-bearing and neither is cosmetic: password managers skip
+   `type="hidden"` inputs outright, and Chromium's autofill treats an element
+   with a zero client width or height as invisible, so `display: none` and
+   `visibility: hidden` fail for the same reason. 1px plus clip is a field
+   that is measurably there and still shows nothing. */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

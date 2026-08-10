@@ -103,15 +103,30 @@
       Your current password is required — a signed-in session is not enough on
       its own. Changing it signs out every other session using this account.
     </p>
-    <form method="post" autocomplete="off">
+    {# No autocomplete="off" here, and a username field below, for the reason
+       brand/change_password.html gives at length: without them the browser
+       reads this as a signup and offers to save a second credential rather
+       than update the one it already holds for this account. #}
+    <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="change-password">
+      {# Readonly, off screen, and deliberately without a name attribute so it
+         is never submitted - the account acted on is read from the session and
+         from nowhere else, and this field must not become a second answer to
+         that question. See this view's module docstring. #}
+      <input class="sr-only" type="text" id="username" value="{{ username }}"
+             autocomplete="username" readonly tabindex="-1" aria-hidden="true">
       <label for="current_password">Current password</label>
       <input type="password" id="current_password" name="current_password"
              autocomplete="current-password" required>
       <label for="password">New password</label>
       <input type="password" id="password" name="password"
-             autocomplete="new-password" required>
+             autocomplete="new-password" minlength="{{ min_password_length }}"
+             aria-describedby="password-rule" required>
+      <p class="muted" id="password-rule">
+        At least {{ min_password_length }} characters, and not the one in use
+        now.
+      </p>
       <label for="confirm">Confirm new password</label>
       <input type="password" id="confirm" name="confirm"
              autocomplete="new-password" required>

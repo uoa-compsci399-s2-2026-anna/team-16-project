@@ -41,6 +41,13 @@ service layer, not of this view — ``admin/accounts.py`` is the only module
 that mutates ``staff`` rows and now the only one that mutates their devices,
 which is what keeps a second caller added later from having to remember.
 
+The change-password form does now *display* the signed-in username, in a
+readonly field placed off screen so a password manager can tell that this
+changes an existing credential rather than creates a new one. It carries no
+``name`` attribute, so it is not submitted and cannot be aimed anywhere; the
+claim above is unchanged, and it is worth keeping that way — the moment a
+handler here reads a username out of a form, the paragraph stops being true.
+
 **A note on ``is_accessible``.** ``@expose`` wraps this route in
 ``login_required``, which calls ``AdminAuth.authenticate()`` and *not* this
 view's ``is_accessible`` — the same sqladmin 0.30 behaviour

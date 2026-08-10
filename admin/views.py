@@ -48,9 +48,24 @@ from admin.totp import qr_svg
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-#: Contract 8.3 sets no policy. Twelve is comfortably above the eight NIST
-#: treats as a floor, and well under bcrypt's 72-byte ceiling.
-MIN_PASSWORD_LENGTH = 12
+#: Contract 8.3 sets no policy. This was twelve and is now eight, at the
+#: repository owner's decision, taken with the argument against in front of
+#: them. What was weighed, recorded here so the next person to ask "why
+#: eight?" reads it rather than re-deriving it:
+#:
+#: Against a lower floor - this panel edits the formulas a public calculator
+#: quotes and reads submission records, and there is no email recovery, so a
+#: compromised administrator is recovered only by another administrator or by
+#: shell access. Part of why twelve cost nothing to hold is that
+#: ``admin/accounts.py`` issues 20-character random passwords, and the floor
+#: only ever bites on the one a person then chooses for themselves.
+#:
+#: For it - this is a staff panel behind TOTP MFA and the login throttle in
+#: ``admin/throttle.py``, not a public signup, and a floor people work around
+#: (a twelfth character appended to an eight-character password) helps nobody.
+#: Eight is also what NIST SP 800-63B sets as the floor for a memorised
+#: secret. Well under bcrypt's 72-byte ceiling either way.
+MIN_PASSWORD_LENGTH = 8
 
 #: Contract 8.3: "The panel prompts for regeneration once 2 codes remain."
 LOW_RECOVERY_CODE_THRESHOLD = 2
@@ -245,7 +260,18 @@ class ChangePasswordView(BaseView):
         if not username:
             return _redirect(request, "admin:login")
 
-        context = {"csrf_token": issue_token(request.session), "error": None}
+        # min_password_length is rendered as the page's own guidance rather
+        # than left to surface only in a refusal - a person should not have to
+        # be told no to learn the rule. Passed, never written into the
+        # template, so the number on screen cannot drift from the number
+        # enforced. `username` is here for the browser's password manager,
+        # not for this view: see change_password.html.
+        context = {
+            "csrf_token": issue_token(request.session),
+            "error": None,
+            "min_password_length": MIN_PASSWORD_LENGTH,
+            "username": username,
+        }
         if request.method == "GET":
             return templates.TemplateResponse(
                 request, "brand/change_password.html", context

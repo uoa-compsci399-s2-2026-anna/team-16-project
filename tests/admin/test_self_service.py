@@ -39,6 +39,7 @@ from admin.models import AuditLog, StaffRole
 from admin.security import verify_password
 from admin.self_service_view import MAX_DEVICE_NAME_LENGTH
 from admin.totp import TOTP_INTERVAL
+from admin.views import MIN_PASSWORD_LENGTH
 
 from tests.admin.conftest import (
     _BROWSER_HEADERS,
@@ -332,7 +333,9 @@ async def test_the_password_rules_are_the_forced_change_pages_rules(me, db_sessi
     The reuse assertion is the one that matters: too short, mismatched, and
     the password already in force are all refused here too."""
     for password, confirm in (
-        ("short", "short"),
+        # One character below the shared floor, derived from the constant so
+        # this stays a boundary rather than a comfortably short string.
+        ("a" * (MIN_PASSWORD_LENGTH - 1), "a" * (MIN_PASSWORD_LENGTH - 1)),
         (NEW_PASSWORD, "something-else-entirely"),
         (PASSWORD, PASSWORD),
     ):
@@ -344,6 +347,74 @@ async def test_the_password_rules_are_the_forced_change_pages_rules(me, db_sessi
 
     staff = get_staff(db_session, me.staff.username)
     assert verify_password(PASSWORD, staff.password_hash)
+
+
+async def test_a_password_of_exactly_the_minimum_length_is_accepted(me, db_session):
+    """The accepting side of the floor, on this page too.
+
+    ``test_the_password_rules_are_the_forced_change_pages_rules`` above only
+    checks refusals, and a refusal-only suite is satisfied by a page that
+    refuses everything. The length is derived from MIN_PASSWORD_LENGTH: the
+    floor moved from twelve to eight and a literal would have survived that
+    without asserting anything about the rule in force.
+    """
+    exactly = "b" * MIN_PASSWORD_LENGTH
+
+    response = await _post(
+        me, action="change-password", current_password=PASSWORD,
+        password=exactly, confirm=exactly,
+    )
+
+    assert response.status_code == 200, response.text
+    staff = get_staff(db_session, me.staff.username)
+    assert verify_password(exactly, staff.password_hash)
+
+
+async def test_the_screen_states_the_length_rule_from_the_constant(me):
+    """The number on screen is MIN_PASSWORD_LENGTH's, not a copy of it.
+
+    ``_context`` has passed ``min_password_length`` into this template since
+    the screen was built, and until now nothing rendered it - the rule was
+    stated only in the refusal a user got for breaking it.
+    """
+    page = await me.get(SECURITY_URL, follow_redirects=False)
+
+    assert page.status_code == 200
+    assert f"At least {MIN_PASSWORD_LENGTH} characters" in page.text
+    stated = set(re.findall(r"(\d+) characters", page.text))
+    assert stated == {str(MIN_PASSWORD_LENGTH)}, stated
+
+
+async def test_the_password_form_carries_the_attributes_a_password_manager_needs(me):
+    """The attributes are in the markup. That, and nothing beyond it.
+
+    No test here can show that Chrome offers to *update* the credential it
+    already holds rather than save a second one; that needs a browser with a
+    password manager signed in, and it was checked by hand. What this holds
+    is that a refactor of this template cannot drop them silently - they all
+    read as decoration, and losing them breaks nothing else in this file.
+
+    The username field is asserted to carry no ``name``: it exists for the
+    browser, it is never submitted, and this screen's rule that the account
+    comes from the session and from no form field stays intact.
+    """
+    page = await me.get(SECURITY_URL, follow_redirects=False)
+    assert page.status_code == 200
+    body = page.text
+
+    match = re.search(r"<input[^>]*autocomplete=\"username\"[^>]*>", body)
+    assert match, body
+    field = match.group(0)
+    assert f'value="{me.staff.username}"' in field, field
+    # Not hidden - password managers skip hidden inputs - and not named, so
+    # it never reaches a request handler.
+    assert 'type="text"' in field, field
+    assert 'type="hidden"' not in field, field
+    assert "readonly" in field, field
+    assert "name=" not in field, field
+
+    assert 'autocomplete="current-password"' in body
+    assert 'autocomplete="new-password"' in body
 
 
 async def test_a_password_change_is_audited_naming_the_actor(me, db_session):

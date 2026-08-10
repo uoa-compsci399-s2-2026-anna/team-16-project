@@ -3,6 +3,7 @@
 Contract: docs/interfaces.md 8.3.
 """
 
+import re
 import time
 
 import pyotp
@@ -16,6 +17,7 @@ from admin.accounts import (
     set_password,
 )
 from admin.totp import TOTP_INTERVAL
+from admin.views import MIN_PASSWORD_LENGTH
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -307,6 +309,123 @@ async def test_a_too_short_password_is_refused_and_the_flag_stays_set(
     assert _must_change_password(admin_app, username) is True
 
 
+async def test_the_floor_refuses_one_short_and_accepts_exactly_the_minimum(
+    admin_app, client, not_onboarded
+):
+    """Both sides of the length boundary, against one account.
+
+    The refusing half on its own would pass against a page that refuses
+    every password, so the accepting half is the one carrying the weight:
+    a password of exactly MIN_PASSWORD_LENGTH characters must go through.
+
+    Lengths are derived from the constant rather than written out. The floor
+    has already moved once - twelve to eight - and a literal 12 here would
+    have stayed green across that change while asserting nothing about the
+    rule actually in force.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+
+    one_short = "a" * (MIN_PASSWORD_LENGTH - 1)
+    refused = await client.post(
+        "/admin/change-password",
+        data={
+            "password": one_short,
+            "confirm": one_short,
+            "csrf_token": await _csrf_from(client, "/admin/change-password"),
+        },
+        follow_redirects=False,
+    )
+
+    assert refused.status_code == 400
+    # The message names the real floor; a hard-coded number in the copy
+    # would fail here rather than mislead a user.
+    assert f"at least {MIN_PASSWORD_LENGTH} characters" in refused.text
+    assert _must_change_password(admin_app, username) is True
+
+    exactly = "a" * MIN_PASSWORD_LENGTH
+    accepted = await client.post(
+        "/admin/change-password",
+        data={
+            "password": exactly,
+            "confirm": exactly,
+            "csrf_token": await _csrf_from(client, "/admin/change-password"),
+        },
+        follow_redirects=False,
+    )
+
+    assert accepted.status_code == 302, accepted.text
+    assert _must_change_password(admin_app, username) is False
+
+
+async def test_the_page_states_the_length_rule_before_anyone_is_refused(
+    admin_app, client, not_onboarded
+):
+    """The number on screen comes from MIN_PASSWORD_LENGTH.
+
+    Prose carrying its own copy of the number is worse than no guidance: it
+    goes quietly wrong the first time the constant moves, and this one has
+    moved. The page is fetched with no error on it, because a rule that is
+    only stated in a refusal is a rule you learn by failing.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+
+    page = await client.get("/admin/change-password", follow_redirects=False)
+
+    assert page.status_code == 200
+    assert f"At least {MIN_PASSWORD_LENGTH} characters" in page.text
+    # And no second, stale number anywhere else on the page. Written as a
+    # sweep rather than "12 is absent" so it keeps working if the floor moves
+    # again, in either direction.
+    stated = set(re.findall(r"(\d+) characters", page.text))
+    assert stated == {str(MIN_PASSWORD_LENGTH)}, stated
+
+
+async def test_the_form_carries_the_attributes_a_password_manager_needs(
+    admin_app, client, not_onboarded
+):
+    """The attributes are in the markup. That, and nothing beyond it.
+
+    This test cannot show that Chrome offers to *update* the stored
+    credential instead of saving a second one - only a browser with a
+    password manager signed in can show that, and it was checked by hand.
+    What it does hold is that a later edit of this template cannot drop them
+    without turning something red. That matters because every one of these
+    attributes reads as decoration: a readonly field nobody can see, an
+    autocomplete value on a field the server never fills. Removing them
+    breaks no behaviour any other test in this file observes, and the
+    symptom appears weeks later in somebody's password manager.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+
+    page = await client.get("/admin/change-password", follow_redirects=False)
+    assert page.status_code == 200
+    body = page.text
+
+    # The username the browser will file the credential under, and it is the
+    # account actually signing in.
+    assert 'autocomplete="username"' in body
+    assert f'value="{username}"' in body
+    username_field = re.search(r"<input[^>]*autocomplete=\"username\"[^>]*>", body)
+    assert username_field, body
+    field = username_field.group(0)
+    # type="hidden" is the obvious way to write this and the one that does
+    # not work: password managers skip hidden inputs. It must be a text
+    # input that is merely off screen, and readonly so it cannot be edited.
+    assert 'type="text"' in field, field
+    assert 'type="hidden"' not in field, field
+    assert "readonly" in field, field
+    assert "sr-only" in field, field
+
+    assert body.count('autocomplete="new-password"') == 2
+    # The form must not switch autocomplete off wholesale; that is the state
+    # this page was in when the browser treated a password change as a new
+    # signup.
+    assert 'autocomplete="off"' not in body
+
+
 # --- Behaviour 6 -------------------------------------------------------------
 
 
@@ -413,8 +532,9 @@ async def test_a_password_short_in_characters_but_over_the_byte_limit_is_refused
     panel, and the error message this page shows explicitly names
     "accented or non-Latin characters" as the reason the two counts differ.
 
-    "e"-with-acute times 40 is 40 *characters* (under MIN_PASSWORD_LENGTH's
-    floor by a mile, nowhere near a character-count limit of 72) but 80
+    "e"-with-acute times 40 is 40 *characters* (well clear of
+    MIN_PASSWORD_LENGTH's floor, and nowhere near a character-count limit of
+    72, so no other check accounts for the refusal) but 80
     *bytes* in UTF-8 (over BCRYPT_MAX_BYTES=72) - so this input is accepted
     by a character-counting mutant and correctly refused only by the real
     byte-counting check.

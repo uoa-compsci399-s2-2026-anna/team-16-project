@@ -45,10 +45,27 @@ __IMAGE_PREFIX__/kaicalc-web:__VERSION__
 Each is also tagged `latest`. Prefer the version tag in anything you deploy:
 `latest` moves under you the next time somebody cuts a release.
 
-These packages live in this repository's GitHub Container Registry namespace
-and inherit its visibility. While the repository is private, pulling them
-requires `docker login ghcr.io` with a personal access token carrying
-`read:packages`, from an account with read access to the repository.
+### Pulling them: log in first
+
+**These packages are private, deliberately.** The university created this
+repository as a private one and GitHub Container Registry inherits that, so an
+anonymous `docker pull` returns an authentication error rather than the image.
+That is expected, not a broken release — anyone holding a GitHub token can
+pull.
+
+Two commands. Use a personal access token, not your password:
+
+```
+echo "$GITHUB_TOKEN" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+docker pull __IMAGE_PREFIX__/kaicalc-api:__VERSION__
+```
+
+The token must carry the **`read:packages`** scope. This is the part that
+catches people out: read access to the repository on its own is not enough — a
+classic token with only `repo` is refused with `denied` at pull time, and the
+message does not mention the scope. Create the token at
+**Settings → Developer settings → Personal access tokens**, tick
+`read:packages`, and try again.
 
 ---
 

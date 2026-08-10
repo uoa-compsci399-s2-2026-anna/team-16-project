@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.2 draft)"
+date: "2026-08-09 (v1.5 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,58 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.5 — 2026-08-09 (from the whole-branch review, **affects B, C, D and E**)
+
+Two of these are privacy defects, and **both are of a kind that is invisible from inside any one module.** Each is produced by two correct-looking halves meeting: a validator with no rule about `prevention` next to an aggregation that filters *for* the scenario `prevention` would land in; a suppression threshold that protects every bucket except the bucket suppression creates, in three breakdowns that are all drawn from the same entries. Neither shows up in a review of the file it lives in, which is the argument for reviewing a branch end to end before it merges rather than each task as it lands.
+
+The third closes v1.4's one open decision. The remainder are the same class v1.4 set out to close — a convention only the implementer knew — and finding four more of them one revision later is the honest measure of how large that class was.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`prevention` is now refused in a `current` scenario, and §6.2's validation table says so.** Nothing on the server enforced it — only C's UI, which never offers it there. A hand-rolled `POST /calculate` persisted a current-scenario `prevention` line, and §5.4 selects `scenario = 'current'`, so it became a bucket in the **public** `by_destination` chart: the destination for waste that by construction did not happen, counted as real waste, on the page whose entire design problem is not overclaiming. §5.4's scenario predicate is the other half of this and structurally cannot catch it — it excludes the *alternative* scenario, and the line is not in the alternative scenario. `tests/api/test_fixture_consistency.py` asserts this of the fixture, which is what made it look covered; a fixture constrains the fixture. The rule sits on the current scenario only, so the failure locates at `entries[i].current` and the alternative keeps the destination that is its whole purpose. `PREVENTION_CODE` moved to `db/types.py` with `admin/taxonomy_rules` re-exporting it, because `api/` may not import `admin/` — v1.3's ruling on `db/detection.py`, for the same reason | §6.2, §2.1 | **B, C** |
+| 2 | **`submission.token` joins §5.5's `REDACTED_FIELDS`, ahead of the screen that would leak it.** §8.2 specifies `/admin/submissions` as a record-level moderation view that sets `excluded_from_public`. The moment it is built on `AuditedModelView`, `write_audit` snapshots the whole row and copies the **live session token** into `audit_log` — readable by every staff member, never expiring, and out of reach of `expire_tokens`, which nulls the column on `submission` and knows nothing about copies. **§2.3's guarantee is that the linkage is severed after an hour**, and a copy in an audit row makes that false for every moderated submission, permanently. One line now; a privacy regression later that nobody would think to look for, in a table whose whole purpose is to be trusted | §5.5 | **B, E** |
+| 3 | **v1.4's open item on `other` is decided, in favour of privacy: `other` is subject to the threshold like any other bucket.** While it is below the threshold it absorbs the **smallest visible** bucket, repeatedly; if merging everything still cannot clear it, the breakdown publishes **no buckets at all** and `total_calculations` stands alone. What made this urgent was not the single-bucket case v1.4 described but its cross-breakdown form: `by_sector`'s `other` and `by_food_category`'s `other` are formed from the same entries, so `tests/fixtures/stats.json` showed both carrying `count: 4, total_kg: "3210.750"` — identical, therefore the same four entries, therefore joinable at a glance. At `count: 1` that is one user's exact tonnage published three times with only the label hidden. **The shares property v1.4 worried about survives**: `other` stays an ordinary bucket carrying every suppressed entry, so the pre-suppression denominator is untouched and §6.4's "shares sum to 1" holds. The fixture is regenerated through `_bucketise` rather than levelled by hand, and its two `other` buckets are now 118 and 88 | §5.4, §6.4 | **B, D** |
+| 4 | **§2.1's `destination` blockquote was the last site still claiming `prevention` has "all factors set to zero".** v1.4 corrected `architecture.md` §4.1 and §6.2 and left this one — in the **normative schema section**, which is where a new reader meets the word first, and which therefore outranks both of the sites that were fixed. It now states what is true (downstream zero, upstream not and structurally cannot be), points at O-7, and lists the three rules stated in terms of this code so that a future editor can see what removing it would break | §2.1 | **all** |
+| 5 | **§9 defines two `details` shapes; the code emitted three, and one of them had `issue` and `message` inverted.** `api/router.py`'s inline-bundle check emitted `{field, issue}` with `FactorBundle.validate()`'s human-readable prose (§4.1) in `issue` — so a consumer told to branch on `issue` would branch on a sentence that changes whenever the engine's wording changes, and would find no `message` to display. **The code was corrected to the contract rather than the contract widened to the code**: two shapes a consumer can predict from `code` is a contract, three it must sniff at runtime is not. §9 now states the rule as a table and says plainly that no presence checks are needed | §9 | **B, C** |
+| 6 | **§10's `taxonomy.json` row described a file that does not exist.** It said "nine MfE destinations across the `prevention`, `reuse`, `recycling` and `disposal` groups"; the fixture has **fourteen** destinations across **three** groups, `prevention` is a destination in `reuse` rather than a group, and `recycling` is not a group code — it is `recycle_recovery`. v1.4 change 5 claimed §10 had been rewritten from the directory, and this row had not been. Recorded rather than quietly fixed because it is the second-order failure worth naming: a section whose stated purpose is to describe what is on disk is the section a reader will not verify | §10 | **C, D** |
+| 7 | **§6.2 states what `food_category: null` and `"standard_mix"` do to the duplicate check: they are distinct, both are accepted, and one supply-chain point is then counted twice.** The field table says "Null is treated as `standard_mix`" — true of the *factor lookup* and of nothing else. Keeping them distinct is deliberate and follows from §5.4, which must be able to tell "did not break it down" from "chose the mixed figure", but the asymmetry reads as a bug from §6.2 alone and a front end should send one or the other consistently | §6.2 | **B, C** |
+
+> **Still open after this revision.** **O-1** (real emissions factors) remains the hard blocker. **O-7 is still the only item on A's critical path** and is still the client's to settle. Carried forward unchanged: `landfill_diverted` as a real `metric` row, and the positive/negative semantic colour pair that C and D both need. v1.4's `other` question (change 3) is **closed**.
+
+### v1.4 — 2026-08-09 (the conventions nobody wrote down, **affects everybody**)
+
+Nothing here is a new requirement. Every row is a rule the system already had — instantiated in a fixture, emitted by a handler, relied on by a test — and that this document did not state, so a second implementer had no way to arrive at it except by reading someone else's code. **That is the whole class of defect this revision closes**, and it is the one a five-way parallel split produces most reliably: the shape of a thing gets contracted, the *convention inside the shape* does not, and the convention is what the next person has to reproduce exactly.
+
+Three of them (1, 3, 4) were already load-bearing on somebody's unwritten work. One (9) is not closed here and must not be closed here — it changes what the client is told the calculator measures.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`GET /factors` now actually emits `source_note` and `data_quality`.** §6.3 has required them since v1.2 and `db/repository.py`'s `build_bundle_data` never selected them, so for two revisions the export published every value with its provenance stripped — the exact combination v1.1 added the columns to prevent, since it removes the defence and keeps the exposure. `build_bundle_data` is the single projection that §6.3 and §10.2's `bundle.json` are both built from, which is why one six-line fix serves both and why the omission hit both. The fixture was written to the contract and its test parked on a **strict** `xfail`, so the gap was a tracked failure rather than a silent one and the marker came off with the fix — the pattern worth repeating whenever a fixture has to lead the code | §6.3 | **B, D** |
+| 2 | **§6.3's equivalence rows gain `name` and `sort_order`.** Both were emitted from the first commit and shown in no version of this section. The contract moved rather than the code because §10.2 **requires** both on a bundle equivalence row and the same projection produces both surfaces: removing them here means a second projection whose only job is to hide two harmless fields, and a second projection is a second thing to keep in step. `name` is the short label (`Kilometres driven`) — `label_template` is a whole sentence, so a consumer building a heading or a CSV column has nothing else, and hard-coding it is what §7.3a already rules out | §6.3 | **B, D** |
+| 3 | **§3 gains rule 5: the `EquivalenceResult.label` interpolation format.** `{value}` renders as whole units, `ROUND_HALF_UP`, comma thousands separator — `Equivalent to driving 18,597 km`. **This was a convention `tests/fixtures/calculate_response.json` invented** to match §6.2's own samples, defined in neither §2.2, §4.3 nor §6.2, and A has to reproduce it in the engine byte for byte or every equivalence on the page is wrong in a way no test in this repository could see: `_assert_shape` compares JSON types and key sets, and `Equivalent to driving 18596.8200000000 km` is a well-formed string of the right type under the right key. Recording it in a test docstring was **not** enough — §0's rule is document, notify, fixture, all three. The rounding mode is the part that had to be written out rather than left to a default: the fixture test used `quantize(Decimal("1"))`, whose context rounds half to **even**, so it would have pinned the wrong rule the first time a value landed on a half. No value in the set does, so both modes passed; the test now names `ROUND_HALF_UP` | §3, §2.2 | **A, B, C, D** |
+| 4 | **§9 gains the five codes `api/errors.py` has always emitted and this section never listed** — `NOT_FOUND` (404), `METHOD_NOT_ALLOWED` (405), `INTERNAL_ERROR` (500), `ENGINE_UNAVAILABLE` (503) and the residual `HTTP_ERROR` — **and the third key on a `details` entry.** §7.1 tells C to branch on `body.error.code`; a code from a closed set is one she can handle and a code from nowhere lands in whatever her default branch does, which is the difference between "the calculator is under maintenance" and a blank panel. `details[]` carries `field`, `issue` **and** `message`, the last of which `errors/validation_error.json` has always had and the sample never showed — a front end built from the sample alone renders the envelope's one generic message against every highlighted row and discards the only text that says what is wrong with that row. Also written down rather than fixed: `HTTP_ERROR` now names two different events, §7.1's client-side "response was not JSON" and this residual server code. They stay sharing a name because the front end's response to both is identical, and a reader who finds one string in two sections should not have to guess which is the mistake | §9, §7.1 | **B, C, D** |
+| 5 | **§10 rewritten from the directory that now exists**, and gains §10.0, which names what enforces it. v1.2's §10 described two divergent sets on two unmerged branches and none in the tree; there is now one canonical set of thirteen files here. The new subsection separates the two kinds of check and says why neither substitutes for the other: `test_fixture_consistency.py` holds the fixtures against each other, against the arithmetic and against `admin/seed.py` without touching HTTP, while `test_api.py` holds them against real responses from the real app. The shape check cannot prove a number — which is precisely how a `stats.json` of three empty arrays survived two revisions while giving D nothing to build a page from. Stated as a standing rule, because change 3 is an instance of it: **anything whose correctness lives inside a string is invisible to `_assert_shape`** and needs an assertion, a contract line, or both | §10 | **all** |
+| 6 | **§4.1 and §4.2 name the modules: `engine/bundle.py` and `engine/calculate.py`.** No version of this document said where `FactorBundle` or `calculate()` live, so both external callers — `db/repository.py`'s bundle factory and `api/engine_adapter.py` — searched two candidates each. A search is not a contract: it lets a layout this document does not describe work in the API and fail in the golden suite, which imports both the documented way. The `from engine import calculate` half was actively harmful — if `engine/calculate.py` existed but exported the function under another name it bound the *module object*, turning a start-up `ImportError` that names the missing thing into `TypeError: 'module' object is not callable` at the first public calculation. Both fallbacks are gone | §4.1, §4.2 | **A, B** |
+| 7 | **§5.2: only a `published` factor set is cached.** The per-set partitioning stands and its reasoning is unchanged, but caching the draft as well satisfied that sentence literally while defeating the path it exists to serve. §8.1's CRUD screens write factor rows directly and have no reason to call `invalidate_factor_bundle` — only `publish_factor_set` and `rollback_to` do — so the first dry run of a draft pinned its numbers for the life of the process: a staff member edits a factor, re-runs the dry run, sees the old figure, and cannot distinguish that from a formula that ignores the column they just changed. That is the confusion `factor_source` was added to prevent, arriving by another route. Not caching is one branch in one function; the alternative is an invalidation hook in all eleven §8.1 views that whoever adds the twelfth has to remember | §5.2 | **B, E** |
+| 8 | **§5.4 records, as open and as the client's, whether `other` is suppressed against itself.** A single sub-threshold bucket is republished verbatim under a new name — `count: 1` with its exact `total_kg` — which is a public statement that exactly one such calculation exists, with only its destination hidden. Raised as `docs/ToB_v2.0.md` S6 and required by no version of this contract. It is recorded rather than implemented because **each available fix breaks something else this document promises**: dropping the bucket makes §6.4's "shares sum to 1" false, since the denominator is computed before suppression; re-normalising inflates every remaining share by the suppressed mass, which is the overclaiming the merge-rather-than-drop rule exists to prevent; and folding it into the largest bucket hides a small number inside a big one. The trade is a real disclosure against a real distortion of the client's own chart, so it is not B's to take in a query or D's to take in a legend | §5.4 | **B, D** |
+| 9 | **`docs/architecture.md` gains O-7: `prevention` is not the 100% offset §4.1 claims, and §4.1 now says so at the point of the claim.** `upstream` is keyed on `(sector, food_category, metric)` and cannot see the destination — §4.3's line variables carry neither the destination nor its group — so a line moved to `prevention` keeps its entry's full upstream factor, while `architecture.md` §4.1 describes `prevention` as all-zero and matching ReFED. Measured on the fixture: 800 kg `not_harvested` → `prevention` yields `net_benefit.co2e` of 96.0, the downstream delta only, where ReFED would also avoid 800 × 0.45 = 360.0. **79% of the benefit is missing, and upstream is the larger term for most categories** — so the failure is one-directional and lands on exactly the number the client's "wasting less" story is built from. §6.2's anti-inflation argument survives untouched: mass conservation is a property of the request. **Not resolved here.** O-7 states three options and who decides; the cheapest changes what the client is told the calculator measures, so it is the client's, and it must be settled before A writes the engine because the golden suite bakes in whichever answer is chosen | `architecture.md` §4.1, §10 | **A, B, E** |
+| 10 | `write_audit`'s serialiser now emits UTC with a `Z` designator for every `datetime`, per §1.3. It appended `Z` to a naive value and left an aware one carrying `+00:00`, so one column serialised two ways depending on whether the object had round-tripped through MySQL — and a non-UTC aware value kept its own offset while still claiming compliance. Same normalisation as `api/serialization.wire()`, reimplemented rather than imported because `db/` may not import `api/` | §5.5, §1.3 | **B, E** |
+
+> **Still open after this revision.** **O-1 remains the hard blocker** and everything still runs on mock factors, so the placeholder banner stays mandatory. **O-7 (change 9) is new and is on A's critical path** — it is the only item here that cannot be deferred past the start of engine work. Carried forward unchanged from v1.2: `landfill_diverted` as a real `metric` row (the client's), and the positive/negative semantic colour pair, which C and D both need and neither has written down. Added by this revision: whether `other` is suppressed against itself (change 8, the client's) — **closed in v1.5 change 3**, in favour of privacy, once the whole-branch review showed the cross-breakdown join that made it more than a single-bucket curiosity.
+
+### v1.3 — 2026-08-09 (the blocklist reaches the API, **affects B, C, D and E**)
+
+Two of the open items v1.2 recorded are now closed, and closed the same way, by the same change: the blocklist is applied to `/api/v1/` and the detection helpers it needed moved into a layer both callers can import. Nothing about a request or response shape changed — **§9.2's `BLOCKED` envelope is unchanged and is now actually emitted**, which is the part C and D care about.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **Closed the v1.2 open item on `looks_automated`, `RequestRate` and `_client_ip`.** They are in `db/detection.py`; `admin/detection.py` is a re-export; `admin/protection.py` keeps `_client_ip` as an alias for `db.detection.client_ip`, which is the same object rather than a second copy. §8.3's recommendation was the one implemented, and its reasoning was the deciding one: two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. Note that the stated rationale was slightly wrong in one particular — `db/detection.py` is not standard-library-only at runtime, because it imports `db.blocklist` for address normalisation. What actually mattered, and what holds, is that it needs nothing from `admin/` | §8.3 | **B, E** |
+| 2 | **Closed v1.2's item #15: whether an in-memory rate-limit counter may be keyed on a raw address.** It may not. Both layers now key on §2.3's HMAC fingerprint, and `api/rate_limit.py` counts with the same `db.detection.RequestRate` the panel uses rather than being a third implementation. §6.5 sets its bar at persistence and a raw address in a process-memory dict cleared that bar, but the dict outlives the request that filled it, so the address is one this system holds — and two layers applying different privacy standards to the same data was never a defensible position for a calculator whose selling point is that it stores nothing about the visitor | §6.5, §2.3 | **B, E** |
+| 3 | **§9.2's "checked before anything else" is now literally true, and is implemented as middleware rather than as a router dependency.** FastAPI solves a router's dependencies only after a request has matched a route, so a dead path under `/api/v1/` answered `404` while every live path answered `403` — which hands a blocked caller a working route scanner. Recorded in §9.2 because it is a requirement on the implementation, not a free choice | §9.2 | **B** |
+| 4 | **Recorded the two deployment hazards the API inherits and cannot fix in process**, both of which make §6.5 and §2.3 silently do nothing: every caller arriving as a reverse proxy's address, and a deployment (`uvicorn --uds`) that gives the process no client address at all. Both are warned about at start-up or on first occurrence. The panel survives the first only because `_RATE_EXEMPT_PATHS` keeps its login handshake reachable; a public API has no login handshake, so there is no equivalent to build | §6.5 | **B, E** |
+| 5 | **`SECRET_KEY` is required by the API, and must be the same value the panel uses.** Both derive the fingerprint key from it through the same `BLOCKLIST_INFO`; two different secrets mean a block made in the panel never matches at the API, with nothing raised on either side. `api/app.py` refuses to start without one rather than starting with a blocklist that does nothing | §2.3 | **B, E** |
+| 6 | **Recorded that `looks_automated` is deliberately not applied to `/api/v1/`.** It is applied to `/admin` only. Scripting a public JSON API is a legitimate way to use it, and §6.3's CSV export exists to be fetched by a tool — refusing `curl` there would refuse a use this contract invites. Written down because a reader who found the shared module and not this line would reasonably assume the omission was an oversight | §8.3, §6.5 | **B, E** |
 
 ### v1.2 — 2026-08-09 (the merge of the two contract lines, **affects everybody**)
 
@@ -60,6 +112,8 @@ A smaller group — 6's scenario filter, 20 and 21 — are defects the correctio
 | 23 | `docs/architecture.md` §9.1.1, cited by §8.3 for the protection design's operational detail, **is not on `main`** — it lands with PR #9, and until then resolves only on `admin_panel`. Said out loud at the citation. A cross-reference that dangles for a stated reason is a known state; one that dangles silently reads as an error in this document | §8.3 | **B, E** |
 
 > **Still open after this revision.** None of these is a defect in the document; all of them are decisions nobody has taken. **O-1 remains the hard blocker** — the client has not supplied real emissions factors, so everything runs on mock data and the banner stays mandatory. Beyond it: whether an in-memory rate-limit counter may hold a raw address (#15, B's); whether `admin.detection.looks_automated`, `RequestRate` and `_client_ip` move into a shared layer or are duplicated in `api/` (§8.3, B's, and the four blocklist items in `api/` are all downstream of it); whether `landfill_diverted` becomes a real `metric` row plus a formula (#8, the client's); and the positive/negative semantic colour pair, which C and D both need and neither has written down.
+>
+> **Two of those four closed in v1.3** (above): the detection helpers moved to `db/detection.py`, and the rate-limit counter now keys on the §2.3 fingerprint in both layers. `landfill_diverted` and the semantic colour pair are still open. This paragraph is left as it was written rather than edited, because it is a record of what was true at v1.2.
 
 ### v1.1 — 2026-08-07 (raised by E, **affects B**)
 
@@ -254,7 +308,9 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
-> `prevention` is a special destination with all factors set to zero. It expresses "waste avoided" and keeps the two scenarios mass-conserving.
+> **`prevention` is the one destination code this system knows by name.** It expresses "waste avoided" and keeps the two scenarios mass-conserving. Three rules are stated in terms of it and none of them is optional: `admin/taxonomy_rules.check_prevention_intact` refuses any edit that would remove or deactivate it (or its group); §6.2 refuses it in a **current** scenario, because it is by construction the destination for waste that did not happen; and §5.4 reads the current scenario only, so it can never become a public statistic. The literal lives once, in `db/types.PREVENTION_CODE`, and `admin/taxonomy_rules` re-exports that object — `api/` may not import from `admin/` and needs the same string.
+>
+> **Its *downstream* factors are zero. Its upstream factors are not, and cannot be.** This blockquote read "with all factors set to zero" for five revisions and that is not true of the data model: `factor_upstream` is keyed on `(sector, food_category, metric)` and has no destination column, so a line moved to `prevention` keeps its entry's full upstream factor. See `architecture.md` **O-7**, which measures the gap and states the three options; it is unsettled and it is on A's critical path. Corrected here in v1.5 because this is the normative schema section, the first place a new reader meets the word, and the last site still asserting the original claim.
 
 ### `sector`
 
@@ -424,7 +480,7 @@ UNIQUE(`factor_set_id`, `metric_id`)
 | `name` | VARCHAR(128) | NOT NULL | |
 | `source_metric_id` | INT | FK, NOT NULL | Which metric it converts from |
 | `value_per_unit` | DECIMAL(20,10) | NOT NULL | Result = metric total × this factor |
-| `label_template` | VARCHAR(255) | NOT NULL | `Equivalent to driving {value} km` |
+| `label_template` | VARCHAR(255) | NOT NULL | `Equivalent to driving {value} km`. `{value}` is the only placeholder; everything else is copied verbatim. **The engine interpolates it, and §3's rule 5 fixes the number format** (whole units, comma thousands separator, `ROUND_HALF_UP`) |
 | `source_note` | TEXT | NULL | Basis for the conversion. Open item O-3 — the New Zealand sources for km driven, meal equivalents and showers are not yet settled, and an equivalence with no stated basis is the figure most likely to be challenged |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
@@ -504,9 +560,13 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 > `db.blocklist.InvalidAddressError` (a `ValueError` subclass) rather than being
 > hashed: a fingerprint of nonsense writes a row that matches no caller and
 > that `unblock` cannot remove either. **Callers on a request path must not let
-> that exception escape** — `admin/protection.py`'s `_client_ip` normalises the
-> connection address itself and treats an unusable one as "no address"; B's
-> middleware needs the same guard.
+> that exception escape** — `db.detection.client_ip` normalises the connection
+> address itself and treats an unusable one as "no address". Both middlewares
+> now go through it (`admin/protection.py` and `api/app.py`), and the API's
+> also catches `InvalidAddressError` narrowly around an *injected* check, since
+> that callable is not its own code. A caller with no usable address is skipped
+> by both the blocklist and the rate limit rather than being given a stand-in
+> key — see §6.5 for the deployment in which that becomes every caller.
 >
 > **Rotating `SECRET_KEY` clears the blocklist.** An HMAC cannot be re-keyed the
 > way an encrypted TOTP secret can — there is no plaintext address left to
@@ -519,9 +579,10 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 > section for who writes one instead. The reconciliation item this used to
 > create for the API layer — that `write_audit` sat in `admin/`, which
 > `api/` may not import — is **closed**: it has always been in
-> `db/repository.py` on B's branch (v1.2 change 9). What remains open there
-> is a different question, about `looks_automated`, `RequestRate` and
-> `_client_ip`.
+> `db/repository.py` on B's branch (v1.2 change 9). The question that was still open there
+> — whether `looks_automated`, `RequestRate` and `_client_ip` move to a shared
+> layer or are duplicated in `api/` — is **closed in v1.3**: they are in
+> `db/detection.py`, and `admin/detection.py` re-exports them. See §8.3.
 
 `sector_id` and `food_category_id` live on `submission_entry`, not here: one submission carries several, each with its own factors.
 
@@ -730,12 +791,36 @@ class CalculationResult:
     entries: tuple[EntryResult, ...]        # request order, one per EntryInput
 ```
 
-**Four rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
+**Five rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
 
 1. **`entries` preserves request order.** §6.2 states it, and `submission_entry.sort_order` (§2.3) exists to persist it. It is what lets C pair a result with the row the user typed.
 2. **`by_destination` is populated per entry and empty at the totals level.** §6.2: the same destination can appear under several entries drawing different upstream factors, so a cross-entry destination breakdown has no single correct aggregation rule. `MetricResult` is one type either way; at the totals level the tuple is empty and the serialiser omits the key. See §6.2 for the ruling on how the front end renders that breakdown.
 3. **An entry with no alternative contributes its `current` result to `totals.alternative`.** This is what §6.2's "entries without one contribute zero to it rather than being excluded, so the totals stay mass-conserving" means in code: the entry's own `EntryResult.alternative` and `EntryResult.net_benefit` stay `None`, but the totals roll-up counts its current figures on both sides, so its contribution to `totals.net_benefit` is exactly zero and `totals.alternative`'s mass equals `totals.current`'s. Excluding it instead would make the alternative lighter than the current scenario and inflate net benefit — the precise failure the dual-scenario design exists to prevent.
 4. **When *no* entry carries an alternative, `totals.alternative` and `totals.net_benefit` are both `None`,** and so is every `EntryResult.alternative` / `EntryResult.net_benefit`.
+5. **`EquivalenceResult.label` interpolates `{value}` in exactly one format**, defined below. Until v1.4 it was defined nowhere, and §6.2's samples were the only evidence of it.
+
+> **`EquivalenceResult.label`: the interpolation rule.**
+>
+> `label` is `equivalence.label_template` (§2.2) with the single placeholder `{value}` replaced by the equivalence's own `value`, formatted as:
+>
+> | Aspect | Rule |
+> | --- | --- |
+> | Decimal places | **None.** Rounded to a whole number |
+> | Rounding | `ROUND_HALF_UP`, on the `Decimal` — never through `float` |
+> | Thousands separator | A comma every three digits: `18,597` |
+> | Decimal separator | Not applicable; there is no fractional part |
+> | Negative values | A leading `-`, same grouping. Possible: a metric total can be negative when a downstream offset dominates (§4.2) |
+> | Anything else in the template | Copied **verbatim**. `{value}` is the only placeholder substituted, and any other brace sequence is literal text — `label_template` is staff-authored (§8.1) and must never behave as a format string |
+>
+> `Equivalent to driving {value} km` with `value = Decimal("18596.8200000000")` gives `Equivalent to driving 18,597 km`.
+>
+> **`value` itself is unaffected and is transmitted at full precision**, as a string, next to the label (§1.2). `label` is display text; `value` is the number. A consumer that wants a different presentation formats `value`, and no consumer re-derives `label`.
+>
+> **Why this is A's to produce and not C's.** §7.6 rule 1: the browser computes nothing. Rounding is arithmetic — a client that formatted the label itself would be the second place a number is turned into the figure a user reads, and the golden suite (§10.1) could not cover it. It is also the client's approved wording (§7.3a warns against C's hard-coded equivalence labels for the same reason).
+>
+> **Why it needs stating at all, in these words.** This is a convention that `tests/fixtures/calculate_response.json` instantiated to match §6.2's samples, which show `21,400` and `14,500`. Neither §2.2, §4.3 nor §6.2 defined it, so the fixtures C and D build against carried a format A had no way to know he had to reproduce — and the mismatch would be invisible to every test in the tree: `_assert_shape` compares types, not text, and a `label` reading `Equivalent to driving 18596.8200000000 km` is a well-formed string of the right type in the right key. The half-up rule in particular is **not** pinned by any fixture, because no fixture value lands on a half; it is stated because half-even would silently round `2.5` down and nobody would find out from a test.
+
+
 
 > **`ScenarioInput` is gone.** It held `sector_code`, `food_category_code` and `lines`; those three now live on `EntryInput`, split across `current` and `alternative`. It is deleted rather than emptied down to a single `lines` field, because a surviving `ScenarioInput` is exactly what B's `api/engine_adapter.py` currently populates with `req.current.sector_code`, and a type that keeps its name while losing its meaning is the one an integration will keep using by accident.
 >
@@ -750,6 +835,8 @@ Lives in `engine/`. **Pure functions: no database access, no file access, no sys
 ## 4.1 `FactorBundle`
 
 A fully loaded snapshot of one factor set. Constructed by the repository layer (§5.3) and treated as read-only by the engine.
+
+**It lives in `engine/bundle.py`**, imported as `from engine.bundle import FactorBundle`. The module is named here because two callers outside `engine/` import it — `db/repository.py`'s default bundle factory and `api/engine_adapter.py`'s `bundle_from_json` — and until v1.4 no version of this document said where it was, so both searched `engine.bundle` and then `engine.types`. A search is not a contract: it lets a layout this document does not describe work in the API and fail in the golden suite, which imports it the documented way. `engine/types.py` is §3's module and holds the frozen dataclasses only.
 
 ```python
 class FactorBundle:
@@ -800,6 +887,8 @@ class FactorBundle:
 > `from_json()` is required by the golden test suite regardless (§10.1 loads a `bundle.json` per case). Dry-run requests are simply a second caller of it. `validate()` exists because a bundle arriving over HTTP may be internally inconsistent in ways a database-loaded one cannot be; the rules are engine domain knowledge and are therefore implemented once, here, rather than duplicated in the API layer.
 
 ## 4.2 Entry Points
+
+**`calculate()` lives in `engine/calculate.py`**, imported as `from engine.calculate import calculate`. Named for the same reason as §4.1's module: `api/engine_adapter.py` is the only caller outside `engine/`, and with nothing written down it tried `engine.calculate` and then `from engine import calculate`. The second form is the dangerous one — if `engine/calculate.py` exists but exports the function under another name, it binds the *module object* and the failure becomes `TypeError: 'module' object is not callable` at the first public calculation, rather than an `ImportError` at start-up naming what is missing. Re-exporting from `engine/__init__.py` is fine; relying on the re-export is not.
 
 ```python
 def calculate(req: CalculationRequest, bundle: FactorBundle) -> CalculationResult:
@@ -987,7 +1076,10 @@ def load_factor_bundle(session, factor_set_id: int | None = None) -> FactorBundl
     not acceptable: staff repeatedly dry-running a draft would otherwise
     either evict the published bundle continuously, or — far worse — serve
     draft factors to a public request. Inline bundles supplied over HTTP
-    (§6.2) are never cached; they differ on every request."""
+    (§6.2) are never cached; they differ on every request.
+
+    **Only a `published` set is cached (v1.4).** A draft or archived set is
+    rebuilt on every load."""
 
 def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     """Within one transaction: archive the current published set, publish the
@@ -1002,6 +1094,25 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
     formulas and equivalences) and returns the new id. This is the
     recommended path for staff edits: clone, edit, publish."""
 ```
+
+> **Why the draft slot exists but is not filled.** Partitioning by
+> `factor_set_id` is what stops a dry run evicting the published bundle, and
+> that requirement stands. Caching the draft *as well* satisfies the sentence
+> above literally and defeats the thing the draft path exists to support:
+> §8.1's CRUD screens write `factor_upstream`, `factor_downstream`,
+> `constant`, `formula` and `equivalence` rows directly and have no reason to
+> call `invalidate_factor_bundle` — only `publish_factor_set` and
+> `rollback_to` do — so the first dry run of a draft pins that draft's numbers
+> for the lifetime of the process. A staff member edits a factor, re-runs the
+> dry run, sees the old figure, and cannot tell that from a formula that
+> ignores the column they just changed. That is precisely the confusion
+> `factor_source` (§6.2) was added to prevent, arriving by another route.
+>
+> The alternative fix — an invalidation hook on every admin write path —
+> touches all eleven §8.1 views and has to be remembered by whoever adds the
+> twelfth. Not caching is one branch in one function, and there is no load
+> argument on the other side: a draft is dry-run by one staff member at a
+> time, while the published set serves every public request.
 
 > **Where these live today.** `admin/factor_lifecycle.py`, not
 > `db/repository.py`. The admin panel needs them and the repository
@@ -1060,6 +1171,9 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
       so each breakdown below joins one table further than its own
       grouping needs — up to `submission`, not merely to the entry.
     - Merges any bucket with count < threshold into 'other'
+    - Then, while 'other' is itself below the threshold, merges the
+      smallest remaining visible bucket into it as well; if even that
+      cannot clear it, returns NO buckets for that breakdown (v1.5)
     - Suppression happens here and is never delegated to the front end
 
     EVERY BREAKDOWN READS THE CURRENT SCENARIO ONLY.
@@ -1109,12 +1223,25 @@ class PublicStats:
 >
 > Note that `unspecified` is a *storage* fact, not a calculation one. The engine resolves a null `food_category` to `standard_mix` before it computes anything (§3, §6.2), so the same entry is `standard_mix` to the engine and `unspecified` to the statistics. Both are correct: one is the factor that was applied, the other is what the user actually told us. **Do not resolve NULL to `standard_mix` here** — that would report a composition the user never claimed, and would make `standard_mix`'s share indistinguishable from the users who selected it deliberately.
 >
+> **`other` is subject to the threshold like every other bucket, and clears it by absorbing more (settled in v1.5).** Until then, a single sub-threshold bucket was republished verbatim under a new name — `{"code": "other", "count": 1, …}` carrying its exact `total_kg` — which hid the label and nothing else. **In combination it was worse than alone**: `by_sector`'s `other` and `by_food_category`'s `other` are formed from the same entries, so an `other` of one published that user's exact tonnage in three breakdowns at once, and the three rows join on sight because the counts and masses are identical.
+>
+> The rule, in order:
+>
+> 1. Merge every bucket below the threshold into `other`, as before.
+> 2. **While `other` exists and is itself below the threshold, merge the smallest visible bucket into it too**, and repeat. Smallest first, because it raises `other`'s count fastest per bucket surrendered and costs the page its least informative row first.
+> 3. **If merging every bucket still leaves `other` below the threshold, publish no buckets for that breakdown at all** — an empty array, with `total_calculations` standing alone. That is a data set so small that every row in it is identifying, and there is no arrangement of it that is both useful and safe. `total_calculations` is a count of submissions and identifies nobody, so it still reports.
+>
+> **This does not break the shares property.** `other` remains an ordinary bucket carrying every suppressed entry, so the denominator — computed before suppression — is untouched and §6.4's "`share` … does sum to 1" holds exactly as before. An empty breakdown has no shares to sum. The alternatives all cost something the merge-rather-than-drop rule was written to protect: *dropping* `other` removes its entries from that denominator and makes the shares false; *re-normalising* inflates every remaining share by the suppressed mass, in the direction of overclaiming; *folding `other` into the largest visible bucket* hides a small number inside a large one and misattributes its tonnage. Absorbing costs one row of resolution and nothing else.
+>
+> Raised as `docs/ToB_v2.0.md` S6 and recorded as open in v1.4. Decided in favour of privacy: a statistics page that cannot describe its smallest cohort is a page with one fewer row, while a page that describes it is a page that identifies it.
+
 > **`total_calculations` and the bucket counts are deliberately counting different things, and the statistics page must not present them as if they were not.** `total_calculations` is submissions; every `StatsBucket.count` is entries. `Σ by_sector[].count` is therefore ≥ `total_calculations`, and the gap is exactly the number of multi-entry submissions. `share` is computed within its own breakdown — over entries — so shares still sum to 1 and are the safe figure to display. Copy that reads "1,247 calculations" beside a sector chart whose counts add to 1,600 invites the obvious question; the honest phrasing names the unit ("1,247 calculations, covering 1,600 points in the supply chain"). See §6.4's copy constraint, which is D's.
 
 ## 5.5 Audit
 
 ```python
-REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash", "ip_hmac"}
+REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash",
+                   "ip_hmac", "token"}
 
 def write_audit(session, actor: str, action: str, table_name: str,
                 row_id: int | None,
@@ -1140,6 +1267,8 @@ def write_audit(session, actor: str, action: str, table_name: str,
 ```
 
 > **Why `ip_hmac` is redacted, and why the list said three for four revisions.** The set above is the v0.3 definition; `ip_hmac` did not exist then. E-8's final review round added it to `admin/audit.py`'s copy, because flipping `can_delete = True` on the blocklist screen would otherwise serialise a whole `IpBlock` row through `row_to_dict` and write the fingerprint into `audit_log` — §8.3 has stated that this list carries it ever since, while this list did not. **The definition was the stale half, not the claim.**
+>
+> **Why `token` is redacted, and why it is here before the view that would leak it.** `submission.token` (§2.3) is a live session token. §8.2 specifies `/admin/submissions` as a record-level moderation screen that sets `excluded_from_public`; the moment it is built on `AuditedModelView`, `write_audit` snapshots the whole row and copies that token into `audit_log` — readable by every staff member, never expiring, and out of reach of `expire_tokens`, which nulls the column on `submission` and knows nothing about copies of it. **§2.3's guarantee is that the linkage is severed after an hour**, and a copy in an audit row makes that guarantee false for every moderated submission, permanently. Like `ip_hmac` it is not a credential; like `ip_hmac` it is the one field tying a stored row back to a person's browser session, which is the thing this system's stated design promises not to keep. Added in v1.5, ahead of the screen, because a redaction added after the screen ships is a redaction that arrives after the rows do.
 >
 > This matters more after B's integration than before it. `db/repository.py`'s `write_audit` becomes the canonical one and `admin/audit.py` becomes a re-export of it (§8.3), so E's copy — the one that already redacts `ip_hmac` — stops being the code that runs. An API-side automatic block writes its audit entry through **this** function.
 
@@ -1246,6 +1375,8 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 > **The two scenarios of an entry must describe the same mass, and until v1.2 nothing enforced it.** The dual-scenario design rests on this: `architecture.md` §4.1 states that the `prevention` destination exists precisely so that `net_benefit` cannot be inflated by simply assuming less waste in the alternative — "wasting less" is expressed by *moving* mass to `prevention`, whose factors are all zero, not by sending less of it. That is a 100% offset and it conserves mass by construction.
 >
+> **The half of that sentence this rule depends on is the mass half, and it holds.** The "100% offset" half does not, as built — see `architecture.md` **O-7**: only `prevention`'s *downstream* factors are zero, and a prevented line keeps its entry's upstream factor. It is repeated here because it is the stated motivation for this rule, and the rule survives it: mass conservation is a property of the *request*, which O-7 does not touch. Do not read the phrase as a description of what the engine computes until O-7 is settled.
+>
 > **Without a rule, an implementer building from §6.2 alone permits exactly what `prevention` was designed to prevent**, and nothing downstream exposes it. An alternative that simply drops a 1,200 kg landfill line produces a large, entirely fictitious `net_benefit`. The response cannot reveal it: `totals.total_kg` reports the **current** scenario's mass only (§3), so the two figures a reader would compare are never both on the page. The golden suite cannot catch it either — it exercises `calculate()` against a fixed request, and this is a property of the *request*. The only place it can be caught is here.
 >
 > **The tolerance is absolute — 0.010 kg — and it is derived from this contract's own limits rather than picked.** The front end builds alternative lines by allocating percentages of an entry total and rounding each line independently to 3 decimal places (§7.3a, `improvement.js`), so each line carries at most 0.0005 kg of rounding error, and §6.2 already caps a scenario at 20 lines per entry. 20 × 0.0005 = 0.010 kg, and that bound holds regardless of the tonnage involved. A **relative** tolerance would be wrong in both directions: at 5,000 tonnes even 0.01% is 500 kg, which is looser than the defect this rule exists to catch, and at 2 kg it is tighter than the rounding the front end unavoidably produces, rejecting a legitimate request the user cannot fix.
@@ -1263,6 +1394,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
 | Entry count `<= 20` | `VALIDATION_ERROR` |
 | **Per entry carrying an `alternative`: `\|Σ alternative.qty_kg − Σ current.qty_kg\| <= 0.010`** | `VALIDATION_ERROR`, `field` = `entries[i].alternative` |
+| **No `prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current` |
 | No duplicate `destination` within one entry's scenario | `VALIDATION_ERROR` |
 | No duplicate `(sector, food_category)` across entries | `VALIDATION_ERROR` |
 | All codes exist | `UNKNOWN_CODE` |
@@ -1270,6 +1402,10 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | `dry_run.factor_set_version` and `dry_run.bundle` both non-null | `VALIDATION_ERROR` |
 | `dry_run.bundle` row count across all tables `<= 5000` | `VALIDATION_ERROR` |
 | `dry_run.bundle` fails `FactorBundle.validate()` | `VALIDATION_ERROR`, one `details` entry per problem |
+
+> **Why `prevention` in a `current` scenario is a rejection and not a curiosity.** Until v1.5 nothing on the server refused it — only C's own UI, which never offers it in the current column. A hand-rolled request carrying it persists an ordinary `submission_line` with `scenario = 'current'`, and §5.4 selects exactly that, so the line becomes a bucket in the public `by_destination` chart. `prevention` is the destination for waste that *did not happen*; counting it as real waste is the failure §5.4's scenario predicate exists to prevent, arriving through the one door that predicate cannot close — the predicate excludes the alternative scenario, and this line is not in the alternative scenario. It also makes no sense as an input: the current scenario is a description of what a business is doing now, and "we sent 900 kg to not existing" is not a description of anything. `tests/api/test_fixture_consistency.py` asserted this of the *fixture*, which is what made it look covered; a fixture constrains the fixture.
+
+> **`food_category: null` and `"standard_mix"` are the same thing to the engine and different things to the duplicate check.** Two entries with the same sector, one carrying `null` and one carrying `"standard_mix"`, are **both accepted** — the duplicate rule compares the values as sent. They then draw identical upstream factors, appear as two entries in the response, and count as two entries in §5.4's `by_sector`, so one supply-chain point is described twice. This is deliberate and it follows from §5.4, which keeps the two distinct on purpose: `unspecified` records that the user did not break their waste down, `standard_mix` records that they chose the mixed-composition figure, and collapsing them here would make the statistics unable to tell those apart. It is written down because it is the kind of asymmetry that reads as a bug — the field table two paragraphs up says "Null is treated as `standard_mix`", and that is true of the *factor lookup* and of nothing else. A front end should send one or the other consistently and never both for one sector.
 
 **Request headers**
 
@@ -1433,15 +1569,19 @@ Factors and formulas are published openly (Decision 7).
       "source_note": null, "data_quality": "proxy-AU" }
   ],
   "equivalences": [
-    { "code": "km_driven", "source_metric": "co2e",
+    { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
       "value_per_unit": "4.1800000000",
       "label_template": "Equivalent to driving {value} km",
-      "source_note": null }
+      "source_note": null, "sort_order": 1 }
   ]
 }
 ```
 
 **`source_note` and `data_quality` are part of this response, and both may be `null`.** v1.1 added `source_note` to `factor_upstream`, `factor_downstream` and `equivalence`, and `data_quality` to the two factor tables only — `equivalence` has no `data_quality` column (§2.2) — and this endpoint is the whole reason they exist: v1.1's stated rationale is that a calculator which cannot say which of its numbers are measured and which are borrowed cannot be defended in public, and §6.3 is the only public surface where a number can say so. A factor export that carries the values and drops their provenance publishes exactly the figure that is hardest to defend, with the defence removed. `null` is a legal value — most rows will carry `null` until the client supplies real data — and it must appear as `null`, not as an omitted key, so a consumer can tell "no provenance recorded" from "this endpoint does not report provenance".
+
+> **Emitted since v1.4; the contract said so from v1.2 and the code did not.** `db/repository.py`'s `build_bundle_data` — the one projection this export and §10.2's bundle are both built from — did not select the three columns, so `GET /factors` published every value with its provenance stripped for two revisions after §6.3 required it. The fixture (`tests/fixtures/factors.json`) was written to the contract and its contract test parked on a strict `xfail`, which is what made the gap a tracked failure rather than a silent one; the marker came off with the repository fix.
+
+**`name` and `sort_order` are part of the equivalence rows, and v1.4 added them here rather than removing them from the export.** They were emitted from the beginning and appeared in no version of this section. Three reasons the contract moved rather than the code. §10.2's `bundle.json` **requires** both on every equivalence row, and this response is produced by the same projection — dropping them here means writing a second projection whose only purpose is to hide two harmless fields, and a second projection is a second thing to keep in step. `name` is the short human label (`Kilometres driven`); `label_template` is a whole sentence, so a consumer building a heading, a legend or a CSV column has nothing else to use — D needs it and the alternative is hard-coding it, which §7.3a already rules out for the labels themselves. And `sort_order` is the display order §4.1's `equivalences()` promises; a consumer reading this endpoint directly would otherwise have to invent one.
 
 With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other.
 
@@ -1479,6 +1619,11 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
 
 `by_food_category` shows the `unspecified` bucket (§5.4): entries whose user did not break their waste down by food type. It is an ordinary bucket — suppressed on the same threshold, counted and shared like any other — and it is expected to be one of the largest. It is not the same thing as `standard_mix`, which is what a user selects deliberately.
 
+> **Two things D must build for, both of which the sample above does not show because a mature data set does not reach them.**
+>
+> 1. **`other` may be large.** It is subject to the threshold itself (§5.4), so when it would fall below it, it absorbs the smallest visible buckets until it clears. On a young data set `other` can be the biggest row in the breakdown. A legend that renders it as a footnote, or a chart that gives it a de-emphasised colour on the assumption that it is always small, will look wrong on the day the calculator opens — which is the day it is most likely to be screenshotted.
+> 2. **A breakdown may be an empty array**, while `total_calculations` is non-zero. That is the case where even everything merged together stays below the threshold. It is not an error and not a loading state: render "not enough data yet to show this breakdown" and keep the page. All three breakdowns are independent, so one can be empty while another is full.
+
 > **Copy constraint (owner: D).** The subject of the statistics page must be the calculator itself — "Across the 1,247 calculations run in this tool…" — and **never** "Distribution of food waste destinations in New Zealand". Prefer `share`; if `total_kg` is displayed it must be explicitly labelled as the cumulative total entered into this tool. Do not label a bucket `count` as a number of calculations — it is a number of supply-chain points entered, and the two figures on this page differ by design.
 
 ## 6.5 Rate Limits
@@ -1492,7 +1637,14 @@ Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or 
 
 **No IP address is persisted by the rate limiter, and none is persisted anywhere in this system except the one exception §2.3 records.** That exception is `ip_block`, which stores an HMAC of an address — never the address — and only for a caller a staff member or the automatic protection has blocked. This sentence used to read "IP addresses are never persisted" without qualification; v0.12 added the blocklist exception in §2.3 and this line was not updated, so the document asserted an absolute and its exception in two places at once. The absolute is the one that was wrong: a reader implementing §6.5 literally would have had grounds to call §2.3's table a contract violation.
 
-> **Open, and B owns it: whether an *in-memory* counter may be keyed on a raw address.** §6.5 sets its bar at persistence, and `api/rate_limit.py` keys on `"post-calculate:203.0.113.9"`, which satisfies it. §2.3's prohibition has been read as covering process memory too, and `admin/protection.py` keys on the §2.3 fingerprint accordingly. **The two layers currently apply different privacy standards to the same data**, which is not a defensible position for a calculator whose stated selling point is that it stores nothing about the visitor. Not resolved here because §6.5 is B's section and this is a decision, not a correction. Whichever way it goes, both layers move together.
+> **Resolved in v1.3 — an in-memory counter may not be keyed on a raw address either.** This was recorded as open and B's: §6.5 sets its bar at persistence, and `api/rate_limit.py` keyed on `"post-calculate:203.0.113.9"`, which cleared that bar, while `admin/protection.py` keyed on the §2.3 fingerprint because §2.3's prohibition has been read as covering process memory too. **Both layers now key on the fingerprint**, and both count with the same `db.detection.RequestRate`. The deciding argument was that the counter's dict outlives the request that filled it, so an address in a key is an address this system holds — and two layers applying different privacy standards to the same data was never defensible for a calculator whose stated selling point is that it stores nothing about the visitor. As the note said, both layers moved together.
+
+**How the counters actually behave, since "in memory or Redis" above understates it.** Both are sliding windows, not fixed ones: a fixed window resets on a boundary, which lets a caller spend a full hour's allowance in its last second and another in the first second of the next — 240 calculations inside two seconds against a limit of 120 per hour. The API's limiter (`api/rate_limit.py`) does **not** count a refused request, so a caller who overshoots recovers one window after their last *allowed* request rather than never, and `Retry-After` is the wait until their oldest counted request leaves the window. `admin/protection.py` does count refusals, deliberately — see §8.3's `_RATE_EXEMPT_PATHS`, which exists to survive what that implies. Both counters are per-process: **running more than one worker multiplies the effective limit by the worker count.**
+
+> **Two deployment facts silently disable this section, and neither has an in-process fix.** Both are warned about — the first at start-up, the second the first time it happens — and both are named in `docs/architecture.md` §9.1.1.
+>
+> 1. **Behind a reverse proxy with `PROTECTION_TRUSTED_PROXY` false, "per IP" above is a fiction.** That is the shipped arrangement (TLS terminates upstream) and `false` is the correct default — with no proxy that overwrites `X-Forwarded-For`, trusting it lets any caller claim any address, which is the worse failure. But every caller then arrives as the proxy's own address, so 600/hour becomes 600/hour for the whole internet, and one `ip_block` row denies every visitor at once. The panel survives this only because §8.3's `_RATE_EXEMPT_PATHS` keeps its login handshake reachable; **a public API has no login handshake to exempt, so there is no equivalent mitigation.** Set the flag true once the proxy is confirmed to overwrite the header itself.
+> 2. **A deployment that gives the process no client address disables both this section and §2.3's blocklist.** `uvicorn --uds` behind nginx does exactly that (`scope["client"] is None`). There is then no address to fingerprint and none to count under, so both checks are skipped — the correct answer per request, since inventing a stand-in key collapses every such caller into one shared bucket and one shared blocklist entry, and a silent no-op in aggregate. Bind a TCP socket, or supply the address in `X-Forwarded-For` and set `PROTECTION_TRUSTED_PROXY=true`.
 
 ---
 
@@ -1510,6 +1662,8 @@ The only module that calls `fetch` — verified across the branch. **No other mo
 export class ApiError extends Error {
   constructor(code, message, details = [], status = 0);
   code;      // string — §9 error code, or 'NETWORK_ERROR' | 'HTTP_ERROR' | 'MOCK_FIXTURE_ERROR'
+             // note: 'HTTP_ERROR' is now BOTH — this module's "response was not JSON"
+             // and §9's residual server code. Same handling either way; see §9.
   message;   // string — display-ready
   details;   // Array  — field-level errors; [] when absent
   status;    // number — HTTP status; 0 when the request never completed
@@ -1940,7 +2094,17 @@ The rotation command is not optional. `SECRET_KEY` lives in `.env`, and without 
 
 > **Three things this document calls "fingerprint," and they are not the same thing.** §2.3's "no fingerprint of any kind is stored" and "browser fingerprinting was considered and rejected" both refer to a *browser* fingerprint — a persistent quasi-identifier built from device/header characteristics, rejected there as ineffective against the traffic it would defend against and the highest privacy risk of the options considered. The `ip_hmac` fingerprint described in this section is a different construction entirely — a keyed HMAC of a single known address, not a browser characteristic — kept specifically *because* an operator needs to recompute and compare it, which is exactly the property that made the browser kind unacceptable. Do not read §2.3's rejection of browser fingerprinting as covering this one; it doesn't, and the two are evaluated on different grounds.
 
-`db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. It never writes to the blocklist itself.
+`db/blocklist.py` (owner: E, layer: `db/`) is the whole of the write/read surface: `block_ip`, `unblock_ip`, `is_blocked`, `ip_fingerprint`. **Two middlewares read it, and neither writes to it.** `admin/protection.py`'s `ProtectionMiddleware` (owner: E) reads `is_blocked` ahead of every other check on every request under `/admin`, with no exemption — not even for an authenticated staff session, because a block is another administrator's deliberate act. `api/app.py`'s `blocklist` middleware (added v1.3, owner: B) does the same for every request under `/api/v1/`, ahead of routing so that a dead path is refused identically to a live one (§9.2). Until v1.3 there was no second reader at all: a block made on the screen below held on the panel and did nothing where the public traffic actually arrives, which is the one thing a blocklist is for.
+
+Three differences between the two, each deliberate and each explained where it is implemented:
+
+| | `admin/protection.py` | `api/app.py` |
+| --- | --- | --- |
+| Refusal body | `PlainTextResponse("Refused.")` — a browser surface | §9.2's `BLOCKED` envelope, built by `api/errors.py` like every other error. A JSON client that got plain text back for one error out of twelve would have to special-case it, and C and D would each have to do so separately |
+| Header check | `looks_automated` applies | Does **not** apply — scripting a public JSON API is a legitimate use, and §6.3's CSV export exists to be fetched by a tool |
+| Rate limit | `PROTECTION_MAX_REQUESTS_PER_MINUTE`, refusals counted, `/admin/login` and `/admin/verify` exempt | §6.5's fixed hourly limits, refusals not counted, nothing exempt |
+
+Both key on `db.detection.client_ip`, so a caller with no usable address is skipped by both rather than given a stand-in key — and both inherit the deployment hazards §6.5 records.
 
 The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in a table every staff member can read.
 
@@ -1955,7 +2119,13 @@ The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`),
 > - **E's `_encode` handles `date` more carefully than B's.** That one branch folds into B's function; nothing else of E's does.
 > - Once the re-export is in place, "the caller audits" becomes executable from `api/`, and an API-side automatic block appears in `/admin/audit` like every other write.
 >
-> **The same unresolved split applies to three more names.** `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` are all in `admin/` and are all things B's public-traffic middleware needs. They were built there because `admin/` is where E's stage lived, not because that is where they belong: `detection.py` imports nothing outside the standard library and `_client_ip` imports nothing outside Starlette, so neither has any reason to sit above the layering boundary. **Recommendation:** move `detection.py` to `db/` or to a new shared module and leave `admin/protection.py` importing it, rather than have `api/` duplicate the header-marker list and the sliding-window counter — two copies of a detection rule drift, and the copy that stops matching is the one nobody notices. `_client_ip` should move with it. **This is genuinely unresolved, and B decides it**, since a move changes a file in her layer; E's recommendation is on record here so that the alternative (duplication) is a choice someone made rather than the default nobody discussed. Note also that `RequestRate` is per-process, so under more than one worker the effective limit is multiplied by the worker count — the API's own rate limiting (§6.5) is a separate problem and E has not solved it.
+> **Resolved in v1.3 — the three names moved to `db/detection.py`.** This paragraph recorded the split as genuinely unresolved and B's to decide: `admin.detection.looks_automated`, `admin.detection.RequestRate` and `admin.protection._client_ip` were all in `admin/` and were all things the public-traffic middleware needed. **The recommendation recorded here is the one that was implemented.** They are now `db.detection.looks_automated`, `db.detection.RequestRate` and `db.detection.client_ip`; `admin/detection.py` is a re-export, and `admin/protection.py` keeps `_client_ip` as an alias for the same object rather than a second copy — `tests/db/test_detection_shared.py` asserts that identity with `is`, and AST-pins that `db/detection.py` imports nothing from `admin/`, the same pin `tests/db/test_blocklist.py` applies to the blocklist. The deciding argument was the one written here: two copies of a detection rule drift, and the copy that stops matching is the one nobody notices.
+>
+> One part of the rationale above was wrong and is corrected rather than repeated: **`db/detection.py` is not standard-library-only at runtime.** It imports `db.blocklist` for address normalisation, which pulls in SQLAlchemy and `cryptography`. Starlette is imported under `TYPE_CHECKING` only, so the module is still usable and testable without a web framework, but the stdlib-only property the recommendation leaned on does not survive the move in full. What does survive — and what the layering rule actually required — is that nothing in it needs `admin/`.
+>
+> **`looks_automated` is applied to `/admin` and deliberately not to `/api/v1/`.** The other two are used by both. This is a decision, not an oversight: `/admin` is a browser-only surface, so a caller there that is plainly a script is refused, whereas scripting a public JSON API is a legitimate way to use it and §6.3's CSV export exists precisely to be fetched by a tool. Refusing `curl` at `/api/v1/` would refuse a use this contract invites. The API applies the blocklist and §6.5's rate limit and nothing else.
+>
+> **`RequestRate` is still per-process**, so under more than one worker the effective limit is multiplied by the worker count — true of both layers now, since both count with the same class. The API's own rate limiting (§6.5) is no longer a separate problem: `api/rate_limit.py` wraps this counter rather than being a third implementation of one, keeping only the policy §6.5 needs (a per-call limit, and `Retry-After` derived from the oldest hit still inside the sliding window). It does **not** count refused requests, which is where it deliberately differs from `admin/protection.py` — see §6.5.
 
 **The one case this whole design is built around not causing:** an administrator blocks the address they are sitting behind, and the block itself now stands between them and every page that would let them undo it — including the login page, because the blocklist check has no exemption. `python -m admin.cli unblock <address>` (above) is the only way back short of editing the database by hand, and is the reason that command exists at all.
 
@@ -2002,10 +2172,27 @@ Every non-2xx response uses one envelope:
   "error": {
     "code": "VALIDATION_ERROR",
     "message": "A single line may not exceed 10,000,000 kg",
-    "details": [ { "field": "entries[0].current[1].qty_kg", "issue": "exceeds_max" } ]
+    "details": [
+      { "field": "entries[0].current[1].qty_kg",
+        "issue": "exceeds_max",
+        "message": "A single line may not exceed 10,000,000 kg" }
+    ]
   }
 }
 ```
+
+**`details` has exactly two shapes, and which one you get is decided by the `code`, never by inspection.**
+
+| Shape | Keys | `code` |
+| --- | --- | --- |
+| **Field problem** | `field`, `issue`, `message` — all three, always | `VALIDATION_ERROR` |
+| **Formula problem** | `expression`, `line`, `column`, `reason` | `FORMULA_ERROR`, and only on an **authenticated dry run** (§9.1) |
+
+Every other code carries `details: []`, except §9.2's `BLOCKED`, which carries `null`. **So: if `code` is `VALIDATION_ERROR`, every entry has `field`, `issue` and `message`; if it is `FORMULA_ERROR`, entries are the formula shape or the array is empty; otherwise the array is empty.** No entry mixes the two shapes and no key is conditionally absent within a shape — a consumer needs no presence checks, only a branch on `code`.
+
+On the field shape's three keys: `field` is §9's bracket path, `issue` is a stable machine-readable slug (Pydantic's error `type` where the failure is Pydantic's, e.g. `value_error`; a name this API chooses otherwise, e.g. `mass_not_conserved`, `bundle_invalid`), and `message` is per-field prose distinct from the envelope's single `message`, which describes the request as a whole. **Branch on `issue`, display `message`, target `field`.**
+
+> **Both halves of this were wrong until v1.5, in opposite directions.** The `message` key was emitted from the first commit and shown in no version of this section, while `tests/fixtures/errors/validation_error.json` has always carried it — so a front end built from the old sample rendered `Request validation failed` against every highlighted row and discarded the only text saying what was wrong with that row. And `api/router.py`'s inline-bundle check emitted a *third* shape, `{field, issue}` with no `message`, putting `FactorBundle.validate()`'s human-readable prose (§4.1) into `issue` — inverting the two keys, so a consumer told to branch on `issue` got a sentence that changes whenever the engine's wording changes, and found no `message` to display. **The code was corrected to the contract rather than the contract widened to the code**, because two shapes a consumer can predict from `code` is a contract, and three shapes it must sniff at runtime is not.
 
 **`field` is a bracket-indexed path into the request body**, exactly as a front end would write it: `entries[0].current[1].qty_kg`. Array positions are `[n]`, object keys are `.key`, and the path starts at the root of the request.
 
@@ -2018,10 +2205,23 @@ Every non-2xx response uses one envelope:
 | 401 | `UNAUTHORIZED` | `X-Dry-Run: true` without a valid staff session | Redirect to `/admin/login` |
 | 403 | `BLOCKED` | The caller's address is on the blocklist (`db.blocklist.is_blocked`, §2.3) | Show the `message` and stop. **Do not retry, and do not offer a retry button** |
 | 429 | `RATE_LIMITED` | Rate limit exceeded | Ask the user to retry later; disable the button for 60s |
+| 404 | `NOT_FOUND` | No route matches the path | Bug in the caller. Show the generic banner; do not retry |
+| 405 | `METHOD_NOT_ALLOWED` | The path exists, the method does not | Bug in the caller. Show the generic banner; do not retry |
 | 500 | `FORMULA_ERROR` | A staff-configured formula is invalid | See below |
+| 500 | `INTERNAL_ERROR` | Any unhandled server-side failure | Show the generic banner. A retry may succeed; do not retry automatically |
 | 503 | `NO_PUBLISHED_FACTOR_SET` | No factor set has been published | Show "calculator under maintenance" |
+| 503 | `ENGINE_UNAVAILABLE` | The calculation engine is not installed or failed to load | Show "calculator under maintenance", as for `NO_PUBLISHED_FACTOR_SET` |
+| *(other)* | `HTTP_ERROR` | Residual: any other framework-level HTTP failure, carrying that failure's status | Show the generic banner |
 
 `message` is written for end users and may be displayed verbatim. `details` is for developers and form-field targeting.
+
+> **The last five were emitted by `api/errors.py` from the beginning and appeared in no version of this section**, which listed no generic 500 at all. That is the shape of the defect: §7.1 tells C to branch on `body.error.code`, and a code that reaches her from a closed set she was given is one she can handle, while a code that reaches her from nowhere falls into whatever her `default` branch does. All five already emit the correct envelope — this is the table catching up with the code, not a behaviour change.
+>
+> **Every one of them is a `code` the front end must treat as terminal-and-generic.** None carries actionable `details`, none names a field, and none should be retried automatically. `ENGINE_UNAVAILABLE` is the one worth distinguishing in copy: like `NO_PUBLISHED_FACTOR_SET` it means the calculator cannot run at all right now, rather than that this particular request was bad, and the two deserve the same maintenance message rather than the generic failure banner.
+>
+> **`HTTP_ERROR` is a name collision, deliberately left standing.** §7.1's `ApiError.code` already uses `HTTP_ERROR` for a *client-side* condition — a response the browser could not parse as JSON. The API now also emits it as the residual server code for a framework-level `HTTPException` that is neither 404 nor 405. The two are not the same event, and they are not distinguishable from `code` alone. They are left sharing a name because **the front end's response to both is identical** — a generic banner, no field targeting, no automatic retry — so the distinction would cost C a branch and buy nothing; `status` separates them if it is ever needed (`0` or an unparsed body on C's side, a real status and a well-formed envelope on the API's). Written down so that a reader who finds the same string in two sections does not conclude one of them is a mistake.
+>
+> **What is *not* here is also a rule:** the API does not invent codes beyond this table. §4.4's four engine exceptions map onto rows above; anything else the engine raises is an engine bug, not a documented condition, and lands on `INTERNAL_ERROR` deliberately — a code minted at the point of failure is a code no consumer could have branched on.
 
 ## 9.1 `FORMULA_ERROR` Has Two Presentations
 
@@ -2063,23 +2263,53 @@ a blocked caller cannot use the API's own error messages to probe the
 taxonomy — and, being a single indexed lookup on `ip_hmac`, it costs one query.
 It applies to every endpoint under `/api/v1/`, `GET` included.
 
+**It must run ahead of routing, which means middleware and not a router
+dependency** (`api/app.py`'s `blocklist` middleware). FastAPI solves a router's
+dependencies only once a request has matched a route, so a dependency leaves
+`/api/v1/does-not-exist` answering `404` while every live path answers `403` —
+a working route scanner for a blocked caller, and a difference no amount of
+reticence in the body above can hide. Running ahead of routing also keeps the
+one-query cost honest: a dependency *and* a middleware would be two lookups.
+The response is built directly rather than raised, because an exception raised
+in middleware never reaches the handlers registered with
+`add_exception_handler` — Starlette's `ExceptionMiddleware` sits inside them,
+and the session middleware outside would turn a raised `ApiProblem` into a
+`500 INTERNAL_ERROR`.
+
 ---
 
 # 10. Mock Data Convention
 
 Located in `tests/fixtures/`. C and D consume these directly before the backend is ready.
 
+**These files are the executable form of the contract.** Backend contract tests assert that real responses match their shape, the fixtures are checked against each other and against the shipped seed data, and the front end develops against them directly. They must be updated whenever the contract changes (see §0).
+
+**One canonical set, in this tree, in the v1.3 shape.** Thirteen files. v1.2 recorded two divergent sets on two unmerged branches and neither of them here; that is now history and the paragraph describing it has been replaced by what is actually on disk.
+
 | File | Content |
 | --- | --- |
-| `taxonomy.json` | A complete sample `GET /taxonomy` response |
-| `calculate_request.json` | A standard request sample |
-| `calculate_response.json` | The corresponding full response (dual scenario) |
-| `calculate_response_single.json` | A response with no alternative scenario |
-| `stats.json` | A sample `GET /stats` response including an `other` bucket |
-| `factors.json` | A sample `GET /factors` response |
-| `errors/*.json` | One sample per error code, including `errors/unauthorized.json` and `errors/blocked.json` |
+| `taxonomy.json` | A complete `GET /taxonomy` response: six sectors, ten food categories including `standard_mix`, **fourteen destinations across the three `destination_group` rows `reuse`, `recycle_recovery` and `disposal`** — `prevention` is a destination in the `reuse` group, not a group of its own — the metrics, and the unit presets. **Its codes are `admin/seed.py`'s codes**, not prose invented for the fixture — `code` is the cross-layer identifier (§1.1), and a fixture that renames one produces a front end bound to a code the API will never send |
+| `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json` |
+| `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry and absent at the totals level |
+| `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4) |
+| `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
+| `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, all three `prevention` rows at zero, and `source_note` / `data_quality` on every row |
+| `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
 
-**These files are the executable form of the contract.** Backend contract tests assert that real responses match their shape; the front end develops against them directly. They must be updated whenever the contract changes (see §0).
+`errors/` does not carry the four codes v1.4 added to §9 — `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `INTERNAL_ERROR`, `ENGINE_UNAVAILABLE` — and that is deliberate rather than an omission: their bodies are the same three-key envelope with a fixed `message` and an empty `details`, none is reachable from a front-end code path C or D can exercise, and a fixture per framework failure would add four files that pin nothing the envelope check does not already pin. `HTTP_ERROR` has no fixture for the same reason **and** because its status varies. If a code ever gains a body worth reading, it gains a fixture.
+
+## 10.0 What Enforces This Section
+
+A fixture that agrees with nothing is a fixture that drifts. Two test modules hold this set to the contract, and they check different things:
+
+| Module | What it holds | Examples |
+| --- | --- | --- |
+| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form |
+| `tests/api/test_api.py` | The fixtures against **real responses from the real app** | `test_contract_fixtures_have_the_same_top_level_shapes` (taxonomy, both calculate responses), `test_factors_fixture_matches_the_published_export`, `test_stats_fixture_shape_holds_against_a_populated_database`, and the per-code error assertions inside the behavioural tests |
+
+Both matter, and neither substitutes for the other. The shape check proves the API can produce the fixture; it cannot prove the fixture's numbers are right, because `_assert_shape` compares JSON types and key sets rather than values — which is exactly how a `stats.json` of three empty arrays and a `calculate_response.json` of empty `metrics` passed for two revisions while giving C and D nothing to build against. The consistency check proves the numbers, and cannot prove the API emits them.
+
+> **`_assert_shape` compares types, not text.** A string is a string. Anything whose correctness lives in the *content* of a string — §3 rule 5's `label` format is the case that has already bitten — is invisible to it and needs an assertion in `test_fixture_consistency.py` or a rule in this document. Preferably both.
 
 > **As of v1.2 this section describes an intention, not a directory. `tests/fixtures/` does not exist on any branch a reader of this document is likely to be standing on** — not on `main`, not on `admin_panel` (which owns this document), not on `docs/contract-v1.0`. **Two sets exist, on two unmerged branches, and they disagree with each other and with this contract:**
 >

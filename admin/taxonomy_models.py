@@ -14,7 +14,8 @@ stay resolvable, so it is deactivated instead).
 from decimal import Decimal
 
 from sqlalchemy import (
-    DECIMAL, Boolean, ForeignKey, Integer, SmallInteger, String, Text,
+    DECIMAL, Boolean, CheckConstraint, ForeignKey, Integer, SmallInteger,
+    String, Text,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -133,6 +134,15 @@ class Metric(Base):
     """
 
     __tablename__ = "metric"
+    #: Carried over from B's db/models.py, which declared both of this
+    #: module's CHECK constraints and lost them when her classes gave way to
+    #: these. `compare_metadata` cannot see a missing CHECK — this project
+    #: documents that blind spot in tests/test_migrations.py — so the drift
+    #: gate would never have reported it. Each is proven by its own
+    #: behavioural test against real MySQL in tests/admin/test_taxonomy_models.py.
+    __table_args__ = (
+        CheckConstraint("display_precision >= 0", name="ck_metric_precision"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
@@ -167,6 +177,14 @@ class UnitPreset(Base):
     """
 
     __tablename__ = "unit_preset"
+    #: A negative kg_per_unit is not a hypothetical: the front end multiplies
+    #: it by a unit count in web/units.js, so one negative row turns "three
+    #: buckets" into a negative mass and feeds a negative quantity into every
+    #: metric downstream of it. See the note on Metric above for why the
+    #: migration drift gate cannot catch this one for us.
+    __table_args__ = (
+        CheckConstraint("kg_per_unit >= 0", name="ck_unit_preset_kg"),
+    )
 
     id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)

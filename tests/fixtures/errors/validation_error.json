@@ -1,0 +1,18 @@
+{
+  "error": {
+    "code": "VALIDATION_ERROR",
+    "message": "Request validation failed",
+    "details": [
+      {
+        "field": "entries[0].current[1].qty_kg",
+        "issue": "value_error",
+        "message": "Value error, decimal values must be JSON strings"
+      },
+      {
+        "field": "entries[1].alternative",
+        "issue": "mass_not_conserved",
+        "message": "The alternative scenario must describe the same mass as the current one, to within 0.010 kg"
+      }
+    ]
+  }
+}

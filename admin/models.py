@@ -22,7 +22,7 @@ from sqlalchemy import (
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from db.base import Base
+from db.base import BIGINT_PK, Base
 
 
 def utcnow() -> datetime:
@@ -121,7 +121,9 @@ class AuditLog(Base):
 
     __tablename__ = "audit_log"
 
-    id: Mapped[int] = mapped_column(BigInteger, primary_key=True, autoincrement=True)
+    #: BIGINT on MySQL, INTEGER on SQLite — this table is written both from the
+    #: admin panel against MySQL and from B's SQLite fixtures. See db/base.py.
+    id: Mapped[int] = mapped_column(BIGINT_PK, primary_key=True, autoincrement=True)
     at: Mapped[datetime] = mapped_column(DateTime, nullable=False, default=utcnow)
     actor: Mapped[str] = mapped_column(String(128), nullable=False)
     action: Mapped[str] = mapped_column(String(32), nullable=False)

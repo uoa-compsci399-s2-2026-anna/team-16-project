@@ -121,6 +121,8 @@ A scenario is `(sector, food_category, [(destination, qty_kg), ...])`.
 
 > `net_benefit[metric] = current[metric].total − alternative[metric].total`
 
+> **Read O-7 before you rely on the paragraph above.** The mass-conservation half is true and is enforced (`interfaces.md` §6.2's 0.010 kg rule). **The "100% offset, matching ReFED" half is not true of the data model as it stands**: only `prevention`'s *downstream* factors are zero, and the model has no way to zero an upstream one — `factor_upstream` is keyed on `(sector, food_category, metric)` and cannot see the destination, so a line moved to `prevention` keeps its entry's full upstream factor. On the shipped mock factors that leaves 79% of the benefit of preventing waste out of the answer, in the direction of understating the client's headline story. §10's **O-7** states the three options and who decides. This cross-reference exists so that nobody reads the paragraph above, believes it, and builds on it — it was believed for four contract revisions.
+
 ## 4.2 Upstream / Downstream Split
 
 Following ReFED's two-part model:
@@ -317,7 +319,8 @@ Reaching that 503 on a fresh install is expected, not a fault.
 `ProtectionMiddleware` (`admin/protection.py`) sits ahead of every route under
 `/admin`, static files excepted, and refuses a request in three ways: the
 blocklist (`db/blocklist.py`, §2.3), a stateless check on header shape
-(`admin/detection.py`'s `looks_automated`), and a per-address rate limit. All
+(`db/detection.py`'s `looks_automated`, re-exported as `admin.detection`), and
+a per-address rate limit. All
 three are controlled by three settings, none of which existed in `.env.example`
 before this stage — a genuine gap, since the first of them is the only way
 out of a false-positive lockout:
@@ -325,7 +328,7 @@ out of a false-positive lockout:
 | Setting | Default | Meaning |
 | --- | --- | --- |
 | `PROTECTION_ENABLED` | `true` | Whether any of the three checks run at all. **This is the escape hatch.** Setting it to `false` and restarting turns off the blocklist, the header check and the rate limit together — there is no finer-grained switch. Use it when protection itself is producing the lockout (a false-positive header match, a shared address hitting the rate limit) and reaching the CLI's `unblock` command would not fix it, because the block is not what is refusing the request. |
-| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`admin/detection.py`'s `RequestRate`) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. Must be 1 or greater; `admin/config.py` refuses to start on `0` or a negative value, because a limit of `0` refuses the first unauthenticated request from every address, `/admin/login` included. |
+| `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`db/detection.py`'s `RequestRate`, shared with the public API's own limiter) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. Must be 1 or greater; `admin/config.py` refuses to start on `0` or a negative value, because a limit of `0` refuses the first unauthenticated request from every address, `/admin/login` included. |
 | `PROTECTION_TRUSTED_PROXY` | `false` | Whether to read the caller's address from `X-Forwarded-For` instead of the raw TCP connection. **Must stay `false` unless a reverse proxy that itself overwrites `X-Forwarded-For` genuinely sits in front of this panel.** With no such proxy, `X-Forwarded-For` is a header any caller can set to any value — trusting it lets one visitor forge another's address, collapses the rate limit into a single shared counter, and can turn one legitimate block into a block on every visitor at once. |
 
 **Every one of these settings needs a process restart to take effect.**
@@ -419,8 +422,8 @@ hits this can either turn off protection for the affected caller's session
 with `PROTECTION_ENABLED=false` (the same escape hatch as above, since this
 is not a blocklist entry and `unblock` has nothing to remove), or have the
 affected person log in from a browser/extension configuration
-`admin.detection.looks_automated` does not flag, then treat the header check's
-false-positive rate on real browsers as a tuning problem for `admin/detection.py`
+`db.detection.looks_automated` does not flag, then treat the header check's
+false-positive rate on real browsers as a tuning problem for `db/detection.py`
 going forward.
 
 **What this is not.** `ProtectionMiddleware` is in-process, application-level
@@ -436,6 +439,62 @@ addresses are stable enough to be worth blocking. An operator deciding
 whether to trust this panel's exposure to the open internet should read this
 paragraph before any of the settings above.
 
+**The public API half.** The blocklist is now applied to `/api/v1/` as well
+(`api/app.py`'s `blocklist` middleware), which is where the traffic actually
+arrives — a block made on the panel's screen and not enforced at the API stops
+nobody. It shares one implementation with the panel: `db/blocklist.py` for the
+table and the fingerprint, `db/detection.py` for the address resolution and the
+sliding-window counter. Four operational differences from everything above, and
+each one is a decision rather than an omission:
+
+| | Panel (`/admin`) | Public API (`/api/v1/`) |
+| --- | --- | --- |
+| Blocklist | Yes, no exemption | Yes, no exemption. Ahead of routing, so a dead path under `/api/v1/` is refused identically to a live one — otherwise a blocked caller can still map which routes exist |
+| Header check (`looks_automated`) | Yes | **No.** `/admin` is a browser-only surface; a public JSON API is not. §6.3's CSV export exists to be fetched by a tool, so refusing `curl` here would refuse a use the contract invites |
+| Rate limit | `PROTECTION_MAX_REQUESTS_PER_MINUTE`, refusals counted | §6.5's fixed 120/hour (`POST /calculate`) and 600/hour (`GET`), refusals **not** counted — there is no login page behind this to keep reachable, and not counting is what makes `Retry-After` a promise rather than a guess |
+| Refusal body | `PlainTextResponse("Refused.")` | §9.2's `BLOCKED` envelope, built by `api/errors.py` like every other error. A JSON client that got plain text back for one error out of twelve would have to special-case it |
+| Off switch | `PROTECTION_ENABLED=false` | **None.** That variable is read by `admin/config.py` only. The API's protections are always on; there is no env var and no restart that turns them off |
+
+**`SECRET_KEY` is required by the API too, and must be the same value.** Both
+layers derive the fingerprint key from it independently, through the same
+`BLOCKLIST_INFO`, so two different secrets mean two different fingerprints for
+one address — a block made in the panel would simply never match at
+`/api/v1/`, with nothing raised on either side. `api/app.py` refuses to start
+without one rather than starting with a blocklist that silently does nothing.
+
+**Two hazards the API inherits with no equivalent mitigation, and what is done
+about them instead.** Both are the same problem seen from two sides — the API
+is measuring callers by a value the deployment may not be giving it — and
+neither has an in-process fix, so both are warned about at `WARNING` level and
+named here:
+
+1. **Behind the shipped deployment, every API caller arrives as the proxy's own
+   address.** TLS terminates upstream and `PROTECTION_TRUSTED_PROXY` correctly
+   defaults to `false`, so §6.5's "600 / hour / IP" is one global bucket for all
+   public traffic, and one blocklist entry denies every visitor at once. On the
+   panel this exact chain was a Critical — any unauthenticated caller could
+   lock out every administrator remotely — and `_RATE_EXEMPT_PATHS` is what
+   made it survivable by keeping the login handshake reachable. **A public API
+   has no login handshake to exempt**, so there is nothing equivalent to build.
+   `api/app.py` logs a start-up warning naming both consequences. Set
+   `PROTECTION_TRUSTED_PROXY=true` only once the proxy is confirmed to
+   overwrite `X-Forwarded-For` itself — with no such proxy, trusting that
+   header lets any caller claim any address, which is the worse failure of the
+   two, and is why `false` remains the default.
+2. **A deployment that hides the client address disables both protections
+   silently.** `uvicorn --uds` behind nginx gives every request
+   `scope["client"] is None`. There is then no address to fingerprint and none
+   to count under, so the blocklist and the rate limit are both skipped — the
+   correct answer per request (inventing a stand-in key is what collapses every
+   such caller into one shared bucket and one shared blocklist entry) and a
+   silent no-op in aggregate. `api/app.py` logs a warning the first time it
+   sees such a request, once per process. **Bind a TCP socket, or put the real
+   address in `X-Forwarded-For` and set `PROTECTION_TRUSTED_PROXY=true`.**
+
+**Confirm both at deployment time, not during an incident** — together with the
+proxy access log the manual-block form depends on (see above). All three are
+facts about the deployment that this code cannot establish for itself.
+
 ---
 
 # 10. Open Items
@@ -448,5 +507,35 @@ paragraph before any of the settings above.
 | O-4 | Any localisation beyond language (units, date formats) | C, D |
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
+| O-7 | **`prevention` is not the 100% offset §4.1 claims.** Only its downstream factors are zero; a prevented line keeps its entry's full upstream factor, which is the larger term for most food categories. See below — this one must be settled before A writes the engine. | **A (blocking), B, E** |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
+
+## O-7 — `prevention` and the upstream factor
+
+**What is true.** `factor_upstream` is keyed on `(sector, food_category, metric)`. It has no destination column and cannot acquire one from `interfaces.md` §4.3's line variables, which carry `qty_kg`, `upstream`, `downstream` and the constants — neither the destination nor its group. So `line_value = qty_kg * (upstream + downstream)` applies the entry's upstream factor to every line in the entry, including a line sent to `prevention`. Setting `prevention`'s downstream factors to zero, which the data does, zeroes only the second term.
+
+**What §4.1 claims.** All factors zero; a 100% offset; parity with ReFED, which treats prevented waste as avoiding the production impact as well as the disposal impact.
+
+**The size of the gap, measured on `tests/fixtures/`.** 800 kg of `not_harvested` vegetables from `primary_production`, moved to `prevention` in the alternative:
+
+| | Current | Alternative | `net_benefit.co2e` |
+| --- | --- | --- | --- |
+| As built | 800 × (0.45 + 0.12) = 456.0 | 800 × (0.45 + 0.00) = 360.0 | **96.0** |
+| As §4.1 describes | 456.0 | 0.0 | **456.0** |
+
+**79% of the benefit is missing**, and upstream is the larger of the two terms for most categories, so this is representative rather than a worst case.
+
+**The failure is one-directional, and it lands on the worst number to get wrong.** `prevention` is systematically *understated*, never overstated — so `interfaces.md` §6.2's anti-inflation argument survives intact (mass conservation is a property of the request, and this does not touch it), but the client's headline message, that not wasting food in the first place beats every disposal route, comes out as the weakest number on the results page. A user who tries "what if we prevented this" sees a smaller improvement than composting it.
+
+**Three options. None is expressible in the data as it stands** — a pure formula cannot do it, because `downstream(prevention) = −upstream` would have to vary by sector and `factor_downstream` has no sector column.
+
+| Option | What changes | Cost | Whose call |
+| --- | --- | --- | --- |
+| **1. Documentation only** | Restate §4.1 as "`prevention`'s **downstream** factors are zero"; drop the ReFED-parity claim; say plainly on the methodology page that prevention is credited with avoided disposal only | Cheapest. No code, no schema, no migration | **The client's.** It changes what the calculator is described as measuring, and the description is the client's public position, not ours |
+| **2. Schema** | A destination (or destination-group) dimension on `factor_upstream`, or an upstream multiplier column on `destination` | Crosses A, B and E: migration, admin screens, bundle shape, `interfaces.md` §2.2 and §10.2 | A and B, with E for the panel |
+| **3. One new line variable** | Derive `prevented` from `destination_group.is_waste` (or a flag on `destination`) and expose it to §4.3, making the default formula `qty_kg * (upstream * (1 - prevented) + downstream)` | One variable, one formula edit, no new table. Keeps "metrics are data, not code" and adds no aggregation to §4.3 | A, with a `interfaces.md` §4.3 contract change |
+
+**Option 3 is the only route that keeps the configurability invariant** and is the one to prefer if the answer is "yes, prevention should avoid upstream too". Option 1 is the only one that is free, and it is the one nobody on this team may choose alone.
+
+**This must be settled before A writes the engine.** The golden suite (`interfaces.md` §10.1) bakes in whichever answer is taken, and that suite is the team's only evidence at handover that the calculator computes correctly — a suite that certifies the wrong semantics certifies them very convincingly.

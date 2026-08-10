@@ -1,0 +1,238 @@
+{
+  "factor_set": {
+    "version_label": "MOCK-v0 — PLACEHOLDER",
+    "is_mock": true,
+    "published_at": "2026-08-05T02:00:00Z",
+    "notes": "Placeholder data. The client has not yet supplied New Zealand emissions factors (open item O-1), so every value below is either derived from ReFED (United States) or invented to exercise the calculator. Nothing here may be quoted."
+  },
+  "constants": [
+    {
+      "code": "GWP_CH4_100",
+      "value": "28.0000000000",
+      "unit": "kg CO2e / kg CH4",
+      "note": "IPCC AR5, 100-year horizon. Bound to const_GWP_CH4 when a request carries gwp_horizon = 100. No formula in this placeholder set references it yet — the split of the greenhouse-gas factor into its methane component arrives with the client's real data (O-1)."
+    },
+    {
+      "code": "GWP_CH4_20",
+      "value": "84.0000000000",
+      "unit": "kg CO2e / kg CH4",
+      "note": "IPCC AR5, 20-year horizon. Bound to const_GWP_CH4 when a request carries gwp_horizon = 20."
+    },
+    {
+      "code": "FOOD_VALUE_PER_KG",
+      "value": "0.0000000000",
+      "unit": "NZD / kg",
+      "note": "The value of the wasted food itself. Open item O-2 has not settled whether this is included, and at cost or at retail price, so it defaults to zero and the cost metric reports disposal cost and the waste levy only."
+    }
+  ],
+  "formulas": [
+    {
+      "metric": "co2e",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "The default form. Upstream is what it took to produce the food; downstream is what its destination does with it, and may be negative where the destination displaces something worse."
+    },
+    {
+      "metric": "ch4",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "Methane released at the destination. There is no upstream methane row in this placeholder set, so the upstream term is zero throughout."
+    },
+    {
+      "metric": "water",
+      "expression": "qty_kg * (upstream + downstream)",
+      "notes": "Embedded water. Almost all of it is upstream — the water was spent growing and processing the food, whatever happens to it afterwards."
+    },
+    {
+      "metric": "cost",
+      "expression": "qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)",
+      "notes": "Disposal cost and the waste levy, plus the value of the food itself once O-2 is settled and FOOD_VALUE_PER_KG stops being zero."
+    },
+    {
+      "metric": "mass",
+      "expression": "qty_kg",
+      "notes": "The mass metric is the quantity entered. It carries no factors, and it is the one metric a reader can check by hand."
+    }
+  ],
+  "upstream": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "metric": "co2e",
+      "value_per_kg": "1.9000000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "metric": "water",
+      "value_per_kg": "1020.0000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "metric": "co2e",
+      "value_per_kg": "0.4500000000",
+      "source_note": "PLACEHOLDER derived from ReFED (United States). The Otago 2025 baseline notes that New Zealand primary-production loss rates are largely borrowed from Australian figures.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "metric": "water",
+      "value_per_kg": "322.0000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "data_quality": "modelled"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "metric": "co2e",
+      "value_per_kg": "2.6000000000",
+      "source_note": "PLACEHOLDER. Applies to the standard mix, which is what a null food_category resolves to.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "metric": "water",
+      "value_per_kg": "640.0000000000",
+      "source_note": "PLACEHOLDER. Order-of-magnitude only.",
+      "data_quality": "modelled"
+    }
+  ],
+  "downstream": [
+    {
+      "destination": "landfill",
+      "food_category": "dairy",
+      "metric": "co2e",
+      "value_per_kg": "0.9900000000",
+      "source_note": "PLACEHOLDER. A category-specific row: it wins over the generic landfill row below for dairy.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.7000000000",
+      "source_note": "PLACEHOLDER. The generic row — a null food_category means it applies to every category that has no row of its own.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0270000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "landfill",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0600000000",
+      "source_note": "The New Zealand waste disposal levy, NZD 60 per tonne for municipal landfill. This is the one number in the set that is a real New Zealand figure — it is a charge, not an emissions factor. Gate fees and haulage are not included.",
+      "data_quality": "measured"
+    },
+    {
+      "destination": "compost",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.2100000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "compost",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0002000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "compost",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0350000000",
+      "source_note": "PLACEHOLDER gate fee. Not levied.",
+      "data_quality": "modelled"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.0700000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0010000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0450000000",
+      "source_note": "PLACEHOLDER gate fee. Not levied.",
+      "data_quality": "modelled"
+    },
+    {
+      "destination": "animal_feed",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "-0.1500000000",
+      "source_note": "PLACEHOLDER, and negative on purpose: feeding surplus food to animals displaces feed that would otherwise have been grown. A negative downstream factor is an offset and charts must render it below the axis.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "not_harvested",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.1200000000",
+      "source_note": "PLACEHOLDER.",
+      "data_quality": "proxy-US"
+    },
+    {
+      "destination": "prevention",
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. The default formula still applies the entry's upstream factor to a prevented line, so this is not the 100% offset docs/architecture.md §4.1 describes — see open item O-7, which measures the gap at 79% of the benefit on these factors and states the three options. Unsettled; do not quote a prevention figure from this factor set.",
+      "data_quality": null
+    },
+    {
+      "destination": "prevention",
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction.",
+      "data_quality": null
+    },
+    {
+      "destination": "prevention",
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by construction.",
+      "data_quality": null
+    }
+  ],
+  "equivalences": [
+    {
+      "code": "km_driven",
+      "name": "Kilometres driven",
+      "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km",
+      "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e.",
+      "sort_order": 10
+    }
+  ]
+}

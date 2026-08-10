@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "UNAUTHORIZED",
+    "message": "A valid staff session is required",
+    "details": []
+  }
+}
+

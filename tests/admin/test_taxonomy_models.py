@@ -4,7 +4,7 @@ from decimal import Decimal
 
 import pytest
 from sqlalchemy import select
-from sqlalchemy.exc import IntegrityError
+from sqlalchemy.exc import IntegrityError, OperationalError
 
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
@@ -99,3 +99,64 @@ def test_a_food_category_can_be_the_standard_mix(session):
     session.flush()
 
     assert session.scalar(select(FoodCategory)).is_standard_mix is True
+
+
+#: The two CHECK constraints below came from B's `db/models.py` and were lost
+#: when her duplicate taxonomy classes gave way to this module's during the
+#: integration of her branch. They are re-declared in
+#: `admin/taxonomy_models.py` and in `alembic/versions/0004_taxonomy.py`, and
+#: these are the tests that prove it — `compare_metadata` cannot see a missing
+#: CHECK on this SQLAlchemy/MySQL combination (see the "Known blind spot" note
+#: in tests/test_migrations.py), so the drift gate that catches every other
+#: kind of schema regression is structurally blind to exactly this one. Without
+#: a behavioural test, deleting either constraint leaves the whole suite green.
+#:
+#: **They must run on MySQL.** `pytestmark = pytest.mark.db` above puts them
+#: there. A CHECK proven only on SQLite proves nothing about production.
+
+
+def test_a_negative_display_precision_is_refused(session):
+    """`display_precision` is a count of decimal places. Negative is not a
+    smaller number of them; it is nonsense that reaches `toFixed()` in the
+    front end and throws a RangeError on the results page.
+    """
+    session.add(Metric(code="broken", name="Broken", unit="kg",
+                       display_precision=-1))
+
+    # OperationalError, *not* IntegrityError: MySQL reports a CHECK violation
+    # as error 3819, which SQLAlchemy maps to OperationalError. Only a
+    # uniqueness or foreign-key violation arrives as IntegrityError. Asserting
+    # the wrong one here fails even though the constraint is working.
+    with pytest.raises(OperationalError) as caught:
+        session.flush()
+    assert "ck_metric_precision" in str(caught.value)
+
+
+def test_a_negative_kg_per_unit_is_refused(session):
+    """The reason this constraint is worth a test of its own.
+
+    `web/units.js` multiplies `kg_per_unit` by a unit count to turn "three
+    20 litre buckets" into kilograms. One negative row turns that into a
+    negative mass, which flows into `qty_kg`, through every formula, and out
+    the other side as a negative impact — a saving the user never made. There
+    is no application-layer validation of this column anywhere in the panel,
+    so the database is the only thing standing in the way.
+    """
+    session.add(UnitPreset(code="broken_preset", label="Broken",
+                           kg_per_unit=Decimal("-0.5000")))
+
+    with pytest.raises(OperationalError) as caught:
+        session.flush()
+    assert "ck_unit_preset_kg" in str(caught.value)
+
+
+def test_a_zero_kg_per_unit_is_still_allowed(session):
+    """The constraint is `>= 0`, not `> 0` — it refuses nonsense, it does not
+    editorialise. A zero-mass preset is odd but not incoherent, and B wrote it
+    this way.
+    """
+    session.add(UnitPreset(code="zero_preset", label="Zero",
+                           kg_per_unit=Decimal("0.0000")))
+    session.flush()
+
+    assert session.scalar(select(UnitPreset)).kg_per_unit == Decimal("0.0000")

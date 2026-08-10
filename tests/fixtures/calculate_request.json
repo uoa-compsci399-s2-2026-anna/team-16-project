@@ -1,0 +1,29 @@
+{
+  "token": null,
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": [
+        { "destination": "landfill", "qty_kg": "1200.000" },
+        { "destination": "animal_feed", "qty_kg": "300.000" }
+      ],
+      "alternative": [
+        { "destination": "anaerobic_digestion", "qty_kg": "1200.000" },
+        { "destination": "animal_feed", "qty_kg": "300.000" }
+      ]
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "current": [
+        { "destination": "not_harvested", "qty_kg": "800.000" }
+      ],
+      "alternative": [
+        { "destination": "prevention", "qty_kg": "800.000" }
+      ]
+    }
+  ],
+  "dry_run": null
+}

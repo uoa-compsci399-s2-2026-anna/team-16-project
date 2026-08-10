@@ -2,12 +2,20 @@
 
 Contract §2.3: nothing here is stored. This module reads the blocklist
 (``db.blocklist.is_blocked``) and the stateless header/rate signals
-(``admin.detection``) and refuses the one request in front of it; it never
-writes a block itself. Turning a pattern into a lasting block is a staff
-decision made on the blocklist screen (Task 4), which is what keeps the
-blocklist's only write path behind an audited human action.
+(``db.detection``, re-exported as ``admin.detection``) and refuses the one
+request in front of it; it never writes a block itself. Turning a pattern into
+a lasting block is a staff decision made on the blocklist screen (Task 4),
+which is what keeps the blocklist's only write path behind an audited human
+action.
 
-**Deployment note - single process only.** ``RequestRate`` (admin/detection.py)
+**The refusal body here is a bare ``PlainTextResponse``, and that is right for
+this app only.** ``/admin`` is a browser surface; a refused caller gets a page
+that says nothing. The public API refuses with §9.2's ``BLOCKED`` envelope
+instead (``api/app.py``), because a JSON client that got plain text back would
+have to special-case one error out of the twelve in §9. Same blocklist, same
+reticence about *why*, two bodies — one per surface, deliberately.
+
+**Deployment note - single process only.** ``RequestRate`` (db/detection.py)
 counts in one process's memory. Run this panel under more than one worker and
 each worker gets its own counter, so the effective rate limit is the
 configured number multiplied by the worker count - silently weaker than
@@ -50,8 +58,16 @@ from starlette.responses import PlainTextResponse, Response
 from admin.accounts import UnknownStaffError, get_staff
 from admin.auth import SESSION_GENERATION_KEY, SESSION_KEY
 from admin.config import Settings
-from admin.detection import RequestRate, looks_automated
-from db.blocklist import InvalidAddressError, ip_fingerprint, is_blocked, normalise_ip
+from db.blocklist import ip_fingerprint, is_blocked
+from db.detection import RequestRate, client_ip, looks_automated
+
+#: ``_client_ip`` moved to ``db/detection.py`` along with ``RequestRate`` and
+#: ``looks_automated`` so that ``api/`` could apply the same blocklist to public
+#: traffic without a second copy of any of them (§8.3). Kept under its original
+#: private name here because that is the name §2.3 quotes and the name
+#: ``tests/admin/test_client_address.py`` imports — and because it genuinely is
+#: the same object, which ``tests/db/test_detection_shared.py`` asserts.
+_client_ip = client_ip
 
 #: starlette.middleware.sessions.SessionMiddleware's default cookie name.
 #: AdminAuth (admin/backend.py) never overrides ``session_cookie``, so this
@@ -219,72 +235,6 @@ def _is_authenticated_staff(
     return True
 
 
-def _client_ip(request: Request, *, trusted_proxy: bool) -> str | None:
-    """The caller's address, never trusting a caller-supplied header unless
-    an operator has explicitly said a reverse proxy is in front of this.
-
-    See ``Settings.protection_trusted_proxy``'s own docstring
-    (admin/config.py) for why the default matters: with no proxy in front,
-    trusting ``X-Forwarded-For`` lets any caller claim to be any address.
-
-    Returns ``None`` when the ASGI connection carries no client address at
-    all (``request.client is None``) - rare in a real deployment (the ASGI
-    server populates this from the actual TCP connection; nothing here is
-    attacker-controlled), but real for some transports and test harnesses.
-    An earlier version returned ``""`` for this case, which is wrong in
-    exactly the way an empty rate-limit/blocklist key is wrong elsewhere in
-    this module: ``""`` is itself a valid dict/lookup key, so every such
-    caller silently collapsed into one shared bucket - both the in-memory
-    rate counter and the blocklist's fingerprint lookup - rather than each
-    being its own, unidentified caller. ``dispatch`` skips both checks
-    outright when this is ``None``, rather than inventing an address to
-    check against.
-
-    Also returns ``None`` when the value that *is* present does not parse as
-    an address. ``db.blocklist.ip_fingerprint`` raises
-    ``InvalidAddressError`` on such a value by design - an unparseable
-    address that still produced a fingerprint is a block that silently
-    matches nobody - and this middleware runs ahead of *every* request under
-    ``/admin``, so it must not turn a malformed ``request.client.host`` into
-    a 500 on the login page. Normalising here and treating an unusable value
-    exactly as ``None`` is what keeps those two requirements compatible.
-
-    **An unparseable ``X-Forwarded-For`` falls back to the real connection
-    address rather than to ``None``.** With ``trusted_proxy`` true that header
-    is the one attacker-reachable input on this path, and returning ``None``
-    for it would hand any caller a one-header bypass of both the blocklist
-    and the rate limit (``X-Forwarded-For: nonsense``). Falling back means a
-    forged header gains nothing: the caller is still measured against the
-    address the ASGI server actually saw.
-    """
-    if trusted_proxy:
-        forwarded = request.headers.get("x-forwarded-for")
-        if forwarded:
-            # The left-most entry is the original client; anything to its
-            # right was appended by a hop this deployment's own proxy chain
-            # controls.
-            candidate = _normalise_or_none(forwarded.split(",")[0])
-            if candidate is not None:
-                return candidate
-    client = request.client
-    return _normalise_or_none(client.host) if client is not None else None
-
-
-def _normalise_or_none(candidate: str) -> str | None:
-    """``db.blocklist.normalise_ip``, with its refusal turned into ``None``.
-
-    The whole of the difference between this module and every other caller of
-    ``normalise_ip``: the admin form and the CLI report an invalid address to
-    the person who typed it, whereas this one runs on every request and has
-    nobody to report to - see ``_client_ip`` for why ``None`` is the right
-    answer here and why it is not reachable from a forged header.
-    """
-    try:
-        return normalise_ip(candidate)
-    except InvalidAddressError:
-        return None
-
-
 def _refuse(status_code: int) -> Response:
     return PlainTextResponse(_REFUSED_BODY, status_code=status_code)
 
@@ -298,7 +248,9 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
     1. Static paths pass immediately.
     2. Blocklist - no exemption, not even for staff.
     3. An authenticated staff session is exempt from the checks below it.
-    4. Header signals (``admin.detection.looks_automated``).
+    4. Header signals (``db.detection.looks_automated``). Applied here and
+       **not** to ``/api/v1/`` - see that module's docstring for why a public
+       JSON API must not refuse a caller for looking like a script.
     5. Rate limit, keyed on the HMAC fingerprint of the address - never the
        raw address itself, which contract §2.3 forbids holding anywhere,
        including in this process's own memory. ``/admin/login`` and
@@ -340,7 +292,7 @@ class ProtectionMiddleware(BaseHTTPMiddleware):
         if request.url.path.startswith(_STATIC_PREFIX):
             return await call_next(request)
 
-        ip = _client_ip(request, trusted_proxy=settings.protection_trusted_proxy)
+        ip = client_ip(request, trusted_proxy=settings.protection_trusted_proxy)
 
         # Blocklist first, and with no exemption: a block is a deliberate
         # act by another administrator and outranks everything below,

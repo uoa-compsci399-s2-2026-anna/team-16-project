@@ -60,8 +60,12 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('factor_set_id', 'code', name='uq_equivalence_code')
     )
+    # Contract §2.2 specifies BIGINT for these two primary keys, not INT:
+    # ~270 upstream and ~600 downstream rows land per factor set, every
+    # version. Autogenerate emitted sa.Integer() because the models declared a
+    # bare primary key; both now use db.base.BIGINT_PK.
     op.create_table('factor_upstream',
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
     sa.Column('factor_set_id', sa.Integer(), nullable=False),
     sa.Column('sector_id', sa.Integer(), nullable=False),
     sa.Column('food_category_id', sa.Integer(), nullable=False),
@@ -87,8 +91,12 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('factor_set_id', 'metric_id', name='uq_formula_metric')
     )
+    # Contract §2.2 specifies BIGINT for these two primary keys, not INT:
+    # ~270 upstream and ~600 downstream rows land per factor set, every
+    # version. Autogenerate emitted sa.Integer() because the models declared a
+    # bare primary key; both now use db.base.BIGINT_PK.
     op.create_table('factor_downstream',
-    sa.Column('id', sa.Integer(), autoincrement=True, nullable=False),
+    sa.Column('id', sa.BigInteger(), autoincrement=True, nullable=False),
     sa.Column('factor_set_id', sa.Integer(), nullable=False),
     sa.Column('destination_id', sa.Integer(), nullable=False),
     sa.Column('food_category_id', sa.Integer(), nullable=True),

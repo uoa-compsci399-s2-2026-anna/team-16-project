@@ -1,0 +1,165 @@
+{
+  "generated_at": "2026-09-01T03:00:00Z",
+  "total_calculations": 1247,
+  "suppression_threshold": 5,
+  "by_destination": [
+    {
+      "code": "landfill",
+      "label": "Landfill",
+      "count": 1268,
+      "share": "0.4065",
+      "total_kg": "521952.691"
+    },
+    {
+      "code": "compost",
+      "label": "Composting (aerobic digestion)",
+      "count": 604,
+      "share": "0.1936",
+      "total_kg": "248627.308"
+    },
+    {
+      "code": "animal_feed",
+      "label": "Animal feed",
+      "count": 411,
+      "share": "0.1317",
+      "total_kg": "169181.827"
+    },
+    {
+      "code": "anaerobic_digestion",
+      "label": "Anaerobic digestion",
+      "count": 338,
+      "share": "0.1083",
+      "total_kg": "139132.500"
+    },
+    {
+      "code": "sewer",
+      "label": "Sewer or wastewater",
+      "count": 201,
+      "share": "0.0644",
+      "total_kg": "82738.558"
+    },
+    {
+      "code": "food_redistribution",
+      "label": "Food redistribution",
+      "count": 155,
+      "share": "0.0497",
+      "total_kg": "63803.365"
+    },
+    {
+      "code": "combustion",
+      "label": "Combustion",
+      "count": 74,
+      "share": "0.0237",
+      "total_kg": "30460.962"
+    },
+    {
+      "code": "not_harvested",
+      "label": "Not harvested or ploughed in",
+      "count": 41,
+      "share": "0.0131",
+      "total_kg": "16877.019"
+    },
+    {
+      "code": "land_application",
+      "label": "Land application",
+      "count": 19,
+      "share": "0.0061",
+      "total_kg": "7821.058"
+    },
+    {
+      "code": "other",
+      "label": "Other (sample too small)",
+      "count": 9,
+      "share": "0.0029",
+      "total_kg": "3704.712"
+    }
+  ],
+  "by_sector": [
+    {
+      "code": "processing",
+      "label": "Processing and manufacturing",
+      "count": 606,
+      "share": "0.3787",
+      "total_kg": "486428.625"
+    },
+    {
+      "code": "consumer_hospitality",
+      "label": "Hospitality",
+      "count": 388,
+      "share": "0.2425",
+      "total_kg": "311442.750"
+    },
+    {
+      "code": "wholesale_retail",
+      "label": "Wholesale and retail",
+      "count": 301,
+      "share": "0.1881",
+      "total_kg": "241608.938"
+    },
+    {
+      "code": "primary_production",
+      "label": "Primary production",
+      "count": 187,
+      "share": "0.1169",
+      "total_kg": "150102.562"
+    },
+    {
+      "code": "other",
+      "label": "Other (sample too small)",
+      "count": 118,
+      "share": "0.0738",
+      "total_kg": "94717.125"
+    }
+  ],
+  "by_food_category": [
+    {
+      "code": "unspecified",
+      "label": "Not broken down by type",
+      "count": 742,
+      "share": "0.4638",
+      "total_kg": "595594.125"
+    },
+    {
+      "code": "standard_mix",
+      "label": "Mixed food waste (composition unknown)",
+      "count": 210,
+      "share": "0.1312",
+      "total_kg": "168564.375"
+    },
+    {
+      "code": "vegetables",
+      "label": "Vegetables",
+      "count": 188,
+      "share": "0.1175",
+      "total_kg": "150905.250"
+    },
+    {
+      "code": "dairy",
+      "label": "Dairy",
+      "count": 155,
+      "share": "0.0969",
+      "total_kg": "124416.562"
+    },
+    {
+      "code": "fruit",
+      "label": "Fruit",
+      "count": 121,
+      "share": "0.0756",
+      "total_kg": "97125.188"
+    },
+    {
+      "code": "meat",
+      "label": "Meat",
+      "count": 96,
+      "share": "0.0600",
+      "total_kg": "77058.000"
+    },
+    {
+      "code": "other",
+      "label": "Other (sample too small)",
+      "count": 88,
+      "share": "0.0550",
+      "total_kg": "70636.500"
+    }
+  ]
+}

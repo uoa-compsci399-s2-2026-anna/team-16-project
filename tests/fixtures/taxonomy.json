@@ -1,0 +1,172 @@
+{
+  "factor_set": { "version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": true },
+  "sectors": [
+    {
+      "code": "primary_production",
+      "name": "Primary production",
+      "description": "Growing, farming, fishing or harvesting food. This covers farms, orchards, vineyards, fisheries and other operations where food is grown, raised or caught. Typical losses are crops left unharvested, produce rejected on grade or appearance, and food lost during first handling.",
+      "sort_order": 10
+    },
+    {
+      "code": "processing",
+      "name": "Processing and manufacturing",
+      "description": "Producing, preparing, processing or packaging food. This covers factories, bakeries, packhouses and processing facilities. Typical losses are trimming waste, damaged product, production errors, rejected batches and food lost during packaging.",
+      "sort_order": 20
+    },
+    {
+      "code": "wholesale_retail",
+      "name": "Wholesale and retail",
+      "description": "Storing, moving and selling food — from distributors and wholesalers through to supermarkets, grocers and markets. Typical losses are storage and transport damage, stock that passes its date, unsold food and produce pulled from display.",
+      "sort_order": 30
+    },
+    {
+      "code": "consumer_household",
+      "name": "Households",
+      "description": "Food bought for the home and not eaten. Typical losses are leftovers, food that spoils before it is used, and edible parts removed during preparation.",
+      "sort_order": 40
+    },
+    {
+      "code": "consumer_hospitality",
+      "name": "Hospitality",
+      "description": "Preparing or serving food outside the home for sale. This covers restaurants, cafés, hotels, caterers and commercial kitchens. Typical losses are preparation waste, overproduction, buffet waste and what customers leave on the plate.",
+      "sort_order": 50
+    },
+    {
+      "code": "consumer_institution",
+      "name": "Institutions",
+      "description": "Preparing or serving food in public and community organisations. This covers schools, universities, hospitals, aged-care facilities, prisons and workplace cafeterias. Typical losses are kitchen preparation waste, overproduction and uneaten meals.",
+      "sort_order": 60
+    }
+  ],
+  "food_categories": [
+    { "code": "standard_mix", "name": "Mixed food waste (composition unknown)", "is_standard_mix": true, "sort_order": 5 },
+    { "code": "fruit", "name": "Fruit", "is_standard_mix": false, "sort_order": 10 },
+    { "code": "vegetables", "name": "Vegetables", "is_standard_mix": false, "sort_order": 20 },
+    { "code": "nuts_seeds", "name": "Nuts and edible seeds", "is_standard_mix": false, "sort_order": 30 },
+    { "code": "meat", "name": "Meat", "is_standard_mix": false, "sort_order": 40 },
+    { "code": "seafood", "name": "Seafood", "is_standard_mix": false, "sort_order": 50 },
+    { "code": "dairy", "name": "Dairy", "is_standard_mix": false, "sort_order": 60 },
+    { "code": "bakery_grains", "name": "Bakery and grains", "is_standard_mix": false, "sort_order": 70 },
+    { "code": "staples", "name": "Staples", "is_standard_mix": false, "sort_order": 80 },
+    { "code": "beverages", "name": "Beverages (non-dairy)", "is_standard_mix": false, "sort_order": 90 }
+  ],
+  "destination_groups": [
+    { "code": "reuse", "name": "Reuse", "is_waste": false, "sort_order": 10 },
+    { "code": "recycle_recovery", "name": "Recycle and recovery", "is_waste": true, "sort_order": 20 },
+    { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 30 }
+  ],
+  "destinations": [
+    {
+      "code": "prevention",
+      "name": "Prevented — waste avoided",
+      "group": "reuse",
+      "description": "Food that is never wasted in the first place. Used only in the alternative scenario: moving mass here is how the calculator expresses wasting less, and it keeps the two scenarios describing the same total mass.",
+      "sort_order": 5
+    },
+    {
+      "code": "food_redistribution",
+      "name": "Food redistribution",
+      "group": "reuse",
+      "description": "Surplus food given or sold on for people to eat — food rescue organisations, food banks and secondary markets.",
+      "sort_order": 10
+    },
+    {
+      "code": "upcycling",
+      "name": "Upcycling to other food products",
+      "group": "reuse",
+      "description": "Surplus food remade into another food product, such as bread into beer or fruit into preserves.",
+      "sort_order": 20
+    },
+    {
+      "code": "animal_feed",
+      "name": "Animal feed",
+      "group": "reuse",
+      "description": "Food diverted to feed livestock or other animals, either directly or after processing.",
+      "sort_order": 30
+    },
+    {
+      "code": "compost",
+      "name": "Composting (aerobic digestion)",
+      "group": "recycle_recovery",
+      "description": "Food broken down aerobically into a soil conditioner, on site or at a commercial facility.",
+      "sort_order": 40
+    },
+    {
+      "code": "anaerobic_digestion",
+      "name": "Anaerobic digestion",
+      "group": "recycle_recovery",
+      "description": "Food broken down without oxygen to produce biogas and digestate.",
+      "sort_order": 50
+    },
+    {
+      "code": "land_application",
+      "name": "Land application",
+      "group": "recycle_recovery",
+      "description": "Food spread directly onto land, without composting or digestion first.",
+      "sort_order": 60
+    },
+    {
+      "code": "not_harvested",
+      "name": "Not harvested or ploughed in",
+      "group": "recycle_recovery",
+      "description": "Edible crop left in the field or ploughed back into the soil. Relevant mainly to primary production.",
+      "sort_order": 70
+    },
+    {
+      "code": "bioprocessing",
+      "name": "Processing into non-food items",
+      "group": "recycle_recovery",
+      "description": "Food converted into bio-based materials or chemicals. The 2025 Otago baseline recommends reclassifying this as reuse; the grouping is a table row precisely so that change is an edit, not a migration.",
+      "sort_order": 80
+    },
+    {
+      "code": "other_recovery",
+      "name": "Other recovery, including biodiesel",
+      "group": "recycle_recovery",
+      "description": "Energy or material recovery not covered by the other routes, such as rendering to biodiesel.",
+      "sort_order": 90
+    },
+    {
+      "code": "combustion",
+      "name": "Combustion",
+      "group": "disposal",
+      "description": "Food burned, with or without energy recovery.",
+      "sort_order": 100
+    },
+    {
+      "code": "landfill",
+      "name": "Landfill",
+      "group": "disposal",
+      "description": "Food sent to a landfill, where it breaks down without oxygen and releases methane.",
+      "sort_order": 110
+    },
+    {
+      "code": "refuse_discard",
+      "name": "Refuse or discard",
+      "group": "disposal",
+      "description": "Food dumped, littered or otherwise discarded outside a managed waste system.",
+      "sort_order": 120
+    },
+    {
+      "code": "sewer",
+      "name": "Sewer or wastewater",
+      "group": "disposal",
+      "description": "Food flushed to the sewer, including through an in-sink waste disposal unit.",
+      "sort_order": 130
+    }
+  ],
+  "metrics": [
+    { "code": "co2e", "name": "Greenhouse gases", "unit": "kg CO2e", "display_unit": "t CO2e", "display_precision": 1, "sort_order": 10 },
+    { "code": "ch4", "name": "Methane", "unit": "kg CH4", "display_unit": null, "display_precision": 1, "sort_order": 20 },
+    { "code": "water", "name": "Water", "unit": "L", "display_unit": "kL", "display_precision": 0, "sort_order": 30 },
+    { "code": "cost", "name": "Cost", "unit": "NZD", "display_unit": null, "display_precision": 0, "sort_order": 40 },
+    { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "t", "display_precision": 1, "sort_order": 50 }
+  ],
+  "unit_presets": [
+    { "code": "bucket_10l_full", "label": "10 L bucket (full)", "food_category": null, "kg_per_unit": "3.0000" },
+    { "code": "bucket_20l_full", "label": "20 L bucket (full)", "food_category": null, "kg_per_unit": "6.0000" },
+    { "code": "crate_30l_full", "label": "30 L crate (full)", "food_category": null, "kg_per_unit": "9.0000" },
+    { "code": "wheelie_bin_120l", "label": "120 L wheelie bin (full)", "food_category": null, "kg_per_unit": "36.0000" },
+    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)", "food_category": null, "kg_per_unit": "72.0000" }
+  ]
+}

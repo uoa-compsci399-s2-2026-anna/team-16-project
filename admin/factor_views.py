@@ -42,6 +42,35 @@ from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_
 
 _CATEGORY = "Factors"
 
+#: Shared field help. See admin/taxonomy_views.py's own note on the register
+#: these are written in, and tests/admin/test_field_help.py for what enforces
+#: that a new column arrives explained.
+#:
+#: Only the three that genuinely say the same thing on every factor table are
+#: shared. `value_per_kg` is not among them: upstream and downstream mean
+#: different things, and downstream's may be negative.
+_FACTOR_SET_HELP = (
+    "Which version of the numbers this row belongs to. Only a draft can be "
+    "edited: the panel refuses a change to a row in a published or archived "
+    "set, and refuses to move a row into or out of one, because every stored "
+    "result stamped with that version has to keep reproducing years later. "
+    "Clone the set into a new draft first."
+)
+_SOURCE_NOTE_HELP = (
+    "Where this number came from — the document, table or calculation behind "
+    "it. It is published verbatim by the public factor export, which is the "
+    "only place the calculator can say which of its numbers are measured and "
+    "which are borrowed. A figure published without its basis is the figure "
+    "hardest to defend."
+)
+_DATA_QUALITY_HELP = (
+    "How good this particular number is, in your own words — 'measured', "
+    "'modelled', 'proxy-AU'. Free text on purpose: nobody yet knows which "
+    "words the client will use. The mock flag on the factor set is "
+    "all-or-nothing and cannot say that forty rows are solid and twelve are "
+    "borrowed; this can."
+)
+
 
 def _refuse_if_factor_set_not_draft(factor_set: FactorSet | None) -> None:
     """Raise unless `factor_set` is a draft, or there is none to check.
@@ -204,14 +233,44 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
     #: Rendered by sqladmin's `_macros.html` under the field. Without it the
     #: blank option reads as an unfinished form rather than as the answer.
     form_args = {
+        "factor_set": {"description": _FACTOR_SET_HELP},
+        "sector": {"description": (
+            "Where in the supply chain the food was lost. Upstream impact is "
+            "the cost of having produced the food at all, so it depends on "
+            "this and on the food category — not on where the waste "
+            "eventually went."
+        )},
+        "food_category": {"description": (
+            "Which kind of food this number is for. Required here: unlike a "
+            "downstream factor, an upstream row always belongs to exactly "
+            "one category."
+        )},
         "destination": {
             "description": (
                 "Leave blank unless this factor is specific to one destination "
-                "— blank means it applies to every destination. The one row "
-                "that is not blank is 'prevention' at zero: prevented waste "
-                "was never produced, so it carries no upstream burden."
+                "— blank means it applies to every destination, and that is "
+                "the normal case: producing a kilogram of dairy costs what it "
+                "costs whatever later becomes of it. The one row that "
+                "overrides a general one is 'prevention' at zero, because "
+                "food that was never wasted was never produced. A general row "
+                "left without its 'prevention' counterpart makes the "
+                "calculator understate the benefit of preventing waste by "
+                "most of its value, so publishing the set is refused until "
+                "every general row has one."
             ),
         },
+        "metric": {"description": (
+            "Which metric this number feeds. One row per metric: the same "
+            "production step needs a separate row for greenhouse gas, for "
+            "water and for cost."
+        )},
+        "value_per_kg": {"description": (
+            "Impact of producing one kilogram of this food, in the metric's "
+            "own unit. A 'prevention' row is zero — that zero is what makes "
+            "preventing waste a full offset rather than a partial one."
+        )},
+        "source_note": {"description": _SOURCE_NOTE_HELP},
+        "data_quality": {"description": _DATA_QUALITY_HELP},
     }
     column_filters = [
         ForeignKeyFilter(FactorUpstream.factor_set_id, FactorSet.version_label,
@@ -273,6 +332,33 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
                     FactorDownstream.food_category, FactorDownstream.metric,
                     FactorDownstream.value_per_kg, FactorDownstream.data_quality,
                     FactorDownstream.source_note]
+    form_args = {
+        "factor_set": {"description": _FACTOR_SET_HELP},
+        "destination": {"description": (
+            "Where the food actually went. A downstream factor is the cost, "
+            "or the credit, of that route."
+        )},
+        "food_category": {"description": (
+            "Leave blank unless this number genuinely varies by food type — "
+            "blank means the row applies to every category sent to this "
+            "destination. That is how a per-tonne charge like the waste levy "
+            "is entered: one row, no category. A row naming a category wins "
+            "over the blank one; where neither exists the factor is zero."
+        )},
+        "metric": {"description": (
+            "Which metric this number feeds. One row per metric: the same "
+            "disposal route needs a separate row for greenhouse gas, for "
+            "water and for cost."
+        )},
+        "value_per_kg": {"description": (
+            "Impact of sending one kilogram to this destination, in the "
+            "metric's own unit. A negative number is legitimate and nothing "
+            "will clamp it: animal feed displaces feed that would otherwise "
+            "have been grown, so diverting to it is a genuine credit."
+        )},
+        "source_note": {"description": _SOURCE_NOTE_HELP},
+        "data_quality": {"description": _DATA_QUALITY_HELP},
+    }
     column_filters = [
         ForeignKeyFilter(FactorDownstream.factor_set_id, FactorSet.version_label,
                          title="Factor set"),
@@ -324,6 +410,32 @@ class ConstantAdmin(AuditedModelView, model=Constant):
                            Constant.unit, Constant.note]
     form_columns = [Constant.factor_set, Constant.code, Constant.value,
                     Constant.unit, Constant.note]
+    form_args = {
+        "factor_set": {"description": _FACTOR_SET_HELP},
+        "code": {"description": (
+            "How a formula refers to this value. Type it without the prefix: "
+            "'GWP_CH4_100' here is written 'const_GWP_CH4_100' in a formula, "
+            "and 'const_' is added for you. Unique within the factor set. "
+            "Renaming or deleting one that a formula in the same set still "
+            "uses is refused — change the formula first. 'GWP_CH4_20' and "
+            "'GWP_CH4_100' are a special pair: whichever methane horizon a "
+            "visitor picks is bound to 'const_GWP_CH4', which is why no "
+            "formula ever names a horizon itself."
+        )},
+        "value": {"description": (
+            "The number itself, at full precision. What a visitor sees is "
+            "rounded by the metric it ends up in, not here."
+        )},
+        "unit": {"description": (
+            "What the value is measured in, so the next person reading this "
+            "screen knows. Nothing computes with it."
+        )},
+        "note": {"description": (
+            "Why this value, and where it came from. Constants carry no "
+            "provenance anywhere else, so this is the only place the reason "
+            "survives."
+        )},
+    }
     column_searchable_list = [Constant.code]
     column_filters = [
         ForeignKeyFilter(Constant.factor_set_id, FactorSet.version_label,
@@ -460,6 +572,51 @@ class EquivalenceAdmin(AuditedModelView, model=Equivalence):
                     Equivalence.source_metric, Equivalence.value_per_unit,
                     Equivalence.label_template, Equivalence.source_note,
                     Equivalence.sort_order, Equivalence.active]
+    form_args = {
+        "factor_set": {"description": _FACTOR_SET_HELP},
+        "code": {"description": (
+            "The short name the API uses for this equivalence — 'km_driven', "
+            "'meals', 'showers'. Lower case, no spaces. Unique within the "
+            "factor set."
+        )},
+        "name": {"description": (
+            "A short name for this equivalence, for staff and for the API. "
+            "The sentence a visitor actually reads is the label template "
+            "below."
+        )},
+        "source_metric": {"description": (
+            "Which metric total this converts from. It has to be the metric "
+            "the factor below was worked out against — kilometres derived "
+            "from a cost total produce a confident sentence with a "
+            "meaningless number in it, and nothing will flag it."
+        )},
+        "value_per_unit": {"description": (
+            "The metric's total is multiplied by this to get the number in "
+            "the sentence."
+        )},
+        "label_template": {"description": (
+            "The sentence a visitor reads, e.g. 'Equivalent to driving "
+            "{value} km'. '{value}' is the only placeholder and everything "
+            "else is copied out exactly as typed, so a template without it "
+            "renders a sentence with no number in it. The number is "
+            "formatted for you — whole units, comma thousands separator."
+        )},
+        "source_note": {"description": (
+            "What this conversion is based on. Open item O-3: the New "
+            "Zealand sources for kilometres driven, meals and showers are "
+            "not settled, and an equivalence with no stated basis is the "
+            "figure most likely to be challenged in public."
+        )},
+        "sort_order": {"description": (
+            "Order on the results page, lowest first; equal values fall back "
+            "to alphabetical order by code."
+        )},
+        "active": {"description": (
+            "Untick to stop showing this equivalence without deleting it. "
+            "Inactive rows are left out of every calculation this set is "
+            "used for."
+        )},
+    }
     column_searchable_list = [Equivalence.code, Equivalence.name]
     column_filters = [
         ForeignKeyFilter(Equivalence.factor_set_id, FactorSet.version_label,
@@ -503,6 +660,33 @@ class FormulaAdmin(AuditedModelView, model=Formula):
                            Formula.notes]
     form_columns = [Formula.factor_set, Formula.metric, Formula.expression,
                     Formula.notes]
+    form_args = {
+        "factor_set": {"description": _FACTOR_SET_HELP},
+        "metric": {"description": (
+            "Which metric this expression computes. One formula per metric "
+            "per factor set — a metric with no formula in the published set "
+            "produces no figure."
+        )},
+        "expression": {"description": (
+            "This is worked out once for every line a visitor enters, and "
+            "the calculator adds the results together — so write the "
+            "contribution of one line, never a total. That is why there is "
+            "no sum(). Available on each line: qty_kg (kilograms on that "
+            "line), upstream and downstream (the per-kilogram factors "
+            "resolved for that line; downstream may be negative), and any "
+            "constant in this set written as const_ followed by its code, "
+            "plus const_GWP_CH4, which resolves to the 20- or 100-year value "
+            "according to what the visitor chose. min, max, abs and round "
+            "may be called; nothing else can. The usual expression is "
+            "qty_kg * (upstream + downstream). It is checked when you save, "
+            "so a formula the calculator could not run is refused here "
+            "rather than becoming a server error in front of the public."
+        )},
+        "notes": {"description": (
+            "What this expression is doing and why, for whoever opens it "
+            "next. Not shown to the public."
+        )},
+    }
     column_filters = [ForeignKeyFilter(Formula.factor_set_id, FactorSet.version_label,
                                        title="Factor set")]
     page_size = 50
@@ -690,6 +874,35 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     # function anywhere near it) has no way to know that.
     form_columns = [FactorSet.version_label, FactorSet.is_mock,
                     FactorSet.effective_from, FactorSet.notes]
+    form_args = {
+        "version_label": {"description": (
+            "What this version of the numbers is called — '2026-Q3', or "
+            "'MOCK-v0 — PLACEHOLDER'. It must be unique, and it is the name "
+            "the clone, publish, rollback and comparison screens show, and "
+            "the name the audit trail records. Make it something you can "
+            "still recognise in a year."
+        )},
+        "is_mock": {"description": (
+            "Tick while these numbers are placeholders rather than the "
+            "client's real data. While it is ticked, every result page and "
+            "every export carries a warning saying so that a visitor cannot "
+            "dismiss. It can only be changed on a draft: switching it off a "
+            "published set would take that warning away while the numbers "
+            "underneath were still placeholders, and the panel refuses it. "
+            "New sets start ticked, so nothing is ever published as real "
+            "data by omission."
+        )},
+        "effective_from": {"description": (
+            "The date these numbers are meant to apply from, recorded for "
+            "your own reference. Nothing publishes on it — a set goes live "
+            "when somebody presses Publish, and not before."
+        )},
+        "notes": {"description": (
+            "Where this version's numbers came from and what changed since "
+            "the last one. When somebody asks in a year why a figure moved, "
+            "this is the only place that answers."
+        )},
+    }
     column_default_sort = ("id", True)
 
     async def update_model(self, request, pk: str, data: dict):

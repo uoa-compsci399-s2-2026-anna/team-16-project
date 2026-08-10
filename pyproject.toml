@@ -21,7 +21,7 @@ name = "kaicalc"
 # Alpha builds never touch it: CI derives `<this>.dev0+<short-sha>` per build,
 # which sorts BELOW this version in PEP 440 and so can never be mistaken for,
 # or preferred over, a release.
-version = "0.0.0"
+version = "0.0.1"
 description = "Kai Commitment food waste impact calculator - New Zealand impact calculator API, calculation engine and staff admin panel"
 # No `readme`: README.md is the course template and is git-ignored in this
 # tree, so it is neither ours to describe the package with nor reliably present.

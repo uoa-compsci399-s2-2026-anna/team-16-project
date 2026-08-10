@@ -29,6 +29,7 @@ from admin.accounts import (
     unused_recovery_code_count,
 )
 from admin.auth import (
+    ENROLMENT_WINDOW_SECONDS,
     PENDING_LOGIN_TTL_SECONDS,
     SESSION_KEY,
     authenticate_recovery_code,
@@ -39,6 +40,7 @@ from admin.backend import (
     PENDING_SESSION_KEY,
     _pending_login_from_session,
     current_username,
+    extend_pending_login,
 )
 from admin.csrf import check_token, issue_token
 from admin.models import utcnow
@@ -327,10 +329,16 @@ class ChangePasswordView(BaseView):
                 # screen explaining why. Refreshed on a *completed step*
                 # rather than on every page view: a pending login is a
                 # one-factor credential, so idling still expires it.
-                stored = request.session.get(PENDING_SESSION_KEY)
-                if isinstance(stored, dict):
-                    stored["expires_at"] = time.time() + PENDING_LOGIN_TTL_SECONDS
-                    request.session[PENDING_SESSION_KEY] = stored
+                #
+                # This covers the password step only. The scan itself gets
+                # its own, longer grant where it begins - see EnrolView
+                # below, which is what actually made the sentence above
+                # true rather than merely intended.
+                extend_pending_login(
+                    request.session,
+                    now=time.time(),
+                    seconds=PENDING_LOGIN_TTL_SECONDS,
+                )
 
                 # set_password bumped the generation, which just invalidated
                 # the session this request arrived on. Re-stamp it: this user
@@ -458,6 +466,31 @@ class EnrolView(BaseView):
         username = current_username(request.session)
         if not username:
             return _redirect(request, "admin:login")
+
+        # Reaching this line means the gate admitted the request, so there is
+        # a live pending login here and this is where the enrolment step
+        # begins. Extend it, before anything below can spend the time.
+        #
+        # This is the fix for the defect the step's own shape produces, and
+        # the fix has to be *here*, not on the way out. What outlasts the
+        # pending login is the gap between this page rendering and the code
+        # being typed: the user is across the room installing an
+        # authenticator. The deadline therefore falls on the POST, which
+        # `_may_open_pre_login_page` refuses before this handler runs at all -
+        # a bare 302 to /admin/login, indistinguishable at the log from a
+        # rejected code, and it lands on the one request that carries the
+        # recovery codes. They are rendered once and are not recoverable, so
+        # the user who does not happen to try again keeps a second factor
+        # with no fallback behind it, on a system with no email recovery.
+        #
+        # Granted on every method, not only GET. The POST paths below
+        # re-render the same QR after a rejected code or an expired form, and
+        # a user who mistyped is exactly the user who needs the rest of the
+        # window; the completing POST clears the pending login outright a few
+        # lines on, so extending it there is moot rather than generous.
+        extend_pending_login(
+            request.session, now=time.time(), seconds=ENROLMENT_WINDOW_SECONDS
+        )
 
         secret_key = runtime.settings.secret_key
 

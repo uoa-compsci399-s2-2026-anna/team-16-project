@@ -47,6 +47,25 @@ SESSION_GENERATION_KEY = "staff_generation"
 #: be finished by whoever sits down next.
 PENDING_LOGIN_TTL_SECONDS = 300
 
+#: The same allowance, for the one onboarding step that is not "read a code off
+#: a phone" — enrolment. Reading a code assumes the phone already has the
+#: account on it; enrolment is the request to put it there, and what stands
+#: between the QR appearing and the code being typed is installing an
+#: authenticator app on a second device, finding the camera, and waiting out
+#: whichever time step is half-elapsed. Five minutes is a plausible budget for
+#: none of that, and the deadline lands precisely on the request that carries
+#: the recovery codes — shown once, never recoverable — so the cost of it
+#: being too short is not an extra login, it is an account with a second
+#: factor and no way back.
+#:
+#: Fifteen minutes is a bound, not a licence to idle: it is granted from the
+#: moment the enrolment page renders (admin/views.py EnrolView) and only to
+#: that page, which the gate opens only for an account that is not yet
+#: enrolled. What a pending login can reach in that window is unchanged — the
+#: three onboarding pages — and the holder already presented the password, so
+#: the longer window grants nothing that logging in again would not.
+ENROLMENT_WINDOW_SECONDS = 900
+
 #: A real bcrypt hash of a value nothing can supply, verified against when the
 #: username does not exist so that both paths cost the same. Computed once at
 #: import: hashing per request would itself be a measurable difference, and a

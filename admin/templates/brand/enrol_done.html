@@ -2,12 +2,23 @@
 {% block title %}Save your recovery codes{% endblock %}
 {% block content %}
   <h1>Save your recovery codes</h1>
+  <p class="secrets-owner"><strong>{{ issuer }}</strong> — {{ username }}</p>
   <div class="notice notice--info">
     <strong>These are shown once and cannot be recovered.</strong>
   </div>
   <ul class="secrets">
     {% for code in codes %}<li>{{ code }}</li>{% endfor %}
   </ul>
+  {# The same thing again as one selectable block. Codes get copied into a
+     password manager, and a bare list of eight strings says nothing about
+     what it opens once it is sitting in one. #}
+  <details class="secrets-copyable">
+    <summary>Copy as text</summary>
+    <pre>{{ issuer }} — {{ username }}
+Recovery codes, each usable once. Shown once and not recoverable.
+{% for code in codes %}
+{{ code }}{% endfor %}</pre>
+  </details>
   <p>
     Print them and keep them somewhere safe, or store them in a password
     manager. Each one works once.

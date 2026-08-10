@@ -9,6 +9,8 @@ from dataclasses import dataclass
 
 from dotenv import load_dotenv
 
+from admin.totp import DEFAULT_ISSUER
+
 load_dotenv()
 
 
@@ -111,6 +113,12 @@ class Settings:
     # local development served over plain http.
     session_https_only: bool = True
     api_base_url: str = _DEFAULT_API_BASE_URL
+    # What an authenticator app lists a staff enrolment under. An
+    # authenticator groups by issuer, so one instance per issuer is the most a
+    # phone can tell apart: a person enrolled against production and a staging
+    # stack sees two identical entries unless the deployments name themselves.
+    # `Kai Commitment Admin (staging)` is the shape. See admin/totp.py.
+    totp_issuer: str = DEFAULT_ISSUER
     # Whether ProtectionMiddleware (admin/protection.py) runs at all. True by
     # default; an operator debugging a false-positive block can flip this off
     # without redeploying code, at the cost of the blocklist and the header/
@@ -140,6 +148,7 @@ def load_settings() -> Settings:
         login_lockout_minutes=_int("LOGIN_LOCKOUT_MINUTES", 15),
         session_https_only=_bool("SESSION_HTTPS_ONLY", True),
         api_base_url=_str("API_BASE_URL", _DEFAULT_API_BASE_URL),
+        totp_issuer=_str("ADMIN_TOTP_ISSUER", DEFAULT_ISSUER),
         protection_enabled=_bool("PROTECTION_ENABLED", True),
         protection_max_requests_per_minute=_int(
             "PROTECTION_MAX_REQUESTS_PER_MINUTE", 30

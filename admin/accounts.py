@@ -24,7 +24,12 @@ from admin.security import (
     hash_recovery_code,
     verify_recovery_code,
 )
-from admin.totp import generate_totp_secret, provisioning_uri, verify_totp
+from admin.totp import (
+    DEFAULT_ISSUER,
+    generate_totp_secret,
+    provisioning_uri,
+    verify_totp,
+)
 
 #: Contract 8.3. With no email system, administrators are each other's
 #: recovery path, so the system refuses to fall below two — two that exist,
@@ -270,7 +275,11 @@ class MfaAlreadyEnrolledError(RuntimeError):
 
 
 def begin_mfa_enrolment(
-    session: Session, username: str, *, secret_key: str
+    session: Session,
+    username: str,
+    *,
+    secret_key: str,
+    issuer: str = DEFAULT_ISSUER,
 ) -> tuple[str, str]:
     """Start enrolment: store a fresh encrypted secret, return it and the URI.
 
@@ -305,7 +314,7 @@ def begin_mfa_enrolment(
     staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=secret_key)
     staff.mfa_enrolled_at = None
     staff.mfa_last_counter = None
-    return secret, provisioning_uri(secret, username=staff.username)
+    return secret, provisioning_uri(secret, username=staff.username, issuer=issuer)
 
 
 def complete_mfa_enrolment(

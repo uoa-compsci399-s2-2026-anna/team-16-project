@@ -321,7 +321,9 @@ class ChangePasswordView(BaseView):
         )
 
 
-def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
+def _enrolment_view_context(
+    db, username: str, secret_key: str, issuer: str
+) -> dict | None:
     """The QR and secret this page should show, for every one of its paths.
 
     Every branch of EnrolView goes through here - the initial GET, a
@@ -364,14 +366,18 @@ def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
         return None
     if staff.mfa_secret_enc is None:
         try:
-            secret, uri = begin_mfa_enrolment(db, username, secret_key=secret_key)
+            secret, uri = begin_mfa_enrolment(
+                db, username, secret_key=secret_key, issuer=issuer
+            )
         except MfaAlreadyEnrolledError:
             return None
         return {"qr": qr_svg(uri), "secret": secret,
                 "secret_grouped": _grouped(secret)}
     secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
     return {
-        "qr": qr_svg(provisioning_uri(secret, username=staff.username)),
+        "qr": qr_svg(
+            provisioning_uri(secret, username=staff.username, issuer=issuer)
+        ),
         "secret": secret,
         "secret_grouped": _grouped(secret),
     }
@@ -425,7 +431,9 @@ class EnrolView(BaseView):
                 # tab, or Back/Forward after scanning reuses the secret the
                 # user already has on their phone rather than silently
                 # invalidating it. Only a genuinely absent secret mints one.
-                context = _enrolment_view_context(db, username, secret_key)
+                context = _enrolment_view_context(
+                    db, username, secret_key, runtime.settings.totp_issuer
+                )
                 # Commits whether or not a secret was minted: a no-op commit
                 # costs nothing, and leaving a freshly minted secret
                 # uncommitted would show a QR the next request never sees.
@@ -445,7 +453,9 @@ class EnrolView(BaseView):
         form = await request.form()
         with runtime.session_factory() as db:
             if not check_token(request.session, form.get("csrf_token")):
-                context = _enrolment_view_context(db, username, secret_key)
+                context = _enrolment_view_context(
+                    db, username, secret_key, runtime.settings.totp_issuer
+                )
                 if context is None:
                     # The race _enrolment_view_context's own docstring
                     # describes: a concurrent request finished enrolment
@@ -479,7 +489,9 @@ class EnrolView(BaseView):
                 )
             except MfaNotEnrolledError as exc:
                 db.rollback()
-                context = _enrolment_view_context(db, username, secret_key)
+                context = _enrolment_view_context(
+                    db, username, secret_key, runtime.settings.totp_issuer
+                )
                 if context is None:
                     db.commit()
                     return _redirect(request, "admin:index")
@@ -528,5 +540,14 @@ class EnrolView(BaseView):
         return templates.TemplateResponse(
             request,
             "brand/enrol_done.html",
-            {"codes": codes, "next_url": "/admin/"},
+            {
+                "codes": codes,
+                "next_url": "/admin/",
+                # Named so the page, and anything copied off it, says which
+                # system and which account these belong to. Somebody holding
+                # recovery codes for more than one system cannot tell them
+                # apart by their contents alone.
+                "issuer": runtime.settings.totp_issuer,
+                "username": username,
+            },
         )

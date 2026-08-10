@@ -5,6 +5,8 @@ staff.mfa_last_counter).
 """
 
 import pyotp
+from urllib.parse import unquote, urlparse
+
 import pytest
 
 from admin.totp import (
@@ -112,3 +114,56 @@ def test_qr_svg_returns_inline_svg_markup():
 @pytest.mark.parametrize("bad_secret", ["", "not base32!", "8888"])
 def test_verify_rejects_an_unusable_secret_without_raising(bad_secret):
     assert verify_totp(bad_secret, "123456", now=NOW) is None
+
+
+# --------------------------------------------------------------------------
+# What the authenticator app shows
+# --------------------------------------------------------------------------
+#
+# An authenticator lists entries by their issuer. Every account on this system
+# produced an entry reading only "Kai Commitment", so the two administrators
+# the design requires were indistinguishable in the app, and a second
+# deployment - a staging instance, or the same person's own test stack - would
+# add two more entries with the same name and no way to tell any of them apart.
+#
+# The account name was always in the URI; the issuer is what a phone shows in
+# the list, and it named the organisation rather than the system.
+
+
+def test_the_issuer_names_the_system_not_just_the_organisation():
+    """`Kai Commitment` alone does not say which of their systems this is.
+
+    Removing the word `Admin` from the default fails this: it is what
+    distinguishes the staff panel from anything else the same organisation
+    might ask a person to enrol an authenticator against.
+    """
+    uri = provisioning_uri(SECRET, username="alice")
+
+    assert "issuer=Kai%20Commitment%20Admin" in uri
+
+
+def test_the_label_carries_both_the_system_and_the_account():
+    """Most authenticators render the label as `issuer (account)`.
+
+    Both halves have to be there: the issuer so a person with several
+    enrolments can find this one, and the account so the two administrators
+    are distinguishable from each other.
+    """
+    uri = provisioning_uri(SECRET, username="alice")
+    label = unquote(urlparse(uri).path.lstrip("/"))
+
+    assert label == "Kai Commitment Admin:alice"
+
+
+def test_the_issuer_can_name_the_deployment():
+    """One person may enrol against production and a staging stack.
+
+    Without an override both entries read identically, which is the same
+    defect one level up. The deployment sets ADMIN_TOTP_ISSUER; nothing in
+    the application chooses this.
+    """
+    uri = provisioning_uri(SECRET, username="alice", issuer="Kai Commitment Admin (staging)")
+    label = unquote(urlparse(uri).path.lstrip("/"))
+
+    assert label == "Kai Commitment Admin (staging):alice"
+    assert "issuer=Kai%20Commitment%20Admin%20%28staging%29" in uri

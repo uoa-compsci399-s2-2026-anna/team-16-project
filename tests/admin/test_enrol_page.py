@@ -477,3 +477,34 @@ async def test_enrolment_stamps_the_login_time(
 
     with admin_app.state.session_factory() as db:
         assert get_staff(db, username).last_login_at is not None
+
+
+async def test_the_recovery_codes_page_names_the_system_and_the_account(
+    admin_app, client, owes_enrolment
+):
+    """Eight random strings in a password manager say nothing about what they open.
+
+    Deleting either interpolation from brand/enrol_done.html fails this. Same
+    reasoning as the authenticator issuer: the codes outlive the page they
+    were shown on, and whoever finds them later has to be able to tell which
+    system and which account they belong to.
+    """
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+
+    done = await client.post(
+        "/admin/enrol",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(
+                int(views_time.time())
+            ),
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert done.status_code == 200
+    assert "Kai Commitment Admin" in done.text
+    assert username in done.text

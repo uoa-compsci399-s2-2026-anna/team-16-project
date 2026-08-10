@@ -1,0 +1,27 @@
+# Controls the sdist only. The wheel's contents come from pyproject.toml's
+# [tool.setuptools] packages / package-data / data-files, and are already
+# correct - 93 entries, top level exactly admin api db engine.
+#
+# setuptools' legacy sdist default sweeps in anything that looks like a test
+# module, which put nine tests/test_*.py into the source distribution while
+# leaving the rest of tests/ behind: a partial, unrunnable copy of a suite
+# nobody asked for. Prune the directory outright.
+prune tests
+
+# Not deliverable either: local working notes, scratch artefacts and the
+# generated documents. All are gitignored or local-only; none belongs in a
+# distribution handed to a client.
+prune Journal
+prune .superpowers
+exclude project.md
+global-exclude *.docx *.pdf *.pptx *.zh.md
+global-exclude .env .env.*
+global-exclude *.py[cod]
+
+# Kept on purpose, since a source distribution should be able to migrate a
+# database and describe itself:
+include alembic.ini
+include requirements.txt
+recursive-include alembic *.py *.mako README
+include docs/architecture.md
+include docs/interfaces.md

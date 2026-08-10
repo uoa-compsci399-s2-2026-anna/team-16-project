@@ -1,0 +1,630 @@
+# A release. Manual, semantic, and the only thing in this repository that
+# produces an artefact meant to leave it.
+#
+# WHAT THIS EXISTS FOR. The deliverable of this project is source code and
+# documentation; hosting is out of scope. These artefacts exist so that the
+# client is not handed a repository full of pytest, planning notes and build
+# intermediates and left to work out which parts are the product. Someone
+# should be able to open the release page and run the system without reading
+# the source - which is why the release notes below are treated as a
+# deliverable in their own right and not as a changelog.
+#
+# WHAT IT PUBLISHES
+#   * three images tagged `X.Y.Z` and `latest`;
+#   * the wheel and the sdist, attached to a GitHub Release;
+#   * release notes carrying the five deployment facts, in the text.
+#
+# WHAT IT DOES NOT DUPLICATE. The suite, the per-architecture builds and the
+# manifest assembly are the same three reusable workflows ci.yaml calls. That
+# is the point: two copies of a `docker build` loop drift, and the copy that
+# drifts is this one, because nobody watches a workflow that runs four times a
+# year. A release therefore runs the same tests, through the same steps, and
+# reads its published tags back out of the registry the same way.
+#
+# WHERE THE VERSION LIVES. In `pyproject.toml`, in the repository - not in this
+# file and not only in a build. The `bump` job commits it to the default branch
+# and tags THAT commit, so the tag always points at a tree whose pyproject.toml
+# carries the version the tag names, and anyone opening the file on the default
+# branch reads the truth rather than a number frozen at whatever the packaging
+# work happened to start from.
+#
+# Everything downstream then builds from the bump commit by SHA - `_test.yaml`
+# and `_build-images.yaml` take a `ref` for exactly this - so the suite, the
+# images, the wheel and the Release page are all statements about one tree.
+#
+# CI's alpha path still stamps, because `<base>.dev0+<short-sha>` is never
+# committed: it is derived per build and sorts below every release. See the
+# `version` job in ci.yaml for why it is not simply `<base>+<sha>`.
+
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: 'Version to release, X.Y.Z with no leading v (e.g. 1.0.0)'
+        required: true
+        type: string
+
+# Never cancel a release in flight. `cancel-in-progress: true` would be right
+# for CI and catastrophic here: the window it would interrupt is between
+# `imagetools create` and `gh release create`, which leaves images published
+# under a version that has no release, no notes and no wheel. Since the bump
+# job it now also spans a commit and a tag on the default branch.
+#
+# THE GROUP IS A CONSTANT, NOT PER-REF, and that matters more than it looks.
+# Two releases started close together both write pyproject.toml on the same
+# branch; a `${{ github.ref }}` group would let two runs dispatched from
+# different refs do that concurrently, and the loser would fail its push
+# half-way through a release. A constant serialises every release in this
+# repository against every other, which is the only correct answer once the
+# workflow writes to the repository.
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # THE BRANCH OF RECORD - the one the version is committed to and the one the
+  # tag ends up on. Named once, here, because the bump job refers to it four
+  # times and a release that bumped one branch while tagging another would be
+  # the failure this whole design exists to prevent.
+  #
+  # Derived, not hardcoded: `main` today, and correct on its own if the
+  # repository is ever renamed or the default changes.
+  RELEASE_BRANCH: ${{ github.event.repository.default_branch }}
+
+jobs:
+
+  # ===========================================================================
+  # Refuse a bad version before anything is built, tagged or published.
+  # ===========================================================================
+  prepare:
+    name: Validate the version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.resolve.outputs.version }}
+      tag: ${{ steps.resolve.outputs.tag }}
+    steps:
+      - id: resolve
+        env:
+          # The only place the release version enters this workflow.
+          #
+          # EXERCISED, on this branch, before this line took its final form. A
+          # temporary `push:` trigger plus a `|| '<version>'` fallback here
+          # stood in for the dispatch input across two runs, because GitHub
+          # only offers workflow_dispatch for a workflow already present on the
+          # DEFAULT branch and a release workflow first exercised on the real
+          # 1.0.0 is one that has never been tested. `0.0.1-rc1` was refused by
+          # the check below with every other job skipped; `0.0.1` then went the
+          # whole way - three multi-architecture images, a wheel, an sdist and
+          # the notes on a real release page, since deleted. Those two lines
+          # were the only difference between what ran and what is here.
+          RAW_VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          # FAIL EARLY, AND ON THE VALUE ITSELF. Everything downstream - the
+          # image tags, the wheel filename, the git tag, the release title -
+          # is this string. A version that gets as far as being pushed to a
+          # registry and only then turns out to be unparseable is a tag nobody
+          # can delete without `delete:packages`, so the check belongs in a
+          # five-second job at the front rather than anywhere later.
+          #
+          # Strictly X.Y.Z. No `v` prefix (the git tag adds one; the image tag
+          # must not have one), no pre-release suffix, no build metadata: this
+          # project has one release channel, and the alpha channel is CI's
+          # `.dev0+<sha>` images, which are produced by a different workflow
+          # and cannot be requested here.
+          #
+          # STRICTER THAN `^[0-9]+\.[0-9]+\.[0-9]+$` IN ONE RESPECT, on
+          # purpose: no leading zeroes. `01.0.0` matches that looser pattern
+          # and is a perfectly good git tag and image tag - but PEP 440
+          # NORMALISES it, so the wheel would come out as `kaicalc-1.0.0` while
+          # the images said `01.0.0`. The check that catches that lives in the
+          # `dist` job, which runs after the images have already been pushed;
+          # catching it here instead costs one character of regex.
+          if ! printf '%s' "$RAW_VERSION" | grep -Eq '^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'; then
+            echo "::error title=Malformed version::'${RAW_VERSION}' is not X.Y.Z. Give three dot-separated integers with no leading 'v', no pre-release suffix and no build metadata - for example 1.0.0. Nothing has been built, tagged or published."
+            exit 1
+          fi
+
+          TAG="v${RAW_VERSION}"
+
+          # Refuse to re-release. `gh release create` would fail on an existing
+          # tag anyway - but only after the images had been built and pushed,
+          # by which point `X.Y.Z` in the registry points at the new build and
+          # the release page still describes the old one. That is a worse state
+          # than either outcome on its own, so it is checked here.
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/${TAG}" >/dev/null 2>&1; then
+            echo "::error title=Tag already exists::${TAG} is already in this repository. A released version is immutable: release the next patch version instead, or - only if this one was never handed to anybody - delete the tag and its release first. Nothing has been built or published by this run."
+            exit 1
+          fi
+
+          echo "version=${RAW_VERSION}" >> "$GITHUB_OUTPUT"
+          echo "tag=${TAG}"             >> "$GITHUB_OUTPUT"
+          echo "releasing ${RAW_VERSION} as ${TAG}"
+
+  # ===========================================================================
+  # THE VERSION GOES INTO THE REPOSITORY, and everything after this builds from
+  # the commit that put it there.
+  # ===========================================================================
+  #
+  # WHY THIS JOB EXISTS. Overriding the version at build time only hides the
+  # divergence from the build: pyproject.toml would go on saying one thing
+  # while releases moved on, and anyone opening the file would learn something
+  # false. The repository is the source of truth, so the release writes to it.
+  #
+  # THE ORDERING IS THE WHOLE OF THIS JOB, and getting it wrong publishes a
+  # release whose tag and version disagree:
+  #
+  #   1. validate           - `prepare` above, so nothing happens on a typo;
+  #   2. bump, commit, push - here, and if it fails the release ABORTS;
+  #   3. tag THAT commit    - not the commit the run started from;
+  #   4. build from there   - every downstream job takes `ref: <this sha>`.
+  #
+  # Step 2 failing is a reason to stop, never a reason to carry on with the
+  # version overridden in the build alone - that would recreate exactly the
+  # divergence this exists to remove, while looking like it had been fixed. So
+  # the tag is only ever pushed after the branch push has succeeded.
+  #
+  # `contents: write` is scoped to this job. Nothing else in either workflow
+  # needs it.
+  bump:
+    name: Commit the version to the default branch
+    needs: prepare
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    outputs:
+      sha: ${{ steps.push.outputs.sha }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # THE DEFAULT BRANCH, not the ref this run was dispatched from. A
+          # release is cut from the branch of record; dispatching from
+          # somewhere else must not silently release that somewhere else.
+          ref: ${{ env.RELEASE_BRANCH }}
+          # The push below needs the token left in the local git config.
+          persist-credentials: true
+
+      - name: Refuse if there is no pyproject.toml to bump
+        # A clear stop rather than a FileNotFoundError out of the stamp action.
+        # This fires today, on purpose: the default branch does not yet carry
+        # the packaging work, so there is nothing here to bump and nothing to
+        # build. It stops being true when the packaging branch merges.
+        env:
+          BRANCH: ${{ env.RELEASE_BRANCH }}
+        run: |
+          set -eu
+          if [ ! -f pyproject.toml ]; then
+            echo "::error title=Nothing to bump::${BRANCH} has no pyproject.toml, so the version cannot be committed to it and the tree cannot be built. This release needs the packaging work to be on ${BRANCH} first. Nothing has been tagged or published."
+            exit 1
+          fi
+
+      - name: Write the version into pyproject.toml
+        # The same action the images and the wheel use, so there is one
+        # implementation of "what does this version look like in that file".
+        uses: ./.github/actions/stamp-version
+        with:
+          version: ${{ needs.prepare.outputs.version }}
+
+      - name: Commit, push, and only then tag
+        id: push
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          BRANCH: ${{ env.RELEASE_BRANCH }}
+        run: |
+          set -eu
+
+          # Attributed to whoever cut the release, in GitHub's canonical
+          # noreply form. A release is somebody's decision and the history
+          # should say whose.
+          # `:-0` because GITHUB_ACTOR_ID is not guaranteed on every runner
+          # image and `set -u` would abort on it - losing the release to a
+          # missing environment variable in the one job that must not fail
+          # half-way.
+          git config user.name  "${GITHUB_ACTOR}"
+          git config user.email "${GITHUB_ACTOR_ID:-0}+${GITHUB_ACTOR}@users.noreply.github.com"
+
+          if git diff --quiet -- pyproject.toml; then
+            # Already at this version. Not an error - a re-run after a failure
+            # downstream lands here - but it must not produce an empty commit,
+            # and the tag still has to be created against the existing head.
+            echo "pyproject.toml already says ${VERSION}; no bump commit needed"
+          else
+            git add pyproject.toml
+            git commit -m "Release ${VERSION}"
+          fi
+
+          SHA="$(git rev-parse HEAD)"
+
+          # THE PUSH THAT CAN FAIL, AND THE ONE THE RELEASE HANGS ON.
+          if ! git push origin "HEAD:${BRANCH}" 2>push.err; then
+            cat push.err
+            if grep -qiE 'protected branch|GH006|refusing to allow|required status check|pull request is required|review' push.err; then
+              echo "::error title=Branch protection refused the version bump::${BRANCH} is protected, so this workflow cannot commit the version to it. That is a reason to stop, not to work around - a release that skipped this step would publish images and a tag while pyproject.toml still said something else. Either allow this workflow to push to ${BRANCH}, or bump the version by hand on ${BRANCH} first and re-run this release. Nothing has been tagged or published."
+            elif grep -qiE 'non-fast-forward|fetch first|rejected' push.err; then
+              echo "::error title=${BRANCH} moved while this release was running::Somebody pushed to ${BRANCH} between this job checking it out and pushing to it. Nothing has been tagged or published. Re-run the release; it will bump on top of whatever landed."
+            else
+              echo "::error title=Could not push the version bump::git push to ${BRANCH} failed for the reason above. Nothing has been tagged or published."
+            fi
+            exit 1
+          fi
+          echo "pushed ${SHA} to ${BRANCH}"
+
+          # ONLY NOW THE TAG, and pointed at the commit that carries the
+          # version. Annotated rather than lightweight so the tag itself
+          # records who cut it and when.
+          if ! git tag -a "$TAG" -m "Release ${VERSION}" "$SHA" 2>tag.err \
+             || ! git push origin "$TAG" 2>>tag.err; then
+            cat tag.err
+            echo "::error title=Version bumped but not tagged::${SHA} is on ${BRANCH} carrying version ${VERSION}, but ${TAG} could not be created. NOTHING WAS PUBLISHED. Create the tag by hand against ${SHA} and re-run, or revert that commit on ${BRANCH}."
+            exit 1
+          fi
+
+          echo "sha=${SHA}" >> "$GITHUB_OUTPUT"
+          echo "tagged ${TAG} -> ${SHA}"
+
+      - name: Read the tag back off the remote
+        # ASK THE REMOTE WHAT IT ACTUALLY HAS. Everything above is what this
+        # job intended; this is what the tag a client will check out really
+        # contains. The invariant being proven is the one the whole change
+        # exists for: the tag points at a tree whose pyproject.toml carries
+        # the version the tag names.
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          SHA: ${{ steps.push.outputs.sha }}
+        run: |
+          set -euo pipefail
+          gh api "repos/${GITHUB_REPOSITORY}/contents/pyproject.toml?ref=${TAG}" \
+            --jq .content | base64 -d > remote-pyproject.toml
+
+          python3 - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          with open("remote-pyproject.toml", "rb") as fh:
+              got = tomllib.load(fh)["project"]["version"]
+
+          want = os.environ["VERSION"]
+          if got != want:
+              sys.exit(
+                  f"The tree at {os.environ['TAG']} says version {got!r}, but "
+                  f"this release is {want!r}. The tag and the version "
+                  "disagree; nothing further may be published against it."
+              )
+          print(f"verified on the remote: {os.environ['TAG']} -> "
+                f"{os.environ['SHA']}, pyproject.toml version {got}")
+          PY
+
+  # ===========================================================================
+  # The suite. The same one CI runs - a release cut from a red commit is
+  # exactly what sharing this costs nothing to prevent.
+  #
+  # Run against the BUMP COMMIT, like every job below it.
+  # ===========================================================================
+  test:
+    name: Suite
+    needs: [prepare, bump]
+    uses: ./.github/workflows/_test.yaml
+    with:
+      ref: ${{ needs.bump.outputs.sha }}
+
+  # ===========================================================================
+  # The images, per architecture, independent and mutually non-fatal.
+  # ===========================================================================
+  build:
+    name: Images
+    needs: [prepare, bump, test]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_build-images.yaml
+    with:
+      version: ${{ needs.prepare.outputs.version }}
+      arch_tag_prefix: ${{ needs.prepare.outputs.version }}
+      push: true
+      # The tagged tree, not the dispatch ref. Its pyproject.toml already
+      # carries this version, so the stamp step inside is a no-op here and the
+      # real mechanism only on CI's alpha path - one code path, asserted the
+      # same way at the end by asking the built image what it contains.
+      ref: ${{ needs.bump.outputs.sha }}
+
+  # ===========================================================================
+  # `X.Y.Z` and `latest`, assembled from whatever survived and read back.
+  # ===========================================================================
+  #
+  # `latest` moves on every release, including a release of an older version
+  # than the current one. That is a deliberate simplification and not an
+  # oversight: this project cuts releases by hand, a handful of times, and a
+  # "is this newer than the current latest?" comparison is more machinery than
+  # the situation earns. The notes tell deployers to pin the version tag.
+  manifest:
+    name: Semantic tags
+    needs: [prepare, bump, test, build]
+    # `always()` so a failed or never-scheduled arm64 leg does not skip this
+    # job - shipping whatever succeeded is the whole design. The tests must
+    # still have passed.
+    if: always() && needs.test.result == 'success'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_publish-manifest.yaml
+    with:
+      arch_tag_prefix: ${{ needs.prepare.outputs.version }}
+      tags: ${{ needs.prepare.outputs.version }} latest
+      heading: Release images for `${{ needs.prepare.outputs.version }}`
+
+  # ===========================================================================
+  # The wheel and the sdist, stamped to match.
+  # ===========================================================================
+  dist:
+    name: Wheel and sdist
+    needs: [prepare, bump, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          # The tagged tree. The wheel on the release page must be built from
+          # the commit the tag names, not from whatever the run was dispatched
+          # against.
+          ref: ${{ needs.bump.outputs.sha }}
+
+      - name: Assert the checked-out tree already carries the version
+        # THE INVARIANT OF THIS WHOLE CHANGE, checked where the artefact is
+        # actually built: the tag points at a tree whose pyproject.toml carries
+        # the version the tag names. The bump job proved it against the remote;
+        # this proves the thing in front of the build.
+        #
+        # If this ever fails, the stamp step below would quietly paper over it
+        # and produce a correctly-named wheel from a tree that says otherwise -
+        # which is the exact divergence committing the version was meant to end.
+        env:
+          WANT: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import sys
+          import tomllib
+
+          with open("pyproject.toml", "rb") as fh:
+              got = tomllib.load(fh)["project"]["version"]
+          want = os.environ["WANT"]
+          if got != want:
+              sys.exit(
+                  f"the tree being built says version {got!r}, but this "
+                  f"release is {want!r} - the bump commit is not what was "
+                  "checked out"
+              )
+          print(f"the tree being built already says version {got}")
+          PY
+
+      - uses: actions/setup-python@v6
+        with:
+          # The version the images run and the suite is tested on. The wheel is
+          # `py3-none-any`, so this does not change what is produced - it
+          # changes which interpreter's setuptools produced it, which is one
+          # fewer difference between this artefact and the one inside the
+          # images.
+          python-version: '3.11'
+
+      - name: Stamp the version into pyproject.toml
+        # The SAME action the image build uses. If these two stamped
+        # differently, the release page would offer a wheel whose version did
+        # not match the images published beside it, and nothing would raise.
+        uses: ./.github/actions/stamp-version
+        with:
+          version: ${{ needs.prepare.outputs.version }}
+
+      - name: Build
+        # `python -m build` produces both, and produces the sdist first and the
+        # wheel FROM the sdist - so a file missing from MANIFEST.in shows up
+        # here as a broken wheel rather than as a broken install six weeks
+        # later.
+        #
+        # NAMED AND NOT HIDDEN: build isolation fetches setuptools from PyPI
+        # unpinned, exactly as pip does inside the Dockerfiles. Wheel
+        # CONSTRUCTION is therefore still time-dependent even though the
+        # runtime dependency set is pinned by docker/constraints.txt. Carried
+        # forward from task 2's review; unchanged here.
+        run: |
+          set -euo pipefail
+          python -m pip install --upgrade pip build
+          python -m build --sdist --wheel --outdir dist/
+          ls -l dist/
+
+      - name: Assert the artefacts carry the released version
+        # ASK THE ARTEFACT. The stamp action re-parses pyproject.toml, which
+        # proves the source tree and not the output; this reads the version out
+        # of the built wheel's own metadata, which is the thing that gets
+        # attached to the release page.
+        env:
+          WANT: ${{ needs.prepare.outputs.version }}
+        run: |
+          set -euo pipefail
+          python - <<'PY'
+          import os
+          import pathlib
+          import sys
+          import zipfile
+          from email.parser import BytesParser
+
+          want = os.environ["WANT"]
+          dist = pathlib.Path("dist")
+
+          wheels = sorted(dist.glob("*.whl"))
+          sdists = sorted(dist.glob("*.tar.gz"))
+          if len(wheels) != 1 or len(sdists) != 1:
+              sys.exit(f"expected one wheel and one sdist, got {wheels} {sdists}")
+
+          # Out of the wheel's METADATA, not out of its filename: a filename is
+          # a naming convention and METADATA is what pip installs and what
+          # `pip show kaicalc` later reports.
+          with zipfile.ZipFile(wheels[0]) as zf:
+              name = next(n for n in zf.namelist()
+                          if n.endswith(".dist-info/METADATA"))
+              meta = BytesParser().parsebytes(zf.read(name))
+          got = meta["Version"]
+
+          if got != want:
+              sys.exit(f"wheel METADATA says Version: {got}, expected {want}")
+          if wheels[0].name != f"kaicalc-{want}-py3-none-any.whl":
+              sys.exit(f"unexpected wheel filename {wheels[0].name}")
+          if sdists[0].name != f"kaicalc-{want}.tar.gz":
+              sys.exit(f"unexpected sdist filename {sdists[0].name}")
+
+          print(f"verified {wheels[0].name} and {sdists[0].name} at version {got}")
+          PY
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          retention-days: 7
+          if-no-files-found: error
+
+  # ===========================================================================
+  # The release itself: the tag, the notes, the two files.
+  # ===========================================================================
+  publish:
+    name: GitHub Release
+    needs: [prepare, bump, manifest, dist]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      # The tag already exists - the bump job created it. This is only the
+      # Release object and its two attachments.
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ needs.bump.outputs.sha }}
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist
+
+      - name: Render the release notes
+        # The notes are the deliverable the client actually reads, so they are
+        # prose in .github/release-notes-template.md rather than a heredoc
+        # here. The only thing this step does is substitute; if a placeholder
+        # is left unfilled it fails, because a release page reading
+        # `__VERSION__` is worse than no release.
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+          PUBLISHED: ${{ needs.manifest.outputs.published }}
+          MISSING: ${{ needs.manifest.outputs.missing_arches }}
+          # The bump commit - the one the tag points at and the images were
+          # built from. `GITHUB_SHA` here is the commit the run was dispatched
+          # against, which is now a different thing and would put a commit on
+          # the release page that nothing was built from.
+          RELEASE_SHA: ${{ needs.bump.outputs.sha }}
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          import os
+          import pathlib
+          import re
+          import sys
+
+          version = os.environ["VERSION"]
+          published = os.environ.get("PUBLISHED", "").strip()
+          missing = os.environ.get("MISSING", "").strip()
+
+          # WHAT THE TAG ACTUALLY HOLDS, read out of the registry by the
+          # manifest job and passed through here. Not "amd64 and arm64"
+          # written as a constant: on a run where one architecture did not
+          # build, a constant would be the release page telling a client the
+          # image supports a platform it will refuse to run on.
+          if not published:
+              arch_line = "the architectures listed in the run summary"
+          elif missing:
+              arch_line = (
+                  f"**{published} only** - {missing} did not build for this "
+                  "release, and `docker pull` on that architecture will fail "
+                  "with `no matching manifest`"
+              )
+          else:
+              arch_line = published
+
+          text = pathlib.Path(".github/release-notes-template.md").read_text(
+              encoding="utf-8")
+          for key, value in {
+              "__VERSION__": version,
+              "__TAG__": os.environ["TAG"],
+              "__COMMIT__": os.environ["RELEASE_SHA"],
+              "__IMAGE_PREFIX__": os.environ["IMAGE_PREFIX"],
+              "__ARCH_LINE__": arch_line,
+          }.items():
+              text = text.replace(key, value)
+
+          # The HTML comment at the top of the template is a note to whoever
+          # edits it, not to whoever reads the release.
+          text = re.sub(r"^<!--.*?-->\s*", "", text, flags=re.S)
+
+          left = re.findall(r"__[A-Z_]+__", text)
+          if left:
+              sys.exit(
+                  f"unsubstituted placeholders in the release notes: "
+                  f"{sorted(set(left))}"
+              )
+
+          pathlib.Path("release-notes.md").write_text(text, encoding="utf-8")
+          print(text)
+          PY
+
+      - name: Create the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+        run: |
+          set -euo pipefail
+          # NO `--target`. The tag already exists - the bump job created it,
+          # annotated, against the commit that carries this version - and
+          # `gh release create` builds the Release on top of an existing tag.
+          # Passing a target here would be either ignored or an invitation to
+          # point the release at a different commit than the tag does.
+          gh release create "$TAG" \
+            --title "Kai Commitment Food Waste Impact Calculator $VERSION" \
+            --notes-file release-notes.md \
+            --latest \
+            dist/*.whl dist/*.tar.gz
+          echo "released: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG}"
+
+      - name: Summarise
+        env:
+          VERSION: ${{ needs.prepare.outputs.version }}
+          TAG: ${{ needs.prepare.outputs.tag }}
+          MISSING: ${{ needs.manifest.outputs.missing_arches }}
+          PUBLISHED: ${{ needs.manifest.outputs.published }}
+          RELEASE_SHA: ${{ needs.bump.outputs.sha }}
+          BRANCH: ${{ env.RELEASE_BRANCH }}
+        run: |
+          {
+            echo "## Released \`${VERSION}\`"
+            echo
+            echo "* Tag: [\`${TAG}\`](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/releases/tag/${TAG})"
+            echo "* Version commit on \`${BRANCH}\`: \`${RELEASE_SHA}\`"
+            echo "* Images: \`${VERSION}\` and \`latest\`, holding ${PUBLISHED:-(see the manifest job)}"
+            if [ -n "${MISSING}" ]; then
+              echo "* **Incomplete:** \`${MISSING}\` is not in these tags. The release notes say so on the page itself."
+            fi
+            echo "* Attached: \`kaicalc-${VERSION}-py3-none-any.whl\`, \`kaicalc-${VERSION}.tar.gz\`"
+          } >> "$GITHUB_STEP_SUMMARY"

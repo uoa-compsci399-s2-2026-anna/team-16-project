@@ -209,7 +209,17 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m admin.cli")
+    # Both spellings reach this parser: `kaicalc-admin <command>` from an
+    # installed package (pyproject.toml's [project.scripts]) and
+    # `python -m admin.cli <command>` from a checkout. argparse's own default
+    # for prog would print "cli.py", which is neither, so name the one an
+    # operator is most likely to have - the console script, which is what
+    # `docker exec` uses - and note the other alongside it.
+    parser = argparse.ArgumentParser(
+        prog="kaicalc-admin",
+        epilog="Without the package installed, run the same commands as "
+        "`python -m admin.cli <command>` from a checkout.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     create = sub.add_parser("create-staff", help="Create a staff account")

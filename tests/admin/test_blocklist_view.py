@@ -318,6 +318,26 @@ async def test_the_ip_hmac_itself_never_appears_anywhere(
     assert fingerprint not in export_response.text
 
 
+async def test_the_block_form_warns_that_a_blank_duration_wipes_an_expiry(
+    admin_client,
+):
+    """The copy half of the test below, and the counterpart to
+    tests/admin/test_field_help.py for a field that test cannot reach.
+
+    `IpBlockAdmin` sets can_create, can_edit and can_delete all False, so
+    sqladmin scaffolds no form for it and the coverage test walks nothing
+    here - yet this is the panel's most consequential three-field form, and
+    the duration is the field whose blank value is least likely to be
+    intended. The test below proves the wipe happens; nothing proved a staff
+    member was told it would, and behaviour that surprising with no warning
+    beside it is a defect whether or not the behaviour itself is correct.
+    """
+    body = (await admin_client.get("/admin/ip-block/block")).text
+
+    assert "Blank means permanent" in body
+    assert "removes any expiry the earlier block had" in body
+
+
 async def test_a_re_block_with_no_duration_wipes_an_existing_expiry(
     admin_client, session, settings
 ):

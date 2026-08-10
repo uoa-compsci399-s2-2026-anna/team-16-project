@@ -15,6 +15,12 @@
         <option value="{{ fs.version_label }}">{{ fs.version_label }} — {{ fs.status.value }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Which version's numbers to calculate against. Leave it on
+      <em>Published</em> to see what the public sees right now; pick a draft
+      to check an edit before publishing it. This is the only way to run a
+      draft's numbers without making them live.
+    </p>
 
     <label for="sector">Sector</label>
     <select id="sector" name="sector" required>
@@ -30,12 +36,22 @@
         <option value="{{ category.code }}">{{ category.name }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Leaving this on the standard mix is what a visitor who does not know
+      their composition gets, and so the case most worth checking.
+    </p>
 
     <label for="gwp_horizon">Methane horizon</label>
     <select id="gwp_horizon" name="gwp_horizon">
       <option value="100" selected>100 years</option>
       <option value="20">20 years</option>
     </select>
+    <p class="muted">
+      Which methane constant the formulas are given. The 20-year value weights
+      methane several times more heavily, so the same numbers produce a
+      different greenhouse-gas figure on each — a formula worth checking is
+      worth checking on both.
+    </p>
 
     <label for="destination">Destination</label>
     <select id="destination" name="destination" required>
@@ -46,6 +62,11 @@
 
     <label for="qty_kg">Quantity (kg)</label>
     <input type="text" id="qty_kg" name="qty_kg" required value="1000.000">
+    <p class="muted">
+      Three decimal places at most, the same limit the public calculator
+      accepts. A round thousand makes a per-kilogram factor easy to read
+      straight off the result.
+    </p>
 
     <button type="submit">Run</button>
   </form>

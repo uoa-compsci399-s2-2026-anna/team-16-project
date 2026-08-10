@@ -107,6 +107,34 @@ async def test_the_form_is_reachable_by_staff(admin_client):
     assert response.status_code == 200
 
 
+async def test_every_choice_on_the_form_explains_itself(admin_client):
+    """The counterpart to tests/admin/test_field_help.py, for the fields that
+    test cannot reach.
+
+    ``DryRunView`` is a ``BaseView`` with a hand-written template, not a
+    ``ModelView``, so no scaffolded form and no ``form_args`` exist for the
+    coverage test to walk - and this is the screen a staff member tuning a
+    formula spends the most time on. Four of its six controls change the
+    answer silently when chosen wrongly: the factor set decides whether a
+    draft or the live numbers are being exercised at all, a blank food
+    category means the standard mix rather than nothing, the horizon changes
+    every greenhouse-gas figure, and the quantity has a precision limit
+    inherited from the public API.
+
+    Asserted on the distinguishing phrase rather than the whole paragraph, so
+    rewording the copy does not fail this while deleting it does.
+    """
+    body = (await admin_client.get("/admin/try")).text
+
+    for phrase in (
+        "without making them live",          # factor set
+        "the case most worth checking",      # food category
+        "several times more heavily",        # methane horizon
+        "Three decimal places at most",      # quantity
+    ):
+        assert phrase in body, f"the dry-run form no longer explains: {phrase}"
+
+
 async def test_it_is_not_reachable_without_a_session(client):
     response = await client.get("/admin/try")
 

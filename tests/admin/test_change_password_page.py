@@ -33,6 +33,30 @@ SECRET_KEY = "test-secret-key-not-used-anywhere-real"
 # private copy would leak an engine per test.
 
 
+def _remove_account(admin_app, username):
+    """Delete the account **and every audit entry it caused**.
+
+    The audit half is not tidiness. These tests commit to the one shared
+    `kaicalc_test` database, and tests/admin/test_modelviews.py and
+    test_taxonomy_rules.py both assert over the whole of `audit_log` - one of
+    them that it is empty. A row left behind here fails those files, and only
+    when the whole directory runs, which is exactly the failure
+    tests/admin/conftest.py's `_cleanup_staff` docstring records having chased
+    once already. It became reachable from this file the moment
+    ChangePasswordView started auditing its own change.
+
+    Keyed on the actor, for the reason that docstring gives: an entry
+    describing a deleted row cannot be found by looking for the row.
+    """
+    from sqlalchemy import text
+
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        db.execute(text("DELETE FROM audit_log WHERE actor = :u"), {"u": username})
+        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
+        db.commit()
+
+
 @pytest.fixture
 def not_onboarded(admin_app):
     """A freshly created account that has never changed its password.
@@ -50,12 +74,7 @@ def not_onboarded(admin_app):
         _, password = create_staff(db, username=username, display_name="Test User")
         db.commit()
     yield username, password
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    _remove_account(admin_app, username)
 
 
 @pytest.fixture
@@ -92,12 +111,7 @@ def enrolled_but_owes_password_change(admin_app):
         )
         db.commit()
     yield username, password, secret, codes
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    _remove_account(admin_app, username)
 
 
 @pytest.fixture
@@ -129,12 +143,7 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    _remove_account(admin_app, username)
 
 
 async def _login_password_step(client, username, password):

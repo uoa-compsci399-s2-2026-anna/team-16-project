@@ -97,6 +97,18 @@ def clean_bootstrap_slate(admin_app):
 
     def _delete():
         with factory() as db:
+            # The audit entries first, and keyed on the actor. These walks
+            # drive the real change-password page, which records its change
+            # now that an actor is identified there, and audit_log has no
+            # foreign key to staff - so deleting the account alone leaves the
+            # entry behind in the one shared test database. That poisons
+            # test_modelviews.py and test_taxonomy_rules.py, which assert
+            # over the whole table, and only when the directory runs as a
+            # whole. See tests/admin/conftest.py::_cleanup_staff.
+            db.execute(
+                text("DELETE FROM audit_log WHERE actor IN (:a, :b)"),
+                {"a": BOOTSTRAP_USERNAMES[0], "b": BOOTSTRAP_USERNAMES[1]},
+            )
             db.execute(
                 text("DELETE FROM staff WHERE username IN (:a, :b)"),
                 {"a": BOOTSTRAP_USERNAMES[0], "b": BOOTSTRAP_USERNAMES[1]},
@@ -127,6 +139,8 @@ def owes_enrolment(admin_app):
         db.commit()
     yield username, "a-long-enough-password"
     with factory() as db:
+        # The audit entries too, keyed on the actor - see the fixture above.
+        db.execute(text("DELETE FROM audit_log WHERE actor = :u"), {"u": username})
         db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
         db.commit()
 
@@ -160,6 +174,8 @@ def onboarded(admin_app):
         db.commit()
     yield username, "a-long-enough-password", secret, codes
     with factory() as db:
+        # The audit entries too, keyed on the actor - see the fixture above.
+        db.execute(text("DELETE FROM audit_log WHERE actor = :u"), {"u": username})
         db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
         db.commit()
 
@@ -456,6 +472,9 @@ async def test_walk4_a_half_onboarded_account_cannot_reach_any_panel_url_by_typi
         assert change_password.status_code == 200
     finally:
         with factory() as db:
+            db.execute(
+                text("DELETE FROM audit_log WHERE actor = :u"), {"u": username}
+            )
             db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
             db.commit()
 

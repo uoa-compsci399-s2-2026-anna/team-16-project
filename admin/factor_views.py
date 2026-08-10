@@ -251,18 +251,21 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
             "downstream factor, an upstream row always belongs to exactly "
             "one category."
         )},
+        # Trimmed to the field when brand/guidance/prevention_zero.html
+        # arrived: what a general row left without its 'prevention'
+        # counterpart costs, and the refusal at publish time, are a sequence
+        # rather than a field, and they are now stated in full on this
+        # screen's own guidance block - which the list page also carries,
+        # where no field description is rendered at all.
         "destination": {
             "description": (
                 "Leave blank unless this factor is specific to one destination "
                 "— blank means it applies to every destination, and that is "
                 "the normal case: producing a kilogram of dairy costs what it "
-                "costs whatever later becomes of it. The one row that "
-                "overrides a general one is 'prevention' at zero, because "
-                "food that was never wasted was never produced. A general row "
-                "left without its 'prevention' counterpart makes the "
-                "calculator understate the benefit of preventing waste by "
-                "most of its value, so publishing the set is refused until "
-                "every general row has one."
+                "costs whatever later becomes of it. The one exception is "
+                "'prevention', which needs a row of its own at zero for every "
+                "combination that has a general row; publishing is refused "
+                "while any is missing."
             ),
         },
         "metric": {"description": (
@@ -678,20 +681,23 @@ class FormulaAdmin(AuditedModelView, model=Formula):
             "per factor set — a metric with no formula in the published set "
             "produces no figure."
         )},
+        # Trimmed to the field when brand/guidance/writing_a_formula.html
+        # arrived. The variable list, the functions and the reason there is
+        # no sum() were all in here, and the block above this form says the
+        # same things at more length and with the source of each value - so
+        # the page was reading them twice, three inches apart. Referred to by
+        # its heading rather than by "above", which stays true wherever the
+        # block is placed; tests/admin/test_guidance.py holds it to this
+        # screen's create, edit and list routes.
         "expression": {"description": (
-            "This is worked out once for every line a visitor enters, and "
-            "the calculator adds the results together — so write the "
-            "contribution of one line, never a total. That is why there is "
-            "no sum(). Available on each line: qty_kg (kilograms on that "
-            "line), upstream and downstream (the per-kilogram factors "
-            "resolved for that line; downstream may be negative), and any "
-            "constant in this set written as const_ followed by its code, "
-            "plus const_GWP_CH4, which resolves to the 20- or 100-year value "
-            "according to what the visitor chose. min, max, abs and round "
-            "may be called; nothing else can. The usual expression is "
+            "The expression that computes this metric, worked out once for "
+            "every line a visitor enters — so write the contribution of one "
+            "line, never a total. The usual expression is "
             "qty_kg * (upstream + downstream). It is checked when you save, "
             "so a formula the calculator could not run is refused here "
-            "rather than becoming a server error in front of the public."
+            "rather than becoming a server error in front of the public. See "
+            "'Writing a formula' on this screen for the values available to "
+            "it and what is refused."
         )},
         "notes": {"description": (
             "What this expression is doing and why, for whoever opens it "

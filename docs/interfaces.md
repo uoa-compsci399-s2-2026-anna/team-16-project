@@ -2311,6 +2311,31 @@ Both matter, and neither substitutes for the other. The shape check proves the A
 
 > **`_assert_shape` compares types, not text.** A string is a string. Anything whose correctness lives in the *content* of a string — §3 rule 5's `label` format is the case that has already bitten — is invisible to it and needs an assertion in `test_fixture_consistency.py` or a rule in this document. Preferably both.
 
+> **As of v1.2 this section describes an intention, not a directory. `tests/fixtures/` does not exist on any branch a reader of this document is likely to be standing on** — not on `main`, not on `admin_panel` (which owns this document), not on `docs/contract-v1.0`. **Two sets exist, on two unmerged branches, and they disagree with each other and with this contract:**
+>
+> | Branch | Files | Shape |
+> | --- | --- | --- |
+> | `origin/database` (B) | 12 | Flat, pre-v1.0: top-level `sector` / `food_category` / `current`. Carries `factor_source`. `details[].field` is Pydantic's dotted `current.0.qty_kg` |
+> | `origin/Demo-UI` (C) | 10 | Flat, pre-v1.0. **No `factor_source`.** `details[].field` is the bracket form `current[0].qty_kg` |
+>
+> Neither matches §6.2, and a fixture that disagrees with the contract does not fail — it produces code bound to fields the API will never send. The `field` disagreement is the sharpest example: v1.0 §9 ratified C's bracket form and extended it to `entries[0].current[1].qty_kg`, so **B's fixture is the one that must change**, and until it does her handlers and C's lookup keys will never bind to each other.
+>
+> **The canonical set lands once, in the v1.2 shape, with the B integration PR.** Not twice and not in parallel: two people writing fixtures from one contract produce two sets that differ wherever the contract is silent, which is exactly where a fixture is load-bearing. B owns §6 and therefore owns the shape. **Start from B's twelve, not C's ten** — hers is the superset, it already has `factor_source` and the two files C lacks, and it is the set her contract tests assert against. C's `taxonomy.json` is by far the better *content* (six sectors with real descriptions, ten NZ-appropriate food categories, nine MfE destinations) and should fill it.
+>
+> What each file needs:
+>
+> | File | State |
+> | --- | --- |
+> | `calculate_request.json`, `calculate_response.json` | On both branches, both flat. Rewrite to `entries[]` and `totals` + `entries[]`, and make the pair **correspond** — B's currently do not, and hers is not mass-conserving either, which §6.2's new validation rule now rejects outright |
+> | `calculate_response_single.json` | **On `origin/database` only.** Reshape; also `"total_kg": "1"` breaks the 3-decimal rule her own validator enforces |
+> | `errors/unauthorized.json` | **On `origin/database` only.** Shape-correct; carry it across |
+> | `errors/blocked.json` | **Absent from every branch — the only genuinely missing file.** `BLOCKED` was added in v0.13 and has never had a fixture. It is the one error whose `details` is `null` rather than `[]` (§9.2), and every existing error fixture on both branches uses `[]`; a set that makes `[]` universal is how that requirement gets implemented away |
+> | `errors/validation_error.json` | On both, in **two different `field` formats**. §9's bracket path is the ratified one |
+> | `errors/{unknown_code,rate_limited,formula_error,no_published_factor_set}.json` | On both, shape-correct under §9 |
+> | `taxonomy.json` | On both. Must contain a `prevention` destination and at least one destination in the `reuse` group — without them the mass-conserving offset and the entire non-waste half of the MfE taxonomy, which is the client's headline story, cannot be demonstrated at all |
+> | `stats.json` | On both, both effectively empty. Must contain a suppressed `other` bucket: §6.4's copy constraint is the thing D has to write against and there is nothing to write against without one |
+> | `factors.json` | On both. Must not be all-empty arrays, or the methodology page renders "No published formulas were returned" in every demo |
+
 ## 10.1 Golden Test Suite (owner: A)
 
 Under `tests/golden/`, three files per case:

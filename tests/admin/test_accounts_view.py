@@ -610,21 +610,39 @@ async def test_an_administrator_cannot_weaken_their_own_row_through_the_edit_for
     assert staff.is_active is True
 
 
-async def test_the_generic_delete_route_is_closed(admin_client, db_session):
-    """sqladmin registers DELETE /{identity}/delete with a `pks` query
-    parameter, separately from the actions above and from the edit form.
-    `can_delete = False` refuses it; asserted here because deleting your own
-    row is the third way an account could act on itself, and it is reached by
-    neither of the two routes the tests above cover.
+async def test_every_other_generic_write_route_is_closed(admin_client, db_session):
+    """The edit form is not the only route sqladmin generates that writes.
+
+    `Admin.init` (sqladmin/application.py) registers `create`, `delete` and -
+    new in 0.30 - `import`, a CSV upload that runs rows through the same form
+    machinery as `create`. Each is refused here, by `can_create = False`,
+    `can_delete = False` and sqladmin's own `can_import = False` default
+    respectively.
+
+    The import route in particular is guarded by a library default this view
+    never mentions, which is precisely the kind of thing that changes under
+    you on an upgrade: a CSV of `staff` rows would set `role` and `is_active`
+    through `Query.update`, the same path the edit-form test below shows
+    walks straight past `_guard_admin_floor`. Pinned as behaviour rather than
+    left resting on a default nobody chose.
     """
     me = admin_client.staff
 
-    response = await admin_client.request(
+    delete = await admin_client.request(
         "DELETE", "/admin/staff/delete", params={"pks": me.id}
     )
+    create = await admin_client.get("/admin/staff/create")
+    upload = await admin_client.post(
+        "/admin/staff/import",
+        files={"file": ("staff.csv", b"username,role\nmine,admin\n", "text/csv")},
+    )
 
-    assert response.status_code == 403
-    assert get_staff(db_session, me.username).is_active is True
+    assert delete.status_code == 403
+    assert create.status_code == 403
+    assert upload.status_code == 403
+    staff = get_staff(db_session, me.username)
+    assert staff.is_active is True
+    assert staff.role is StaffRole.admin
 
 
 async def test_the_generic_edit_form_cannot_bypass_the_admin_floor(

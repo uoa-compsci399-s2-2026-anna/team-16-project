@@ -702,7 +702,8 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
         label="Issue a new password",
         confirmation_message=(
             "This replaces the account's password and ends its live sessions. "
-            "The new password is shown once — have the person with you."
+            "Any password the account is waiting to collect is replaced too, "
+            "including one you have already read out."
         ),
     )
     async def issue_password_action(self, request):

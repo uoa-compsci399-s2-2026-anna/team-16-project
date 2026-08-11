@@ -58,6 +58,10 @@ echo
 # Single-quoted: a backtick inside a double-quoted string is command
 # substitution, and `docker compose logs migrate` inside the container printed
 # "docker: not found" in the middle of the sentence.
-echo 'Database ready. The administrator passwords above are shown ONCE and'
-echo 'cannot be recovered - `docker compose logs migrate` will still have'
-echo 'them until the container is removed.'
+echo 'Database ready. The administrator passwords above are printed here and'
+echo 'nowhere else - `docker compose logs migrate` will still have them until'
+echo 'the container is removed.'
+echo 'They are also kept encrypted until each account sets a password of its'
+echo 'own, so one lost line can be read back by the OTHER administrator from'
+echo '/admin/staff. Losing both means nobody can log in: run'
+echo '`kaicalc-admin issue-password admin` on this container.'

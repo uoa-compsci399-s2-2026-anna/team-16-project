@@ -130,7 +130,7 @@ class UnknownDeviceError(RuntimeError):
 
 
 def generate_initial_password() -> str:
-    """Generate a one-time initial password.
+    """Generate a random password for somebody to be handed.
 
     ``secrets``, never ``random``: the latter is a Mersenne Twister seeded
     predictably enough that its output is recoverable.
@@ -286,7 +286,7 @@ def create_staff(
     actor: str,
     secret_key: str,
 ) -> tuple[Staff, str]:
-    """Create an account and return it with its one-time initial password.
+    """Create an account and return it with its first password.
 
     Contract §8.3 forbids self-service registration, so this is the only way
     an account comes into existence — ``admin/cli.py``'s ``create-staff``,

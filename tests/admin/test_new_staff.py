@@ -537,7 +537,11 @@ async def test_the_dialog_action_row_is_not_part_of_the_dialogs_scrolled_content
         "submitted. .dialog__actions must be pinned out of that scroll:\n"
         + declarations
     )
-    assert re.search(r"bottom:\s*-?[0-9.]+", declarations), (
+    # Anchored to the start of a declaration. Unanchored, this matched the
+    # `-1.5rem` of `margin-bottom` and passed against a rule carrying no inset
+    # at all — a sticky box with no inset never pins to anything, so that
+    # spelling of the test reported the button reachable while it was not.
+    assert re.search(r"(?m)^\s*bottom:\s*-?[0-9.]+", declarations), (
         "position: sticky does nothing without an inset; the action row needs "
         "a `bottom` to pin against:\n" + declarations
     )

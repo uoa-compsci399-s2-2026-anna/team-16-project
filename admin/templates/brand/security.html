@@ -46,6 +46,9 @@
       <button type="button" id="add-authenticator" class="button"
               data-dialog="dialog-add" aria-haspopup="dialog"
               aria-controls="dialog-add">Add authenticator</button>
+      <button type="button" id="rename-authenticator" class="button"
+              data-dialog="dialog-rename" aria-haspopup="dialog"
+              aria-controls="dialog-rename">Rename authenticator</button>
       <button type="button" id="remove-authenticator" class="button button--danger"
               data-dialog="dialog-remove" aria-haspopup="dialog"
               aria-controls="dialog-remove">Remove authenticator</button>
@@ -90,7 +93,14 @@
                 {%- if device.enrolled -%}
                   In use since {{ device.enrolled_at.strftime('%d %b %Y') }}
                 {%- else -%}
-                  Set-up not finished
+                  {# Reachable only on the response that is *showing* the QR
+                     code: an unconfirmed row is discarded the moment this page
+                     is loaded again, because the code and the QR are shown
+                     once and it can never be picked up. It is therefore
+                     "being set up right now", not a state anything is left
+                     sitting in. The previous wording, "Set-up not finished",
+                     described a row that only a manual Remove could clear. #}
+                  Being set up now
                 {%- endif -%}
               </td>
             </tr>
@@ -101,6 +111,13 @@
     <p class="muted">
       Times are UTC, and “last used” is taken from the code each device last
       had accepted, so it is accurate to the nearest half minute.
+    </p>
+    <p class="muted">
+      Names are yours to change — use <strong>Rename authenticator</strong>
+      whenever one stops being recognisable. The name is a note on this list:
+      your authenticator app keeps the name it was given when you scanned the
+      code, so match them up by the number, the date added and when each was
+      last used.
     </p>
   </section>
 
@@ -176,6 +193,77 @@
           <button type="submit" class="button">Add authenticator</button>
         </div>
       </form>
+    {% endif %}
+  </dialog>
+
+  <!-- Rename an authenticator ----------------------------------------------->
+  {# Every device is renameable, confirmed or not - a name is a note on the
+     row, and there is no state in which correcting one is unsafe. That is why
+     this loop runs over `devices` and the Remove dialog's runs over a filtered
+     list. #}
+  <dialog id="dialog-rename" class="dialog" aria-labelledby="dialog-rename-title"
+          data-return-focus="rename-authenticator"
+          {% if open_dialog == 'rename' %}open{% endif %}>
+    <h2 id="dialog-rename-title">Rename an authenticator</h2>
+    {% if open_dialog == 'rename' and error %}
+      <div class="notice notice--error" role="alert">{{ error }}</div>
+    {% endif %}
+
+    {% if devices %}
+      <p class="muted">
+        This changes the name on this page. It does not change what your
+        authenticator app shows — that name was fixed when you scanned the
+        code and cannot be changed from here.
+      </p>
+      <form method="post" autocomplete="off">
+        <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+        <input type="hidden" name="action" value="rename-device">
+
+        {# Numbered from `device.number`, the same value the table renders, so
+           the two read together. #}
+        <fieldset class="choose">
+          <legend>Which one</legend>
+          {% for device in devices %}
+            <label class="choose__option" for="rename-{{ device.id }}">
+              <input type="radio" id="rename-{{ device.id }}" name="device_id"
+                     value="{{ device.id }}"
+                     {% if loop.first %}data-initial-focus{% endif %} required>
+              <span>{{ device.number }} — {{ device.name }}</span>
+            </label>
+          {% endfor %}
+        </fieldset>
+
+        <label for="rename-name">New name</label>
+        <input type="text" id="rename-name" name="device_name"
+               placeholder="Work phone" maxlength="{{ max_device_name_length }}"
+               aria-describedby="rename-name-help" required>
+        <p class="muted" id="rename-name-help">
+          At most {{ max_device_name_length }} characters, and not a name
+          already used by another authenticator on this account.
+        </p>
+
+        {# Same two proofs, same order, as adding and removing one. Renaming is
+           how a stolen session would get you to remove the wrong device. #}
+        <fieldset class="proof">
+          <legend>Confirm it is you</legend>
+          <label for="rename-code">Code from an authenticator on this account</label>
+          <input type="text" id="rename-code" name="current_code"
+                 autocomplete="one-time-code" inputmode="numeric">
+          <label for="rename-pw">…or your current password</label>
+          <input type="password" id="rename-pw" name="current_password"
+                 autocomplete="current-password">
+        </fieldset>
+
+        <div class="dialog__actions">
+          <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+          <button type="submit" class="button">Rename authenticator</button>
+        </div>
+      </form>
+    {% else %}
+      <p>There are no authenticators on this account to rename.</p>
+      <div class="dialog__actions">
+        <button type="button" class="button" data-close-dialog>Close</button>
+      </div>
     {% endif %}
   </dialog>
 

@@ -581,10 +581,18 @@ async def test_a_selection_containing_the_actor_refuses_the_whole_batch(
     assert colleague.session_generation == enrolled_staff.session_generation
 
 
-async def test_the_screen_offers_no_fourth_action(admin_client):
-    """Three actions, all accounted for: issue-password and reset-mfa are
-    guarded against self-application by admin.accounts, deactivate by the
-    two-administrator floor in the same module.
+async def test_the_screen_offers_no_unaccounted_action(admin_client):
+    """Five actions, all accounted for.
+
+    ``issue-password``, ``reset-mfa`` and ``delete`` are guarded against
+    self-application by ``admin.accounts``; ``deactivate`` and ``delete`` by
+    the two-administrator floor in the same module; ``delete`` additionally
+    requires the account to be deactivated already and re-proves the actor
+    before it runs. ``reactivate`` is the only one that guards nothing, and it
+    is the only one that takes nothing away — it restores an account to the
+    credentials it already had. That asymmetry is the point of listing them
+    here: an action that removes access and carries no guard is what this
+    assertion exists to catch.
 
     Walks the MRO's own ``__dict__`` rather than ``inspect.getmembers`` so an
     action added to a *base* class is caught too - `AuditedModelView` is
@@ -600,7 +608,9 @@ async def test_the_screen_offers_no_fourth_action(admin_client):
         if hasattr(member, "_slug")
     }
 
-    assert slugs == {"issue-password", "reset-mfa", "deactivate"}
+    assert slugs == {
+        "issue-password", "reset-mfa", "deactivate", "reactivate", "delete",
+    }
 
 
 async def test_an_administrator_cannot_weaken_their_own_row_through_the_edit_form(

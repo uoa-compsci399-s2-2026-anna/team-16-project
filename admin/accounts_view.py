@@ -61,6 +61,7 @@ from sqladmin.filters import OperationColumnFilter
 from admin.accounts import (
     MAX_DISPLAY_NAME_LENGTH,
     MAX_USERNAME_LENGTH,
+    AccountStillActiveError,
     DuplicateUsernameError,
     InvalidDisplayNameError,
     InvalidUsernameError,
@@ -69,8 +70,10 @@ from admin.accounts import (
     UnknownStaffError,
     create_staff,
     deactivate_staff,
+    delete_staff,
     get_staff,
     issue_password,
+    reactivate_staff,
     reset_mfa,
 )
 from admin.audit import write_audit
@@ -525,6 +528,233 @@ class StaffAdmin(AuditedModelView, model=Staff):
                 )
             session.commit()
         return RedirectResponse(self._list_url(request), status_code=302)
+
+    # --- removing an account ------------------------------------------------
+
+    @action(
+        name="reactivate",
+        label="Reactivate",
+        confirmation_message=(
+            "This lets the account log in again. Its password and "
+            "authenticator are unchanged."
+        ),
+    )
+    async def reactivate_action(self, request):
+        """Undo a deactivation.
+
+        **Here because ``delete`` requires deactivation first.** A mandatory
+        step that cannot be undone is a trap: deactivating the wrong account
+        would leave the two exits "leave it in the list for ever" and "delete
+        it", and deleting was the capability the panel did not have at all.
+
+        No re-authentication, and the line this sits on is
+        ``deactivate_action``'s rather than ``new_staff``'s: it mints nothing
+        and reveals nothing. Creating an account and issuing a password hand
+        out a working credential and ask for proof on top of the session for
+        that reason; this restores an account to whatever credentials it
+        already had, which nobody learns by pressing it.
+
+        No floor guard either — reactivation only ever *adds* an active
+        account, so every count the floor protects moves upward. See
+        ``admin/accounts.py::reactivate_staff``.
+        """
+        self._require_admin(request)
+        pks = request.query_params.get("pks", "").split(",")
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            for pk in filter(None, pks):
+                staff = session.get(Staff, int(pk))
+                if staff is None:
+                    continue
+                if staff.is_active:
+                    # Already active. Skipped rather than refused: a bulk
+                    # selection that happens to include one is a slip, not an
+                    # error, and an audit entry claiming a change that did not
+                    # happen is worse than no entry.
+                    continue
+                reactivate_staff(session, staff.username)
+                write_audit(
+                    session, actor=actor, action="update", table_name="staff",
+                    row_id=staff.id, before={"is_active": False},
+                    after={"is_active": True},
+                )
+            session.commit()
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    @action(name="delete", label="Delete permanently")
+    async def delete_action(self, request):
+        """Hand the selection to the confirmation page below.
+
+        **This action performs nothing.** sqladmin registers an ``@action``
+        with ``methods=["GET"]`` only, and deletion has to take a proof — the
+        current password or a live code — which means a form, which means a
+        POST. So the dropdown entry exists to carry the selected ``pks`` to a
+        page that can ask, exactly as ``/admin/staff/new`` asks before it mints
+        a credential.
+
+        The alternative was a ``confirmation_message``, which is what the other
+        three actions use. It is a browser ``confirm()``: one OK button, no
+        proof, and nothing between a stolen session and an emptied staff list.
+        """
+        self._require_admin(request)
+        pks = request.query_params.get("pks", "")
+        return RedirectResponse(
+            str(request.url_for("admin:view-staff-delete_page")) + f"?pks={pks}",
+            status_code=302,
+        )
+
+    def _delete_context(self, request, accounts, **extra) -> dict:
+        context = {
+            "accounts": accounts,
+            "error": None,
+            "open_dialog": None,
+            # Round-tripped through the form so the POST acts on the same
+            # selection the page described. Read back from the database on
+            # submission all the same - this is a convenience, never the
+            # authority on what may be deleted.
+            "pks": ",".join(str(a["id"]) for a in accounts),
+            "list_url": self._list_url(request),
+            "csrf_token": issue_token(request.session),
+        }
+        context.update(extra)
+        return context
+
+    async def _delete_page(self, request, context, status_code=200):
+        return await self.templates.TemplateResponse(
+            request, "brand/delete_staff.html", context, status_code=status_code
+        )
+
+    # The route name sqladmin gives this is `admin:view-staff-delete_page` —
+    # `view-{identity}-{func.__name__}` for a ModelView (verified in
+    # sqladmin/application.py::_handle_expose_decorated_func, which ignores the
+    # `identity` argument entirely for model views). `delete_action` above
+    # redirects to that name, so renaming this method changes a URL.
+    @expose("/delete", methods=["GET", "POST"])
+    async def delete_page(self, request):
+        """Delete accounts outright, after saying exactly what that costs.
+
+        **The capability the panel shipped without, and the reason it is worth
+        having.** Only ``deactivate_staff`` existed, so an account created by
+        mistake — or by an implementer testing something — became permanent
+        furniture in a list administrators read to answer "who can get into
+        this system". A list that cannot shrink stops being an answer to that
+        question.
+
+        **What deleting costs, stated on the page rather than only here.** The
+        account's authenticators and recovery codes go with it, and its
+        username becomes free for reuse. What does *not* go is anything it
+        did: ``audit_log.actor`` is text and holds no foreign key onto
+        ``staff``, so every entry the account wrote stays complete and still
+        names it. That property is what made a hard delete the right answer
+        rather than a tombstone, and staff pressing this button are entitled to
+        know it holds — an administrator who thinks deletion erases the trail
+        will avoid the button, or worse, use it hoping that it does.
+
+        Every rule lives in ``admin/accounts.py::delete_staff``: the
+        two-administrator floor, the refusal of self-deletion, and the
+        requirement that the account already be deactivated.
+        ``kaicalc-admin delete-staff`` reaches the same function and is refused
+        the same way. This route adds one thing of its own, and it is the one
+        thing a service function cannot see: proof that the request came from
+        the person whose session it is riding on.
+        """
+        self._require_admin(request)
+
+        pks = [pk for pk in request.query_params.get("pks", "").split(",") if pk]
+        if request.method == "POST":
+            form = await request.form()
+            pks = [pk for pk in (form.get("pks") or "").split(",") if pk]
+
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            accounts = []
+            for pk in pks:
+                try:
+                    staff = session.get(Staff, int(pk))
+                except ValueError:
+                    continue
+                if staff is None:
+                    continue
+                accounts.append({
+                    "id": staff.id,
+                    "username": staff.username,
+                    "display_name": staff.display_name,
+                    "role": staff.role.value,
+                    "is_active": staff.is_active,
+                    "device_count": len(staff.totp_devices),
+                })
+
+            if request.method == "GET":
+                return await self._delete_page(
+                    request, self._delete_context(request, accounts)
+                )
+
+            async def refuse(message, status_code=400):
+                return await self._delete_page(
+                    request,
+                    self._delete_context(
+                        request, accounts, error=message, open_dialog="confirm"
+                    ),
+                    status_code=status_code,
+                )
+
+            if not check_token(request.session, form.get("csrf_token")):
+                session.rollback()
+                return await refuse("That form expired. Please try again.")
+            if not accounts:
+                session.rollback()
+                return await refuse("Nothing was selected to delete.")
+
+            try:
+                acting = get_staff(session, actor)
+            except UnknownStaffError:
+                raise HTTPException(status_code=403) from None
+
+            problem = reauthenticate(
+                session, acting, form, runtime=get_runtime(request), now=time.time()
+            )
+            if problem is not None:
+                session.rollback()
+                return await refuse(problem)
+
+            deleted = []
+            for account in accounts:
+                try:
+                    # delete_staff writes its own audit entry, in this
+                    # transaction, so the removal and the record of who made it
+                    # land or roll back together.
+                    delete_staff(session, account["username"], actor=actor)
+                except SelfRecoveryError as exc:
+                    return await self._refuse_self_recovery(
+                        request, session, exc,
+                        actor=actor, staff_id=account["id"], slug="delete",
+                    )
+                except AccountStillActiveError as exc:
+                    session.rollback()
+                    return await self._refuse(
+                        request, str(exc),
+                        "Deactivating is the reversible step and deleting is "
+                        "not, so the panel makes you take them one at a time. "
+                        "Deactivate ends the account's sessions and refuses "
+                        "its next login; if you change your mind, Reactivate "
+                        "puts it back exactly as it was.",
+                    )
+                except LastAdministratorsError as exc:
+                    session.rollback()
+                    return await self._refuse(
+                        request, str(exc),
+                        "The panel keeps at least two active administrators. "
+                        "With no email system to recover through, one "
+                        "administrator is one lost phone away from a panel "
+                        "nobody can enter.",
+                    )
+                deleted.append(account)
+            session.commit()
+
+        return await self.templates.TemplateResponse(
+            request, "brand/staff_deleted.html",
+            {"deleted": deleted, "list_url": self._list_url(request)},
+        )
 
     @action(
         name="deactivate",

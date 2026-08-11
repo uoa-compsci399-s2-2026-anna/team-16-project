@@ -3,6 +3,8 @@
 Contract: docs/interfaces.md 8.3, "Operational commands".
 
     python -m admin.cli create-staff <username> "<display name>" [--admin]
+    python -m admin.cli delete-staff <username>
+    python -m admin.cli reactivate-staff <username>
     python -m admin.cli reset-mfa <username>
     python -m admin.cli issue-password <username>
     python -m admin.cli rotate-key --old <key> --new <key>
@@ -14,6 +16,12 @@ out, re-encrypting TOTP secrets after a SECRET_KEY change, and (E-8) the way
 back in for an administrator who has blocked the address they are sitting
 behind. They are covered by tests rather than only exercised by hand for
 that reason.
+
+Every command here is a pass-through to ``admin/accounts.py``, which is the
+only module permitted to mutate ``staff`` and holds every rule. The panel
+reaches the same functions. Where the two paths differ it is stated at the
+call site and nowhere else — see ``cmd_delete_staff`` for the one exemption
+this file takes and the two guards it deliberately does not.
 """
 
 import argparse
@@ -23,12 +31,16 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from admin.accounts import (
+    AccountStillActiveError,
     DuplicateUsernameError,
     InvalidDisplayNameError,
     InvalidUsernameError,
+    LastAdministratorsError,
     UnknownStaffError,
     create_staff,
+    delete_staff,
     issue_password,
+    reactivate_staff,
     reset_mfa,
 )
 from admin.audit import write_audit
@@ -108,6 +120,35 @@ def cmd_issue_password(db_session: Session, username: str) -> str:
     """Recovery layer L3: issue a password from the server when no
     administrator can. Returns the plaintext, shown once."""
     return issue_password(db_session, username, actor="cli", allow_self=True)
+
+
+def cmd_delete_staff(db_session: Session, username: str) -> dict:
+    """Remove an account outright. Returns what was destroyed.
+
+    **A pass-through, and it has to stay one**, the same statement
+    ``cmd_create_staff`` carries from the other side. ``StaffAdmin.delete_page``
+    reaches the same ``delete_staff``, and every rule — the two-administrator
+    floor, the refusal of self-deletion, the requirement that the account be
+    deactivated first — lives there. A check added here would be a check the
+    panel does not have, and the path with fewer of them is the one that ends
+    up mattering.
+
+    ``allow_self=True``, for the reason ``cmd_reset_mfa`` and
+    ``cmd_issue_password`` already carry it and no more: layer L3 has no acting
+    session to be the second party, and whoever runs this already holds shell
+    access to the database behind it. **It is the only guard the exemption
+    reaches.** The floor and the deactivation requirement are unconditional
+    here exactly as they are in the panel — the CLI is the way back in when
+    every administrator is locked out, which is an argument for skipping the
+    *second party*, not for letting a server-side command leave the deployment
+    with one administrator.
+    """
+    return delete_staff(db_session, username, actor="cli", allow_self=True)
+
+
+def cmd_reactivate_staff(db_session: Session, username: str) -> None:
+    """Let a deactivated account log in again. Pass-through, as above."""
+    reactivate_staff(db_session, username)
 
 
 def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[int, int]:
@@ -284,6 +325,18 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     issue.add_argument("username")
 
+    delete = sub.add_parser(
+        "delete-staff",
+        help="Delete a deactivated account outright, with its authenticators "
+        "and recovery codes. What it did stays in the audit log",
+    )
+    delete.add_argument("username")
+
+    reactivate = sub.add_parser(
+        "reactivate-staff", help="Let a deactivated account log in again"
+    )
+    reactivate.add_argument("username")
+
     rotate = sub.add_parser("rotate-key", help="Re-encrypt TOTP secrets")
     rotate.add_argument("--old", required=True)
     rotate.add_argument("--new", required=True)
@@ -357,6 +410,42 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Issued a new password for {args.username}.")
             print(f"  Password: {password}")
             print("  They must change it at their next login. Hand it over in person.")
+        elif args.command == "delete-staff":
+            try:
+                removed = cmd_delete_staff(db_session, args.username)
+            except UnknownStaffError:
+                print(f"No such account: {args.username}")
+                return 1
+            except (AccountStillActiveError, LastAdministratorsError) as exc:
+                # Refused rather than crashed, the same treatment
+                # `create-staff` gives a name already in use: an operator
+                # reaching for this is usually tidying up, and a traceback out
+                # of a service function reads like the command is broken
+                # rather than like the account is not ready to be removed.
+                print(f"Refused: {exc}")
+                return 1
+            db_session.commit()
+            print(f"Deleted {removed['username']} ({removed['role']}).")
+            print(
+                f"  Destroyed {removed['totp_devices_destroyed']} "
+                f"authenticator(s) and {removed['recovery_codes_destroyed']} "
+                "recovery code(s) with it."
+            )
+            print(
+                "  Everything the account did stays in the audit log and still "
+                "names it. The username is now free to reuse."
+            )
+        elif args.command == "reactivate-staff":
+            try:
+                cmd_reactivate_staff(db_session, args.username)
+            except UnknownStaffError:
+                print(f"No such account: {args.username}")
+                return 1
+            db_session.commit()
+            print(
+                f"Reactivated {args.username}. Their password and authenticator "
+                "are unchanged, so they can log in as before."
+            )
         elif args.command == "rotate-key":
             count, cleared = cmd_rotate_key(
                 db_session, old_key=args.old, new_key=args.new

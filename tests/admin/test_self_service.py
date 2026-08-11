@@ -38,7 +38,10 @@ from admin.accounts import (
 )
 from admin.models import AuditLog, StaffRole
 from admin.security import verify_password
-from admin.self_service_view import MAX_DEVICE_NAME_LENGTH
+#: Imported from the service layer, which is where it moved when
+#: rename_totp_device began enforcing it. The page renders it as a maxlength;
+#: a second copy in the view would be a second number.
+from admin.accounts import MAX_DEVICE_NAME_LENGTH
 from admin.totp import TOTP_INTERVAL
 from admin.views import MIN_PASSWORD_LENGTH
 
@@ -194,7 +197,18 @@ def _device_rows(html: str) -> list[list[str]]:
 
 
 async def _enrol_second_device(client, admin_app, monkeypatch, name="Backup phone"):
-    """Drive the real two-request add-a-device flow. Returns the new secret."""
+    """Drive the real two-request add-a-device flow. Returns the new secret.
+
+    **The confirmation reuses the CSRF token out of the QR page**, rather than
+    letting ``_post`` fetch a fresh one, because that is what a browser does:
+    the enrolment dialog is rendered *inside* the begin-device response and its
+    form carries that response's token. There is no GET between the two steps
+    in the real flow, and there must not be one here either — a GET of
+    /admin/security discards an unconfirmed enrolment by design (see
+    ``admin/accounts.py::discard_unconfirmed_devices``), so a helper that
+    fetched a token mid-flow would be testing a sequence no browser performs
+    and would destroy the very row it was about to confirm.
+    """
     begun = await _post(
         client, action="begin-device", device_name=name,
         current_password=PASSWORD,
@@ -203,11 +217,14 @@ async def _enrol_second_device(client, admin_app, monkeypatch, name="Backup phon
     match = re.search(r'<code class="key">([A-Z2-7 ]+)</code>', begun.text)
     assert match, "the enrolment page rendered no setup key"
     secret = match.group(1).replace(" ", "")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', begun.text)
+    assert token, "the enrolment page rendered no CSRF token"
 
     now = int(time.time())
     monkeypatch.setattr(time, "time", lambda: float(now))
     confirmed = await _post(
         client, action="confirm-device", device_name=name,
+        csrf_token=token.group(1),
         code=pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(now),
     )
     assert confirmed.status_code == 200, confirmed.text[:400]
@@ -412,8 +429,15 @@ async def test_the_screen_states_the_length_rule_from_the_constant(me):
 
     assert page.status_code == 200
     assert f"At least {MIN_PASSWORD_LENGTH} characters" in page.text
+    # Every character count on the page comes from a constant, not from a
+    # number somebody typed into the template: the password rule from
+    # MIN_PASSWORD_LENGTH, the authenticator-name rule from
+    # MAX_DEVICE_NAME_LENGTH. Asserted as the exact set, so a third hardcoded
+    # figure appearing anywhere on this screen fails here.
     stated = set(re.findall(r"(\d+) characters", page.text))
-    assert stated == {str(MIN_PASSWORD_LENGTH)}, stated
+    assert stated == {
+        str(MIN_PASSWORD_LENGTH), str(MAX_DEVICE_NAME_LENGTH)
+    }, stated
 
 
 async def test_the_password_form_carries_the_attributes_a_password_manager_needs(me):
@@ -614,6 +638,12 @@ async def test_a_wrong_confirmation_code_keeps_the_same_secret(me, db_session):
 
     rejected = await _post(
         me, action="confirm-device", device_name="Backup phone", code="000000",
+        # The token out of the QR page, as the browser sends it. A GET to
+        # fetch a fresh one would discard the enrolment this test is about -
+        # see _enrol_second_device.
+        csrf_token=re.search(
+            r'name="csrf_token" value="([^"]+)"', begun.text
+        ).group(1),
     )
 
     assert rejected.status_code == 400
@@ -1156,20 +1186,28 @@ async def test_the_authenticators_are_a_numbered_table(
 
 
 async def test_a_device_that_has_never_been_used_says_so(me):
-    """`last_counter` NULL is the ordinary state of an enrolment begun and not
-    finished, and it must not render as an epoch date or as a blank cell."""
+    """`last_counter` NULL is the ordinary state of an enrolment in progress,
+    and it must not render as an epoch date or as a blank cell.
+
+    Read out of the begin-device response, which is the only place an
+    unconfirmed row is ever rendered now: it is discarded on the next GET of
+    this page, because the QR and the setup key are shown once and the row can
+    never be picked up again. Its status therefore says "Being set up now"
+    rather than the "Set-up not finished" this screen used to leave sitting in
+    the list with no control able to clear it.
+    """
     begun = await _post(
         me, action="begin-device", device_name="Backup phone",
         current_password=PASSWORD,
     )
     assert begun.status_code == 200
 
-    rows = _device_rows((await me.get(SECURITY_URL)).text)
+    rows = _device_rows(begun.text)
 
     assert len(rows) == 2
     assert rows[1][1] == "Backup phone"
     assert rows[1][3] == "Never used"
-    assert rows[1][4] == "Set-up not finished"
+    assert rows[1][4] == "Being set up now"
 
 
 async def test_add_and_remove_are_above_the_table_and_not_inside_a_row(
@@ -1319,6 +1357,12 @@ async def test_the_chooser_focuses_a_choice_it_actually_offers(me):
     all - and a Remove dialog the server reopens after a refusal then opens
     with the keyboard nowhere. The numbering has to keep counting devices
     even so, or the dialog and the table stop agreeing.
+
+    Read out of the begin-device response rather than a following GET: that
+    GET now discards the unfinished enrolment, so the response that renders
+    the QR is where this arrangement exists. The property under test has not
+    moved - the dialog still has to loop over what may be removed rather than
+    over every device - only the request that produces it.
     """
     begun = await _post(
         me, action="begin-device", device_name="Backup phone",
@@ -1326,9 +1370,7 @@ async def test_the_chooser_focuses_a_choice_it_actually_offers(me):
     )
     assert begun.status_code == 200
 
-    dialog = _element(
-        (await me.get(SECURITY_URL)).text, r'<dialog id="dialog-remove".*?</dialog>'
-    )
+    dialog = _element(begun.text, r'<dialog id="dialog-remove".*?</dialog>')
 
     options = re.findall(r'<label class="choose__option".*?</label>', dialog, re.S)
     assert len(options) == 1, options

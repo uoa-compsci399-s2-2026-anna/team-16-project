@@ -68,17 +68,21 @@ from starlette.templating import Jinja2Templates
 
 from admin.accounts import (
     DEFAULT_DEVICE_NAME,
+    MAX_DEVICE_NAME_LENGTH,
     MAX_TOTP_DEVICES,
     DuplicateDeviceNameError,
+    InvalidDeviceNameError,
     LastAuthenticatorError,
     MfaNotEnrolledError,
     TooManyDevicesError,
     UnknownDeviceError,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
+    discard_unconfirmed_devices,
     get_staff,
     last_password_change,
     remove_totp_device,
+    rename_totp_device,
     resume_mfa_enrolment,
     set_password,
 )
@@ -91,10 +95,11 @@ from admin.views import MIN_PASSWORD_LENGTH, _grouped, _password_problem
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-#: Longest device name accepted. Matches ``staff_totp_device.name``'s
-#: VARCHAR(64); a longer value would be truncated by MySQL in non-strict mode
-#: and rejected outright in strict mode, and neither reads as an explanation.
-MAX_DEVICE_NAME_LENGTH = 64
+#: ``MAX_DEVICE_NAME_LENGTH`` moved to ``admin/accounts.py`` and is imported
+#: above. It is now enforced by ``rename_totp_device`` as well as rendered as
+#: this page's ``maxlength``, and a limit defined in a view while being applied
+#: in the service layer is two numbers waiting to disagree — MySQL in
+#: non-strict mode truncates the difference silently.
 
 
 def _last_used(last_counter: int | None) -> datetime | None:
@@ -240,7 +245,54 @@ class SecurityView(BaseView):
 
         if request.method == "GET":
             with runtime.session_factory() as db:
-                context = self._context(db, username)
+                # **This is where an abandoned enrolment dies, and a GET is the
+                # right signal for it.** The QR and the secret are rendered
+                # only in the response to the re-authenticated POST that minted
+                # them, so a GET of this page means the person is no longer
+                # looking at either and the row can never be completed — the
+                # enrol dialog's own Cancel is already a link here, so
+                # cancelling destroys it with no further wiring. Leaving it
+                # would leave a stored TOTP secret that has never
+                # authenticated anything, occupying a name and a slot against
+                # the next attempt, in a state ("Set-up not finished") that no
+                # control can move it out of.
+                #
+                # A GET that writes is not idempotent, which is a real cost and
+                # the reason to name it here rather than let it be discovered.
+                # It is bounded — the second GET has nothing left to discard —
+                # and the alternatives are worse: a beacon on unload is
+                # unreliable, and a deadline leaves the secret sitting there
+                # for the whole of it in exchange for nothing, since the row's
+                # only possible future is to be destroyed.
+                #
+                # It cannot touch a confirmed device: discard_unconfirmed_devices
+                # filters on `enrolled_at is None` and this page is unreachable
+                # until the account has a confirmed one.
+                discarded = discard_unconfirmed_devices(db, username)
+                notice = None
+                for device in discarded:
+                    write_audit(
+                        db, actor=username, action="delete",
+                        table_name="staff_totp_device", row_id=device.id,
+                        before={"username": username, "name": device.name,
+                                "confirmed": False},
+                        after=None,
+                    )
+                if discarded:
+                    db.commit()
+                    # Said out loud. A row vanishing between two page loads
+                    # with no explanation reads as data loss, and this screen
+                    # is the one place somebody is already anxious about
+                    # losing a second factor.
+                    names = ", ".join(f"“{d.name}”" for d in discarded)
+                    notice = (
+                        f"Unfinished set-up for {names} was discarded. An "
+                        "authenticator that was never confirmed cannot be "
+                        "picked up again — the code and the QR are shown once "
+                        "— so it is cleared rather than left in the list. Your "
+                        "working authenticators are untouched."
+                    )
+                context = self._context(db, username, notice=notice)
             return self._page(request, context)
 
         form = await request.form()
@@ -257,6 +309,7 @@ class SecurityView(BaseView):
                 "begin-device": self._begin_device,
                 "confirm-device": self._confirm_device,
                 "remove-device": self._remove_device,
+                "rename-device": self._rename_device,
             }.get(action)
             if handler is None:
                 context = self._context(
@@ -335,6 +388,29 @@ class SecurityView(BaseView):
             )
 
         if problem is None:
+            # The second moment an abandoned enrolment dies, and the answer to
+            # "does one interfere with starting a fresh one": it did, twice.
+            # An unconfirmed row holds its name against
+            # DuplicateDeviceNameError and counts toward MAX_TOTP_DEVICES, so
+            # four abandoned scans left an account unable to add a real
+            # authenticator at all. Reaped before the mint, so the name and
+            # the slot are free for the request that is asking for them.
+            #
+            # Deliberately here and not inside begin_mfa_enrolment: that
+            # function is shared with admin/views.py::EnrolView, where an
+            # unfinished enrolment is *resumed* across GETs during onboarding
+            # and re-minting invalidates the code already on somebody's phone.
+            # The service layer decides what may be destroyed; this page
+            # decides when. See discard_unconfirmed_devices.
+            discarded = discard_unconfirmed_devices(db, username)
+            for device in discarded:
+                write_audit(
+                    db, actor=username, action="delete",
+                    table_name="staff_totp_device", row_id=device.id,
+                    before={"username": username, "name": device.name,
+                            "confirmed": False},
+                    after=None,
+                )
             try:
                 secret, uri = begin_mfa_enrolment(
                     db, username,
@@ -452,6 +528,79 @@ class SecurityView(BaseView):
             db, username,
             notice=f"{device_name} is now set up. Both authenticators work; "
                    "keep the other one until you are sure.",
+        )
+        return self._page(request, context)
+
+    def _rename_device(self, request, db, username, form, *, runtime, now):
+        """Rename one authenticator.
+
+        **Why the name is editable rather than replaced by the ordinal.** Every
+        name on this screen ends up saying nothing — the onboarding device is
+        called "Authenticator" because something had to call it something, and
+        the second gets whatever its owner typed at a form that gave them no
+        reason to think about it. That is not evidence the column is useless;
+        it is evidence that a name nobody can revise is a name nobody invests
+        in. The ordinal already exists in the ``#`` column and identifies the
+        row without saying anything about the device, which is exactly what is
+        missing when somebody is deciding which phone to remove.
+
+        **Re-authenticated, like every other action here, and not only for
+        consistency.** Renaming is how a stolen session gets the *owner* to
+        remove the wrong device: relabel the session's own enrolment as the
+        owner's old phone and the owner does the damage themselves, through the
+        Remove step, which is fully proved and would therefore succeed. The
+        proof is cheap and it closes that.
+
+        No ``session_generation`` bump, and that asymmetry with
+        ``_remove_device`` is the point: this changes a note, not a credential.
+        """
+        staff = get_staff(db, username)
+        problem = self._reauthenticate(db, staff, form, runtime=runtime, now=now)
+
+        raw = form.get("device_id") or ""
+        try:
+            device_id = int(raw)
+        except (TypeError, ValueError):
+            problem = problem or "That authenticator is not on this account."
+            device_id = None
+
+        renamed = None
+        if problem is None:
+            try:
+                # Scoped to this account inside the service layer, which is
+                # what makes another account's device id a not-found rather
+                # than a rename. Nothing on this form names an account.
+                device = rename_totp_device(
+                    db, username, device_id, form.get("device_name") or ""
+                )
+                renamed = device.name
+            except (
+                UnknownDeviceError,
+                InvalidDeviceNameError,
+                DuplicateDeviceNameError,
+            ) as exc:
+                problem = str(exc)
+
+        if problem is not None:
+            db.rollback()
+            context = self._context(db, username, error=problem, open_dialog="rename")
+            return self._page(request, context, status_code=400)
+
+        write_audit(
+            db, actor=staff.username, action="update",
+            table_name="staff_totp_device", row_id=device_id,
+            before=None,
+            after={"username": staff.username, "name": renamed,
+                   "changed": "name", "self_service": True},
+        )
+        db.commit()
+
+        context = self._context(
+            db, username,
+            notice=f"Renamed to “{renamed}”. This changes the name here only — "
+                   "your authenticator app still shows the name it was given "
+                   "when you scanned the code, and cannot be relabelled from "
+                   "this screen.",
         )
         return self._page(request, context)
 

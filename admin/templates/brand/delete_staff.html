@@ -1,0 +1,157 @@
+{% extends "brand/base.html" %}
+{% block title %}Delete accounts{% endblock %}
+
+{# The same generic module brand/security.html and brand/new_staff.html load.
+   It opens any [data-dialog] target, closes any [data-close-dialog], and
+   re-opens modally whatever the server rendered `open`. #}
+{% block head %}
+  <script type="module" src="/admin/static/security.js" defer></script>
+{% endblock %}
+
+{% block shell %}
+<main class="page">
+
+  <header class="page__head">
+    <div class="page__mark" aria-hidden="true"></div>
+    <h1>Delete {{ accounts | length }} account{% if accounts | length != 1 %}s{% endif %}</h1>
+    <p class="page__who">This cannot be undone.</p>
+  </header>
+
+  {# A refused submission comes back inside the dialog it was made in - a modal
+     covers the page, so a message printed behind it is a message nobody
+     reads. Only an error belonging to no dialog is shown here. #}
+  {% if error and not open_dialog %}
+    <div class="notice notice--error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if not accounts %}
+    <section class="panel">
+      <p>Nothing was selected. Choose the accounts to delete from the list.</p>
+      <div class="actions">
+        <a class="button" href="{{ list_url }}">Back to accounts</a>
+      </div>
+    </section>
+  {% else %}
+
+  <section class="panel" aria-labelledby="which-heading">
+    <h2 id="which-heading">Which accounts</h2>
+    <div class="table-scroll">
+      <table class="devices">
+        <caption class="sr-only">The accounts this page will delete.</caption>
+        <thead>
+          <tr>
+            <th scope="col">Username</th>
+            <th scope="col">Name</th>
+            <th scope="col">Role</th>
+            <th scope="col">Status</th>
+            <th scope="col">Authenticators</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for account in accounts %}
+            <tr>
+              <th scope="row">{{ account.username }}</th>
+              <td>{{ account.display_name }}</td>
+              <td>{{ account.role }}</td>
+              <td>
+                {%- if account.is_active -%}
+                  Still active
+                {%- else -%}
+                  Deactivated
+                {%- endif -%}
+              </td>
+              <td>{{ account.device_count }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel" aria-labelledby="cost-heading">
+    <h2 id="cost-heading">What this does, and what it does not</h2>
+    <ul>
+      <li>
+        The account is removed outright, along with its authenticators and its
+        recovery codes. Nobody can log in as it again, and the username becomes
+        free for somebody else to use.
+      </li>
+      <li>
+        <strong>Everything the account did stays in the audit log</strong>, in
+        full, still naming it. The trail records who made each change as a
+        name rather than as a link to this list, so deleting an account never
+        makes an entry stop saying who was responsible. Deleting is not a way
+        to remove a record of anything.
+      </li>
+      <li>
+        An account must be <strong>deactivated first</strong>. Deactivating is
+        the step you can undo — <strong>Reactivate</strong> on the accounts
+        screen puts the account back exactly as it was. This one you cannot.
+      </li>
+      <li>
+        You cannot delete your own account, and the panel will not go below two
+        administrators who can log in.
+      </li>
+    </ul>
+  </section>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# Round-tripped so the POST acts on the same selection the page above
+       described. The handler reads every row back from the database anyway
+       and applies every rule there - this is what was shown, not what is
+       permitted. #}
+    <input type="hidden" name="pks" value="{{ pks }}">
+
+    <div class="actions">
+      <button type="button" id="delete-accounts" class="button button--danger"
+              data-dialog="dialog-confirm" aria-haspopup="dialog"
+              aria-controls="dialog-confirm">Delete permanently</button>
+      <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
+    </div>
+
+    {# Inside the form on purpose, so the hidden fields above submit with the
+       proof below as one request. Without JavaScript this dialog never opens
+       and the form cannot be submitted at all - the same property the dialogs
+       on brand/security.html and brand/new_staff.html have, and the reason the
+       button that opens it is type="button". #}
+    <dialog id="dialog-confirm" class="dialog"
+            aria-labelledby="dialog-confirm-title"
+            data-return-focus="delete-accounts"
+            {% if open_dialog == 'confirm' %}open{% endif %}>
+      <h2 id="dialog-confirm-title">Confirm it is you</h2>
+      {% if open_dialog == 'confirm' and error %}
+        <div class="notice notice--error" role="alert">{{ error }}</div>
+      {% endif %}
+      <p class="muted">
+        Deleting an account is irreversible, so it asks for proof beyond being
+        signed in — being signed in is the one thing somebody who had taken
+        your session would also have.
+      </p>
+
+      {# The code first, the password beneath it, matching the proof blocks on
+         brand/security.html and brand/new_staff.html. Either is accepted and
+         both must stay accepted: see admin/auth.py::reauthenticate. #}
+      <fieldset class="proof">
+        <legend>Prove it is you</legend>
+        <label for="confirm-code">Code from your authenticator</label>
+        <input type="text" id="confirm-code" name="current_code"
+               autocomplete="one-time-code" inputmode="numeric"
+               data-initial-focus>
+        <label for="confirm-pw">…or your current password</label>
+        <input type="password" id="confirm-pw" name="current_password"
+               autocomplete="current-password">
+      </fieldset>
+
+      <div class="dialog__actions">
+        <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+        <button type="submit" class="button button--danger">Delete permanently</button>
+      </div>
+    </dialog>
+  </form>
+  {% endif %}
+
+  <p><a href="{{ list_url }}">Back to accounts</a></p>
+
+</main>
+{% endblock %}

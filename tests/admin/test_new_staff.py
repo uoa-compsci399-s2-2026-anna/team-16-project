@@ -41,6 +41,7 @@ from admin.models import AuditLog, Staff, StaffRole
 from admin.security import verify_password
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
+from tests.admin.conftest import SECRET_KEY
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -451,17 +452,23 @@ async def test_an_account_whose_password_was_never_collected_is_recoverable(
     admin_client, admin_app
 ):
     """**The failure mode this design chose to handle.** If the page carrying
-    the one-time password is never seen — a crash, a closed tab, a bounce —
-    the password is gone for good and the account is not: nobody can log in as
-    it, and another administrator can issue it a new one through the path that
-    already exists. What must never happen is a row in `staff` nobody can ever
-    log in as and nobody can tell why."""
+    the password is never seen — a crash, a closed tab, a bounce — the account
+    must not be stranded. Two ways out exist and this asserts the second:
+    contract v1.15 keeps the created password readable from
+    `/admin/staff/unclaimed-password` (driven in
+    tests/admin/test_unclaimed_password.py), and failing that another
+    administrator issues a replacement, which since v1.16 is kept on the same
+    terms. What must never happen is a row in `staff` nobody can ever log in as
+    and nobody can tell why."""
     username, response = await _create(admin_client)
     assert response.status_code == 200
 
     factory = admin_app.state.session_factory
     with factory() as db:
-        issued = issue_password(db, username, actor=admin_client.staff.username)
+        issued = issue_password(
+            db, username, actor=admin_client.staff.username,
+            secret_key=SECRET_KEY,
+        )
         db.commit()
         staff = get_staff(db, username)
         assert verify_password(issued, staff.password_hash) is True
@@ -476,10 +483,17 @@ async def test_the_result_page_says_the_account_is_recoverable(admin_client):
     _, response = await _create(admin_client)
     flat = _flat(response)
 
-    assert "shown once" in flat
-    assert "If you have lost this password, the account is not lost" in flat
+    assert "If you have lost this password, it is not gone" in flat
+    # Both ways out, in the order an administrator should try them. The first
+    # is the one v1.15 added and this page did not mention until v1.16 - it
+    # still said the password was "not stored anywhere", which was true when it
+    # was written and would send somebody to mint a replacement for a password
+    # sitting one proof away.
+    assert "Show the password waiting to be collected" in flat
     assert "Issue a new password" in flat
     assert "Do not create a second account for the same person" in flat
+    # And the sentence that stopped being true must not have survived.
+    assert "not stored anywhere" not in flat
 
 
 # --- the confirmation can actually be pressed -------------------------------

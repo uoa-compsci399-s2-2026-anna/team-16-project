@@ -75,7 +75,7 @@ from admin.accounts import (
     issue_password,
     reactivate_staff,
     reset_mfa,
-    reveal_initial_password,
+    reveal_unclaimed_password,
 )
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY, reauthenticate
@@ -87,19 +87,19 @@ from admin.security import TotpSecretUndecryptableError
 
 
 def _format_unclaimed(row, _name) -> str:
-    """Render ``initial_password_unclaimed`` for the list and details pages.
+    """Render ``has_unclaimed_password`` for the list and details pages.
 
-    Contract v1.15 item 3. A bare ``True``/``False`` leaves the reader to work
-    out which way round it is, on the one column where guessing wrong means
-    either reading out a string that no longer opens the account or telling a
-    colleague their password is gone when it is not.
+    Contract v1.15 item 3, v1.16. A bare ``True``/``False`` leaves the reader
+    to work out which way round it is, on the one column where guessing wrong
+    means either reading out a string that no longer opens the account or
+    telling a colleague their password is gone when it is not.
 
     A module-level function rather than a lambda in the class body: sqladmin
     stores whatever is in ``column_formatters`` and calls it as
     ``formatter(row, name)``, and a plain ``def`` in the class body would be
     bound as a method on attribute access. This sidesteps the question.
     """
-    return "Yes - can be revealed" if row.initial_password_unclaimed else "No"
+    return "Yes - can be revealed" if row.has_unclaimed_password else "No"
 
 
 class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
@@ -145,27 +145,36 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
     column_list = [
         Staff.username, Staff.display_name, Staff.role, Staff.is_active,
         Staff.must_change_password,
-        # Contract v1.15 item 3. The *fact* that an initial password is still
-        # waiting, never the password - a derived boolean off
-        # `initial_password_enc is not None` (admin/models.py). The plaintext
-        # has exactly one route and that route asks for proof.
+        # Contract v1.15 item 3, widened by v1.16. The *fact* that a
+        # system-minted password is still waiting, never the password - a
+        # derived boolean off `unclaimed_password_enc is not None`
+        # (admin/models.py). The plaintext has exactly one route and that route
+        # asks for proof.
         #
-        # This has to be its own column rather than being read off
-        # `must_change_password`, which is the obvious shortcut and is wrong:
-        # `issue_password` sets that flag and deliberately clears this one, so
-        # "must change, nothing to reveal" is an ordinary state meaning "a
-        # replacement was issued and shown once". Conflating them would have
-        # the list promising a reveal that the reveal page then refuses.
-        "initial_password_unclaimed",
+        # Truthful for a password an administrator *issued* as well as for one
+        # an account was created with, since v1.16 stores both. Before that it
+        # said "No" the instant after Issue a new password had displayed one,
+        # which was correct about the column and useless to the person reading
+        # it.
+        #
+        # It still has to be its own column rather than being read off
+        # `must_change_password`, which is the obvious shortcut and is still
+        # wrong: an account created before v1.15, or one whose stored copy went
+        # undecryptable when SECRET_KEY changed, owes a password change with
+        # nothing to reveal. Conflating them would have the list promising a
+        # reveal that the reveal page then refuses.
+        "has_unclaimed_password",
         Staff.mfa_enrolled_at, Staff.last_login_at,
     ]
     column_labels = {
         # sqladmin would render the property name verbatim
-        # ("Initial Password Unclaimed"), which reads as a setting rather than
-        # as a state of this account.
-        "initial_password_unclaimed": "Initial password still unclaimed",
+        # ("Has Unclaimed Password"), which reads as a setting rather than as a
+        # state of this account. It deliberately does not say *initial*: since
+        # v1.16 the waiting password may be one an administrator issued this
+        # morning to an account three years old.
+        "has_unclaimed_password": "Password waiting to be collected",
     }
-    column_formatters = {"initial_password_unclaimed": _format_unclaimed}
+    column_formatters = {"has_unclaimed_password": _format_unclaimed}
     # `column_formatters` covers the *list* page only; sqladmin reads
     # `column_formatters_detail` for /details/{pk} (sqladmin/models.py's
     # `get_detail_value` against `get_list_value`). Without this second line
@@ -325,7 +334,7 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
 
     @expose("/new", methods=["GET", "POST"])
     async def new_staff(self, request):
-        """Create an account, and show its one-time password exactly once.
+        """Create an account, and show the password it was given.
 
         **The capability this panel shipped without.** Until this route
         existed the only way to onboard a colleague was
@@ -343,15 +352,12 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
         redirect between the write and the display, which is the shape that
         lost a set of recovery codes on this project on 2026-08-10 (an expired
         pending-login window bounced the enrolment POST to the login page
-        before the codes rendered). That narrows the window; it does not close
-        it, and a closed tab or a crashed browser still loses the password for
-        good. **That is the failure this design accepts, and it is survivable
-        precisely because the account is not lost with it:** the row carries
-        ``must_change_password`` and no enrolment, so nobody can log in as it,
-        and "Issue a new password" on this same screen mints another. The
-        result page says so in as many words, because an administrator who
-        does not know that is one who deletes the account and starts again —
-        and this screen has no delete.
+        before the codes rendered). Since v1.15 a closed tab no longer loses the
+        password either: it is stored encrypted until it is claimed, and
+        *Show the password waiting to be collected* on this same screen reads it
+        back after a proof. Two ways out remain rather than one, and the result
+        page names both — "Issue a new password" still mints another, and since
+        v1.16 that replacement is kept on the same terms.
 
         A never-collected account is also legible from the list page without
         anyone being told: ``must_change_password`` set with ``MFA enrolled``
@@ -455,7 +461,7 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                     # Stores the initial password encrypted under this key
                     # until the account claims it (contract v1.15 item 3), so
                     # that a closed tab does not lose it - see
-                    # `initial_password_page` below.
+                    # `unclaimed_password_page` below.
                     secret_key=runtime.settings.secret_key,
                 )
             except (
@@ -487,10 +493,13 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
             },
         )
 
-    # --- revealing an unclaimed initial password ----------------------------
+    # --- revealing an unclaimed password ------------------------------------
 
-    @action(name="show-initial-password", label="Show the initial password")
-    async def show_initial_password_action(self, request):
+    @action(
+        name="show-unclaimed-password",
+        label="Show the password waiting to be collected",
+    )
+    async def show_unclaimed_password_action(self, request):
         """Carry the selection to the confirmation page below.
 
         **Performs nothing**, for the same reason ``delete_action`` performs
@@ -506,12 +515,12 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
         self._require_admin(request)
         pks = request.query_params.get("pks", "")
         return RedirectResponse(
-            str(request.url_for("admin:view-staff-initial_password_page"))
+            str(request.url_for("admin:view-staff-unclaimed_password_page"))
             + f"?pks={pks}",
             status_code=302,
         )
 
-    def _initial_password_context(self, request, accounts, **extra) -> dict:
+    def _unclaimed_password_context(self, request, accounts, **extra) -> dict:
         context = {
             "accounts": accounts,
             "revealed": None,
@@ -525,50 +534,57 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
         context.update(extra)
         return context
 
-    async def _initial_password_page(self, request, context, status_code=200):
+    async def _unclaimed_password_page(self, request, context, status_code=200):
         return await self.templates.TemplateResponse(
-            request, "brand/initial_password.html", context, status_code=status_code
+            request, "brand/unclaimed_password.html", context, status_code=status_code
         )
 
     # sqladmin names an @expose route on a ModelView
     # `view-{identity}-{func.__name__}`, ignoring the `identity` argument
     # entirely (sqladmin/application.py::_handle_expose_decorated_func), so
-    # this is `admin:view-staff-initial_password_page` and renaming the method
-    # changes a URL that `show_initial_password_action` above redirects to.
-    @expose("/initial-password", methods=["GET", "POST"])
-    async def initial_password_page(self, request):
-        """Show an account's initial password, if it has not been claimed.
+    # this is `admin:view-staff-unclaimed_password_page` and renaming the method
+    # changes a URL that `show_unclaimed_password_action` above redirects to.
+    @expose("/unclaimed-password", methods=["GET", "POST"])
+    async def unclaimed_password_page(self, request):
+        """Show the password waiting on an account, if one is still waiting.
 
-        Contract §8.3, v1.15 item 3. **The feature exists because a one-time
-        reveal is easy to lose** — the page that creates an account shows the
-        password once, and a closed tab loses it for good. The account survives
-        (it owes a password change and an enrolment, so nobody can log in as
-        it) but the administrator then has to issue a replacement, and if the
-        original was already read out to the colleague, that is a password they
-        will try and be refused by.
+        Contract §8.3, v1.15 item 3, widened by v1.16. **The feature exists
+        because a one-time reveal is easy to lose** — the page that mints a
+        password shows it once, and a closed tab loses it for good. The account
+        survives, because it owes a password change either way; what does not
+        survive is the exchange, since the administrator then has to issue
+        another and the one already read out to the colleague stops working.
+
+        **v1.16 is why this page says "waiting to be collected" and not
+        "initial".** Until then only the creation password was stored, so
+        pressing *Issue a new password* produced a value this page immediately
+        disowned — the loss the feature prevents, still unprevented one screen
+        away. Both are stored now and this page does not distinguish them: the
+        question it answers is "what do I read out", which has one answer.
 
         **What it is not.** It is not a plain column on the list. The value is
-        a working credential for an account whose second factor is not yet
-        enrolled — an attacker reaching the forced-enrolment page enrols their
-        own authenticator — so it sits behind the same press-then-prove dialog
-        as creating an account and deleting one: the current password or a live
-        code, on top of an administrator session. Being signed in is the one
-        thing somebody holding a stolen session would also have, which is
-        exactly why being signed in is not enough for any of the three.
+        a working credential, and on a freshly created account it is the whole
+        of the protection — the second factor is not enrolled yet, so an
+        attacker reaching the forced-enrolment page enrols their own. So it sits
+        behind the same press-then-prove dialog as creating an account and
+        deleting one: the current password or a live code, on top of an
+        administrator session. Being signed in is the one thing somebody
+        holding a stolen session would also have, which is exactly why being
+        signed in is not enough for any of the three.
 
-        **The list page still says an account is unclaimed** without this page
-        being opened (``initial_password_unclaimed`` in ``column_list``). That
+        **The list page still says a password is waiting** without this page
+        being opened (``has_unclaimed_password`` in ``column_list``). That
         separation is the point: the state is public to administrators, the
         value is not.
 
-        **NULL is a first-class answer, not an error.** The account has changed
-        its password, or an administrator has issued a replacement, or it was
-        created before v1.15 — three ordinary histories with one outcome. The
-        template says which sentence applies rather than rendering a blank, and
-        the response is still 200: nothing went wrong.
+        **NULL is a first-class answer, not an error.** The account has set a
+        password of its own, or it was created before v1.15 — two ordinary
+        histories with one outcome, where v1.15 had a third and far more
+        confusing one. The template says which sentence applies rather than
+        rendering a blank, and the response is still 200: nothing went wrong.
 
         Every successful reveal writes an ``audit_log`` entry through
-        ``reveal_initial_password``. A reversibly-stored credential readable
+        ``reveal_unclaimed_password``. A reversibly-stored credential readable
         without a trace would leave no way to tell an administrator who read a
         colleague's password from one who did not.
         """
@@ -601,19 +617,19 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                     "username": staff.username,
                     "display_name": staff.display_name,
                     "role": staff.role.value,
-                    "unclaimed": staff.initial_password_unclaimed,
+                    "unclaimed": staff.has_unclaimed_password,
                     "last_login_at": staff.last_login_at,
                 })
 
             if request.method == "GET":
-                return await self._initial_password_page(
-                    request, self._initial_password_context(request, accounts)
+                return await self._unclaimed_password_page(
+                    request, self._unclaimed_password_context(request, accounts)
                 )
 
             async def refuse(message):
-                return await self._initial_password_page(
+                return await self._unclaimed_password_page(
                     request,
-                    self._initial_password_context(
+                    self._unclaimed_password_context(
                         request, accounts, error=message, open_dialog="confirm"
                     ),
                     status_code=400,
@@ -646,7 +662,7 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                     # names the account and says why there is nothing for it,
                     # which is the answer the person pressing this actually
                     # needs.
-                    password = reveal_initial_password(
+                    password = reveal_unclaimed_password(
                         session,
                         account["username"],
                         actor=actor,
@@ -670,13 +686,13 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                     "that every stored secret is re-wrapped under the new one; "
                     "authenticator enrolments are affected the same way.",
                 )
-            # The audit entries reveal_initial_password wrote are in this
+            # The audit entries reveal_unclaimed_password wrote are in this
             # transaction and are the only thing being committed - nothing
             # about the staff rows changed.
             session.commit()
 
-        return await self._initial_password_page(
-            request, self._initial_password_context(
+        return await self._unclaimed_password_page(
+            request, self._unclaimed_password_context(
                 request, accounts, revealed=revealed
             )
         )
@@ -690,20 +706,40 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
         ),
     )
     async def issue_password_action(self, request):
+        """Mint a replacement password, and keep it until it is claimed.
+
+        **Contract v1.16 removed this screen's asymmetry with account
+        creation.** The password below is stored encrypted exactly as a created
+        one is, so an administrator who loses this page recovers it from
+        *Show the unclaimed password* rather than by issuing yet another and
+        invalidating one they may already have read out.
+        """
         self._require_admin(request)
         pks = request.query_params.get("pks", "").split(",")
         actor = request.session.get(SESSION_KEY, "unknown")
+        # The same key create_staff is given on `new_staff` above. Read once,
+        # outside the loop, because a bulk selection must not be able to store
+        # two accounts' passwords under two different keys.
+        secret_key = get_runtime(request).settings.secret_key
         issued = []
+        # The rows actually acted on, so the page can link back to the reveal
+        # screen for exactly those. Collected here rather than reusing `pks`:
+        # that is what the browser asked for, and a row that no longer exists
+        # is skipped below.
+        acted_on = []
         with self.session_maker() as session:
             for pk in filter(None, pks):
                 staff = session.get(Staff, int(pk))
                 if staff is None:
                     continue
+                acted_on.append(staff.id)
                 # issue_password writes its own audit entry (admin/accounts.py) -
                 # the plaintext never passes through this view's own
                 # write_audit call, which is what keeps it out of the trail.
                 try:
-                    password = issue_password(session, staff.username, actor=actor)
+                    password = issue_password(
+                        session, staff.username, actor=actor, secret_key=secret_key
+                    )
                 except SelfRecoveryError as exc:
                     return await self._refuse_self_recovery(
                         request, session, exc,
@@ -713,7 +749,16 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
             session.commit()
         return await self.templates.TemplateResponse(
             request, "brand/issued_credential.html",
-            {"issued": issued, "next_url": self._list_url(request)},
+            {
+                "issued": issued,
+                "next_url": self._list_url(request),
+                # So the page can point at the screen that will show these
+                # again, which is the whole of what v1.16 changed here.
+                "reveal_url": request.url_for(
+                    "admin:view-staff-unclaimed_password_page"
+                ),
+                "pks": ",".join(str(i) for i in acted_on),
+            },
         )
 
     @action(

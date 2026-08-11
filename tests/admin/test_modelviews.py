@@ -14,7 +14,7 @@ from admin.auth import SESSION_KEY
 from admin.models import AuditLog, Staff, StaffRecoveryCode
 from admin.modelviews import AuditLogAdmin, AuditedModelView
 
-#: The key `create_staff` writes `initial_password_enc` under (contract
+#: The key `create_staff` writes `unclaimed_password_enc` under (contract
 #: v1.15). Its value is immaterial here - nothing in this file reads the
 #: column back - but the argument is required, deliberately: an optional one
 #: is a caller that silently forgot, and an account created without it would

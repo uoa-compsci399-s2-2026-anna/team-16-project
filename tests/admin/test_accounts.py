@@ -364,7 +364,7 @@ def test_issuing_yourself_a_password_is_refused(session):
     generation_before = before.session_generation
 
     with pytest.raises(SelfRecoveryError):
-        issue_password(session, "alice", actor="alice")
+        issue_password(session, "alice", actor="alice", secret_key=SECRET_KEY)
 
     staff = get_staff(session, "alice")
     assert staff.password_hash == hash_before
@@ -388,7 +388,7 @@ def test_a_refused_self_issue_writes_no_audit_entry_of_its_own(session):
     assert len(before) == 1, "creating the account writes exactly one entry"
 
     with pytest.raises(SelfRecoveryError):
-        issue_password(session, "alice", actor="alice")
+        issue_password(session, "alice", actor="alice", secret_key=SECRET_KEY)
 
     assert session.scalars(select(AuditLog.id)).all() == before
 
@@ -416,7 +416,7 @@ def test_the_self_check_folds_case_the_way_a_username_does(session):
     session.flush()
 
     with pytest.raises(SelfRecoveryError):
-        issue_password(session, "alice", actor="  Alice  ")
+        issue_password(session, "alice", actor="  Alice  ", secret_key=SECRET_KEY)
 
 
 def test_another_administrator_is_the_case_these_actions_exist_for(session):
@@ -425,7 +425,7 @@ def test_another_administrator_is_the_case_these_actions_exist_for(session):
     create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
     session.flush()
 
-    issued = issue_password(session, "alice", actor="bob")
+    issued = issue_password(session, "alice", actor="bob", secret_key=SECRET_KEY)
     session.flush()
 
     assert verify_password(issued, get_staff(session, "alice").password_hash)
@@ -437,7 +437,9 @@ def test_the_cli_may_act_on_the_account_it_is_recovering(session):
     admin/cli.py's own comment for why it is the one caller that gets it."""
     staff = _enrolled(session, "alice")
 
-    issued = issue_password(session, "alice", actor="alice", allow_self=True)
+    issued = issue_password(
+        session, "alice", actor="alice", secret_key=SECRET_KEY, allow_self=True
+    )
     reset_mfa(session, "alice", actor="alice", allow_self=True)
     session.flush()
 
@@ -491,7 +493,7 @@ def test_audit_history_survives_deleting_its_author(session):
     # Two entries written *by* the account about to be deleted, of the two
     # shapes this panel actually produces: one from a service function
     # (issue_password) and one a view would write by hand.
-    issue_password(session, "victim", actor="author")
+    issue_password(session, "victim", actor="author", secret_key=SECRET_KEY)
     write_audit(
         session, actor="author", action="update", table_name="factor_set",
         row_id=99, before={"status": "draft"}, after={"status": "published"},

@@ -93,18 +93,23 @@ REDACTED_FIELDS = {
     "code_hash",
     "ip_hmac",
     "token",
-    #: The unclaimed initial password (contract v1.15, §8.3). Added here in
-    #: the same change that added the column, not after it, because
-    #: `row_to_dict` snapshots *every* mapped column of a `staff` row and
-    #: `audit_log` is append-only — a value that reaches this table cannot be
-    #: taken back out, and the whole point of the column is that its contents
-    #: stop existing the moment the password is changed. An audit copy would
-    #: outlive the account's onboarding by the life of the deployment.
+    #: The unclaimed password (contract v1.15 §8.3, renamed and widened in
+    #: v1.16). Added here in the same change that added the column, not after
+    #: it, because `row_to_dict` snapshots *every* mapped column of a `staff`
+    #: row and `audit_log` is append-only — a value that reaches this table
+    #: cannot be taken back out, and the whole point of the column is that its
+    #: contents stop existing the moment the password is claimed. An audit copy
+    #: would outlive that by the life of the deployment.
     #:
     #: It is the ciphertext that is redacted, and that is not belt-and-braces:
     #: the key is derived from SECRET_KEY, which is available to anything that
     #: can read `audit_log` in the first place, so the ciphertext in this
     #: table is the plaintext.
+    "unclaimed_password_enc",
+    #: What that column was called between v1.15 and v1.16 (migration `0012`
+    #: renamed it). Kept for the same reason `mfa_secret_enc` is kept above,
+    #: and it is the cheaper half of the two: a redaction that is one string
+    #: out of date fails open and says nothing while it does.
     "initial_password_enc",
 }
 

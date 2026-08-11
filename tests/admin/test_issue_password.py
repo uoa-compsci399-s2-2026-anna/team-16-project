@@ -45,7 +45,9 @@ def enrolled_staff(session) -> Staff:
 
 
 def test_the_returned_password_is_the_one_that_works(session, enrolled_staff):
-    issued = issue_password(session, enrolled_staff.username, actor="admin")
+    issued = issue_password(
+        session, enrolled_staff.username, actor="admin", secret_key=SECRET_KEY
+    )
     session.flush()
 
     staff = get_staff(session, enrolled_staff.username)
@@ -59,7 +61,9 @@ def test_the_account_is_forced_to_change_it(session, enrolled_staff):
     same would leave the account looking already-onboarded, and the forced
     change page would never appear.
     """
-    issue_password(session, enrolled_staff.username, actor="admin")
+    issue_password(
+        session, enrolled_staff.username, actor="admin", secret_key=SECRET_KEY
+    )
     session.flush()
 
     assert get_staff(session, enrolled_staff.username).must_change_password is True
@@ -70,7 +74,9 @@ def test_issuing_a_password_ends_the_account_s_live_sessions(session, enrolled_s
     session_data = {}
     stamp_session(session_data, enrolled_staff)
 
-    issue_password(session, enrolled_staff.username, actor="admin")
+    issue_password(
+        session, enrolled_staff.username, actor="admin", secret_key=SECRET_KEY
+    )
     session.flush()
 
     with pytest.raises(StaffAuthRequired):
@@ -78,8 +84,12 @@ def test_issuing_a_password_ends_the_account_s_live_sessions(session, enrolled_s
 
 
 def test_two_calls_produce_different_passwords(session, enrolled_staff):
-    first = issue_password(session, enrolled_staff.username, actor="admin")
-    second = issue_password(session, enrolled_staff.username, actor="admin")
+    first = issue_password(
+        session, enrolled_staff.username, actor="admin", secret_key=SECRET_KEY
+    )
+    second = issue_password(
+        session, enrolled_staff.username, actor="admin", secret_key=SECRET_KEY
+    )
 
     assert first != second
 
@@ -90,7 +100,9 @@ def test_the_issued_password_is_never_written_to_the_audit_trail(session, enroll
     An audit entry carrying it would put a working credential in a table
     every staff member can read.
     """
-    issued = issue_password(session, enrolled_staff.username, actor="admin")
+    issued = issue_password(
+        session, enrolled_staff.username, actor="admin", secret_key=SECRET_KEY
+    )
     session.flush()
 
     entries = session.scalars(select(AuditLog)).all()
@@ -102,4 +114,4 @@ def test_the_issued_password_is_never_written_to_the_audit_trail(session, enroll
 
 def test_an_unknown_account_raises(session):
     with pytest.raises(UnknownStaffError):
-        issue_password(session, "nobody", actor="admin")
+        issue_password(session, "nobody", actor="admin", secret_key=SECRET_KEY)

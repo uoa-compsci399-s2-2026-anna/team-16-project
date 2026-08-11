@@ -26,10 +26,10 @@ from admin.models import (
     utcnow,
 )
 from admin.security import (
-    decrypt_initial_password,
     decrypt_totp_secret,
-    encrypt_initial_password,
+    decrypt_unclaimed_password,
     encrypt_totp_secret,
+    encrypt_unclaimed_password,
     generate_recovery_codes,
     hash_password,
     hash_recovery_code,
@@ -299,16 +299,19 @@ def create_staff(
     otherwise discarded, and losing the page that showed it meant the
     administrator had to issue a new one, which is a real nuisance once the old
     one has already been read out to the colleague. ``admin/models.py``'s note
-    on ``initial_password_enc`` and ``admin/security.py``'s note above
-    ``encrypt_initial_password`` between them carry what that buys and what it
+    on ``unclaimed_password_enc`` and ``admin/security.py``'s note above
+    ``encrypt_unclaimed_password`` between them carry what that buys and what it
     costs; the part that belongs here is the invariant:
 
-        **This column is written here and cleared by ``set_password`` and
-        ``issue_password``, and by nothing else.** A future path that changes a
-        password without clearing it leaves a live, readable credential on an
-        account whose password is something else — the one failure mode worth
-        more than the whole feature. ``tests/admin/test_initial_password.py``
-        drives every such path and asserts the column is NULL afterwards.
+        **This column is written here and by ``issue_password`` — the two
+        functions that mint a password its holder did not choose — and cleared
+        by ``set_password``, which is the one that records a password its
+        holder did. Nothing else touches it.** A future path that changes a
+        password without doing one of those two leaves a live, readable
+        credential on an account whose password is something else — the one
+        failure mode worth more than the whole feature.
+        ``tests/admin/test_unclaimed_password.py`` drives every such path and
+        asserts what the column holds afterwards.
 
     The plaintext is *also* still returned, and every caller still shows it
     once at the point of creation (``brand/staff_created.html``,
@@ -397,7 +400,7 @@ def create_staff(
         # NOT NULL with no default. The line below is a *second*, separate
         # copy under a different protection, not the absence of this one.
         password_hash=hash_password(password),
-        initial_password_enc=encrypt_initial_password(
+        unclaimed_password_enc=encrypt_unclaimed_password(
             password, secret_key=secret_key
         ),
         role=role,
@@ -439,27 +442,32 @@ def set_password(session: Session, username: str, new_password: str) -> None:
     The caller that is changing its *own* password must re-stamp its session
     afterwards — see ChangePasswordView.
 
-    **Clears ``initial_password_enc``, and this is the single function that
-    covers two of the three paths that matter** (contract v1.15 item 3). Both
-    of this function's callers land here and nowhere else — the self-service
-    change in ``admin/self_service_view.py`` (``/admin/security``) and the
-    forced change at first login in ``admin/views.py``
-    (``/admin/change-password``) — which is why the clearing lives here rather
-    than in either view: a copy in one view is a clearing the other path does
-    not do, and the forced change at first login is precisely the path that
-    decides how long the column exists at all. (There is no ``set-password``
-    CLI command; ``issue-password`` is the CLI's way to replace a password, and
-    it clears the column itself.)
+    **Clears ``unclaimed_password_enc``, and this is the function the whole
+    feature's safety rests on** (contract v1.15 item 3, v1.16). It is the only
+    place a password arrives that its holder chose, so it is the only place
+    that can say the minted one is spent. Both of this function's callers land
+    here and nowhere else — the self-service change in
+    ``admin/self_service_view.py`` (``/admin/security``) and the forced change
+    at first login in ``admin/views.py`` (``/admin/change-password``) — which
+    is why the clearing lives here rather than in either view: a copy in one
+    view is a clearing the other path does not do, and the forced change at
+    first login is precisely the path that decides how long the column exists
+    at all. (There is no ``set-password`` CLI command; ``issue-password`` is
+    the CLI's way to replace a password, and since v1.16 it *stores* the
+    replacement rather than clearing.)
 
-    Unconditional. Not ``if staff.initial_password_enc is not None``, which
+    Unconditional. Not ``if staff.unclaimed_password_enc is not None``, which
     reads the same and is not: the point is that after this call the column is
     NULL whatever it was, so a future caller cannot arrange a state where it is
-    skipped.
+    skipped. **v1.16 made this stricter rather than looser** — the column can
+    now be non-NULL on an account that is years old and fully enrolled, so the
+    forced-change path is no longer the only one that ever finds a value here
+    to clear.
     """
     staff = get_staff(session, username)
     staff.password_hash = hash_password(new_password)
     staff.must_change_password = False
-    staff.initial_password_enc = None
+    staff.unclaimed_password_enc = None
     staff.session_generation += 1
 
 
@@ -530,14 +538,57 @@ def last_password_change(session: Session, staff: Staff) -> datetime | None:
 
 
 def issue_password(
-    session: Session, username: str, *, actor: str, allow_self: bool = False
+    session: Session,
+    username: str,
+    *,
+    actor: str,
+    secret_key: str,
+    allow_self: bool = False,
 ) -> str:
     """Replace an account's password with a random one it must then change.
 
     Contract §8.3, recovery layer L2: this is half of what an administrator
     does to a compromised or locked-out colleague (reset_mfa is the other
-    half). The plaintext is returned to be read out once and handed over out
-    of band - there is no email system, deliberately.
+    half). The plaintext is returned to be read out and handed over out of band
+    - there is no email system, deliberately.
+
+    **The issued password is kept, encrypted, on exactly the terms a created
+    one is — contract v1.16, and the whole of what that revision changed
+    here.** Until v1.16 this function *cleared* ``unclaimed_password_enc``, on
+    the reasoning that the column meant "the password this account was created
+    with". The consequence was an asymmetry with no defence: the loss the
+    feature exists to prevent — a closed tab taking a password nobody wrote
+    down — was prevented for a created password and not for an issued one, and
+    the only recovery from the second was to issue *another*, invalidating one
+    that may already have been read out to the colleague. That is the same
+    exchange v1.15 removed from creation, left in place one screen away.
+
+    So the column now means "the password this system last minted for this
+    account, until somebody claims it". Two writers, this and ``create_staff``,
+    and they agree on every observable: the value is stored, the account is
+    forced to change it, and the list says a password is waiting.
+    ``set_password`` clears it, from either of them, unconditionally.
+
+    **Overwritten, never merely left alone.** A previous unclaimed value here
+    is a password that no longer opens the account, so an implementation that
+    skipped the write when one was present would go on offering a dead string
+    to the administrator reading it out. The assignment is unconditional for
+    that reason, and ``secret_key`` is a required keyword argument for the same
+    reason it is on ``create_staff``: an optional one is a caller that silently
+    forgot, and the state that produces — a password issued with nothing
+    stored — is precisely the NULL column this revision exists to abolish.
+
+    **What it costs, stated because it is a real widening.** The exposure
+    window is no longer bounded by "between creation and first login". An
+    account whose administrator issued a password on Friday holds a readable
+    credential until it is used, which may be Monday. The bound that remains is
+    the same one that always did: the column is NULL from each password change
+    onward, and ``set_password`` is unconditional. See ``admin/security.py``'s
+    note above ``encrypt_unclaimed_password`` for the rest of the cost, and
+    note that an issued password differs from a created one in the account's
+    favour — an account that has already enrolled still holds its second
+    factor, so the stored password is one of two rather than the whole of the
+    protection.
 
     Refuses when ``actor`` names the account being acted on, unless
     ``allow_self`` says otherwise - see ``_guard_not_self``. The guard runs
@@ -548,7 +599,8 @@ def issue_password(
 
     Distinct from set_password, which clears must_change_password because the
     user chose that password themselves. An issued password is a temporary
-    credential; the account is forced through the change page on next login.
+    credential; the account is forced through the change page on next login,
+    exactly as a created account is - the two land in the same state.
     Also bumps session_generation inline, along with every other credential
     change in this module (set_password, deactivate_staff, reset_mfa) -
     there is no shared helper for it; each site increments the column
@@ -559,20 +611,14 @@ def issue_password(
     password = generate_initial_password()
     staff.password_hash = hash_password(password)
     staff.must_change_password = True
-    # The third path that changes a password, and the third that has to clear
-    # the unclaimed-initial-password column (contract v1.15 item 3). Cleared
-    # rather than replaced with this new value, deliberately: v1.15 scopes the
-    # column to "the password the account was created with", so an issued
-    # replacement stays a one-time reveal - shown on brand/issued_credential.html
-    # and kept nowhere. Storing it too would widen the window from "between
-    # creation and first login" to "any time an administrator has issued a
-    # password and it has not been used", which is unbounded, and the loss this
-    # feature exists to prevent is the loss of the *creation* page.
-    #
-    # Leaving it as it was would be the actual defect: the row would keep
-    # offering an initial password that no longer opens the account, and the
-    # administrator reading it out would be handing over a dead string.
-    staff.initial_password_enc = None
+    # Contract v1.16. Written, not cleared, and written on every call whatever
+    # was there before: the column holds the password that currently opens this
+    # account and nothing else, so the one state that must not exist is a fresh
+    # password with a stale value - or no value - beside it. See the docstring
+    # for why the v1.15 behaviour (clear) was the half-measure it looked like.
+    staff.unclaimed_password_enc = encrypt_unclaimed_password(
+        password, secret_key=secret_key
+    )
     staff.session_generation += 1
     write_audit(
         session,
@@ -632,17 +678,26 @@ def reactivate_staff(session: Session, username: str) -> None:
     staff.session_generation += 1
 
 
-def reveal_initial_password(
+def reveal_unclaimed_password(
     session: Session, username: str, *, actor: str, secret_key: str
 ) -> str | None:
-    """Read back an unclaimed initial password, recording that it was read.
+    """Read back an unclaimed password, recording that it was read.
 
-    Contract §8.3, v1.15 item 3. Returns ``None`` when there is nothing to
-    reveal — the account has changed its password, or an administrator has
-    issued a replacement — and the caller must render that as its own outcome
-    rather than as an error or as an empty string. "There is nothing here" and
-    "here it is" are different answers and a page that blurs them would have
-    somebody reading out a blank.
+    Contract §8.3, v1.15 item 3 as widened by v1.16: the value is whichever
+    password the system last minted for this account — the one it was created
+    with, or the one an administrator issued since — and this function does not
+    distinguish them, because the person pressing the button is asking "what do
+    I read out", which has one answer.
+
+    Returns ``None`` when there is nothing to reveal. Two histories produce
+    that, and v1.16 removed the third: the account has set a password of its
+    own, or it was created before v1.15 and never had one stored. (Until v1.16
+    "an administrator issued a replacement" was the third and by far the most
+    confusing, since it followed an action that had just displayed a password.)
+    The caller must render ``None`` as its own outcome rather than as an error
+    or as an empty string — "there is nothing here" and "here it is" are
+    different answers, and a page that blurred them would have somebody reading
+    out a blank.
 
     **Every successful read writes an ``audit_log`` entry**, and that is the
     price of the column existing at all. A reversibly-stored credential that
@@ -663,24 +718,30 @@ def reveal_initial_password(
     clearing it.
 
     No ``_guard_not_self``. Unlike ``issue_password`` and ``reset_mfa`` this
-    mints nothing and clears nothing, and the self-aimed case cannot arise
-    anyway: an account signed in has necessarily completed its forced password
-    change, which set this column to NULL. The function would return None.
+    mints nothing and clears nothing, and the self-aimed case still cannot
+    arise after v1.16, though the argument is now one step longer. An account
+    with an established session has completed a forced password change, which
+    cleared this column. The only way it can be repopulated is
+    ``issue_password``, which bumps ``session_generation`` and therefore ends
+    that session — so an account cannot be signed in *and* hold an unclaimed
+    password at the same time. Aimed at itself this function would return None,
+    and a guard that can never fire is one whose test passes against an
+    implementation that refuses everything.
 
     Refuses nothing else, and holds no role check — the role floor is the
     view's (``StaffAdmin`` is administrator-only, and
-    ``StaffAdmin.initial_password_page`` calls ``_require_admin`` on top of
+    ``StaffAdmin.unclaimed_password_page`` calls ``_require_admin`` on top of
     that, because an ``@expose`` route does not inherit ``is_accessible``).
     This module's convention is that the service layer holds the rules a CLI
     and a panel must share, and there is no CLI command for this: a shell on
-    the container can read ``staff.initial_password_enc`` and ``SECRET_KEY``
+    the container can read ``staff.unclaimed_password_enc`` and ``SECRET_KEY``
     directly, so a command would add a path without adding a capability.
     """
     staff = get_staff(session, username)
-    if staff.initial_password_enc is None:
+    if staff.unclaimed_password_enc is None:
         return None
-    password = decrypt_initial_password(
-        staff.initial_password_enc, secret_key=secret_key
+    password = decrypt_unclaimed_password(
+        staff.unclaimed_password_enc, secret_key=secret_key
     )
     write_audit(
         session,
@@ -689,7 +750,7 @@ def reveal_initial_password(
         table_name="staff",
         row_id=staff.id,
         before=None,
-        after={"username": staff.username, "revealed": "initial_password"},
+        after={"username": staff.username, "revealed": "unclaimed_password"},
     )
     return password
 

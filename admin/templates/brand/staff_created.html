@@ -5,9 +5,13 @@
    led here: this page has exactly one job, which is to be read once, and the
    card is what brand/issued_credential.html already uses for the same job.
 
-   The password is rendered here and stored nowhere - not in `staff`, not in
-   `audit_log`, not in a redirect. This response is the only place it has ever
-   existed in readable form. #}
+   The password is rendered straight from the POST that created the account -
+   never through a redirect, which would have to carry it in a URL or a flash
+   message. It is *also* kept in `staff.unclaimed_password_enc`, encrypted,
+   until the account sets a password of its own (contract v1.15 item 3); it
+   never reaches `audit_log`, which redacts that column. The two sentences
+   below say so, because the version of this page that said "not stored
+   anywhere" outlived the change that made it false. #}
 {% block content %}
   <h1>{{ created.display_name }} can now be added to the team</h1>
 
@@ -22,8 +26,9 @@
   </ul>
 
   <div class="notice notice--warning" role="status">
-    This password is shown once and is not stored anywhere. Read it out or
-    write it down now.
+    Read it out or write it down now. It is kept, encrypted, only until this
+    person sets a password of their own — an administrator can read it back
+    from the accounts screen until then, and after that it is gone for good.
   </div>
 
   <p>
@@ -39,11 +44,12 @@
      create a second account for the same person and leave the first one
      sitting in the table forever. #}
   <p>
-    <strong>If you have lost this password, the account is not lost.</strong>
-    Nobody can log in as it yet. Go to
+    <strong>If you have lost this password, it is not gone.</strong> Go to
     <a href="{{ list_url }}">Staff accounts</a>, select this row, and choose
-    <strong>Issue a new password</strong> — that produces another one, shown
-    the same way. Do not create a second account for the same person.
+    <strong>Show the password waiting to be collected</strong> — it asks for
+    proof and then shows this same password again. Failing that,
+    <strong>Issue a new password</strong> mints a replacement, kept on the same
+    terms. Do not create a second account for the same person.
   </p>
 
   <p>

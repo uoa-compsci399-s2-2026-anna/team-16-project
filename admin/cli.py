@@ -48,10 +48,10 @@ from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
 from admin.models import Staff, StaffRole, StaffTotpDevice
 from admin.security import (
-    decrypt_initial_password,
     decrypt_totp_secret,
-    encrypt_initial_password,
+    decrypt_unclaimed_password,
     encrypt_totp_secret,
+    encrypt_unclaimed_password,
 )
 from admin.seed import seed_taxonomy
 from admin.taxonomy_rules import TaxonomyInvariantError
@@ -69,7 +69,7 @@ def cmd_create_staff(
     actor: str,
     secret_key: str,
 ) -> tuple[str, str]:
-    """Create an account. Returns (username, one-time initial password).
+    """Create an account. Returns (username, its first password).
 
     Exempt from the two-administrator floor: that rule guards removal, and a
     system with no accounts has to be able to bootstrap its first one.
@@ -123,10 +123,24 @@ def cmd_reset_mfa(db_session: Session, username: str) -> None:
     reset_mfa(db_session, username, actor="cli", allow_self=True)
 
 
-def cmd_issue_password(db_session: Session, username: str) -> str:
+def cmd_issue_password(
+    db_session: Session, username: str, *, secret_key: str
+) -> str:
     """Recovery layer L3: issue a password from the server when no
-    administrator can. Returns the plaintext, shown once."""
-    return issue_password(db_session, username, actor="cli", allow_self=True)
+    administrator can. Returns the plaintext.
+
+    ``secret_key`` is required and keyword-only, exactly as it is on
+    ``cmd_create_staff`` and for the same reason: since contract v1.16
+    ``issue_password`` *stores* the password it mints, encrypted under this
+    key, until the account claims it. A default here would be a second, wrong
+    key, and an optional one would be a path that quietly issued a password
+    with nothing stored — the asymmetry v1.16 exists to remove, reintroduced on
+    the CLI side only, which is the path that gets used when everything else
+    has failed.
+    """
+    return issue_password(
+        db_session, username, actor="cli", secret_key=secret_key, allow_self=True
+    )
 
 
 def cmd_delete_staff(db_session: Session, username: str) -> dict:
@@ -162,15 +176,15 @@ def cmd_rotate_key(
     db_session: Session, *, old_key: str, new_key: str
 ) -> tuple[int, int, int]:
     """Re-encrypt every stored secret, and clear the blocklist, under a new
-    SECRET_KEY. Returns (TOTP secrets re-encrypted, unclaimed initial
-    passwords re-encrypted, blocks cleared).
+    SECRET_KEY. Returns (TOTP secrets re-encrypted, unclaimed passwords
+    re-encrypted, blocks cleared).
 
-    **Two encrypted columns now, not one.** `staff.initial_password_enc`
+    **Two encrypted columns now, not one.** `staff.unclaimed_password_enc`
     (contract v1.15) is Fernet under a key derived from SECRET_KEY exactly as
     `staff_totp_device.secret_enc` is, only under a different HKDF `info`, so
     it has to be carried across a rotation the same way. Left out, a rotation
-    would turn every unclaimed initial password into a blob that
-    `reveal_initial_password` raises `TotpSecretUndecryptableError` on - a
+    would turn every unclaimed password into a blob that
+    `reveal_unclaimed_password` raises `TotpSecretUndecryptableError` on - a
     500 on an administrator screen, for accounts that were mid-onboarding
     when the key changed, with the recovery ("issue a new password") not
     obvious from the error. Both columns are decrypted before either is
@@ -225,18 +239,18 @@ def cmd_rotate_key(
         for device in devices
     ]
 
-    # The unclaimed initial passwords, same all-at-once ordering and for the
+    # The unclaimed passwords, same all-at-once ordering and for the
     # same reason: this comprehension is inside the "decrypt everything before
     # writing anything" window, so a single undecryptable row aborts the whole
     # rotation with nothing written rather than leaving half the table under
     # each key.
     unclaimed = db_session.scalars(
-        select(Staff).where(Staff.initial_password_enc.is_not(None))
+        select(Staff).where(Staff.unclaimed_password_enc.is_not(None))
     ).all()
-    initial_plaintext = [
+    unclaimed_plaintext = [
         (
             staff,
-            decrypt_initial_password(staff.initial_password_enc, secret_key=old_key),
+            decrypt_unclaimed_password(staff.unclaimed_password_enc, secret_key=old_key),
         )
         for staff in unclaimed
     ]
@@ -244,8 +258,8 @@ def cmd_rotate_key(
     for device, secret in plaintext:
         device.secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
 
-    for staff, password in initial_plaintext:
-        staff.initial_password_enc = encrypt_initial_password(
+    for staff, password in unclaimed_plaintext:
+        staff.unclaimed_password_enc = encrypt_unclaimed_password(
             password, secret_key=new_key
         )
 
@@ -253,7 +267,7 @@ def cmd_rotate_key(
     for row in blocks:
         db_session.delete(row)
 
-    return len(plaintext), len(initial_plaintext), len(blocks)
+    return len(plaintext), len(unclaimed_plaintext), len(blocks)
 
 
 def cmd_unblock(db_session: Session, address: str, *, secret_key: str) -> bool:
@@ -308,10 +322,18 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """Print freshly created bootstrap credentials to standard output.
 
     Contract 8.3, "Bootstrap": the passwords are "randomly generated per
-    deployment, printed once to standard output" and cannot be recovered
-    afterwards. This is the only moment they exist in readable form, so the
-    wording has to carry that - an operator who does not realise it will
-    close the terminal.
+    deployment, printed once to standard output".
+
+    **They are no longer the only copy, and this function must not say they
+    are.** Bootstrap goes through ``create_staff``, so since contract v1.15
+    each password is also stored encrypted until that account claims it — which
+    means one lost line is recoverable *by the other administrator*, from
+    /admin/staff. Losing both is still terminal for the panel, because a reveal
+    needs a signed-in administrator and there is nobody else; the way back
+    there is ``kaicalc-admin issue-password`` on the container. The message
+    below says exactly that, rather than the flat "cannot be recovered" it used
+    to carry, which was true when it was written and would now send an operator
+    to rebuild a deployment they could have logged in to.
 
     Shared with ``admin.app``'s startup hook rather than written twice.
     Both the CLI subcommand and application start reach the same
@@ -332,9 +354,14 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
         print(f"  {username}: {password}")
     print()
     print(
-        "These passwords are shown once and cannot be recovered. Log in "
-        "with both accounts now, change both passwords, and enrol both "
+        "Log in with both accounts now, change both passwords, and enrol both "
         "authenticators. Do not send them by email."
+    )
+    print(
+        "If you lose one of these lines, the other administrator can read it "
+        "back from /admin/staff until that account changes its password. If "
+        "you lose both, nobody can log in: run `kaicalc-admin issue-password "
+        "admin` on the container."
     )
 
 
@@ -433,8 +460,11 @@ def main(argv: list[str] | None = None) -> int:
                 "and do not reuse it."
             )
             print(
-                "If it is lost before they use it, the account is not: run "
-                f"`kaicalc-admin issue-password {username}` for another one."
+                "If it is lost before they use it, it is still recoverable: an "
+                "administrator can read it back from /admin/staff, under `Show "
+                "the password waiting to be collected`, until the account "
+                f"changes it. Failing that, `kaicalc-admin issue-password "
+                f"{username}` mints another."
             )
         elif args.command == "reset-mfa":
             cmd_reset_mfa(db_session, args.username)
@@ -445,7 +475,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "issue-password":
             try:
-                password = cmd_issue_password(db_session, args.username)
+                password = cmd_issue_password(
+                    db_session, args.username, secret_key=settings.secret_key
+                )
             except UnknownStaffError:
                 print(f"No such account: {args.username}")
                 return 1
@@ -453,6 +485,11 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Issued a new password for {args.username}.")
             print(f"  Password: {password}")
             print("  They must change it at their next login. Hand it over in person.")
+            print(
+                "  If this line is lost, the password is not: an administrator "
+                "can read it back from /admin/staff, under `Show the password "
+                "waiting to be collected`, until the account changes it."
+            )
         elif args.command == "delete-staff":
             try:
                 removed = cmd_delete_staff(db_session, args.username)
@@ -490,17 +527,17 @@ def main(argv: list[str] | None = None) -> int:
                 "are unchanged, so they can log in as before."
             )
         elif args.command == "rotate-key":
-            count, initial_count, cleared = cmd_rotate_key(
+            count, unclaimed_count, cleared = cmd_rotate_key(
                 db_session, old_key=args.old, new_key=args.new
             )
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
-            if initial_count:
+            if unclaimed_count:
                 print(
-                    f"Re-encrypted {initial_count} unclaimed initial "
-                    "password(s). These belong to accounts created but not yet "
-                    "logged in to; they stay readable from "
-                    "/admin/staff/initial-password."
+                    f"Re-encrypted {unclaimed_count} unclaimed password(s). "
+                    "These belong to accounts that have been given a password "
+                    "and have not yet set one of their own; they stay readable "
+                    "from /admin/staff/unclaimed-password."
                 )
             if cleared:
                 print(

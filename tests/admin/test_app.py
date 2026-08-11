@@ -190,14 +190,24 @@ async def test_startup_creates_two_administrators_on_an_empty_database(empty_dat
 async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     empty_database, capsys
 ):
-    """The passwords exist in readable form exactly once, in this output.
+    """The start-up output has to say what these two lines are worth.
 
-    Pinned against the CLI's own wording rather than a paraphrase: an
-    operator following the handover documentation has read the ``python -m
-    admin.cli bootstrap`` instructions, and a start-up that says something
-    different is a start-up they will not recognise as the same event. The
-    "shown once and cannot be recovered" sentence is the load-bearing part -
-    output that does not say it invites someone to close the terminal.
+    Pinned against the CLI's own wording rather than a paraphrase: an operator
+    following the handover documentation has read the ``python -m admin.cli
+    bootstrap`` instructions, and a start-up that says something different is
+    a start-up they will not recognise as the same event.
+
+    **The load-bearing sentence changed with contract v1.15 and this test
+    changed with it.** It used to be "shown once and cannot be recovered",
+    which was true when it was written: bootstrap goes through
+    ``create_staff``, which since v1.15 stores each password encrypted until
+    the account claims it, so one lost line is recoverable *by the other
+    administrator* from /admin/staff. Losing both is still terminal for the
+    panel — a reveal needs a signed-in administrator and there is nobody else —
+    and the output has to name the way back from that, which is
+    ``kaicalc-admin issue-password`` on the container. An operator told the
+    flat "cannot be recovered" would rebuild a deployment they could have
+    logged in to.
     """
     await _run_startup(empty_database)
 
@@ -205,7 +215,11 @@ async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     assert "Created initial administrator accounts." in out
     for username in BOOTSTRAP_USERNAMES:
         assert re.search(rf"^  {username}: \S{{20}}$", out, re.MULTILINE), out
-    assert "These passwords are shown once and cannot be recovered." in out
+    assert "cannot be recovered" not in out, (
+        "the sentence that stopped being true in v1.15 is back"
+    )
+    assert "the other administrator can read it back from /admin/staff" in out
+    assert "kaicalc-admin issue-password admin" in out
     assert "Do not send them by email." in out
 
 

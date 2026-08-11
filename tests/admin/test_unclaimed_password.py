@@ -1,4 +1,4 @@
-"""The unclaimed initial password. Contract §8.3, v1.15 item 3.
+"""The unclaimed password. Contract §8.3, v1.15 item 3, widened by v1.16.
 
 **The premise this feature was requested on was false, and the tests here start
 by pinning that.** The request was to show the initial password more than once,
@@ -11,22 +11,41 @@ below is that fact as an assertion, because the whole security argument for
 this feature rests on it: what was added is a **second, separately encrypted
 copy**, not the removal of a hash.
 
+**What v1.16 changed, and why half of this file is about it.** v1.15 stored the
+password an account was *created* with and had ``issue_password`` clear the
+column. So the loss the feature exists to prevent — a closed tab taking a
+password nobody wrote down — was prevented for a created password and not for
+an issued one, and the only recovery from the second was to issue *another*,
+which stops the one already read out to the colleague from working. The owner
+ruled that the two be aligned. ``issue_password`` now **overwrites** the column
+with what it mints, and the column was renamed
+``initial_password_enc`` → ``unclaimed_password_enc`` (migration ``0012``)
+because a non-NULL value no longer means "this account has never been used".
+
 **What is being tested, in order of how much it matters.**
 
-1. *The column is cleared on every path that changes a password.* Three paths —
-   self-service, the forced change at first login, and an administrator issuing
-   a replacement — each with its own test, driven at the layer a person
-   actually reaches it through wherever that is HTTP. A path that changed a
+1. *``set_password`` clears the column on every path that reaches it, whatever
+   put a value there.* Self-service and the forced change at first login, each
+   driven at the layer a person actually reaches it through, and each driven
+   over a *created* password and over an *issued* one — which under v1.15 was
+   an unreachable state and is now the ordinary one. A path that changed a
    password and left the column alone would leave a live, readable credential
    on an account whose password is now something else. That is the one failure
    mode worth more than the feature.
-2. *The value never reaches the audit log.* The trail is append-only, so a copy
+2. *``issue_password`` leaves a readable value behind, and it is the new one.*
+   Both halves: a test that the column is non-NULL would pass against an
+   implementation that never overwrote a stale value, which is the failure that
+   hands an administrator a dead string to read out.
+3. *A created account and an account handed a replacement land in the same
+   state.* That is what "align them" means, asserted as one comparison rather
+   than as two separate tests that could both drift.
+4. *The value never reaches the audit log.* The trail is append-only, so a copy
    there outlives the column by the life of the deployment.
-3. *Only an administrator can reveal it, and only with proof.*
+5. *Only an administrator can reveal it, and only with proof.*
    tests/admin/test_role_matrix.py holds the role floor for the two routes;
    this file holds the proof requirement, which is the part a correct role
    check does not give you.
-4. *The reveal is recorded.*
+6. *The reveal is recorded.*
 """
 
 import dataclasses
@@ -39,15 +58,15 @@ from admin.accounts import (
     create_staff,
     get_staff,
     issue_password,
-    reveal_initial_password,
+    reveal_unclaimed_password,
     set_password,
 )
 from admin.models import AuditLog, Staff, StaffRole
 from admin.security import (
-    INITIAL_PASSWORD_ENCRYPTION_INFO,
+    UNCLAIMED_PASSWORD_ENCRYPTION_INFO,
     TOTP_ENCRYPTION_INFO,
-    decrypt_initial_password,
-    encrypt_initial_password,
+    decrypt_unclaimed_password,
+    encrypt_unclaimed_password,
     verify_password,
 )
 from tests.admin.conftest import (
@@ -79,6 +98,18 @@ def session(_committed_session):  # noqa: F811
 #: Every account this file creates carries this prefix, so one teardown
 #: predicate covers all of them however a test failed part-way through.
 _PREFIX = "ip-test-"
+
+#: What `admin/protection.py` needs to see before it will treat a request with
+#: no session cookie as a person rather than a script - the same block
+#: tests/admin/conftest.py's `_login` sends, and needed here for the same
+#: reason: the two forced-change tests below drive `/admin/login` directly,
+#: before any cookie exists.
+_BROWSER_HEADERS = {
+    "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+    "accept": "text/html,application/xhtml+xml",
+    "sec-fetch-mode": "navigate",
+}
 
 
 @pytest.fixture(autouse=True)
@@ -140,7 +171,7 @@ def test_the_password_hash_is_bcrypt_from_the_moment_of_creation(session):
 
 
 def test_the_stored_copy_is_a_second_thing_and_not_the_plaintext(session):
-    """`initial_password_enc` is ciphertext, not the password with a new name.
+    """`unclaimed_password_enc` is ciphertext, not the password with a new name.
 
     Asserted three ways, because "it is encrypted" is exactly the claim that a
     base64 encoding would also appear to satisfy: the password's bytes do not
@@ -151,10 +182,10 @@ def test_the_stored_copy_is_a_second_thing_and_not_the_plaintext(session):
     _resync(session)
     staff = get_staff(session, staff.username)
 
-    blob = staff.initial_password_enc
+    blob = staff.unclaimed_password_enc
     assert blob is not None
     assert password.encode() not in blob
-    assert decrypt_initial_password(blob, secret_key=SECRET_KEY) == password
+    assert decrypt_unclaimed_password(blob, secret_key=SECRET_KEY) == password
 
 
 def test_the_two_encryption_purposes_do_not_share_a_key():
@@ -166,65 +197,194 @@ def test_the_two_encryption_purposes_do_not_share_a_key():
     the only way it surfaces is a rotation or an analysis that turns out to
     cover more than it was meant to.
     """
-    assert INITIAL_PASSWORD_ENCRYPTION_INFO != TOTP_ENCRYPTION_INFO
+    assert UNCLAIMED_PASSWORD_ENCRYPTION_INFO != TOTP_ENCRYPTION_INFO
 
     from admin.security import decrypt_totp_secret
 
-    blob = encrypt_initial_password("a-known-value", secret_key=SECRET_KEY)
+    blob = encrypt_unclaimed_password("a-known-value", secret_key=SECRET_KEY)
     with pytest.raises(Exception):
         # A TOTP-key decrypt of an initial-password token must fail. If this
         # ever passes, the two `info` values have converged.
         decrypt_totp_secret(blob, secret_key=SECRET_KEY)
 
 
-# --- the clearing paths -----------------------------------------------------
+# --- what issue_password leaves behind (contract v1.16) ---------------------
+
+
+def test_issue_password_stores_the_replacement(session):
+    """The alignment itself, at the service layer.
+
+    Under v1.15 this column was NULL after an issue and the replacement was a
+    one-time reveal. That is what the owner ruled should change: the loss the
+    feature prevents for a created password was not prevented for an issued
+    one, and the only recovery was to issue yet another - invalidating a
+    password that may already have been handed over.
+
+    Three assertions, and none of them is redundant. Non-NULL alone would pass
+    against an implementation that simply stopped touching the column (which
+    would leave the *creation* password sitting there, opening nothing).
+    Decrypting alone would pass against one that stored something unrelated.
+    The pairing - it is non-NULL, it decrypts to exactly the value returned to
+    the caller, and that value is the one the account's hash now verifies - is
+    what says the stored copy is the live credential.
+    """
+    staff, created = _make(session)
+    _resync(session)
+
+    replacement = issue_password(
+        session, staff.username, actor="somebody-else", secret_key=SECRET_KEY
+    )
+    session.commit()
+    _resync(session)
+
+    staff = get_staff(session, staff.username)
+    assert staff.unclaimed_password_enc is not None, (
+        "an issued password left nothing to reveal - the v1.15 asymmetry"
+    )
+    assert decrypt_unclaimed_password(
+        staff.unclaimed_password_enc, secret_key=SECRET_KEY
+    ) == replacement
+    assert verify_password(replacement, staff.password_hash) is True
+    assert replacement != created
+
+
+def test_issuing_overwrites_the_password_that_was_there(session):
+    """The half a "the column is not NULL" test cannot see.
+
+    An implementation that stopped clearing the column but never wrote to it
+    would satisfy every assertion above except this one, and would be the worst
+    of the three possible behaviours: the row would go on offering the password
+    the account was *created* with, which the issue has just invalidated, and
+    the administrator reading it out would be handing over a dead string with
+    the panel's assurance behind it.
+    """
+    staff, created = _make(session)
+    _resync(session)
+    stored_before = get_staff(session, staff.username).unclaimed_password_enc
+
+    replacement = issue_password(
+        session, staff.username, actor="somebody-else", secret_key=SECRET_KEY
+    )
+    session.commit()
+    _resync(session)
+
+    stored_after = get_staff(session, staff.username).unclaimed_password_enc
+    assert stored_after != stored_before
+    assert decrypt_unclaimed_password(
+        stored_after, secret_key=SECRET_KEY
+    ) == replacement
+    assert decrypt_unclaimed_password(stored_after, secret_key=SECRET_KEY) != created
+
+    revealed = reveal_unclaimed_password(
+        session, staff.username, actor="an-administrator", secret_key=SECRET_KEY
+    )
+    session.commit()
+    assert revealed == replacement, "the reveal handed back the superseded password"
+
+
+def test_a_created_account_and_an_issued_one_land_in_the_same_state(session):
+    """"Align them", as one comparison rather than two tests that could drift.
+
+    The observable state of an account holding a password it did not choose is
+    three things: the forced change is owed, a value is stored, and the list
+    can say so. Both minting paths must produce all three - that is the whole
+    of what v1.16 asked for, and asserting it as a tuple equality means a
+    future change to either path that moves one of them fails here rather than
+    in whichever of the two files happened to cover it.
+
+    `must_change_password` was already True on both paths before v1.16, and it
+    is asserted anyway: the brief asked whether the two agreed, and a property
+    that holds by accident and is never checked is one that stops holding
+    quietly.
+    """
+    created_account, _ = _make(session, suffix="created")
+    issued_account, _ = _make(session, suffix="issued")
+    # Claim the second account's creation password first, so that what is
+    # measured afterwards is the *issue*, not a leftover from creation.
+    set_password(session, issued_account.username, "a-password-of-their-own")
+    session.commit()
+    issue_password(
+        session, issued_account.username, actor="somebody-else",
+        secret_key=SECRET_KEY,
+    )
+    session.commit()
+    _resync(session)
+
+    def state(username):
+        row = get_staff(session, username)
+        return (
+            row.must_change_password,
+            row.unclaimed_password_enc is not None,
+            row.has_unclaimed_password,
+        )
+
+    assert state(issued_account.username) == state(created_account.username)
+    assert state(created_account.username) == (True, True, True)
+
+
+# --- the clearing path ------------------------------------------------------
 
 
 def test_set_password_clears_it(session):
-    """Path 1 and 2 in one function, and that is the point of it being one.
+    """Both of `set_password`'s callers in one function, and that is the point
+    of it being one.
 
-    `set_password` has exactly two callers - the self-service screen
+    `set_password` has exactly two - the self-service screen
     (`/admin/security`, admin/self_service_view.py) and the forced change at
     first login (`/admin/change-password`, admin/views.py). Clearing here
     rather than in either view is what makes the HTTP test below pass for a
     structural reason rather than as a coincidence of two views each
     remembering. (There is no `set-password` CLI command; `issue-password` is
-    the CLI's way to replace a password and it clears the column itself.)
+    the CLI's way to replace a password, and since v1.16 it stores what it
+    mints rather than clearing.)
     """
     staff, _ = _make(session)
     _resync(session)
-    assert get_staff(session, staff.username).initial_password_enc is not None
+    assert get_staff(session, staff.username).unclaimed_password_enc is not None
 
     set_password(session, staff.username, "a-password-of-their-own")
     session.commit()
     _resync(session)
 
-    assert get_staff(session, staff.username).initial_password_enc is None
+    assert get_staff(session, staff.username).unclaimed_password_enc is None
 
 
-def test_issue_password_clears_it(session):
-    """Path 3. An administrator-issued replacement is a one-time reveal.
+def test_set_password_clears_an_issued_password_too(session):
+    """The state v1.16 created, and the reason the clearing had to survive it.
 
-    The column is scoped to "the password the account was created with", so
-    issuing a new one clears it rather than storing the new value. Leaving it
-    as it was would be the real defect: the row would go on offering a password
-    that no longer opens the account.
+    Under v1.15 an issued password left the column NULL, so "an account with a
+    stored password that is not its creation password" did not exist, and no
+    test could distinguish a `set_password` that clears unconditionally from
+    one that only ever happened to be called on freshly created rows. That
+    state exists now, and it is the ordinary one for any account past its
+    first day.
+
+    Driven with the creation password already claimed, so the value being
+    cleared is unambiguously the issued one.
     """
     staff, _ = _make(session)
+    set_password(session, staff.username, "a-password-of-their-own")
+    session.commit()
     _resync(session)
+    assert get_staff(session, staff.username).unclaimed_password_enc is None
 
-    replacement = issue_password(session, staff.username, actor="somebody-else")
+    issue_password(
+        session, staff.username, actor="somebody-else", secret_key=SECRET_KEY
+    )
+    session.commit()
+    _resync(session)
+    assert get_staff(session, staff.username).unclaimed_password_enc is not None
+
+    set_password(session, staff.username, "a-second-password-of-their-own")
     session.commit()
     _resync(session)
 
-    staff = get_staff(session, staff.username)
-    assert staff.initial_password_enc is None
-    assert staff.must_change_password is True, (
-        "must_change_password and initial_password_enc are different facts; "
-        "this is the state that proves the list page cannot read one off the "
-        "other"
+    row = get_staff(session, staff.username)
+    assert row.unclaimed_password_enc is None, (
+        "an issued password survived the account setting one of its own - a "
+        "readable credential on an account whose password is now something else"
     )
-    assert verify_password(replacement, staff.password_hash) is True
+    assert row.must_change_password is False
 
 
 @pytest.mark.asyncio
@@ -240,14 +400,9 @@ async def test_the_forced_change_at_first_login_clears_it(admin_app, client, ses
     """
     staff, password = _make(session)
     _resync(session)
-    assert get_staff(session, staff.username).initial_password_enc is not None
+    assert get_staff(session, staff.username).unclaimed_password_enc is not None
 
-    headers = {
-        "user-agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
-                      "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
-        "accept": "text/html,application/xhtml+xml",
-        "sec-fetch-mode": "navigate",
-    }
+    headers = _BROWSER_HEADERS
     login = await client.post(
         "/admin/login",
         data={"username": staff.username, "password": password},
@@ -278,10 +433,69 @@ async def test_the_forced_change_at_first_login_clears_it(admin_app, client, ses
     _resync(session)
     staff = get_staff(session, staff.username)
     assert staff.must_change_password is False
-    assert staff.initial_password_enc is None, (
+    assert staff.unclaimed_password_enc is None, (
         "the forced change at first login left the initial password stored - "
         "a readable credential on an account whose password is now something "
         "else"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_forced_change_after_an_issued_password_clears_it(
+    admin_app, client, session
+):
+    """The same pre-login page, reached with an *issued* password in the
+    column - a combination that could not occur before v1.16.
+
+    It is worth its own test rather than being folded into the one above.
+    `/admin/change-password` is the one screen a locked-out colleague reaches
+    with a password an administrator has just read out to them, so it is the
+    screen that decides how long an *issued* password stays readable; and it is
+    reached through `admin/backend.py`'s pending-login gate, a different code
+    path from every other page on the panel. Under v1.15 this test would have
+    passed vacuously - the column was already NULL before the request.
+    """
+    staff, _created = _make(session)
+    issued = issue_password(
+        session, staff.username, actor="somebody-else", secret_key=SECRET_KEY
+    )
+    session.commit()
+    _resync(session)
+    assert get_staff(session, staff.username).unclaimed_password_enc is not None, (
+        "nothing was stored, so this test would prove nothing about clearing"
+    )
+
+    login = await client.post(
+        "/admin/login",
+        data={"username": staff.username, "password": issued},
+        headers=_BROWSER_HEADERS,
+        follow_redirects=False,
+    )
+    assert login.status_code == 302, "the issued password should be accepted"
+    assert login.headers["location"].endswith("/admin/change-password")
+
+    page = await client.get("/admin/change-password", headers=_BROWSER_HEADERS)
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert token, "no CSRF token on the forced change page"
+
+    changed = await client.post(
+        "/admin/change-password",
+        data={
+            "password": "a-password-of-their-own",
+            "confirm": "a-password-of-their-own",
+            "csrf_token": token.group(1),
+        },
+        headers=_BROWSER_HEADERS,
+        follow_redirects=False,
+    )
+    assert changed.status_code == 302, changed.text[:400]
+
+    _resync(session)
+    row = get_staff(session, staff.username)
+    assert row.must_change_password is False
+    assert row.unclaimed_password_enc is None, (
+        "the forced change left the issued password stored - a readable "
+        "credential on an account whose password is now something else"
     )
 
 
@@ -300,16 +514,16 @@ def test_the_ciphertext_never_reaches_the_audit_log(session):
     from admin.audit import REDACTED_FIELDS, row_to_dict
     from db.repository import _json_safe
 
-    assert "initial_password_enc" in REDACTED_FIELDS
+    assert "unclaimed_password_enc" in REDACTED_FIELDS
 
     staff, password = _make(session)
     _resync(session)
     staff = get_staff(session, staff.username)
 
     snapshot = row_to_dict(staff)
-    assert snapshot["initial_password_enc"] == staff.initial_password_enc
+    assert snapshot["unclaimed_password_enc"] == staff.unclaimed_password_enc
     safe = _json_safe(snapshot)
-    assert safe["initial_password_enc"] == "[redacted]"
+    assert safe["unclaimed_password_enc"] == "[redacted]"
     assert password not in repr(safe)
 
 
@@ -317,7 +531,7 @@ def test_revealing_writes_an_audit_entry_that_does_not_carry_the_value(session):
     staff, password = _make(session)
     _resync(session)
 
-    revealed = reveal_initial_password(
+    revealed = reveal_unclaimed_password(
         session, staff.username, actor="an-administrator", secret_key=SECRET_KEY
     )
     session.commit()
@@ -333,7 +547,7 @@ def test_revealing_writes_an_audit_entry_that_does_not_carry_the_value(session):
     assert entry.action == "reveal"
     assert entry.actor == "an-administrator"
     assert entry.after_json == {
-        "username": staff.username, "revealed": "initial_password"
+        "username": staff.username, "revealed": "unclaimed_password"
     }
     assert password not in repr(entry.after_json)
     assert password not in repr(entry.before_json)
@@ -355,7 +569,7 @@ def test_revealing_nothing_returns_none_and_writes_no_entry(session):
         select(text("COUNT(*)")).select_from(AuditLog)
         .where(AuditLog.table_name == "staff", AuditLog.row_id == staff.id)
     )
-    assert reveal_initial_password(
+    assert reveal_unclaimed_password(
         session, staff.username, actor="an-administrator", secret_key=SECRET_KEY
     ) is None
     session.commit()
@@ -384,7 +598,7 @@ async def test_the_page_will_not_show_it_without_proof(admin_client, session):
     staff, password = _make(session)
     _resync(session)
 
-    page = await admin_client.get(f"/admin/staff/initial-password?pks={staff.id}")
+    page = await admin_client.get(f"/admin/staff/unclaimed-password?pks={staff.id}")
     assert page.status_code == 200
     assert password not in page.text, (
         "the page showed the password before any proof was given"
@@ -393,7 +607,7 @@ async def test_the_page_will_not_show_it_without_proof(admin_client, session):
     assert token
 
     refused = await admin_client.post(
-        "/admin/staff/initial-password",
+        "/admin/staff/unclaimed-password",
         data={
             "pks": str(staff.id),
             "csrf_token": token.group(1),
@@ -416,12 +630,12 @@ async def test_an_administrator_who_proves_it_sees_the_password(admin_client, se
     staff, password = _make(session)
     _resync(session)
 
-    page = await admin_client.get(f"/admin/staff/initial-password?pks={staff.id}")
+    page = await admin_client.get(f"/admin/staff/unclaimed-password?pks={staff.id}")
     token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
     assert token
 
     shown = await admin_client.post(
-        "/admin/staff/initial-password",
+        "/admin/staff/unclaimed-password",
         data={
             "pks": str(staff.id),
             "csrf_token": token.group(1),
@@ -462,12 +676,114 @@ async def test_the_list_says_a_password_is_waiting_without_showing_it(
 
 
 @pytest.mark.asyncio
+async def test_the_list_says_a_password_is_waiting_after_one_is_issued(
+    admin_client, session
+):
+    """The indicator has to be truthful for an issued password too.
+
+    Before v1.16 this column read "No" from the instant `Issue a new password`
+    had displayed one - correct about the column and useless to the person
+    reading the screen, since a password *was* waiting to be collected. Driven
+    with the creation password claimed first, so the "Yes" can only be the
+    issue.
+
+    Both halves again: the account must be on the page at all, and the
+    plaintext must not be.
+    """
+    staff, _ = _make(session)
+    set_password(session, staff.username, "a-password-of-their-own")
+    session.commit()
+    issued = issue_password(
+        session, staff.username, actor="somebody-else", secret_key=SECRET_KEY
+    )
+    session.commit()
+    _resync(session)
+
+    listing = await admin_client.get("/admin/staff/list?pageSize=100")
+    assert listing.status_code == 200
+    assert staff.username in listing.text, "the account was not on the list at all"
+    assert "Yes - can be revealed" in listing.text
+    assert issued not in listing.text, "the list page rendered the password itself"
+
+
+@pytest.mark.asyncio
+async def test_the_panel_can_read_back_a_password_it_issued(admin_client, session):
+    """End to end through the panel, which is where the asymmetry was visible.
+
+    Drives the real `Issue a new password` action over HTTP - not
+    `issue_password` directly - because the view had to be given a
+    `secret_key` for the service function to store anything, and a view that
+    forgot it would fail here and nowhere else. Then reveals, with proof, and
+    asserts the value handed back is the one the action displayed.
+
+    The account is a scratch one, never the acting administrator: issuing a
+    password to yourself is refused by `_guard_not_self`.
+    """
+    staff, created = _make(session)
+    _resync(session)
+
+    issued_page = await admin_client.get(
+        "/admin/staff/action/issue-password", params={"pks": staff.id}
+    )
+    assert issued_page.status_code == 200, issued_page.text[:400]
+    shown = re.search(r'<code class="key">([^<]+)</code>', issued_page.text)
+    assert shown, issued_page.text[:600]
+    issued = shown.group(1)
+    assert issued != created
+
+    page = await admin_client.get(f"/admin/staff/unclaimed-password?pks={staff.id}")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert token
+
+    revealed = await admin_client.post(
+        "/admin/staff/unclaimed-password",
+        data={
+            "pks": str(staff.id),
+            "csrf_token": token.group(1),
+            "current_password": admin_client.password,
+        },
+    )
+    assert revealed.status_code == 200
+    assert issued in revealed.text, (
+        "the panel issued a password and then could not show it again - the "
+        "asymmetry contract v1.16 removed"
+    )
+    assert created not in revealed.text, (
+        "the superseded creation password was shown instead of the live one"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_issued_page_says_the_password_can_be_read_again(
+    admin_client, session
+):
+    """The wording, which was a defect of its own.
+
+    `brand/issued_credential.html` said "This is shown once and is not
+    recoverable". An administrator who believed it and lost the tab would issue
+    *another* password - which stops the one they may already have read out
+    from working, which is the whole loss this feature exists to prevent.
+    """
+    staff, _ = _make(session)
+    _resync(session)
+
+    page = await admin_client.get(
+        "/admin/staff/action/issue-password", params={"pks": staff.id}
+    )
+    flat = re.sub(r"\s+", " ", page.text)
+
+    assert "shown once and is not recoverable" not in flat
+    assert "If you lose this page, the password is not lost" in flat
+    assert "Show the password waiting to be collected" in flat
+
+
+@pytest.mark.asyncio
 async def test_the_details_page_does_not_render_the_ciphertext(admin_client, session):
     """`column_details_list` defaults to *every* mapped column.
 
     This is a live defect this project has already had once — the staff details
     page rendered the bcrypt hash and the encrypted TOTP secret in full, from a
-    list the same view correctly redacted. `initial_password_enc` is a new
+    list the same view correctly redacted. `unclaimed_password_enc` is a new
     mapped column and would have joined them without `column_details_list`
     being explicit.
     """
@@ -479,7 +795,7 @@ async def test_the_details_page_does_not_render_the_ciphertext(admin_client, ses
     assert staff.username in details.text
     assert password not in details.text
 
-    blob = get_staff(session, staff.username).initial_password_enc
+    blob = get_staff(session, staff.username).unclaimed_password_enc
     assert blob is not None
     assert blob.decode("ascii", "ignore") not in details.text
 
@@ -500,11 +816,11 @@ async def test_revealing_is_refused_after_the_password_is_claimed(
 
     async def attempt():
         page = await admin_client.get(
-            f"/admin/staff/initial-password?pks={staff.id}"
+            f"/admin/staff/unclaimed-password?pks={staff.id}"
         )
         token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
         return await admin_client.post(
-            "/admin/staff/initial-password",
+            "/admin/staff/unclaimed-password",
             data={
                 "pks": str(staff.id),
                 "csrf_token": token.group(1),
@@ -548,9 +864,41 @@ def test_a_key_rotation_carries_the_unclaimed_passwords_across(session):
 
     assert initial_count >= 1
     staff = get_staff(session, staff.username)
-    assert decrypt_initial_password(
-        staff.initial_password_enc, secret_key=new_key
+    assert decrypt_unclaimed_password(
+        staff.unclaimed_password_enc, secret_key=new_key
     ) == password
+
+
+def test_a_key_rotation_carries_an_issued_password_across(session):
+    """`cmd_rotate_key` selects on `unclaimed_password_enc IS NOT NULL`, so it
+    picks up an issued password with no change - asserted rather than assumed,
+    because v1.16 multiplied the number of rows that predicate matches and an
+    account that has one issued to it is by definition one somebody is waiting
+    on.
+    """
+    from admin.cli import cmd_rotate_key
+
+    staff, _created = _make(session)
+    set_password(session, staff.username, "a-password-of-their-own")
+    session.commit()
+    issued = issue_password(
+        session, staff.username, actor="somebody-else", secret_key=SECRET_KEY
+    )
+    session.commit()
+    _resync(session)
+
+    new_key = "another-different-secret-key-for-this-test"
+    _totp, count, _blocks = cmd_rotate_key(
+        session, old_key=SECRET_KEY, new_key=new_key
+    )
+    session.commit()
+    _resync(session)
+
+    assert count >= 1
+    row = get_staff(session, staff.username)
+    assert decrypt_unclaimed_password(
+        row.unclaimed_password_enc, secret_key=new_key
+    ) == issued
 
 
 @pytest.mark.asyncio
@@ -572,7 +920,7 @@ async def test_an_unrotated_key_change_is_explained_rather_than_a_500(
     staff, password = _make(session)
     _resync(session)
 
-    page = await admin_client.get(f"/admin/staff/initial-password?pks={staff.id}")
+    page = await admin_client.get(f"/admin/staff/unclaimed-password?pks={staff.id}")
     token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
     assert token
 
@@ -600,7 +948,7 @@ async def test_an_unrotated_key_change_is_explained_rather_than_a_500(
     )
 
     answer = await admin_client.post(
-        "/admin/staff/initial-password",
+        "/admin/staff/unclaimed-password",
         data={
             "pks": str(staff.id),
             "csrf_token": token.group(1),

@@ -45,7 +45,7 @@ pytestmark = pytest.mark.db
 #: The key every encrypted column in this file's fixtures is written under,
 #: and therefore the one `cmd_rotate_key` has to be given as `old_key`. Since
 #: contract v1.15 that is two columns and not one - `staff_totp_device.secret_enc`
-#: and `staff.initial_password_enc` - so `create_staff` takes it here too.
+#: and `staff.unclaimed_password_enc` - so `create_staff` takes it here too.
 #: Creating an account under a different key produced exactly the failure a
 #: half-rotated deployment would: `TotpSecretUndecryptableError` out of
 #: `cmd_rotate_key`, naming the wrong remedy.
@@ -112,7 +112,7 @@ def test_issue_password_command_returns_a_working_password(session):
     create_staff(session, username="alice", display_name="Alice", actor="test", secret_key=OLD_KEY)
     session.flush()
 
-    password = cmd_issue_password(session, "alice")
+    password = cmd_issue_password(session, "alice", secret_key=OLD_KEY)
     session.flush()
 
     staff = get_staff(session, "alice")
@@ -134,7 +134,7 @@ def test_the_cli_can_recover_an_account_that_happens_to_be_named_cli(session):
     """
     enrol(session, "cli", OLD_KEY)
 
-    password = cmd_issue_password(session, "cli")
+    password = cmd_issue_password(session, "cli", secret_key=OLD_KEY)
     cmd_reset_mfa(session, "cli")
     session.flush()
 
@@ -201,7 +201,7 @@ def test_rotate_key_skips_accounts_with_no_enrolment(session):
 
     The middle number is 2, not 0, and that is the assertion doing its second
     job: both accounts were just created and neither has logged in, so both
-    carry an unclaimed `initial_password_enc` (contract v1.15) and both have to
+    carry an unclaimed `unclaimed_password_enc` (contract v1.15) and both have to
     be carried across the rotation. An account with no enrolment still has an
     initial password - the two columns are independent, and a rotation that
     walked accounts by enrolment would leave bob's unreadable.

@@ -392,9 +392,16 @@ async def test_the_csv_export_never_renders_a_password_hash(admin_client, enroll
     assert enrolled_staff.password_hash not in response.text
 
 
-async def test_issuing_a_password_shows_it_once_and_forces_a_change(
+async def test_issuing_a_password_shows_it_and_forces_a_change(
     admin_client, db_session, enrolled_staff
 ):
+    """Contract v1.16 renamed this test: it no longer shows the password
+    "once". The value is kept encrypted until the account claims it, exactly
+    as a created one is, and tests/admin/test_unclaimed_password.py drives
+    reading it back. What this asserts is the pair that has always mattered
+    here - the password on the page is the one the account can now log in
+    with, and the account owes a change.
+    """
     response = await admin_client.get(
         "/admin/staff/action/issue-password", params={"pks": enrolled_staff.id}
     )
@@ -406,6 +413,9 @@ async def test_issuing_a_password_shows_it_once_and_forces_a_change(
 
     staff = get_staff(db_session, enrolled_staff.username)
     assert staff.must_change_password is True
+    assert staff.unclaimed_password_enc is not None, (
+        "the panel issued a password and stored nothing to read it back from"
+    )
     # Not just "some text landed in the <code> tag" - the exact password the
     # account can now log in with. A template whose context key silently
     # didn't match (e.g. `password` vs. the view's `issued` tuple) would
@@ -607,7 +617,7 @@ async def test_the_screen_offers_no_unaccounted_action(admin_client):
     self-application by ``admin.accounts``; ``deactivate`` and ``delete`` by
     the two-administrator floor in the same module; ``delete`` additionally
     requires the account to be deactivated already and re-proves the actor
-    before it runs. ``show-initial-password`` (contract v1.15) performs
+    before it runs. ``show-unclaimed-password`` (contract v1.15, v1.16) performs
     nothing itself — like ``delete`` it carries the selection to a page that
     can take a proof, because an ``@action`` is GET-only and revealing a live
     credential cannot be a one-click ``confirm()``. ``reactivate`` is the only
@@ -633,7 +643,7 @@ async def test_the_screen_offers_no_unaccounted_action(admin_client):
 
     assert slugs == {
         "issue-password", "reset-mfa", "deactivate", "reactivate", "delete",
-        "show-initial-password",
+        "show-unclaimed-password",
     }
 
 

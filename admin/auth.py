@@ -140,11 +140,24 @@ def authenticate_password(
     after that conclusion is to reset it again.
 
     The fix is in the copy, not in the order of operations. The login page
-    now states the lockout policy to *everyone* it refuses: repeated failures
-    lock an account for LOGIN_LOCKOUT_MINUTES, and while that lock is in
-    force a correct password is refused too. That is true for every visitor,
-    reveals nothing an attacker could not measure by trying, and is what
-    tells a locked-out administrator to wait rather than to reissue.
+    states the lockout policy to *everyone* it refuses: after
+    LOGIN_MAX_FAILURES failures an account is locked for
+    LOGIN_LOCKOUT_MINUTES, and while that lock is in force a correct password
+    is refused too. That is true for every visitor, reveals nothing an
+    attacker could not measure by trying (the count in five tries, the period
+    by waiting), and is what tells a locked-out administrator to wait rather
+    than to reissue.
+
+    **The policy is stated, but not at the same rank as the outcome.** The
+    first version of the copy put it in the alert box, full size, directly
+    under the line reporting the refusal, and the owner read it on the first
+    wrong password as a report that they were locked out - the whole defect
+    this text exists to prevent, arrived at from the other side. The page now
+    keeps the outcome in the alert (which is also what role="alert"
+    announces) and the standing rule below it in muted text, opening with its
+    own condition. See admin/templates/sqladmin/login.html. Nothing about
+    what is *said* changed between those two versions, and nothing here did
+    either: one message, byte-identical for all three refusals.
 
     The precise alternative - verify the password first and consult the lock
     afterwards, so that only someone holding a correct password for a real

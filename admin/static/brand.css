@@ -274,15 +274,33 @@ button:hover { background: var(--blueberry); }
 /* The mandatory, non-dismissible mock-data banner (contract §2.2): Banana
    ground takes Kale text per the brand guidelines' light-ground rule. */
 .notice--warning { background: var(--banana); color: var(--kale); font-weight: bold; }
-/* A notice may carry more than one paragraph: the login page's refusal says
-   what happened and then what to do about it, which is two sentences that
-   do not belong run together. The browser's default 1em margin on <p> would
-   push past the notice's own padding at both ends, so the block is spaced
-   from the inside instead. No other notice in the panel holds a <p> today -
-   the ones near a <p> in compare.html and dry_run_result.html are siblings
-   of it, not parents. */
+/* A notice may hold its message in a <p>, as the login page's refusal does.
+   The browser's default 1em margin would push past the notice's own padding
+   at both ends, so the block is spaced from the inside instead. No other
+   notice in the panel holds a <p> today - the ones near a <p> in
+   compare.html and dry_run_result.html are siblings of it, not parents. */
 .notice p       { margin: 0; }
-.notice p + p   { margin-top: 0.5rem; }
+
+/* A muted line that qualifies the notice above it rather than continuing it.
+   The login page's standing lockout rule is the one user: it sits OUTSIDE
+   the refusal notice, in .muted on the card's white ground, because it is a
+   rule about repeated attempts and not a report on this one - read at full
+   size on the Orange alarm ground it was taken for a diagnosis. Being
+   outside costs a paragraph gap it does not want (the notice's 1rem below
+   plus the <p>'s own 1em above), so the two are pulled back together:
+   adjacent margins collapse to the sum, 0.5rem, and the rule reads as
+   attached to the thing it qualifies rather than as the next section.
+
+   Deliberately its own class and not `.notice + .muted`: security.html's two
+   dialogs put an explanatory .muted paragraph directly under an error
+   notice, and the sibling selector would have quietly retuned a screen this
+   change has no business touching.
+
+   Contrast, not opacity, is what separates the two here: white on Orange is
+   already 3.3:1, and thinning it to make the rule quieter would have put the
+   secondary text near 2.5:1. Moving it to the white ground makes it quieter
+   AND more legible than it was. */
+.notice-note { margin-top: -0.5rem; }
 
 /* Page-level guidance: what this screen is for, and in what order to do
    things. The Kale rule down the left is the same signal the four

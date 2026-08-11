@@ -5,6 +5,7 @@ enrolment pages is refused while onboarding is incomplete.
 """
 
 import json
+import re
 import time
 from base64 import b64decode, b64encode
 
@@ -1343,6 +1344,19 @@ async def test_a_deactivated_session_is_cleared_not_merely_refused(
 # an oracle for which usernames exist. What changed is what the page says -
 # the same sentence to everyone, but a true one, naming the configured
 # lockout period.
+#
+# Then a second reading of the same page found a second defect, in the
+# weighting rather than the wording. The lockout policy sat in the alert box
+# directly under the line reporting the outcome, at the same size and in the
+# present tense, and the owner read it on the FIRST wrong password as "I am
+# locked out now". The rule now sits outside the alert, in muted text, and
+# opens with its own condition. So there are two properties under test here
+# and not one:
+#
+#   * the page still says the SAME thing to all three refusals (the byte
+#     comparisons below, which compare whole bodies and not fragments), and
+#   * the outcome and the standing rule are not the same kind of statement -
+#     what `role="alert"` announces is only what just happened.
 
 
 def _squashed(response) -> str:
@@ -1375,9 +1389,80 @@ async def test_the_refusal_explains_that_a_lockout_refuses_a_correct_password(
     body = _squashed(response)
     assert response.status_code == 400
     assert "Those sign-in details were not accepted." in body
-    assert "Repeated failed attempts lock an account for 15 minutes" in body
+    assert "After 5 failed attempts an account is locked for 15 minutes" in body
     assert "the correct password is refused as well" in body
-    assert "issuing a new password does not lift the lock" in body
+    assert "Waiting is what lifts a lock" in body
+    assert "issuing a new password does not" in body
+
+
+def _alert_region(response) -> str:
+    """The contents of the one element carrying role="alert", squashed.
+
+    Parsed off the served page rather than assumed, because the whole point
+    of the assertion it serves is WHERE a sentence sits.
+    """
+    body = _squashed(response)
+    match = re.search(r'<div[^>]*\brole="alert"[^>]*>(.*?)</div>', body)
+    assert match is not None, "no role=alert region on the page"
+    return match.group(1).strip()
+
+
+async def test_the_lockout_rule_is_ranked_below_what_just_happened(
+    client, admin_app
+):
+    """The standing rule is not inside the alert, and is not full-size text.
+
+    The defect this pins is not that the rule is missing - the test above
+    already had it present, and the page shipped with it present. The defect
+    was that one wrong password ANNOUNCED a lockout, because a rule about
+    repeated attempts sat in the alarm box, at full size, in the present
+    tense, immediately under the line reporting the outcome.
+
+    Three things are asserted, and the first is the one that matters:
+
+      1. what `role="alert"` encloses - which is what a screen reader
+         announces on arrival - is only the outcome;
+      2. the rule is still on the page, outside it, in `.muted`;
+      3. `.muted` is a real reduction in the stylesheet the page actually
+         links, so (2) is not a class that does nothing.
+
+    **What this does NOT prove, stated plainly rather than implied away: that
+    a human reads the rule as subordinate.** There is no browser here. It
+    pins the structure that carries the hierarchy - a refactor cannot move
+    the rule back into the alert or drop the class silently - and the
+    perception itself needs the owner's eyes on 18080.
+    """
+    _make_staff(admin_app, "wanda")
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": "not-the-right-password"},
+        follow_redirects=False,
+    )
+    body = _squashed(response)
+    alert = _alert_region(response)
+
+    # 1. The alert says what happened, and nothing about the standing rule.
+    assert "Those sign-in details were not accepted." in alert
+    assert "locked for" not in alert
+    assert "failed attempt" not in alert
+    assert "new password" not in alert
+
+    # 2. The rule is on the page all the same, in muted text outside it.
+    assert (
+        '<p class="muted notice-note"> After 5 failed attempts an account is locked'
+        in body
+    )
+
+    # 3. And `.muted` is a reduction in the stylesheet this page links.
+    stylesheet = await client.get("/admin/static/brand.css")
+    assert stylesheet.status_code == 200
+    # Anchored: `.muted` also appears inside other selectors in the file, and
+    # an unanchored match lands on one of those, which carries no font-size.
+    rule = re.search(r"^\.muted\s*\{([^}]*)\}", stylesheet.text, re.M)
+    assert rule is not None, "the page asks for .muted; brand.css must define it"
+    size = re.search(r"font-size:\s*([0-9.]+)rem", rule.group(1))
+    assert size is not None and float(size.group(1)) < 1.0, rule.group(1)
 
 
 async def test_the_login_page_carries_no_refusal_before_anything_is_refused(
@@ -1385,27 +1470,50 @@ async def test_the_login_page_carries_no_refusal_before_anything_is_refused(
 ):
     """`{% if error %}` and not a block that is always on: a login page that
     greets every visitor with a refusal notice would pass every assertion
-    above."""
+    above.
+
+    Both halves are checked, because they are now two elements: a visitor who
+    has been refused nothing must meet neither the alert nor the rule. A
+    lockout policy standing on an untouched login page is the same defect
+    this section exists for, one step earlier.
+    """
     response = await client.get("/admin/login")
 
     body = _squashed(response)
     assert response.status_code == 200
     assert "Those sign-in details were not accepted." not in body
-    assert "lock an account for" not in body
+    assert "an account is locked for" not in body
+    assert "failed attempt" not in body
 
 
-async def test_the_refusal_names_the_configured_lockout_not_a_literal(monkeypatch):
-    """LOGIN_LOCKOUT_MINUTES, not a number typed into the template.
+@pytest.mark.parametrize(
+    ("max_failures", "minutes", "expected"),
+    [
+        (1, 7, "After 1 failed attempt an account is locked for 7 minutes,"),
+        (3, 1, "After 3 failed attempts an account is locked for 1 minute,"),
+    ],
+)
+async def test_the_refusal_names_the_configured_lockout_not_a_literal(
+    monkeypatch, max_failures, minutes, expected
+):
+    """LOGIN_MAX_FAILURES and LOGIN_LOCKOUT_MINUTES, not numbers typed in.
 
-    Built against a value that is not the shipped default, so a hard-coded
-    "15" fails here rather than agreeing with itself. It needs its own app
-    because tests/conftest.py's admin_app fixture never sets the variable -
-    the same reason tests/admin/test_session_cookie.py builds its own.
+    Built against values that are not the shipped defaults, so a hard-coded
+    "5" or "15" fails here rather than agreeing with itself. It needs its own
+    app because tests/conftest.py's admin_app fixture never sets either
+    variable - the same reason tests/admin/test_session_cookie.py builds its
+    own.
+
+    The two cases also cover the grammar in both directions: a deployment
+    configured to 1 must not be told "1 attempts", and the message on a
+    real request is the only place that can be seen. `LOGIN_MAX_FAILURES=1`
+    locks on the first failure, which is exactly what this test does.
     """
     monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
     monkeypatch.setenv("DATABASE_URL", TEST_URL)
     monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
-    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", "7")
+    monkeypatch.setenv("LOGIN_MAX_FAILURES", str(max_failures))
+    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", str(minutes))
     app = create_app()
     try:
         transport = ASGITransport(app=app)
@@ -1422,8 +1530,8 @@ async def test_the_refusal_names_the_configured_lockout_not_a_literal(monkeypatc
 
     body = _squashed(response)
     assert response.status_code == 400
-    assert "lock an account for 7 minutes" in body
-    assert "wait 7 minutes and try the same password again" in body
+    assert expected in body
+    assert "5 failed attempts" not in body
     assert "15 minutes" not in body
 
 
@@ -1472,8 +1580,11 @@ async def test_a_locked_account_refuses_a_correct_password_with_the_same_page(
 
     assert locked.status_code == 400
     assert "location" not in locked.headers
+    # The whole body, not a fragment of it: what must hold is that the two
+    # refusals are indistinguishable, and a substring comparison would let a
+    # single differing word through anywhere else on the page.
     assert locked.text == wrong.text
-    assert "Repeated failed attempts lock an account for" in _squashed(locked)
+    assert "an account is locked for" in _squashed(locked)
 
 
 async def test_the_throttle_is_still_not_an_oracle_for_which_usernames_exist(

@@ -1,0 +1,53 @@
+{% extends "brand/base.html" %}
+{% block title %}Account created{% endblock %}
+
+{# Uses `content` (the centred card) rather than `page`, unlike the form that
+   led here: this page has exactly one job, which is to be read once, and the
+   card is what brand/issued_credential.html already uses for the same job.
+
+   The password is rendered here and stored nowhere - not in `staff`, not in
+   `audit_log`, not in a redirect. This response is the only place it has ever
+   existed in readable form. #}
+{% block content %}
+  <h1>{{ created.display_name }} can now be added to the team</h1>
+
+  <p>
+    The account <strong>{{ created.username }}</strong> exists, as
+    {% if created.role == 'admin' %}an administrator{% else %}staff{% endif %}.
+    Its first password is below.
+  </p>
+
+  <ul class="secrets">
+    <li><strong>{{ created.username }}</strong> — <code class="key">{{ password }}</code></li>
+  </ul>
+
+  <div class="notice notice--warning" role="status">
+    This password is shown once and is not stored anywhere. Read it out or
+    write it down now.
+  </div>
+
+  <p>
+    Hand it over in person or by phone. Nothing has been sent to anyone — this
+    system has no email. At their first login they will be made to choose
+    their own password and then to set up an authenticator app; until both are
+    done the account can reach nothing.
+  </p>
+
+  {# The sentence this whole page exists for. An administrator who closes this
+     tab too early and does not know this is one who assumes the account is
+     ruined - and this screen has no delete, so what they would actually do is
+     create a second account for the same person and leave the first one
+     sitting in the table forever. #}
+  <p>
+    <strong>If you have lost this password, the account is not lost.</strong>
+    Nobody can log in as it yet. Go to
+    <a href="{{ list_url }}">Staff accounts</a>, select this row, and choose
+    <strong>Issue a new password</strong> — that produces another one, shown
+    the same way. Do not create a second account for the same person.
+  </p>
+
+  <p>
+    <a href="{{ list_url }}">Back to accounts</a> ·
+    <a href="{{ new_url }}">Add another</a>
+  </p>
+{% endblock %}

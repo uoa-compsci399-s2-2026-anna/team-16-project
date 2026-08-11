@@ -84,7 +84,7 @@ def test_bootstrap_accounts_have_no_mfa_enrolment(session):
 
 def test_bootstrap_does_nothing_when_administrators_already_exist(session):
     create_staff(
-        session, username="someone", display_name="Someone", role=StaffRole.admin
+        session, username="someone", display_name="Someone", role=StaffRole.admin, actor="test"
     )
     session.flush()
 
@@ -122,7 +122,7 @@ def test_bootstrap_is_idempotent_while_no_administrator_is_usable_yet(session):
 def test_bootstrap_ignores_non_administrator_accounts(session):
     """A system with staff but no administrator is still locked out, so it
     still needs bootstrapping."""
-    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff)
+    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test")
     session.flush()
 
     created = ensure_bootstrap_admins(session)

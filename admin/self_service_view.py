@@ -81,13 +81,11 @@ from admin.accounts import (
     remove_totp_device,
     resume_mfa_enrolment,
     set_password,
-    verify_staff_totp,
 )
 from admin.audit import write_audit
-from admin.auth import SESSION_KEY, stamp_session
+from admin.auth import SESSION_KEY, reauthenticate, stamp_session
 from admin.csrf import check_token, issue_token
 from admin.runtime import get_runtime
-from admin.security import verify_password
 from admin.totp import TOTP_INTERVAL, qr_svg
 from admin.views import MIN_PASSWORD_LENGTH, _grouped, _password_problem
 
@@ -203,73 +201,21 @@ class SecurityView(BaseView):
     # --- re-authentication --------------------------------------------------
 
     def _reauthenticate(self, db, staff, form, *, runtime, now, password_only=False):
-        """Return None when the caller has proved itself, else a message.
+        """Delegate to ``admin/auth.py::reauthenticate``. See it for the whole
+        argument — what the second proof is for, why a TOTP code is refused
+        for a password change, and why failures are charged to the login
+        throttle.
 
-        ``password_only`` is what a password change passes. Accepting a TOTP
-        code there would miss the point entirely: the session presenting it
-        has already cleared the second factor, so a code proves nothing the
-        cookie did not, while the current password is the one secret a
-        stolen session does not carry.
-
-        Failures are charged to the **shared login throttle**, the same
-        counter ``authenticate_password`` and ``authenticate_totp`` use.
-        Contract §8.3's reason for one counter applies here unchanged: a
-        six-digit code is a 10^6 search space, and this page accepts one from
-        a caller who by construction already holds a session. The cost is
-        that an attacker sitting on a stolen session can lock the rightful
-        owner out of logging in — accepted, because an attacker at that point
-        can already do considerably worse, and the alternative is an
-        unthrottled oracle for the account's own password.
-
-        Success deliberately does **not** clear the counter, for the reason
-        ``authenticate_password``'s docstring gives: clearing on a correct
-        factor lets an attacker who holds one of them alternate successes
-        with guesses and never reach the threshold.
+        **The body moved out of this class rather than being copied into the
+        second caller.** ``admin/accounts_view.py``'s account-creation route
+        needs the identical proof for the identical reason, and this project
+        has already had the other outcome five times over in its test
+        teardowns: a second copy written slightly weaker, and the weaker one
+        being the one that runs. This wrapper stays so that the call sites
+        below read as they always did.
         """
-        if runtime.throttle.is_locked(staff.username, now=now):
-            remaining = runtime.throttle.seconds_remaining(staff.username, now=now)
-            return (
-                "Too many failed attempts. Try again in "
-                f"{remaining} seconds."
-            )
-
-        password = form.get("current_password") or ""
-        if password:
-            if verify_password(password, staff.password_hash):
-                return None
-            runtime.throttle.record_failure(staff.username, now=now)
-            return "That is not the current password for this account."
-
-        if password_only:
-            return "Enter your current password to confirm this change."
-
-        code = (form.get("current_code") or "").strip()
-        if code:
-            try:
-                accepted = verify_staff_totp(
-                    db, staff.username, code,
-                    secret_key=runtime.settings.secret_key, now=int(now),
-                )
-            except MfaNotEnrolledError:
-                accepted = False
-            if accepted:
-                return None
-            runtime.throttle.record_failure(staff.username, now=now)
-            # Names the replay case explicitly. Somebody who has just
-            # finished logging in reaches for the code still on their screen,
-            # and it is refused by the counter that stops replay - telling
-            # them to check their device clock would send them to fix
-            # something that is not broken. Same reasoning, same wording
-            # shape, as VerifyView's own failure message.
-            return (
-                "That code was not accepted. If you have just used it to log "
-                "in, wait for your authenticator to show the next one — each "
-                "code works only once."
-            )
-
-        return (
-            "Confirm it is you: enter your current password, or a code from "
-            "an authenticator already on this account."
+        return reauthenticate(
+            db, staff, form, runtime=runtime, now=now, password_only=password_only
         )
 
     # --- the route ----------------------------------------------------------

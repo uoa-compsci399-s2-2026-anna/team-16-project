@@ -47,7 +47,7 @@ def enrolled(session, username: str = "alice") -> tuple[str, str, list[str]]:
     "good session" test has to represent an account require_staff_username
     actually admits.
     """
-    _, password = create_staff(session, username=username, display_name="Alice")
+    _, password = create_staff(session, username=username, display_name="Alice", actor="test")
     session.flush()
     set_password(session, username, password)
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)
@@ -147,7 +147,7 @@ def test_the_initial_password_authenticates_before_the_forced_change(session):
     This case is not covered by the enrolled() helper, which deliberately
     completes onboarding.
     """
-    _, password = create_staff(session, username="dave", display_name="Dave")
+    _, password = create_staff(session, username="dave", display_name="Dave", actor="test")
     session.flush()
     throttle = make_throttle()
 
@@ -475,7 +475,7 @@ def test_a_totp_for_an_unenrolled_account_counts_as_a_failure(session):
     """It must not escape as MfaNotEnrolledError: the login flow has to treat
     it as one more failed attempt, or it becomes an oracle for which accounts
     have finished enrolling."""
-    _, password = create_staff(session, username="bob", display_name="Bob")
+    _, password = create_staff(session, username="bob", display_name="Bob", actor="test")
     session.flush()
     throttle = make_throttle()
     pending = pass_password(session, "bob", password, throttle)
@@ -492,7 +492,7 @@ def test_a_totp_for_an_unfinished_enrolment_is_refused(session):
     row. It must not satisfy the login second factor: mfa_enrolled_at is what
     says a real authenticator holds that secret.
     """
-    _, password = create_staff(session, username="bob", display_name="Bob")
+    _, password = create_staff(session, username="bob", display_name="Bob", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "bob", secret_key=SECRET_KEY)
     session.flush()
@@ -642,7 +642,7 @@ def test_require_staff_rejects_an_account_that_has_not_enrolled_mfa(session):
     """Contract 8.3: while mfa_enrolled_at is NULL every route except the
     password-change and enrolment pages is refused. Without this the forced
     enrolment is advisory and can be walked past by typing a URL."""
-    create_staff(session, username="bob", display_name="Bob")
+    create_staff(session, username="bob", display_name="Bob", actor="test")
     session.flush()
 
     with pytest.raises(StaffAuthRequired):
@@ -651,7 +651,7 @@ def test_require_staff_rejects_an_account_that_has_not_enrolled_mfa(session):
 
 def test_require_staff_rejects_an_account_that_must_change_its_password(session):
     """Same reasoning: the forced password change has to be unavoidable."""
-    _, _ = create_staff(session, username="carol", display_name="Carol")
+    _, _ = create_staff(session, username="carol", display_name="Carol", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "carol", secret_key=SECRET_KEY)
     code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(int(NOW))

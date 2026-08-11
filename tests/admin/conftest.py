@@ -102,7 +102,7 @@ def _create_onboarded_account(admin_app, *, role=StaffRole.admin):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role)
+        create_staff(db, username=username, display_name="Test User", role=role, actor="test")
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -235,6 +235,13 @@ async def admin_client(admin_app, client, monkeypatch):
         _cleanup_staff(admin_app, staff)
         raise
     client.staff = staff
+    # Both factors are hung off the client alongside the row. Any screen that
+    # re-authenticates on top of an established session - /admin/security, and
+    # /admin/staff/new - needs one of them to drive its permitted case, and a
+    # test that could only drive the *refused* case would be asserting that a
+    # system which refuses everything works correctly.
+    client.password = password
+    client.secret = secret
     yield client
     _cleanup_staff(admin_app, staff)
 
@@ -253,6 +260,8 @@ async def staff_client(admin_app, client, monkeypatch):
         _cleanup_staff(admin_app, staff)
         raise
     client.staff = staff
+    client.password = password
+    client.secret = secret
     yield client
     _cleanup_staff(admin_app, staff)
 

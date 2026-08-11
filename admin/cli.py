@@ -22,7 +22,15 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from admin.accounts import UnknownStaffError, create_staff, issue_password, reset_mfa
+from admin.accounts import (
+    DuplicateUsernameError,
+    InvalidDisplayNameError,
+    InvalidUsernameError,
+    UnknownStaffError,
+    create_staff,
+    issue_password,
+    reset_mfa,
+)
 from admin.audit import write_audit
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
@@ -47,6 +55,17 @@ def cmd_create_staff(
 
     Exempt from the two-administrator floor: that rule guards removal, and a
     system with no accounts has to be able to bootstrap its first one.
+
+    **A pass-through, and it has to stay one.** ``StaffAdmin.new_staff``
+    reaches the same ``create_staff``, and every rule about what a username may
+    be, what is refused, and what is written to ``audit_log`` lives there.
+    A check added here would be a check the panel does not have, and the path
+    with fewer of them is the one that ends up mattering. This function exists
+    only to keep ``main()`` from holding a service call inline, the same shape
+    ``cmd_reset_mfa`` and ``cmd_issue_password`` have.
+
+    ``create_staff`` flushes on its own behalf (it needs the primary key for
+    its audit entry), so there is no flush here.
     """
     staff, password = create_staff(
         db_session,
@@ -55,7 +74,6 @@ def cmd_create_staff(
         role=role,
         actor=actor,
     )
-    db_session.flush()
     return staff.username, password
 
 
@@ -296,15 +314,31 @@ def main(argv: list[str] | None = None) -> int:
     with factory() as db_session:
         if args.command == "create-staff":
             role = StaffRole.admin if args.admin else StaffRole.staff
-            username, password = cmd_create_staff(
-                db_session, args.username, args.display_name, role, actor="cli"
-            )
+            try:
+                username, password = cmd_create_staff(
+                    db_session, args.username, args.display_name, role, actor="cli"
+                )
+            except (
+                DuplicateUsernameError,
+                InvalidDisplayNameError,
+                InvalidUsernameError,
+            ) as exc:
+                # Before this, a name already in use reached the operator as
+                # an IntegrityError traceback out of the flush, which reads
+                # like the command is broken rather than like the argument is
+                # - the same reason `unblock` catches InvalidAddressError.
+                print(f"Refused: {exc}")
+                return 1
             db_session.commit()
             print(f"Created {username} ({role.value}).")
             print(f"Initial password: {password}")
             print(
                 "Hand this over in person or by phone. Do not send it by email, "
                 "and do not reuse it."
+            )
+            print(
+                "If it is lost before they use it, the account is not: run "
+                f"`kaicalc-admin issue-password {username}` for another one."
             )
         elif args.command == "reset-mfa":
             cmd_reset_mfa(db_session, args.username)

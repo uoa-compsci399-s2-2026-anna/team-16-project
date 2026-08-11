@@ -36,7 +36,7 @@ NOW = 1800
 
 
 def enrol(session, username: str, secret_key: str) -> str:
-    create_staff(session, username=username, display_name=username.title())
+    create_staff(session, username=username, display_name=username.title(), actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, username, secret_key=secret_key)
     code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(NOW)
@@ -89,7 +89,7 @@ def test_reset_mfa_command_clears_the_enrolment(session):
 
 
 def test_issue_password_command_returns_a_working_password(session):
-    create_staff(session, username="alice", display_name="Alice")
+    create_staff(session, username="alice", display_name="Alice", actor="test")
     session.flush()
 
     password = cmd_issue_password(session, "alice")
@@ -178,7 +178,7 @@ def test_rotate_key_reencrypts_every_device_not_one_per_account(session):
 
 def test_rotate_key_skips_accounts_with_no_enrolment(session):
     enrol(session, "alice", OLD_KEY)
-    create_staff(session, username="bob", display_name="Bob")
+    create_staff(session, username="bob", display_name="Bob", actor="test")
     session.flush()
 
     assert cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY) == (1, 0)

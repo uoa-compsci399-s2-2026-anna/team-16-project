@@ -124,7 +124,7 @@ def owes_enrolment(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User")
+        create_staff(db, username=username, display_name="Test User", actor="test")
         db.flush()
         set_password(db, username, "a-long-enough-password")
         db.commit()
@@ -146,7 +146,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -426,7 +426,7 @@ async def test_walk4_a_half_onboarded_account_cannot_reach_any_panel_url_by_typi
     factory = admin_app.state.session_factory
     with factory() as db:
         _, password = create_staff(
-            db, username=username, display_name="Half Onboarded"
+            db, username=username, display_name="Half Onboarded", actor="test"
         )
         db.commit()
     try:

@@ -8,6 +8,7 @@ That is what lets the admin panel write an audit_log entry in the same
 transaction as the change it describes.
 """
 
+import re
 import secrets
 import string
 from datetime import datetime
@@ -49,9 +50,51 @@ MIN_ACTIVE_ADMINS = 2
 _INITIAL_PASSWORD_ALPHABET = string.ascii_letters + string.digits
 _INITIAL_PASSWORD_LENGTH = 20
 
+#: ``staff.username`` is VARCHAR(64) and ``staff.display_name`` VARCHAR(128).
+#: Enforced here rather than only in a form, because MySQL in non-strict mode
+#: truncates silently — an account created with a 70-character username would
+#: be stored under a name nobody can reproduce at the login box.
+MAX_USERNAME_LENGTH = 64
+MAX_DISPLAY_NAME_LENGTH = 128
+
+#: What a username may contain, after ``_normalise_username`` has stripped and
+#: casefolded it. Deliberately permissive about *which* characters — a trust
+#: may want ``jane``, ``j.gerrard`` or ``jane@example.org`` and none of those
+#: is wrong — and strict about the one thing that is: no whitespace, anywhere.
+#: A username with a space in it is one the login box's own ``.strip()`` can
+#: never reconstruct from the middle, so the account would be created and then
+#: be unreachable, which is the exact failure this whole task exists to avoid.
+_USERNAME_RE = re.compile(r"^[^\s]+$")
+
 
 class LastAdministratorsError(RuntimeError):
     """The change would leave fewer than MIN_ACTIVE_ADMINS administrators."""
+
+
+class InvalidUsernameError(RuntimeError):
+    """The proposed username is empty, too long, or contains whitespace."""
+
+
+class InvalidDisplayNameError(RuntimeError):
+    """The proposed display name is empty or too long."""
+
+
+class DuplicateUsernameError(RuntimeError):
+    """An account with that username already exists.
+
+    Refused here, before the insert, rather than left to surface as the
+    UNIQUE constraint's ``IntegrityError`` — which reaches the CLI as a
+    traceback and the panel as a 500.
+
+    **This is also what stops creation becoming a way around
+    ``_guard_not_self``.** Creating an account is the one operation in this
+    module that mints a credential without proving anything about the account
+    it belongs to, because the account does not exist yet. If it could name a
+    row that *did* exist, it would be ``issue_password`` with the guard taken
+    off: an administrator — or a stolen session — would "create" their own
+    username and be handed a fresh password for the account already there.
+    Refusing a name that is taken is what keeps creation strictly additive.
+    """
 
 
 class UnknownStaffError(RuntimeError):
@@ -226,17 +269,91 @@ def create_staff(
     username: str,
     display_name: str,
     role: StaffRole = StaffRole.staff,
-    actor: str | None = None,
+    actor: str,
 ) -> tuple[Staff, str]:
     """Create an account and return it with its one-time initial password.
 
     The plaintext password is returned rather than stored: it is shown once
-    and handed over out of band. Contract 8.3 forbids self-service
-    registration, so this is the only way an account comes into existence.
+    and handed over out of band. Contract §8.3 forbids self-service
+    registration, so this is the only way an account comes into existence —
+    ``admin/cli.py``'s ``create-staff`` and ``StaffAdmin.new_staff`` both land
+    here, and neither carries a rule of its own.
+
+    **The password is not recoverable and is deliberately not stored.** What
+    is recoverable is the *account*: if the page or terminal carrying this
+    value is lost, ``issue_password`` mints another. Every caller has to say
+    so at the point it shows the value — see ``brand/staff_created.html``, and
+    ``admin/cli.py``'s own printed lines.
+
+    ``actor`` is **required**, and keyword-only, for the reason ``reset_mfa``'s
+    already is: an optional actor is a caller that silently forgot one, and
+    here that would put an unattributed account into ``staff`` and an
+    unattributed row into ``audit_log``. ``bootstrap`` and ``cli`` are the two
+    non-human values in use.
+
+    Refuses a username that is taken, empty, over-length or contains
+    whitespace, and a display name that is empty or over-length. Every one of
+    those is refused **before** anything is added to the session, so a
+    rejected call leaves the transaction exactly as it found it.
+
+    Writes its own ``audit_log`` entry, in the same transaction, the way
+    ``issue_password`` does. Creation is a write like any other (§8.1) and it
+    was the one mutation in this module that left no trace: an account that
+    appeared with nobody named beside it was indistinguishable from one
+    inserted by hand against the database.
+
+    **``password_hash`` is deliberately absent from that payload**, and the
+    reason is not redaction — ``write_audit`` would redact it anyway. It is
+    that ``last_password_change`` reads the trail for exactly two shapes, one
+    of which is "this entry has a ``password_hash`` key", and naming it here
+    would make every account's *creation* answer the question
+    ``/admin/security`` asks as "when did you last change your password".
+    A newly created account has never changed its password; it was issued one,
+    and it is forced to change it at first login — which writes an entry of
+    its own. ``action="create"`` on ``table_name="staff"`` already says a
+    credential was minted, since an account cannot exist without one.
     """
+    username = _normalise_username(username)
+    if not username or not _USERNAME_RE.match(username):
+        raise InvalidUsernameError(
+            "A username is required and cannot contain spaces. It is what "
+            "this person types at the login box."
+        )
+    if len(username) > MAX_USERNAME_LENGTH:
+        raise InvalidUsernameError(
+            f"That username is too long. Use at most {MAX_USERNAME_LENGTH} "
+            "characters."
+        )
+
+    display_name = display_name.strip()
+    if not display_name:
+        raise InvalidDisplayNameError(
+            "A display name is required. It is what the panel and the audit "
+            "trail show in place of the username."
+        )
+    if len(display_name) > MAX_DISPLAY_NAME_LENGTH:
+        raise InvalidDisplayNameError(
+            f"That name is too long. Use at most {MAX_DISPLAY_NAME_LENGTH} "
+            "characters."
+        )
+
+    # Checked rather than caught. The UNIQUE constraint on staff.username is
+    # still the real guarantee — two simultaneous creations of the same name
+    # would race past this and one would fail at the flush — but that is a
+    # 500 on a panel with two administrators, whereas the case that actually
+    # happens (a name already in use, typed by one person) gets an
+    # explanation. See DuplicateUsernameError for why this is a guard and not
+    # a convenience.
+    if session.scalar(select(Staff).where(Staff.username == username)) is not None:
+        raise DuplicateUsernameError(
+            f"An account named {username!r} already exists. Usernames cannot "
+            "be reused, and creating one never replaces an existing account. "
+            "If this is the same person, issue them a new password instead."
+        )
+
     password = generate_initial_password()
     staff = Staff(
-        username=_normalise_username(username),
+        username=username,
         display_name=display_name,
         password_hash=hash_password(password),
         role=role,
@@ -246,6 +363,27 @@ def create_staff(
         created_by=actor,
     )
     session.add(staff)
+    # Before write_audit, so row_id is the real primary key rather than None.
+    # Flushing but not committing is this module's convention throughout: the
+    # caller owns the transaction, which is what lets the row and its audit
+    # entry land or roll back together.
+    session.flush()
+    write_audit(
+        session,
+        actor=actor,
+        action="create",
+        table_name="staff",
+        row_id=staff.id,
+        before=None,
+        after={
+            "username": staff.username,
+            "display_name": staff.display_name,
+            "role": staff.role.value,
+            "is_active": True,
+            "must_change_password": True,
+            "created_by": staff.created_by,
+        },
+    )
     return staff, password
 
 

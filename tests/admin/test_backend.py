@@ -13,7 +13,7 @@ import itsdangerous
 import pyotp
 import pytest
 from httpx import ASGITransport, AsyncClient
-from sqlalchemy import delete
+from sqlalchemy import delete, text
 
 from admin.accounts import (
     begin_mfa_enrolment,
@@ -125,7 +125,7 @@ def _make_staff(
     secret_key = admin_app.state.settings.secret_key
     with admin_app.state.session_factory() as db:
         _, password = create_staff(
-            db, username=username, display_name=username.title(), role=StaffRole.staff
+            db, username=username, display_name=username.title(), role=StaffRole.staff, actor="test"
         )
         db.flush()
         if password_changed:
@@ -184,9 +184,26 @@ def _reset_staff_table(admin_app):
     created it - invisible to the transactional ``session`` fixture other
     test modules use, but not to a fresh count query against the same
     schema. staff_recovery_code cascades via its FK's ON DELETE CASCADE.
+
+    The ``audit_log`` sweep is the second half of the same job and was added
+    when ``admin/accounts.py::create_staff`` began auditing itself: this
+    module creates 75 accounts across its walks, so without it every later
+    file in the run that reads ``audit_log`` as a whole - four tests in
+    test_modelviews.py and test_taxonomy_rules.py assert the table is empty
+    or that its first row is theirs - fails on rows belonging to a module
+    that finished half an hour of test-time earlier. ``audit_log`` has no
+    foreign key into ``staff`` (an audit entry must outlive the row it
+    describes, or a delete would erase its own record), so the cascade above
+    does not reach it and the deletion has to be explicit.
     """
     yield
     with admin_app.state.session_factory() as db:
+        db.execute(
+            text(
+                "DELETE FROM audit_log WHERE table_name = 'staff' "
+                "AND row_id IN (SELECT id FROM staff)"
+            )
+        )
         db.execute(delete(Staff))
         db.commit()
 

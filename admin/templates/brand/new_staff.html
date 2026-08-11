@@ -1,0 +1,165 @@
+{% extends "brand/base.html" %}
+{% block title %}Add a staff member{% endblock %}
+
+{# The same module brand/security.html loads, unchanged. It is generic - it
+   opens any [data-dialog] target, closes any [data-close-dialog], and
+   re-opens modally whatever the server rendered `open` - so this page gets
+   the backdrop, the inertness, Escape and focus return without a line of its
+   own. See admin/static/security.js for what it deliberately does not
+   contain. #}
+{% block head %}
+  <script type="module" src="/admin/static/security.js" defer></script>
+{% endblock %}
+
+{# `shell`, not `content`: this is a settings screen somebody visits on
+   purpose, not one of the login gauntlet's gates. Same choice, same reason,
+   as brand/security.html. #}
+{% block shell %}
+<main class="page">
+
+  <header class="page__head">
+    <div class="page__mark" aria-hidden="true"></div>
+    <h1>Add a staff member</h1>
+    <p class="page__who">This creates the account. It does not send anything.</p>
+  </header>
+
+  {# A refused submission comes back inside the dialog it was made in - a modal
+     covers the page, so a message printed behind it is a message nobody
+     reads. Only an error belonging to no dialog is shown here. #}
+  {% if error and not open_dialog %}
+    <div class="notice notice--error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  <section class="panel" aria-labelledby="what-happens-heading">
+    <h2 id="what-happens-heading">What happens next</h2>
+    <ol>
+      <li>
+        The account is created and a password is generated for it. That
+        password is shown to you <strong>once</strong>, on the next page.
+      </li>
+      <li>
+        You hand it over in person or by phone. There is no email in this
+        system, deliberately — nothing is sent to anybody.
+      </li>
+      <li>
+        At their first login they are made to choose their own password and
+        then to set up an authenticator app. Neither step can be skipped, and
+        until both are done the account can reach nothing.
+      </li>
+    </ol>
+    <p class="muted">
+      If you lose that password before handing it over — a closed tab, a
+      crash — the account is not lost with it. Nobody can log in as it, and
+      you can issue a new password from the accounts screen at any time using
+      <strong>Issue a new password</strong>. You never need to create a second
+      account for the same person.
+    </p>
+  </section>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+
+    <section class="panel" aria-labelledby="details-heading">
+      <h2 id="details-heading">The new account</h2>
+
+      <label for="username">Username</label>
+      <input type="text" id="username" name="username" value="{{ username }}"
+             maxlength="{{ max_username_length }}"
+             aria-describedby="username-help" required>
+      <p class="muted" id="username-help">
+        What this person types at the login box. It is stored in lower case,
+        it cannot contain spaces, and it cannot be changed afterwards or
+        reused by anyone else. At most {{ max_username_length }} characters.
+      </p>
+
+      <label for="display_name">Full name</label>
+      <input type="text" id="display_name" name="display_name"
+             value="{{ display_name }}"
+             maxlength="{{ max_display_name_length }}"
+             aria-describedby="display-name-help" required>
+      <p class="muted" id="display-name-help">
+        Shown on the accounts screen so colleagues can tell who an account
+        belongs to. At most {{ max_display_name_length }} characters.
+      </p>
+
+      {# Radios, not a select, and with the consequence of each written beside
+         it. The choice decides what this person can do to other people's
+         accounts, and a two-option select whose labels are the bare words
+         "staff" and "admin" says none of that. #}
+      <fieldset class="choose">
+        <legend>What this account may do</legend>
+        <label class="choose__option" for="role-staff">
+          <input type="radio" id="role-staff" name="role" value="staff"
+                 {% if role != 'admin' %}checked{% endif %}>
+          <span>
+            <strong>Staff</strong> — edit the taxonomy, factors and formulas,
+            run dry runs, publish and roll back factor sets, read the audit
+            log. This is the right choice for almost everyone.
+          </span>
+        </label>
+        <label class="choose__option" for="role-admin">
+          <input type="radio" id="role-admin" name="role" value="admin"
+                 {% if role == 'admin' %}checked{% endif %}>
+          <span>
+            <strong>Administrator</strong> — everything staff can do, and in
+            addition: add, deactivate and re-role accounts, issue another
+            person's password, reset another person's authenticator, and
+            manage the IP blocklist. Administrators are each other's only way
+            back in when somebody loses a phone, so there must always be at
+            least two.
+          </span>
+        </label>
+      </fieldset>
+    </section>
+
+    <div class="actions">
+      <button type="button" id="create-account" class="button"
+              data-dialog="dialog-confirm" aria-haspopup="dialog"
+              aria-controls="dialog-confirm">Create account</button>
+      <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
+    </div>
+
+    {# Inside the form on purpose, so the fields above submit with the proof
+       below as one request. Without JavaScript this dialog never opens and
+       the form cannot be submitted at all - the same property the three
+       dialogs on brand/security.html already have, and the reason the button
+       that opens it is type="button" inside no separate form. #}
+    <dialog id="dialog-confirm" class="dialog"
+            aria-labelledby="dialog-confirm-title"
+            data-return-focus="create-account"
+            {% if open_dialog == 'confirm' %}open{% endif %}>
+      <h2 id="dialog-confirm-title">Confirm it is you</h2>
+      {% if open_dialog == 'confirm' and error %}
+        <div class="notice notice--error" role="alert">{{ error }}</div>
+      {% endif %}
+      <p class="muted">
+        Creating an account hands out a working password, so it asks for proof
+        beyond being signed in — being signed in is the one thing somebody who
+        had taken your session would also have.
+      </p>
+
+      {# The code first, the password beneath it, matching the two proof
+         blocks on brand/security.html. Either is accepted and both must stay
+         accepted: see admin/auth.py::reauthenticate. #}
+      <fieldset class="proof">
+        <legend>Prove it is you</legend>
+        <label for="confirm-code">Code from your authenticator</label>
+        <input type="text" id="confirm-code" name="current_code"
+               autocomplete="one-time-code" inputmode="numeric"
+               data-initial-focus>
+        <label for="confirm-pw">…or your current password</label>
+        <input type="password" id="confirm-pw" name="current_password"
+               autocomplete="current-password">
+      </fieldset>
+
+      <div class="dialog__actions">
+        <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+        <button type="submit" class="button">Create the account</button>
+      </div>
+    </dialog>
+  </form>
+
+  <p><a href="{{ list_url }}">Back to accounts</a></p>
+
+</main>
+{% endblock %}

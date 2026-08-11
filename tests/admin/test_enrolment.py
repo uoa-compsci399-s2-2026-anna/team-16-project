@@ -39,7 +39,7 @@ def code_for(secret: str, counter: int) -> str:
 
 def enrolled_account(session, username: str = "alice") -> str:
     """Create an account, enrol it, and return its TOTP secret."""
-    create_staff(session, username=username, display_name="Alice Example")
+    create_staff(session, username=username, display_name="Alice Example", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)
     complete_mfa_enrolment(
@@ -54,7 +54,7 @@ def enrolled_account(session, username: str = "alice") -> str:
 
 
 def test_begin_enrolment_returns_a_secret_and_a_scannable_uri(session):
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
 
     secret, uri = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
@@ -68,7 +68,7 @@ def test_begin_enrolment_stores_the_secret_but_does_not_mark_it_enrolled(session
     browser between the two requests. Enrolment still only counts once a
     correct code has been produced, which is what proves the authenticator
     actually holds it."""
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
 
     begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
@@ -86,7 +86,7 @@ def test_begin_enrolment_stores_the_secret_but_does_not_mark_it_enrolled(session
 
 
 def test_completing_an_enrolment_that_was_never_begun_is_refused(session):
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
 
     with pytest.raises(MfaNotEnrolledError):
@@ -98,7 +98,7 @@ def test_completing_an_enrolment_that_was_never_begun_is_refused(session):
 def test_beginning_enrolment_again_replaces_an_unfinished_one(session):
     """Someone abandons the enrolment page and starts over. The second secret
     is the one that must work."""
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
     begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
     second_secret, _ = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
@@ -169,7 +169,7 @@ def test_completing_enrolment_with_a_correct_code_enrols_the_account(session):
 
 
 def test_completing_enrolment_with_a_wrong_code_is_refused(session):
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
 
@@ -180,7 +180,7 @@ def test_completing_enrolment_with_a_wrong_code_is_refused(session):
 
 
 def test_completing_enrolment_issues_the_agreed_number_of_recovery_codes(session):
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
 
@@ -236,7 +236,7 @@ def test_the_same_code_cannot_be_used_twice(session):
 
 
 def test_verifying_a_code_for_an_unenrolled_account_is_refused(session):
-    create_staff(session, username="bob", display_name="Bob")
+    create_staff(session, username="bob", display_name="Bob", actor="test")
     session.flush()
 
     with pytest.raises(MfaNotEnrolledError):
@@ -251,7 +251,7 @@ def test_a_begun_but_unfinished_enrolment_does_not_satisfy_the_login_factor(sess
     access only once enrolment has completed, so the login second factor has
     to gate on mfa_enrolled_at and not on the presence of a secret.
     """
-    create_staff(session, username="bob", display_name="Bob")
+    create_staff(session, username="bob", display_name="Bob", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "bob", secret_key=SECRET_KEY)
     session.flush()
@@ -267,7 +267,7 @@ def test_a_begun_but_unfinished_enrolment_does_not_satisfy_the_login_factor(sess
 
 
 def test_a_recovery_code_works_once(session):
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
     codes = complete_mfa_enrolment(
@@ -291,7 +291,7 @@ def test_an_unknown_recovery_code_is_rejected(session):
 
 
 def test_consuming_a_recovery_code_leaves_the_others_usable(session):
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
     secret, _ = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)
     codes = complete_mfa_enrolment(
@@ -527,7 +527,7 @@ def test_the_default_devices_label_is_the_bare_username(session):
     `alice (Authenticator)` - changes what every new enrolment shows on the
     phone with the whole suite green.
     """
-    create_staff(session, username="alice", display_name="Alice Example")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test")
     session.flush()
 
     _secret, uri = begin_mfa_enrolment(session, "alice", secret_key=SECRET_KEY)

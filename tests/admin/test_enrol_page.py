@@ -28,6 +28,7 @@ from admin.security import decrypt_totp_secret
 from admin.totp import TOTP_INTERVAL
 from admin.views import _grouped
 from admin.views import time as views_time
+from tests.admin.conftest import _cleanup_staff_named
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -53,14 +54,19 @@ def owes_enrolment(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
         db.flush()
         set_password(db, username, "a-long-enough-password")
         db.commit()
     yield username, "a-long-enough-password"
-    with factory() as db:
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    # conftest's, not a fourth copy of the deletion. It carries both
+    # predicates - `actor = :username` AND `table_name = 'staff' AND
+    # row_id = :id` - and the second is the one that catches the `create`
+    # entry admin/accounts.py::create_staff now writes, whose actor is the
+    # account's *creator* rather than the account. A teardown holding only
+    # the actor predicate leaves that row behind, where it is visible to
+    # every later test in the run that reads audit_log as a whole.
+    _cleanup_staff_named(admin_app, username)
 
 
 @pytest.fixture
@@ -77,7 +83,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -91,9 +97,7 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 async def _login_password_step(client, username, password):

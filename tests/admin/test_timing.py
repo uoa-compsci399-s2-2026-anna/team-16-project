@@ -41,7 +41,7 @@ def enrolled_staff(session) -> Staff:
     test_issue_password.py's fixtures of the same name.
     """
     username = "erin"
-    _, password = create_staff(session, username=username, display_name="Erin")
+    _, password = create_staff(session, username=username, display_name="Erin", actor="test")
     session.flush()
     set_password(session, username, "a-strong-initial-password")
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)
@@ -61,7 +61,7 @@ def deactivated_staff(session) -> Staff:
     a guard that only applies to StaffRole.admin, so it does not apply here.
     """
     username = "dana"
-    _, password = create_staff(session, username=username, display_name="Dana")
+    _, password = create_staff(session, username=username, display_name="Dana", actor="test")
     session.flush()
     set_password(session, username, "a-strong-initial-password")
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)

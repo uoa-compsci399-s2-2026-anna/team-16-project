@@ -70,7 +70,7 @@ def _onboard(admin_app, *, role=StaffRole.staff):
     """
     username = f"u{uuid.uuid4().hex[:10]}"
     with admin_app.state.session_factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role)
+        create_staff(db, username=username, display_name="Test User", role=role, actor="test")
         db.flush()
         set_password(db, username, PASSWORD)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)

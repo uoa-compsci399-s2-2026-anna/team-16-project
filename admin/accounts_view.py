@@ -50,25 +50,35 @@ this project's own convention: every ``_redirect`` call in ``admin/views.py``
 already passes a prefixed name.
 """
 
+import time
+
 from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 
-from sqladmin import action
+from sqladmin import action, expose
 from sqladmin.filters import OperationColumnFilter
 
 from admin.accounts import (
+    MAX_DISPLAY_NAME_LENGTH,
+    MAX_USERNAME_LENGTH,
+    DuplicateUsernameError,
+    InvalidDisplayNameError,
+    InvalidUsernameError,
     LastAdministratorsError,
     SelfRecoveryError,
     UnknownStaffError,
+    create_staff,
     deactivate_staff,
     get_staff,
     issue_password,
     reset_mfa,
 )
 from admin.audit import write_audit
-from admin.auth import SESSION_KEY
+from admin.auth import SESSION_KEY, reauthenticate
+from admin.csrf import check_token, issue_token
 from admin.modelviews import AuditedModelView
 from admin.models import Staff, StaffRole
+from admin.runtime import get_runtime
 
 
 class StaffAdmin(AuditedModelView, model=Staff):
@@ -77,10 +87,16 @@ class StaffAdmin(AuditedModelView, model=Staff):
     icon = "fa-solid fa-users"
     category = "Administration"
 
-    # Contract §8.3 forbids self-service registration, and an account created
-    # through a generic form would have no initial password to hand over.
-    # Creation goes through the CLI (`python -m admin.cli create-staff`) -
-    # deliberately out of scope here, see the task's "Carried Forward" note.
+    # sqladmin's *generic* create form stays off, and the reason is stronger
+    # than "out of scope" (which is what this comment used to say, pointing at
+    # the CLI). That form's path is Query.insert -> setattr -> commit
+    # (sqladmin/_queries.py): it reaches no service function, so it would run
+    # none of admin/accounts.py's rules, and it has no way to produce an
+    # initial password at all - `password_hash` is NOT NULL with no default,
+    # so the field would either have to appear on the form (staff typing a
+    # bcrypt hash) or the insert would fail. Creation is the hand-written
+    # `new_staff` route below, which goes through `create_staff` exactly as
+    # `python -m admin.cli create-staff` does.
     can_create = False
     can_delete = False
     # Contract §8.3: "This must be enforced in the service layer, not only
@@ -131,8 +147,18 @@ class StaffAdmin(AuditedModelView, model=Staff):
     ]
     # No form_columns: can_create and can_edit are both False above, so
     # sqladmin never scaffolds a form for this view — every mutation goes
-    # through a guarded @action instead.
+    # through a guarded @action or the `new_staff` route instead.
     column_default_sort = ("username", False)
+
+    # Puts "Add a staff member" in the list page's own menu bar. Without it,
+    # /admin/staff/new is reachable only by somebody who already knows the
+    # URL - and until this task there was no URL, only a shell on the
+    # container, which is the whole defect being fixed. Same hook and same
+    # shape as brand/ip_block_list.html: the template extends
+    # brand/model_list.html and replaces `model_menu_bar` alone, so search,
+    # filters, pagination, the export menu and the bulk-action dropdown are
+    # inherited untouched.
+    list_template = "brand/staff_list.html"
 
     def is_visible(self, request) -> bool:
         return self._is_admin(request)
@@ -225,6 +251,205 @@ class StaffAdmin(AuditedModelView, model=Staff):
         session.commit()
         return await self._refuse(
             request, str(exc), self._SELF_RECOVERY_EXPLANATION
+        )
+
+    # --- creating an account ------------------------------------------------
+
+    #: The role values the form may submit, and the only two that exist
+    #: (``admin/models.py::StaffRole``). Read as a whitelist, never coerced:
+    #: an unrecognised value is refused rather than falling back to either
+    #: side. A form that quietly resolved a typo to `admin` would hand out the
+    #: capability this whole screen exists to control, and one that quietly
+    #: resolved it to `staff` would silently ignore a deliberate choice and be
+    #: discovered only when the new administrator could not do their job.
+    _ROLES = {role.value: role for role in StaffRole}
+
+    def _new_staff_context(self, request, **extra) -> dict:
+        context = {
+            "error": None,
+            # Which dialog to reopen, and nothing more than that - purely
+            # presentational, the same field brand/security.html carries. A
+            # refused submission has to come back inside the dialog it was
+            # made in, because a modal covers a message printed behind it.
+            "open_dialog": None,
+            # Echoed back so a refusal does not cost somebody the three
+            # fields they had already filled in. Safe to render: both are
+            # escaped by Jinja's autoescaping, and unlike the blocklist form
+            # (which deliberately drops the rejected value) nothing here is a
+            # value somebody may have typed believing it was private.
+            "username": "",
+            "display_name": "",
+            "role": StaffRole.staff.value,
+            "max_username_length": MAX_USERNAME_LENGTH,
+            "max_display_name_length": MAX_DISPLAY_NAME_LENGTH,
+            "list_url": self._list_url(request),
+            "csrf_token": issue_token(request.session),
+        }
+        context.update(extra)
+        return context
+
+    async def _new_staff_page(self, request, context, status_code=200):
+        return await self.templates.TemplateResponse(
+            request, "brand/new_staff.html", context, status_code=status_code
+        )
+
+    @expose("/new", methods=["GET", "POST"])
+    async def new_staff(self, request):
+        """Create an account, and show its one-time password exactly once.
+
+        **The capability this panel shipped without.** Until this route
+        existed the only way to onboard a colleague was
+        ``kaicalc-admin create-staff`` on the container — which means a panel
+        that cannot add the person sitting next to you without a developer,
+        for a client that is a trust with staff turnover and no developer.
+
+        Both entry points reach ``admin/accounts.py::create_staff`` and
+        neither holds a rule of its own; see ``admin/cli.py::cmd_create_staff``
+        for the same statement from the other side. Everything refused here is
+        refused there.
+
+        **What happens if the page carrying the password is never seen.** The
+        row is committed and then rendered in the same response — there is no
+        redirect between the write and the display, which is the shape that
+        lost a set of recovery codes on this project on 2026-08-10 (an expired
+        pending-login window bounced the enrolment POST to the login page
+        before the codes rendered). That narrows the window; it does not close
+        it, and a closed tab or a crashed browser still loses the password for
+        good. **That is the failure this design accepts, and it is survivable
+        precisely because the account is not lost with it:** the row carries
+        ``must_change_password`` and no enrolment, so nobody can log in as it,
+        and "Issue a new password" on this same screen mints another. The
+        result page says so in as many words, because an administrator who
+        does not know that is one who deletes the account and starts again —
+        and this screen has no delete.
+
+        A never-collected account is also legible from the list page without
+        anyone being told: ``must_change_password`` set with ``MFA enrolled``
+        and ``last login`` both empty is exactly "created, never used".
+
+        **Proof, on top of the session.** Creating an account mints a working
+        credential, so it asks for the current password or a live code the
+        same way ``/admin/security`` does before adding an authenticator — see
+        ``admin/auth.py::reauthenticate``. A stolen administrator session
+        otherwise mints itself a second administrator account, with a password
+        of its own choosing, and survives the theft being noticed. Required
+        for a ``staff`` account too, not only an administrator one: one rule
+        with no branch in it cannot be wrong on one side of the branch.
+
+        ``self.templates`` rather than a module-level ``Jinja2Templates``,
+        matching ``admin/blocklist_views.py``: the templates rendered here
+        extend ``brand/base.html``, and this is the environment sqladmin
+        assigned this view.
+        """
+        # sqladmin registers an @expose route on a ModelView with
+        # `login_required` only and never calls `is_accessible` for it - see
+        # this module's own docstring, and blocklist_views.py's. Without this
+        # line a plain staff member could POST to /admin/staff/new directly.
+        self._require_admin(request)
+
+        if request.method == "GET":
+            return await self._new_staff_page(request, self._new_staff_context(request))
+
+        form = await request.form()
+        if not check_token(request.session, form.get("csrf_token")):
+            # Page-level, not inside the dialog: an expired token means this
+            # whole page is stale and the fix is to start it again, so
+            # reopening the confirmation step over a form that can no longer
+            # be submitted would send somebody to retype a code for nothing.
+            return await self._new_staff_page(
+                request,
+                self._new_staff_context(
+                    request, error="That form expired. Please try again."
+                ),
+                status_code=400,
+            )
+
+        username = (form.get("username") or "").strip()
+        display_name = (form.get("display_name") or "").strip()
+        role_value = (form.get("role") or "").strip()
+        # Echoed back on every refusal below.
+        typed = {
+            "username": username,
+            "display_name": display_name,
+            "role": role_value if role_value in self._ROLES else StaffRole.staff.value,
+        }
+
+        async def refuse(message):
+            return await self._new_staff_page(
+                request,
+                self._new_staff_context(
+                    request, error=message, open_dialog="confirm", **typed
+                ),
+                status_code=400,
+            )
+
+        role = self._ROLES.get(role_value)
+        if role is None:
+            return await refuse(
+                "Choose whether this account is staff or an administrator."
+            )
+
+        actor = request.session.get(SESSION_KEY, "unknown")
+        now = time.time()
+        runtime = get_runtime(request)
+
+        with self.session_maker() as session:
+            try:
+                acting = get_staff(session, actor)
+            except UnknownStaffError:
+                # _require_admin has already read this same row, so reaching
+                # here means the account was removed between the two reads.
+                raise HTTPException(status_code=403) from None
+
+            problem = reauthenticate(
+                session, acting, form, runtime=runtime, now=now
+            )
+            if problem is not None:
+                # Nothing has been written yet - reauthenticate only reads,
+                # and record_failure lives on the in-memory throttle - but
+                # rolled back explicitly all the same, so this branch cannot
+                # start depending on the session being clean.
+                session.rollback()
+                return await refuse(problem)
+
+            try:
+                # create_staff writes its own audit entry, inside this
+                # transaction, so the row and the record of who added it land
+                # or roll back together. This view adds none of its own.
+                staff, password = create_staff(
+                    session,
+                    username=username,
+                    display_name=display_name,
+                    role=role,
+                    actor=actor,
+                )
+            except (
+                DuplicateUsernameError,
+                InvalidDisplayNameError,
+                InvalidUsernameError,
+            ) as exc:
+                session.rollback()
+                return await refuse(str(exc))
+
+            created = {
+                "username": staff.username,
+                "display_name": staff.display_name,
+                "role": staff.role.value,
+            }
+            session.commit()
+
+        # Rendered from this same response. The plaintext exists nowhere else
+        # - not in the database, not in audit_log, not in a redirect target
+        # that would need it in a URL or a flash message.
+        return await self.templates.TemplateResponse(
+            request,
+            "brand/staff_created.html",
+            {
+                "created": created,
+                "password": password,
+                "list_url": self._list_url(request),
+                "new_url": request.url_for("admin:view-staff-new_staff"),
+            },
         )
 
     @action(

@@ -31,6 +31,7 @@ from admin.config import Settings
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
 from db.session import create_session_factory
+from tests.admin.conftest import _cleanup_staff_named
 from tests.conftest import ROOT_URL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
@@ -259,7 +260,7 @@ async def logged_in_client(admin_app, client, monkeypatch):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Route Check")
+        create_staff(db, username=username, display_name="Route Check", actor="test")
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -298,6 +299,14 @@ async def logged_in_client(admin_app, client, monkeypatch):
     assert verify.status_code == 302, "TOTP step should have completed the login"
 
     yield client
+    # This fixture had no teardown at all, and committed both a `staff` row
+    # and (since admin/accounts.py::create_staff began auditing itself) an
+    # `audit_log` row against a database every other test in the directory
+    # shares. The stray audit entry is the more damaging half: four tests in
+    # test_audit.py and test_modelviews.py read the first row of that table
+    # and assert what it is, so a leftover `create staff` row makes them fail
+    # for a reason that has nothing to do with what they check.
+    _cleanup_staff_named(admin_app, username)
 
 
 async def test_the_audit_log_view_is_reachable(logged_in_client):

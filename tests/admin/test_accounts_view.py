@@ -60,7 +60,7 @@ def _create_onboarded_account(admin_app, *, role):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role)
+        create_staff(db, username=username, display_name="Test User", role=role, actor="test")
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -210,7 +210,7 @@ def enrolled_staff(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Target User")
+        create_staff(db, username=username, display_name="Target User", actor="test")
         db.flush()
         set_password(db, username, "a-strong-initial-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -276,6 +276,7 @@ async def two_admins(admin_app, admin_client):
         create_staff(
             db, username=second_username, display_name="Second Admin",
             role=StaffRole.admin,
+            actor="test",
         )
         db.flush()
         set_password(db, second_username, "a-long-enough-password")

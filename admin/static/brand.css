@@ -180,19 +180,27 @@ dialog.dialog::backdrop {
   margin-top: 1.25rem;
 }
 /* Radio and proof groups: a fieldset's default border and padding fight the
-   card it sits in. */
-.dialog fieldset {
+   card it sits in. `.panel` is named alongside `.dialog` because the role
+   chooser on brand/new_staff.html is a fieldset on the page rather than
+   inside a dialog, and a group that styled itself one way in a dialog and
+   another on the page would read as two different controls. Nothing on
+   /admin/security is affected: every fieldset there is inside a dialog. */
+.dialog fieldset, .panel fieldset {
   border: 0;
   border-top: 2px solid var(--kale);
   padding: 0.75rem 0 0;
   margin: 1.25rem 0 0;
 }
-.dialog legend {
+.dialog legend, .panel legend {
   font-family: 'Geologica', Helvetica, Arial, sans-serif;
   padding: 0 0.5rem 0 0;
 }
 .choose__option { display: flex; gap: 0.5rem; align-items: baseline; font-weight: 400; }
 .choose__option input { margin: 0; }
+/* The role chooser's options carry a sentence each rather than two words, so
+   they need room between them and a top-aligned control. */
+.panel .choose__option { align-items: start; margin-bottom: 0.9rem; }
+.panel .choose__option:last-child { margin-bottom: 0; }
 .qr { margin: 0.5rem 0; }
 
 /* Buttons. `button` already carries the Kale ground; these are the two

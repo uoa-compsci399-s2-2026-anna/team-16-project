@@ -322,6 +322,98 @@ def authenticate_recovery_code(
     )
 
 
+def reauthenticate(
+    session: Session,
+    staff: Staff,
+    form,
+    *,
+    runtime,
+    now: float,
+    password_only: bool = False,
+) -> str | None:
+    """Return None when the caller has proved itself afresh, else a message.
+
+    **A second proof on top of an established session, and the reason it is
+    needed at all.** Every caller of this function sits behind
+    ``AdminAuth.authenticate()``'s ordinary branch, so the request already
+    carries a session that presented both factors at some point. That is
+    exactly what a *stolen* session also carries. The current password and a
+    live TOTP code are the two things a session cookie does not carry, so
+    either one re-proves the person rather than the cookie.
+
+    ``password_only`` is what a password change passes. Accepting a TOTP code
+    there would miss the point entirely: the session presenting it has already
+    cleared the second factor, so a code proves nothing the cookie did not,
+    while the current password is the one secret a stolen session does not
+    carry.
+
+    Failures are charged to the **shared login throttle**, the same counter
+    ``authenticate_password`` and ``authenticate_totp`` use. Contract §8.3's
+    reason for one counter applies here unchanged: a six-digit code is a 10^6
+    search space, and these pages accept one from a caller who by construction
+    already holds a session. The cost is that an attacker sitting on a stolen
+    session can lock the rightful owner out of logging in — accepted, because
+    an attacker at that point can already do considerably worse, and the
+    alternative is an unthrottled oracle for the account's own password.
+
+    Success deliberately does **not** clear the counter, for the reason
+    ``authenticate_password``'s docstring gives: clearing on a correct factor
+    lets an attacker who holds one of them alternate successes with guesses
+    and never reach the threshold.
+
+    **Why this lives here rather than on the view that first needed it.**
+    ``admin/self_service_view.py`` wrote it, and ``admin/accounts_view.py``'s
+    account-creation route needs the same proof for the same reason. Copying
+    it is the failure this project has already had five times over in its test
+    teardowns: the second copy is written slightly weaker and is the one that
+    matters. ``staff`` is passed in rather than looked up so that this
+    function never has to decide *whose* account is being proved — the caller
+    reads that from ``SESSION_KEY`` and from nowhere else.
+    """
+    if runtime.throttle.is_locked(staff.username, now=now):
+        remaining = runtime.throttle.seconds_remaining(staff.username, now=now)
+        return f"Too many failed attempts. Try again in {remaining} seconds."
+
+    password = form.get("current_password") or ""
+    if password:
+        if verify_password(password, staff.password_hash):
+            return None
+        runtime.throttle.record_failure(staff.username, now=now)
+        return "That is not the current password for this account."
+
+    if password_only:
+        return "Enter your current password to confirm this change."
+
+    code = (form.get("current_code") or "").strip()
+    if code:
+        try:
+            accepted = verify_staff_totp(
+                session, staff.username, code,
+                secret_key=runtime.settings.secret_key, now=int(now),
+            )
+        except MfaNotEnrolledError:
+            accepted = False
+        if accepted:
+            return None
+        runtime.throttle.record_failure(staff.username, now=now)
+        # Names the replay case explicitly. Somebody who has just finished
+        # logging in reaches for the code still on their screen, and it is
+        # refused by the counter that stops replay - telling them to check
+        # their device clock would send them to fix something that is not
+        # broken. Same reasoning, same wording shape, as VerifyView's own
+        # failure message.
+        return (
+            "That code was not accepted. If you have just used it to log in, "
+            "wait for your authenticator to show the next one — each code "
+            "works only once."
+        )
+
+    return (
+        "Confirm it is you: enter your current password, or a code from an "
+        "authenticator already on this account."
+    )
+
+
 def stamp_session(session_data: dict, staff: Staff) -> None:
     """Write both halves of the session identity.
 

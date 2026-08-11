@@ -59,7 +59,7 @@ def not_onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
         db.commit()
     yield username, password
     _cleanup_staff_named(admin_app, username)
@@ -86,7 +86,7 @@ def enrolled_but_owes_password_change(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
         db.flush()
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
         now = int(time.time()) - 2 * TOTP_INTERVAL
@@ -117,7 +117,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)

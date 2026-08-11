@@ -1844,3 +1844,120 @@ async def test_an_off_screen_field_stays_off_screen_inside_a_dialog(me):
         "overflows the dialog it sits in. The rule must be element-qualified "
         "as well:\n" + selector
     )
+
+
+#: Every form that asks for the account's password as proof. Chrome reads such
+#: a form as a credential form whether or not it is one, so each must name the
+#: account explicitly - see brand/_account_hint.html.
+def _forms_asking_for_the_password(markup):
+    return [
+        form for form in re.findall(r"<form\b.*?</form>", markup, re.S)
+        if 'autocomplete="current-password"' in form
+    ]
+
+
+def _assert_names_the_account(form, account):
+    """The form must say whose password it is asking for, once, and safely."""
+    hints = re.findall(r"<input[^>]*autocomplete=\"username\"[^>]*>", form)
+    assert len(hints) == 1, (
+        "a form asking for the account password must name the account exactly "
+        f"once, or the browser guesses; found {len(hints)} in:\n{form}"
+    )
+    hint = hints[0]
+    assert f'value="{account}"' in hint, hint
+    # Everything Task 2 established about this field, held for every copy of
+    # it: visible to a password manager, invisible to a person, and never
+    # submitted - the account acted on comes from the session alone.
+    assert 'type="text"' in hint, hint
+    assert 'type="hidden"' not in hint, hint
+    assert "sr-only" in hint, hint
+    assert "readonly" in hint, hint
+    assert "name=" not in hint, hint
+
+
+async def test_no_form_leaves_the_browser_to_guess_which_field_is_the_username(
+    me, admin_app, monkeypatch
+):
+    """**Renaming an authenticator offered to change the stored username.**
+
+    Reported for both Rename and Add. It is not the Task 2 hint leaking into
+    forms that have nothing to do with credentials - that field appears in the
+    change-password form and nowhere else, which was checked before anything
+    was changed. It is the opposite: these forms carry an
+    ``autocomplete="current-password"`` proof field, so Chrome reads them as
+    credential forms, finds no field declaring ``autocomplete="username"``, and
+    falls back to the text input nearest above the password - skipping the code
+    box, which declares ``one-time-code``. That leaves the authenticator's
+    nickname. Chrome's own parser said so, read out of
+    ``chrome://password-manager-internals`` against this running panel:
+
+        device_name: type=text, renderer_id=4
+        current_code: type=text, autocomplete=one-time-code
+        current_password: type=password, autocomplete=current-password
+        ...
+        Username element :  device_name
+
+    for the Add dialog and the Rename dialog alike, while the change-password
+    form on the same page correctly reported ``Username element : username``.
+
+    The remedy is scoping, not removal: name the account in every form that
+    asks for its password, so the guess never happens. Asserted over *every*
+    such form on the page rather than over a list of dialog ids, so a dialog
+    added later cannot reintroduce this quietly.
+    """
+    # A second authenticator, so the Remove dialog renders its form at all -
+    # with one enrolled there is nothing removable and the dialog carries an
+    # explanation instead. Removing is the third place the proof field appears
+    # and it must not be the one nobody checked.
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    body = (await me.get(SECURITY_URL, follow_redirects=False)).text
+
+    forms = _forms_asking_for_the_password(body)
+    assert len(forms) == 4, (
+        "expected the add, rename, remove and change-password forms to ask "
+        f"for the password; found {len(forms)}"
+    )
+    for form in forms:
+        _assert_names_the_account(form, me.staff.username)
+
+
+async def test_an_authenticators_nickname_does_not_read_as_an_account_field(me):
+    """The other half, and the half that is about this field rather than the
+    form around it.
+
+    ``device_name`` is a label for a phone. It is not an account name, it is
+    not autofillable from anything the browser has stored, and offering to
+    fill it is how it got mistaken for one. Both boxes that carry it - Add and
+    Rename - say so.
+    """
+    body = (await me.get(SECURITY_URL, follow_redirects=False)).text
+
+    boxes = re.findall(r"<input[^>]*name=\"device_name\"[^>]*>", body)
+    # Add and Rename. Remove has no name box; the enrolment dialog carries the
+    # chosen name as a hidden field, which is not a text box at all.
+    assert len(boxes) == 2, boxes
+    for box in boxes:
+        assert 'autocomplete="off"' in box, box
+
+
+async def test_the_account_named_to_the_browser_is_the_one_signed_in(me):
+    """And the permitted case: the hint is right, not merely present.
+
+    A test that some ``autocomplete="username"`` field exists would pass
+    against one carrying the wrong account - which would be worse than none,
+    because it would invite the password manager to rewrite the stored
+    credential under a name that is not the account's. The value has to be the
+    session's own account, and it has to survive a refusal, which is the state
+    this page is re-rendered in most often.
+    """
+    body = (await me.get(SECURITY_URL, follow_redirects=False)).text
+    for form in _forms_asking_for_the_password(body):
+        _assert_names_the_account(form, me.staff.username)
+
+    refused = await _post(
+        me, action="rename-device", device_id=me.staff.totp_devices[0].id,
+        device_name="Renamed", current_password="not-the-current-password",
+    )
+    assert refused.status_code in (200, 400)
+    for form in _forms_asking_for_the_password(refused.text):
+        _assert_names_the_account(form, me.staff.username)

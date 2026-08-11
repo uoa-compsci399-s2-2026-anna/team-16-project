@@ -283,6 +283,11 @@ class StaffAdmin(AuditedModelView, model=Staff):
             "username": "",
             "display_name": "",
             "role": StaffRole.staff.value,
+            # Whose password the proof field is asking for - the signed-in
+            # administrator, never the account being created. Read from the
+            # session, like every other answer to "who is acting". See
+            # brand/_account_hint.html for what the browser does without it.
+            "signed_in_as": request.session.get(SESSION_KEY, ""),
             "max_username_length": MAX_USERNAME_LENGTH,
             "max_display_name_length": MAX_DISPLAY_NAME_LENGTH,
             "list_url": self._list_url(request),
@@ -613,6 +618,9 @@ class StaffAdmin(AuditedModelView, model=Staff):
             # submission all the same - this is a convenience, never the
             # authority on what may be deleted.
             "pks": ",".join(str(a["id"]) for a in accounts),
+            # The signed-in administrator, never one of the accounts being
+            # deleted. brand/_account_hint.html says why the browser needs it.
+            "signed_in_as": request.session.get(SESSION_KEY, ""),
             "list_url": self._list_url(request),
             "csrf_token": issue_token(request.session),
         }

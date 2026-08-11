@@ -1010,3 +1010,48 @@ async def test_reactivating_an_already_active_account_writes_nothing(
         )
     )
     assert after == before
+
+
+async def test_the_delete_confirmation_names_the_acting_administrator(
+    admin_client, enrolled_staff
+):
+    """The third page carrying the proof field, and it was the one nobody
+    would have thought to check.
+
+    A form holding ``autocomplete="current-password"`` is read by Chrome as a
+    credential form, and with no field declaring ``autocomplete="username"`` it
+    guesses which input holds the account name. That guess is what made
+    renaming an authenticator on /admin/security offer to change the stored
+    username, and it is why this page - which has no visible text input at all,
+    so today Chrome has nothing to guess *with* - is asserted anyway. Adding
+    one field to this form later would otherwise reintroduce the defect in a
+    place with no test looking.
+
+    The value is the administrator doing the deleting, never an account in the
+    selection.
+    """
+    page = await _delete_page(admin_client, enrolled_staff.id)
+    assert page.status_code == 200
+    body = page.text
+
+    asking = [
+        form for form in re.findall(r"<form\b.*?</form>", body, re.S)
+        if 'autocomplete="current-password"' in form
+    ]
+    assert len(asking) == 1, asking
+
+    hints = re.findall(r"<input[^>]*autocomplete=\"username\"[^>]*>", asking[0])
+    assert len(hints) == 1, (
+        "a form asking for the account password must name the account exactly "
+        f"once, or the browser guesses; found {len(hints)}"
+    )
+    hint = hints[0]
+    assert f'value="{admin_client.staff.username}"' in hint, hint
+    assert enrolled_staff.username not in hint, (
+        "the account named to the browser is the one whose password is being "
+        "asked for - the administrator acting, never the account being "
+        f"deleted:\n{hint}"
+    )
+    assert "name=" not in hint, hint
+    assert "readonly" in hint, hint
+    assert "sr-only" in hint, hint

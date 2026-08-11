@@ -1,4 +1,5 @@
 {% extends "brand/base.html" %}
+{% import "brand/_account_hint.html" as account %}
 {% block title %}Delete accounts{% endblock %}
 
 {# The same generic module brand/security.html and brand/new_staff.html load.
@@ -102,6 +103,10 @@
        and applies every rule there - this is what was shown, not what is
        permitted. #}
     <input type="hidden" name="pks" value="{{ pks }}">
+    {# Same reason as brand/new_staff.html: the proof field below is
+       autocomplete="current-password", so the browser looks for an account
+       name in this form and must be told which one it is. #}
+    {{ account.account_hint(signed_in_as, "acting-account-hint") }}
 
     <div class="actions">
       <button type="button" id="delete-accounts" class="button button--danger"

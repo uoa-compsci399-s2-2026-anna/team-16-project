@@ -1,4 +1,5 @@
 {% extends "brand/base.html" %}
+{% import "brand/_account_hint.html" as account %}
 {% block title %}Your security{% endblock %}
 
 {# Plain ES module, deferred, no inline script - the panel may grow a CSP and
@@ -167,8 +168,10 @@
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="begin-device">
+        {{ account.account_hint(signed_in_as, "add-account-hint") }}
         <label for="add-device-name">Name for the new device</label>
         <input type="text" id="add-device-name" name="device_name"
+               autocomplete="off"
                placeholder="Backup phone" maxlength="{{ max_device_name_length }}"
                data-initial-focus required>
 
@@ -218,6 +221,7 @@
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="rename-device">
+        {{ account.account_hint(signed_in_as, "rename-account-hint") }}
 
         {# Numbered from `device.number`, the same value the table renders, so
            the two read together. #}
@@ -235,6 +239,7 @@
 
         <label for="rename-name">New name</label>
         <input type="text" id="rename-name" name="device_name"
+               autocomplete="off"
                placeholder="Work phone" maxlength="{{ max_device_name_length }}"
                aria-describedby="rename-name-help" required>
         <p class="muted" id="rename-name-help">
@@ -282,6 +287,7 @@
       <form method="post" autocomplete="off">
         <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
         <input type="hidden" name="action" value="remove-device">
+        {{ account.account_hint(signed_in_as, "remove-account-hint") }}
 
         {# Numbered from `device.number`, which the table renders too, so the
            two read together however this list is filtered.
@@ -367,12 +373,7 @@
     <form method="post">
       <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
       <input type="hidden" name="action" value="change-password">
-      {# Readonly, off screen, and deliberately without a name attribute so it
-         is never submitted - the account acted on is read from the session and
-         from nowhere else, and this field must not become a second answer to
-         that question. See this view's module docstring. #}
-      <input class="sr-only" type="text" id="username" value="{{ username }}"
-             autocomplete="username" readonly tabindex="-1" aria-hidden="true">
+      {{ account.account_hint(signed_in_as, "username") }}
       <label for="current_password">Current password</label>
       <input type="password" id="current_password" name="current_password"
              autocomplete="current-password" data-initial-focus required>

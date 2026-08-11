@@ -145,6 +145,13 @@ class SecurityView(BaseView):
         confirmed = staff.enrolled_totp_devices
         context = {
             "username": staff.username,
+            # The same value under a second name, and the duplication is
+            # deliberate. `username` is this page's own heading material;
+            # `signed_in_as` is what brand/_account_hint.html reads, and it is
+            # named for what it means rather than for where it happens to be
+            # used, because brand/new_staff.html calls the same macro on a page
+            # whose `username` is somebody else's account entirely.
+            "signed_in_as": staff.username,
             "display_name": staff.display_name,
             "devices": [
                 {

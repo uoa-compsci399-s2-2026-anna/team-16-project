@@ -1,4 +1,5 @@
 {% extends "brand/base.html" %}
+{% import "brand/_account_hint.html" as account %}
 {% block title %}Add a staff member{% endblock %}
 
 {# The same module brand/security.html loads, unchanged. It is generic - it
@@ -58,12 +59,19 @@
 
   <form method="post" autocomplete="off">
     <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# The proof field further down is autocomplete="current-password", which
+       makes Chrome read this whole form as a credential form and go looking
+       for the account name in it. Measured: it picked the box below - the new
+       colleague's username - and offered to rename the signed-in
+       administrator to it. #}
+    {{ account.account_hint(signed_in_as, "acting-account-hint") }}
 
     <section class="panel" aria-labelledby="details-heading">
       <h2 id="details-heading">The new account</h2>
 
       <label for="username">Username</label>
       <input type="text" id="username" name="username" value="{{ username }}"
+             autocomplete="off"
              maxlength="{{ max_username_length }}"
              aria-describedby="username-help" required>
       <p class="muted" id="username-help">
@@ -74,6 +82,7 @@
 
       <label for="display_name">Full name</label>
       <input type="text" id="display_name" name="display_name"
+             autocomplete="off"
              value="{{ display_name }}"
              maxlength="{{ max_display_name_length }}"
              aria-describedby="display-name-help" required>

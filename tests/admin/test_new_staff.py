@@ -727,3 +727,63 @@ async def test_a_refusal_is_not_scrolled_out_of_the_dialog_that_carries_it(
         "taking the scroll away from the field is only half of it — the "
         "reason has to be scrolled to:\n" + reopened
     )
+
+
+async def test_this_form_names_the_acting_administrator_not_the_new_account(
+    admin_client
+):
+    """**The unreported instance of the authenticator-rename defect.**
+
+    The report was about /admin/security: renaming an authenticator made
+    Google Password Manager offer to change the stored username. The cause is
+    that a form carrying an ``autocomplete="current-password"`` proof field is
+    read by Chrome as a credential form, and with no field declaring
+    ``autocomplete="username"`` it falls back to the text input nearest above
+    the password, skipping anything marked ``one-time-code``.
+
+    This form has the same shape and a worse candidate. Read out of
+    ``chrome://password-manager-internals`` against the running panel, before
+    anything was changed:
+
+        username: type=text, renderer_id=3
+        display_name: type=text, renderer_id=4
+        current_code: type=text, autocomplete=one-time-code
+        current_password: type=password, autocomplete=current-password
+        ...
+        Username element :  username
+
+    - the box holding the **new colleague's** username. Creating an account
+    would have offered to rename the signed-in administrator's saved
+    credential to whoever was just added.
+
+    So the value asserted here is the acting administrator, and the assertion
+    that it is *not* the account being created is the point of the test rather
+    than a flourish.
+    """
+    page, _ = await _open_form(admin_client)
+    body = page.text
+
+    forms = re.findall(r"<form\b.*?</form>", body, re.S)
+    asking = [f for f in forms if 'autocomplete="current-password"' in f]
+    assert len(asking) == 1, asking
+
+    hints = re.findall(r"<input[^>]*autocomplete=\"username\"[^>]*>", asking[0])
+    assert len(hints) == 1, (
+        "a form asking for the account password must name the account "
+        f"exactly once, or the browser guesses; found {len(hints)}"
+    )
+    hint = hints[0]
+    assert f'value="{admin_client.staff.username}"' in hint, hint
+    # Never submitted: the account acting is read from the session and from
+    # nowhere else, and this field must not become a second answer to that.
+    assert "name=" not in hint, hint
+    assert 'type="hidden"' not in hint, hint
+    assert "readonly" in hint, hint
+    assert "sr-only" in hint, hint
+
+    # And the two boxes that do describe the new account say they are not
+    # account fields for this browser to fill or to learn from.
+    for field_id in ("username", "display_name"):
+        field = re.search(rf"<input[^>]*id=\"{field_id}\"[^>]*>", body).group(0)
+        assert 'autocomplete="off"' in field, field
+        assert 'autocomplete="username"' not in field, field

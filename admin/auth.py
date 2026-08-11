@@ -129,6 +129,34 @@ def authenticate_password(
     A failure against a username that does not exist still counts towards the
     throttle. Skipping it would turn the throttle into an oracle for which
     usernames are real.
+
+    **One None for three different refusals, and it stays that way.** A wrong
+    password, an unknown username and a locked account are all reported here
+    as None, so the caller cannot tell them apart and neither can the page.
+    That cost something real: an administrator whose password had just been
+    reset mistyped the issued 20-character value a few times, tripped the
+    lock, and then read every correct attempt as "invalid credentials" - the
+    reasonable conclusion being that the reset had failed, and the next move
+    after that conclusion is to reset it again.
+
+    The fix is in the copy, not in the order of operations. The login page
+    now states the lockout policy to *everyone* it refuses: repeated failures
+    lock an account for LOGIN_LOCKOUT_MINUTES, and while that lock is in
+    force a correct password is refused too. That is true for every visitor,
+    reveals nothing an attacker could not measure by trying, and is what
+    tells a locked-out administrator to wait rather than to reissue.
+
+    The precise alternative - verify the password first and consult the lock
+    afterwards, so that only someone holding a correct password for a real
+    locked account is told so - was considered and rejected. It would put a
+    bcrypt verification on the far side of the lock, which is exactly the
+    work the early return above exists to refuse: an attacker who has locked
+    a username (and they can lock any username, real or not, per the
+    paragraph above) could then compel unbounded bcrypt work at will. It
+    would also have to carry a third outcome out through
+    AdminAuth.login(), whose contract with sqladmin is True/False/Response.
+    Do not reorder verify_password and throttle.is_locked without weighing
+    both of those again.
     """
     if throttle.is_locked(username, now=now):
         return None

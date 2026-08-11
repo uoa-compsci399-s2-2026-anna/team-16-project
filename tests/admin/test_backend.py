@@ -11,6 +11,7 @@ from base64 import b64decode, b64encode
 import itsdangerous
 import pyotp
 import pytest
+from httpx import ASGITransport, AsyncClient
 from sqlalchemy import delete
 
 from admin.accounts import (
@@ -22,10 +23,12 @@ from admin.accounts import (
     reset_mfa,
     set_password,
 )
+from admin.app import create_app
 from admin.auth import SESSION_GENERATION_KEY, SESSION_KEY
 from admin.backend import PENDING_SESSION_KEY, _is_pre_login_page, current_username
 from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
+from tests.conftest import TEST_URL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -231,7 +234,7 @@ async def test_a_wrong_password_re_renders_the_login_page_with_an_error(
     )
 
     assert response.status_code == 400
-    assert "Invalid credentials." in response.text
+    assert "Those sign-in details were not accepted." in response.text
     assert "location" not in response.headers
 
 
@@ -1322,3 +1325,201 @@ async def test_a_deactivated_session_is_cleared_not_merely_refused(
 
     assert response.status_code in (302, 307)
     assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+# ===========================================================================
+# A lockout must stop being reported as a wrong password
+# ===========================================================================
+#
+# The incident: an administrator's password was reset by a second
+# administrator, the 20-character issued value was mistyped a few times, the
+# throttle locked the account, and every correct attempt after that came back
+# as "Invalid credentials." - which reads as the reset having failed, and the
+# move after that reading is to reset it again.
+#
+# The refusal itself is unchanged and must stay unchanged:
+# authenticate_password returns None for a wrong password, an unknown
+# username and a locked account alike, which is what stops the throttle being
+# an oracle for which usernames exist. What changed is what the page says -
+# the same sentence to everyone, but a true one, naming the configured
+# lockout period.
+
+
+def _squashed(response) -> str:
+    """The response body with every run of whitespace collapsed to one space.
+
+    The message spans several source lines in the template, so a substring
+    assertion written the way a person reads the sentence would fail on the
+    newlines and indentation Jinja preserves.
+    """
+    return " ".join(response.text.split())
+
+
+async def test_the_refusal_explains_that_a_lockout_refuses_a_correct_password(
+    client, admin_app
+):
+    """The sentence the incident needed, on the page a real request renders.
+
+    Asserted against the served HTML rather than the template file: a
+    template that is not the one the app loads is exactly the failure this
+    project has already been caught by twice.
+    """
+    _make_staff(admin_app, "wanda")
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": "not-the-right-password"},
+        follow_redirects=False,
+    )
+
+    body = _squashed(response)
+    assert response.status_code == 400
+    assert "Those sign-in details were not accepted." in body
+    assert "Repeated failed attempts lock an account for 15 minutes" in body
+    assert "the correct password is refused as well" in body
+    assert "issuing a new password does not lift the lock" in body
+
+
+async def test_the_login_page_carries_no_refusal_before_anything_is_refused(
+    client,
+):
+    """`{% if error %}` and not a block that is always on: a login page that
+    greets every visitor with a refusal notice would pass every assertion
+    above."""
+    response = await client.get("/admin/login")
+
+    body = _squashed(response)
+    assert response.status_code == 200
+    assert "Those sign-in details were not accepted." not in body
+    assert "lock an account for" not in body
+
+
+async def test_the_refusal_names_the_configured_lockout_not_a_literal(monkeypatch):
+    """LOGIN_LOCKOUT_MINUTES, not a number typed into the template.
+
+    Built against a value that is not the shipped default, so a hard-coded
+    "15" fails here rather than agreeing with itself. It needs its own app
+    because tests/conftest.py's admin_app fixture never sets the variable -
+    the same reason tests/admin/test_session_cookie.py builds its own.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
+    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", "7")
+    app = create_app()
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as configured_client:
+            response = await configured_client.post(
+                "/admin/login",
+                data={"username": "nobody-at-all", "password": "wrong"},
+                follow_redirects=False,
+            )
+    finally:
+        app.state.session_factory.kw["bind"].dispose()
+
+    body = _squashed(response)
+    assert response.status_code == 400
+    assert "lock an account for 7 minutes" in body
+    assert "wait 7 minutes and try the same password again" in body
+    assert "15 minutes" not in body
+
+
+async def test_a_locked_account_refuses_a_correct_password_with_the_same_page(
+    client, admin_app
+):
+    """The incident itself, walked end to end.
+
+    The comparison is what carries the test. Asserting only that the locked
+    attempt is refused would pass against a panel that refuses everything, so
+    what is asserted is that the locked-with-the-correct-password refusal and
+    an ordinary wrong-password refusal are the *same* response - same status,
+    same rendered page - which is the property the design deliberately keeps
+    and the reason the message had to change instead of the code path.
+
+    The successful password step first is not decoration: without it, a
+    refusal at the end could equally be explained by the password never
+    having been right.
+    """
+    password = _make_staff(admin_app, "wanda", password_changed=True, mfa=True)
+    max_failures = admin_app.state.settings.login_max_failures
+
+    accepted = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": password},
+        follow_redirects=False,
+    )
+    assert accepted.status_code in (302, 307), "the password really is correct"
+    assert "/admin/verify" in accepted.headers["location"]
+
+    # A completed password step never clears the counter (admin/auth.py), so
+    # exactly these failures stand between here and the lock.
+    for _ in range(max_failures):
+        wrong = await client.post(
+            "/admin/login",
+            data={"username": "wanda", "password": "not-the-right-password"},
+            follow_redirects=False,
+        )
+        assert wrong.status_code == 400
+
+    locked = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": password},
+        follow_redirects=False,
+    )
+
+    assert locked.status_code == 400
+    assert "location" not in locked.headers
+    assert locked.text == wrong.text
+    assert "Repeated failed attempts lock an account for" in _squashed(locked)
+
+
+async def test_the_throttle_is_still_not_an_oracle_for_which_usernames_exist(
+    client, admin_app
+):
+    """Two properties together, because either one alone is hollow.
+
+    Asserting that an unknown username is refused proves nothing at all - a
+    panel that refuses everything satisfies it. Asserting only that the two
+    responses match is barely better: a short circuit that skipped
+    record_failure for an unknown username would leave the two pages byte
+    for byte identical and still hand over an oracle, because only the real
+    username would ever go on to lock. So both are checked on every attempt:
+    the responses are indistinguishable, and the counter advances in step for
+    a username that exists and one that does not.
+
+    The counter is read off the app's own throttle rather than inferred from
+    a later response, so the assertion is about the state the mutation would
+    change and not about a symptom of it.
+    """
+    _make_staff(admin_app, "wanda")
+    throttle = admin_app.state.throttle
+    max_failures = admin_app.state.settings.login_max_failures
+    now = time.time()
+
+    assert not throttle.is_locked("wanda", now=now)
+    assert not throttle.is_locked("ghost-account", now=now)
+
+    real = ghost = None
+    for attempt in range(1, max_failures + 1):
+        real = await client.post(
+            "/admin/login",
+            data={"username": "wanda", "password": "not-the-right-password"},
+            follow_redirects=False,
+        )
+        ghost = await client.post(
+            "/admin/login",
+            data={"username": "ghost-account", "password": "not-the-right-password"},
+            follow_redirects=False,
+        )
+
+        expected_locked = attempt >= max_failures
+        assert throttle.is_locked("wanda", now=now) is expected_locked, attempt
+        assert throttle.is_locked("ghost-account", now=now) is expected_locked, attempt
+
+        assert real.status_code == ghost.status_code == 400
+        assert real.text == ghost.text
+        assert "location" not in real.headers
+        assert "location" not in ghost.headers

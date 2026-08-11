@@ -3,7 +3,38 @@
 {% block content %}
   <h1>Kai Commitment</h1>
   <p class="muted">Impact calculator administration</p>
-  {% if error %}<div class="notice notice--error" role="alert">{{ error }}</div>{% endif %}
+  {# One message for every refusal, deliberately.
+
+     `error` is sqladmin's own flag for "the password step was refused". It
+     carries a single fixed string for every refusal, because
+     admin/backend.py's login() can only answer True or False - and that is
+     the shape the design wants: admin/auth.py's authenticate_password
+     returns None for a wrong password, for an unknown username and for a
+     locked account alike, so that the throttle cannot be used as an oracle
+     for which usernames exist. The flag is used as a boolean and its text
+     is not rendered; nothing is lost, since sqladmin only ever sets it to
+     "Invalid credentials.".
+
+     What was missing was not precision but truth. A correct password IS
+     refused while a lockout is in force, and a panel that says only
+     "invalid credentials" reads as though the password itself were wrong -
+     which is how a reset password came to be reset a second time. The
+     second paragraph says the thing that is true for everyone, names the
+     configured period (admin/app.py sets login_lockout_minutes), and heads
+     off the move that does not help. #}
+  {% if error %}
+    <div class="notice notice--error" role="alert">
+      <p>Those sign-in details were not accepted.</p>
+      <p>
+        Repeated failed attempts lock an account for
+        {{ login_lockout_minutes }} minutes, and while that lock is in force
+        the correct password is refused as well. If you have just made
+        several attempts, wait {{ login_lockout_minutes }} minutes and try
+        the same password again — issuing a new password does not lift the
+        lock.
+      </p>
+    </div>
+  {% endif %}
   <form method="post">
     <label for="username">Username</label>
     <input type="text" id="username" name="username"

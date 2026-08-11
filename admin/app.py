@@ -161,6 +161,20 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         authentication_backend=AdminAuth(settings=settings, app=app),
     )
 
+    # The login page is the one page a locked-out person can still reach, and
+    # it has to state the lockout period without a number written into the
+    # template - a hard-coded "15 minutes" is confidently wrong the first
+    # time a deployment sets LOGIN_LOCKOUT_MINUTES to anything else. It
+    # cannot come through the view context: sqladmin owns the /admin/login
+    # route and passes that template a context of its own ({"error": ...}
+    # and nothing more, sqladmin/application.py), so a Jinja global is the
+    # only seam. Scoped to this app the same way the Runtime below is -
+    # sqladmin builds one Jinja2Templates per Admin instance
+    # (init_templating_engine), so two create_app() results never share it.
+    admin.templates.env.globals["login_lockout_minutes"] = (
+        settings.login_lockout_minutes
+    )
+
     # `admin.admin` is sqladmin's own mounted Starlette application - the
     # exact object `request.app` resolves to inside a view (see
     # admin/runtime.py). Attaching Runtime here rather than to a

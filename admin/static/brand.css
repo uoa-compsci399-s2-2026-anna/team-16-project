@@ -274,6 +274,15 @@ button:hover { background: var(--blueberry); }
 /* The mandatory, non-dismissible mock-data banner (contract §2.2): Banana
    ground takes Kale text per the brand guidelines' light-ground rule. */
 .notice--warning { background: var(--banana); color: var(--kale); font-weight: bold; }
+/* A notice may carry more than one paragraph: the login page's refusal says
+   what happened and then what to do about it, which is two sentences that
+   do not belong run together. The browser's default 1em margin on <p> would
+   push past the notice's own padding at both ends, so the block is spaced
+   from the inside instead. No other notice in the panel holds a <p> today -
+   the ones near a <p> in compare.html and dry_run_result.html are siblings
+   of it, not parents. */
+.notice p       { margin: 0; }
+.notice p + p   { margin-top: 0.5rem; }
 
 /* Page-level guidance: what this screen is for, and in what order to do
    things. The Kale rule down the left is the same signal the four

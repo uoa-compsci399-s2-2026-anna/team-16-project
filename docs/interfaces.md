@@ -27,6 +27,15 @@ This document defines **what every person's code receives and what it returns.**
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
 
+### v1.14 — 2026-08-11 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Accounts can be deleted.** `/admin/staff/delete` and `kaicalc-admin delete-staff`, both through `admin.accounts.delete_staff`. Only `deactivate_staff` existed, so an account created by mistake became permanent furniture in the list administrators read to answer "who can get into this system". The deletion is a **hard delete and costs the audit trail nothing**: `audit_log` holds no foreign key to `staff` and cannot — `actor` is `VARCHAR(128)` and also carries `cli`, `bootstrap` and `deploy-seed` — so every entry a deleted account wrote stays complete and still names it. A tombstone would have bought a property the trail already has while leaving the row and the username in place. **No migration**; nothing in the schema changes. | §8.3 |
+| 2 | **Deletion requires the account to be deactivated first, and `reactivate_staff` ships with it.** Deletion then acts on a row whose sessions are already gone rather than racing one in flight. Requiring it is only defensible if the mandatory step is reversible, and it was not: deactivating the wrong account had no undo. Also guarded by the two-administrator floor, by the refusal of self-deletion (which runs *before* the deactivation check), and by re-authentication at the point of the action. | §8.3 |
+| 3 | **`last_password_change()` is scoped to entries at or after `staff.created_at`.** It reads the trail by `(table_name='staff', row_id)`, and **SQLite reuses a deleted rowid** while MySQL does not — this module is imported by both. Without the scope, an account created after a deletion could be handed the dead account's id and be shown its password history. Fixed on the read side, so `audit_log` stays append-only. | §8.3 |
+| 4 | **An authenticator can be renamed at any time, and an unconfirmed enrolment is destroyed rather than left in the list.** Auto-generated names carried no information and nothing could revise them; "Set-up not finished" was not a state anybody could act on, since the secret and QR are shown once, so the row could only ever be litter that a manual Remove cleared. It now dies on a GET of `/admin/security` and on beginning a new enrolment — no timer — and cannot touch a confirmed device. Renaming does **not** bump `session_generation`: a name is a note, not a credential. | §8.3 |
+
 ### v1.13 — 2026-08-10 (raised by E, affects B)
 
 | # | Change | Section |
@@ -2306,8 +2315,20 @@ It exists because §8.3's self-recovery rule removed the only way to change one'
 | Change the password | **The current password.** A TOTP code is *not* accepted — the session presenting it has already cleared the second factor, so a code proves nothing the cookie did not, while the current password is the one secret a stolen session does not carry |
 | Add an authenticator | The current password, **or** a code from a device already enrolled |
 | Remove an authenticator | The same, **and** it must not be the last confirmed device |
+| Rename an authenticator | The same. Any device may be renamed, including an unconfirmed one |
 
-Every one of the three writes an `audit_log` entry naming the actor. Changing the password and removing a device each bump `session_generation` — a credential change ends every other session — and each re-stamps the acting session, which did the thing deliberately and is not what is being evicted.
+Every one of the four writes an `audit_log` entry naming the actor. Changing the password and removing a device each bump `session_generation` — a credential change ends every other session — and each re-stamps the acting session, which did the thing deliberately and is not what is being evicted. **Renaming deliberately does not bump it:** a name is a note on the row, not a credential, and signing every session out over an edited caption would be a cost with nothing bought.
+
+**A device name is editable at any time, and the screen says what renaming does not do.** The name reaches the authenticator app through the `otpauth://` label, which is consumed once, at the scan — so renaming changes this list and nothing on the phone. Re-minting the secret so the app could be relabelled is not on offer: it would invalidate a working second factor to correct a caption. Names are matched to devices by the ordinal, the date added and "last used". The alternative considered and rejected was dropping the name for the bare ordinal; the ordinal already exists and says nothing about the device, and a name is useless only while nothing can revise it.
+
+**An unconfirmed enrolment is destroyed rather than left in the list.** `staff_totp_device.enrolled_at IS NULL` is a QR that was displayed and never proved, and it **cannot be continued** — the secret and the QR exist only in the response to the re-authenticated `POST` that minted them. It therefore dies at two moments, both in `admin/self_service_view.py`, calling `admin.accounts.discard_unconfirmed_devices`:
+
+* on a **GET of `/admin/security`**, which is what leaving the page means here (the enrolment dialog's own Cancel is a link to this route), and
+* on **beginning a new enrolment**, before the new secret is minted.
+
+There is no timer, and no scheduled job. A deadline would leave a stored TOTP secret that has never authenticated anything sitting there for the length of it, in exchange for nothing — the row's only possible future is to be destroyed. The reap is audited and the page states it when it happens; a row vanishing silently reads as data loss.
+
+**The reap can never touch a confirmed device.** It filters on `enrolled_at IS NULL` and nothing else, it removes rows individually rather than clearing the collection, and `/admin/security` is unreachable until `mfa_enrolled_at` is set, so a confirmed device always remains. `_sync_mfa_enrolled_at` stays the sole writer of `mfa_enrolled_at` and is called by every path that adds or removes a device, `begin_mfa_enrolment` now included.
 
 **The last confirmed device cannot be removed.** An account whose only second factor is deleted does not announce it: the session in hand goes on working exactly as before, and the discovery comes at the next login when `require_staff()` refuses the account. Recovery codes do not count as the other factor — they are single-use, there are five, and an account holding only those is counting down.
 
@@ -2344,6 +2365,38 @@ The second count exists because bootstrap creates two administrators carrying `m
 This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
 
 > Consequence worth knowing: while fewer than two administrators are usable, **no** administrator can be deactivated or demoted, including one that was never onboarded. Eviction is still possible without deactivation — reset the account's MFA and issue a new password — but it is indirect. This errs toward "cannot be locked out" over "can always evict", which is the correct side for a small organisation with no email recovery.
+
+### Removing an account — `/admin/staff/delete` (owner: E)
+
+An account list that cannot shrink stops being an answer to "who can get into this system". Accounts are **deleted outright**, and the deletion costs the audit trail nothing.
+
+**Why a hard delete rather than a tombstone.** `audit_log` holds **no foreign key to `staff`**, in the model or in `0002_audit_log.py`'s DDL, and cannot: `audit_log.actor` is `VARCHAR(128)` and also carries `cli`, `bootstrap`, `deploy-seed` and `unknown`, none of which is a row in `staff`. The trail therefore already stores identity the way a tombstone would be introduced to make it store it. Every entry a deleted account wrote **stays complete and still names it**; the same holds for `staff.created_by`, `factor_set.published_by` and `ip_block.created_by`, all text and all unaffected. A tombstone would leave the row and the username in place — not the capability asked for — while buying a property the trail already has.
+
+**What is destroyed with the account** is exactly its credentials: `staff_recovery_code` and `staff_totp_device` cascade, at the database and through the ORM. That is correct rather than incidental — a stored TOTP secret must not outlive the account it authenticates.
+
+Four guards, all in `admin/accounts.py::delete_staff` except the last:
+
+| Guard | Why |
+| --- | --- |
+| **The account must already be deactivated** | Deletion then acts on a row `deactivate_staff` has made inert — sessions ended, generation bumped — rather than racing a request in flight, and the floor is checked at both steps. Refused with `AccountStillActiveError`, deliberately a different class from `LastAdministratorsError`: they are different problems with different next steps |
+| **The two-administrator floor** | Named for deletion by the rule above. In practice it bites at deactivation, since a deactivated row is already past it |
+| **No self-deletion** | `_guard_not_self`, the guard `issue_password` and `reset_mfa` already carry. It runs **before** the deactivation check, so aiming this at your own account is refused for being yours rather than for being active. An administrator deleting their own account removes the second party from a procedure whose whole value is that there was one |
+| **Re-authentication** | The current password or a live code, at the point of the action — the proof `/admin/staff/new` already takes. A stolen session otherwise empties the staff list holding only the cookie |
+
+Deletion writes its own `audit_log` entry carrying the whole identity — username, display name, role, and the counts of authenticators and recovery codes destroyed — rather than a reference to a row that is about to stop resolving. After the commit it is the only record the account existed.
+
+**`reactivate_staff` ships with it**, because requiring deactivation first is defensible only if that step can be undone; without it, deactivating the wrong account is a trap whose only exits are leaving it in the list for ever and deleting it. It takes no floor guard (it only ever adds an active account) and no self guard (`authenticate()` refuses an inactive account, so nobody can be signed in as the account they would be reactivating — a guard there could never fire).
+
+**One consequence to know about.** `last_password_change()` reads the trail by `(table_name='staff', row_id)`, and `staff.id` is a plain autoincrement integer. MySQL 8 persists its counter and does not reuse ids, but **SQLite hands out `max(rowid) + 1` and reuses one immediately**, and `admin/accounts.py` is imported by both. That read is therefore additionally scoped to `AuditLog.at >= staff.created_at` — an account cannot have changed its password before it existed. Scoped on the read side rather than by rewriting the deleted account's rows, so `audit_log` stays append-only.
+
+Operational commands (`admin/cli.py`), both pass-throughs to the same service functions:
+
+```
+python -m admin.cli delete-staff <username>
+python -m admin.cli reactivate-staff <username>
+```
+
+`delete-staff` passes `allow_self=True`, the exemption `reset-mfa` and `issue-password` already carry: layer L3 has no acting session to be the second party. **It reaches the self-recovery guard and nothing else** — the floor and the deactivation requirement are unconditional there, exactly as in the panel.
 
 **Session invalidation.** Every credential change — password change, MFA
 reset, deactivation — increments `staff.session_generation`. The signed

@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-10 (v1.13 draft)"
+date: "2026-08-12 (v1.15 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,16 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.15 — 2026-08-12 (raised by the repository owner, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The audit log becomes `role = admin` only.** §8.3's role table has granted "view audit log" to both roles since v0.2, and the panel implemented that faithfully — a `staff` account reached **Audit log** in the sidebar and read every actor's entries, administrators' password issues, account creations and deletions included. **That was the specification, not a defect in the code**, and it is the specification that is being changed: the trail is an administrator's oversight tool, and a staff member reading their colleagues' account administration is not doing anything the role exists for. Enforced through `is_accessible`, which sqladmin consults for `/list`, `/details/{pk}` **and** `/export/{export_type}` separately (three handlers, not one); `AuditLogAdmin` declares no `@expose` and no `@action`, the two route kinds sqladmin registers with `login_required` alone, so those three are the whole of its surface. The rejected alternative was "their own entries only", and it was rejected on two grounds: a `ModelView` reads through four different queries (`list_query`, `get_object_for_details`, `get_model_objects`, `ajax_lookup`) so a filter on one leaves the others open to a guessed `id` or a single export request; and `actor` is a plain `VARCHAR(128)` that also holds `cli`, `bootstrap`, `deploy-seed` and `unknown`, so a per-actor view is a trail with holes and nothing on the page saying so | §8.2, §8.3 |
+| 2 | **`write_audit`'s `REDACTED_FIELDS` is unchanged, and the six passages justifying it with "`audit_log` is readable by every staff member" now read as historical.** Narrowing the audience is not a reason to widen what is written. `password_hash`, `mfa_secret_enc`, `code_hash`, `token` and `ip_hmac` are credentials and identifiers no screen should render at any role, and the trail is exportable, pasted into tickets and read over shoulders. A redaction dropped because "only administrators see it now" is one that has to be found again the first time a read-only auditor role is added | §5.5 |
+| 3 | **The initial password is stored, reversibly encrypted, until it is claimed.** New nullable column `staff.initial_password_enc`. **This is a deliberate weakening of credential storage and it was the repository owner's decision, taken with the cost stated.** It exists because a one-time reveal is easy to lose and this project has already lost a set of recovery codes to exactly that shape. Written only by `create_staff`; cleared unconditionally by `set_password` (self-service *and* the forced change at first login) and by `issue_password`; gone with the row on `delete_staff`. Read only through `/admin/staff/initial-password`, which is `role = admin`, takes the same re-authentication proof as account creation and deletion, and writes an `audit_log` entry per reveal. Encrypted with Fernet under a key derived from `SECRET_KEY` by HKDF with its own `info`, never the one `mfa_secret_enc` uses. **The cost, plainly:** anyone holding both a database dump and `SECRET_KEY` can log in as every account that has not yet claimed its password, and those accounts are pre-MFA — the attacker enrols the authenticator — so the password is the whole of their protection. The exposure is bounded by the column being NULL at every other moment of an account's life | §2.4, §8.3 |
+| 4 | **`audit_log.action` gains `reveal`.** Written by `/admin/staff/initial-password` on each successful display. Recorded here rather than reused as `read`, because the enumeration is already the thing that has drifted twice (v1.14 added `archive` and `refuse` after both were already being written) and a reader branching on the documented set would silently drop these rows | §2.3 |
+| 5 | **§8.2's audit-log path is `/admin/audit-log`, not `/admin/audit`.** sqladmin derives a `ModelView`'s identity from its model class name (`AuditLog` → `audit-log`), so the URL this document has named since v0.2 has never been the one the panel serves. Corrected in the document, not in the code: the identity is what every `request.url_for("admin:list", identity=...)` call and every menu link already resolve to | §8.2 |
 
 ### v1.14 — 2026-08-11 (raised by E, affects E only)
 
@@ -2259,7 +2269,7 @@ Requirements: list views must offer search and filtering.
 | Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
-| Audit log | `/admin/audit` | Read-only, filterable by actor, time and table |
+| Audit log | `/admin/audit-log` | Read-only, filterable by actor, time and table. **`role = admin` only** from v1.15 — see the change log for why "their own entries only" was rejected |
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
@@ -2276,10 +2286,12 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Capability | `staff` | `admin` |
 | --- | --- | --- |
 | Taxonomy, factor and formula CRUD | ✅ | ✅ |
-| Dry run, view submissions, view audit log | ✅ | ✅ |
+| Dry run, view submissions | ✅ | ✅ |
+| View the audit log | ❌ | ✅ |
 | Set `excluded_from_public` | ✅ | ✅ |
 | Publish, roll back | ✅ | ✅ |
-| Create, deactivate and re-role accounts | ❌ | ✅ |
+| Create, deactivate, re-role and delete accounts | ❌ | ✅ |
+| Reveal an unclaimed initial password | ❌ | ✅ |
 | Reset another account's MFA, issue a random password | ❌ | ✅ |
 
 Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.

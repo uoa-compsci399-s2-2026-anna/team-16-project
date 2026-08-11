@@ -79,12 +79,12 @@ from admin.accounts import (
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY, reauthenticate
 from admin.csrf import check_token, issue_token
-from admin.modelviews import AuditedModelView
+from admin.modelviews import AdministratorOnly, AuditedModelView
 from admin.models import Staff, StaffRole
 from admin.runtime import get_runtime
 
 
-class StaffAdmin(AuditedModelView, model=Staff):
+class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
     name = "Staff account"
     name_plural = "Staff accounts"
     icon = "fa-solid fa-users"
@@ -163,34 +163,11 @@ class StaffAdmin(AuditedModelView, model=Staff):
     # inherited untouched.
     list_template = "brand/staff_list.html"
 
-    def is_visible(self, request) -> bool:
-        return self._is_admin(request)
-
-    def is_accessible(self, request) -> bool:
-        """Only role=admin.
-
-        is_visible alone hides the menu entry while leaving the URL open;
-        both are needed, and sqladmin calls them for different purposes -
-        and, per this module's docstring, calls this one for its own
-        generated routes only. The action methods below call it again
-        explicitly for exactly that reason.
-        """
-        return self._is_admin(request)
-
-    def _is_admin(self, request) -> bool:
-        username = request.session.get(SESSION_KEY)
-        if not username:
-            return False
-        with self.session_maker() as session:
-            try:
-                return get_staff(session, username).role is StaffRole.admin
-            except UnknownStaffError:
-                return False
-
-    def _require_admin(self, request) -> None:
-        if not self.is_accessible(request):
-            raise HTTPException(status_code=403)
-
+    # is_visible, is_accessible, _is_admin and _require_admin now come from
+    # AdministratorOnly (admin/modelviews.py), which carries the full account
+    # of why all three are needed and which routes each one reaches. They were
+    # defined here first and copied verbatim into blocklist_views.py; a third
+    # copy for AuditLogAdmin is what made writing them once worth doing.
     def _list_url(self, request):
         return request.url_for("admin:list", identity=self.identity)
 

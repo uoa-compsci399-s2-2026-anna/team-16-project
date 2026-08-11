@@ -73,24 +73,21 @@ what they actually are — two independent facts, not a synchronised pair —
 instead of silently implying one actor set both.
 """
 
-from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 from starlette.responses import Response as StarletteResponse
 
 from sqladmin import action, expose
 from sqlalchemy import select
 
-from admin.accounts import UnknownStaffError, get_staff
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY
-from admin.models import StaffRole
-from admin.modelviews import AuditedModelView
+from admin.modelviews import AdministratorOnly, AuditedModelView
 from admin.runtime import get_runtime
 from db.blocklist import InvalidAddressError, block_ip, ip_fingerprint, normalise_ip
 from db.blocklist_models import IpBlock
 
 
-class IpBlockAdmin(AuditedModelView, model=IpBlock):
+class IpBlockAdmin(AdministratorOnly, AuditedModelView, model=IpBlock):
     name = "IP block"
     name_plural = "IP blocks"
     icon = "fa-solid fa-ban"
@@ -143,29 +140,12 @@ class IpBlockAdmin(AuditedModelView, model=IpBlock):
     # filters, pagination, the bulk-action dropdown - is untouched.
     list_template = "brand/ip_block_list.html"
 
-    def is_visible(self, request) -> bool:
-        return self._is_admin(request)
-
-    def is_accessible(self, request) -> bool:
-        """Only role=admin - blocking access to a public service is an
-        administrator's decision, the same floor accounts_view.py's
-        StaffAdmin sets for account management."""
-        return self._is_admin(request)
-
-    def _is_admin(self, request) -> bool:
-        username = request.session.get(SESSION_KEY)
-        if not username:
-            return False
-        with self.session_maker() as session:
-            try:
-                return get_staff(session, username).role is StaffRole.admin
-            except UnknownStaffError:
-                return False
-
-    def _require_admin(self, request) -> None:
-        if not self.is_accessible(request):
-            raise HTTPException(status_code=403)
-
+    # Only role=admin - blocking access to a public service is an
+    # administrator's decision, the same floor accounts_view.py's StaffAdmin
+    # sets for account management. is_visible, is_accessible, _is_admin and
+    # _require_admin all come from AdministratorOnly (admin/modelviews.py),
+    # which carries the account of why all three are needed; this class held
+    # a verbatim copy of them until AuditLogAdmin needed a third.
     def _list_url(self, request):
         return request.url_for("admin:list", identity=self.identity)
 

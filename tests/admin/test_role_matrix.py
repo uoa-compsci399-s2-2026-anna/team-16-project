@@ -137,14 +137,24 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
 ]
 
 
-def _describe(case):
-    return f"{case[0]} {case[1]}"
+def _ids(cases) -> list[str]:
+    """Readable parametrize ids, built up front rather than through `ids=fn`.
+
+    Two things had to be worked around. pytest calls an `ids=` callable once
+    per *argument*, not once per tuple, so a function taking the whole case
+    raises "error raised while trying to determine id of parameter 'path'".
+    And left to itself pytest turns "GET /admin/staff/list" into "G E-/ a-s t"
+    - it sanitises per character and then dedupes - which makes both a failure
+    list and a `-k` filter useless. A precomputed list of strings sidesteps
+    both.
+    """
+    return [f"{method}:{path.strip('/').replace('/', '.')}" for method, path, _ in cases]
 
 
 # --- the refusals -----------------------------------------------------------
 
 
-@pytest.mark.parametrize("method,path,why", _ADMIN_ONLY, ids=_describe)
+@pytest.mark.parametrize("method,path,why", _ADMIN_ONLY, ids=_ids(_ADMIN_ONLY))
 async def test_a_plain_staff_member_is_refused(staff_client, method, path, why):
     """403, asserted exactly rather than `in (302, 403)`.
 
@@ -160,7 +170,7 @@ async def test_a_plain_staff_member_is_refused(staff_client, method, path, why):
     assert response.status_code == 403, why
 
 
-@pytest.mark.parametrize("method,path,why", _ADMIN_ONLY, ids=_describe)
+@pytest.mark.parametrize("method,path,why", _ADMIN_ONLY, ids=_ids(_ADMIN_ONLY))
 async def test_an_administrator_is_not_refused(admin_client, method, path, why):
     """The other half, and the half that makes the refusals mean anything.
 
@@ -185,7 +195,7 @@ async def test_an_administrator_is_not_refused(admin_client, method, path, why):
 # --- the grants -------------------------------------------------------------
 
 
-@pytest.mark.parametrize("method,path,why", _BOTH_ROLES, ids=_describe)
+@pytest.mark.parametrize("method,path,why", _BOTH_ROLES, ids=_ids(_BOTH_ROLES))
 async def test_both_roles_reach_it(staff_client, method, path, why):
     response = await staff_client.request(method, path, follow_redirects=False)
     assert response.status_code != 403, (
@@ -193,7 +203,7 @@ async def test_both_roles_reach_it(staff_client, method, path, why):
     )
 
 
-@pytest.mark.parametrize("method,path,why", _BOTH_ROLES, ids=_describe)
+@pytest.mark.parametrize("method,path,why", _BOTH_ROLES, ids=_ids(_BOTH_ROLES))
 async def test_an_administrator_reaches_it_too(admin_client, method, path, why):
     response = await admin_client.request(method, path, follow_redirects=False)
     assert response.status_code != 403, (

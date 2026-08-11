@@ -105,6 +105,18 @@ class SelfRecoveryError(RuntimeError):
     """A recovery action was aimed at the account performing it."""
 
 
+class AccountStillActiveError(RuntimeError):
+    """Deletion was attempted on an account that has not been deactivated.
+
+    Deliberately its own class rather than a reuse of LastAdministratorsError,
+    which is the other refusal ``delete_staff`` can raise. The two say opposite
+    things about what to do next — "deactivate this account first" against
+    "there are not enough administrators to remove one at all" — and a caller
+    that rendered the wrong message would send an administrator to perform a
+    step that is not the one blocking them.
+    """
+
+
 class UnknownDeviceError(RuntimeError):
     """No authenticator with that id **on this account**.
 
@@ -429,12 +441,34 @@ def last_password_change(session: Session, staff: Staff) -> datetime | None:
     account's ``staff``-table entries only, which is a handful of rows for the
     life of an account — JSON predicates differ between MySQL and SQLite, and
     this module is imported by both.
+
+    **``AuditLog.at >= staff.created_at`` is a correctness guard, not an
+    optimisation, and it is what makes ``delete_staff`` safe to have.**
+    ``audit_log`` holds no foreign key to ``staff`` — deliberately, since
+    ``actor`` also carries ``cli``, ``bootstrap`` and ``deploy-seed`` — so a
+    deleted account's entries stay in the table naming a ``row_id`` that no
+    longer resolves. ``staff.id`` is a plain autoincrement integer, and while
+    MySQL 8 persists its counter across restarts and does not reuse ids,
+    **SQLite hands out ``max(rowid) + 1`` and reuses one the moment a row is
+    deleted**; this module is imported by both. Without this predicate, an
+    account created after a deletion could be handed the dead account's id and
+    inherit its password history, and ``/admin/security`` would tell a new
+    member of staff their password was last changed on a date belonging to
+    somebody who no longer exists.
+
+    Scoped on the read side rather than by rewriting the deleted account's rows
+    to NULL, which was the alternative. An account cannot have changed its
+    password before it existed, so this excludes nothing genuine — and it
+    leaves ``audit_log`` append-only. A deletion that edited historical rows
+    would make the trail describe the present rather than what happened, which
+    is the one property it exists to have.
     """
     rows = session.scalars(
         select(AuditLog)
         .where(
             AuditLog.table_name == "staff",
             AuditLog.row_id == staff.id,
+            AuditLog.at >= staff.created_at,
         )
         .order_by(AuditLog.at.desc(), AuditLog.id.desc())
     )
@@ -499,6 +533,153 @@ def deactivate_staff(session: Session, username: str) -> None:
     staff.session_generation += 1
 
 
+def reactivate_staff(session: Session, username: str) -> None:
+    """Undo a deactivation.
+
+    **This exists because ``delete_staff`` requires deactivation first**, and
+    that requirement is only defensible if the step it makes mandatory is
+    genuinely reversible. Without this function, deactivating the wrong account
+    was a trap with two exits — leave it in the list for ever, or delete it —
+    and "delete it" is the one this panel was refusing to offer at all.
+
+    **It takes no floor guard, and none is missing.** ``_guard_admin_floor``
+    refuses changes that *remove* an active administrator; this only ever adds
+    one, so every count it protects moves upward or stays put.
+
+    **It takes no self guard either, and that is a property of the system
+    rather than an omission.** ``_guard_not_self`` stops an administrator
+    aiming a recovery action at their own account. Here there is no such aim to
+    take: ``AdminAuth.authenticate`` refuses a session whose account is not
+    ``is_active``, so nobody can be signed in as the account they would be
+    reactivating. A guard here could never fire, and a guard that cannot fire
+    is one whose test passes against any implementation at all — including one
+    that refuses everything, which is this project's recorded failure mode for
+    guard tests. Stated rather than added.
+
+    Bumps ``session_generation`` for symmetry with ``deactivate_staff``. There
+    is no live session to evict — deactivation already ended them and the
+    account has had none since — but the invariant every other write in this
+    module holds is that a change to an account's ability to log in ends the
+    cookies minted before it, and an exception to it would have to be reasoned
+    about by the next caller rather than simply relied upon.
+    """
+    staff = get_staff(session, username)
+    staff.is_active = True
+    staff.session_generation += 1
+
+
+def delete_staff(
+    session: Session, username: str, *, actor: str, allow_self: bool = False
+) -> dict:
+    """Remove an account outright. Returns what was destroyed, for the caller.
+
+    **Why this is a hard delete and not a tombstone.** The question a delete
+    has to answer on this project is what becomes of the audit trail, which is
+    a deliverable in its own right — an entry that can no longer say who did
+    the thing is a worse outcome than a list with an extra row in it. The
+    answer, established by reading every reference to ``staff`` rather than
+    assumed: **``audit_log`` has no foreign key to this table**, in the model
+    or in ``0002_audit_log.py``'s DDL. ``audit_log.actor`` is
+    ``VARCHAR(128)``, and it has to be, because it also carries ``cli``,
+    ``bootstrap``, ``deploy-seed`` and ``unknown`` — none of which is or could
+    be a row here. So the trail already stores identity the way a tombstone
+    would have been introduced to make it store it, and every entry a deleted
+    account wrote stays complete and still names its author.
+
+    The same holds for the other three denormalised identity columns —
+    ``staff.created_by``, ``factor_set.published_by``, ``ip_block.created_by``.
+    All text, none a foreign key, none affected.
+
+    A tombstone was rejected on the merits: it leaves the row in ``staff``, the
+    username taken, and the list one query parameter away from showing what was
+    hidden — which is not the capability that was asked for — while buying
+    nothing, since the property it is normally bought for is already held.
+
+    **What *is* destroyed with the account** is exactly its credentials:
+    ``staff_recovery_code`` and ``staff_totp_device`` cascade, at the database
+    (``ondelete="CASCADE"``) and through the ORM (``delete-orphan``). That is
+    the correct outcome and not a side effect to be worked around — a stored
+    TOTP secret must not outlive the account it authenticates.
+
+    **The one hazard, and where it is closed.** ``last_password_change`` reads
+    the trail by ``(table_name='staff', row_id)``, and a deleted id can be
+    handed out again under SQLite. That is fixed in ``last_password_change``
+    itself, on the read side, so this function does not have to rewrite history
+    to be safe; see its docstring.
+
+    Four guards, in the order they are cheapest to explain:
+
+    * **Deactivation first.** Refused unless ``is_active`` is already False.
+      Deletion is then bookkeeping on a row that ``deactivate_staff`` has
+      already made inert — it evicted the sessions and bumped the generation —
+      rather than an eviction racing a request in flight. It also puts the
+      floor check on the path twice, and the first of the two runs while the
+      account still counts toward it.
+    * **The two-administrator floor**, via ``_guard_admin_floor``, which §8.3
+      names for deletion in the same breath as deactivation and demotion. In
+      practice a deactivated account is already past it — the guard returns
+      early for a row that is not active — which is precisely why the check at
+      deactivation time is the one that bites, and why this call stays here
+      rather than being dropped as redundant: it is the guard for the case
+      where the two steps are ever decoupled.
+    * **No self-deletion**, via ``_guard_not_self``. An administrator deleting
+      their own account has removed the second party from the procedure whose
+      whole value is that a second party was involved, and has done to the
+      floor in one action what deactivation is refused for doing.
+    * Re-authentication, which belongs to the caller: it is a proof about the
+      request, and this module never sees one.
+
+    Writes its own ``audit_log`` entry, inside the caller's transaction, the
+    way ``create_staff`` does. It is the entry most worth having — after the
+    commit it is the only record that the account ever existed — so it carries
+    the whole identity rather than a reference to a row that is about to stop
+    resolving.
+    """
+    staff = get_staff(session, username)
+    _guard_not_self(staff, actor, allow_self=allow_self, what="Deleting an account")
+    if staff.is_active:
+        raise AccountStillActiveError(
+            f"{staff.username!r} is still active. Deactivate the account first, "
+            "then delete it. Deactivating ends its sessions and refuses its "
+            "next login, and it can be undone; deleting cannot."
+        )
+    _guard_admin_floor(session, staff)
+
+    # Snapshotted before the delete, because after it there is nothing left to
+    # read and this is the only record the account ever existed.
+    removed = {
+        "username": staff.username,
+        "display_name": staff.display_name,
+        "role": staff.role.value,
+        "is_active": staff.is_active,
+        "created_at": staff.created_at,
+        "created_by": staff.created_by,
+        # Named as counts, never as rows. The point of saying so at all is that
+        # an administrator reading the trail can see that a second factor and a
+        # set of recovery codes went with the account, which is what makes the
+        # deletion irreversible in the way that matters.
+        "totp_devices_destroyed": len(staff.totp_devices),
+        "recovery_codes_destroyed": len(staff.recovery_codes),
+    }
+    staff_id = staff.id
+
+    session.delete(staff)
+    # Before the audit entry, so a database-level refusal (a foreign key added
+    # later without this function being revisited) surfaces here rather than
+    # after a row claiming the deletion happened has been written.
+    session.flush()
+    write_audit(
+        session,
+        actor=actor,
+        action="delete",
+        table_name="staff",
+        row_id=staff_id,
+        before=removed,
+        after=None,
+    )
+    return removed
+
+
 def set_role(session: Session, username: str, role: StaffRole) -> None:
     staff = get_staff(session, username)
     if staff.role is StaffRole.admin and role is not StaffRole.admin:
@@ -546,6 +727,23 @@ class TooManyDevicesError(RuntimeError):
 
 class DuplicateDeviceNameError(RuntimeError):
     """The account already has an authenticator under that name."""
+
+
+class InvalidDeviceNameError(RuntimeError):
+    """The proposed authenticator name is empty or over-length."""
+
+
+#: Longest authenticator name accepted, matching ``staff_totp_device.name``'s
+#: VARCHAR(64).
+#:
+#: **Here rather than in the view that used to own it**, because it is now
+#: enforced in two places for two different reasons: ``rename_totp_device``
+#: refuses an over-length name, and ``brand/security.html`` renders it as a
+#: ``maxlength``. A constant defined in the view and a limit enforced in the
+#: service layer are two numbers, and MySQL in non-strict mode truncates the
+#: difference silently — an authenticator would be stored under a name nobody
+#: typed. ``admin/self_service_view.py`` imports it from here.
+MAX_DEVICE_NAME_LENGTH = 64
 
 
 #: What the onboarding enrolment calls the first device. Anything the person
@@ -746,6 +944,15 @@ def begin_mfa_enrolment(
         existing.secret_enc = encrypted
         existing.last_counter = None
 
+    # A no-op in every reachable case — the row just added or replaced is
+    # unconfirmed, so `has_enrolled` is unmoved. Called anyway, because
+    # _sync_mfa_enrolled_at's docstring claims that *every* function here which
+    # can add or remove a device ends by calling it, and this was the one that
+    # did not. Nothing had broken; the divergence between what the helper says
+    # about itself and what the code does is the thing being closed, since the
+    # next person to add a writer will read that claim and rely on it.
+    _sync_mfa_enrolled_at(staff)
+
     return secret, provisioning_uri(
         secret, username=_device_label(staff.username, device_name), issuer=issuer
     )
@@ -918,6 +1125,128 @@ def remove_totp_device(
     _sync_mfa_enrolled_at(staff)
     staff.session_generation += 1
     return device
+
+
+def rename_totp_device(
+    session: Session, username: str, device_id: int, new_name: str
+) -> "StaffTotpDevice":
+    """Change one authenticator's name. Returns the row, renamed.
+
+    **Why the name is kept and made editable, rather than dropped for the
+    ordinal.** Every name on this screen ends up saying nothing — the onboarding
+    device is called ``Authenticator`` because something had to call it
+    something, and the second one gets whatever its owner typed while looking at
+    a form that gave them no reason to think about it. That is not evidence the
+    column is useless; it is evidence that a name nobody can revise is a name
+    nobody invests in. The ordinal already exists (``number`` on the security
+    screen) and identifies the row without saying anything about the device,
+    which is precisely the gap the name is supposed to fill when somebody is
+    deciding which phone to remove.
+
+    **What renaming does not do, and the screen must say so.** The name reaches
+    the authenticator app through ``_device_label``'s ``otpauth://`` URI, and
+    that URI is consumed once, at the scan. Renaming afterwards changes this
+    list and nothing on the phone. Re-minting the secret so the app could be
+    relabelled is not an option worth having: it would invalidate a working
+    second factor to correct a caption.
+
+    So this is a note against a row, and it is treated as one — no
+    ``session_generation`` bump, because nothing about the account's
+    credentials has changed. Compare ``remove_totp_device``, which bumps
+    precisely because it has.
+
+    ``device_id`` is looked up **within the account**, the same property
+    ``remove_totp_device`` holds and for the same reason: another account's
+    device id must be a not-found here rather than a rename somewhere else, so
+    that the scoping is a property of the service layer and not of whichever
+    view calls it.
+
+    The account already holding that name is refused rather than left to
+    ``uq_staff_totp_device_name``, which would surface as an IntegrityError at
+    the flush — a 500 on the panel, and a traceback on the CLI. Renaming a
+    device to the name it already has is allowed and is a no-op, since the
+    uniqueness check has to exclude the row being renamed for that to be true.
+    """
+    staff = get_staff(session, username)
+    device = next((d for d in staff.totp_devices if d.id == device_id), None)
+    if device is None:
+        raise UnknownDeviceError("That authenticator is not on this account.")
+
+    new_name = new_name.strip()
+    if not new_name:
+        raise InvalidDeviceNameError(
+            "Give the authenticator a name, so you can tell it apart later."
+        )
+    if len(new_name) > MAX_DEVICE_NAME_LENGTH:
+        raise InvalidDeviceNameError(
+            f"That name is too long. Use at most {MAX_DEVICE_NAME_LENGTH} "
+            "characters."
+        )
+    # `d is not device` is what makes renaming a device to its current name a
+    # no-op rather than a refusal — without it the row would collide with
+    # itself, and the person correcting a typo in their own device's name
+    # would be told the name was taken by the device they were editing.
+    if any(d.name == new_name and d is not device for d in staff.totp_devices):
+        raise DuplicateDeviceNameError(
+            f"This account already has an authenticator called {new_name!r}. "
+            "Give this one a different name."
+        )
+
+    device.name = new_name
+    return device
+
+
+def discard_unconfirmed_devices(
+    session: Session, username: str
+) -> list["StaffTotpDevice"]:
+    """Destroy every unconfirmed enrolment on the account. Returns what went.
+
+    **An unconfirmed device cannot be continued, so it is not a state.** The
+    secret and the QR exist only in the response to the re-authenticated POST
+    that minted them — ``begin_mfa_enrolment`` persists the secret encrypted
+    precisely so the plaintext never has to be carried between two requests.
+    Once that page is gone the row can only ever be destroyed, so
+    "Set-up not finished" was never a stage of anything; it was litter that
+    only a manual Remove cleared, and it is a stored TOTP secret that has
+    never authenticated anything, left lying about for no benefit.
+
+    It is also actively in the way. An abandoned row holds its name against
+    ``begin_mfa_enrolment``'s ``DuplicateDeviceNameError`` and counts toward
+    ``MAX_TOTP_DEVICES``, so four abandoned scans leave an account unable to
+    add a real authenticator at all.
+
+    **What guarantees this cannot destroy a confirmed device.** The filter is
+    ``enrolled_at is None`` and there is no other term in it. It removes rows
+    one at a time through the relationship and **never calls ``.clear()``** —
+    the operation that makes ``reset_mfa`` correct is the operation that would
+    make this catastrophic, and the two functions sit close enough together in
+    this file to be confused by somebody editing quickly.
+
+    **The decision of *when* to call this belongs to the caller, and that split
+    is deliberate.** This function knows what may be destroyed; the page knows
+    when somebody has left it. Folding the reap into ``begin_mfa_enrolment``
+    would put it on ``admin/views.py::EnrolView``'s path too, where the
+    opposite property is load-bearing: onboarding lands on ``/admin/enrol`` by
+    GET and ``_enrolment_view_context`` deliberately *resumes* an unfinished
+    enrolment across those GETs, because re-minting invalidates the code
+    already sitting on somebody's phone and then blames their device clock for
+    it. A reaper in the shared layer would break onboarding to tidy the
+    self-service screen. Callers: ``admin/self_service_view.py`` only, on a GET
+    of the page and before beginning a new enrolment.
+
+    Ends with ``_sync_mfa_enrolled_at`` like every other function here that can
+    remove a device. It is a no-op whenever a confirmed device remains, which
+    on the only path that calls this is always — ``/admin/security`` is
+    unreachable until ``mfa_enrolled_at`` is set — and it is called anyway, so
+    that the helper's claim to be the sole writer of that column holds without
+    a caller having to reason about which case it is in.
+    """
+    staff = get_staff(session, username)
+    discarded = [d for d in staff.totp_devices if d.enrolled_at is None]
+    for device in discarded:
+        staff.totp_devices.remove(device)
+    _sync_mfa_enrolled_at(staff)
+    return discarded
 
 
 def unused_recovery_code_count(session: Session, username: str) -> int:

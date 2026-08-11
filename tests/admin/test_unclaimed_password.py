@@ -322,6 +322,37 @@ def test_a_created_account_and_an_issued_one_land_in_the_same_state(session):
     assert state(created_account.username) == (True, True, True)
 
 
+def test_a_token_written_under_the_v1_15_derivation_still_opens(session):
+    """The key derivation is a compatibility contract with data already on
+    disk, and v1.16's rename is exactly the change that would break it.
+
+    ``UNCLAIMED_PASSWORD_ENCRYPTION_INFO`` reads
+    ``b"initial-password-encryption"`` under a name that no longer says
+    "initial", which invites a tidy-up. The `info` is HKDF input: change those
+    bytes and a different key comes out, every value stored by v1.15 becomes a
+    blob nothing can open, and **nothing in this suite would notice** - encrypt
+    and decrypt stay consistent with each other within one process, so the
+    failure appears only on a deployment, on a credential screen, for exactly
+    the accounts that were mid-onboarding.
+
+    So the fixture is a literal token, produced by v1.15's derivation under
+    this file's SECRET_KEY and pasted here. It pins the whole derivation - the
+    `info`, the hash, the length, the absent salt - rather than only the
+    constant's spelling, which an equality assertion on the bytes would do and
+    which would not catch a change to `_derive_key` itself.
+
+    If this ever fails: do not regenerate the token. Restore the derivation,
+    or ship a re-encryption pass in the migration that changes it.
+    """
+    token = (
+        b"gAAAAABqe67nHLXy4ZtEfmjruFUb3-PETvmzl1ch9x8vdeC6CwI4vvmEI7D85sVHer"
+        b"eEmUH9WWwSGkWbmTfcbef3oyJ2OFobM2OIYl4avKBR-uL6aXXWwpE="
+    )
+    assert decrypt_unclaimed_password(
+        token, secret_key=SECRET_KEY
+    ) == "a-password-written-by-v1-15"
+
+
 # --- the clearing path ------------------------------------------------------
 
 
@@ -704,6 +735,51 @@ async def test_the_list_says_a_password_is_waiting_after_one_is_issued(
     assert staff.username in listing.text, "the account was not on the list at all"
     assert "Yes - can be revealed" in listing.text
     assert issued not in listing.text, "the list page rendered the password itself"
+
+
+@pytest.mark.asyncio
+async def test_the_list_says_no_when_a_forced_change_is_owed_with_nothing_stored(
+    admin_client, session
+):
+    """The one state that separates the indicator from `must_change_password`,
+    and the reason `StaffAdmin` renders them as two columns.
+
+    They agree on both minting paths - v1.16 made sure of it - so an indicator
+    that simply returned `must_change_password` would pass every other test in
+    this file. It would be wrong here: an account created before v1.15, or one
+    whose stored copy went undecryptable across an unrotated SECRET_KEY change,
+    owes a password change with nothing to reveal. Conflating them puts "Yes -
+    can be revealed" on a row the reveal page then answers "Not recoverable",
+    which is the panel promising something it refuses one click later.
+
+    The pre-v1.15 row is made by clearing the column directly rather than
+    through a service function, because no service function can produce this
+    state - which is the point: it arrives from history, not from a code path
+    anybody can drive.
+    """
+    staff, _ = _make(session)
+    _resync(session)
+    row = get_staff(session, staff.username)
+    row.unclaimed_password_enc = None
+    session.commit()
+    _resync(session)
+
+    row = get_staff(session, staff.username)
+    assert row.must_change_password is True, "the fixture is not the state under test"
+    assert row.has_unclaimed_password is False
+
+    listing = await admin_client.get("/admin/staff/list?pageSize=100")
+    assert listing.status_code == 200
+    assert staff.username in listing.text, "the account was not on the list at all"
+    # The row's own cell, not the page: another account on the same list may
+    # legitimately be showing "Yes".
+    cell = re.search(
+        rf"{re.escape(staff.username)}.*?</tr>", listing.text, re.S
+    )
+    assert cell, "the account's row was not found in the table"
+    assert "Yes - can be revealed" not in cell.group(0), (
+        "the list offered a reveal for an account with nothing stored"
+    )
 
 
 @pytest.mark.asyncio

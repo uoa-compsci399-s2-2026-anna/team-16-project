@@ -34,6 +34,7 @@ from admin.models import AuditLog, Staff, StaffRole, utcnow
 from admin.security import (
     TotpSecretUndecryptableError,
     decrypt_totp_secret,
+    decrypt_unclaimed_password,
     verify_password,
 )
 from admin.totp import TOTP_INTERVAL
@@ -118,6 +119,14 @@ def test_issue_password_command_returns_a_working_password(session):
     staff = get_staff(session, "alice")
     assert verify_password(password, staff.password_hash)
     assert staff.must_change_password is True
+    # Contract v1.16: the CLI stores what it mints, under the key it was
+    # given. Asserted by decrypting rather than by "the column is not NULL" -
+    # a command that passed the wrong key, or a stale one, would store a
+    # perfectly well-formed blob and fail only later, on the reveal page, as
+    # a 500 for the account somebody is waiting on.
+    assert decrypt_unclaimed_password(
+        staff.unclaimed_password_enc, secret_key=OLD_KEY
+    ) == password
 
 
 def test_the_cli_can_recover_an_account_that_happens_to_be_named_cli(session):

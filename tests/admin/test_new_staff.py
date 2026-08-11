@@ -581,3 +581,149 @@ async def test_the_dialog_action_row_is_not_part_of_the_dialogs_scrolled_content
         "element above its containing block - so `dialog.dialog > form` must "
         "take the form's box out of the layout, or the row is not pinned at all"
     )
+
+
+async def test_the_required_fields_behind_the_modal_are_checked_before_it_opens(
+    admin_client
+):
+    """**The second report of "点不动", and a different cause from the first.**
+
+    The first was geometry: the action row was clipped out of the clamped
+    dialog and the press landed on the backdrop. That was fixed and measured.
+    This one happens with the button fully visible, fully hit-testable, and
+    pressed squarely.
+
+    The dialog on this page sits *inside* the page's form, so Username and
+    Full name — both ``required`` — are outside the dialog. ``showModal()``
+    makes everything outside the dialog inert, and an inert control cannot
+    take focus. Press the submit button with either field empty and the
+    browser's interactive validation finds an invalid control, refuses to
+    submit, and then has nothing it is allowed to focus and nowhere to anchor
+    the bubble. It gives up silently. Measured in Chrome 151 over CDP against
+    the running panel at 2000x994 — the reporter's own viewport — with the
+    button visible and ``elementFromPoint`` resolving to the button itself:
+
+    ==========================  ======  ===========================
+    state                       POSTs   console
+    ==========================  ======  ===========================
+    both fields filled             1    (400, refusal rendered)
+    Full name empty                0    invalid form control ... is
+                                        not focusable
+    Username empty                 0    invalid form control ... is
+                                        not focusable
+    ==========================  ======  ===========================
+
+    and corroborated against the reporter's session in the admin container's
+    log, which holds two GETs of this page minutes apart and **no POST to it
+    at all** — so no server-side cause of any kind, including a refusal that
+    renders invisibly, can be what they hit.
+
+    The assertion is the *pairing*, like the action-row test above. It demands
+    the guard only while this page actually has the hazard: a control that is
+    ``required``, inside the form, and outside the dialog. Move the dialog out
+    of the form, or drop ``required``, and the hazard is gone and this test
+    stops asking.
+    """
+    page = await admin_client.get(NEW_URL)
+    assert page.status_code == 200
+    markup = page.text
+
+    form = re.search(r"<form[^>]*method=\"post\"[^>]*>(.*)</form>", markup, re.S)
+    assert form is not None, "the page must submit through one form"
+    inside_form = form.group(1)
+    dialog = re.search(r"<dialog[^>]*id=\"dialog-confirm\".*?</dialog>", inside_form, re.S)
+    assert dialog is not None, (
+        "the confirmation dialog is expected inside the form — the whole "
+        "hazard is that arrangement, and if it has moved this test must be "
+        "re-derived rather than deleted"
+    )
+    behind_the_modal = inside_form.replace(dialog.group(0), "")
+    hazard = re.findall(r"<input[^>]*\brequired\b[^>]*>", behind_the_modal)
+
+    if not hazard:
+        return  # nothing outside the dialog can block submission
+
+    module = await admin_client.get("/admin/static/security.js")
+    assert module.status_code == 200
+    source = module.text
+
+    opener = re.search(
+        r"for \(const opener of openers\) \{(.*?)\n\}", source, re.S
+    )
+    assert opener is not None, "security.js must still bind the dialog openers"
+    handler = opener.group(1)
+
+    assert "checkValidity" in handler, (
+        "this page has a required control outside the dialog:\n"
+        + "\n".join(hazard)
+        + "\nOnce the modal is up that control is inert, so a failed "
+        "constraint blocks submission with nothing to report it on. The "
+        "opener must check those controls before showModal():\n" + handler
+    )
+    # Anchored on the scoping, not merely on the call. Validating the *whole*
+    # form here would report a failure on a field inside the dialog — which is
+    # not on screen yet — and that is the same defect pointed the other way.
+    assert re.search(r"!\s*dialog\.contains\(el\)", handler), (
+        "only the controls outside the dialog may be checked before it "
+        "opens; the dialog's own fields are focusable once it is up and the "
+        "browser reports them itself:\n" + handler
+    )
+    # And the guard has to actually stop the modal. Checking validity and
+    # opening anyway is the shipped defect with a diagnostic bolted on.
+    assert re.search(r"reportValidity\(\);\s*\n\s*return;", handler), (
+        "the opener must report on the offending control and leave the modal "
+        "down — with it up, the browser cannot show the message at all:\n"
+        + handler
+    )
+
+
+async def test_a_refusal_is_not_scrolled_out_of_the_dialog_that_carries_it(
+    admin_client
+):
+    """A refused submission comes back inside its dialog, and must stay read.
+
+    The error notice is rendered at the top of the dialog, under the heading.
+    ``security.js`` then focuses ``[data-initial-focus]``, and on a dialog tall
+    enough to scroll that focus call scrolls the field into view — taking the
+    notice off the top of the dialog's own box on the way. Measured in Chrome
+    against this page with a wrong password:
+
+    ==========  ==========  ===========  ==========
+    viewport    scrollTop   notice top   visible
+    ==========  ==========  ===========  ==========
+    2000x994             0          279  yes
+    390x844              0          158  yes
+    390x400            204         -111  **no**
+    390x360            221         -131  **no**
+    1280x320           168          -81  **no**
+    ==========  ==========  ===========  ==========
+
+    A refusal nobody can see is indistinguishable from a button that did
+    nothing — the same complaint this page has now produced twice, from two
+    unrelated causes.
+    """
+    _, refused = await _create(
+        admin_client, current_password="not-the-current-password"
+    )
+    assert refused.status_code == 400
+    flat = _flat(refused)
+    assert 'role="alert"' in flat, "a refusal must be announced, not just shown"
+
+    module = await admin_client.get("/admin/static/security.js")
+    source = module.text
+    reopened = re.search(
+        r"for \(const dialog of serverOpened\) \{(.*)", source, re.S
+    ).group(1)
+
+    assert re.search(r"focus\(\{\s*preventScroll", reopened), (
+        "focusing the initial field scrolls it into view, which scrolls the "
+        "refusal off the top of a dialog tall enough to scroll:\n" + reopened
+    )
+    assert re.search(r"role='alert'|role=\?\"alert", reopened), (
+        "the refusal is what must be kept on screen, and it is marked with "
+        "role=alert:\n" + reopened
+    )
+    assert "scrollIntoView" in reopened, (
+        "taking the scroll away from the field is only half of it — the "
+        "reason has to be scrolled to:\n" + reopened
+    )

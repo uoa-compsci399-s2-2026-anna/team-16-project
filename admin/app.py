@@ -104,7 +104,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         print live credentials into the test output.
         """
         with session_factory() as db:
-            created = ensure_bootstrap_admins(db)
+            created = ensure_bootstrap_admins(db, secret_key=settings.secret_key)
             db.commit()
         report_bootstrap_result(created)
         yield

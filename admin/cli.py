@@ -46,8 +46,13 @@ from admin.accounts import (
 from admin.audit import write_audit
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
-from admin.models import StaffRole, StaffTotpDevice
-from admin.security import decrypt_totp_secret, encrypt_totp_secret
+from admin.models import Staff, StaffRole, StaffTotpDevice
+from admin.security import (
+    decrypt_initial_password,
+    decrypt_totp_secret,
+    encrypt_initial_password,
+    encrypt_totp_secret,
+)
 from admin.seed import seed_taxonomy
 from admin.taxonomy_rules import TaxonomyInvariantError
 from db.blocklist import InvalidAddressError, ip_fingerprint, unblock_ip
@@ -62,6 +67,7 @@ def cmd_create_staff(
     role: StaffRole,
     *,
     actor: str,
+    secret_key: str,
 ) -> tuple[str, str]:
     """Create an account. Returns (username, one-time initial password).
 
@@ -85,6 +91,7 @@ def cmd_create_staff(
         display_name=display_name,
         role=role,
         actor=actor,
+        secret_key=secret_key,
     )
     return staff.username, password
 
@@ -151,9 +158,23 @@ def cmd_reactivate_staff(db_session: Session, username: str) -> None:
     reactivate_staff(db_session, username)
 
 
-def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[int, int]:
-    """Re-encrypt every stored TOTP secret, and clear the blocklist, under a
-    new SECRET_KEY. Returns (secrets re-encrypted, blocks cleared).
+def cmd_rotate_key(
+    db_session: Session, *, old_key: str, new_key: str
+) -> tuple[int, int, int]:
+    """Re-encrypt every stored secret, and clear the blocklist, under a new
+    SECRET_KEY. Returns (TOTP secrets re-encrypted, unclaimed initial
+    passwords re-encrypted, blocks cleared).
+
+    **Two encrypted columns now, not one.** `staff.initial_password_enc`
+    (contract v1.15) is Fernet under a key derived from SECRET_KEY exactly as
+    `staff_totp_device.secret_enc` is, only under a different HKDF `info`, so
+    it has to be carried across a rotation the same way. Left out, a rotation
+    would turn every unclaimed initial password into a blob that
+    `reveal_initial_password` raises `TotpSecretUndecryptableError` on - a
+    500 on an administrator screen, for accounts that were mid-onboarding
+    when the key changed, with the recovery ("issue a new password") not
+    obvious from the error. Both columns are decrypted before either is
+    written, for the reason the next paragraph gives.
 
     Decrypts everything before writing anything. A partial rotation would
     leave some secrets readable only with the old key and some only with the
@@ -204,14 +225,35 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[
         for device in devices
     ]
 
+    # The unclaimed initial passwords, same all-at-once ordering and for the
+    # same reason: this comprehension is inside the "decrypt everything before
+    # writing anything" window, so a single undecryptable row aborts the whole
+    # rotation with nothing written rather than leaving half the table under
+    # each key.
+    unclaimed = db_session.scalars(
+        select(Staff).where(Staff.initial_password_enc.is_not(None))
+    ).all()
+    initial_plaintext = [
+        (
+            staff,
+            decrypt_initial_password(staff.initial_password_enc, secret_key=old_key),
+        )
+        for staff in unclaimed
+    ]
+
     for device, secret in plaintext:
         device.secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
+
+    for staff, password in initial_plaintext:
+        staff.initial_password_enc = encrypt_initial_password(
+            password, secret_key=new_key
+        )
 
     blocks = db_session.scalars(select(IpBlock)).all()
     for row in blocks:
         db_session.delete(row)
 
-    return len(plaintext), len(blocks)
+    return len(plaintext), len(initial_plaintext), len(blocks)
 
 
 def cmd_unblock(db_session: Session, address: str, *, secret_key: str) -> bool:
@@ -369,7 +411,8 @@ def main(argv: list[str] | None = None) -> int:
             role = StaffRole.admin if args.admin else StaffRole.staff
             try:
                 username, password = cmd_create_staff(
-                    db_session, args.username, args.display_name, role, actor="cli"
+                    db_session, args.username, args.display_name, role,
+                    actor="cli", secret_key=settings.secret_key,
                 )
             except (
                 DuplicateUsernameError,
@@ -447,11 +490,18 @@ def main(argv: list[str] | None = None) -> int:
                 "are unchanged, so they can log in as before."
             )
         elif args.command == "rotate-key":
-            count, cleared = cmd_rotate_key(
+            count, initial_count, cleared = cmd_rotate_key(
                 db_session, old_key=args.old, new_key=args.new
             )
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
+            if initial_count:
+                print(
+                    f"Re-encrypted {initial_count} unclaimed initial "
+                    "password(s). These belong to accounts created but not yet "
+                    "logged in to; they stay readable from "
+                    "/admin/staff/initial-password."
+                )
             if cleared:
                 print(
                     f"Cleared {cleared} IP block(s). A block is stored as an "
@@ -483,7 +533,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"No block found for {args.address}. Nothing to do.")
         elif args.command == "bootstrap":
-            created = ensure_bootstrap_admins(db_session)
+            created = ensure_bootstrap_admins(
+                db_session, secret_key=settings.secret_key
+            )
             db_session.commit()
             if not created:
                 print("Administrator accounts already exist. Nothing to do.")

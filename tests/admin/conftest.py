@@ -102,7 +102,7 @@ def _create_onboarded_account(admin_app, *, role=StaffRole.admin):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role, actor="test")
+        create_staff(db, username=username, display_name="Test User", role=role, actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)

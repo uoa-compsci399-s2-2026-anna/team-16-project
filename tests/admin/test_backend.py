@@ -125,7 +125,8 @@ def _make_staff(
     secret_key = admin_app.state.settings.secret_key
     with admin_app.state.session_factory() as db:
         _, password = create_staff(
-            db, username=username, display_name=username.title(), role=StaffRole.staff, actor="test"
+            db, username=username, display_name=username.title(), role=StaffRole.staff, actor="test",
+            secret_key="test-secret-key-not-used-anywhere-real",
         )
         db.flush()
         if password_changed:

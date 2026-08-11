@@ -75,6 +75,7 @@ from admin.accounts import (
     issue_password,
     reactivate_staff,
     reset_mfa,
+    reveal_initial_password,
 )
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY, reauthenticate
@@ -126,8 +127,37 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
     # same reasoning applies to the screen the trail sits beside.
     column_list = [
         Staff.username, Staff.display_name, Staff.role, Staff.is_active,
-        Staff.must_change_password, Staff.mfa_enrolled_at, Staff.last_login_at,
+        Staff.must_change_password,
+        # Contract v1.15 item 3. The *fact* that an initial password is still
+        # waiting, never the password - a derived boolean off
+        # `initial_password_enc is not None` (admin/models.py). The plaintext
+        # has exactly one route and that route asks for proof.
+        #
+        # This has to be its own column rather than being read off
+        # `must_change_password`, which is the obvious shortcut and is wrong:
+        # `issue_password` sets that flag and deliberately clears this one, so
+        # "must change, nothing to reveal" is an ordinary state meaning "a
+        # replacement was issued and shown once". Conflating them would have
+        # the list promising a reveal that the reveal page then refuses.
+        "initial_password_unclaimed",
+        Staff.mfa_enrolled_at, Staff.last_login_at,
     ]
+    column_labels = {
+        # sqladmin would render the property name verbatim
+        # ("Initial Password Unclaimed"), which reads as a setting rather than
+        # as a state of this account.
+        "initial_password_unclaimed": "Initial password still unclaimed",
+    }
+    column_formatters = {
+        # Contract v1.15 item 3. A bare True/False leaves the reader to work
+        # out which way round it is, on the one column where guessing wrong
+        # means either reading out a dead string or telling a colleague their
+        # password is gone when it is not.
+        "initial_password_unclaimed": (
+            lambda row, _name: "Yes - can be revealed" if row.initial_password_unclaimed
+            else "No"
+        ),
+    }
     # column_list only narrows the *list* page. sqladmin's get_details_columns
     # (sqladmin/models.py) falls back to every mapped column
     # (self._prop_names) when column_details_list is unset, regardless of
@@ -407,6 +437,11 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                     display_name=display_name,
                     role=role,
                     actor=actor,
+                    # Stores the initial password encrypted under this key
+                    # until the account claims it (contract v1.15 item 3), so
+                    # that a closed tab does not lose it - see
+                    # `initial_password_page` below.
+                    secret_key=runtime.settings.secret_key,
                 )
             except (
                 DuplicateUsernameError,
@@ -435,6 +470,181 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                 "list_url": self._list_url(request),
                 "new_url": request.url_for("admin:view-staff-new_staff"),
             },
+        )
+
+    # --- revealing an unclaimed initial password ----------------------------
+
+    @action(name="show-initial-password", label="Show the initial password")
+    async def show_initial_password_action(self, request):
+        """Carry the selection to the confirmation page below.
+
+        **Performs nothing**, for the same reason ``delete_action`` performs
+        nothing: sqladmin registers an ``@action`` with ``methods=["GET"]``
+        only, and revealing a live credential has to take a proof, which means
+        a form, which means a POST. The dropdown entry exists to carry the
+        selected ``pks`` somewhere that can ask.
+
+        No ``confirmation_message``. That is a browser ``confirm()`` — one OK
+        button and nothing between a stolen session and every unclaimed
+        password on the panel.
+        """
+        self._require_admin(request)
+        pks = request.query_params.get("pks", "")
+        return RedirectResponse(
+            str(request.url_for("admin:view-staff-initial_password_page"))
+            + f"?pks={pks}",
+            status_code=302,
+        )
+
+    def _initial_password_context(self, request, accounts, **extra) -> dict:
+        context = {
+            "accounts": accounts,
+            "revealed": None,
+            "error": None,
+            "open_dialog": None,
+            "pks": ",".join(str(a["id"]) for a in accounts),
+            "signed_in_as": request.session.get(SESSION_KEY, ""),
+            "list_url": self._list_url(request),
+            "csrf_token": issue_token(request.session),
+        }
+        context.update(extra)
+        return context
+
+    async def _initial_password_page(self, request, context, status_code=200):
+        return await self.templates.TemplateResponse(
+            request, "brand/initial_password.html", context, status_code=status_code
+        )
+
+    # sqladmin names an @expose route on a ModelView
+    # `view-{identity}-{func.__name__}`, ignoring the `identity` argument
+    # entirely (sqladmin/application.py::_handle_expose_decorated_func), so
+    # this is `admin:view-staff-initial_password_page` and renaming the method
+    # changes a URL that `show_initial_password_action` above redirects to.
+    @expose("/initial-password", methods=["GET", "POST"])
+    async def initial_password_page(self, request):
+        """Show an account's initial password, if it has not been claimed.
+
+        Contract §8.3, v1.15 item 3. **The feature exists because a one-time
+        reveal is easy to lose** — the page that creates an account shows the
+        password once, and a closed tab loses it for good. The account survives
+        (it owes a password change and an enrolment, so nobody can log in as
+        it) but the administrator then has to issue a replacement, and if the
+        original was already read out to the colleague, that is a password they
+        will try and be refused by.
+
+        **What it is not.** It is not a plain column on the list. The value is
+        a working credential for an account whose second factor is not yet
+        enrolled — an attacker reaching the forced-enrolment page enrols their
+        own authenticator — so it sits behind the same press-then-prove dialog
+        as creating an account and deleting one: the current password or a live
+        code, on top of an administrator session. Being signed in is the one
+        thing somebody holding a stolen session would also have, which is
+        exactly why being signed in is not enough for any of the three.
+
+        **The list page still says an account is unclaimed** without this page
+        being opened (``initial_password_unclaimed`` in ``column_list``). That
+        separation is the point: the state is public to administrators, the
+        value is not.
+
+        **NULL is a first-class answer, not an error.** The account has changed
+        its password, or an administrator has issued a replacement, or it was
+        created before v1.15 — three ordinary histories with one outcome. The
+        template says which sentence applies rather than rendering a blank, and
+        the response is still 200: nothing went wrong.
+
+        Every successful reveal writes an ``audit_log`` entry through
+        ``reveal_initial_password``. A reversibly-stored credential readable
+        without a trace would leave no way to tell an administrator who read a
+        colleague's password from one who did not.
+        """
+        # An @expose route on a ModelView is wrapped in `login_required` and
+        # nothing else - sqladmin never calls `is_accessible` for it (see this
+        # module's docstring). Without this line any signed-in account could
+        # POST here and read every unclaimed password on the panel.
+        self._require_admin(request)
+
+        pks = [pk for pk in request.query_params.get("pks", "").split(",") if pk]
+        form = None
+        if request.method == "POST":
+            form = await request.form()
+            pks = [pk for pk in (form.get("pks") or "").split(",") if pk]
+
+        actor = request.session.get(SESSION_KEY, "unknown")
+        runtime = get_runtime(request)
+
+        with self.session_maker() as session:
+            accounts = []
+            for pk in pks:
+                try:
+                    staff = session.get(Staff, int(pk))
+                except ValueError:
+                    continue
+                if staff is None:
+                    continue
+                accounts.append({
+                    "id": staff.id,
+                    "username": staff.username,
+                    "display_name": staff.display_name,
+                    "role": staff.role.value,
+                    "unclaimed": staff.initial_password_unclaimed,
+                    "last_login_at": staff.last_login_at,
+                })
+
+            if request.method == "GET":
+                return await self._initial_password_page(
+                    request, self._initial_password_context(request, accounts)
+                )
+
+            async def refuse(message):
+                return await self._initial_password_page(
+                    request,
+                    self._initial_password_context(
+                        request, accounts, error=message, open_dialog="confirm"
+                    ),
+                    status_code=400,
+                )
+
+            if not check_token(request.session, form.get("csrf_token")):
+                session.rollback()
+                return await refuse("That form expired. Please try again.")
+            if not accounts:
+                session.rollback()
+                return await refuse("Nothing was selected.")
+
+            try:
+                acting = get_staff(session, actor)
+            except UnknownStaffError:
+                raise HTTPException(status_code=403) from None
+
+            problem = reauthenticate(
+                session, acting, form, runtime=runtime, now=time.time()
+            )
+            if problem is not None:
+                session.rollback()
+                return await refuse(problem)
+
+            revealed = []
+            for account in accounts:
+                # Returns None when there is nothing stored. Carried through as
+                # None rather than filtered out: the template names the account
+                # and says why there is nothing for it, which is the answer the
+                # person pressing this actually needs.
+                password = reveal_initial_password(
+                    session,
+                    account["username"],
+                    actor=actor,
+                    secret_key=runtime.settings.secret_key,
+                )
+                revealed.append({**account, "password": password})
+            # The audit entries reveal_initial_password wrote are in this
+            # transaction and are the only thing being committed - nothing
+            # about the staff rows changed.
+            session.commit()
+
+        return await self._initial_password_page(
+            request, self._initial_password_context(
+                request, accounts, revealed=revealed
+            )
         )
 
     @action(

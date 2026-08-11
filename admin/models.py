@@ -77,6 +77,36 @@ class Staff(Base):
     #: ``staff``); ``tests/admin/test_accounts.py`` pins the invariant after
     #: every operation that can move it.
     mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    #: The account's initial password, encrypted, until somebody claims it.
+    #: Contract §8.3, v1.15 item 3. **The only reversibly-stored credential in
+    #: this system** — everything else a person types is hashed and cannot be
+    #: read back at all.
+    #:
+    #: NULL means "there is nothing to reveal", and it is NULL for the whole of
+    #: an account's life except the window between creation and the first
+    #: password change. ``admin/accounts.py`` is the only module that writes
+    #: it: ``create_staff`` sets it, ``set_password`` and ``issue_password``
+    #: both clear it unconditionally, and ``delete_staff`` takes it with the
+    #: row. That list is the invariant — a fourth path that changes a password
+    #: without clearing this column would leave a dead value on a live account,
+    #: which is the one failure mode worth more than the feature.
+    #:
+    #: **A non-NULL value here is not the same fact as ``must_change_password``
+    #: and the two must not be conflated.** ``must_change_password`` is also
+    #: set by ``issue_password``, which deliberately clears this column: an
+    #: administrator-issued replacement is shown once and not kept. So
+    #: ``must_change_password and initial_password_enc is None`` is a real and
+    #: ordinary state, meaning "a password was issued and is not recoverable".
+    #: ``StaffAdmin`` renders the two as separate columns for that reason.
+    #:
+    #: VARBINARY on MySQL, LargeBinary elsewhere, matching
+    #: ``StaffTotpDevice.secret_enc``. A Fernet token over a 24-character
+    #: password is around 160 bytes, well inside 255.
+    initial_password_enc: Mapped[bytes | None] = mapped_column(
+        LargeBinary(255).with_variant(mysql.VARBINARY(255), "mysql"), nullable=True
+    )
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow
     )
@@ -117,10 +147,23 @@ class Staff(Base):
         """
         return [d for d in self.totp_devices if d.enrolled_at is not None]
 
+    @property
+    def initial_password_unclaimed(self) -> bool:
+        """Whether an initial password is still there to be revealed.
+
+        A derived boolean and never the value itself, so that a list page, a
+        details page or an audit snapshot can say *that* a password is waiting
+        without any of them being a path to reading it. ``StaffAdmin`` puts
+        this in ``column_list``; the plaintext has exactly one route
+        (``/admin/staff/initial-password``) and that route asks for proof.
+        """
+        return self.initial_password_enc is not None
+
     def __str__(self) -> str:
         #: username, never id - a staff member is identified by how they log
         #: in, and no other column here is safe to show (password_hash is a
-        #: secret; the TOTP secret is no longer a column of this table at all
+        #: secret; initial_password_enc is a *reversibly* stored one, which is
+        #: worse; the TOTP secret is no longer a column of this table at all
         #: since v1.13, and StaffTotpDevice.__str__ withholds it for the same
         #: reason).
         return self.username

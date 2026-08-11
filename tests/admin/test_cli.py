@@ -42,13 +42,20 @@ from db.blocklist_models import IpBlock
 
 pytestmark = pytest.mark.db
 
+#: The key every encrypted column in this file's fixtures is written under,
+#: and therefore the one `cmd_rotate_key` has to be given as `old_key`. Since
+#: contract v1.15 that is two columns and not one - `staff_totp_device.secret_enc`
+#: and `staff.initial_password_enc` - so `create_staff` takes it here too.
+#: Creating an account under a different key produced exactly the failure a
+#: half-rotated deployment would: `TotpSecretUndecryptableError` out of
+#: `cmd_rotate_key`, naming the wrong remedy.
 OLD_KEY = "old-secret-key-for-tests"
 NEW_KEY = "new-secret-key-for-tests"
 NOW = 1800
 
 
 def enrol(session, username: str, secret_key: str) -> str:
-    create_staff(session, username=username, display_name=username.title(), actor="test")
+    create_staff(session, username=username, display_name=username.title(), actor="test", secret_key=OLD_KEY)
     session.flush()
     secret, _ = begin_mfa_enrolment(session, username, secret_key=secret_key)
     code = pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(NOW)
@@ -72,7 +79,8 @@ def stored_secret(session, username: str, device_name: str = "Authenticator") ->
 
 def test_create_staff_command_returns_a_usable_initial_password(session):
     username, password = cmd_create_staff(
-        session, "alice", "Alice Example", StaffRole.admin, actor="bootstrap"
+        session, "alice", "Alice Example", StaffRole.admin, actor="bootstrap",
+        secret_key=OLD_KEY,
     )
     session.flush()
 
@@ -84,7 +92,7 @@ def test_create_staff_command_returns_a_usable_initial_password(session):
 def test_create_staff_command_is_exempt_from_the_administrator_floor(session):
     """The floor guards removal, not creation. A system with no accounts has
     to be able to bootstrap its first administrator."""
-    cmd_create_staff(session, "admin0", "Admin Zero", StaffRole.admin, actor="cli")
+    cmd_create_staff(session, "admin0", "Admin Zero", StaffRole.admin, actor="cli", secret_key=OLD_KEY)
     session.flush()
 
     staff = get_staff(session, "admin0")
@@ -101,7 +109,7 @@ def test_reset_mfa_command_clears_the_enrolment(session):
 
 
 def test_issue_password_command_returns_a_working_password(session):
-    create_staff(session, username="alice", display_name="Alice", actor="test")
+    create_staff(session, username="alice", display_name="Alice", actor="test", secret_key=OLD_KEY)
     session.flush()
 
     password = cmd_issue_password(session, "alice")
@@ -139,7 +147,7 @@ def test_rotate_key_reencrypts_every_enrolled_secret(session):
     secret_a = enrol(session, "alice", OLD_KEY)
     secret_b = enrol(session, "bob", OLD_KEY)
 
-    rotated, _cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    rotated, _initial, _cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
     session.flush()
 
     assert rotated == 2
@@ -176,7 +184,7 @@ def test_rotate_key_reencrypts_every_device_not_one_per_account(session):
     )
     session.flush()
 
-    rotated, _cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    rotated, _initial, _cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
     session.flush()
 
     assert rotated == 2
@@ -189,11 +197,20 @@ def test_rotate_key_reencrypts_every_device_not_one_per_account(session):
 
 
 def test_rotate_key_skips_accounts_with_no_enrolment(session):
+    """One TOTP secret rotated, because only one account has an enrolment.
+
+    The middle number is 2, not 0, and that is the assertion doing its second
+    job: both accounts were just created and neither has logged in, so both
+    carry an unclaimed `initial_password_enc` (contract v1.15) and both have to
+    be carried across the rotation. An account with no enrolment still has an
+    initial password - the two columns are independent, and a rotation that
+    walked accounts by enrolment would leave bob's unreadable.
+    """
     enrol(session, "alice", OLD_KEY)
-    create_staff(session, username="bob", display_name="Bob", actor="test")
+    create_staff(session, username="bob", display_name="Bob", actor="test", secret_key=OLD_KEY)
     session.flush()
 
-    assert cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY) == (1, 0)
+    assert cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY) == (1, 2, 0)
 
 
 def test_rotate_key_with_the_wrong_old_key_changes_nothing(session):
@@ -316,7 +333,7 @@ def test_rotate_key_clears_the_blocklist(session):
              secret_key=OLD_KEY)
     session.flush()
 
-    rotated, cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
+    rotated, _initial, cleared = cmd_rotate_key(session, old_key=OLD_KEY, new_key=NEW_KEY)
     session.flush()
 
     assert (rotated, cleared) == (1, 2)
@@ -379,6 +396,7 @@ def _deactivated_account(session, username: str, *, role=StaffRole.staff):
     create_staff(
         session, username=username, display_name=username.title(),
         role=role, actor="test",
+        secret_key=OLD_KEY,
     )
     session.flush()
     staff = get_staff(session, username)
@@ -414,7 +432,7 @@ def test_delete_staff_command_reports_what_went_with_the_account(session):
 def test_delete_staff_command_refuses_an_account_that_is_still_active(session):
     """The CLI's allow_self exemption reaches the self-recovery guard and
     nothing else. Deactivation is still required here."""
-    create_staff(session, username="alice", display_name="Alice", actor="test")
+    create_staff(session, username="alice", display_name="Alice", actor="test", secret_key=OLD_KEY)
     session.flush()
 
     with pytest.raises(AccountStillActiveError):
@@ -431,6 +449,7 @@ def test_delete_staff_command_is_still_bound_by_the_administrator_floor(session)
         create_staff(
             session, username=f"admin{index}", display_name=f"Admin {index}",
             role=StaffRole.admin, actor="test",
+            secret_key=OLD_KEY,
         )
     session.flush()
     for index in range(2):

@@ -39,7 +39,7 @@ def enrolled_staff(session) -> Staff:
     admits — the same reasoning as test_auth.py's own `enrolled()` helper.
     """
     username = "erin"
-    _, password = create_staff(session, username=username, display_name="Erin", actor="test")
+    _, password = create_staff(session, username=username, display_name="Erin", actor="test", secret_key=SECRET_KEY)
     session.flush()
     set_password(session, username, "a-strong-initial-password")
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)

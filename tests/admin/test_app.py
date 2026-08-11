@@ -260,7 +260,7 @@ async def logged_in_client(admin_app, client, monkeypatch):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Route Check", actor="test")
+        create_staff(db, username=username, display_name="Route Check", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -309,7 +309,24 @@ async def logged_in_client(admin_app, client, monkeypatch):
     _cleanup_staff_named(admin_app, username)
 
 
-async def test_the_audit_log_view_is_reachable(logged_in_client):
+async def test_the_audit_log_view_is_registered_and_administrator_only(
+    logged_in_client,
+):
+    """403, not 200, and 403 is what "registered" looks like from here.
+
+    `logged_in_client` is a plain `staff` account (create_staff's default
+    role), and contract v1.15 closed the audit log to that role - the trail is
+    an administrator's oversight tool. This test was written to prove the view
+    is *registered* rather than to prove anything about roles, and 403 proves
+    that just as well as 200 did: an unregistered identity answers 404 from
+    sqladmin's `_find_model_view`, so the two are distinguishable and this
+    assertion still fails if `AuditLogAdmin` stops being added in
+    `create_app`.
+
+    The role rule itself is held at both roles, over real HTTP, in
+    tests/admin/test_role_matrix.py - including the details and export routes,
+    which are separate handlers from this one.
+    """
     response = await logged_in_client.get("/admin/audit-log/list")
 
-    assert response.status_code == 200
+    assert response.status_code == 403

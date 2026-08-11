@@ -93,6 +93,19 @@ REDACTED_FIELDS = {
     "code_hash",
     "ip_hmac",
     "token",
+    #: The unclaimed initial password (contract v1.15, §8.3). Added here in
+    #: the same change that added the column, not after it, because
+    #: `row_to_dict` snapshots *every* mapped column of a `staff` row and
+    #: `audit_log` is append-only — a value that reaches this table cannot be
+    #: taken back out, and the whole point of the column is that its contents
+    #: stop existing the moment the password is changed. An audit copy would
+    #: outlive the account's onboarding by the life of the deployment.
+    #:
+    #: It is the ciphertext that is redacted, and that is not belt-and-braces:
+    #: the key is derived from SECRET_KEY, which is available to anything that
+    #: can read `audit_log` in the first place, so the ciphertext in this
+    #: table is the plaintext.
+    "initial_password_enc",
 }
 
 _bundle_cache: dict[int, Any] = {}

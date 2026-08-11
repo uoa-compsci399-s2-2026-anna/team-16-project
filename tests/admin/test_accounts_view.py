@@ -68,7 +68,7 @@ def _create_onboarded_account(admin_app, *, role):
     password = PASSWORD
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role, actor="test")
+        create_staff(db, username=username, display_name="Test User", role=role, actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -228,7 +228,7 @@ def enrolled_staff(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Target User", actor="test")
+        create_staff(db, username=username, display_name="Target User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-strong-initial-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -295,6 +295,7 @@ async def two_admins(admin_app, admin_client):
             db, username=second_username, display_name="Second Admin",
             role=StaffRole.admin,
             actor="test",
+            secret_key=SECRET_KEY,
         )
         db.flush()
         set_password(db, second_username, "a-long-enough-password")
@@ -600,17 +601,21 @@ async def test_a_selection_containing_the_actor_refuses_the_whole_batch(
 
 
 async def test_the_screen_offers_no_unaccounted_action(admin_client):
-    """Five actions, all accounted for.
+    """Six actions, all accounted for.
 
     ``issue-password``, ``reset-mfa`` and ``delete`` are guarded against
     self-application by ``admin.accounts``; ``deactivate`` and ``delete`` by
     the two-administrator floor in the same module; ``delete`` additionally
     requires the account to be deactivated already and re-proves the actor
-    before it runs. ``reactivate`` is the only one that guards nothing, and it
-    is the only one that takes nothing away — it restores an account to the
-    credentials it already had. That asymmetry is the point of listing them
-    here: an action that removes access and carries no guard is what this
-    assertion exists to catch.
+    before it runs. ``show-initial-password`` (contract v1.15) performs
+    nothing itself — like ``delete`` it carries the selection to a page that
+    can take a proof, because an ``@action`` is GET-only and revealing a live
+    credential cannot be a one-click ``confirm()``. ``reactivate`` is the only
+    one that guards nothing, and it is the only one that takes nothing away —
+    it restores an account to the credentials it already had. That asymmetry
+    is the point of listing them here: an action that removes access, or hands
+    out a working credential, and carries no guard is what this assertion
+    exists to catch.
 
     Walks the MRO's own ``__dict__`` rather than ``inspect.getmembers`` so an
     action added to a *base* class is caught too - `AuditedModelView` is
@@ -628,6 +633,7 @@ async def test_the_screen_offers_no_unaccounted_action(admin_client):
 
     assert slugs == {
         "issue-password", "reset-mfa", "deactivate", "reactivate", "delete",
+        "show-initial-password",
     }
 
 

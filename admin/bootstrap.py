@@ -29,8 +29,23 @@ _DISPLAY_NAMES = {
 }
 
 
-def ensure_bootstrap_admins(session: Session) -> list[tuple[str, str]]:
+def ensure_bootstrap_admins(
+    session: Session, *, secret_key: str
+) -> list[tuple[str, str]]:
     """Create the initial administrator accounts if none exist.
+
+    ``secret_key`` is threaded through to ``create_staff``, which stores each
+    account's initial password encrypted under it until the account is claimed
+    (contract v1.15 item 3). Required rather than defaulted: this runs at
+    application start, where ``Settings`` has already been loaded and refuses
+    to exist without ``SECRET_KEY``, so there is nothing to default *to* that
+    would not be a second, wrong key.
+
+    A practical consequence worth knowing: the two bootstrap passwords are
+    printed once into ``docker compose logs`` and are now also recoverable from
+    the panel by either administrator, until whichever of them logs in first
+    changes theirs. Since a fresh deployment's most common failure is losing
+    those two lines in the start-up output, that is the case this was asked for.
 
     Returns ``[(username, password), ...]`` for accounts actually created, in
     plaintext — this is the only moment those passwords are readable. The
@@ -52,6 +67,7 @@ def ensure_bootstrap_admins(session: Session) -> list[tuple[str, str]]:
             display_name=_DISPLAY_NAMES[username],
             role=StaffRole.admin,
             actor="bootstrap",
+            secret_key=secret_key,
         )
         created.append((staff.username, password))
 

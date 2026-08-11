@@ -68,6 +68,7 @@ def add_admins(session, count: int) -> None:
             display_name=f"Admin {index}",
             role=StaffRole.admin,
             actor="test",
+            secret_key=SECRET_KEY,
         )
     session.flush()
 
@@ -104,7 +105,8 @@ def test_generated_initial_passwords_are_long_and_unrepeated():
 
 def test_create_staff_returns_a_working_initial_password(session):
     staff, password = create_staff(
-        session, username="alice", display_name="Alice Example", actor="test"
+        session, username="alice", display_name="Alice Example", actor="test",
+        secret_key=SECRET_KEY,
     )
     session.flush()
 
@@ -112,27 +114,28 @@ def test_create_staff_returns_a_working_initial_password(session):
 
 
 def test_created_accounts_must_change_their_password(session):
-    staff, _ = create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    staff, _ = create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
 
     assert staff.must_change_password is True
 
 
 def test_created_accounts_are_not_yet_enrolled_in_mfa(session):
-    staff, _ = create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    staff, _ = create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
 
     assert staff.mfa_enrolled_at is None
 
 
 def test_create_staff_records_who_created_the_account(session):
     staff, _ = create_staff(
-        session, username="alice", display_name="Alice Example", actor="admin0"
+        session, username="alice", display_name="Alice Example", actor="admin0",
+        secret_key=SECRET_KEY,
     )
 
     assert staff.created_by == "admin0"
 
 
 def test_setting_a_password_clears_the_must_change_flag(session):
-    create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     set_password(session, "alice", "a brand new password")
@@ -150,7 +153,7 @@ def test_setting_a_password_for_an_unknown_account_raises(session):
 
 def test_count_active_admins_ignores_deactivated_and_non_admin_accounts(session):
     add_admins(session, 2)
-    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test")
+    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     assert count_active_admins(session) == 2
@@ -185,7 +188,7 @@ def test_demoting_an_administrator_is_refused_when_only_two_remain(session):
 
 def test_a_non_administrator_can_always_be_deactivated(session):
     add_admins(session, 2)
-    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test")
+    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     deactivate_staff(session, "bob")
@@ -197,7 +200,7 @@ def test_a_non_administrator_can_always_be_deactivated(session):
 
 def test_promoting_a_staff_member_to_administrator_is_allowed(session):
     add_admins(session, 2)
-    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test")
+    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     set_role(session, "bob", StaffRole.admin)
@@ -219,7 +222,7 @@ def test_the_guard_does_not_block_a_no_op_role_change(session):
 
 def test_usernames_are_stored_folded_to_lower_case(session):
     """So that 'Alice' and 'alice' cannot become two accounts."""
-    staff, _ = create_staff(session, username="Alice", display_name="Alice Example", actor="test")
+    staff, _ = create_staff(session, username="Alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
 
     assert staff.username == "alice"
 
@@ -245,7 +248,8 @@ def test_count_usable_admins_counts_an_administrator_who_finished_onboarding(ses
     """Walks the real flow rather than setting the columns, so the shortcut
     the other tests here use is anchored to what the service layer does."""
     _, password = create_staff(
-        session, username="admin0", display_name="Admin 0", role=StaffRole.admin, actor="test"
+        session, username="admin0", display_name="Admin 0", role=StaffRole.admin, actor="test",
+        secret_key=SECRET_KEY,
     )
     session.flush()
     set_password(session, "admin0", password)
@@ -265,7 +269,7 @@ def test_count_usable_admins_counts_an_administrator_who_finished_onboarding(ses
 
 def test_count_usable_admins_ignores_deactivated_and_non_admin_accounts(session):
     add_usable_admins(session, 2)
-    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test")
+    create_staff(session, username="bob", display_name="Bob", role=StaffRole.staff, actor="test", secret_key=SECRET_KEY)
     session.flush()
     onboard(session, "bob")
 
@@ -333,7 +337,7 @@ def _enrolled(session, username: str):
     fixture completely while leaving the account it was aimed at still
     holding a working second factor.
     """
-    create_staff(session, username=username, display_name=username.title(), actor="test")
+    create_staff(session, username=username, display_name=username.title(), actor="test", secret_key=SECRET_KEY)
     session.flush()
     staff = get_staff(session, username)
     staff.totp_devices.append(
@@ -353,7 +357,7 @@ def test_issuing_yourself_a_password_is_refused(session):
     """Issuing a password is a password change that never asks for the
     current one. Aimed at yourself it is the first half of a takeover from a
     stolen session, not recovery."""
-    create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
     session.flush()
     before = get_staff(session, "alice")
     hash_before = before.password_hash
@@ -378,7 +382,7 @@ def test_a_refused_self_issue_writes_no_audit_entry_of_its_own(session):
     assertion would have started failing on a row that has every right to be
     there - and, worse, would have passed for the wrong reason if creation had
     ever stopped auditing itself."""
-    create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
     session.flush()
     before = session.scalars(select(AuditLog.id)).all()
     assert len(before) == 1, "creating the account writes exactly one entry"
@@ -408,7 +412,7 @@ def test_the_self_check_folds_case_the_way_a_username_does(session):
     string arrives from a session cookie that was written at login. A guard
     comparing the two raw would be defeated by typing one capital letter into
     the login form."""
-    create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     with pytest.raises(SelfRecoveryError):
@@ -418,7 +422,7 @@ def test_the_self_check_folds_case_the_way_a_username_does(session):
 def test_another_administrator_is_the_case_these_actions_exist_for(session):
     """The guard must not turn the feature off. A colleague acting on a
     locked-out account is recovery layer L2 itself."""
-    create_staff(session, username="alice", display_name="Alice Example", actor="test")
+    create_staff(session, username="alice", display_name="Alice Example", actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     issued = issue_password(session, "alice", actor="bob")
@@ -457,6 +461,7 @@ def _deactivated(session, username: str, *, role=StaffRole.staff):
     create_staff(
         session, username=username, display_name=username.title(),
         role=role, actor="test",
+        secret_key=SECRET_KEY,
     )
     session.flush()
     staff = get_staff(session, username)
@@ -479,7 +484,7 @@ def test_audit_history_survives_deleting_its_author(session):
     rather than a tombstone, and it is asserted rather than reasoned about
     because the whole design rests on it.
     """
-    create_staff(session, username="victim", display_name="Victim", actor="test")
+    create_staff(session, username="victim", display_name="Victim", actor="test", secret_key=SECRET_KEY)
     _deactivated(session, "author")
     session.flush()
 
@@ -567,7 +572,7 @@ def test_deleting_an_account_destroys_its_authenticators_and_recovery_codes(sess
 def test_an_active_account_cannot_be_deleted(session):
     """Deactivation first, so deletion acts on a row deactivate_staff has
     already made inert rather than racing a live session."""
-    create_staff(session, username="alice", display_name="Alice", actor="test")
+    create_staff(session, username="alice", display_name="Alice", actor="test", secret_key=SECRET_KEY)
     session.flush()
 
     with pytest.raises(AccountStillActiveError):
@@ -647,6 +652,7 @@ def test_an_administrator_at_the_floor_cannot_be_removed_by_either_route(session
     create_staff(
         session, username="admin9", display_name="Admin 9",
         role=StaffRole.admin, actor="test",
+        secret_key=SECRET_KEY,
     )
     session.flush()
     onboard(session, "admin9")
@@ -693,7 +699,7 @@ def test_a_recycled_row_id_does_not_inherit_a_dead_accounts_password_date(sessio
     delete_staff(session, "ghost", actor="admin0")
     session.flush()
 
-    create_staff(session, username="newcomer", display_name="Newcomer", actor="test")
+    create_staff(session, username="newcomer", display_name="Newcomer", actor="test", secret_key=SECRET_KEY)
     session.flush()
     newcomer = get_staff(session, "newcomer")
     # Stand in for the id reuse SQLite performs on its own.
@@ -708,7 +714,7 @@ def test_a_recycled_row_id_does_not_inherit_a_dead_accounts_password_date(sessio
 def test_a_password_change_after_creation_is_still_found(session):
     """The other half of the guard above. Scoping the read by created_at must
     not hide the entries it exists to find."""
-    create_staff(session, username="alice", display_name="Alice", actor="test")
+    create_staff(session, username="alice", display_name="Alice", actor="test", secret_key=SECRET_KEY)
     session.flush()
     staff = get_staff(session, "alice")
     write_audit(

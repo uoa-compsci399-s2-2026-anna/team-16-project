@@ -54,7 +54,7 @@ def owes_enrolment(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         db.commit()
@@ -83,7 +83,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User", actor="test")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)

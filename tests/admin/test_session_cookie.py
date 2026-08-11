@@ -75,7 +75,7 @@ def account(secure_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = secure_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User", actor="test")
+        create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, PASSWORD)
         db.commit()

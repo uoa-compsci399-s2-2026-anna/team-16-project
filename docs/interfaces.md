@@ -803,13 +803,13 @@ row, and it must survive the account of whoever made it being deleted.
 | `id` | BIGINT | PK, AI | |
 | `at` | DATETIME | NOT NULL | |
 | `actor` | VARCHAR(128) | NOT NULL | Staff username |
-| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `delete` / `publish` / `rollback` / `archive` / `refuse` |
+| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `delete` / `publish` / `rollback` / `archive` / `refuse` / `reveal` |
 | `table_name` | VARCHAR(64) | NOT NULL | |
 | `row_id` | BIGINT | NULL | |
 | `before_json` | JSON | NULL | |
 | `after_json` | JSON | NULL | |
 
-> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). `audit_log` is readable by every staff member, so an unfiltered dump of a `staff` row would hand out password hashes and TOTP secrets.
+> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). An unfiltered dump of a `staff` row would hand out password hashes, TOTP secrets and — since v1.15 — the reversibly-encrypted initial password. This table is `role = admin` only from v1.15 (§8.2); the blocklist is unchanged and is not conditional on the audience, since the trail is exportable and append-only.
 
 ## 2.4 Staff and Access Control
 
@@ -1468,7 +1468,7 @@ class PublicStats:
 
 ```python
 REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "secret_enc", "code_hash",
-                   "ip_hmac", "token"}
+                   "ip_hmac", "token", "initial_password_enc"}
 
 def write_audit(session, actor: str, action: str, table_name: str,
                 row_id: int | None,
@@ -1479,11 +1479,23 @@ def write_audit(session, actor: str, action: str, table_name: str,
     leave no audit record claiming it happened.
 
     Every key in REDACTED_FIELDS is replaced with "[redacted]" before
-    serialisation. audit_log is readable by every staff member through
-    /admin/audit, so an unfiltered staff row would expose password hashes
-    and TOTP secrets to anyone holding an account.
+    serialisation. Written when audit_log was readable by every staff
+    member; v1.15 closed /admin/audit-log to role=admin only, and the set
+    is unchanged all the same. Narrowing the audience is not a reason to
+    widen what is written: these are credentials, the trail is exportable
+    and append-only, and a redaction dropped because "only administrators
+    see it now" is one that has to be found again the first time a
+    read-only auditor role exists.
 
-    ip_hmac is in that set for a different reason from the other three:
+    initial_password_enc (v1.15) is in the set for a reason of its own: it
+    is the one reversibly-encrypted credential in the system, and its whole
+    design is that it stops existing when the password is claimed. A copy in
+    an append-only table would outlive that by the life of the deployment.
+    It is the *ciphertext* that is redacted, and that is not belt-and-braces:
+    the key is derived from SECRET_KEY, which anything able to read
+    audit_log already has.
+
+    ip_hmac is in that set for a different reason again:
     it is not a credential, it is derived from a visitor's address, and
     §2.3 permits storing such a derivation in exactly one place — the
     ip_block table, which only administrators can read. audit_log has a
@@ -2296,17 +2308,79 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 
 Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.
 
+### The unclaimed initial password (v1.15)
+
+`staff.initial_password_enc` holds the password an account was **created**
+with, encrypted with Fernet under a key derived from `SECRET_KEY` by HKDF with
+its own `info` (never the one `staff_totp_device.secret_enc` uses). It is NULL
+for the whole of an account's life except the window between creation and the
+first password change.
+
+**This is the only reversibly-stored credential in the system, and it is a
+deliberate weakening taken by the repository owner with the cost stated.**
+Everything else a person types is hashed and cannot be read back: `password_hash`
+is bcrypt from the instant the row exists, and `must_change_password` says
+nothing whatever about how the password is stored. What v1.15 added is a second,
+separately encrypted copy — not the removal of a hash.
+
+**Why.** A one-time reveal is easy to lose. The page that creates an account
+shows the password once; a closed tab loses it, and the administrator then has
+to issue a replacement, which stops the password already read out to the
+colleague from working. This project has already lost a set of recovery codes
+to exactly that shape.
+
+**The cost.** Anyone holding both a database dump and `SECRET_KEY` can log in
+as every account that has not yet claimed its password. Those accounts are
+pre-MFA in the way that matters: the attacker reaches the forced-enrolment page
+and enrols their own authenticator, so the password is the whole of the
+protection. What bounds it is the column's lifetime. Note that in the shipped
+container arrangement `SECRET_KEY` lives in a named volume that is **not**
+mounted into the database container, so an ordinary dump does not carry it; a
+compromise of the Docker host carries both.
+
+**Written by** `create_staff` and by nothing else. **Cleared unconditionally
+by** `set_password` (which is what both the self-service screen and the forced
+change at first login call) and by `issue_password`; **gone with the row** on
+`delete_staff`. `kaicalc-admin rotate-key` re-wraps it alongside the TOTP
+secrets, in the same decrypt-everything-before-writing-anything window.
+
+An administrator-issued replacement is **not** stored: `issue_password` clears
+the column rather than replacing its contents, so the column always means "the
+password this account was created with". `must_change_password` set with this
+column NULL is therefore an ordinary state, meaning "a replacement was issued
+and shown once" — the two facts are separate and `StaffAdmin` renders them as
+separate columns.
+
+**Reading it.** `/admin/staff/initial-password`, `role = admin`, reached from
+the `Show the initial password` action on `/admin/staff/list`. It takes the same
+re-authentication proof as creating an account and deleting one — the current
+password or a live TOTP code, on top of the administrator session — because
+being signed in is the one thing somebody holding a stolen session would also
+have. Every successful reveal writes an `audit_log` entry with
+`action = "reveal"`; the entry never carries the value, and
+`initial_password_enc` is in §5.5's `REDACTED_FIELDS` so that a whole-row
+snapshot cannot land the ciphertext in an append-only table either. The list
+page shows *that* an account's password is still unclaimed without showing it.
+
+There is no CLI command. Anyone with a shell on the container can read the
+column and `SECRET_KEY` directly, so one would add a path without adding a
+capability.
+
 ### Mandatory MFA
 
 Every account enrols a TOTP authenticator. There is no opt-out.
 
 ```
 admin creates account  ->  random initial password, shown once,
-                           handed over out of band
+                           handed over out of band; also kept
+                           encrypted (staff.initial_password_enc)
+                           and re-readable at
+                           /admin/staff/initial-password
         v
 first login            ->  must_change_password = true
         v
-forced password change
+forced password change ->  initial_password_enc cleared; nothing
+                           left to reveal, for good
         v
 forced TOTP enrolment  ->  QR code plus 5 single-use recovery codes,
                            shown once; one correct TOTP required to finish
@@ -2491,7 +2565,7 @@ Three differences between the two, each deliberate and each explained where it i
 
 Both key on `db.detection.client_ip`, so a caller with no usable address is skipped by both rather than given a stand-in key — and both inherit the deployment hazards §6.5 records.
 
-The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in a table every staff member can read.
+The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in `audit_log` — which since v1.15 only administrators can read, but which is also exportable and append-only, so the redaction does not depend on that.
 
 **Where an operator gets an address to type into that form.** Nowhere in this system — and that is worth stating, because the form otherwise reads as more capable than the panel is. Nothing here ever shows staff a caller's address: §2.3 forbids storing one, and the panel deliberately does not log one either. The address has to come from outside: the reverse proxy's or hosting platform's own access log, an alert from the host, or a report from someone who can see the traffic. The form's purpose is to *apply* an address an operator already has in hand from one of those, during an incident, with no CDN or upstream firewall available to do it for them. Anyone planning to rely on this screen should confirm the deployment keeps a proxy access log at all, before an incident rather than during one.
 

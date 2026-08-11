@@ -26,7 +26,9 @@ from admin.models import (
     utcnow,
 )
 from admin.security import (
+    decrypt_initial_password,
     decrypt_totp_secret,
+    encrypt_initial_password,
     encrypt_totp_secret,
     generate_recovery_codes,
     hash_password,
@@ -282,20 +284,41 @@ def create_staff(
     display_name: str,
     role: StaffRole = StaffRole.staff,
     actor: str,
+    secret_key: str,
 ) -> tuple[Staff, str]:
     """Create an account and return it with its one-time initial password.
 
-    The plaintext password is returned rather than stored: it is shown once
-    and handed over out of band. Contract §8.3 forbids self-service
-    registration, so this is the only way an account comes into existence —
-    ``admin/cli.py``'s ``create-staff`` and ``StaffAdmin.new_staff`` both land
-    here, and neither carries a rule of its own.
+    Contract §8.3 forbids self-service registration, so this is the only way
+    an account comes into existence — ``admin/cli.py``'s ``create-staff``,
+    ``StaffAdmin.new_staff`` and ``admin/bootstrap.py`` all land here, and none
+    of them carries a rule of its own.
 
-    **The password is not recoverable and is deliberately not stored.** What
-    is recoverable is the *account*: if the page or terminal carrying this
-    value is lost, ``issue_password`` mints another. Every caller has to say
-    so at the point it shows the value — see ``brand/staff_created.html``, and
-    ``admin/cli.py``'s own printed lines.
+    **The password is stored, encrypted and reversibly, until it is claimed —
+    contract v1.15 item 3, and it is the one reversibly-stored credential in
+    this system.** It was not, until v1.15: the value was returned and
+    otherwise discarded, and losing the page that showed it meant the
+    administrator had to issue a new one, which is a real nuisance once the old
+    one has already been read out to the colleague. ``admin/models.py``'s note
+    on ``initial_password_enc`` and ``admin/security.py``'s note above
+    ``encrypt_initial_password`` between them carry what that buys and what it
+    costs; the part that belongs here is the invariant:
+
+        **This column is written here and cleared by ``set_password`` and
+        ``issue_password``, and by nothing else.** A future path that changes a
+        password without clearing it leaves a live, readable credential on an
+        account whose password is something else — the one failure mode worth
+        more than the whole feature. ``tests/admin/test_initial_password.py``
+        drives every such path and asserts the column is NULL afterwards.
+
+    The plaintext is *also* still returned, and every caller still shows it
+    once at the point of creation (``brand/staff_created.html``,
+    ``admin/cli.py``'s printed lines). Nothing about the reveal route replaces
+    handing it over then; it only means a lost page is recoverable.
+
+    ``secret_key`` is required and keyword-only for the same reason ``actor``
+    is: an optional one is a caller that silently forgot, and here that would
+    be an account created with nothing to reveal, discovered only by the
+    administrator who went looking.
 
     ``actor`` is **required**, and keyword-only, for the reason ``reset_mfa``'s
     already is: an optional actor is a caller that silently forgot one, and
@@ -367,7 +390,16 @@ def create_staff(
     staff = Staff(
         username=username,
         display_name=display_name,
+        # bcrypt, exactly as before and exactly as every other password on
+        # this system. The premise that a password with must_change_password
+        # set is "not yet hashed into the database" is false and has always
+        # been: hash_password runs here, at creation, and password_hash is
+        # NOT NULL with no default. The line below is a *second*, separate
+        # copy under a different protection, not the absence of this one.
         password_hash=hash_password(password),
+        initial_password_enc=encrypt_initial_password(
+            password, secret_key=secret_key
+        ),
         role=role,
         is_active=True,
         must_change_password=True,
@@ -406,10 +438,25 @@ def set_password(session: Session, username: str, new_password: str) -> None:
     an eviction, and leaving the old sessions live would make it cosmetic.
     The caller that is changing its *own* password must re-stamp its session
     afterwards — see ChangePasswordView.
+
+    **Clears ``initial_password_enc``, and this is the single function that
+    covers two of the three paths that matter** (contract v1.15 item 3): the
+    self-service change on ``/admin/security`` and the forced change at first
+    login on ``/admin/change-password`` both come through here, and so does
+    ``kaicalc-admin set-password``. That is why the clearing lives in this
+    function rather than in either view — a copy in one view is a clearing the
+    other path does not do, and the forced change at first login is precisely
+    the path that decides how long the column exists at all.
+
+    Unconditional. Not ``if staff.initial_password_enc is not None``, which
+    reads the same and is not: the point is that after this call the column is
+    NULL whatever it was, so a future caller cannot arrange a state where it is
+    skipped.
     """
     staff = get_staff(session, username)
     staff.password_hash = hash_password(new_password)
     staff.must_change_password = False
+    staff.initial_password_enc = None
     staff.session_generation += 1
 
 
@@ -509,6 +556,20 @@ def issue_password(
     password = generate_initial_password()
     staff.password_hash = hash_password(password)
     staff.must_change_password = True
+    # The third path that changes a password, and the third that has to clear
+    # the unclaimed-initial-password column (contract v1.15 item 3). Cleared
+    # rather than replaced with this new value, deliberately: v1.15 scopes the
+    # column to "the password the account was created with", so an issued
+    # replacement stays a one-time reveal - shown on brand/issued_credential.html
+    # and kept nowhere. Storing it too would widen the window from "between
+    # creation and first login" to "any time an administrator has issued a
+    # password and it has not been used", which is unbounded, and the loss this
+    # feature exists to prevent is the loss of the *creation* page.
+    #
+    # Leaving it as it was would be the actual defect: the row would keep
+    # offering an initial password that no longer opens the account, and the
+    # administrator reading it out would be handing over a dead string.
+    staff.initial_password_enc = None
     staff.session_generation += 1
     write_audit(
         session,
@@ -566,6 +627,68 @@ def reactivate_staff(session: Session, username: str) -> None:
     staff = get_staff(session, username)
     staff.is_active = True
     staff.session_generation += 1
+
+
+def reveal_initial_password(
+    session: Session, username: str, *, actor: str, secret_key: str
+) -> str | None:
+    """Read back an unclaimed initial password, recording that it was read.
+
+    Contract §8.3, v1.15 item 3. Returns ``None`` when there is nothing to
+    reveal — the account has changed its password, or an administrator has
+    issued a replacement — and the caller must render that as its own outcome
+    rather than as an error or as an empty string. "There is nothing here" and
+    "here it is" are different answers and a page that blurs them would have
+    somebody reading out a blank.
+
+    **Every successful read writes an ``audit_log`` entry**, and that is the
+    price of the column existing at all. A reversibly-stored credential that
+    could be read without leaving a trace would mean an administrator who read
+    a colleague's password before they collected it is indistinguishable from
+    one who did not — which is the whole question anybody would ask after a
+    compromise. ``action="reveal"`` is a value contract §2.3's enumeration
+    gained in v1.15 rather than being reused as ``read`` or ``update``; both of
+    those already mean something else to ``last_password_change``, which reads
+    this same trail and branches on the shape of ``after_json``.
+
+    **The entry never carries the value, in any form.** ``after`` names the
+    account and says the reveal happened. The ciphertext is in
+    ``REDACTED_FIELDS`` for the separate reason that ``row_to_dict`` would
+    otherwise snapshot it (see ``db/repository.py``), but this call site does
+    not go near it: the trail is append-only, so anything written here outlives
+    the column by the life of the deployment, which would defeat the point of
+    clearing it.
+
+    No ``_guard_not_self``. Unlike ``issue_password`` and ``reset_mfa`` this
+    mints nothing and clears nothing, and the self-aimed case cannot arise
+    anyway: an account signed in has necessarily completed its forced password
+    change, which set this column to NULL. The function would return None.
+
+    Refuses nothing else, and holds no role check — the role floor is the
+    view's (``StaffAdmin`` is administrator-only, and
+    ``StaffAdmin.initial_password_page`` calls ``_require_admin`` on top of
+    that, because an ``@expose`` route does not inherit ``is_accessible``).
+    This module's convention is that the service layer holds the rules a CLI
+    and a panel must share, and there is no CLI command for this: a shell on
+    the container can read ``staff.initial_password_enc`` and ``SECRET_KEY``
+    directly, so a command would add a path without adding a capability.
+    """
+    staff = get_staff(session, username)
+    if staff.initial_password_enc is None:
+        return None
+    password = decrypt_initial_password(
+        staff.initial_password_enc, secret_key=secret_key
+    )
+    write_audit(
+        session,
+        actor=actor,
+        action="reveal",
+        table_name="staff",
+        row_id=staff.id,
+        before=None,
+        after={"username": staff.username, "revealed": "initial_password"},
+    )
+    return password
 
 
 def delete_staff(

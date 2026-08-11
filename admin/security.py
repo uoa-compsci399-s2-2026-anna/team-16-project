@@ -20,6 +20,15 @@ BCRYPT_MAX_BYTES = 72
 #: SECRET_KEY must pick a different value here so the two never share a key.
 TOTP_ENCRYPTION_INFO = b"totp-secret-encryption"
 
+#: HKDF ``info`` for the unclaimed-initial-password key. **Distinct from
+#: TOTP_ENCRYPTION_INFO on purpose, and the rule that says so is the comment
+#: directly above.** The two protect different things with different lifetimes
+#: — a TOTP secret is valid for the life of a device, an initial password
+#: until first login — and sharing a key would mean a compromise of one
+#: analysis is a compromise of both, and that ``kaicalc-admin rotate-key``
+#: could not be taught to re-wrap one without the other.
+INITIAL_PASSWORD_ENCRYPTION_INFO = b"initial-password-encryption"
+
 
 class PasswordTooLongError(ValueError):
     """Password exceeds bcrypt's 72-byte input limit."""
@@ -87,9 +96,20 @@ def _derive_key(secret_key: str, info: bytes) -> bytes:
     ).derive(secret_key.encode("utf-8"))
 
 
-def _fernet(secret_key: str) -> Fernet:
-    derived = _derive_key(secret_key, TOTP_ENCRYPTION_INFO)
+def _fernet_for(secret_key: str, info: bytes) -> Fernet:
+    """A Fernet bound to one purpose, named by ``info``.
+
+    Purpose-separated at this level rather than by each caller deriving its
+    own: a second copy of these two lines is a second place for the ``info``
+    argument to be omitted, and omitting it is silent - two purposes sharing
+    one key encrypt and decrypt each other's values perfectly well.
+    """
+    derived = _derive_key(secret_key, info)
     return Fernet(base64.urlsafe_b64encode(derived))
+
+
+def _fernet(secret_key: str) -> Fernet:
+    return _fernet_for(secret_key, TOTP_ENCRYPTION_INFO)
 
 
 def encrypt_totp_secret(secret: str, *, secret_key: str) -> bytes:
@@ -115,6 +135,74 @@ def decrypt_totp_secret(blob: bytes, *, secret_key: str) -> str:
     except InvalidToken as exc:
         raise TotpSecretUndecryptableError(
             "Stored TOTP secret cannot be decrypted with the current "
+            "SECRET_KEY. If SECRET_KEY was changed, run "
+            "python -m admin.cli rotate-key --old <old> --new <new>."
+        ) from exc
+
+
+# --- The unclaimed initial password -----------------------------------------
+#
+# **This is reversible storage of a live credential, and it is the one place in
+# this system that has any.** Everything else a person could type is hashed:
+# `password_hash` is bcrypt, `code_hash` is SHA-256, and neither can be read
+# back at all. Contract v1.15 item 3 records the decision and its cost; what
+# follows is the part that belongs beside the code.
+#
+# WHAT IT BUYS. An initial password is shown once, on the page that creates the
+# account, and handed over in person - there is no email system, deliberately.
+# A closed tab loses it. The account survives (nobody can log in as it: it owes
+# a password change and an enrolment), but the administrator has to issue a new
+# one, and if the old one was already read out to the colleague, that is now a
+# password they will try and be refused by. Keeping the value until it is
+# claimed removes that whole exchange.
+#
+# WHAT IT COSTS, precisely. Anyone holding a database dump *and* SECRET_KEY can
+# read the initial password of every account that has not yet logged in, and
+# those accounts are pre-MFA in a way that does not help: the attacker reaches
+# the forced enrolment page and enrols their own authenticator. The password is
+# the whole of the protection. What bounds it is the column's lifetime - NULL
+# before creation and NULL from the first password change onward, which for a
+# colleague sitting next to you is minutes.
+#
+# WHAT IT DOES NOT PROTECT AGAINST, said plainly for the same reason
+# `encrypt_totp_secret` says it: losing the database and SECRET_KEY together.
+# In the shipped container arrangement SECRET_KEY lives in its own named
+# volume (docker/entrypoint.sh writes /var/lib/kaicalc/secret_key) that is
+# mounted into the application services and *not* into the database container,
+# so an ordinary dump - mysqldump, a leaked backup, a misconfigured export -
+# does not carry it. A compromise of the Docker host carries both.
+
+
+def encrypt_initial_password(plain: str, *, secret_key: str) -> bytes:
+    """Encrypt an unclaimed initial password for ``staff.initial_password_enc``.
+
+    Fernet, so this is reversible - which is the entire point and the entire
+    cost. See the note above, and ``admin/accounts.py::create_staff`` for the
+    only caller.
+    """
+    return _fernet_for(secret_key, INITIAL_PASSWORD_ENCRYPTION_INFO).encrypt(
+        plain.encode("utf-8")
+    )
+
+
+def decrypt_initial_password(blob: bytes, *, secret_key: str) -> str:
+    """Read back a stored initial password.
+
+    Raises ``TotpSecretUndecryptableError`` - the same error the TOTP path
+    raises, and for the same cause: SECRET_KEY was changed without rotating.
+    Reusing it rather than adding a second, near-identical exception keeps the
+    one recovery instruction ("run rotate-key") attached to every symptom of
+    the one mistake that produces it.
+    """
+    try:
+        return (
+            _fernet_for(secret_key, INITIAL_PASSWORD_ENCRYPTION_INFO)
+            .decrypt(blob)
+            .decode("utf-8")
+        )
+    except InvalidToken as exc:
+        raise TotpSecretUndecryptableError(
+            "A stored initial password cannot be decrypted with the current "
             "SECRET_KEY. If SECRET_KEY was changed, run "
             "python -m admin.cli rotate-key --old <old> --new <new>."
         ) from exc

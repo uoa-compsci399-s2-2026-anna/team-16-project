@@ -93,7 +93,8 @@ def audited_view(session):
 @pytest.fixture()
 def existing_row(session):
     staff, _ = create_staff(
-        session, username="original", display_name="Original", actor="setup"
+        session, username="original", display_name="Original", actor="setup",
+        secret_key="test-secret-key-not-used-anywhere-real",
     )
     session.flush()
     return staff
@@ -108,7 +109,8 @@ def existing_row_with_recovery_code(session):
     test_a_relation_touching_update_still_writes_an_audit_row.
     """
     staff, _ = create_staff(
-        session, username="withcode", display_name="Original", actor="setup"
+        session, username="withcode", display_name="Original", actor="setup",
+        secret_key="test-secret-key-not-used-anywhere-real",
     )
     session.flush()
     code = StaffRecoveryCode(staff_id=staff.id, code_hash="a" * 64)

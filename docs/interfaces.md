@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.15 draft)"
+date: "2026-08-12 (v1.16 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,16 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.16 — 2026-08-12 (raised by the repository owner, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **An administrator-issued password is kept and re-readable on exactly the same terms as a created one.** `issue_password` **overwrites** `staff.unclaimed_password_enc` with the password it mints, where v1.15 had it *clear* the column. v1.15's asymmetry had no defence: the loss the feature exists to prevent — a closed tab taking a password nobody wrote down — was prevented for a created password and not for an issued one, and the only recovery from the second was to issue *yet another*, which stops the one already read out to the colleague from working. That is the same exchange v1.15 removed from account creation, left in place one screen away. The overwrite is unconditional: a stale value here is a password that no longer opens the account, so "leave it alone if something is there" would have the panel offering a dead string. `secret_key` becomes a **required, keyword-only** argument of `issue_password` and of `kaicalc-admin issue-password`'s `cmd_issue_password`, for the reason it is required on `create_staff` — an optional one is a caller that silently forgot, and the state that produces is precisely the NULL column this revision abolishes | §8.3 |
+| 2 | **`staff.initial_password_enc` is renamed `staff.unclaimed_password_enc`** (migration `0012`, an in-place `ALTER TABLE ... CHANGE`: same type, same nullability, same data, same key). Under v1.15 a non-NULL value meant "this account has never been used"; after item 1 it can belong to an account three years old whose owner lost their password this morning, so the old name would go on telling every future reader something false — in the model, on the accounts list ("Initial password still unclaimed"), and in `audit_log`'s `after_json`. The Python surface renames with it: `Staff.initial_password_unclaimed` → `Staff.has_unclaimed_password`, `encrypt/decrypt_initial_password` → `encrypt/decrypt_unclaimed_password`, `reveal_initial_password` → `reveal_unclaimed_password`, `INITIAL_PASSWORD_ENCRYPTION_INFO` → `UNCLAIMED_PASSWORD_ENCRYPTION_INFO`, `/admin/staff/initial-password` → `/admin/staff/unclaimed-password`, and the `show-initial-password` action → `show-unclaimed-password`. **The HKDF `info` byte string is deliberately unchanged** (`b"initial-password-encryption"`): it is key-derivation material, so editing it to match the name would derive a different key and turn every stored value into a blob nothing can open. Both `REDACTED_FIELDS` (§5.5) hold the old name alongside the new, the way `mfa_secret_enc` has been kept since v1.13 | §2.4, §5.5, §8.2, §8.3 |
+| 3 | **`audit_log`'s reveal entry now reads `{"username": ..., "revealed": "unclaimed_password"}`.** The value was `"initial_password"`, which the trail — append-only, and the one table that must not say anything untrue — would have gone on asserting about passwords that were not initial | §2.3, §8.3 |
+| 4 | **Wording corrected wherever it claimed a one-time reveal, including two places that were already wrong before this revision.** `brand/issued_credential.html` said "This is shown once and is not recoverable"; `brand/staff_created.html` said "This password is shown once and is not stored anywhere", which stopped being true when v1.15 landed and would send an administrator to mint a replacement for a password sitting one proof away. The bootstrap output's "These passwords are shown once and cannot be recovered" is corrected the same way: bootstrap goes through `create_staff`, so one lost line is recoverable *by the other administrator*, and only losing both is terminal — for which the output now names `kaicalc-admin issue-password` | §8.3 |
+| 5 | **`staff.unclaimed_password_enc` is added to §2.4's `staff` table**, which v1.15 changed the schema without doing | §2.4 |
 
 ### v1.15 — 2026-08-12 (raised by the repository owner, affects E only)
 
@@ -809,7 +819,7 @@ row, and it must survive the account of whoever made it being deleted.
 | `before_json` | JSON | NULL | |
 | `after_json` | JSON | NULL | |
 
-> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). An unfiltered dump of a `staff` row would hand out password hashes, TOTP secrets and — since v1.15 — the reversibly-encrypted initial password. This table is `role = admin` only from v1.15 (§8.2); the blocklist is unchanged and is not conditional on the audience, since the trail is exportable and append-only.
+> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). An unfiltered dump of a `staff` row would hand out password hashes, TOTP secrets and — since v1.15 — the reversibly-encrypted unclaimed password. This table is `role = admin` only from v1.15 (§8.2); the blocklist is unchanged and is not conditional on the audience, since the trail is exportable and append-only.
 
 ## 2.4 Staff and Access Control
 
@@ -826,6 +836,7 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 | `role` | ENUM(`admin`, `staff`) | NOT NULL, DEFAULT `staff` | |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 | `must_change_password` | BOOLEAN | NOT NULL, DEFAULT TRUE | Set on creation and on an administrator reset |
+| `unclaimed_password_enc` | VARBINARY(255) | NULL | **The password this system last minted for this account, until somebody claims it** (v1.15; renamed from `initial_password_enc` and widened to cover issued replacements in v1.16, migration `0012`). Fernet under an HKDF-derived key of its own, never the one `staff_totp_device.secret_enc` uses. Written by `create_staff` and `issue_password`, cleared unconditionally by `set_password`, gone with the row on `delete_staff`. **The only reversibly-stored credential in the system** — see §8.3 for the decision and its cost |
 | `mfa_enrolled_at` | DATETIME | NULL | When the account's second factor came into force. **Derived state:** true exactly when `staff_totp_device` holds at least one row with `enrolled_at` set. Kept as a column so the onboarding gates, `require_staff()` and the two-administrator floor go on reading one indexed value; `admin/accounts.py` is its only writer |
 | `created_at` | DATETIME | NOT NULL | |
 | `created_by` | VARCHAR(64) | NULL | |
@@ -1468,7 +1479,8 @@ class PublicStats:
 
 ```python
 REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "secret_enc", "code_hash",
-                   "ip_hmac", "token", "initial_password_enc"}
+                   "ip_hmac", "token", "unclaimed_password_enc",
+                   "initial_password_enc"}
 
 def write_audit(session, actor: str, action: str, table_name: str,
                 row_id: int | None,
@@ -1487,13 +1499,14 @@ def write_audit(session, actor: str, action: str, table_name: str,
     see it now" is one that has to be found again the first time a
     read-only auditor role exists.
 
-    initial_password_enc (v1.15) is in the set for a reason of its own: it
-    is the one reversibly-encrypted credential in the system, and its whole
-    design is that it stops existing when the password is claimed. A copy in
-    an append-only table would outlive that by the life of the deployment.
-    It is the *ciphertext* that is redacted, and that is not belt-and-braces:
-    the key is derived from SECRET_KEY, which anything able to read
-    audit_log already has.
+    unclaimed_password_enc (v1.15; named initial_password_enc until v1.16,
+    and both names are in the set for the reason mfa_secret_enc's old name is)
+    is there for a reason of its own: it is the one reversibly-encrypted
+    credential in the system, and its whole design is that it stops existing
+    when the password is claimed. A copy in an append-only table would outlive
+    that by the life of the deployment. It is the *ciphertext* that is
+    redacted, and that is not belt-and-braces: the key is derived from
+    SECRET_KEY, which anything able to read audit_log already has.
 
     ip_hmac is in that set for a different reason again:
     it is not a credential, it is derived from a visitor's address, and
@@ -2303,18 +2316,19 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Set `excluded_from_public` | ✅ | ✅ |
 | Publish, roll back | ✅ | ✅ |
 | Create, deactivate, re-role and delete accounts | ❌ | ✅ |
-| Reveal an unclaimed initial password | ❌ | ✅ |
+| Reveal an unclaimed password | ❌ | ✅ |
 | Reset another account's MFA, issue a random password | ❌ | ✅ |
 
 Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.
 
-### The unclaimed initial password (v1.15)
+### The unclaimed password (v1.15, widened v1.16)
 
-`staff.initial_password_enc` holds the password an account was **created**
-with, encrypted with Fernet under a key derived from `SECRET_KEY` by HKDF with
-its own `info` (never the one `staff_totp_device.secret_enc` uses). It is NULL
-for the whole of an account's life except the window between creation and the
-first password change.
+`staff.unclaimed_password_enc` holds **the password this system last minted for
+an account and nobody has claimed yet** — the one it was created with, or a
+replacement an administrator issued since — encrypted with Fernet under a key
+derived from `SECRET_KEY` by HKDF with its own `info` (never the one
+`staff_totp_device.secret_enc` uses). It is NULL for the whole of an account's
+life except the window between a minting and the next password change.
 
 **This is the only reversibly-stored credential in the system, and it is a
 deliberate weakening taken by the repository owner with the cost stated.**
@@ -2323,63 +2337,87 @@ is bcrypt from the instant the row exists, and `must_change_password` says
 nothing whatever about how the password is stored. What v1.15 added is a second,
 separately encrypted copy — not the removal of a hash.
 
-**Why.** A one-time reveal is easy to lose. The page that creates an account
-shows the password once; a closed tab loses it, and the administrator then has
-to issue a replacement, which stops the password already read out to the
-colleague from working. This project has already lost a set of recovery codes
-to exactly that shape.
+**Why.** A one-time reveal is easy to lose. The page that mints a password shows
+it once; a closed tab loses it, and the administrator then has to issue a
+replacement, which stops the password already read out to the colleague from
+working. This project has already lost a set of recovery codes to exactly that
+shape.
 
-**The cost.** Anyone holding both a database dump and `SECRET_KEY` can log in
-as every account that has not yet claimed its password. Those accounts are
-pre-MFA in the way that matters: the attacker reaches the forced-enrolment page
-and enrols their own authenticator, so the password is the whole of the
-protection. What bounds it is the column's lifetime. Note that in the shipped
-container arrangement `SECRET_KEY` lives in a named volume that is **not**
-mounted into the database container, so an ordinary dump does not carry it; a
-compromise of the Docker host carries both.
+**Why it covers issued passwords too (v1.16).** v1.15 stored only the creation
+password and had `issue_password` clear the column. So the loss just described
+was prevented on one screen and not on the one next to it, and the only recovery
+from losing an issued password was to issue *another* — invalidating one that
+may already have been handed over. The two are now aligned: `issue_password`
+**overwrites** the column with what it mints. Overwrites, never leaves alone: a
+previous value is a password that no longer opens the account, and a row that
+went on offering it would hand an administrator a dead string to read out.
 
-**Written by** `create_staff` and by nothing else. **Cleared unconditionally
-by** `set_password` (which is what both the self-service screen and the forced
-change at first login call) and by `issue_password`; **gone with the row** on
-`delete_staff`. `kaicalc-admin rotate-key` re-wraps it alongside the TOTP
-secrets, in the same decrypt-everything-before-writing-anything window.
+**The cost, and how it changed.** Anyone holding both a database dump and
+`SECRET_KEY` can log in as every account holding an unclaimed password. A newly
+created account is pre-MFA in the way that matters — the attacker reaches the
+forced-enrolment page and enrols their own authenticator, so the password is the
+whole of the protection; an account that has only had a password *issued* still
+holds its second factor, so there the password is one of two. What bounds the
+exposure is the column's lifetime, and v1.16 lengthened it: no longer "between
+creation and first login" but "until whoever holds the account sets a password
+of their own", which for a password issued on a Friday may be Monday. Note that
+in the shipped container arrangement `SECRET_KEY` lives in a named volume that
+is **not** mounted into the database container, so an ordinary dump does not
+carry it; a compromise of the Docker host carries both.
 
-An administrator-issued replacement is **not** stored: `issue_password` clears
-the column rather than replacing its contents, so the column always means "the
-password this account was created with". `must_change_password` set with this
-column NULL is therefore an ordinary state, meaning "a replacement was issued
-and shown once" — the two facts are separate and `StaffAdmin` renders them as
-separate columns.
+**Written by** `create_staff` and `issue_password` — the two functions that mint
+a password its holder did not choose — and by nothing else. **Cleared
+unconditionally by** `set_password`, which is what both the self-service screen
+and the forced change at first login call, and which is the only place a
+password arrives that its holder chose. **Gone with the row** on `delete_staff`.
+`kaicalc-admin rotate-key` re-wraps it alongside the TOTP secrets, in the same
+decrypt-everything-before-writing-anything window.
 
-**Reading it.** `/admin/staff/initial-password`, `role = admin`, reached from
-the `Show the initial password` action on `/admin/staff/list`. It takes the same
-re-authentication proof as creating an account and deleting one — the current
-password or a live TOTP code, on top of the administrator session — because
-being signed in is the one thing somebody holding a stolen session would also
-have. Every successful reveal writes an `audit_log` entry with
-`action = "reveal"`; the entry never carries the value, and
-`initial_password_enc` is in §5.5's `REDACTED_FIELDS` so that a whole-row
+`must_change_password` and a non-NULL column now agree on both writing paths,
+and they are still **different facts that must not be read off each other**: an
+account created before v1.15, or one whose stored copy went undecryptable across
+an unrotated `SECRET_KEY` change, owes a password change with nothing to reveal.
+`StaffAdmin` renders them as separate columns for that reason — conflating them
+would have the list promising a reveal the reveal page then refuses.
+
+**Reading it.** `/admin/staff/unclaimed-password`, `role = admin`, reached from
+the `Show the password waiting to be collected` action on `/admin/staff/list`.
+It takes the same re-authentication proof as creating an account and deleting
+one — the current password or a live TOTP code, on top of the administrator
+session — because being signed in is the one thing somebody holding a stolen
+session would also have. Every successful reveal writes an `audit_log` entry
+with `action = "reveal"` and `after_json = {"username": ..., "revealed":
+"unclaimed_password"}`; the entry never carries the value, and
+`unclaimed_password_enc` is in §5.5's `REDACTED_FIELDS` so that a whole-row
 snapshot cannot land the ciphertext in an append-only table either. The list
-page shows *that* an account's password is still unclaimed without showing it.
+page shows *that* a password is waiting without showing it.
 
-There is no CLI command. Anyone with a shell on the container can read the
-column and `SECRET_KEY` directly, so one would add a path without adding a
-capability.
+There is no CLI command for the reveal. Anyone with a shell on the container can
+read the column and `SECRET_KEY` directly, so one would add a path without
+adding a capability.
+
+**The column was named `initial_password_enc` in v1.15.** Migration `0012`
+renames it in place; the HKDF `info` byte string is deliberately left as
+`b"initial-password-encryption"`, because it is key-derivation material and
+editing it to match would make every stored value undecryptable.
 
 ### Mandatory MFA
 
 Every account enrols a TOTP authenticator. There is no opt-out.
 
 ```
-admin creates account  ->  random initial password, shown once,
+admin creates account  ->  random password, shown once on the page,
                            handed over out of band; also kept
-                           encrypted (staff.initial_password_enc)
+                           encrypted (staff.unclaimed_password_enc)
                            and re-readable at
-                           /admin/staff/initial-password
+                           /admin/staff/unclaimed-password
+        |                  (an administrator issuing a replacement
+        |                   later re-enters this state: same column,
+        |                   same reveal, same forced change)
         v
 first login            ->  must_change_password = true
         v
-forced password change ->  initial_password_enc cleared; nothing
+forced password change ->  unclaimed_password_enc cleared; nothing
                            left to reveal, for good
         v
 forced TOTP enrolment  ->  QR code plus 5 single-use recovery codes,
@@ -2510,7 +2548,7 @@ changes, check the other.
 
 
 
-`admin.accounts.issue_password(session, username, *, actor) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned once, to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
+`admin.accounts.issue_password(session, username, *, actor, secret_key, allow_self=False) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), stores that password encrypted in `staff.unclaimed_password_enc` so it can be read back until it is claimed (v1.16 — hence `secret_key`, required and keyword-only), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
 
@@ -2522,13 +2560,13 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | --- | --- |
 | Trigger | Application start, only when the active administrator count is zero |
 | Accounts | `admin` and `admin2` |
-| Passwords | **Randomly generated per deployment, printed once to standard output.** There is no default password and no fixed value anywhere in the source. |
+| Passwords | **Randomly generated per deployment, printed once to standard output.** There is no default password and no fixed value anywhere in the source. Since v1.15 each is also kept encrypted until that account claims it, so one lost line is recoverable by the *other* administrator from `/admin/staff/unclaimed-password`; losing both is terminal for the panel and the way back is `kaicalc-admin issue-password` on the container. |
 | State | Both carry `must_change_password` and no MFA enrolment, so `require_staff()` refuses them until both steps are completed |
 | Idempotence | Runs once. A restart with administrators present creates nothing. |
 
-**A fixed default password would be the single worst defect this system could ship.** `admin`/`admin` on a public panel is exactly how community-sector accounts get taken over, and it is the reason MFA is mandatory here in the first place. The generated passwords exist only in the start-up output; they cannot be recovered afterwards, only reset via `reset-mfa` and a new password.
+**A fixed default password would be the single worst defect this system could ship.** `admin`/`admin` on a public panel is exactly how community-sector accounts get taken over, and it is the reason MFA is mandatory here in the first place. The generated passwords are shown in the start-up output and kept encrypted until claimed (see the row above); once both accounts have logged in and changed them there is nothing left to recover, and the way back is `kaicalc-admin issue-password`.
 
-> Deployment note for the handover documentation: the start-up output contains live credentials. Capture them, log in with both accounts, change both passwords, enrol both authenticators, then discard the output. Do not pipe first-start output into a shared log collector.
+> Deployment note for the handover documentation: the start-up output contains live credentials. Capture them, log in with both accounts, change both passwords, enrol both authenticators, then discard the output. Do not pipe first-start output into a shared log collector. Changing both passwords is also what clears the stored copies, so it is the step that ends the exposure described under §8.3's unclaimed password, not merely good hygiene.
 
 > Two administrators is not sufficient on its own. A small organisation is likely to hand both accounts to the same person, or to replace phones at the same time. L1 is the layer that does not depend on a second human being available, which is why it is mandatory rather than a convenience. The panel prompts for regeneration once 2 codes remain.
 

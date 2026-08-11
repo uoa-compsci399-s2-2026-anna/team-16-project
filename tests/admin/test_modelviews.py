@@ -14,6 +14,13 @@ from admin.auth import SESSION_KEY
 from admin.models import AuditLog, Staff, StaffRecoveryCode
 from admin.modelviews import AuditLogAdmin, AuditedModelView
 
+#: The key `create_staff` writes `initial_password_enc` under (contract
+#: v1.15). Its value is immaterial here - nothing in this file reads the
+#: column back - but the argument is required, deliberately: an optional one
+#: is a caller that silently forgot, and an account created without it would
+#: have nothing to reveal, discovered only by the administrator who looked.
+SECRET_KEY = "test-secret-key-not-used-anywhere-real"
+
 pytestmark = pytest.mark.db
 
 
@@ -94,7 +101,7 @@ def audited_view(session):
 def existing_row(session):
     staff, _ = create_staff(
         session, username="original", display_name="Original", actor="setup",
-        secret_key="test-secret-key-not-used-anywhere-real",
+        secret_key=SECRET_KEY,
     )
     session.flush()
     return staff
@@ -110,7 +117,7 @@ def existing_row_with_recovery_code(session):
     """
     staff, _ = create_staff(
         session, username="withcode", display_name="Original", actor="setup",
-        secret_key="test-secret-key-not-used-anywhere-real",
+        secret_key=SECRET_KEY,
     )
     session.flush()
     code = StaffRecoveryCode(staff_id=staff.id, code_hash="a" * 64)

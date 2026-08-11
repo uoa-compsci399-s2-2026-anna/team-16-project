@@ -83,6 +83,23 @@ from admin.csrf import check_token, issue_token
 from admin.modelviews import AdministratorOnly, AuditedModelView
 from admin.models import Staff, StaffRole
 from admin.runtime import get_runtime
+from admin.security import TotpSecretUndecryptableError
+
+
+def _format_unclaimed(row, _name) -> str:
+    """Render ``initial_password_unclaimed`` for the list and details pages.
+
+    Contract v1.15 item 3. A bare ``True``/``False`` leaves the reader to work
+    out which way round it is, on the one column where guessing wrong means
+    either reading out a string that no longer opens the account or telling a
+    colleague their password is gone when it is not.
+
+    A module-level function rather than a lambda in the class body: sqladmin
+    stores whatever is in ``column_formatters`` and calls it as
+    ``formatter(row, name)``, and a plain ``def`` in the class body would be
+    bound as a method on attribute access. This sidesteps the question.
+    """
+    return "Yes - can be revealed" if row.initial_password_unclaimed else "No"
 
 
 class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
@@ -148,16 +165,14 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
         # as a state of this account.
         "initial_password_unclaimed": "Initial password still unclaimed",
     }
-    column_formatters = {
-        # Contract v1.15 item 3. A bare True/False leaves the reader to work
-        # out which way round it is, on the one column where guessing wrong
-        # means either reading out a dead string or telling a colleague their
-        # password is gone when it is not.
-        "initial_password_unclaimed": (
-            lambda row, _name: "Yes - can be revealed" if row.initial_password_unclaimed
-            else "No"
-        ),
-    }
+    column_formatters = {"initial_password_unclaimed": _format_unclaimed}
+    # `column_formatters` covers the *list* page only; sqladmin reads
+    # `column_formatters_detail` for /details/{pk} (sqladmin/models.py's
+    # `get_detail_value` against `get_list_value`). Without this second line
+    # the details page renders a bare `True`, which is the reading nobody
+    # should have to do twice - the same "the details page is a separate code
+    # path from the list" trap `column_details_list` exists for just above.
+    column_formatters_detail = column_formatters
     # column_list only narrows the *list* page. sqladmin's get_details_columns
     # (sqladmin/models.py) falls back to every mapped column
     # (self._prop_names) when column_details_list is unset, regardless of
@@ -624,18 +639,37 @@ class StaffAdmin(AdministratorOnly, AuditedModelView, model=Staff):
                 return await refuse(problem)
 
             revealed = []
-            for account in accounts:
-                # Returns None when there is nothing stored. Carried through as
-                # None rather than filtered out: the template names the account
-                # and says why there is nothing for it, which is the answer the
-                # person pressing this actually needs.
-                password = reveal_initial_password(
-                    session,
-                    account["username"],
-                    actor=actor,
-                    secret_key=runtime.settings.secret_key,
+            try:
+                for account in accounts:
+                    # Returns None when there is nothing stored. Carried
+                    # through as None rather than filtered out: the template
+                    # names the account and says why there is nothing for it,
+                    # which is the answer the person pressing this actually
+                    # needs.
+                    password = reveal_initial_password(
+                        session,
+                        account["username"],
+                        actor=actor,
+                        secret_key=runtime.settings.secret_key,
+                    )
+                    revealed.append({**account, "password": password})
+            except TotpSecretUndecryptableError as exc:
+                # SECRET_KEY was changed without `kaicalc-admin rotate-key`,
+                # which re-wraps this column alongside the TOTP secrets. Caught
+                # rather than allowed to 500, because a stack trace on an
+                # administrator screen names neither the cause nor the way out,
+                # and there is a perfectly good way out: the account is not
+                # lost, only this one stored copy is.
+                session.rollback()
+                return await self._refuse(
+                    request, str(exc),
+                    "The account itself is fine — only this stored copy of its "
+                    "first password cannot be read. Use Issue a new password "
+                    "on the accounts screen to mint another. If SECRET_KEY was "
+                    "changed deliberately, run `kaicalc-admin rotate-key` so "
+                    "that every stored secret is re-wrapped under the new one; "
+                    "authenticator enrolments are affected the same way.",
                 )
-                revealed.append({**account, "password": password})
             # The audit entries reveal_initial_password wrote are in this
             # transaction and are the only thing being committed - nothing
             # about the staff rows changed.

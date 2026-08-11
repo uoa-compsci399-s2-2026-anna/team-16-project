@@ -440,13 +440,16 @@ def set_password(session: Session, username: str, new_password: str) -> None:
     afterwards — see ChangePasswordView.
 
     **Clears ``initial_password_enc``, and this is the single function that
-    covers two of the three paths that matter** (contract v1.15 item 3): the
-    self-service change on ``/admin/security`` and the forced change at first
-    login on ``/admin/change-password`` both come through here, and so does
-    ``kaicalc-admin set-password``. That is why the clearing lives in this
-    function rather than in either view — a copy in one view is a clearing the
-    other path does not do, and the forced change at first login is precisely
-    the path that decides how long the column exists at all.
+    covers two of the three paths that matter** (contract v1.15 item 3). Both
+    of this function's callers land here and nowhere else — the self-service
+    change in ``admin/self_service_view.py`` (``/admin/security``) and the
+    forced change at first login in ``admin/views.py``
+    (``/admin/change-password``) — which is why the clearing lives here rather
+    than in either view: a copy in one view is a clearing the other path does
+    not do, and the forced change at first login is precisely the path that
+    decides how long the column exists at all. (There is no ``set-password``
+    CLI command; ``issue-password`` is the CLI's way to replace a password, and
+    it clears the column itself.)
 
     Unconditional. Not ``if staff.initial_password_enc is not None``, which
     reads the same and is not: the point is that after this call the column is

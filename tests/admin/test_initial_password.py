@@ -29,6 +29,7 @@ copy**, not the removal of a hash.
 4. *The reveal is recorded.*
 """
 
+import dataclasses
 import re
 
 import pytest
@@ -182,11 +183,13 @@ def test_the_two_encryption_purposes_do_not_share_a_key():
 def test_set_password_clears_it(session):
     """Path 1 and 2 in one function, and that is the point of it being one.
 
-    `set_password` is what the self-service screen (`/admin/security`) and the
-    forced change at first login (`/admin/change-password`) both call, and what
-    the CLI calls. Clearing here rather than in either view is what makes the
-    two HTTP tests below pass for a structural reason rather than a coincidence
-    of two views each remembering.
+    `set_password` has exactly two callers - the self-service screen
+    (`/admin/security`, admin/self_service_view.py) and the forced change at
+    first login (`/admin/change-password`, admin/views.py). Clearing here
+    rather than in either view is what makes the HTTP test below pass for a
+    structural reason rather than as a coincidence of two views each
+    remembering. (There is no `set-password` CLI command; `issue-password` is
+    the CLI's way to replace a password and it clears the column itself.)
     """
     staff, _ = _make(session)
     _resync(session)
@@ -548,3 +551,72 @@ def test_a_key_rotation_carries_the_unclaimed_passwords_across(session):
     assert decrypt_initial_password(
         staff.initial_password_enc, secret_key=new_key
     ) == password
+
+
+@pytest.mark.asyncio
+async def test_an_unrotated_key_change_is_explained_rather_than_a_500(
+    admin_app, admin_client, session, monkeypatch
+):
+    """SECRET_KEY changed without `kaicalc-admin rotate-key`.
+
+    The ciphertext then cannot be opened, and the naive outcome is a stack
+    trace on an administrator screen that names neither the cause nor the way
+    out. Both exist: `issue-password` mints a working credential, and
+    `rotate-key` re-wraps every stored secret. The page says so.
+
+    Driven by pointing the *running app's* settings at a different key rather
+    than by writing a corrupt blob, because that is the shape the failure
+    actually takes - a real deployment has good ciphertext under the old key,
+    not damaged ciphertext.
+    """
+    staff, password = _make(session)
+    _resync(session)
+
+    page = await admin_client.get(f"/admin/staff/initial-password?pks={staff.id}")
+    token = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert token
+
+    # `create_app` hangs the Runtime off sqladmin's own mounted Starlette
+    # app, not the outer FastAPI's state (admin/runtime.py), which is the
+    # object a view's `request.app` resolves to. Reached here the same way.
+    #
+    # Both `Runtime` and `Settings` are frozen dataclasses, so this replaces
+    # the whole Runtime on the mounted app's `state` (a plain namespace, which
+    # is not frozen). `dataclasses.replace` twice keeps every other setting and
+    # every other Runtime field the app was built with - which matters, because
+    # this same Runtime carries the throttle that the re-authentication step
+    # below reads.
+    mounted = _mounted_admin_app(admin_app)
+    runtime = mounted.state.runtime
+    monkeypatch.setattr(
+        mounted.state,
+        "runtime",
+        dataclasses.replace(
+            runtime,
+            settings=dataclasses.replace(
+                runtime.settings, secret_key="a-completely-different-secret-key"
+            ),
+        ),
+    )
+
+    answer = await admin_client.post(
+        "/admin/staff/initial-password",
+        data={
+            "pks": str(staff.id),
+            "csrf_token": token.group(1),
+            "current_password": admin_client.password,
+        },
+    )
+    assert answer.status_code == 400, "a 500 here is the failure being fixed"
+    assert password not in answer.text
+    assert "rotate-key" in answer.text
+    assert "Issue a new password" in answer.text
+
+
+def _mounted_admin_app(app):
+    """sqladmin's mounted sub-application, which carries `state.runtime`."""
+    for route in app.routes:
+        inner = getattr(route, "app", None)
+        if inner is not None and hasattr(getattr(inner, "state", None), "runtime"):
+            return inner
+    raise AssertionError("sqladmin's mounted application was not reachable")

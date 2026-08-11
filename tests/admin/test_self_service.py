@@ -1787,3 +1787,60 @@ async def test_every_dialog_keeps_its_action_row_pinned(me):
     for name in dialogs:
         dialog = _element(body, rf'<dialog id="{name}".*?</dialog>')
         assert 'class="dialog__actions"' in dialog, name
+
+
+async def test_an_off_screen_field_stays_off_screen_inside_a_dialog(me):
+    """**The horizontal scrollbar on "Change your password".**
+
+    The dialog carries a readonly username field in `.sr-only` so a password
+    manager offers to *update* the stored credential rather than save a second
+    one. `.sr-only` is one class — specificity 0,1,0 — and brand.css also has
+
+        input[type="text"], input[type="password"] { width: 100%; ... }
+
+    at 0,1,1, which beats it on an input whichever order they are written in.
+    So the field was 100% wide, not 1px. It is `position: absolute` inside a
+    `<dialog>`, and the UA stylesheet gives `dialog` `position: absolute`, so
+    the dialog is its containing block and 100% resolved to the dialog's
+    *padding* box while the field was laid out at the *content* box's left
+    edge — putting its right edge one padding-width past the dialog's.
+
+    Measured in Chrome 151 on `#dialog-password`: `scrollWidth` 499 against
+    `clientWidth` 476, a 23px horizontal scroll, identical at 2000, 1280, 768,
+    390, 360 and 320px wide, because both numbers come from the dialog's fixed
+    2 x 1.5rem padding and not from the viewport. Every other dialog in the
+    panel measured 0. Neither `display: contents` nor `flex-wrap: nowrap` was
+    involved: forcing the form back to `display: block` in the live page left
+    `scrollWidth` at 499, and forcing the field to 1px took it to 476.
+
+    The assertion is the pairing. It only demands the element-qualified
+    selector while a bare-type rule is actually sizing inputs; drop that rule
+    and the collision is gone with it.
+    """
+    stylesheet = await me.get("/admin/static/brand.css")
+    assert stylesheet.status_code == 200
+    css = stylesheet.text
+
+    sizes_inputs = re.search(
+        r"(?m)^input\[type=\"text\"\][^{]*\{[^}]*?(?m:^\s*width:)", css, re.S
+    )
+    if not sizes_inputs:
+        return  # nothing is overriding .sr-only's width on an input
+
+    hidden = re.search(r"(?m)^(\.sr-only[^{]*)\{([^}]*)\}", css)
+    assert hidden is not None, "brand.css must define .sr-only"
+    selector, declarations = hidden.group(1), hidden.group(2)
+
+    assert re.search(r"(?m)^\s*width:\s*1px", declarations), (
+        "an off-screen field must be 1px, not sized like a visible input:\n"
+        + declarations
+    )
+    # The whole defect is that this rule loses on an input. Anchored on the
+    # element-qualified form, because `.sr-only` alone reads as if it applied
+    # and is exactly what shipped the scrollbar.
+    assert re.search(r"(?m)^\s*input\.sr-only\s*(,|\{|$)", selector), (
+        "brand.css sizes inputs with a 0,1,1 selector, so `.sr-only` at 0,1,0 "
+        "never applies to one and the field is laid out full width — which "
+        "overflows the dialog it sits in. The rule must be element-qualified "
+        "as well:\n" + selector
+    )

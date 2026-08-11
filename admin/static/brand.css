@@ -437,8 +437,29 @@ button:hover { background: var(--blueberry); }
    `type="hidden"` inputs outright, and Chromium's autofill treats an element
    with a zero client width or height as invisible, so `display: none` and
    `visibility: hidden` fail for the same reason. 1px plus clip is a field
-   that is measurably there and still shows nothing. */
-.sr-only {
+   that is measurably there and still shows nothing.
+
+   `input.sr-only` IS LOAD-BEARING, and leaving it off is what put a horizontal
+   scrollbar on the change-password dialog. `.sr-only` is one class - 0,1,0 -
+   and `input[type="text"], input[type="password"]` above is a type plus an
+   attribute - 0,1,1 - so that rule's `width: 100%`, `padding` and `border`
+   beat every one of the declarations below on an input, whichever order the
+   two rules are written in. The field is `position: absolute` inside a
+   `<dialog>`, and the UA stylesheet gives `dialog` `position: absolute`, so
+   the dialog is its containing block and `100%` resolves to the dialog's
+   *padding* box - 476px - while the field is laid out at the *content* box's
+   left edge. Its right edge therefore lands one padding-width past the
+   dialog's, and the dialog scrolls sideways by exactly that: measured in
+   Chrome, `scrollWidth` 499 against `clientWidth` 476 on `#dialog-password`,
+   identical at 2000, 1280, 768, 390, 360 and 320px wide, because both numbers
+   are fixed by the 2 x 1.5rem padding rather than by the viewport.
+
+   Repeating the class with the element beside it makes these 0,1,1 as well,
+   and they are later in the file, so they win. This is not cosmetic tidying:
+   any dialog carrying one of these fields grows the scrollbar, and the fix for
+   the password manager's username prompt puts one in five more of them. */
+.sr-only,
+input.sr-only {
   position: absolute;
   width: 1px;
   height: 1px;

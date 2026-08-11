@@ -173,11 +173,36 @@ dialog.dialog::backdrop {
      says the page behind the dialog is inert. */
   background: rgba(0, 50, 35, 0.55);
 }
+/* Pinned to the foot of the dialog, never scrolled out of it.
+ *
+ * `dialog.dialog` above is the scroll container: `max-height: min(85vh, 44rem)`
+ * with `overflow-y: auto`. An action row in normal flow is therefore part of
+ * the scrolled content, and once a dialog's content is taller than that clamp
+ * the row is simply clipped out of the visible box - the submit button cannot
+ * be seen, cannot be reached, and a press where it is laid out lands on the
+ * dialog itself. That is a button that does nothing: no submission, no
+ * request, no error, nothing to read. Measured in Chrome against this panel:
+ * /admin/staff/new's confirmation is 470px of content and loses its button
+ * entirely below a 460px viewport, and /admin/security's change-password
+ * dialog is 594px and loses it below 600px - so every dialog here has the
+ * defect and the tallest one has it worst.
+ *
+ * The negative `bottom` and `margin-bottom` cancel the dialog's own 1.5rem
+ * padding so the bar sits flush with the bottom edge, and the white ground
+ * and top rule keep scrolled content from appearing to run through it. Do not
+ * return this to static flow without giving the dialog a separate scrolling
+ * body - the clamp above makes the two a pair. */
 .dialog__actions {
   display: flex;
   flex-wrap: wrap;
   gap: 0.75rem;
   margin-top: 1.25rem;
+  position: sticky;
+  bottom: -1.5rem;
+  margin-bottom: -1.5rem;
+  padding: 0.75rem 0 1.5rem;
+  background: var(--white);
+  border-top: 2px solid var(--kale);
 }
 /* Radio and proof groups: a fieldset's default border and padding fight the
    card it sits in. `.panel` is named alongside `.dialog` because the role

@@ -480,3 +480,68 @@ async def test_the_result_page_says_the_account_is_recoverable(admin_client):
     assert "If you have lost this password, the account is not lost" in flat
     assert "Issue a new password" in flat
     assert "Do not create a second account for the same person" in flat
+
+
+# --- the confirmation can actually be pressed -------------------------------
+
+
+async def test_the_dialog_action_row_is_not_part_of_the_dialogs_scrolled_content(
+    admin_client
+):
+    """**The defect that shipped past 21 passing tests in this file.**
+
+    Every test above submits with ``client.post``, which reaches the route
+    without ever going near the markup. None of them presses anything, so all
+    of them passed against a screen whose confirmation dialog could not be
+    submitted from a browser at all: ``dialog.dialog`` is a scroll container
+    (``max-height: min(85vh, 44rem)`` with ``overflow-y: auto``), the action
+    row carrying **Create the account** sat in that scrolled content, and once
+    the dialog's content was taller than the clamp the button was clipped out
+    of the visible box. Pressing where it was laid out hit the dialog instead.
+    No submission, no request, no error - the report was "点不动", and it was
+    exactly right.
+
+    Measured in Chrome over CDP against the running panel: this dialog is
+    470px of content and its button is entirely gone below a 460px viewport;
+    /admin/security's change-password dialog is 594px and gone below 600px.
+    The stylesheet is shared, so this asserts the invariant for every dialog
+    in the panel at once.
+
+    The assertion is written as the *pairing*, not as "sticky appears in the
+    file". A clamped, scrolling dialog and an action row in normal flow is the
+    combination that hides the button; either alone is fine. If a later change
+    gives dialogs a separate scrolling body, the clamp moves off
+    ``dialog.dialog`` and this test stops demanding stickiness - which is the
+    correct behaviour, because the hazard is gone with it.
+    """
+    stylesheet = await admin_client.get("/admin/static/brand.css")
+    assert stylesheet.status_code == 200
+    css = stylesheet.text
+
+    dialog_rule = re.search(r"^dialog\.dialog\s*\{([^}]*)\}", css, re.M)
+    assert dialog_rule is not None, "brand.css must define dialog.dialog"
+    body = dialog_rule.group(1)
+    clamped = "max-height" in body
+    scrolls = re.search(r"overflow(-y)?:\s*(auto|scroll)", body) is not None
+
+    if not (clamped and scrolls):
+        return  # no clipping hazard to guard against
+
+    actions = re.search(r"^\.dialog__actions\s*\{([^}]*)\}", css, re.M)
+    assert actions is not None, "brand.css must define .dialog__actions"
+    declarations = actions.group(1)
+
+    assert re.search(r"position:\s*sticky", declarations), (
+        "dialog.dialog clamps its height and scrolls, so an action row left in "
+        "normal flow is scrolled out of reach and the dialog cannot be "
+        "submitted. .dialog__actions must be pinned out of that scroll:\n"
+        + declarations
+    )
+    assert re.search(r"bottom:\s*-?[0-9.]+", declarations), (
+        "position: sticky does nothing without an inset; the action row needs "
+        "a `bottom` to pin against:\n" + declarations
+    )
+    assert re.search(r"background:", declarations), (
+        "a pinned action row over scrolling content needs its own ground, or "
+        "the content scrolls visibly through it:\n" + declarations
+    )

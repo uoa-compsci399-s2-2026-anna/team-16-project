@@ -10,15 +10,27 @@ import pytest
 from sqlalchemy import select
 
 from admin.accounts import (
+    RECOVERY_CODE_COUNT,
+    AccountStillActiveError,
+    LastAdministratorsError,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     create_staff,
+    deactivate_staff,
     get_staff,
 )
+from admin.audit import write_audit
 from admin.cli import (
-    cmd_create_staff, cmd_issue_password, cmd_reset_mfa, cmd_rotate_key, cmd_unblock,
+    _build_parser,
+    cmd_create_staff,
+    cmd_delete_staff,
+    cmd_issue_password,
+    cmd_reactivate_staff,
+    cmd_reset_mfa,
+    cmd_rotate_key,
+    cmd_unblock,
 )
-from admin.models import AuditLog, StaffRole
+from admin.models import AuditLog, Staff, StaffRole, utcnow
 from admin.security import (
     TotpSecretUndecryptableError,
     decrypt_totp_secret,
@@ -351,3 +363,147 @@ def test_unblock_refuses_a_value_that_is_not_an_address(session):
 
     with pytest.raises(InvalidAddressError):
         cmd_unblock(session, "203.0.113.9:54321", secret_key=OLD_KEY)
+
+
+# --- deleting and reactivating from the server ------------------------------
+#
+# The CLI and the panel must reach the same service functions. Everything
+# refused in admin/accounts.py is refused on both paths, and the only
+# difference between them is stated at the call site in admin/cli.py: layer L3
+# passes allow_self=True, because it has no acting session to be the second
+# party. It does not skip the floor and it does not skip the deactivation
+# requirement, and the two tests below are what hold that.
+
+
+def _deactivated_account(session, username: str, *, role=StaffRole.staff):
+    create_staff(
+        session, username=username, display_name=username.title(),
+        role=role, actor="test",
+    )
+    session.flush()
+    staff = get_staff(session, username)
+    staff.is_active = False
+    session.flush()
+    return staff
+
+
+def test_delete_staff_command_removes_a_deactivated_account(session):
+    _deactivated_account(session, "alice")
+
+    removed = cmd_delete_staff(session, "alice")
+    session.flush()
+
+    assert removed["username"] == "alice"
+    assert session.scalar(select(Staff).where(Staff.username == "alice")) is None
+
+
+def test_delete_staff_command_reports_what_went_with_the_account(session):
+    """The printed output tells an operator the authenticators and recovery
+    codes are gone too, so the counts have to be real rather than assumed."""
+    enrol(session, "alice", OLD_KEY)
+    get_staff(session, "alice").is_active = False
+    session.flush()
+
+    removed = cmd_delete_staff(session, "alice")
+    session.flush()
+
+    assert removed["totp_devices_destroyed"] == 1
+    assert removed["recovery_codes_destroyed"] == RECOVERY_CODE_COUNT
+
+
+def test_delete_staff_command_refuses_an_account_that_is_still_active(session):
+    """The CLI's allow_self exemption reaches the self-recovery guard and
+    nothing else. Deactivation is still required here."""
+    create_staff(session, username="alice", display_name="Alice", actor="test")
+    session.flush()
+
+    with pytest.raises(AccountStillActiveError):
+        cmd_delete_staff(session, "alice")
+
+    assert get_staff(session, "alice") is not None
+
+
+def test_delete_staff_command_is_still_bound_by_the_administrator_floor(session):
+    """Layer L3 is the way back in when every administrator is locked out.
+    That is an argument for skipping the *second party*, not for letting a
+    server-side command leave the deployment with one administrator."""
+    for index in range(2):
+        create_staff(
+            session, username=f"admin{index}", display_name=f"Admin {index}",
+            role=StaffRole.admin, actor="test",
+        )
+    session.flush()
+    for index in range(2):
+        staff = get_staff(session, f"admin{index}")
+        staff.must_change_password = False
+        staff.mfa_enrolled_at = utcnow()
+    session.flush()
+
+    # Deactivation is refused at the floor, so the account can never reach the
+    # state deletion requires - which is how the floor reaches deletion.
+    with pytest.raises(LastAdministratorsError):
+        deactivate_staff(session, "admin1")
+    with pytest.raises(AccountStillActiveError):
+        cmd_delete_staff(session, "admin1")
+
+    assert get_staff(session, "admin1") is not None
+
+
+def test_the_cli_may_delete_an_account_named_cli(session):
+    """The same argument test_the_cli_can_recover_an_account_that_happens_to_be
+    _named_cli makes for reset-mfa and issue-password: the exemption is the
+    allow_self argument, not the accident that the actor string differs from
+    every username."""
+    _deactivated_account(session, "cli")
+
+    cmd_delete_staff(session, "cli")
+    session.flush()
+
+    assert session.scalar(select(Staff).where(Staff.username == "cli")) is None
+
+
+def test_delete_staff_command_leaves_the_audit_trail_naming_the_account(session):
+    """The property the whole deletion design rests on, asserted from the
+    server-side path too: audit_log.actor is text and holds no foreign key to
+    staff, so what an account did outlives it."""
+    _deactivated_account(session, "alice")
+    write_audit(
+        session, actor="alice", action="publish", table_name="factor_set",
+        row_id=7, before=None, after={"status": "published"},
+    )
+    session.flush()
+
+    cmd_delete_staff(session, "alice")
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(
+            AuditLog.actor == "alice", AuditLog.table_name == "factor_set"
+        )
+    )
+    assert entry is not None
+    assert entry.after_json == {"status": "published"}
+
+
+def test_reactivate_staff_command_lets_an_account_log_in_again(session):
+    _deactivated_account(session, "alice")
+
+    cmd_reactivate_staff(session, "alice")
+    session.flush()
+
+    assert get_staff(session, "alice").is_active is True
+
+
+def test_the_delete_and_reactivate_commands_are_registered(session):
+    """Both are reachable as subcommands, not merely importable functions.
+    A command nobody can invoke is a break-glass path that is not there.
+    """
+    parser = _build_parser()
+
+    deleted = parser.parse_args(["delete-staff", "alice"])
+    reactivated = parser.parse_args(["reactivate-staff", "alice"])
+
+    assert deleted.command == "delete-staff"
+    assert deleted.username == "alice"
+    assert reactivated.command == "reactivate-staff"
+    assert reactivated.username == "alice"

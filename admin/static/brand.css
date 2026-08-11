@@ -191,19 +191,83 @@ dialog.dialog::backdrop {
  * padding so the bar sits flush with the bottom edge, and the white ground
  * and top rule keep scrolled content from appearing to run through it. Do not
  * return this to static flow without giving the dialog a separate scrolling
- * body - the clamp above makes the two a pair. */
+ * body - the clamp above makes the two a pair.
+ *
+ * `flex-wrap: nowrap`, and this half was missed the first time. A wrapped bar
+ * is two button rows tall - 145px measured at a 390px width, where the dialog
+ * has 300px of content box and `Cancel` (102px) plus a primary button named
+ * after its action (186-225px) cannot share a line. A sticky bar that tall
+ * cannot be held inside the 336px scrollport a 400px viewport leaves, so the
+ * primary button lands below the dialog's own bottom edge and a press on it
+ * hits the dialog: exactly the defect this rule was written to fix, surviving
+ * in the one case nobody measured. Verified in Chromium at 390x400 - the
+ * rename dialog's submit sat at y=355..401 against a dialog ending at y=370 -
+ * and at 390x360, where the change-password dialog had it too.
+ *
+ * The buttons shrink instead (`min-width: 0`, and `flex-shrink` left at its
+ * default of 1). Their labels wrap inside them, which costs a line of text and
+ * keeps the bar a single row. Do not put `flex-wrap: wrap` back without
+ * re-measuring every dialog below a 400px viewport height. */
 .dialog__actions {
   display: flex;
-  flex-wrap: wrap;
+  flex-wrap: nowrap;
   gap: 0.75rem;
   margin-top: 1.25rem;
   position: sticky;
-  bottom: -1.5rem;
-  margin-bottom: -1.5rem;
-  padding: 0.75rem 0 1.5rem;
+  /* `0`, not `-1.5rem`, and the negative `margin-bottom` that went with it is
+   * gone. A negative `bottom` says in as many words "this bar may sit 1.5rem
+   * below the scroll container's bottom edge" - and `overflow-y: auto` then
+   * clips exactly that much of it. On a short dialog nothing scrolls, so the
+   * bar never reaches its sticky threshold and the overhang never appears;
+   * measured in Chromium at 390x360 the rename dialog's buttons were cut off
+   * 40% of the way down, live at the top and dead at the bottom, which is the
+   * worst version of this defect - a control that answers a press in one half
+   * and ignores it in the other.
+   *
+   * With `bottom: 0` the bar's own bottom edge is held at the scroll
+   * container's, so it is flush and whole. Its `padding-bottom` supplies the
+   * space the dialog's cancelled bottom padding used to, and the white ground
+   * still covers content scrolling underneath. */
+  bottom: 0;
+  padding: 0.75rem 0 1rem;
   background: var(--white);
   border-top: 2px solid var(--kale);
 }
+/* So a long label wraps inside its button rather than pushing the bar to a
+   second row. Without `min-width: 0` a flex item refuses to shrink below its
+   content's intrinsic width and the bar overflows instead. */
+.dialog__actions .button { min-width: 0; }
+
+/* The third thing the sticky bar needs, and the least obvious one.
+ *
+ * `position: sticky` pins an element relative to the scrollport, but it may
+ * never be moved outside its own **containing block** - and on /admin/security
+ * the bar's containing block is the `<form>` it sits in, not the dialog. Those
+ * dialogs open with a heading and a paragraph of explanation *above* the form,
+ * so the form's top edge starts well down the dialog; pinning the bar to the
+ * scrollport's bottom would place it above that edge, which sticky is not
+ * allowed to do, so it is left unpinned and runs off the bottom instead.
+ * Measured in Chromium at 390x360: the rename dialog's form began at y=257
+ * inside a scrollport ending at y=331, and the bar sat at y=277..377 - the
+ * lower 40% clipped, so a press answered in one half of the button and did
+ * nothing in the other.
+ *
+ * `display: contents` removes the form's own box while leaving the form itself
+ * in the DOM, so the bar's containing block becomes the dialog and pinning
+ * works. Confirmed by injecting exactly this rule against the live panel: the
+ * same bar moved to y=207..307, inside a dialog ending at y=333.
+ *
+ * Two things make it safe here rather than merely convenient. Nothing in this
+ * stylesheet styles a `form` box, so no layout is lost. And these forms carry
+ * no accessible name, so they were never `form` landmarks - there is no
+ * exposed role for `display: contents` to drop. Submission is unaffected:
+ * a control's form association is by DOM ancestry, not by layout.
+ *
+ * Scoped to a *direct child* form on purpose. brand/new_staff.html and
+ * brand/delete_staff.html put the dialog inside the form rather than the other
+ * way round, so their action bars are already direct children of the dialog
+ * and this rule correctly does not match them. */
+dialog.dialog > form { display: contents; }
 /* Radio and proof groups: a fieldset's default border and padding fight the
    card it sits in. `.panel` is named alongside `.dialog` because the role
    chooser on brand/new_staff.html is a fieldset on the page rather than

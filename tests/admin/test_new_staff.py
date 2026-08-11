@@ -549,3 +549,35 @@ async def test_the_dialog_action_row_is_not_part_of_the_dialogs_scrolled_content
         "a pinned action row over scrolling content needs its own ground, or "
         "the content scrolls visibly through it:\n" + declarations
     )
+
+    # The two conditions below are the rest of what "pinned" actually needs.
+    # Both were missing while the three assertions above passed, and both were
+    # found by measuring in Chromium rather than by reading the stylesheet -
+    # which is the honest limit of this test and the reason the comments say
+    # what was measured. A rule present in a file is not a button anybody can
+    # press; these stop a silent regression, they do not prove reachability.
+
+    # A wrapped bar is two button rows tall - 145px at a 390px width, where the
+    # dialog has 300px of content box and `Cancel` plus a primary button named
+    # after its action cannot share a line. No sticky bar that tall fits the
+    # 336px scrollport a 400px viewport leaves, so the primary button lands
+    # below the dialog's own bottom edge and a press on it hits the dialog.
+    assert re.search(r"flex-wrap:\s*nowrap", declarations), (
+        "the action row must not wrap. A two-row bar is taller than the "
+        "scrollport can hold it, and the submit button is clipped out of the "
+        "dialog below a 400px viewport:\n" + declarations
+    )
+
+    # `position: sticky` may never move an element outside its own containing
+    # block. On /admin/security the action row sits inside a `<form>` that
+    # begins below the dialog's heading and explanatory paragraph, so pinning
+    # the row to the scrollport's bottom would put it above the form's top edge
+    # - which sticky will not do, leaving the row unpinned and running off the
+    # bottom. Taking the form's box out of the layout makes the dialog the
+    # containing block. Measured at 390x360: the rename dialog's row moved from
+    # y=277..377 (clipped by a dialog ending at y=333) to y=207..307.
+    assert re.search(r"dialog\.dialog\s*>\s*form\s*\{[^}]*display:\s*contents", css), (
+        "a dialog's action row lives inside its form, and sticky cannot pin an "
+        "element above its containing block - so `dialog.dialog > form` must "
+        "take the form's box out of the layout, or the row is not pinned at all"
+    )

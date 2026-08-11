@@ -22,7 +22,7 @@ import pyotp
 import pytest
 import pytest_asyncio
 from sqlalchemy import bindparam as sa_bindparam
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 
 from admin.accounts import (
     RECOVERY_CODE_COUNT,
@@ -32,7 +32,8 @@ from admin.accounts import (
     get_staff,
     set_password,
 )
-from admin.models import AuditLog, StaffRole
+from admin.audit import write_audit
+from admin.models import AuditLog, Staff, StaffRole
 from admin.security import verify_password
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
@@ -40,6 +41,13 @@ from admin.views import time as views_time
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
 SECRET_KEY = "test-secret-key-not-used-anywhere-real"
+
+#: The password every account these fixtures create is left holding.
+#: A constant rather than a literal repeated at each call site: the
+#: routes that re-authenticate (creating an account, deleting one) have
+#: to send the same value the fixture set, and two copies of it would
+#: drift into a test that fails for the wrong reason.
+PASSWORD = "a-long-enough-password"
 
 
 # --- Fixtures ----------------------------------------------------------
@@ -57,7 +65,7 @@ def _create_onboarded_account(admin_app, *, role):
     was successfully committed even when the *login* half raises.
     """
     username = f"u{uuid.uuid4().hex[:10]}"
-    password = "a-long-enough-password"
+    password = PASSWORD
     factory = admin_app.state.session_factory
     with factory() as db:
         create_staff(db, username=username, display_name="Test User", role=role, actor="test")
@@ -140,6 +148,16 @@ def _cleanup_staff(admin_app, *staff_rows):
             db.execute(
                 text("DELETE FROM audit_log WHERE table_name = 'staff' AND row_id = :id"),
                 {"id": staff.id},
+            )
+            # ...and every entry this account *wrote*, whatever table it names.
+            # tests/admin/conftest.py's copy of this helper has always done
+            # this and its docstring calls the difference load-bearing. It
+            # matters more here now: the deletion tests assert that an entry an
+            # account wrote outlives the account, which means deliberately
+            # committing one that row_id-based cleanup would never find.
+            db.execute(
+                text("DELETE FROM audit_log WHERE actor = :actor"),
+                {"actor": staff.username},
             )
             db.execute(text("DELETE FROM staff WHERE id = :id"), {"id": staff.id})
         db.commit()
@@ -704,3 +722,291 @@ async def test_the_generic_edit_form_cannot_bypass_the_admin_floor(
 
     assert response.status_code == 403
     assert get_staff(db_session, second.username).is_active is True
+
+
+# --- deleting an account through the panel ----------------------------------
+
+
+async def _delete_page(client, *ids):
+    """GET the confirmation page for a selection."""
+    return await client.get(
+        "/admin/staff/delete", params={"pks": ",".join(str(i) for i in ids)}
+    )
+
+
+async def _delete(client, *ids, proof=None, csrf=None):
+    """POST the confirmation page. `proof` is the re-authentication field."""
+    if csrf is None:
+        page = await _delete_page(client, *ids)
+        assert page.status_code == 200, page.status_code
+        match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+        assert match, "no CSRF token rendered on the delete page"
+        csrf = match.group(1)
+    data = {"csrf_token": csrf, "pks": ",".join(str(i) for i in ids)}
+    data.update(proof or {})
+    return await client.post("/admin/staff/delete", data=data, follow_redirects=False)
+
+
+def _deactivate_directly(admin_app, staff):
+    """Put an account into the state deletion requires, without driving the
+    action - the deactivate route has its own tests."""
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        db.execute(
+            text("UPDATE staff SET is_active = 0 WHERE id = :id"), {"id": staff.id}
+        )
+        db.commit()
+
+
+async def test_the_delete_action_hands_the_selection_to_the_confirmation_page(
+    admin_client, enrolled_staff
+):
+    """The action itself deletes nothing: sqladmin registers @action as GET
+    only, and deletion has to take a proof, which needs a form."""
+    response = await admin_client.get(
+        "/admin/staff/action/delete", params={"pks": enrolled_staff.id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    assert "/admin/staff/delete" in response.headers["location"]
+    assert str(enrolled_staff.id) in response.headers["location"]
+
+
+async def test_a_plain_staff_member_cannot_reach_the_delete_page(
+    staff_client, enrolled_staff
+):
+    """sqladmin registers an @expose route on a ModelView with login_required
+    only and never calls is_accessible for it, so the check has to be in the
+    handler - the same property /admin/staff/new needs."""
+    page = await staff_client.get(
+        "/admin/staff/delete", params={"pks": enrolled_staff.id}
+    )
+    posted = await staff_client.post(
+        "/admin/staff/delete",
+        data={"pks": str(enrolled_staff.id), "csrf_token": "irrelevant"},
+        follow_redirects=False,
+    )
+
+    assert page.status_code == 403
+    assert posted.status_code == 403
+
+
+async def test_an_active_account_is_refused_with_the_step_that_unblocks_it(
+    admin_client, admin_app, db_session, enrolled_staff
+):
+    """The account has not been deactivated, so the refusal has to name
+    deactivation rather than the two-administrator floor - they are different
+    problems with different next steps, which is why they are different
+    exception classes."""
+    response = await _delete(
+        admin_client, enrolled_staff.id, proof={"current_password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    assert "deactivate" in response.text.lower()
+    assert get_staff(db_session, enrolled_staff.username) is not None
+
+
+async def test_a_deactivated_account_is_deleted_and_the_trail_keeps_its_work(
+    admin_client, admin_app, db_session, enrolled_staff
+):
+    """The whole feature, end to end, with the property that justified a hard
+    delete asserted on the way through: an entry the account wrote is still
+    there afterwards, still naming it."""
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        write_audit(
+            db, actor=enrolled_staff.username, action="update",
+            table_name="factor_set", row_id=4242,
+            before={"status": "draft"}, after={"status": "published"},
+        )
+        db.commit()
+    _deactivate_directly(admin_app, enrolled_staff)
+
+    response = await _delete(
+        admin_client, enrolled_staff.id, proof={"current_password": PASSWORD}
+    )
+
+    assert response.status_code == 200, response.text[:400]
+    assert enrolled_staff.username in response.text
+
+    db_session.commit()
+    assert db_session.scalar(
+        select(Staff).where(Staff.username == enrolled_staff.username)
+    ) is None, "the account is gone"
+
+    survived = db_session.scalar(
+        select(AuditLog).where(
+            AuditLog.actor == enrolled_staff.username,
+            AuditLog.table_name == "factor_set",
+        )
+    )
+    assert survived is not None, "what the account did outlives the account"
+    assert survived.after_json == {"status": "published"}
+
+    deletion = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.table_name == "staff", AuditLog.action == "delete")
+        .order_by(AuditLog.id.desc())
+    )
+    assert deletion is not None
+    assert deletion.actor == admin_client.staff.username
+    assert deletion.before_json["username"] == enrolled_staff.username
+
+
+async def test_deleting_requires_the_password_or_a_code(
+    admin_client, admin_app, db_session, enrolled_staff
+):
+    """A stolen session is the one thing that already has the cookie, so the
+    cookie alone cannot be enough to empty the staff list.
+
+    Both halves: refused with no proof, and permitted with it. A refusal test
+    on its own passes against a route that refuses everything.
+    """
+    _deactivate_directly(admin_app, enrolled_staff)
+
+    refused = await _delete(admin_client, enrolled_staff.id)
+
+    assert refused.status_code == 400
+    db_session.commit()
+    assert db_session.scalar(
+        select(Staff).where(Staff.username == enrolled_staff.username)
+    ) is not None, "nothing was deleted without proof"
+
+    allowed = await _delete(
+        admin_client, enrolled_staff.id, proof={"current_password": PASSWORD}
+    )
+
+    assert allowed.status_code == 200, allowed.text[:400]
+    db_session.commit()
+    assert db_session.scalar(
+        select(Staff).where(Staff.username == enrolled_staff.username)
+    ) is None, "and the same request with proof succeeds"
+
+
+async def test_deleting_your_own_account_is_refused_and_recorded(
+    admin_client, db_session
+):
+    """Half of a takeover from a stolen session, and the second party removed
+    from a procedure whose value is that there was one. Refused in the service
+    layer so the CLI is refused identically; recorded here because a refusal
+    that left no trace would be the one thing an administrator reading the
+    trail could not see.
+
+    The acting account is left active on purpose. ``_guard_not_self`` runs
+    *before* ``delete_staff``'s deactivation check, so aiming this at yourself
+    is refused for being yourself rather than for being active — which is the
+    right message, and the ordering that produces it is what this asserts.
+    Deactivating the acting account first would also make the request
+    unauthenticated: ``AdminAuth.authenticate`` refuses an inactive account, so
+    the page would never be reached at all and the test would pass for a
+    reason that has nothing to do with the guard.
+    """
+    response = await _delete(
+        admin_client, admin_client.staff.id, proof={"current_password": PASSWORD}
+    )
+
+    assert response.status_code == 400
+    db_session.commit()
+    assert db_session.scalar(
+        select(Staff).where(Staff.username == admin_client.staff.username)
+    ) is not None
+
+    refusal = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.table_name == "staff", AuditLog.action == "refuse")
+        .order_by(AuditLog.id.desc())
+    )
+    assert refusal is not None
+    assert refusal.after_json["refused"] == "delete"
+
+
+async def test_the_delete_page_says_the_audit_trail_is_not_erased(
+    admin_client, enrolled_staff
+):
+    """An administrator who believes deleting an account scrubs what it did
+    will either avoid the button or press it hoping that it does. Both are
+    worse than knowing."""
+    page = await _delete_page(admin_client, enrolled_staff.id)
+
+    assert page.status_code == 200
+    readable = re.sub(r"<[^>]+>", " ", page.text)
+    assert "audit log" in readable.lower()
+    assert enrolled_staff.username in page.text
+
+
+async def test_the_deleted_page_does_not_offer_a_selectionless_delete(admin_client):
+    """No pks at all is a page that must not carry a submittable form - the
+    handler refuses it, and the page should not invite the request."""
+    page = await admin_client.get("/admin/staff/delete", params={"pks": ""})
+
+    assert page.status_code == 200
+    assert 'name="current_password"' not in page.text
+
+
+# --- reactivation -----------------------------------------------------------
+
+
+async def test_a_deactivated_account_can_be_reactivated_from_the_panel(
+    admin_client, admin_app, db_session, enrolled_staff
+):
+    """Without this, requiring deactivation before deletion is a trap rather
+    than a step."""
+    _deactivate_directly(admin_app, enrolled_staff)
+
+    response = await admin_client.get(
+        "/admin/staff/action/reactivate", params={"pks": enrolled_staff.id},
+        follow_redirects=False,
+    )
+
+    assert response.status_code == 302
+    db_session.commit()
+    assert get_staff(db_session, enrolled_staff.username).is_active is True
+
+
+async def test_reactivation_is_audited(
+    admin_client, admin_app, db_session, enrolled_staff
+):
+    _deactivate_directly(admin_app, enrolled_staff)
+
+    await admin_client.get(
+        "/admin/staff/action/reactivate", params={"pks": enrolled_staff.id},
+        follow_redirects=False,
+    )
+
+    db_session.commit()
+    entry = db_session.scalar(
+        select(AuditLog)
+        .where(AuditLog.table_name == "staff", AuditLog.row_id == enrolled_staff.id)
+        .order_by(AuditLog.id.desc())
+    )
+    assert entry is not None
+    assert entry.actor == admin_client.staff.username
+    assert entry.after_json["is_active"] is True
+
+
+async def test_reactivating_an_already_active_account_writes_nothing(
+    admin_client, db_session, enrolled_staff
+):
+    """A bulk selection that happens to include an active account is a slip,
+    not an error - but an audit entry claiming a change that did not happen is
+    worse than no entry."""
+    before = db_session.scalar(
+        select(func.count()).select_from(AuditLog).where(
+            AuditLog.table_name == "staff", AuditLog.row_id == enrolled_staff.id
+        )
+    )
+
+    await admin_client.get(
+        "/admin/staff/action/reactivate", params={"pks": enrolled_staff.id},
+        follow_redirects=False,
+    )
+
+    db_session.commit()
+    after = db_session.scalar(
+        select(func.count()).select_from(AuditLog).where(
+            AuditLog.table_name == "staff", AuditLog.row_id == enrolled_staff.id
+        )
+    )
+    assert after == before

@@ -50,6 +50,7 @@ from tests.admin.conftest import (
     SECRET_KEY,
     _cleanup_staff,
     _login,
+    _resync,
 )
 
 pytestmark = [pytest.mark.asyncio, pytest.mark.db]
@@ -1471,3 +1472,318 @@ async def test_the_password_section_states_its_own_age(me, db_session):
     assert f"Last changed on {today}" in after, after
     assert "not recorded" not in after, after
 
+
+
+# --- an unconfirmed enrolment does not survive leaving the page -------------
+
+
+async def test_leaving_the_page_discards_an_unfinished_enrolment(me, db_session):
+    """The reported defect. "Set-up not finished" was not a state anybody
+    could act on: the QR and the setup key are shown once, in the response to
+    the request that minted them, so the row could never be picked up again
+    and only a manual Remove cleared it.
+
+    A GET of this page is what "left it" means here - the enrol dialog's own
+    Cancel is a link to this route - and it is the moment the row dies.
+    """
+    begun = await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    assert begun.status_code == 200
+    _resync(db_session)
+    assert any(
+        d.name == "Backup phone" for d in _devices(db_session, me.staff.username)
+    ), "precondition: the unconfirmed row exists"
+
+    page = await me.get(SECURITY_URL)
+
+    assert page.status_code == 200
+    _resync(db_session)
+    assert not any(
+        d.name == "Backup phone" for d in _devices(db_session, me.staff.username)
+    ), "the unfinished enrolment is gone"
+    assert "Backup phone" not in _text(
+        _element(page.text, r'<table class="devices">.*?</table>')
+    )
+
+
+async def test_discarding_an_unfinished_enrolment_is_said_out_loud(me):
+    """A row vanishing between two page loads with no explanation reads as
+    data loss, and this is the one screen where that is frightening."""
+    await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+
+    page = await me.get(SECURITY_URL)
+
+    readable = _text(page.text)
+    assert "Backup phone" in readable, readable
+    assert "discarded" in readable.lower(), readable
+    # And it says the working ones are safe, which is the question somebody
+    # reading that sentence will immediately have.
+    assert "untouched" in readable.lower(), readable
+
+
+async def test_a_confirmed_authenticator_survives_the_discard(
+    me, admin_app, db_session, monkeypatch
+):
+    """The failure mode that locks somebody out of their own account.
+
+    ``mfa_enrolled_at`` is asserted **unchanged**, not merely still set:
+    ``_sync_mfa_enrolled_at`` stamps only on the none-to-some transition, so a
+    reaper that destroyed the confirmed devices and let the column be
+    re-derived would move the timestamp. Equality kills a mutant a null check
+    would let live.
+    """
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    _resync(db_session)
+    staff = get_staff(db_session, me.staff.username)
+    enrolled_before = staff.mfa_enrolled_at
+    confirmed_before = sorted(d.name for d in staff.enrolled_totp_devices)
+    assert len(confirmed_before) == 2
+
+    # An abandoned third scan, then the GET that reaps it.
+    await _post(
+        me, action="begin-device", device_name="Third phone",
+        current_password=PASSWORD,
+    )
+    page = await me.get(SECURITY_URL)
+    assert page.status_code == 200
+
+    _resync(db_session)
+    staff = get_staff(db_session, me.staff.username)
+    assert sorted(d.name for d in staff.enrolled_totp_devices) == confirmed_before
+    assert staff.mfa_enrolled_at == enrolled_before
+
+
+async def test_a_page_load_with_nothing_to_discard_says_nothing(me):
+    """The notice must belong to the event, not to the page. An account that
+    has never abandoned a scan should never read a sentence about one."""
+    page = await me.get(SECURITY_URL)
+
+    assert "discarded" not in _text(page.text).lower()
+
+
+async def test_discarding_an_unfinished_enrolment_is_audited(me, db_session):
+    """Every write produces an audit_log entry, deletions included."""
+    await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    await me.get(SECURITY_URL)
+
+    _resync(db_session)
+    entry = db_session.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.table_name == "staff_totp_device",
+            AuditLog.action == "delete",
+            AuditLog.actor == me.staff.username,
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    assert entry is not None
+    assert entry.before_json["name"] == "Backup phone"
+    assert entry.before_json["confirmed"] is False
+
+
+async def test_an_abandoned_enrolment_does_not_block_reusing_its_name(
+    me, admin_app, db_session, monkeypatch
+):
+    """It did: the row held its name against DuplicateDeviceNameError, so
+    somebody who mis-scanned "Backup phone" could never call the next attempt
+    the same thing."""
+    await _post(
+        me, action="begin-device", device_name="Backup phone",
+        current_password=PASSWORD,
+    )
+    # No GET in between - this is the other death, the one that happens when a
+    # new enrolment begins, and it has to work on its own.
+    secret = await _enrol_second_device(me, admin_app, monkeypatch, name="Backup phone")
+
+    assert secret
+    _resync(db_session)
+    devices = _devices(db_session, me.staff.username)
+    named = [d for d in devices if d.name == "Backup phone"]
+    assert len(named) == 1, [d.name for d in devices]
+    assert named[0].enrolled_at is not None
+
+
+# --- renaming an authenticator ----------------------------------------------
+
+
+async def _rename(client, device_id, new_name, **proof):
+    return await _post(
+        client, action="rename-device", device_id=str(device_id),
+        device_name=new_name, **proof,
+    )
+
+
+async def test_an_authenticator_can_be_renamed_from_the_screen(me, db_session):
+    """The capability the column was missing. Every name ended up saying
+    nothing because nothing could revise one."""
+    device = _devices(db_session, me.staff.username)[0]
+
+    response = await _rename(me, device.id, "Work phone", current_password=PASSWORD)
+
+    assert response.status_code == 200, response.text[:400]
+    _resync(db_session)
+    assert _devices(db_session, me.staff.username)[0].name == "Work phone"
+    rows = _device_rows(response.text)
+    assert rows[0][1] == "Work phone"
+
+
+async def test_renaming_requires_the_password_or_a_code(me, db_session):
+    """Both halves. Renaming is how a stolen session gets the owner to remove
+    the wrong device - relabel your own enrolment as their old phone and they
+    do it themselves through a Remove step that is fully proved."""
+    device = _devices(db_session, me.staff.username)[0]
+    original = device.name
+
+    refused = await _rename(me, device.id, "Work phone")
+
+    assert refused.status_code == 400
+    _resync(db_session)
+    assert _devices(db_session, me.staff.username)[0].name == original
+
+    allowed = await _rename(
+        me, device.id, "Work phone", current_password=PASSWORD
+    )
+
+    assert allowed.status_code == 200, allowed.text[:400]
+    _resync(db_session)
+    assert _devices(db_session, me.staff.username)[0].name == "Work phone"
+
+
+async def test_a_refused_rename_comes_back_inside_its_own_dialog(me, db_session):
+    """A modal covers the page, so a message printed behind it is a message
+    nobody reads - the property every other dialog on this screen holds."""
+    device = _devices(db_session, me.staff.username)[0]
+
+    response = await _rename(me, device.id, "")
+
+    assert response.status_code == 400
+    dialog = _element(response.text, r'<dialog id="dialog-rename".*?</dialog>')
+    assert "open" in dialog.split(">")[0], dialog[:200]
+    assert 'role="alert"' in dialog
+
+
+async def test_one_accounts_screen_cannot_rename_another_accounts_device(
+    me, admin_app, db_session
+):
+    """Scoped inside the service layer, so another account's device id is a
+    not-found rather than a rename somewhere else. Nothing on this form names
+    an account.
+
+    The second account is torn down in a ``finally``, matching
+    ``test_one_accounts_screen_cannot_remove_another_accounts_device``.
+    ``_onboard`` commits against the running app's own database, so a row left
+    behind here outlives the test - and ``create_staff`` writes an
+    ``audit_log`` entry, which is what
+    ``tests/admin/test_taxonomy_rules.py::test_the_hook_actually_stops_a_commit``
+    trips over: it asserts the table is empty, trusting it is the only writer.
+    """
+    other, _ = _onboard(admin_app, role=StaffRole.staff)
+    try:
+        theirs = _devices(db_session, other.username)[0]
+        original = theirs.name
+
+        response = await _rename(
+            me, theirs.id, "Taken over", current_password=PASSWORD
+        )
+
+        assert response.status_code == 400
+        _resync(db_session)
+        assert _devices(db_session, other.username)[0].name == original
+    finally:
+        _cleanup_staff(admin_app, other)
+
+
+async def test_renaming_is_audited_naming_the_actor(me, db_session):
+    device = _devices(db_session, me.staff.username)[0]
+
+    await _rename(me, device.id, "Work phone", current_password=PASSWORD)
+
+    _resync(db_session)
+    entry = db_session.scalar(
+        select(AuditLog)
+        .where(
+            AuditLog.table_name == "staff_totp_device",
+            AuditLog.actor == me.staff.username,
+            AuditLog.action == "update",
+        )
+        .order_by(AuditLog.id.desc())
+    )
+    assert entry is not None
+    assert entry.after_json["name"] == "Work phone"
+    assert entry.after_json["changed"] == "name"
+
+
+async def test_renaming_does_not_sign_the_other_sessions_out(me, db_session):
+    """A note on a row is not a credential change. Removing a device bumps
+    session_generation precisely because it is one, and renaming borrowing
+    that behaviour would sign people out for editing a caption."""
+    before = get_staff(db_session, me.staff.username).session_generation
+    device = _devices(db_session, me.staff.username)[0]
+
+    await _rename(me, device.id, "Work phone", current_password=PASSWORD)
+
+    _resync(db_session)
+    assert get_staff(db_session, me.staff.username).session_generation == before
+
+
+async def test_the_screen_says_renaming_does_not_reach_the_authenticator_app(me):
+    """The one honest caveat. The app's label was fixed when the code was
+    scanned and cannot be revised from here, so a screen that implied
+    otherwise would have somebody hunting for a change that never arrives."""
+    page = await me.get(SECURITY_URL)
+
+    readable = _text(page.text)
+    assert "authenticator app" in readable.lower(), readable
+    assert "rename" in readable.lower(), readable
+
+
+async def test_the_rename_dialog_offers_every_device_and_names_its_action(
+    me, admin_app, db_session, monkeypatch
+):
+    """Renaming is safe on any device, confirmed or not, so this dialog loops
+    over every one - unlike Remove, which loops over what may be removed."""
+    await _enrol_second_device(me, admin_app, monkeypatch)
+    _resync(db_session)
+
+    dialog = _element(
+        (await me.get(SECURITY_URL)).text, r'<dialog id="dialog-rename".*?</dialog>'
+    )
+
+    options = re.findall(r'<label class="choose__option".*?</label>', dialog, re.S)
+    assert len(options) == 2, options
+    assert _text(options[0]).startswith("1 — "), _text(options[0])
+    assert _text(options[1]).startswith("2 — "), _text(options[1])
+    assert 'name="device_id"' in dialog
+    assert 'name="device_name"' in dialog
+    # The proof, which this dialog needs exactly as Add and Remove do.
+    assert 'name="current_password"' in dialog
+    assert 'name="current_code"' in dialog
+
+
+async def test_every_dialog_keeps_its_action_row_pinned(me):
+    """Commit 82d541b: `dialog.dialog` is the scroll container, so an action
+    row in normal flow is clipped out of the visible box once the content is
+    taller than the clamp - a submit button that cannot be seen, cannot be
+    reached, and whose press lands on the dialog behind it.
+
+    Every dialog on this screen, including the one added for renaming, has to
+    carry `.dialog__actions`. Measured in a browser separately; this is what
+    stops a new dialog shipping without the class.
+    """
+    body = (await me.get(SECURITY_URL)).text
+
+    dialogs = re.findall(r'<dialog id="([^"]+)".*?</dialog>', body, re.S)
+    assert set(dialogs) >= {
+        "dialog-add", "dialog-rename", "dialog-remove", "dialog-password"
+    }, dialogs
+    for name in dialogs:
+        dialog = _element(body, rf'<dialog id="{name}".*?</dialog>')
+        assert 'class="dialog__actions"' in dialog, name

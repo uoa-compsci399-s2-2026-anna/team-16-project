@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.18 draft)"
+date: "2026-08-12 (v1.19 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,13 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.19 — 2026-08-12 (adds an external benchmark; affects A, and reserves a code prefix for everyone)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New §10.3: a ReFED comparison fixture, and the `refed_` taxonomy code prefix is reserved.** Every correctness check this project has descends from this document, so none of them can catch a mistake made *in* this document. ReFED's Impact Calculator is the product this one is modelled on and it publishes its conversion factors; `tests/benchmark/refed/` runs one scenario through both and agrees to the limit of our own `DECIMAL(20,10)` storage. Because taxonomy rows are global and carry no `factor_set_id` (§2.1), the fixture's sectors, food types and destinations are additional rows in the shared tables rather than a private vocabulary — so **`refed_` is reserved as a code prefix and no New Zealand taxonomy row may take it.** The fixture is loaded as a `draft` and is never published: it is United States data, `is_mock` is true on it, and the placeholder banner is correct while it is selected | §2.1, §10.3 |
+| 2 | **§10.3 records that our factor tables cannot hold ReFED's shape one-for-one, and what that costs.** `factor_upstream` is keyed `(sector, food_category, destination)` and matches ReFED's key exactly; `factor_downstream` is keyed `(destination, food_category)` and has no sector column, while ReFED's downstream factors differ by sector in 82 of their 102 (food type, destination) groups. This is not a defect — no New Zealand requirement asks for a sector-varying downstream factor — but it is the reason the fixture's food category codes carry a supply chain stage, and it is the first thing to check if a downstream factor ever does need to vary by sector | §2.2, §10.3 |
 
 ### v1.18 — 2026-08-12 (closes open item O-9; affects B and E)
 
@@ -2949,3 +2956,23 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
 
 `upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
+
+## 10.3 The ReFED Comparison Fixture (owner: A)
+
+**Everything above descends from this document.** The golden cases, the fixtures, the engine and the contract were written by the same people from the same source, so they share one ancestor: together they prove the engine does what §3 and §4 say, and they cannot prove that §3 and §4 are right. `tests/benchmark/refed/` is the one check here whose expected answer nobody on this team produced.
+
+It runs one scenario through two implementations — ours, and ReFED's Impact Calculator, the product this calculator is modelled on. Full instructions, provenance and the unit conversions are in **`docs/refed-comparison.md`**; what belongs in the contract is only what constrains other people's code.
+
+| Rule | Why |
+| --- | --- |
+| **`refed_` is a reserved taxonomy code prefix.** No `sector`, `food_category` or `destination` row that is part of the New Zealand product may take it | Taxonomy rows are global — §2.1's tables carry no `factor_set_id`, and there is no way to give a factor set a private vocabulary. The fixture's 1 sector, 39 food categories and 12 destinations are therefore rows in the same tables the product uses. The prefix is the whole of what keeps the two vocabularies distinguishable, in the database and in a dropdown |
+| **The fixture is loaded as a `draft` and must never be published** | It is United States data. `is_mock` is `true` on it and the placeholder banner is correct while it is selected (§6.2). Publishing it would archive the live New Zealand set — that is what `publish_factor_set` is for and it is not what this fixture is for. It is reached through §6.2.1's `dry_run.factor_set_version`, which persists nothing |
+| **No metric rows are added for it** | `metric` is global and the engine iterates every active row (§4.1). An added metric would appear, at zero, in every New Zealand result. This is why ReFED's meals-recovered figure is not represented and cannot be compared |
+
+> **Our two factor tables cannot hold ReFED's shape one-for-one.** `factor_upstream` is keyed `(sector, food_category, destination)` and matches ReFED's key exactly. `factor_downstream` is keyed `(destination, food_category)` and has no sector column — and ReFED's downstream factors genuinely differ by sector in **82 of their 102** (food type, destination) groups.
+>
+> That is not a defect in §2.2. No New Zealand requirement asks for a downstream factor that varies by supply chain stage, and adding a sector column to `factor_downstream` to serve a test fixture would be the tail wagging the dog. The fixture absorbs the difference instead, by making its `food_category` codes carry the stage — `refed_retail_produce`, `refed_farm_dry_goods` — which is lossless: no two ReFED cells are merged and no number changes.
+>
+> **Record it here because it is the first thing to check if a downstream factor ever does need to vary by sector.** If the client's data arrives with, say, a different landfill emission factor for kerbside collection than for a commercial contract, this is the schema change that implies, and this note is where the shape of the problem is already written down.
+
+The tolerance the comparison asserts is **derived, not chosen**: `value_per_kg` is `DECIMAL(20,10)` (§2.2), so each factor is rounded at the tenth decimal place and a line of `qty` kilograms carries at most `1e-10 × qty` of error in the metric total. That is invisible for water and dominates for methane. **If that tolerance ever has to be widened, the storage precision has changed and this document is what should have changed first.**

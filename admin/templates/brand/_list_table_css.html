@@ -87,6 +87,43 @@
     box-shadow: inset 0 -1px 0 #e5e7eb;
   }
 
+  /* THE FIRST COLUMN IS DELIBERATELY NOT PINNED, and this paragraph is the
+     decision rather than an omission.
+
+     The case for pinning is real: sqladmin puts the row's checkbox in column
+     one and its view/edit/delete icons in column two, so scrolling right to
+     read `data_quality` carries the row's only actions off the left edge.
+
+     Two measurements decided against it. The first is what it costs. Those
+     two cells are 52px and 96px on this panel, measured - 148px, permanently,
+     off the top of a scrollport that is 682px wide at a 1280px viewport
+     (22%), 426px at 1024 (35%) and 194px at 768 before the sidebar rule below
+     (76%, leaving 46px of readable table). The defect being fixed is that
+     there is not enough horizontal room; spending a fifth to three quarters
+     of it on two columns of controls fixes a symptom of that by making the
+     cause worse.
+
+     The second is how it fails. Stacked sticky columns need the second one
+     offset by the first one's width - `left: 52px` - and CSS cannot measure
+     that; 52px is what Tabler's `.w-1` plus its cell padding happen to
+     produce today. Declaring a width on column one instead only moves the
+     problem: a table cell may not be laid out narrower than its content, so
+     any future change that makes the checkbox cell wider than the declared
+     offset puts column two ON TOP of column one. The failure mode is a
+     pinned cell silently covering data, arriving from a Tabler or sqladmin
+     upgrade that nothing in this repository tests.
+
+     What the clamp gives instead: the row stays at the same vertical position
+     while the table scrolls sideways, so `Home`, `shift+wheel` or a flick
+     brings the actions back with the wanted row still under the pointer. That
+     is a cheap round trip, and it was not cheap before this change only
+     because there was no way to see that the table scrolled at all.
+
+     To revisit it, the thing that would have to be true is a first column
+     whose width cannot be exceeded by its content - then the offset is
+     declared rather than observed, and only the width tax is left to argue
+     about. */
+
   /* DISCOVERABILITY, which is the actual complaint and is not the same
      property as scrollability.
 

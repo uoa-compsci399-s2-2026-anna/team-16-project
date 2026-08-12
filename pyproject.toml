@@ -23,8 +23,33 @@ name = "kaicalc"
 # or preferred over, a release.
 version = "0.0.0"
 description = "Kai Commitment food waste impact calculator - New Zealand impact calculator API, calculation engine and staff admin panel"
-# No `readme`: README.md is the course template and is git-ignored in this
-# tree, so it is neither ours to describe the package with nor reliably present.
+# The wheel's and the sdist's long description.
+#
+# THE COMMENT THAT STOOD HERE ARGUED FROM A FALSE PREMISE. It said README.md
+# "is the course template and is git-ignored in this tree, so it is neither
+# ours to describe the package with nor reliably present". README.md is
+# tracked, .gitignore carries no rule for it, and it is no longer the template
+# - it now answers what the project is, how to run it and how to develop on it.
+# Every clause of the reason was untrue, so the decision it defended was
+# re-taken rather than re-worded.
+#
+# WHY IT IS IN. The first thing under the title is the placeholder-data
+# warning: the shipped factors are mock, the numbers are meaningless, do not
+# quote them. That is the single most important thing anybody installing this
+# package can be told, and without this line `pip show -v kaicalc` tells them
+# nothing at all. The file is self-contained - no images, no relative links,
+# no external assets - so it survives being read outside the repository, which
+# is the usual reason a README makes a poor long description.
+#
+# WHAT IT COSTS. The README's content is now packaging metadata, so a change to
+# it changes what the wheel says about itself. Nothing in .github/workflows/
+# asserted its absence, so nothing had to move; the release job's metadata check
+# reads `Version` out of the built wheel and is indifferent to this.
+#
+# The wheel does not gain README.md as a *file* - setuptools folds the content
+# into the dist-info METADATA body. The image hygiene check in
+# _build-images.yaml is therefore unaffected.
+readme = "README.md"
 requires-python = ">=3.11"
 authors = [{ name = "UoA COMPSCI 399 Team 16 (502 Bad Gateway)" }]
 keywords = ["food-waste", "impact-calculator", "new-zealand", "kai-commitment"]

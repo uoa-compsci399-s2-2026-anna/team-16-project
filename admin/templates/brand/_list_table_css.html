@@ -131,9 +131,6 @@
   /* DISCOVERABILITY, which is the actual complaint and is not the same
      property as scrollability.
 
-     Declaring `::-webkit-scrollbar` opts a Blink/WebKit scroll container out
-     of overlay scrollbars: the bar is then drawn permanently, in the layout,
-     whether or not a pointer is anywhere near it. On the Windows machine this
      A scrollbar is the platform's answer and on Windows - where this was
      reported from - it is a good one: measured in headed Chromium at
      1280x900, the clamped box reserves 15px of classic scrollbar on each
@@ -179,17 +176,25 @@
      fault. sqladmin lays the list card and the filter sidebar out as a flex
      ROW that never wraps, and sqladmin's own main.css pins the sidebar at
      `width: 300px; flex-shrink: 0`. The card takes what is left, and what is
-     left runs out: measured in Chromium, the scrollport is 682px at a
-     1280-wide viewport, 426px at 1024, 194px at 768 and 56px at 390 - and on
-     /admin/factor-upstream the page itself then scrolled sideways, 522px of
-     content in a 390px viewport, which is the "the whole page moves" half of
-     the report.
+     left runs out: measured in Chromium on /admin/factor-upstream, the
+     scrollport was 682px at a 1280-wide viewport, 426px at 1024, 194px at 768
+     and 56px at 390.
 
      A 56px scrollport is not a component anybody can scroll; it is a hole. So
      below Tabler's `md` breakpoint the row is allowed to wrap and the sidebar
      drops underneath at full width - which is what its own `col-md-3` says
-     should happen and what main.css's fixed width prevents. The card gets the
-     whole width back, and the page stops scrolling sideways. */
+     should happen and what main.css's fixed width prevents. Measured after:
+     494px at 768 and 356px at 390.
+
+     WHAT THIS DOES NOT FIX, said here because it is the nearest thing to it
+     and would otherwise be assumed. At 390px the page still scrolls sideways
+     on four screens, and the table is not why: the culprits are sqladmin's
+     own card FOOTER - the pagination strip, seven page links plus "Showing 1
+     to 100 of 776 items" plus a "100 / Page" menu, laid out in a flex row
+     that does not wrap, measured 522px wide in a 390px viewport - and, on
+     /admin/comparison-scenario-line, the card HEADER's "+ New Comparison
+     scenario line" button at 252px. Both are outside the scrollport and
+     unrelated to the clipping this file fixes; both are still there. */
   @media (max-width: 991.98px) {
     .container-fluid .d-flex.min-w-0 {
       flex-wrap: wrap;

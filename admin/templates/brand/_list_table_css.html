@@ -1,0 +1,148 @@
+{# Makes a wide list table reachable. Included by brand/model_list.html, which
+   is AuditedModelView's `list_template` - and which brand/staff_list.html and
+   brand/ip_block_list.html extend - so this covers every ModelView list page
+   in the panel and no other screen.
+
+   THE DEFECT. sqladmin already wraps its list table in
+   `<div class="table-responsive">`, and Tabler already gives that
+   `overflow-x: auto`, so the div is a horizontal scroll container and always
+   was. What it never had was a HEIGHT. The div is as tall as the table, and a
+   page of 100 rows is 4656px tall - so the horizontal scrollbar, which a
+   browser draws at the BOTTOM INSIDE EDGE of the scroll container, is drawn
+   4656px down the page. Measured in Chromium at 1280x900 on
+   /admin/factor-upstream/list with the ReFED set loaded: the container's top
+   is at y=783 and its scrollbar therefore sits at y~5424, about 4500px below
+   the fold. The content is reachable by shift+wheel and by nothing a reader
+   can see, which is why the report was "cannot scroll sideways" rather than
+   "the scrollbar is inconvenient" - an affordance nobody can find is not an
+   affordance.
+
+   The NZ taxonomy hid this. Its widest list is 965px against a 682px
+   container, so the two right-hand columns were clipped and nobody chased
+   them. The ReFED comparison set makes the same table 2187px wide against the
+   same 682px, and its codes are long enough
+   (`refed_foodservice_breads_bakery - ReFED Foodservice / Breads & Bakery`)
+   that a row ends mid-word. The bug is not new; the data that shows it is.
+
+   THE FIX, in one sentence: give the container a height, so that the scrollbar
+   it already had is drawn somewhere a person can see it, and pin the header
+   row to the top of the box it now has. `vh` and not a pixel count, because
+   the load-bearing property is that the whole scrollport - including its
+   bottom edge, including its horizontal scrollbar - fits on screen at once
+   once the reader has scrolled the table into view. A fixed 600px does not
+   have that property on a laptop in a video call.
+
+   WHAT THIS DELIBERATELY DOES NOT DO is trap the page. `overscroll-behavior`
+   is set on the X AXIS ONLY: a horizontal flick that runs off the end of the
+   table stops there instead of being handed to the browser as a back-gesture,
+   which is a real hazard on a precision trackpad over a table this wide.
+   Vertical overscroll is left at `auto` on purpose, so a wheel that reaches
+   the last row carries on scrolling the page, exactly as it does over any
+   other part of it. A table that swallowed the page's vertical scroll would
+   be a worse defect than the one being fixed here. #}
+<style>
+  /* The scrollport. `overflow: auto` rather than Tabler's `overflow-x: auto`
+     alone: the computed value of the other axis was already `auto` (a box
+     that scrolls on one axis cannot be `visible` on the other), so this
+     changes nothing by itself - it is written out so that the pair reads as
+     one decision next to the max-height that finally makes it mean
+     something.
+
+     `max(70vh, 16rem)`: 70vh keeps the box inside the viewport, and the 16rem
+     floor keeps roughly five rows and a scrollbar usable on a short landscape
+     phone, where 70vh is 250px or less.
+
+     A table shorter than the clamp is untouched - `max-height` is a ceiling,
+     not a height - so /admin/metric and /admin/formula still end where their
+     last row ends and grow no scrollbar they did not need. */
+  .table-responsive {
+    max-height: max(70vh, 16rem);
+    overflow: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  /* The header row, pinned to the top of the scrollport. `上下` as well as
+     `左右` in the report: at row 60 of 100 the column headings are gone and
+     the reader is looking at nine unlabelled columns of numbers.
+
+     Three things this needs, and two of them are only needed because the
+     table is `border-collapse: collapse`:
+
+     - An opaque ground. `<th>` already computes to #f9fafb here, which is
+       Tabler's own thead colour measured on this panel rather than a colour
+       chosen for it; restating it is what stops rows showing through the
+       pinned row as they pass under it, because a sticky cell that inherits
+       `transparent` paints nothing.
+     - `box-shadow` and not `border-bottom`. Under `border-collapse: collapse`
+       a cell's borders belong to the table's border grid, not to the cell, so
+       they do not travel with a sticky cell and the header loses its rule the
+       moment it lifts. The inset shadow is drawn by the cell itself and does.
+     - `z-index`, so the pinned row paints over the rows sliding beneath it.
+       `position: sticky` alone does not raise a cell above later content. */
+  .table-responsive > table > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f9fafb;
+    box-shadow: inset 0 -1px 0 #e5e7eb;
+  }
+
+  /* DISCOVERABILITY, which is the actual complaint and is not the same
+     property as scrollability.
+
+     Declaring `::-webkit-scrollbar` opts a Blink/WebKit scroll container out
+     of overlay scrollbars: the bar is then drawn permanently, in the layout,
+     whether or not a pointer is anywhere near it. On the Windows machine this
+     was reported from that is already the default and these rules only colour
+     it; on macOS, and on any platform set to "show scroll bars only when
+     scrolling", it is the difference between a table that announces it
+     continues to the right and one that looks exactly like a table that has
+     been truncated. `scrollbar-color` is the standard-property half of the
+     same statement, for Firefox.
+
+     Kale (#003223) at low alpha rather than the token: this stylesheet is
+     inlined into a Tabler page, which does not load brand.css and so has no
+     `--kale` to read. Both values are that colour. */
+  .table-responsive {
+    scrollbar-color: rgba(0, 50, 35, 0.35) rgba(0, 50, 35, 0.07);
+  }
+  .table-responsive::-webkit-scrollbar {
+    width: 14px;
+    height: 14px;
+  }
+  .table-responsive::-webkit-scrollbar-track {
+    background: rgba(0, 50, 35, 0.07);
+  }
+  .table-responsive::-webkit-scrollbar-thumb {
+    background: rgba(0, 50, 35, 0.35);
+    border-radius: 7px;
+  }
+  .table-responsive::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 50, 35, 0.55);
+  }
+
+  /* The other half of "the table cannot be read", and it is not the table's
+     fault. sqladmin lays the list card and the filter sidebar out as a flex
+     ROW that never wraps, and sqladmin's own main.css pins the sidebar at
+     `width: 300px; flex-shrink: 0`. The card takes what is left, and what is
+     left runs out: measured in Chromium, the scrollport is 682px at a
+     1280-wide viewport, 426px at 1024, 194px at 768 and 56px at 390 - and on
+     /admin/factor-upstream the page itself then scrolled sideways, 522px of
+     content in a 390px viewport, which is the "the whole page moves" half of
+     the report.
+
+     A 56px scrollport is not a component anybody can scroll; it is a hole. So
+     below Tabler's `md` breakpoint the row is allowed to wrap and the sidebar
+     drops underneath at full width - which is what its own `col-md-3` says
+     should happen and what main.css's fixed width prevents. The card gets the
+     whole width back, and the page stops scrolling sideways. */
+  @media (max-width: 991.98px) {
+    .container-fluid .d-flex.min-w-0 {
+      flex-wrap: wrap;
+    }
+    .container-fluid .filter-sidebar-col {
+      width: 100%;
+      margin-top: 1rem;
+    }
+  }
+</style>

@@ -7,10 +7,19 @@
    sqladmin's own `content` block underneath the blocks.
 
    Set on AuditedModelView, so a view that declares no `guidance_blocks`
-   renders exactly what it rendered before this file existed. #}
+   renders exactly what it rendered before this file existed.
+
+   It also carries the rules that make a wide table scrollable in its own
+   right - see brand/_list_table_css.html, which explains why they are a
+   `<style>` block here rather than a rule in admin/static/brand.css: these
+   are sqladmin's pages, and sqladmin's pages do not load brand.css. Placed
+   here rather than in the two subclasses so that every list screen in the
+   panel gets it from one file, including brand/staff_list.html and
+   brand/ip_block_list.html, which extend this template. #}
 {% extends "sqladmin/list.html" %}
 
 {% block content %}
+{% include "brand/_list_table_css.html" %}
 {% include "brand/_guidance.html" %}
 {{ super() }}
 {% endblock %}

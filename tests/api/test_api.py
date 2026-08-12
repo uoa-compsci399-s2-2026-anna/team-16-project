@@ -123,6 +123,22 @@ async def test_taxonomy_contract(app):
     assert groups[destinations["prevention"]["group"]]["is_waste"] is False
 
 
+async def test_the_endpoint_offers_only_what_the_published_set_prices(app):
+    """§6.1 as HTTP, not as a repository call (v1.21).
+
+    `db/tests/test_taxonomy_coverage.py` is where the rule is argued; this is
+    the assertion that it survives serialisation and reaches the browser. The
+    seed's `MOCK-v0` prices `processing`/`dairy` and two destinations, and
+    every other seeded row is an option that would have returned a silent zero.
+    """
+    async with await _client(app) as client:
+        body = (await client.get("/api/v1/taxonomy")).json()
+    assert {row["code"] for row in body["destinations"]} == {"prevention", "landfill"}
+    assert {row["code"] for row in body["sectors"]} == {"processing"}
+    assert {row["code"] for row in body["food_categories"]} == {"standard_mix", "dairy"}
+    assert {row["code"] for row in body["destination_groups"]} == {"reuse", "disposal"}
+
+
 async def test_public_calculation_persists_and_returns_token(app):
     payload = json.loads((FIXTURES / "calculate_request.json").read_text())
     async with await _client(app) as client:

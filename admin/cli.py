@@ -318,6 +318,29 @@ def cmd_seed_taxonomy(db_session: Session) -> dict[str, int]:
     return seed_taxonomy(db_session)
 
 
+#: The screen an administrator reads an unclaimed password back from, as it
+#: must be typed into a browser. Interpolated into every message below rather
+#: than written out at each one.
+#:
+#: **It was written out at each one, and three of the four were a 404.** They
+#: said ``/admin/staff``; sqladmin serves the staff list at
+#: ``/admin/staff/list`` and nothing at the bare prefix. The one that was
+#: right was ``rotate-key``'s, so the tree disagreed with itself and no test
+#: noticed, because the only assertion covering any of them checked for the
+#: prefix - which is a substring of both the broken form and the correct one.
+#:
+#: The cost is not cosmetic. The person following this line is an operator who
+#: has just lost a password, and the panel answering "not found" reads as "it
+#: is gone" at exactly the moment they are already worried they have locked
+#: themselves out of their own deployment.
+#:
+#: tests/admin/test_operator_guidance.py drives every ``/admin/...`` path this
+#: module and docker/init.sh name, as a real administrator over real HTTP, and
+#: fails on a 404. A constant cannot drift from itself; a path that stops
+#: being served is a different failure, and that is the one the test catches.
+UNCLAIMED_PASSWORD_SCREEN = "/admin/staff/list"
+
+
 def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """Print freshly created bootstrap credentials to standard output.
 
@@ -328,7 +351,7 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     are.** Bootstrap goes through ``create_staff``, so since contract v1.15
     each password is also stored encrypted until that account claims it — which
     means one lost line is recoverable *by the other administrator*, from
-    /admin/staff. Losing both is still terminal for the panel, because a reveal
+    /admin/staff/list. Losing both is still terminal for the panel, because a reveal
     needs a signed-in administrator and there is nobody else; the way back
     there is ``kaicalc-admin issue-password`` on the container. The message
     below says exactly that, rather than the flat "cannot be recovered" it used
@@ -359,9 +382,9 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     )
     print(
         "If you lose one of these lines, the other administrator can read it "
-        "back from /admin/staff until that account changes its password. If "
-        "you lose both, nobody can log in: run `kaicalc-admin issue-password "
-        "admin` on the container."
+        f"back from {UNCLAIMED_PASSWORD_SCREEN} until that account changes its "
+        "password. If you lose both, nobody can log in: run `kaicalc-admin "
+        "issue-password admin` on the container."
     )
 
 
@@ -461,10 +484,10 @@ def main(argv: list[str] | None = None) -> int:
             )
             print(
                 "If it is lost before they use it, it is still recoverable: an "
-                "administrator can read it back from /admin/staff, under `Show "
-                "the password waiting to be collected`, until the account "
-                f"changes it. Failing that, `kaicalc-admin issue-password "
-                f"{username}` mints another."
+                f"administrator can read it back from {UNCLAIMED_PASSWORD_SCREEN}, "
+                "under `Show the password waiting to be collected`, until the "
+                f"account changes it. Failing that, `kaicalc-admin "
+                f"issue-password {username}` mints another."
             )
         elif args.command == "reset-mfa":
             cmd_reset_mfa(db_session, args.username)
@@ -487,8 +510,9 @@ def main(argv: list[str] | None = None) -> int:
             print("  They must change it at their next login. Hand it over in person.")
             print(
                 "  If this line is lost, the password is not: an administrator "
-                "can read it back from /admin/staff, under `Show the password "
-                "waiting to be collected`, until the account changes it."
+                f"can read it back from {UNCLAIMED_PASSWORD_SCREEN}, under "
+                "`Show the password waiting to be collected`, until the "
+                "account changes it."
             )
         elif args.command == "delete-staff":
             try:

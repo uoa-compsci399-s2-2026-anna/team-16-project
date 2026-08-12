@@ -1,0 +1,210 @@
+{# Makes a wide list table reachable. Included by brand/list_table.html, which
+   is the root of the brand list-template chain - AuditLogAdmin's
+   `list_template` directly, and AuditedModelView's through
+   brand/model_list.html, which brand/staff_list.html and
+   brand/ip_block_list.html extend in turn. So this reaches all seventeen
+   ModelView list pages in the panel and no other screen; that is asserted,
+   page by page, in tests/admin/test_list_table.py.
+
+   THE DEFECT. sqladmin already wraps its list table in
+   `<div class="table-responsive">`, and Tabler already gives that
+   `overflow-x: auto`, so the div is a horizontal scroll container and always
+   was. What it never had was a HEIGHT. The div is as tall as the table, and a
+   page of 100 rows is 4656px tall - so the horizontal scrollbar, which a
+   browser draws at the BOTTOM INSIDE EDGE of the scroll container, is drawn
+   4656px down the page. Measured in Chromium at 1280x900 on
+   /admin/factor-upstream/list with the ReFED set loaded: the container's top
+   is at y=783 and its scrollbar therefore sits at y~5424, about 4500px below
+   the fold. The content is reachable by shift+wheel and by nothing a reader
+   can see, which is why the report was "cannot scroll sideways" rather than
+   "the scrollbar is inconvenient" - an affordance nobody can find is not an
+   affordance.
+
+   The NZ taxonomy hid this. Its widest list is 965px against a 682px
+   container, so the two right-hand columns were clipped and nobody chased
+   them. The ReFED comparison set makes the same table 2187px wide against the
+   same 682px, and its codes are long enough
+   (`refed_foodservice_breads_bakery - ReFED Foodservice / Breads & Bakery`)
+   that a row ends mid-word. The bug is not new; the data that shows it is.
+
+   THE FIX, in one sentence: give the container a height, so that the scrollbar
+   it already had is drawn somewhere a person can see it, and pin the header
+   row to the top of the box it now has. `vh` and not a pixel count, because
+   the load-bearing property is that the whole scrollport - including its
+   bottom edge, including its horizontal scrollbar - fits on screen at once
+   once the reader has scrolled the table into view. A fixed 600px does not
+   have that property on a laptop in a video call.
+
+   WHAT THIS DELIBERATELY DOES NOT DO is trap the page. `overscroll-behavior`
+   is set on the X AXIS ONLY: a horizontal flick that runs off the end of the
+   table stops there instead of being handed to the browser as a back-gesture,
+   which is a real hazard on a precision trackpad over a table this wide.
+   Vertical overscroll is left at `auto` on purpose, so a wheel that reaches
+   the last row carries on scrolling the page, exactly as it does over any
+   other part of it. A table that swallowed the page's vertical scroll would
+   be a worse defect than the one being fixed here. #}
+<style>
+  /* The scrollport. `overflow: auto` rather than Tabler's `overflow-x: auto`
+     alone: the computed value of the other axis was already `auto` (a box
+     that scrolls on one axis cannot be `visible` on the other), so this
+     changes nothing by itself - it is written out so that the pair reads as
+     one decision next to the max-height that finally makes it mean
+     something.
+
+     `max(70vh, 16rem)`: 70vh keeps the box inside the viewport, and the 16rem
+     floor keeps roughly five rows and a scrollbar usable on a short landscape
+     phone, where 70vh is 250px or less. The two disagree only below a 366px
+     viewport, and the floor only outgrows the viewport below 257px of it -
+     measured at 1280x240, port 256 against a 240px viewport, and correct at
+     every height from 300px up. A browser window shorter than one dialog is
+     not a case worth a third term in the expression.
+
+     A table shorter than the clamp is untouched - `max-height` is a ceiling,
+     not a height - so /admin/metric and /admin/formula still end where their
+     last row ends and grow no scrollbar they did not need. */
+  .table-responsive {
+    max-height: max(70vh, 16rem);
+    overflow: auto;
+    overscroll-behavior-x: contain;
+  }
+
+  /* The header row, pinned to the top of the scrollport. `上下` as well as
+     `左右` in the report: at row 60 of 100 the column headings are gone and
+     the reader is looking at nine unlabelled columns of numbers.
+
+     Three things this needs, and two of them are only needed because the
+     table is `border-collapse: collapse`:
+
+     - An opaque ground. `<th>` already computes to #f9fafb here, which is
+       Tabler's own thead colour measured on this panel rather than a colour
+       chosen for it; restating it is what stops rows showing through the
+       pinned row as they pass under it, because a sticky cell that inherits
+       `transparent` paints nothing.
+     - `box-shadow` and not `border-bottom`. Under `border-collapse: collapse`
+       a cell's borders belong to the table's border grid, not to the cell, so
+       they do not travel with a sticky cell and the header loses its rule the
+       moment it lifts. The inset shadow is drawn by the cell itself and does.
+     - `z-index`, so the pinned row paints over the rows sliding beneath it.
+       `position: sticky` alone does not raise a cell above later content. */
+  .table-responsive > table > thead > tr > th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f9fafb;
+    box-shadow: inset 0 -1px 0 #e5e7eb;
+  }
+
+  /* THE FIRST COLUMN IS DELIBERATELY NOT PINNED, and this paragraph is the
+     decision rather than an omission.
+
+     The case for pinning is real: sqladmin puts the row's checkbox in column
+     one and its view/edit/delete icons in column two, so scrolling right to
+     read `data_quality` carries the row's only actions off the left edge.
+
+     Two measurements decided against it. The first is what it costs. Those
+     two cells are 52px and 96px on this panel, measured - 148px, permanently,
+     off the top of a scrollport that is 682px wide at a 1280px viewport
+     (22%), 426px at 1024 (35%) and 194px at 768 before the sidebar rule below
+     (76%, leaving 46px of readable table). The defect being fixed is that
+     there is not enough horizontal room; spending a fifth to three quarters
+     of it on two columns of controls fixes a symptom of that by making the
+     cause worse.
+
+     The second is how it fails. Stacked sticky columns need the second one
+     offset by the first one's width - `left: 52px` - and CSS cannot measure
+     that; 52px is what Tabler's `.w-1` plus its cell padding happen to
+     produce today. Declaring a width on column one instead only moves the
+     problem: a table cell may not be laid out narrower than its content, so
+     any future change that makes the checkbox cell wider than the declared
+     offset puts column two ON TOP of column one. The failure mode is a
+     pinned cell silently covering data, arriving from a Tabler or sqladmin
+     upgrade that nothing in this repository tests.
+
+     What the clamp gives instead: the row stays at the same vertical position
+     while the table scrolls sideways, so `Home`, `shift+wheel` or a flick
+     brings the actions back with the wanted row still under the pointer. That
+     is a cheap round trip, and it was not cheap before this change only
+     because there was no way to see that the table scrolled at all.
+
+     To revisit it, the thing that would have to be true is a first column
+     whose width cannot be exceeded by its content - then the offset is
+     declared rather than observed, and only the width tax is left to argue
+     about. */
+
+  /* DISCOVERABILITY, which is the actual complaint and is not the same
+     property as scrollability.
+
+     A scrollbar is the platform's answer and on Windows - where this was
+     reported from - it is a good one: measured in headed Chromium at
+     1280x900, the clamped box reserves 15px of classic scrollbar on each
+     axis, permanently, in the layout. But that is the platform's default and
+     not something CSS achieved: the same 15px is measured with these rules,
+     without them, and with `::-webkit-scrollbar` forced. On macOS, and
+     anywhere set to "show scroll bars only when scrolling", the bar is an
+     overlay that appears on interaction - so the reader who has not yet
+     guessed that the table scrolls is shown nothing that says it does. That
+     reader is exactly who this defect was reported by.
+
+     So the affordance is drawn by the table itself. Four background layers,
+     which is Roman Komarov's scroll-shadow technique: two white COVERS at the
+     left and right edges attached `local`, so they travel with the content
+     and slide away from the edge as it scrolls, and two Kale SHADOWS attached
+     `scroll`, so they stay pinned to the visible box. At rest the left cover
+     hides the left shadow and the right shadow is uncovered: a soft dark edge
+     that says the content continues. Scroll to the end and the right cover
+     arrives over the right shadow while the left one is revealed. It costs no
+     layout, needs no JavaScript, and - unlike a scrollbar - it is the same on
+     every platform.
+
+     #fff for the covers because that is the card's own ground, measured;
+     Kale (#003223) at 0.22 for the shadows, written as rgba because this
+     stylesheet is inlined into a Tabler page, which does not load brand.css
+     and so has no `--kale` to read.
+
+     The shadows show THROUGH the rows rather than behind them: Tabler leaves
+     `<td>` at `transparent` (measured), so the container's own background is
+     what the reader sees at the row's edges. Under the pinned header row they
+     do not show, because that row has an opaque ground of its own - which is
+     the right result, since the header is the one row whose right-hand end is
+     never the interesting part. */
+  .table-responsive {
+    background:
+      linear-gradient(to right, #fff 40%, rgba(255, 255, 255, 0)) 0 0 / 2.5rem 100% no-repeat local,
+      linear-gradient(to left, #fff 40%, rgba(255, 255, 255, 0)) 100% 0 / 2.5rem 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0, 50, 35, 0.22), rgba(0, 50, 35, 0)) 0 0 / 0.9rem 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0, 50, 35, 0.22), rgba(0, 50, 35, 0)) 100% 0 / 0.9rem 100% no-repeat scroll;
+  }
+
+  /* The other half of "the table cannot be read", and it is not the table's
+     fault. sqladmin lays the list card and the filter sidebar out as a flex
+     ROW that never wraps, and sqladmin's own main.css pins the sidebar at
+     `width: 300px; flex-shrink: 0`. The card takes what is left, and what is
+     left runs out: measured in Chromium on /admin/factor-upstream, the
+     scrollport was 682px at a 1280-wide viewport, 426px at 1024, 194px at 768
+     and 56px at 390.
+
+     A 56px scrollport is not a component anybody can scroll; it is a hole. So
+     below Tabler's `md` breakpoint the row is allowed to wrap and the sidebar
+     drops underneath at full width - which is what its own `col-md-3` says
+     should happen and what main.css's fixed width prevents. Measured after:
+     494px at 768 and 356px at 390.
+
+     WHAT THIS DOES NOT FIX, said here because it is the nearest thing to it
+     and would otherwise be assumed. At 390px the page still scrolls sideways
+     on four screens, and the table is not why: the culprits are sqladmin's
+     own card FOOTER - the pagination strip, seven page links plus "Showing 1
+     to 100 of 776 items" plus a "100 / Page" menu, laid out in a flex row
+     that does not wrap, measured 522px wide in a 390px viewport - and, on
+     /admin/comparison-scenario-line, the card HEADER's "+ New Comparison
+     scenario line" button at 252px. Both are outside the scrollport and
+     unrelated to the clipping this file fixes; both are still there. */
+  @media (max-width: 991.98px) {
+    .container-fluid .d-flex.min-w-0 {
+      flex-wrap: wrap;
+    }
+    .container-fluid .filter-sidebar-col {
+      width: 100%;
+      margin-top: 1rem;
+    }
+  }
+</style>

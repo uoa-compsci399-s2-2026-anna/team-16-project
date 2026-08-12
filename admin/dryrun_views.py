@@ -33,6 +33,7 @@ from starlette.requests import Request
 from starlette.responses import Response
 from starlette.templating import Jinja2Templates
 
+from admin.auth import SESSION_KEY
 from admin.calc_client import CalculateRefused, CalculateUnavailable
 from admin.comparison_models import ComparisonScenario
 from admin.factor_models import FactorSet, FactorSetStatus
@@ -145,7 +146,7 @@ class DryRunView(BaseView):
         try:
             result = runtime.calc_client.dry_run(
                 body,
-                cookies=dict(request.cookies),
+                actor=request.session.get(SESSION_KEY, "unknown"),
                 factor_set_version=factor_set_version,
             )
         except CalculateRefused as exc:
@@ -238,7 +239,7 @@ def _metrics_of(result: dict | None) -> dict:
     return metrics if isinstance(metrics, dict) else {}
 
 
-def _run_call(calc_client, body: dict, cookies: dict, factor_set_version: str) -> tuple:
+def _run_call(calc_client, body: dict, actor: str, factor_set_version: str) -> tuple:
     """Run one dry run; turn a refusal into data for that call's own row.
 
     ``CalculateRefused`` is caught here because it is a per-row condition -
@@ -255,7 +256,7 @@ def _run_call(calc_client, body: dict, cookies: dict, factor_set_version: str) -
     """
     try:
         result = calc_client.dry_run(
-            body, cookies=cookies, factor_set_version=factor_set_version
+            body, actor=actor, factor_set_version=factor_set_version
         )
         return result, None
     except CalculateRefused as exc:
@@ -399,15 +400,15 @@ class CompareView(BaseView):
                 (scenario, _scenario_request_body(scenario)) for scenario in scenarios
             ]
 
-        cookies = dict(request.cookies)
+        actor = request.session.get(SESSION_KEY, "unknown")
         rows = []
         try:
             for scenario, body in bodies:
                 published_result, published_error = _run_call(
-                    runtime.calc_client, body, cookies, published.version_label
+                    runtime.calc_client, body, actor, published.version_label
                 )
                 draft_result, draft_error = _run_call(
-                    runtime.calc_client, body, cookies, target.version_label
+                    runtime.calc_client, body, actor, target.version_label
                 )
                 rows.append({
                     "scenario": scenario,

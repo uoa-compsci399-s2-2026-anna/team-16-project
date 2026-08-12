@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.17 draft)"
+date: "2026-08-12 (v1.21 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,36 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.21 — 2026-08-12 (raised by the repository owner; affects B, C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§6.1 returns the vocabulary the published factor set covers, not every active row.** §2.1's three vocabulary tables carry no `factor_set_id` — a factor set brings factors, not a vocabulary — so publishing one could not narrow the calculator's form, and a user who typed a quantity against a destination the published set has no factors for got **a silent zero, with nothing on the form to say which it was.** That was invisible while exactly one set of taxonomy rows existed and became impossible to miss when v1.19's ReFED fixture put a second, disjoint vocabulary in the same tables: 26 destinations offered, 12 priced. **It was never only ReFED's** — `MOCK-v0` prices 6 destinations of 14 and 3 sectors of 6, so most of the New Zealand form is a silent zero today and this is what stops it claiming otherwise. Covered means: a **destination** with a `factor_downstream` row (including the `food_category_id IS NULL` row, which is how the waste levy is held) or a non-NULL `factor_upstream.destination_id` (the O-7 column); a **sector** in `factor_upstream.sector_id`; a **food category** in `factor_upstream.food_category_id` or a non-NULL `factor_downstream.food_category_id`; a **destination group** with at least one visible destination; a **unit preset** whose `food_category` is null or visible. The rows come back when real factors are loaded, with no code change | §5.1, §6.1 |
+| 2 | **Two rows are never filtered, and neither is an exception so much as a row the rule cannot speak about.** `prevention`'s factors are zero **by construction** — that is the whole of what makes it a 100% offset and keeps the two scenarios mass-conserving — so "has no factor row" is not evidence a set does not support it. It is held out by name (`db.types.PREVENTION_CODE`) and its group with it. It is covered anyway in every set the lifecycle will publish, because `publish_factor_set` refuses a set whose general upstream rows have no matching `prevention` row at zero — **but that is a coincidence of two other rules rather than a guarantee**, and the improvement panel is unusable the day it stops holding. A second vocabulary's own prevention row (`refed_prevention`) is covered by the ordinary rule and needs no special case. The **`is_standard_mix` food category** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry it and §6.2 resolves a null `food_category` to it, so filtering it out would leave a caller with no legal way to say "composition unknown" while the server went on resolving null to a code it was never offered. §2.1's "exactly one" invariant is still counted over the **active** rows, not the narrowed list — counting the narrowed list answers 500 on the first request the day a set the standard mix is not in gets published | §2.1, §5.1, §6.1 |
+| 3 | **`metric` and `get_taxonomy_for_bundle` are deliberately not narrowed.** Metrics are the *output* vocabulary — nothing a user types is a metric, so an uncovered one cannot become a silent zero; it would be a zero column, visible on its own terms (§10.3 already rules metric rows global). `get_taxonomy_for_bundle` is a different function feeding the engine's dictionary of legal codes and §6.3's factor export, and it stays a **superset on purpose**: narrowing it would turn every code §6.1 no longer offers from a zero into an `UNKNOWN_CODE` 400, including for a browser tab holding a taxonomy fetched before the last publish. Reading a historical submission is unaffected either way — §5.4 selects `destination.code` and `.name` from the tables it joins and never consults §6.1's snapshot | §5.1, §5.4, §6.3 |
+| 4 | **The filter is one repository function's and must not reach `sqladmin`.** Staff have to see and edit every taxonomy row whatever is published — a row cannot be given its first factor if the panel has stopped listing it. `get_taxonomy` has exactly one caller, `GET /api/v1/taxonomy`; the panel queries the models directly through `admin/modelviews.py`. `tests/db/test_taxonomy_coverage.py` asserts both halves: an ordinary model query still returns every row (which fails if this is ever implemented as a `with_loader_criteria` or a query event), and no file under `admin/` names `get_taxonomy` | §8.1 |
+
+### v1.20 — 2026-08-12 (raised by the repository owner; affects C and D)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§7.3a: the results export carries the results.** `downloadResults` produced `food-waste-impact-results.txt` containing the total mass, each entry, its destinations and quantities, the factor version and the placeholder notice — and **not one output figure.** No greenhouse gas, no methane, no water, no cost. The file name says "results" and the file is the one somebody attaches to an email, so this is not a missing nicety: it is a deliverable that names itself after the thing it omits. It now carries the impact summary (every metric in `totals.current.metrics` except `mass`, at that metric's own `display_precision`, labelled with the `unit` that travelled with the figure), the tangible equivalents as the engine worded them, each entry's own metric totals, each destination's `by_destination[].value`, and — when a comparison was run — `totals.net_benefit` per metric. `mass` stays out of the impact list for the reason `summaryCards` keeps it out and is the "Total food waste" line instead. Every figure is read from the response; nothing is summed, differenced or re-scaled on the way to the file (§7.6.1) | §7.3a, §7.6.2 |
+| 2 | **New export `buildResultsReport(state)`, and `downloadResults` becomes the two lines that touch the browser.** The report is worth asserting on and a `Blob` is not. `tests/web/test_results_export.py` is the first test in this repository that executes a line of `web/js/`: it runs the real module under Node against `tests/fixtures/calculate_response.json` and asserts the figures — `4,449.0 kg CO2e`, `3,468.0` against landfill — appear as whole anchored lines. Node is the runner only and does not enter the stack (`architecture.md` §3): there is still no build step, no `package.json` and nothing for a browser to load | §7.3a |
+
+### v1.19 — 2026-08-12 (adds an external benchmark; affects A, and reserves a code prefix for everyone)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New §10.3: a ReFED comparison fixture, and the `refed_` taxonomy code prefix is reserved.** Every correctness check this project has descends from this document, so none of them can catch a mistake made *in* this document. ReFED's Impact Calculator is the product this one is modelled on and it publishes its conversion factors; `tests/benchmark/refed/` runs one scenario through both and agrees to the limit of our own `DECIMAL(20,10)` storage. Because taxonomy rows are global and carry no `factor_set_id` (§2.1), the fixture's sectors, food types and destinations are additional rows in the shared tables rather than a private vocabulary — so **`refed_` is reserved as a code prefix and no New Zealand taxonomy row may take it.** The fixture is loaded as a `draft` and is never published: it is United States data, `is_mock` is true on it, and the placeholder banner is correct while it is selected | §2.1, §10.3 |
+| 2 | **§10.3 records that our factor tables cannot hold ReFED's shape one-for-one, and what that costs.** `factor_upstream` is keyed `(sector, food_category, destination)` and matches ReFED's key exactly; `factor_downstream` is keyed `(destination, food_category)` and has no sector column, while ReFED's downstream factors differ by sector in 82 of their 102 (food type, destination) groups. This is not a defect — no New Zealand requirement asks for a sector-varying downstream factor — but it is the reason the fixture's food category codes carry a supply chain stage, and it is the first thing to check if a downstream factor ever does need to vary by sector | §2.2, §10.3 |
+
+### v1.18 — 2026-08-12 (closes open item O-9; affects B and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New request header `X-Staff-Proof`, and §6.2's dry-run row now names a mechanism.** The row has required "an authenticated staff session" since v1.1 and never said how the API establishes one. Nothing did: `api.app:create_app`'s `staff_authenticator` was supplied only by `tests/api/test_api.py` and `tests/api/test_api_entries.py`, so **every dry run in every deployed system answered `UNAUTHORIZED`** and §8.2 was inert — `/admin/try` rendered the refusal inside a 200 page and looked like a working screen. The panel now mints a short-lived signed proof (`db/staff_proof.py`, in `db/` because `api/` may not import `admin/` — v1.3's ruling on `db/detection.py`) and the API verifies it as its **default** authenticator, `staff_authenticator=None` having been changed from "no authenticator" to "use the default", the same correction `blocklist_check` already carries. The rejected alternative was letting the API read the panel's session cookie; see the note under §6.2 for why sharing one origin with `/admin` makes that a wider grant than it looks | §6.2, §8.2 |
+| 2 | **The panel no longer forwards the browser's cookies to the API.** `admin/calc_client.py` sent `dict(request.cookies)` on every dry run in the belief that the API authenticated with them. It does not and must not, so the forwarding proved nothing and its only effect was to hand a live staff session cookie to a second service. `CalculateClient.dry_run`'s `cookies` parameter is replaced by `actor` | §8.2 |
 
 ### v1.17 — 2026-08-12 (from merging `main` back into this line, affects nobody's code)
 
@@ -1255,9 +1285,12 @@ Lives in `db/repository.py`. **The only code in the system that touches the data
 
 ```python
 def get_taxonomy(session) -> TaxonomySnapshot:
-    """All active taxonomy rows, sorted by sort_order.
-    Serialised directly by GET /api/v1/taxonomy."""
+    """The active taxonomy rows the PUBLISHED factor set covers, sorted by
+    sort_order. Serialised directly by GET /api/v1/taxonomy. See §6.1 for
+    what "covers" means and for the two rows that are never filtered."""
 ```
+
+> **This returned every active row until v1.21, and that is what made the calculator offer destinations the published set prices at nothing.** The rule and its two protected rows are stated once, under §6.1. `get_taxonomy_for_bundle` — a different function, feeding the engine and §6.3 — is **not** narrowed and must stay a superset.
 
 ```python
 @dataclass(frozen=True)
@@ -1549,6 +1582,29 @@ Base path `/api/v1`. All responses are `application/json; charset=utf-8`.
 
 Called once on page load to build every dropdown and input row.
 
+**It returns the vocabulary the published factor set covers, not every active row (v1.21).**
+
+> **Why this is not a filter on top of the taxonomy but the definition of what the taxonomy endpoint is for.** §2.1's `sector`, `food_category` and `destination` are global tables with no `factor_set_id`: a factor set brings factors, not a vocabulary. So until v1.21 publishing a set could not narrow the form, and a user who typed a quantity against a destination the published set has no factors for got **a silent zero — with nothing on the form to distinguish it from an error, or from a genuine zero.** The form is a promise that the calculator can price what it offers.
+>
+> **It was visible first with a second vocabulary and it was never only that vocabulary's.** §10.3's ReFED fixture puts `refed_`-prefixed rows in the same tables; with it loaded the endpoint offered 26 destinations against a set that prices 12, and every New Zealand destination in that list was dead. But `MOCK-v0` prices 6 destinations of 14 and 3 sectors of 6, so most of the New Zealand form is a silent zero **today**, and this rule is what stops the deliverable claiming otherwise. The rows return the moment the client's real factors are loaded — one import, no code change, which is Decision 2 doing its job.
+
+| Row | Covered when |
+| --- | --- |
+| `destination` | it has at least one `factor_downstream` row in the published set — **including the `food_category_id IS NULL` row**, which §2.2 defines as "every food category" and which is how a per-tonne charge like the waste levy is held — **or** it appears as a non-NULL `factor_upstream.destination_id` (the O-7 column, v1.8) |
+| `sector` | it appears as `factor_upstream.sector_id` |
+| `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
+| `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
+| `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category |
+| `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
+
+> **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
+
+> **`prevention` and the `is_standard_mix` food category are never filtered out.** `prevention`'s factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. It is held out by name (`db.types.PREVENTION_CODE`) and its group is kept with it. It happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching `prevention` row at zero — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding. A second vocabulary's own prevention (`refed_prevention`) is covered by the ordinary rule; both may appear at once, which is harmless, because a prevention destination is a zero-factor offset under any set and §6.2 refuses `prevention` in a *current* scenario outright.
+>
+> The **standard mix** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry `is_standard_mix` and §6.2 resolves a null `food_category` to it, so filtering it out would leave a consumer with no legal way to say "composition unknown" while the server went on resolving null to a code the consumer was never offered. §2.1's "exactly one active row" invariant is still counted over the **active** rows rather than the narrowed ones.
+
+> **A consumer must not assume this list is stable across a publish.** The front end fetches it once per page load and holds it in `state.taxonomy` (§7.2) — it caches nothing across loads, and nothing here may be cached in `localStorage`, because a taxonomy fetched before a publish is a form offering codes the current set does not price, which is the defect this rule closes arriving by another door.
+
 **200 response**
 
 ```json
@@ -1675,7 +1731,10 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 | Header | Purpose |
 | --- | --- |
-| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written — the three tables of §2.3 are untouched, not two of them. No token is minted, and the response carries **`"token": null`** — the key is present and null, never omitted, per §6.3's rule for the same choice. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
+| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written — the three tables of §2.3 are untouched, not two of them. No token is minted, and the response carries **`"token": null`** — the key is present and null, never omitted, per §6.3's rule for the same choice. **Requires an authenticated staff session** (§8.4), proved by `X-Staff-Proof` below; a request carrying this header without a valid proof is rejected with `UNAUTHORIZED` (401). |
+| `X-Staff-Proof: <token>` | **How the API is satisfied that the caller is staff.** A value minted by the admin panel with `db.staff_proof.mint_staff_proof` and verified with `verify_staff_proof`: `itsdangerous.TimestampSigner` over `{"sub": "<username>"}`, signed under the deployment's single `SECRET_KEY` with a **pinned salt**, valid for `PROOF_TTL_SECONDS` (60). Meaningful **only** alongside `X-Dry-Run: true` — on any other request it is ignored and grants nothing. Sent server-to-server by `admin/calc_client.py`; **never set on a browser and never a cookie.** |
+
+> **Why a proof and not the panel's session cookie (v1.18, open item O-9).** Until v1.18 this row required a staff session and named no mechanism, and `api.app:create_app`'s `staff_authenticator` was supplied by nothing but two test files — so every dry run in every real deployment answered `UNAUTHORIZED` while `/admin/try` rendered that refusal inside a 200 page. The cookie was the obvious fix and was rejected: `/admin` and `/api/v1/` are one origin behind nginx, so a session cookie the API accepted would also be sent there by the browser, making the API a second place a staff session is *established* and putting the arbitrary-`bundle` path one `fetch` away from any staff member's tab. A proof cannot be minted without `SECRET_KEY`, which no browser holds. The salt is pinned to a value distinct from the one `SessionMiddleware` signs with, so **a stolen session cookie cannot be replayed as a proof, and a proof cannot be replayed as a session cookie**, though both are signed under the one shared secret. The API performs no `staff` lookup and holds no `staff` model; the cost of that is a 60-second window in which a just-deactivated account's proof is still accepted, for a calculation that persists nothing. `docs/architecture.md` §10 carries the full ruling and the three rejected alternatives.
 
 > `submission_entry` is named explicitly because it was added after this row was written and an implementer working from the older wording writes orphan entry rows on every staff dry run. Staff run dozens of calculations while tuning one formula, and `submission_entry` is what §5.4 aggregates `by_sector` and `by_food_category` over — so those orphans would land squarely in the public statistics this header exists to protect, while `total_calculations` stayed flat and hid it.
 
@@ -2153,11 +2212,27 @@ Module-private and worth knowing: `validateCurrentStep()` returns a display stri
  *  @returns {string} HTML */
 export function renderResults(state);
 
-/** Builds a plain-text report and triggers a Blob download as
- *  'food-waste-impact-results.txt'. Carries the placeholder notice only when
- *  factor_set.is_mock, and always the factor version (§7.6.2). */
+/** The plain-text report, returned rather than downloaded.
+ *
+ *  Carries, in this order: the total mass in kg and tonnes; an impact summary
+ *  holding every metric in totals.current.metrics except `mass`, each at its
+ *  own display_precision and labelled with the unit that travelled with the
+ *  figure; the tangible equivalents as `label` — the sentence the engine
+ *  interpolated — copied verbatim; the improvement comparison read from
+ *  totals.net_benefit, when one was run; then per entry, the inputs the user
+ *  typed, that entry's own metric totals and each destination's
+ *  by_destination[].value; then the factor version, the placeholder notice
+ *  when and only when factor_set.is_mock (§7.6.2), and the percentage-waste
+ *  limitation. No figure is summed, differenced or re-scaled here (§7.6.1).
+ *  @returns {string} */
+export function buildResultsReport(state);
+
+/** Wraps buildResultsReport in a Blob and triggers the download as
+ *  'food-waste-impact-results.txt'. */
 export function downloadResults(state);
 ```
+
+> **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
 
 > **The client-side aggregation layer is gone.** This module summed engine-computed metric totals, equivalence values and destination rows across entries; the two largest numbers on the page were numbers the engine never produced. It now reads `totals` and `net_benefit` from §6.2, and the destination tab is rendered per entry per the ruling there. `aggregateResults` and `differenceData` no longer exist.
 >
@@ -2939,3 +3014,23 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
 
 `upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
+
+## 10.3 The ReFED Comparison Fixture (owner: A)
+
+**Everything above descends from this document.** The golden cases, the fixtures, the engine and the contract were written by the same people from the same source, so they share one ancestor: together they prove the engine does what §3 and §4 say, and they cannot prove that §3 and §4 are right. `tests/benchmark/refed/` is the one check here whose expected answer nobody on this team produced.
+
+It runs one scenario through two implementations — ours, and ReFED's Impact Calculator, the product this calculator is modelled on. Full instructions, provenance and the unit conversions are in **`docs/refed-comparison.md`**; what belongs in the contract is only what constrains other people's code.
+
+| Rule | Why |
+| --- | --- |
+| **`refed_` is a reserved taxonomy code prefix.** No `sector`, `food_category` or `destination` row that is part of the New Zealand product may take it | Taxonomy rows are global — §2.1's tables carry no `factor_set_id`, and there is no way to give a factor set a private vocabulary. The fixture's 1 sector, 39 food categories and 12 destinations are therefore rows in the same tables the product uses. The prefix is the whole of what keeps the two vocabularies distinguishable, in the database and in a dropdown |
+| **The fixture is loaded as a `draft` and must never be published** | It is United States data. `is_mock` is `true` on it and the placeholder banner is correct while it is selected (§6.2). Publishing it would archive the live New Zealand set — that is what `publish_factor_set` is for and it is not what this fixture is for. It is reached through §6.2.1's `dry_run.factor_set_version`, which persists nothing |
+| **No metric rows are added for it** | `metric` is global and the engine iterates every active row (§4.1). An added metric would appear, at zero, in every New Zealand result. This is why ReFED's meals-recovered figure is not represented and cannot be compared |
+
+> **Our two factor tables cannot hold ReFED's shape one-for-one.** `factor_upstream` is keyed `(sector, food_category, destination)` and matches ReFED's key exactly. `factor_downstream` is keyed `(destination, food_category)` and has no sector column — and ReFED's downstream factors genuinely differ by sector in **82 of their 102** (food type, destination) groups.
+>
+> That is not a defect in §2.2. No New Zealand requirement asks for a downstream factor that varies by supply chain stage, and adding a sector column to `factor_downstream` to serve a test fixture would be the tail wagging the dog. The fixture absorbs the difference instead, by making its `food_category` codes carry the stage — `refed_retail_produce`, `refed_farm_dry_goods` — which is lossless: no two ReFED cells are merged and no number changes.
+>
+> **Record it here because it is the first thing to check if a downstream factor ever does need to vary by sector.** If the client's data arrives with, say, a different landfill emission factor for kerbside collection than for a commercial contract, this is the schema change that implies, and this note is where the shape of the problem is already written down.
+
+The tolerance the comparison asserts is **derived, not chosen**: `value_per_kg` is `DECIMAL(20,10)` (§2.2), so each factor is rounded at the tenth decimal place and a line of `qty` kilograms carries at most `1e-10 × qty` of error in the metric total. That is invisible for water and dominates for methane. **If that tolerance ever has to be widened, the storage precision has changed and this document is what should have changed first.**

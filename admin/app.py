@@ -186,7 +186,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         session_factory=session_factory,
         throttle=app.state.throttle,
         settings=settings,
-        calc_client=HttpCalculateClient(base_url=settings.api_base_url),
+        # `secret_key` is what makes a dry run succeed against a real API
+        # (open item O-9). The panel signs a short-lived proof with it; the API
+        # verifies that proof with the same value, which the deployment
+        # guarantees is one value by mounting one `secret` volume into both
+        # services. A mismatch here is not a subtle bug - every dry run 401s.
+        calc_client=HttpCalculateClient(
+            base_url=settings.api_base_url, secret_key=settings.secret_key
+        ),
     )
 
     # Registered first, and that is the whole of why it is here rather than

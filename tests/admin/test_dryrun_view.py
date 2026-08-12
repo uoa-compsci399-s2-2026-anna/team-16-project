@@ -24,7 +24,7 @@ def session(_committed_session):
 @dataclass
 class _Call:
     body: dict
-    cookies: dict
+    actor: str
     factor_set_version: str | None
 
 
@@ -49,10 +49,10 @@ class FakeCalculateClient:
         #: check one failing scenario does not take the others with it.
         self.refuse_on_call: int | None = None
 
-    def dry_run(self, request_body: dict, *, cookies: dict,
+    def dry_run(self, request_body: dict, *, actor: str,
                 factor_set_version: str | None) -> dict:
         index = len(self.calls)
-        self.calls.append(_Call(request_body, cookies, factor_set_version))
+        self.calls.append(_Call(request_body, actor, factor_set_version))
         if self.unavailable:
             raise CalculateUnavailable("the calculation service is not reachable")
         if self.refuse is not None or self.refuse_on_call == index:
@@ -178,6 +178,36 @@ async def test_a_submitted_scenario_reaches_the_client_with_the_header(
     # The blank food-category option must send null, not "" — the API
     # treats null as standard_mix (§6.2) but has no rule for an empty string.
     assert call.body["entries"][0]["food_category"] is None
+
+
+async def test_the_call_vouches_for_the_signed_in_staff_member(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """The `actor` the client is given must be *this* session's username.
+
+    `admin/calc_client.py` signs a staff proof over whatever it is handed
+    (`db/staff_proof.py`, open item O-9), so this value is the panel's whole
+    assertion about who is asking. A view that passed a constant, or read the
+    wrong session key, would still produce a proof the API accepts - the
+    signature would be valid and the name would be wrong - and every test that
+    only checks the call happened would stay green.
+
+    Asserted against `admin_client.staff.username`, the account the fixture
+    actually logged in as, rather than against any literal.
+    """
+    session.commit()
+
+    await admin_client.post("/admin/try", data={
+        "factor_set": one_draft.version_label,
+        "sector": taxonomy_for_factors.sector.code,
+        "food_category": "",
+        "gwp_horizon": "100",
+        "destination": taxonomy_for_factors.destination.code,
+        "qty_kg": "1200.000",
+    })
+
+    assert fake_calc_client.calls, "the view never called the calculate client"
+    assert fake_calc_client.calls[0].actor == admin_client.staff.username
 
 
 async def test_a_non_numeric_gwp_horizon_falls_back_to_100(

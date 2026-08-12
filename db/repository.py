@@ -170,8 +170,112 @@ def _published(session: Session) -> FactorSet:
     return session.get(FactorSet, get_published_factor_set_id(session))
 
 
+def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
+    """The taxonomy row ids one factor set can actually price. §5.1.
+
+    "Covered" is defined from the factor tables and from nothing else:
+
+    * a **destination** has at least one ``factor_downstream`` row -- including
+      the ``food_category_id IS NULL`` row, which §2.2 defines as "every food
+      category" and which is how a per-tonne charge like the waste levy is
+      held -- **or** appears as a non-NULL ``factor_upstream.destination_id``;
+    * a **sector** appears as ``factor_upstream.sector_id``;
+    * a **food category** appears as ``factor_upstream.food_category_id`` or as
+      a non-NULL ``factor_downstream.food_category_id``.
+
+    ``factor_upstream.destination_id`` is read as well as
+    ``factor_downstream``'s because O-7 (v1.8) made it nullable and NULL means
+    "every destination". The two published shapes need both halves: a New
+    Zealand set carries one general row per ``(sector, food_category, metric)``
+    plus a ``prevention`` override, so the column is where its only
+    per-destination information lives; the ReFED fixture carries an explicit
+    row per destination, so the column is where nearly all of its information
+    lives. Reading only one of the two tables loses one of the two shapes, and
+    both are in the deployed database today.
+    """
+    upstream = session.execute(
+        select(
+            FactorUpstream.sector_id,
+            FactorUpstream.food_category_id,
+            FactorUpstream.destination_id,
+        )
+        .where(FactorUpstream.factor_set_id == factor_set_id)
+        .distinct()
+    ).all()
+    downstream = session.execute(
+        select(FactorDownstream.destination_id, FactorDownstream.food_category_id)
+        .where(FactorDownstream.factor_set_id == factor_set_id)
+        .distinct()
+    ).all()
+    sectors = {sector_id for sector_id, _, _ in upstream}
+    foods = {food_id for _, food_id, _ in upstream}
+    destinations = {dest_id for _, _, dest_id in upstream if dest_id is not None}
+    for dest_id, food_id in downstream:
+        destinations.add(dest_id)
+        if food_id is not None:
+            foods.add(food_id)
+    return {"sectors": sectors, "food_categories": foods, "destinations": destinations}
+
+
 def get_taxonomy(session: Session) -> TaxonomySnapshot:
+    """The active taxonomy **narrowed to what the published set covers**. §5.1, §6.1.
+
+    Until v1.21 this returned every active row. §2.1's three vocabulary tables
+    carry no ``factor_set_id`` -- a factor set brings factors, not a vocabulary
+    -- so publishing one could not narrow the form, and the calculator offered
+    destinations the published set prices at nothing. **A user who types a
+    quantity against one of those gets a silent zero and the form gives no
+    sign.** That was invisible while exactly one set of taxonomy rows existed
+    and became impossible to miss when §10.3's ReFED fixture added a second,
+    disjoint vocabulary to the same tables: 26 destinations offered, 12 of them
+    priced. It was never only ReFED's -- ``MOCK-v0`` prices 6 destinations of
+    14 and 3 sectors of 6, so most of the New Zealand form is already a silent
+    zero, and this is what makes the deliverable stop claiming otherwise. The
+    rows come back the moment real factors are loaded, with no code change,
+    which is Decision 2 doing its job.
+
+    **Two rows are kept whatever the factor tables say, and neither is an
+    exception to the rule so much as a row the rule cannot speak about.**
+
+    ``prevention``'s factors are zero *by construction* -- that is the whole of
+    what makes it a 100% offset and what keeps the two scenarios
+    mass-conserving (§6.2). An absence of factor rows is therefore not evidence
+    that a set does not support it, which is the inference this function draws
+    for every other row, so it is held out of the inference by name. In the
+    deployed database it is covered anyway, because ``publish_factor_set``
+    refuses a set whose general upstream rows have no matching ``prevention``
+    row at zero -- but that is a coincidence of two other rules rather than a
+    guarantee, and the improvement panel is unusable the day it stops holding.
+    The ReFED set's own ``refed_prevention`` carries 156 rows in each factor
+    table and needs no special case; both may appear at once and that is
+    harmless, since a prevention destination is a zero-factor offset under any
+    set and §6.2 refuses ``prevention`` in a *current* scenario outright.
+
+    The **standard mix** is kept for the structural half of the same reason:
+    §2.1 requires exactly one active row to carry ``is_standard_mix`` and §6.2
+    resolves a null ``food_category`` to it, so filtering it out would leave a
+    consumer with no legal way to say "composition unknown" while the server
+    went on resolving null to a code it was never offered.
+
+    **``metric`` is not filtered.** Metrics are the output vocabulary; nothing
+    a user types is a metric, so an uncovered one cannot become the silent zero
+    this function exists to remove -- it would be a zero column, visible on its
+    own terms. §10.3 already rules metric rows global.
+
+    **``get_taxonomy_for_bundle`` is not filtered either, and must not be.** It
+    is a different function feeding the engine's dictionary of legal codes and
+    §6.3's factor export. Narrowing it would turn every code this endpoint no
+    longer offers from a zero into an ``UNKNOWN_CODE`` 400 -- including for a
+    browser tab holding a taxonomy fetched before the last publish. The bundle
+    stays a superset deliberately.
+
+    Reading a historical submission is unaffected: ``get_public_stats`` selects
+    ``destination.code`` and ``.name`` from the tables it joins and never
+    consults this snapshot, so a submission recorded under a set that is now
+    archived still reads back under its own names.
+    """
     published = _published(session)
+    covered = _covered_by(session, published.id)
     groups = session.scalars(
         select(DestinationGroup)
         .where(DestinationGroup.active.is_(True))
@@ -187,6 +291,13 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         .where(FoodCategory.active.is_(True))
         .order_by(FoodCategory.sort_order, FoodCategory.code)
     ).all()
+    #: Still counted over every **active** row, not over the narrowed list. It
+    #: is §2.1's invariant about the table -- "exactly one active row must be
+    #: standard_mix" -- and a published set that happens to price none of the
+    #: food categories does not make the schema wrong. Counting the narrowed
+    #: list would turn this into a 500 on the calculator's first request the
+    #: day someone publishes a set the standard mix is not in, which is the
+    #: state the deployed ReFED set is in right now.
     if sum(1 for row in foods if row.is_standard_mix) != 1:
         raise TaxonomyInvariantError("Exactly one active food category must be standard_mix")
     metrics = session.scalars(
@@ -206,6 +317,32 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         .where(UnitPreset.active.is_(True))
         .order_by(UnitPreset.code)
     ).all()
+
+    # ---- the narrowing, applied once the active rows are in hand ----------
+    sectors = [x for x in sectors if x.id in covered["sectors"]]
+    foods = [
+        x for x in foods
+        if x.id in covered["food_categories"] or x.is_standard_mix
+    ]
+    destinations = [
+        (x, group_code) for x, group_code in destinations
+        if x.id in covered["destinations"] or x.code == PREVENTION_CODE
+    ]
+    #: A group appears iff a destination that survived belongs to it. Derived
+    #: from the surviving rows rather than computed a second time, so
+    #: `destinations[].group` can never name a group this response omits --
+    #: that dangling reference is the one way this filter could break a
+    #: consumer that was reading both lists correctly.
+    visible_groups = {group_code for _, group_code in destinations}
+    groups = [x for x in groups if x.code in visible_groups]
+    #: A preset naming a food category the caller can no longer choose is a
+    #: unit conversion for a row that is not on the form. `food_code` is NULL
+    #: for a preset that applies to every category, and those always stay.
+    visible_foods = {x.code for x in foods}
+    presets = [
+        (x, food_code) for x, food_code in presets
+        if food_code is None or food_code in visible_foods
+    ]
     return TaxonomySnapshot(
         sectors=tuple(SectorSpec(x.code, x.name, x.description, x.sort_order) for x in sectors),
         food_categories=tuple(

@@ -248,21 +248,58 @@ def test_every_guidance_template_is_shown_somewhere():
     )
 
 
-def test_the_list_pages_still_extend_sqladmin_s_own():
-    """The override adds to the list page; it must not replace it.
+def _extends_chain(start: str) -> list[str]:
+    """The `{% extends %}` chain from a brand template up to its root.
 
-    `brand/model_list.html` is now every audited view's `list_template`. If
-    it ever stopped extending `sqladmin/list.html`, search, filters,
-    pagination and the bulk-action dropdown would vanish from fourteen
-    screens at once, and every test above would still pass.
+    Followed rather than matched on one literal line, because the chain has
+    more than one link in it since the list-table scrollport landed:
+
+        sqladmin/list.html
+          brand/list_table.html      the scrollport rules
+            brand/model_list.html    + page-level guidance
+              brand/staff_list.html    + its own `model_menu_bar`
+              brand/ip_block_list.html + its own `model_menu_bar`
+
+    Asserting `'{% extends "sqladmin/list.html" %}' in model_list.html` was
+    the original form of the test below and it failed on that restructure
+    while the property it guards - that nothing in the chain REPLACES
+    sqladmin's page - was never broken for a moment. Walking the chain keeps
+    the guard and drops the coincidence: a link inserted anywhere still has
+    to end at sqladmin's own template, and a template that stops extending
+    at any depth still fails.
     """
     brand = GUIDANCE_DIR.parent
-    assert '{% extends "sqladmin/list.html" %}' in (
-        brand / "model_list.html").read_text(encoding="utf-8")
-    # IpBlockAdmin's own override has to reach the mechanism through it.
-    assert '{% extends "brand/model_list.html" %}' in (
-        brand / "ip_block_list.html").read_text(encoding="utf-8")
+    chain, seen, current = [], set(), start
+    while current.startswith("brand/"):
+        assert current not in seen, f"template inheritance loops at {current}"
+        seen.add(current)
+        text = (brand / Path(current).name).read_text(encoding="utf-8")
+        match = re.search(r'{%\s*extends\s*"([^"]+)"\s*%}', text)
+        assert match, f"{current} extends nothing; it replaces the page instead"
+        current = match.group(1)
+        chain.append(current)
+    return chain
 
+
+@pytest.mark.parametrize(
+    "template",
+    ["brand/model_list.html", "brand/list_table.html",
+     "brand/ip_block_list.html", "brand/staff_list.html"],
+)
+def test_the_list_pages_still_extend_sqladmin_s_own(template):
+    """The override adds to the list page; it must not replace it.
+
+    `brand/model_list.html` is every audited view's `list_template`, and
+    `brand/list_table.html` - which it now extends - is AuditLogAdmin's. If
+    either stopped reaching `sqladmin/list.html`, search, filters, pagination
+    and the bulk-action dropdown would vanish from fifteen screens at once,
+    and every test above would still pass.
+    """
+    chain = _extends_chain(template)
+
+    assert chain[-1] == "sqladmin/list.html", (
+        f"{template} no longer reaches sqladmin's own list page: {chain}"
+    )
     assert ModelView.list_template != AuditedModelView.list_template, (
         "the base no longer overrides sqladmin's list template"
     )

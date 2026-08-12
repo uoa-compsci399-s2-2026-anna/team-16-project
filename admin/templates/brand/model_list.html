@@ -3,14 +3,19 @@
 
    Extends rather than replaces, the same shape as brand/ip_block_list.html:
    search, filters, pagination, the export menu and the bulk-action dropdown
-   are all inherited untouched, and `{{ super() }}` renders the whole of
-   sqladmin's own `content` block underneath the blocks.
+   are all inherited untouched, and brand/list_table.html's `{{ super() }}`
+   renders the whole of sqladmin's own `content` block underneath the blocks.
 
    Set on AuditedModelView, so a view that declares no `guidance_blocks`
-   renders exactly what it rendered before this file existed. #}
-{% extends "sqladmin/list.html" %}
+   renders exactly what it rendered before this file existed.
 
-{% block content %}
+   Extends brand/list_table.html rather than sqladmin/list.html directly since
+   the list-table scrollport fix landed: that file carries the rules that make
+   a wide table reachable, and it sits one level lower so that AuditLogAdmin -
+   which is not an AuditedModelView and so never sees this file - can take
+   them without taking the guidance mechanism as well. #}
+{% extends "brand/list_table.html" %}
+
+{% block list_page_intro %}
 {% include "brand/_guidance.html" %}
-{{ super() }}
 {% endblock %}

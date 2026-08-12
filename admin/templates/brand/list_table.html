@@ -1,0 +1,39 @@
+{# sqladmin's own list page, with the rules that make a wide table reachable.
+   See brand/_list_table_css.html for the defect and the measurements.
+
+   THIS FILE EXISTS SO THAT "EVERY LIST PAGE" IS LITERALLY TRUE. The obvious
+   home for the include was brand/model_list.html, which is what
+   AuditedModelView sets as its `list_template` - and that would have missed
+   exactly one screen. AuditLogAdmin is a plain `ModelView`, not an
+   `AuditedModelView` (a view onto the audit trail has nothing to audit), so
+   it inherits sqladmin's own `list_template` and none of the brand overrides
+   with it. /admin/audit-log is one of the five widest tables in the panel and
+   it would have been the one left clipped.
+
+   The clipping fix and the guidance mechanism are also simply two different
+   things: one is a property of every table sqladmin draws, the other is a
+   property of the views that have something to explain. Splitting them means
+   a view can take the first without declaring `guidance_blocks` for the
+   second, which is what lets AuditLogAdmin point at this file and change
+   nothing else.
+
+   The inheritance chain, top to bottom:
+
+       sqladmin/list.html
+         brand/list_table.html      this file - the scrollport rules
+           brand/model_list.html    + page-level guidance (AuditedModelView)
+             brand/staff_list.html    + its own `model_menu_bar`
+             brand/ip_block_list.html + its own `model_menu_bar`
+
+   `list_page_intro` is the seam. It renders between the style block and
+   sqladmin's own content, so anything a subtemplate puts there lands above
+   the table and below nothing. Empty here: a view that extends this file and
+   fills in nothing renders exactly what sqladmin renders, plus a stylesheet.
+   #}
+{% extends "sqladmin/list.html" %}
+
+{% block content %}
+{% include "brand/_list_table_css.html" %}
+{% block list_page_intro %}{% endblock %}
+{{ super() }}
+{% endblock %}

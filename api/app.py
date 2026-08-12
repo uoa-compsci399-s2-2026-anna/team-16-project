@@ -131,6 +131,10 @@ def _blocklist_check(request: Request) -> bool:
     return is_blocked(request.state.db, ip, secret_key=request.app.state.secret_key)
 
 
+class StaffProofRejected(Exception):
+    """No usable ``X-Staff-Proof``. Mapped to `UNAUTHORIZED` (401) by the router."""
+
+
 def _default_staff_authenticator(request: Request) -> str:
     """§6.2's staff gate on the dry-run path. Contract §8.2, open item O-9.
 
@@ -153,10 +157,6 @@ def _default_staff_authenticator(request: Request) -> str:
     if username is None:
         raise StaffProofRejected("no valid staff proof on the request")
     return username
-
-
-class StaffProofRejected(Exception):
-    """No usable ``X-Staff-Proof``. Mapped to `UNAUTHORIZED` (401) by the router."""
 
 
 def create_app(

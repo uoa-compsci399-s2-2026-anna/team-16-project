@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.16 draft)"
+date: "2026-08-12 (v1.17 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,12 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.17 — 2026-08-12 (from merging `main` back into this line, affects nobody's code)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§10's fixture note is rewritten: `tests/fixtures/` exists.** The note merged in from `main` was written at v1.2 and says in the present tense that the directory "does not exist on any branch a reader of this document is likely to be standing on", that two disagreeing sets sit on two unmerged branches, and that the canonical set will land with B's integration PR. All three were true then; none is true now. B's integration merged as PR #12, and the directory holds the seven files, `errors/`'s seven — `blocked.json` among them, the one the note called the only genuinely missing file — and `tests/golden/`'s nine cases. **A contract that describes work as outstanding when it is finished is worse than one that is silent about it**, because the next reader does the work again. The reasoning is kept in the past tense: why one canonical set rather than two, and the four content requirements that were argued for on their own merits and remain binding | §10 |
 
 ### v1.16 — 2026-08-12 (raised by the repository owner, affects E only)
 
@@ -2808,30 +2814,13 @@ Both matter, and neither substitutes for the other. The shape check proves the A
 
 > **`_assert_shape` compares types, not text.** A string is a string. Anything whose correctness lives in the *content* of a string — §3 rule 5's `label` format is the case that has already bitten — is invisible to it and needs an assertion in `test_fixture_consistency.py` or a rule in this document. Preferably both.
 
-> **As of v1.2 this section describes an intention, not a directory. `tests/fixtures/` does not exist on any branch a reader of this document is likely to be standing on** — not on `main`, not on `admin_panel` (which owns this document), not on `docs/contract-v1.0`. **Two sets exist, on two unmerged branches, and they disagree with each other and with this contract:**
+> **Settled in v1.17. `tests/fixtures/` now exists, in the v1.2 shape, as one canonical set** — the seven files above plus `errors/`'s seven, and `tests/golden/`'s nine cases beside them. What follows is why there is one set and not two, because the reasoning outlives the situation that produced it.
 >
-> | Branch | Files | Shape |
-> | --- | --- | --- |
-> | `origin/database` (B) | 12 | Flat, pre-v1.0: top-level `sector` / `food_category` / `current`. Carries `factor_source`. `details[].field` is Pydantic's dotted `current.0.qty_kg` |
-> | `origin/Demo-UI` (C) | 10 | Flat, pre-v1.0. **No `factor_source`.** `details[].field` is the bracket form `current[0].qty_kg` |
+> Between v1.2 and the B integration two sets existed on two unmerged branches, and they disagreed with each other and with this contract: `origin/database` carried twelve files with `factor_source` and Pydantic's dotted `current.0.qty_kg`; `origin/Demo-UI` carried ten without `factor_source` and with the bracket form `current[0].qty_kg`. **A fixture that disagrees with the contract does not fail** — it quietly produces code bound to fields the API will never send, and the two front ends built against the two forms would never have bound to each other. v1.0 §9 ratified the bracket form and extended it to `entries[0].current[1].qty_kg`; B's set was the one that changed, and it landed once, with her integration PR, rather than twice in parallel.
 >
-> Neither matches §6.2, and a fixture that disagrees with the contract does not fail — it produces code bound to fields the API will never send. The `field` disagreement is the sharpest example: v1.0 §9 ratified C's bracket form and extended it to `entries[0].current[1].qty_kg`, so **B's fixture is the one that must change**, and until it does her handlers and C's lookup keys will never bind to each other.
+> **That is the rule worth keeping: two people writing fixtures from one contract produce two sets that differ wherever the contract is silent, which is exactly where a fixture is load-bearing.** The owner of the section owns the shape. B owns §6, so B owned these; C's `taxonomy.json` supplied the content, being the better one (six sectors with real descriptions, ten NZ-appropriate food categories, nine MfE destinations).
 >
-> **The canonical set lands once, in the v1.2 shape, with the B integration PR.** Not twice and not in parallel: two people writing fixtures from one contract produce two sets that differ wherever the contract is silent, which is exactly where a fixture is load-bearing. B owns §6 and therefore owns the shape. **Start from B's twelve, not C's ten** — hers is the superset, it already has `factor_source` and the two files C lacks, and it is the set her contract tests assert against. C's `taxonomy.json` is by far the better *content* (six sectors with real descriptions, ten NZ-appropriate food categories, nine MfE destinations) and should fill it.
->
-> What each file needs:
->
-> | File | State |
-> | --- | --- |
-> | `calculate_request.json`, `calculate_response.json` | On both branches, both flat. Rewrite to `entries[]` and `totals` + `entries[]`, and make the pair **correspond** — B's currently do not, and hers is not mass-conserving either, which §6.2's new validation rule now rejects outright |
-> | `calculate_response_single.json` | **On `origin/database` only.** Reshape; also `"total_kg": "1"` breaks the 3-decimal rule her own validator enforces |
-> | `errors/unauthorized.json` | **On `origin/database` only.** Shape-correct; carry it across |
-> | `errors/blocked.json` | **Absent from every branch — the only genuinely missing file.** `BLOCKED` was added in v0.13 and has never had a fixture. It is the one error whose `details` is `null` rather than `[]` (§9.2), and every existing error fixture on both branches uses `[]`; a set that makes `[]` universal is how that requirement gets implemented away |
-> | `errors/validation_error.json` | On both, in **two different `field` formats**. §9's bracket path is the ratified one |
-> | `errors/{unknown_code,rate_limited,formula_error,no_published_factor_set}.json` | On both, shape-correct under §9 |
-> | `taxonomy.json` | On both. Must contain a `prevention` destination and at least one destination in the `reuse` group — without them the mass-conserving offset and the entire non-waste half of the MfE taxonomy, which is the client's headline story, cannot be demonstrated at all |
-> | `stats.json` | On both, both effectively empty. Must contain a suppressed `other` bucket: §6.4's copy constraint is the thing D has to write against and there is nothing to write against without one |
-> | `factors.json` | On both. Must not be all-empty arrays, or the methodology page renders "No published formulas were returned" in every demo |
+> Two of them were worth the argument on their own and still are, so they are requirements and not history. **`errors/blocked.json` is the one error whose `details` is `null` rather than `[]`** (§9.2) — it was absent from every branch, and every other error fixture uses `[]`, so a set that made `[]` universal is precisely how that requirement would have been implemented away. **`taxonomy.json` must contain a `prevention` destination and at least one destination in the `reuse` group**, or the mass-conserving offset and the entire non-waste half of the MfE taxonomy — the client's headline story — cannot be demonstrated at all. `stats.json` must carry a suppressed `other` bucket, since §6.4's copy constraint is what D writes against, and `factors.json` must not be all-empty arrays, or the methodology page renders "No published formulas were returned" in every demo.
 
 ## 10.1 Golden Test Suite (owner: A)
 

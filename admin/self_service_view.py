@@ -9,7 +9,7 @@ from a stolen session. That guard removed the only way a staff member could
 change their own credentials alone. This screen puts the capability back
 through a path that actually proves who is asking.
 
-**It needs no administrator role, and that is the point.** ``/admin/staff`` is
+**It needs no administrator role, and that is the point.** ``/admin/staff/*`` is
 recovery layer L2, one administrator acting on another, and stays
 administrator-only. Managing your own second factor is not an administrative
 act and must not require finding a colleague; a `staff` member reaches this

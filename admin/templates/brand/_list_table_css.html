@@ -93,32 +93,45 @@
      Declaring `::-webkit-scrollbar` opts a Blink/WebKit scroll container out
      of overlay scrollbars: the bar is then drawn permanently, in the layout,
      whether or not a pointer is anywhere near it. On the Windows machine this
-     was reported from that is already the default and these rules only colour
-     it; on macOS, and on any platform set to "show scroll bars only when
-     scrolling", it is the difference between a table that announces it
-     continues to the right and one that looks exactly like a table that has
-     been truncated. `scrollbar-color` is the standard-property half of the
-     same statement, for Firefox.
+     A scrollbar is the platform's answer and on Windows - where this was
+     reported from - it is a good one: measured in headed Chromium at
+     1280x900, the clamped box reserves 15px of classic scrollbar on each
+     axis, permanently, in the layout. But that is the platform's default and
+     not something CSS achieved: the same 15px is measured with these rules,
+     without them, and with `::-webkit-scrollbar` forced. On macOS, and
+     anywhere set to "show scroll bars only when scrolling", the bar is an
+     overlay that appears on interaction - so the reader who has not yet
+     guessed that the table scrolls is shown nothing that says it does. That
+     reader is exactly who this defect was reported by.
 
-     Kale (#003223) at low alpha rather than the token: this stylesheet is
-     inlined into a Tabler page, which does not load brand.css and so has no
-     `--kale` to read. Both values are that colour. */
+     So the affordance is drawn by the table itself. Four background layers,
+     which is Roman Komarov's scroll-shadow technique: two white COVERS at the
+     left and right edges attached `local`, so they travel with the content
+     and slide away from the edge as it scrolls, and two Kale SHADOWS attached
+     `scroll`, so they stay pinned to the visible box. At rest the left cover
+     hides the left shadow and the right shadow is uncovered: a soft dark edge
+     that says the content continues. Scroll to the end and the right cover
+     arrives over the right shadow while the left one is revealed. It costs no
+     layout, needs no JavaScript, and - unlike a scrollbar - it is the same on
+     every platform.
+
+     #fff for the covers because that is the card's own ground, measured;
+     Kale (#003223) at 0.22 for the shadows, written as rgba because this
+     stylesheet is inlined into a Tabler page, which does not load brand.css
+     and so has no `--kale` to read.
+
+     The shadows show THROUGH the rows rather than behind them: Tabler leaves
+     `<td>` at `transparent` (measured), so the container's own background is
+     what the reader sees at the row's edges. Under the pinned header row they
+     do not show, because that row has an opaque ground of its own - which is
+     the right result, since the header is the one row whose right-hand end is
+     never the interesting part. */
   .table-responsive {
-    scrollbar-color: rgba(0, 50, 35, 0.35) rgba(0, 50, 35, 0.07);
-  }
-  .table-responsive::-webkit-scrollbar {
-    width: 14px;
-    height: 14px;
-  }
-  .table-responsive::-webkit-scrollbar-track {
-    background: rgba(0, 50, 35, 0.07);
-  }
-  .table-responsive::-webkit-scrollbar-thumb {
-    background: rgba(0, 50, 35, 0.35);
-    border-radius: 7px;
-  }
-  .table-responsive::-webkit-scrollbar-thumb:hover {
-    background: rgba(0, 50, 35, 0.55);
+    background:
+      linear-gradient(to right, #fff 40%, rgba(255, 255, 255, 0)) 0 0 / 2.5rem 100% no-repeat local,
+      linear-gradient(to left, #fff 40%, rgba(255, 255, 255, 0)) 100% 0 / 2.5rem 100% no-repeat local,
+      radial-gradient(farthest-side at 0 50%, rgba(0, 50, 35, 0.22), rgba(0, 50, 35, 0)) 0 0 / 0.9rem 100% no-repeat scroll,
+      radial-gradient(farthest-side at 100% 50%, rgba(0, 50, 35, 0.22), rgba(0, 50, 35, 0)) 100% 0 / 0.9rem 100% no-repeat scroll;
   }
 
   /* The other half of "the table cannot be read", and it is not the table's

@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.20 draft)"
+date: "2026-08-12 (v1.21 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,15 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.21 — 2026-08-12 (raised by the repository owner; affects B, C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§6.1 returns the vocabulary the published factor set covers, not every active row.** §2.1's three vocabulary tables carry no `factor_set_id` — a factor set brings factors, not a vocabulary — so publishing one could not narrow the calculator's form, and a user who typed a quantity against a destination the published set has no factors for got **a silent zero, with nothing on the form to say which it was.** That was invisible while exactly one set of taxonomy rows existed and became impossible to miss when v1.19's ReFED fixture put a second, disjoint vocabulary in the same tables: 26 destinations offered, 12 priced. **It was never only ReFED's** — `MOCK-v0` prices 6 destinations of 14 and 3 sectors of 6, so most of the New Zealand form is a silent zero today and this is what stops it claiming otherwise. Covered means: a **destination** with a `factor_downstream` row (including the `food_category_id IS NULL` row, which is how the waste levy is held) or a non-NULL `factor_upstream.destination_id` (the O-7 column); a **sector** in `factor_upstream.sector_id`; a **food category** in `factor_upstream.food_category_id` or a non-NULL `factor_downstream.food_category_id`; a **destination group** with at least one visible destination; a **unit preset** whose `food_category` is null or visible. The rows come back when real factors are loaded, with no code change | §5.1, §6.1 |
+| 2 | **Two rows are never filtered, and neither is an exception so much as a row the rule cannot speak about.** `prevention`'s factors are zero **by construction** — that is the whole of what makes it a 100% offset and keeps the two scenarios mass-conserving — so "has no factor row" is not evidence a set does not support it. It is held out by name (`db.types.PREVENTION_CODE`) and its group with it. It is covered anyway in every set the lifecycle will publish, because `publish_factor_set` refuses a set whose general upstream rows have no matching `prevention` row at zero — **but that is a coincidence of two other rules rather than a guarantee**, and the improvement panel is unusable the day it stops holding. A second vocabulary's own prevention row (`refed_prevention`) is covered by the ordinary rule and needs no special case. The **`is_standard_mix` food category** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry it and §6.2 resolves a null `food_category` to it, so filtering it out would leave a caller with no legal way to say "composition unknown" while the server went on resolving null to a code it was never offered. §2.1's "exactly one" invariant is still counted over the **active** rows, not the narrowed list — counting the narrowed list answers 500 on the first request the day a set the standard mix is not in gets published | §2.1, §5.1, §6.1 |
+| 3 | **`metric` and `get_taxonomy_for_bundle` are deliberately not narrowed.** Metrics are the *output* vocabulary — nothing a user types is a metric, so an uncovered one cannot become a silent zero; it would be a zero column, visible on its own terms (§10.3 already rules metric rows global). `get_taxonomy_for_bundle` is a different function feeding the engine's dictionary of legal codes and §6.3's factor export, and it stays a **superset on purpose**: narrowing it would turn every code §6.1 no longer offers from a zero into an `UNKNOWN_CODE` 400, including for a browser tab holding a taxonomy fetched before the last publish. Reading a historical submission is unaffected either way — §5.4 selects `destination.code` and `.name` from the tables it joins and never consults §6.1's snapshot | §5.1, §5.4, §6.3 |
+| 4 | **The filter is one repository function's and must not reach `sqladmin`.** Staff have to see and edit every taxonomy row whatever is published — a row cannot be given its first factor if the panel has stopped listing it. `get_taxonomy` has exactly one caller, `GET /api/v1/taxonomy`; the panel queries the models directly through `admin/modelviews.py`. `tests/db/test_taxonomy_coverage.py` asserts both halves: an ordinary model query still returns every row (which fails if this is ever implemented as a `with_loader_criteria` or a query event), and no file under `admin/` names `get_taxonomy` | §8.1 |
 
 ### v1.20 — 2026-08-12 (raised by the repository owner; affects C and D)
 
@@ -1276,9 +1285,12 @@ Lives in `db/repository.py`. **The only code in the system that touches the data
 
 ```python
 def get_taxonomy(session) -> TaxonomySnapshot:
-    """All active taxonomy rows, sorted by sort_order.
-    Serialised directly by GET /api/v1/taxonomy."""
+    """The active taxonomy rows the PUBLISHED factor set covers, sorted by
+    sort_order. Serialised directly by GET /api/v1/taxonomy. See §6.1 for
+    what "covers" means and for the two rows that are never filtered."""
 ```
+
+> **This returned every active row until v1.21, and that is what made the calculator offer destinations the published set prices at nothing.** The rule and its two protected rows are stated once, under §6.1. `get_taxonomy_for_bundle` — a different function, feeding the engine and §6.3 — is **not** narrowed and must stay a superset.
 
 ```python
 @dataclass(frozen=True)
@@ -1569,6 +1581,29 @@ Base path `/api/v1`. All responses are `application/json; charset=utf-8`.
 ## 6.1 `GET /api/v1/taxonomy`
 
 Called once on page load to build every dropdown and input row.
+
+**It returns the vocabulary the published factor set covers, not every active row (v1.21).**
+
+> **Why this is not a filter on top of the taxonomy but the definition of what the taxonomy endpoint is for.** §2.1's `sector`, `food_category` and `destination` are global tables with no `factor_set_id`: a factor set brings factors, not a vocabulary. So until v1.21 publishing a set could not narrow the form, and a user who typed a quantity against a destination the published set has no factors for got **a silent zero — with nothing on the form to distinguish it from an error, or from a genuine zero.** The form is a promise that the calculator can price what it offers.
+>
+> **It was visible first with a second vocabulary and it was never only that vocabulary's.** §10.3's ReFED fixture puts `refed_`-prefixed rows in the same tables; with it loaded the endpoint offered 26 destinations against a set that prices 12, and every New Zealand destination in that list was dead. But `MOCK-v0` prices 6 destinations of 14 and 3 sectors of 6, so most of the New Zealand form is a silent zero **today**, and this rule is what stops the deliverable claiming otherwise. The rows return the moment the client's real factors are loaded — one import, no code change, which is Decision 2 doing its job.
+
+| Row | Covered when |
+| --- | --- |
+| `destination` | it has at least one `factor_downstream` row in the published set — **including the `food_category_id IS NULL` row**, which §2.2 defines as "every food category" and which is how a per-tonne charge like the waste levy is held — **or** it appears as a non-NULL `factor_upstream.destination_id` (the O-7 column, v1.8) |
+| `sector` | it appears as `factor_upstream.sector_id` |
+| `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
+| `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
+| `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category |
+| `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
+
+> **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
+
+> **`prevention` and the `is_standard_mix` food category are never filtered out.** `prevention`'s factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. It is held out by name (`db.types.PREVENTION_CODE`) and its group is kept with it. It happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching `prevention` row at zero — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding. A second vocabulary's own prevention (`refed_prevention`) is covered by the ordinary rule; both may appear at once, which is harmless, because a prevention destination is a zero-factor offset under any set and §6.2 refuses `prevention` in a *current* scenario outright.
+>
+> The **standard mix** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry `is_standard_mix` and §6.2 resolves a null `food_category` to it, so filtering it out would leave a consumer with no legal way to say "composition unknown" while the server went on resolving null to a code the consumer was never offered. §2.1's "exactly one active row" invariant is still counted over the **active** rows rather than the narrowed ones.
+
+> **A consumer must not assume this list is stable across a publish.** The front end fetches it once per page load and holds it in `state.taxonomy` (§7.2) — it caches nothing across loads, and nothing here may be cached in `localStorage`, because a taxonomy fetched before a publish is a form offering codes the current set does not price, which is the defect this rule closes arriving by another door.
 
 **200 response**
 

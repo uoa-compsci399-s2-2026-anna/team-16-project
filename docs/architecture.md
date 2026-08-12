@@ -517,7 +517,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
 | O-8 | **Interface translation. Nothing here is promised** — the shape below is a sketch pending the client's word, and dropping it entirely is a likely outcome. Sibling of O-4. See below. | Client, C, D, E |
-| O-9 | **`/admin/try` cannot succeed in a deployed system.** `api.app:create_app` takes a `staff_authenticator` and nothing in production supplies one, so every dry run answers `UNAUTHORIZED` and contract §8.2 is inert. Found by running a walkthrough against a clean stack, not by any test — the only callers that pass one are two API test files. See below. | B, E |
+| ~~O-9~~ | ~~**`/admin/try` cannot succeed in a deployed system.**~~ **Closed 2026-08-12.** The panel now mints a short-lived signed proof (`db/staff_proof.py`) and the API verifies it by default. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
@@ -623,7 +623,7 @@ Roughly 150 translatable strings exist in `web/js` today, concentrated in `calcu
 `sqladmin` renders its own templates; translating them means overriding or forking them. The panel has five users, all in New Zealand, working in English. Unless the client asks, this is effort better spent on the field-level help in O-9.
 
 
-## O-9 — the dry-run authenticator was never wired — **OPEN**
+## O-9 — the dry-run authenticator was never wired — **CLOSED 2026-08-12**
 
 `POST /api/v1/calculate` accepts `X-Dry-Run: true` from a staff member, and the panel's `/admin/try` screen is built on it. `api.app:create_app` takes a `staff_authenticator` callable to decide who that staff member is. **Nothing in production passes one.** `run.sh` serves `api.app:create_app` bare; the only code that supplies the argument is `tests/api/test_api.py` and `tests/api/test_api_entries.py`, each injecting a lambda.
 
@@ -631,12 +631,36 @@ So every dry run in a deployed system answers `UNAUTHORIZED`, and §8.2 — tuni
 
 **Why no test caught it.** The tests supply exactly the thing production lacks. That is the failure mode worth naming: a test double that fills a gap rather than standing in for something real reports success on a path nobody has ever run. The panel's own tests reach the screen and stop at the API boundary; the API's tests reach the endpoint with an authenticator already injected. Neither one crosses the seam where the wiring is missing.
 
-**Why it is not fixed here.** The question is not how to pass an argument. It is **who may run an unpersisted calculation against published factors**, and how the API — which may not import `admin/` — satisfies itself that a caller is staff. That is a contract decision spanning B's layer and E's, and the honest options differ in what they cost:
+**The question was never how to pass an argument.** It was **who may run an unpersisted calculation against published factors**, and how the API — which may not import `admin/` — satisfies itself that a caller is staff. Recorded as needing a B-and-E decision; the repository owner now owns both modules and took it.
 
-- a shared signed token minted by the panel and verified by the API, which needs a secret both already have and a decision about expiry;
-- an internal network boundary, which makes the guarantee a deployment property rather than a code one and would have to be stated as such;
-- moving the dry run into the panel against its own engine import, which duplicates a calculation path the whole architecture exists to keep singular.
+### The ruling
 
-**The first is most likely right** — both processes already derive keys from one `SECRET_KEY` with pinned `info` strings, and the blocklist fingerprint proves the pattern works across the boundary. It is recorded rather than chosen because §8.2 belongs to E and the endpoint belongs to B.
+**A short-lived signed proof, minted by the panel, verified by the API: `db/staff_proof.py`.** The panel signs `{"sub": "<username>"}` with `itsdangerous.TimestampSigner` under the deployment's one `SECRET_KEY` and a **pinned salt**, sends it as `X-Staff-Proof` on the server-to-server call, and the API's default `staff_authenticator` verifies it. It lives in `db/` because both layers need it and `api/` may not import `admin/` — v1.3's ruling on `db/detection.py`, and the reason `PREVENTION_CODE` sits in `db/types.py`.
 
-Until it is settled, staff have no way to test a formula except by publishing it — which is exactly the risk the dry-run screen was designed to remove.
+| Option | Verdict |
+| --- | --- |
+| **1. Signed proof minted by the panel** (`db/staff_proof.py`) | **Chosen.** Both processes already share one `SECRET_KEY` through one mounted volume, and the §2.3 blocklist fingerprint already proves keys derived from it agree across the boundary |
+| **2. Move the panel's session machinery into `db/` and let the API read the session cookie** | **Rejected**, and this is the substantive rejection. It is not a layering problem — `admin/protection.py` already decodes that cookie standalone, so moving it was entirely feasible. It is that doing so would make the API **a second place where a staff session is established**, so a mistake in it becomes an authentication defect in the public-facing service. It also widens reach: `/admin` and `/api/v1/` are one origin behind nginx, so a shared session cookie is sent by the browser to the API too, and any staff member's browser could then drive the arbitrary `dry_run.bundle` path directly. Option 1 keeps authentication in exactly one place and gives the API a smaller question to answer |
+| **3. An internal network boundary** — trust anything that can reach `api:18000` | **Rejected.** It makes the guarantee a deployment property rather than a code one. The `ports:` block in `docker/compose.yaml` publishes the API on 18000 for development, so out of the box the boundary does not exist, and the failure is silent |
+| **4. Move the dry run into the panel against its own engine import** | **Rejected** by the contract, not by preference: v1.1 decision 1 already resolved §4.2 against §8.2 in favour of the HTTP path, because two calculation paths drift and the point of a dry run is that it exercises what production exercises |
+
+### The security boundary, stated
+
+**What a proof asserts:** "at time T, the panel had an authenticated staff session for this username". It is minted only in `admin/calc_client.py`, only after sqladmin's `login_required`, the role floor and the onboarding gates have already passed.
+
+**Can it authenticate a non-staff caller?** No. Minting requires `SECRET_KEY`, which lives in a volume mounted into the application containers and is never sent to a browser. A visitor cannot construct one, and the salt is pinned to a value distinct from the default `SessionMiddleware` signs with — so a **stolen session cookie cannot be replayed as a proof**, and a proof cannot be replayed as a session cookie, even though both are signed under the same secret. Both directions are asserted in `tests/db/test_staff_proof.py`.
+
+**Can a dry run now reach anything a normal calculation cannot?** It reaches what §6.2.1 always specified and no more: the inline `dry_run.bundle` (capped at 5000 rows) and an unpublished `factor_set_version`, and it persists nothing. A valid proof on a request *without* `X-Dry-Run` changes nothing — the request is an ordinary public calculation, persisted, with a token — and the proof opens no other route. Both are asserted in `tests/api/test_dry_run_auth.py`.
+
+**What it deliberately does not do.** The API performs no `staff` lookup: it holds no `staff` model, and giving the public service a reason to read the credential table would be a worse trade than the one taken. So an account deactivated in the seconds after a proof was minted can have that proof accepted for up to `PROOF_TTL_SECONDS` (60). The window is bounded, it buys only a calculation that persists nothing, and if it ever stops being acceptable the fix is a lookup here — not a wider credential.
+
+**A residual, named rather than left implicit.** `SESSION_HTTPS_ONLY` defaults to `false` in the shipped compose file so the panel is usable over plain http, and `PROTECTION_TRUSTED_PROXY` defaults to `false` alongside it. The proof travels only between two containers on the compose network, so it is not exposed by that default, but it is a bearer credential for its 60 seconds and TLS in front is what keeps it that way in production. This is the same pairing `docker/compose.yaml` already documents.
+
+### What was done
+
+- `db/staff_proof.py`: `mint_staff_proof` / `verify_staff_proof`, `STAFF_PROOF_HEADER`, `PROOF_TTL_SECONDS`, and the pinned salt. Every verification failure — absent, malformed, wrongly signed, expired, or validly signed over the wrong payload — returns `None`, because the caller's only correct response to any of them is 401.
+- `api/app.py`: `staff_authenticator=None` now means **"use the default"**, not "no authenticator" — the identical correction `blocklist_check` already carried, arrived at the same way and for the same reason. Assigning `app.state.staff_authenticator = None` after construction still disables it.
+- `admin/calc_client.py`: takes `secret_key`, mints one proof per call, and **no longer forwards the browser's cookie jar**. That forwarding authenticated nothing — the API cannot read the panel's session cookie — so its only effect was to hand a live staff session cookie to a second service on every dry run.
+- `tests/db/test_staff_proof.py` and `tests/api/test_dry_run_auth.py`.
+
+**Why no test caught the original defect, and what now would.** The tests supplied exactly the thing production lacked: `test_dry_run_requires_staff_and_does_not_persist` asserts the refusal, then assigns `app.state.staff_authenticator = lambda request: "alice"` and asserts the success — both halves passing against an app that could never authenticate anybody. `tests/api/test_dry_run_auth.py` drives the fixture app **without ever assigning an authenticator**, so it exercises the seam the old tests stepped over. That is the general lesson worth keeping: *a test double that fills a gap production has reports success on a path nobody has run.*

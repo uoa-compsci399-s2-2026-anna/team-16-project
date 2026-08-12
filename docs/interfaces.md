@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.17 draft)"
+date: "2026-08-12 (v1.18 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,13 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.18 — 2026-08-12 (closes open item O-9; affects B and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New request header `X-Staff-Proof`, and §6.2's dry-run row now names a mechanism.** The row has required "an authenticated staff session" since v1.1 and never said how the API establishes one. Nothing did: `api.app:create_app`'s `staff_authenticator` was supplied only by `tests/api/test_api.py` and `tests/api/test_api_entries.py`, so **every dry run in every deployed system answered `UNAUTHORIZED`** and §8.2 was inert — `/admin/try` rendered the refusal inside a 200 page and looked like a working screen. The panel now mints a short-lived signed proof (`db/staff_proof.py`, in `db/` because `api/` may not import `admin/` — v1.3's ruling on `db/detection.py`) and the API verifies it as its **default** authenticator, `staff_authenticator=None` having been changed from "no authenticator" to "use the default", the same correction `blocklist_check` already carries. The rejected alternative was letting the API read the panel's session cookie; see the note under §6.2 for why sharing one origin with `/admin` makes that a wider grant than it looks | §6.2, §8.2 |
+| 2 | **The panel no longer forwards the browser's cookies to the API.** `admin/calc_client.py` sent `dict(request.cookies)` on every dry run in the belief that the API authenticated with them. It does not and must not, so the forwarding proved nothing and its only effect was to hand a live staff session cookie to a second service. `CalculateClient.dry_run`'s `cookies` parameter is replaced by `actor` | §8.2 |
 
 ### v1.17 — 2026-08-12 (from merging `main` back into this line, affects nobody's code)
 
@@ -1675,7 +1682,10 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 | Header | Purpose |
 | --- | --- |
-| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written — the three tables of §2.3 are untouched, not two of them. No token is minted, and the response carries **`"token": null`** — the key is present and null, never omitted, per §6.3's rule for the same choice. **Requires an authenticated staff session** (§8.4); an unauthenticated request carrying this header is rejected with `UNAUTHORIZED` (401). |
+| `X-Dry-Run: true` | **Do not persist.** No `submission`, **no `submission_entry`** and no `submission_line` row is written — the three tables of §2.3 are untouched, not two of them. No token is minted, and the response carries **`"token": null`** — the key is present and null, never omitted, per §6.3's rule for the same choice. **Requires an authenticated staff session** (§8.4), proved by `X-Staff-Proof` below; a request carrying this header without a valid proof is rejected with `UNAUTHORIZED` (401). |
+| `X-Staff-Proof: <token>` | **How the API is satisfied that the caller is staff.** A value minted by the admin panel with `db.staff_proof.mint_staff_proof` and verified with `verify_staff_proof`: `itsdangerous.TimestampSigner` over `{"sub": "<username>"}`, signed under the deployment's single `SECRET_KEY` with a **pinned salt**, valid for `PROOF_TTL_SECONDS` (60). Meaningful **only** alongside `X-Dry-Run: true` — on any other request it is ignored and grants nothing. Sent server-to-server by `admin/calc_client.py`; **never set on a browser and never a cookie.** |
+
+> **Why a proof and not the panel's session cookie (v1.18, open item O-9).** Until v1.18 this row required a staff session and named no mechanism, and `api.app:create_app`'s `staff_authenticator` was supplied by nothing but two test files — so every dry run in every real deployment answered `UNAUTHORIZED` while `/admin/try` rendered that refusal inside a 200 page. The cookie was the obvious fix and was rejected: `/admin` and `/api/v1/` are one origin behind nginx, so a session cookie the API accepted would also be sent there by the browser, making the API a second place a staff session is *established* and putting the arbitrary-`bundle` path one `fetch` away from any staff member's tab. A proof cannot be minted without `SECRET_KEY`, which no browser holds. The salt is pinned to a value distinct from the one `SessionMiddleware` signs with, so **a stolen session cookie cannot be replayed as a proof, and a proof cannot be replayed as a session cookie**, though both are signed under the one shared secret. The API performs no `staff` lookup and holds no `staff` model; the cost of that is a 60-second window in which a just-deactivated account's proof is still accepted, for a calculation that persists nothing. `docs/architecture.md` §10 carries the full ruling and the three rejected alternatives.
 
 > `submission_entry` is named explicitly because it was added after this row was written and an implementer working from the older wording writes orphan entry rows on every staff dry run. Staff run dozens of calculations while tuning one formula, and `submission_entry` is what §5.4 aggregates `by_sector` and `by_food_category` over — so those orphans would land squarely in the public statistics this header exists to protect, while `total_calculations` stayed flat and hid it.
 

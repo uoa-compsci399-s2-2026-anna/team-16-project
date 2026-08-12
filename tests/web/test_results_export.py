@@ -286,3 +286,58 @@ def test_the_comparison_reads_net_benefit_rather_than_subtracting(tmp_path):
         re.M,
     )
     assert not re.search(r"^  - Mass: ", report, re.M)
+
+
+FILENAME_HARNESS = """
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { writeFileSync } from 'node:fs'
+const { exportFilename } = await import(process.argv[2])
+// Local-time constructor on purpose: the stamp is meant to read as the clock
+// the person pressing the button is looking at, so a UTC fixture would assert
+// the wrong thing on any machine that is not on UTC.
+const fixed = new Date(2026, 7, 12, 9, 4, 5)
+writeFileSync(process.argv[3], exportFilename(fixed), 'utf8')
+"""
+
+
+def _filename_for(tmp_path: Path) -> str:
+    harness = tmp_path / "filename.mjs"
+    harness.write_text(FILENAME_HARNESS, encoding="utf-8")
+    out = tmp_path / "name.txt"
+    completed = subprocess.run(
+        [shutil.which("node"), str(harness), RESULTS_JS.as_uri(), str(out)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not build the file name:\n{completed.stdout}\n{completed.stderr}"
+    )
+    return out.read_text(encoding="utf-8")
+
+
+@node
+def test_the_export_file_name_carries_a_zero_padded_timestamp(tmp_path):
+    """August is `08` and 9:04:05 is `090405`, so a directory sorts chronologically.
+
+    Unpadded parts would put `2026-8-12` after `2026-10-01` in a file listing,
+    which is the one property the stamp exists to provide. The date is fixed in
+    the harness rather than read from the clock - `exportFilename` takes `now`
+    for the same reason `engine.calculate` takes no clock.
+    """
+    assert _filename_for(tmp_path) == "food-waste-impact-results-2026-08-12-090405.txt"
+
+
+def test_the_download_no_longer_hard_codes_one_name():
+    """The stamp is worthless if `downloadResults` keeps its own literal.
+
+    This asserts the absence of the old constant rather than the presence of the
+    call, because a file that contains both would pass a presence check while
+    every export still landed on the same name.
+    """
+    source = RESULTS_JS.read_text(encoding="utf-8")
+    assert "'food-waste-impact-results.txt'" not in source
+    assert re.search(r"^\s*link\.download = exportFilename\(\)$", source, re.M)

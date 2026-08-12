@@ -320,11 +320,41 @@ export function buildResultsReport(state) {
   ].join('\n')
 }
 
+/**
+ * The download's file name, stamped with local time.
+ *
+ * A fixed name meant every export after the first arrived as
+ * `food-waste-impact-results (1).txt`, and the browser decides that suffix, not
+ * this code - so the order is the download order, not the calculation order, and
+ * nothing on the file says which scenario it holds. Somebody comparing two runs
+ * has to open both to tell them apart.
+ *
+ * Sortable order (year first, zero-padded), so a directory listing is
+ * chronological. Local time rather than UTC: the stamp exists to be recognised
+ * by the person who pressed the button, and they are reading their own clock.
+ *
+ * `now` is a parameter because a function that reads the system clock cannot be
+ * asserted on - the same reason `engine.calculate` takes no clock.
+ */
+export function exportFilename(now = new Date()) {
+  const pad = (value) => String(value).padStart(2, '0')
+  const stamp = [
+    now.getFullYear(),
+    pad(now.getMonth() + 1),
+    pad(now.getDate()),
+  ].join('-') + '-' + [
+    pad(now.getHours()),
+    pad(now.getMinutes()),
+    pad(now.getSeconds()),
+  ].join('')
+  return `food-waste-impact-results-${stamp}.txt`
+}
+
 export function downloadResults(state) {
   const url = URL.createObjectURL(new Blob([buildResultsReport(state)], { type: 'text/plain;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
-  link.download = 'food-waste-impact-results.txt'
+  link.download = exportFilename()
   link.click()
   URL.revokeObjectURL(url)
 }

@@ -1,4 +1,5 @@
 const API_BASE = '/api/v1'
+const NEWS_API = 'https://kaicommitment.org.nz/wp-json/wp/v2/posts'
 const searchParams = new URLSearchParams(window.location.search)
 const MOCK_MODE = searchParams.get('mock') === '1'
 const MOCK_ERROR = searchParams.get('mockError')
@@ -183,4 +184,37 @@ export function getStats() {
 export function getFactors(opts = {}) {
   const query = opts.version ? `?version=${encodeURIComponent(opts.version)}` : ''
   return request(`/factors${query}`)
+}
+
+export async function getNewsPosts(limit = 6) {
+  const numericLimit = Number(limit)
+  const integerLimit = Number.isFinite(numericLimit) ? Math.trunc(numericLimit) : 6
+  const safeLimit = Math.min(100, Math.max(1, integerLimit))
+  const per_page = String(safeLimit)
+  const query = new URLSearchParams({ per_page })
+  const url = `${NEWS_API}?${query.toString()}&_embed`
+
+  let response
+  try {
+    response = await fetch(url, { headers: { Accept: 'application/json' } })
+  } catch {
+    throw new ApiError('NETWORK_ERROR', 'The news service could not be reached. Check your connection and try again.')
+  }
+
+  let body
+  try {
+    body = await response.json()
+  } catch {
+    throw new ApiError('HTTP_ERROR', 'The news service returned an unexpected response.', [], response.status)
+  }
+
+  if (!response.ok) {
+    throw new ApiError(
+      body?.code || 'HTTP_ERROR',
+      body?.message || 'The news request could not be completed.',
+      Array.isArray(body?.data) ? body.data : [],
+      response.status,
+    )
+  }
+  return body
 }

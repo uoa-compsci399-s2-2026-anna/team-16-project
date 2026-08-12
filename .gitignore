@@ -46,3 +46,8 @@ node_modules/
 Thumbs.db
 desktop.ini
 *.icloud
+
+# Local AI-agent planning, memory, and review work (repository root only)
+/.codex/
+/.superpowers/
+/.claude/

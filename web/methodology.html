@@ -3,16 +3,56 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Methodology | Kai Commitment Food Waste Impact Calculator</title>
+    <meta name="description" content="Read the published formulas, constants, impact factors and provenance used by the Kai Commitment food waste impact calculator.">
+    <title>Documentation | Kai Commitment Food Waste Impact Calculator</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
-  <body>
-    <a class="skip-link" href="#main-content">Skip to methodology</a>
-    <header class="site-header"><div class="header-inner"><a class="brand" href="./index.html"><img src="./assets/kai-commitment-logo.png" alt="Kai Commitment - Leading action on food waste"><span class="prototype-label">Impact calculator</span></a></div></header>
-    <main class="main-content" id="main-content" tabindex="-1">
-      <section class="content-section"><p class="eyebrow">Transparency</p><h1>Methodology and published factors</h1><p class="section-intro">Calculation factors and formulas are supplied by the calculator service so the published method remains transparent and versioned.</p><div id="factor-content"><p role="status">Loading the published methodology…</p></div><p><a class="button button-secondary" href="./index.html">Back to calculator</a></p></section>
+  <body class="methodology-page">
+    <a class="skip-link" href="#main-content">Skip to documentation</a>
+    <header class="site-header">
+      <div class="header-inner public-header-inner methodology-header-inner">
+        <a class="brand" href="./home.html">
+          <img src="./assets/kai-commitment-logo.png" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label">Impact calculator</span>
+        </a>
+        <nav class="public-nav" aria-label="Primary navigation">
+          <a href="./home.html">Home</a>
+          <a href="./index.html">Calculator</a>
+          <a href="./stats.html">Statistics</a>
+          <a href="./methodology.html" aria-current="page">Documentation</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="main-content methodology-main" id="main-content" tabindex="-1">
+      <section aria-labelledby="documentation-title">
+        <p class="eyebrow">Transparency</p>
+        <h1 id="documentation-title">Methodology and published factors</h1>
+        <p class="section-intro">The calculator service supplies the versioned constants, formulas and factors shown here. Values and provenance are presented as published; this page does not calculate or reinterpret them.</p>
+      </section>
+
+      <div id="factor-status" class="methodology-status" role="status" aria-live="polite">
+        <p class="loading-state">Loading the published methodology&hellip;</p>
+      </div>
+      <div id="factor-content" aria-live="polite" aria-busy="true"></div>
+
+      <section class="review-block methodology-explanation" aria-labelledby="what-we-record">
+        <h2 id="what-we-record">What we record</h2>
+        <p>The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.</p>
+      </section>
+
+      <section class="review-block methodology-explanation" aria-labelledby="background-reading-heading">
+        <h2 id="background-reading-heading">Background reading</h2>
+        <p>No approved background-reading sources have been provided. Approved background reading has not yet been provided because this page only lists client-approved sources.</p>
+      </section>
+
+      <p><a class="button button-secondary methodology-back-link" href="./index.html">Back to calculator</a></p>
     </main>
-    <footer><p>Kai Commitment · Food Waste Impact Calculator</p></footer>
+
+    <footer>
+      <p>Kai Commitment &middot; Food Waste Impact Calculator</p>
+      <p class="transparency-notice">This tool stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business. <a href="./methodology.html#what-we-record">What we record</a></p>
+    </footer>
     <script type="module" src="./js/methodology.js"></script>
   </body>
 </html>

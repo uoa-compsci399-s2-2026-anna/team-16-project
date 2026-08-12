@@ -1,110 +1,91 @@
 # Front end — Kai Commitment Food Waste Impact Calculator
 
-Plain HTML, CSS and JavaScript ES modules. No Node.js, no framework, no build step: what is
-in this directory is what the browser runs.
+The public application is plain HTML, CSS and JavaScript ES modules. There is no front-end
+build step: the browser runs the files in this directory directly.
 
-This file exists because the same prose was written into the repository's root `README.md`,
-which is the course template established by Asma Shakil and is not ours to edit. The content
-is worth keeping — the `?mock=1` documentation below is how C, D and E all develop while the
-backend is unmerged — so it lives here, next to the code it describes.
+## Public pages
+
+- `index.html` — calculator entry point (and the production `/` page)
+- `home.html` — introduction, calculator call to action and latest Kai Commitment news
+- `stats.html` — privacy-protected aggregate statistics and charts
+- `methodology.html` — published methodology, factors and provenance
+
+Every page links to the other three through the shared public navigation. The calculator
+keeps its own in-page step navigation and reset controls.
 
 ## Structure
 
 ```text
 web/
-  index.html            Calculator entry point
-  methodology.html      Published methodology view
-  README.md             This file
-  assets/               Brand images and the self-hosted brand fonts
-  css/styles.css        The whole design system, mobile-first from 375px
-  js/api.js             The only module that calls fetch()
-  js/state.js           Single shared state object with a subscriber set
-  js/units.js           Every mass conversion the front end performs
-  js/view.js            escapeHtml, formatNumber, slug, buttonRow
-  js/calculator.js      The six-step wizard and its delegated listeners
-  js/results.js         The results screen
-  js/improvement.js     The alternative scenario and the comparison screen
-  js/methodology.js     Entry point for methodology.html
-  js/main.js            Entry point for index.html
+  home.html                 Home and news page
+  index.html                Six-step calculator
+  stats.html                Aggregate statistics page
+  methodology.html          Documentation and published-factor page
+  assets/                   Brand images and self-hosted fonts
+  css/styles.css            Shared design system and responsive page layouts
+  js/api.js                 The only module that calls fetch()
+  js/news.js                WordPress post normalisation
+  js/home.js                Home/news page entry point
+  js/charts.js              Chart.js adapters for bar and doughnut charts
+  js/stats.js               Statistics page entry point
+  js/methodology.js         Documentation page entry point
+  js/main.js                Calculator entry point
+  js/calculator.js          Calculator wizard and delegated listeners
+  js/results.js             Calculator results view
+  js/improvement.js         Alternative scenario and comparison view
+  js/state.js               Shared calculator state and subscribers
+  js/units.js               User-entered mass conversions
+  js/view.js                Shared rendering helpers
+  vendor/chart.umd.min.js   Self-hosted Chart.js runtime
+  vendor/chart.js.LICENSE.md
+  vendor/chart.js.SOURCE.md
 ```
 
-`docs/interfaces.md` §7 is the contract for these modules and is the authority where this
-file and it disagree. Do not rename a request or response field without following the
-contract-change process in §0 of that document.
+`docs/interfaces.md` §7 is the contract for these modules and remains authoritative if it
+and this file disagree. Do not rename API fields without following the contract-change
+process in §0.
 
-## Run the application
+## Run locally
 
-In production the front end and the FastAPI service are on the same origin, and the API base
-path is `/api/v1`. Configure the backend to serve this directory as static files and open its
-calculator URL. The front end calls:
+In production the public files and API are same-origin, with API routes under `/api/v1`.
+The Home page also requests the public Kai Commitment WordPress posts endpoint through
+`api.js`. If that request is unavailable, the page keeps a useful calculator call to action.
 
-- `GET /api/v1/taxonomy`
-- `POST /api/v1/calculate`
-- `GET /api/v1/factors`
-- `GET /api/v1/stats` (through the shared API module; not yet used by a page)
-
-A static file server on its own will display the shell, but the calculator deliberately shows
-an unavailable state until `GET /api/v1/taxonomy` is reachable.
-
-### Run against the contract fixtures, with no backend
-
-From the **repository root** — not from `web/`:
+For a fixture-backed local run, start a static server from the **repository root** (not from
+`web/`):
 
 ```bash
-python3 -m http.server 8000
+python -m http.server 8000
 ```
 
-Then open:
+Then open the public pages under `http://127.0.0.1:8000/web/`. Add `?mock=1` to the
+calculator, statistics or documentation URL to load the JSON contract fixtures instead of
+the same-origin API. For example:
 
 ```text
 http://127.0.0.1:8000/web/index.html?mock=1
+http://127.0.0.1:8000/web/stats.html?mock=1
+http://127.0.0.1:8000/web/methodology.html?mock=1
 ```
 
-`?mock=1` is read once at module load and routes every call to the JSON files in
-`tests/fixtures/`; production URLs continue to use `/api/v1`. Error states are reachable by
-adding one of:
+The document root must include both `web/` and `tests/`, because mock URLs resolve to
+`tests/fixtures/`. Serving `web/` as the document root makes those fixtures unreachable.
 
-```text
-&mockError=validation_error
-&mockError=unknown_code
-&mockError=rate_limited
-&mockError=formula_error
-&mockError=no_published_factor_set
-```
+> Do not use `?mock=1` for a client demonstration. Mock calculation responses contain fixed
+> fixture impact figures rather than figures derived from the amount entered. Demonstrate
+> against the real API with the mock factor set loaded so the engine calculates from the
+> submitted values and the required placeholder-factor warning remains visible.
 
-> **Do not run a client demo on `?mock=1`.** Mock mode re-derives only the mass figures from
-> what you type; every impact figure is the fixture's, cycled by entry index. **Enter 5 kg and
-> the page will tell you 4,449 kg CO2e.** That is correct behaviour for a fixture server and
-> it is documented in `docs/interfaces.md` §7.1, but in front of the client it is a number
-> that cannot be walked back. Demo against the real API with the mock **factor set** loaded —
-> the figures are still placeholders, but they are placeholders the engine computed from what
-> was actually entered, and the placeholder banner says so on screen.
+Mock calculator error states can be exercised with `mockError`, for example
+`?mock=1&mockError=validation_error`. Supported fixture names are documented in
+`docs/interfaces.md` §7.1.
 
-> **The document root has to be an ancestor of both `web/` and `tests/`.** The fixture URL is
-> resolved against `api.js`'s own module URL (`web/js/` → `../../tests/fixtures/`), so it
-> follows the page wherever it is served from — but a browser clamps `../` at the origin
-> root, so serving `web/` *as* the root makes the fixtures unreachable and every mock call
-> 404s. That is why the command above is run from the repository root. Mock mode therefore
-> cannot work under the production FastAPI static mount as it stands; a dev-only mount that
-> exposes `tests/fixtures/` is B's to add.
+## Front-end constraints
 
-## Constraints these modules are written to
-
-Stated in full as §7.6 of `docs/interfaces.md`. In short:
-
-- **The front end performs no impact calculation.** Every number on screen comes from the
-  API, including cross-entry totals — read `totals` and `net_benefit` from the response,
-  never a sum over `entries[]`. The single exception is mass conversion on what the *user*
-  typed, and it lives in `units.js`.
-- **Taxonomy options come from the API.** No code, name or unit is hard-coded in a view;
-  adding a metric is meant to cost one database row and one formula.
-- **Decimals travel as strings.** JavaScript's `Number` is a double, so a decimal from the
-  API is coerced for display only.
-- **A negative value is real and must look negative.** A downstream factor may be an offset,
-  so a metric total may be below zero; charts draw it from a centre line rather than
-  discarding the sign.
-- **`factor_set.is_mock` puts a non-dismissible warning on every results view and every
-  export**, and the warning is conditional on that flag rather than unconditional.
-- **The returned session token is written back to `sessionStorage`** after every successful
-  calculation and reused for the rest of the browser session.
-- **Mobile-first, baseline 375px.**
+- Only `api.js` performs network requests.
+- Apart from conversion of user-entered mass in `units.js`, impact values come from the API.
+- Taxonomy, metrics and equivalences are data-driven rather than hard-coded in views.
+- Negative impact values retain their sign in text and charts.
+- A mock factor set produces a persistent, conditional warning in every results view.
+- The returned anonymous session token is stored in `sessionStorage` and reused.
+- Layouts are checked at 320px, 375px, the 481–849px tablet band and desktop widths.

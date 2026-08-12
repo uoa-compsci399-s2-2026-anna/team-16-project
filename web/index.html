@@ -7,15 +7,23 @@
     <title>Food Waste Impact Calculator | Kai Commitment</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
-  <body>
+  <body class="calculator-page">
     <a class="skip-link" href="#main-content">Skip to calculator</a>
     <header class="site-header intro-header" id="site-header">
-      <div class="header-inner">
+      <div class="header-inner public-header-inner calculator-header-inner">
         <button class="brand brand-home-button" id="home-button" type="button" aria-label="Clear calculator data and return to the introduction">
           <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label">Impact calculator</span>
         </button>
-        <button class="text-button" id="clear-button" type="button" hidden>Clear all data</button>
+        <div class="calculator-header-actions">
+          <nav class="public-nav" aria-label="Primary navigation">
+            <a href="./home.html">Home</a>
+            <a href="./index.html" aria-current="page">Calculator</a>
+            <a href="./stats.html">Statistics</a>
+            <a href="./methodology.html">Documentation</a>
+          </nav>
+          <button class="text-button" id="clear-button" type="button" hidden>Clear all data</button>
+        </div>
       </div>
     </header>
 
@@ -26,7 +34,7 @@
 
     <footer>
       <p>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice">This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</p>
+      <p class="transparency-notice">This tool stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business. <a href="./methodology.html#what-we-record">What we record</a></p>
     </footer>
     <script type="module" src="./js/main.js"></script>
   </body>

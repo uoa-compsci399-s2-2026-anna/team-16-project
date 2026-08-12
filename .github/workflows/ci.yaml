@@ -1,0 +1,187 @@
+# CI: the test suite against a real MySQL 8, then the alpha images.
+#
+# TWO THINGS THIS PIPELINE EXISTS TO GUARANTEE, neither of which a human can be
+# relied on to do:
+#
+#   1. That the suite runs against MySQL 8 and not something that merely
+#      accepts the same SQL - see .github/workflows/_test.yaml.
+#   2. That the images stay free of tests/, docs/, Journal/ and .superpowers/.
+#      That was checked twice by hand, both times by someone who thought to
+#      look, and it is one forgotten .dockerignore line away from being false.
+#      See the hygiene step in .github/workflows/_build-images.yaml.
+#
+# WHERE THE WORK ACTUALLY LIVES. This file is a sequence of calls; the three
+# jobs it calls are shared verbatim with release.yaml:
+#
+#   _test.yaml             the suite against MySQL 8
+#   _build-images.yaml     the two independent per-architecture builds
+#   _publish-manifest.yaml the multi-architecture tags, and the read-back
+#
+# That is deliberate. Two copies of a `docker build` loop drift, and the copy
+# that drifts is the release one, because nobody watches it. A release now runs
+# the same tests, builds through the same steps and publishes through the same
+# assembly as every push to main.
+#
+# ARCHITECTURE. amd64 and arm64 are built as two independent, mutually
+# non-fatal jobs, and a third job assembles the multi-architecture tag from
+# whichever of them actually reached the registry. This repository is PRIVATE,
+# so `ubuntu-24.04-arm` is billed by the minute out of an allowance nobody has
+# measured; a run that cannot schedule arm64 must still ship a usable amd64
+# image rather than shipping nothing. Nothing is gated behind a variable: the
+# try-and-report shape covers both "we have arm minutes" and "we ran out on the
+# 12th" with no one editing these files.
+
+name: CI
+
+on:
+  push:
+    branches:
+      - main
+      # The packaging branches build and push too. Without this, this workflow
+      # could not be exercised before it merged - and `workflow_dispatch` is no
+      # help, because GitHub only offers manual dispatch for a workflow that
+      # already exists on the DEFAULT branch. A workflow that has never run is
+      # not finished. The moving tag is branch-derived off main (see
+      # `moving_tag` in the `version` job), so `alpha` never points at anything
+      # that is not on main.
+      - 'build/**'
+  pull_request:
+  workflow_dispatch:
+
+# One run per ref.
+#
+# CANCELLATION IS LIMITED TO PULL REQUESTS, and that is the whole subtlety
+# here. A PR builds to verify and pushes nothing, so interrupting one costs a
+# rebuild and nothing else - which is where the arm64 minutes were worth saving
+# on a branch somebody is pushing to repeatedly.
+#
+# On a push, cancelling can land in the same `imagetools create` -> push window
+# that release.yaml protects with `cancel-in-progress: false`, and for the same
+# reason: a run killed mid-publish leaves the moving tag torn, pointing at one
+# architecture or at nothing. The blast radius is only ever a disposable alpha
+# tag that the very next run republishes - but "it heals itself shortly" is not
+# a property worth relying on when the alternative is queueing.
+#
+# So pushes QUEUE instead. The group is per-ref, so a second push waits for the
+# first rather than running beside it - which also keeps two pytest processes
+# off one database, the deadlock tests/admin's shared-database fixtures hit
+# when two runs overlap. Each run does get its own MySQL service container, so
+# that was already safe, but queueing makes it safe by construction.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+  packages: write        # GHCR, through GITHUB_TOKEN. No new secret is added.
+
+jobs:
+
+  # ===========================================================================
+  # What this run calls itself.
+  # ===========================================================================
+  version:
+    name: Derive the alpha version and tags
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      sha_tag: ${{ steps.derive.outputs.sha_tag }}
+      moving_tag: ${{ steps.derive.outputs.moving_tag }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: derive
+        run: |
+          set -euo pipefail
+          SHA="${GITHUB_SHA:0:7}"
+
+          # THE MOVING TAG. `alpha` means "the head of main", and nothing else
+          # is allowed to claim it: a run on a packaging branch gets a
+          # branch-derived moving tag instead, so the mechanism is exercised
+          # identically without `alpha` ever pointing at unmerged code.
+          if [ "${GITHUB_REF}" = "refs/heads/main" ]; then
+            MOVING="alpha"
+          else
+            MOVING="$(printf '%s' "${GITHUB_REF#refs/heads/}" \
+                      | tr '[:upper:]' '[:lower:]' | tr -c 'a-z0-9._-' '-')"
+          fi
+
+          # THE ALPHA VERSION: `<base>.dev0+<short-sha>`.
+          #
+          # Two properties, both required, and the obvious `<base>+<short-sha>`
+          # only gives one of them.
+          #
+          #   * It cannot be mistaken for a release. `1.0.0.dev0+9a3f21c` is
+          #     nobody's idea of a shipped version, and it names the commit it
+          #     came from.
+          #   * It sorts BELOW the release. This is the part a bare local
+          #     segment gets backwards: PEP 440 orders a local version ABOVE
+          #     the public version it decorates, so `1.0.0+9a3f21c` > `1.0.0`
+          #     and an alpha wheel sitting beside a release in one directory
+          #     would be the one pip picked. `.dev0` is what puts it behind:
+          #     `1.0.0.dev0+9a3f21c` < `1.0.0`.
+          #
+          # The base is read from pyproject.toml rather than written here, so
+          # there is still exactly one place a version number is spelled out.
+          BASE="$(python3 -c '
+          import tomllib
+          with open("pyproject.toml","rb") as fh:
+              print(tomllib.load(fh)["project"]["version"])
+          ')"
+          case "$BASE" in
+            *dev*|*+*)
+              echo "::error title=pyproject version is not a base version::pyproject.toml says ${BASE}. The base version must be a plain N.N.N; the .dev0+sha suffix is added here, not committed."
+              exit 1
+              ;;
+          esac
+          VERSION="${BASE}.dev0+${SHA}"
+
+          echo "version=$VERSION"     >> "$GITHUB_OUTPUT"
+          echo "sha_tag=$SHA"         >> "$GITHUB_OUTPUT"
+          echo "moving_tag=$MOVING"   >> "$GITHUB_OUTPUT"
+          echo "alpha version ${VERSION}; tags ${SHA}, ${MOVING}"
+
+  # ===========================================================================
+  # The suite, against MySQL 8.
+  # ===========================================================================
+  test:
+    name: Suite
+    uses: ./.github/workflows/_test.yaml
+
+  # ===========================================================================
+  # The two architecture builds. Independent by construction.
+  # ===========================================================================
+  build:
+    name: Images
+    needs: [version, test]
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_build-images.yaml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      arch_tag_prefix: ${{ needs.version.outputs.sha_tag }}
+      # A pull request builds to verify and publishes nothing.
+      push: ${{ github.event_name != 'pull_request' }}
+
+  # ===========================================================================
+  # The multi-architecture tag, assembled from whatever survived.
+  # ===========================================================================
+  manifest:
+    name: Alpha tag
+    needs: [version, test, build]
+    # `always()` so a failed or never-scheduled arm64 leg does not skip this
+    # job - that is the whole point. But NOT unconditional: the tests must have
+    # passed, and a pull request publishes nothing.
+    if: always() && needs.test.result == 'success' && github.event_name != 'pull_request'
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/_publish-manifest.yaml
+    with:
+      arch_tag_prefix: ${{ needs.version.outputs.sha_tag }}
+      tags: ${{ needs.version.outputs.sha_tag }} ${{ needs.version.outputs.moving_tag }}
+      heading: >-
+        Alpha images for `${{ needs.version.outputs.sha_tag }}`
+        (kaicalc ${{ needs.version.outputs.version }})

@@ -1,0 +1,52 @@
+{
+  "version_label": "GOLDEN-case-04",
+  "is_mock": true,
+
+  "sectors": [
+    { "code": "processing", "name": "Processing / Manufacturing", "sort_order": 20 }
+  ],
+  "food_categories": [
+    { "code": "standard_mix", "name": "Standard mix", "is_standard_mix": true, "sort_order": 0 },
+    { "code": "dairy", "name": "Dairy", "is_standard_mix": false, "sort_order": 60 }
+  ],
+  "destination_groups": [
+    { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 30 }
+  ],
+  "destinations": [
+    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 120 }
+  ],
+  "metrics": [
+    { "code": "co2e", "name": "Greenhouse gases", "unit": "kg CO2e",
+      "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 10 },
+    { "code": "ch4", "name": "Methane", "unit": "kg CH4",
+      "display_unit": null, "display_precision": 1, "sort_order": 20 }
+  ],
+
+  "constants": [
+    { "code": "GWP_CH4_100", "value": "28.0000000000", "unit": "kg CO2e / kg CH4",
+      "note": "IPCC AR5, 100-year horizon." },
+    { "code": "GWP_CH4_20", "value": "84.0000000000", "unit": "kg CO2e / kg CH4",
+      "note": "IPCC AR5, 20-year horizon. Present in this bundle and NOT selected by this case; case_05 is the same bundle read at the other horizon." }
+  ],
+  "formulas": [
+    { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)",
+      "notes": "Names no constant, so it must not move between the two horizons." },
+    { "metric": "ch4", "expression": "qty_kg * (upstream + downstream) * const_GWP_CH4",
+      "notes": "Names const_GWP_CH4 and never a horizon (contract 4.3). Switching the request rebinds one variable and touches no stored expression." }
+  ],
+  "upstream": [
+    { "sector": "processing", "food_category": "dairy", "destination": null,
+      "metric": "co2e", "value_per_kg": "1.9000000000" }
+  ],
+  "downstream": [
+    { "destination": "landfill", "food_category": "dairy",
+      "metric": "co2e", "value_per_kg": "0.9900000000" },
+    { "destination": "landfill", "food_category": null,
+      "metric": "ch4", "value_per_kg": "0.0270000000" }
+  ],
+  "equivalences": [
+    { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
+      "value_per_unit": "4.1800000000",
+      "label_template": "Equivalent to driving {value} km", "sort_order": 10 }
+  ]
+}

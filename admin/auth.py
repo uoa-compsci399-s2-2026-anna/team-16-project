@@ -47,6 +47,25 @@ SESSION_GENERATION_KEY = "staff_generation"
 #: be finished by whoever sits down next.
 PENDING_LOGIN_TTL_SECONDS = 300
 
+#: The same allowance, for the one onboarding step that is not "read a code off
+#: a phone" — enrolment. Reading a code assumes the phone already has the
+#: account on it; enrolment is the request to put it there, and what stands
+#: between the QR appearing and the code being typed is installing an
+#: authenticator app on a second device, finding the camera, and waiting out
+#: whichever time step is half-elapsed. Five minutes is a plausible budget for
+#: none of that, and the deadline lands precisely on the request that carries
+#: the recovery codes — shown once, never recoverable — so the cost of it
+#: being too short is not an extra login, it is an account with a second
+#: factor and no way back.
+#:
+#: Fifteen minutes is a bound, not a licence to idle: it is granted from the
+#: moment the enrolment page renders (admin/views.py EnrolView) and only to
+#: that page, which the gate opens only for an account that is not yet
+#: enrolled. What a pending login can reach in that window is unchanged — the
+#: three onboarding pages — and the holder already presented the password, so
+#: the longer window grants nothing that logging in again would not.
+ENROLMENT_WINDOW_SECONDS = 900
+
 #: A real bcrypt hash of a value nothing can supply, verified against when the
 #: username does not exist so that both paths cost the same. Computed once at
 #: import: hashing per request would itself be a measurable difference, and a
@@ -110,6 +129,47 @@ def authenticate_password(
     A failure against a username that does not exist still counts towards the
     throttle. Skipping it would turn the throttle into an oracle for which
     usernames are real.
+
+    **One None for three different refusals, and it stays that way.** A wrong
+    password, an unknown username and a locked account are all reported here
+    as None, so the caller cannot tell them apart and neither can the page.
+    That cost something real: an administrator whose password had just been
+    reset mistyped the issued 20-character value a few times, tripped the
+    lock, and then read every correct attempt as "invalid credentials" - the
+    reasonable conclusion being that the reset had failed, and the next move
+    after that conclusion is to reset it again.
+
+    The fix is in the copy, not in the order of operations. The login page
+    states the lockout policy to *everyone* it refuses: after
+    LOGIN_MAX_FAILURES failures an account is locked for
+    LOGIN_LOCKOUT_MINUTES, and while that lock is in force a correct password
+    is refused too. That is true for every visitor, reveals nothing an
+    attacker could not measure by trying (the count in five tries, the period
+    by waiting), and is what tells a locked-out administrator to wait rather
+    than to reissue.
+
+    **The policy is stated, but not at the same rank as the outcome.** The
+    first version of the copy put it in the alert box, full size, directly
+    under the line reporting the refusal, and the owner read it on the first
+    wrong password as a report that they were locked out - the whole defect
+    this text exists to prevent, arrived at from the other side. The page now
+    keeps the outcome in the alert (which is also what role="alert"
+    announces) and the standing rule below it in muted text, opening with its
+    own condition. See admin/templates/sqladmin/login.html. Nothing about
+    what is *said* changed between those two versions, and nothing here did
+    either: one message, byte-identical for all three refusals.
+
+    The precise alternative - verify the password first and consult the lock
+    afterwards, so that only someone holding a correct password for a real
+    locked account is told so - was considered and rejected. It would put a
+    bcrypt verification on the far side of the lock, which is exactly the
+    work the early return above exists to refuse: an attacker who has locked
+    a username (and they can lock any username, real or not, per the
+    paragraph above) could then compel unbounded bcrypt work at will. It
+    would also have to carry a third outcome out through
+    AdminAuth.login(), whose contract with sqladmin is True/False/Response.
+    Do not reorder verify_password and throttle.is_locked without weighing
+    both of those again.
     """
     if throttle.is_locked(username, now=now):
         return None
@@ -259,6 +319,98 @@ def authenticate_recovery_code(
         throttle=throttle,
         now=now,
         verify=lambda username: consume_recovery_code(session, username, code),
+    )
+
+
+def reauthenticate(
+    session: Session,
+    staff: Staff,
+    form,
+    *,
+    runtime,
+    now: float,
+    password_only: bool = False,
+) -> str | None:
+    """Return None when the caller has proved itself afresh, else a message.
+
+    **A second proof on top of an established session, and the reason it is
+    needed at all.** Every caller of this function sits behind
+    ``AdminAuth.authenticate()``'s ordinary branch, so the request already
+    carries a session that presented both factors at some point. That is
+    exactly what a *stolen* session also carries. The current password and a
+    live TOTP code are the two things a session cookie does not carry, so
+    either one re-proves the person rather than the cookie.
+
+    ``password_only`` is what a password change passes. Accepting a TOTP code
+    there would miss the point entirely: the session presenting it has already
+    cleared the second factor, so a code proves nothing the cookie did not,
+    while the current password is the one secret a stolen session does not
+    carry.
+
+    Failures are charged to the **shared login throttle**, the same counter
+    ``authenticate_password`` and ``authenticate_totp`` use. Contract §8.3's
+    reason for one counter applies here unchanged: a six-digit code is a 10^6
+    search space, and these pages accept one from a caller who by construction
+    already holds a session. The cost is that an attacker sitting on a stolen
+    session can lock the rightful owner out of logging in — accepted, because
+    an attacker at that point can already do considerably worse, and the
+    alternative is an unthrottled oracle for the account's own password.
+
+    Success deliberately does **not** clear the counter, for the reason
+    ``authenticate_password``'s docstring gives: clearing on a correct factor
+    lets an attacker who holds one of them alternate successes with guesses
+    and never reach the threshold.
+
+    **Why this lives here rather than on the view that first needed it.**
+    ``admin/self_service_view.py`` wrote it, and ``admin/accounts_view.py``'s
+    account-creation route needs the same proof for the same reason. Copying
+    it is the failure this project has already had five times over in its test
+    teardowns: the second copy is written slightly weaker and is the one that
+    matters. ``staff`` is passed in rather than looked up so that this
+    function never has to decide *whose* account is being proved — the caller
+    reads that from ``SESSION_KEY`` and from nowhere else.
+    """
+    if runtime.throttle.is_locked(staff.username, now=now):
+        remaining = runtime.throttle.seconds_remaining(staff.username, now=now)
+        return f"Too many failed attempts. Try again in {remaining} seconds."
+
+    password = form.get("current_password") or ""
+    if password:
+        if verify_password(password, staff.password_hash):
+            return None
+        runtime.throttle.record_failure(staff.username, now=now)
+        return "That is not the current password for this account."
+
+    if password_only:
+        return "Enter your current password to confirm this change."
+
+    code = (form.get("current_code") or "").strip()
+    if code:
+        try:
+            accepted = verify_staff_totp(
+                session, staff.username, code,
+                secret_key=runtime.settings.secret_key, now=int(now),
+            )
+        except MfaNotEnrolledError:
+            accepted = False
+        if accepted:
+            return None
+        runtime.throttle.record_failure(staff.username, now=now)
+        # Names the replay case explicitly. Somebody who has just finished
+        # logging in reaches for the code still on their screen, and it is
+        # refused by the counter that stops replay - telling them to check
+        # their device clock would send them to fix something that is not
+        # broken. Same reasoning, same wording shape, as VerifyView's own
+        # failure message.
+        return (
+            "That code was not accepted. If you have just used it to log in, "
+            "wait for your authenticator to show the next one — each code "
+            "works only once."
+        )
+
+    return (
+        "Confirm it is you: enter your current password, or a code from an "
+        "authenticator already on this account."
     )
 
 

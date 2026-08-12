@@ -20,6 +20,24 @@ BCRYPT_MAX_BYTES = 72
 #: SECRET_KEY must pick a different value here so the two never share a key.
 TOTP_ENCRYPTION_INFO = b"totp-secret-encryption"
 
+#: HKDF ``info`` for the unclaimed-password key. **Distinct from
+#: TOTP_ENCRYPTION_INFO on purpose, and the rule that says so is the comment
+#: directly above.** The two protect different things with different lifetimes
+#: — a TOTP secret is valid for the life of a device, an unclaimed password
+#: until it is claimed — and sharing a key would mean a compromise of one
+#: analysis is a compromise of both, and that ``kaicalc-admin rotate-key``
+#: could not be taught to re-wrap one without the other.
+#:
+#: **The byte string is frozen and must never be "tidied up" to match the
+#: name.** v1.16 renamed the column, this constant and both functions below
+#: from *initial* to *unclaimed*; the ``info`` is key-derivation material, so
+#: changing these bytes derives a different key and turns every value already
+#: stored under the old one into a blob nothing can open — silently, since
+#: Fernet's failure is an ``InvalidToken`` at read time, on a credential
+#: screen, for exactly the accounts that were mid-onboarding. A rename is free;
+#: this line is not.
+UNCLAIMED_PASSWORD_ENCRYPTION_INFO = b"initial-password-encryption"
+
 
 class PasswordTooLongError(ValueError):
     """Password exceeds bcrypt's 72-byte input limit."""
@@ -87,9 +105,20 @@ def _derive_key(secret_key: str, info: bytes) -> bytes:
     ).derive(secret_key.encode("utf-8"))
 
 
-def _fernet(secret_key: str) -> Fernet:
-    derived = _derive_key(secret_key, TOTP_ENCRYPTION_INFO)
+def _fernet_for(secret_key: str, info: bytes) -> Fernet:
+    """A Fernet bound to one purpose, named by ``info``.
+
+    Purpose-separated at this level rather than by each caller deriving its
+    own: a second copy of these two lines is a second place for the ``info``
+    argument to be omitted, and omitting it is silent - two purposes sharing
+    one key encrypt and decrypt each other's values perfectly well.
+    """
+    derived = _derive_key(secret_key, info)
     return Fernet(base64.urlsafe_b64encode(derived))
+
+
+def _fernet(secret_key: str) -> Fernet:
+    return _fernet_for(secret_key, TOTP_ENCRYPTION_INFO)
 
 
 def encrypt_totp_secret(secret: str, *, secret_key: str) -> bytes:
@@ -115,6 +144,80 @@ def decrypt_totp_secret(blob: bytes, *, secret_key: str) -> str:
     except InvalidToken as exc:
         raise TotpSecretUndecryptableError(
             "Stored TOTP secret cannot be decrypted with the current "
+            "SECRET_KEY. If SECRET_KEY was changed, run "
+            "python -m admin.cli rotate-key --old <old> --new <new>."
+        ) from exc
+
+
+# --- The unclaimed password -------------------------------------------------
+#
+# **This is reversible storage of a live credential, and it is the one place in
+# this system that has any.** Everything else a person could type is hashed:
+# `password_hash` is bcrypt, `code_hash` is SHA-256, and neither can be read
+# back at all. Contract v1.15 item 3 records the decision and its cost, and
+# v1.16 widened it from the password an account is created with to any password
+# the system has minted for it and nobody has claimed; what follows is the part
+# that belongs beside the code.
+#
+# WHAT IT BUYS. A system-minted password is shown once, on the page that
+# creates the account or the page that issues a replacement, and handed over in
+# person - there is no email system, deliberately. A closed tab loses it. The
+# account survives (nobody can log in as it without also completing the forced
+# change), but the administrator has to issue another, and if the lost one had
+# already been read out to the colleague, that is now a password they will try
+# and be refused by. Keeping the value until it is claimed removes that whole
+# exchange - and v1.16 removed it from the *issued* case too, which until then
+# was the one the original feature left unprotected.
+#
+# WHAT IT COSTS, precisely. Anyone holding a database dump *and* SECRET_KEY can
+# log in as every account holding an unclaimed password. A newly created
+# account is pre-MFA in a way that does not help: the attacker reaches the
+# forced enrolment page and enrols their own authenticator, so the password is
+# the whole of the protection. An account that has already enrolled and has
+# only had a password issued still holds its second factor, so there the
+# password is one of two. What bounds the exposure in both cases is the
+# column's lifetime - NULL before creation, NULL from each password change
+# onward, and for a colleague sitting next to you that is minutes.
+#
+# WHAT IT DOES NOT PROTECT AGAINST, said plainly for the same reason
+# `encrypt_totp_secret` says it: losing the database and SECRET_KEY together.
+# In the shipped container arrangement SECRET_KEY lives in its own named
+# volume (docker/entrypoint.sh writes /var/lib/kaicalc/secret_key) that is
+# mounted into the application services and *not* into the database container,
+# so an ordinary dump - mysqldump, a leaked backup, a misconfigured export -
+# does not carry it. A compromise of the Docker host carries both.
+
+
+def encrypt_unclaimed_password(plain: str, *, secret_key: str) -> bytes:
+    """Encrypt an unclaimed password for ``staff.unclaimed_password_enc``.
+
+    Fernet, so this is reversible - which is the entire point and the entire
+    cost. See the note above. Two callers, both in ``admin/accounts.py``:
+    ``create_staff`` and, since v1.16, ``issue_password``.
+    """
+    return _fernet_for(secret_key, UNCLAIMED_PASSWORD_ENCRYPTION_INFO).encrypt(
+        plain.encode("utf-8")
+    )
+
+
+def decrypt_unclaimed_password(blob: bytes, *, secret_key: str) -> str:
+    """Read back a stored unclaimed password.
+
+    Raises ``TotpSecretUndecryptableError`` - the same error the TOTP path
+    raises, and for the same cause: SECRET_KEY was changed without rotating.
+    Reusing it rather than adding a second, near-identical exception keeps the
+    one recovery instruction ("run rotate-key") attached to every symptom of
+    the one mistake that produces it.
+    """
+    try:
+        return (
+            _fernet_for(secret_key, UNCLAIMED_PASSWORD_ENCRYPTION_INFO)
+            .decrypt(blob)
+            .decode("utf-8")
+        )
+    except InvalidToken as exc:
+        raise TotpSecretUndecryptableError(
+            "A stored unclaimed password cannot be decrypted with the current "
             "SECRET_KEY. If SECRET_KEY was changed, run "
             "python -m admin.cli rotate-key --old <old> --new <new>."
         ) from exc

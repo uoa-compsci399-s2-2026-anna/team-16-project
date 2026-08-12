@@ -21,12 +21,14 @@ from admin.accounts import (
     complete_mfa_enrolment,
     create_staff,
     get_staff,
+    pending_totp_device,
     set_password,
 )
 from admin.security import decrypt_totp_secret
 from admin.totp import TOTP_INTERVAL
 from admin.views import _grouped
 from admin.views import time as views_time
+from tests.admin.conftest import _cleanup_staff_named
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -52,14 +54,19 @@ def owes_enrolment(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         db.commit()
     yield username, "a-long-enough-password"
-    with factory() as db:
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    # conftest's, not a fourth copy of the deletion. It carries both
+    # predicates - `actor = :username` AND `table_name = 'staff' AND
+    # row_id = :id` - and the second is the one that catches the `create`
+    # entry admin/accounts.py::create_staff now writes, whose actor is the
+    # account's *creator* rather than the account. A teardown holding only
+    # the actor predicate leaves that row behind, where it is visible to
+    # every later test in the run that reads audit_log as a whole.
+    _cleanup_staff_named(admin_app, username)
 
 
 @pytest.fixture
@@ -76,7 +83,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -90,9 +97,7 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 async def _login_password_step(client, username, password):
@@ -111,9 +116,18 @@ async def _csrf_from(client, path):
 
 
 def _stored_secret(admin_app, username):
+    """The secret of the enrolment in progress.
+
+    Reads the *unconfirmed* `staff_totp_device` row rather than a column on
+    `staff`: contract v1.13 moved TOTP secrets onto their own table so an
+    account can enrol a second phone before losing the first. On this page
+    there is only ever one device - it is the onboarding enrolment - but
+    asking for the pending one is what keeps that true by construction.
+    """
     with admin_app.state.session_factory() as db:
-        staff = get_staff(db, username)
-        return decrypt_totp_secret(staff.mfa_secret_enc, secret_key=SECRET_KEY)
+        device = pending_totp_device(db, username)
+        assert device is not None, "no enrolment in progress for this account"
+        return decrypt_totp_secret(device.secret_enc, secret_key=SECRET_KEY)
 
 
 def _mfa_enrolled(admin_app, username):
@@ -345,7 +359,7 @@ async def test_the_handler_refuses_an_established_session_even_if_the_gate_admit
 
     # The eviction: an administrator resets this account's MFA mid-session.
     with admin_app.state.session_factory() as db:
-        reset_mfa(db, username)
+        reset_mfa(db, username, actor="admin")
         db.commit()
 
     monkeypatch.setattr(
@@ -357,7 +371,11 @@ async def test_the_handler_refuses_an_established_session_even_if_the_gate_admit
     assert response.status_code in (302, 307)
     assert not response.headers["location"].rstrip("/").endswith("/admin/enrol")
     with admin_app.state.session_factory() as db:
-        assert get_staff(db, username).mfa_secret_enc is None
+        # No device row at all, confirmed or otherwise. reset_mfa clears the
+        # whole collection, and asserting on the collection rather than on
+        # `mfa_enrolled` is what catches a reset that left a usable secret
+        # behind on a second, unconfirmed row.
+        assert get_staff(db, username).totp_devices == []
 
 
 # --- Behaviour 7 --------------------------------------------------------
@@ -477,3 +495,73 @@ async def test_enrolment_stamps_the_login_time(
 
     with admin_app.state.session_factory() as db:
         assert get_staff(db, username).last_login_at is not None
+
+
+async def test_the_recovery_codes_page_names_the_system_and_the_account(
+    admin_app, client, owes_enrolment
+):
+    """Eight random strings in a password manager say nothing about what they open.
+
+    Deleting either interpolation from brand/enrol_done.html fails this. Same
+    reasoning as the authenticator issuer: the codes outlive the page they
+    were shown on, and whoever finds them later has to be able to tell which
+    system and which account they belong to.
+    """
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+
+    done = await client.post(
+        "/admin/enrol",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(
+                int(views_time.time())
+            ),
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+
+    assert done.status_code == 200
+    assert "Kai Commitment Admin" in done.text
+    assert username in done.text
+
+
+async def test_a_rejected_code_re_renders_a_byte_identical_qr(
+    admin_app, client, owes_enrolment
+):
+    """Not merely the same secret - the same *image*.
+
+    The existing secret assertions cannot see a **label** that changed between
+    the first render and the second, and a changed label is a different
+    `otpauth://` URI, which an authenticator adds as a *second entry* rather
+    than recognising as the one it already holds.
+
+    To be exact about what this does and does not prove today. Until v1.13
+    this page built its resume URI from a bare `staff.username` while
+    `begin_mfa_enrolment` built its mint URI from
+    `_device_label(username, DEFAULT_DEVICE_NAME)`. Those two produce the
+    *same string*, so this test would not have failed on that drift and does
+    not claim to have caught it - the drift was latent, waiting on the default
+    device's label acquiring a rule the resume path did not share. What this
+    pins is the property that made it latent rather than live: the mint path
+    and the resume path render one image. `test_the_default_devices_label_is_
+    the_bare_username` in test_enrolment.py pins the label's value itself,
+    which is the half this cannot see.
+    """
+    username, password = owes_enrolment
+    await _login_password_step(client, username, password)
+
+    first = await client.get("/admin/enrol")
+    before = re.search(r'<path d="([^"]+)"', first.text).group(1)
+
+    rejected = await client.post(
+        "/admin/enrol",
+        data={"csrf_token": await _csrf_from(client, "/admin/enrol"), "code": "000000"},
+    )
+
+    assert rejected.status_code == 400
+    after = re.search(r'<path d="([^"]+)"', rejected.text).group(1)
+    assert after == before
+

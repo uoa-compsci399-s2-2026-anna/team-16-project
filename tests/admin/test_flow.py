@@ -26,18 +26,23 @@ import pytest
 from sqlalchemy import text
 
 from admin.accounts import (
+    RECOVERY_CODE_COUNT,
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     count_active_admins,
     create_staff,
     deactivate_staff,
     get_staff,
+    pending_totp_device,
     set_password,
 )
+from admin.auth import PENDING_LOGIN_TTL_SECONDS
 from admin.bootstrap import BOOTSTRAP_USERNAMES, ensure_bootstrap_admins
 from admin.security import decrypt_totp_secret
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
+
+from tests.admin.conftest import _cleanup_staff_named
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -65,9 +70,18 @@ async def _csrf_from(client, path):
 
 
 def _stored_secret(admin_app, username):
+    """The secret of the enrolment in progress.
+
+    Reads the *unconfirmed* `staff_totp_device` row rather than a column on
+    `staff`: contract v1.13 moved TOTP secrets onto their own table so an
+    account can enrol a second phone before losing the first. On this page
+    there is only ever one device - it is the onboarding enrolment - but
+    asking for the pending one is what keeps that true by construction.
+    """
     with admin_app.state.session_factory() as db:
-        staff = get_staff(db, username)
-        return decrypt_totp_secret(staff.mfa_secret_enc, secret_key=SECRET_KEY)
+        device = pending_totp_device(db, username)
+        assert device is not None, "no enrolment in progress for this account"
+        return decrypt_totp_secret(device.secret_enc, secret_key=SECRET_KEY)
 
 
 @pytest.fixture
@@ -81,19 +95,41 @@ def clean_bootstrap_slate(admin_app):
     would then pass (or fail) for a reason that has nothing to do with the
     onboarding gate it is meant to be driving.
     """
-    factory = admin_app.state.session_factory
-
     def _delete():
-        with factory() as db:
-            db.execute(
-                text("DELETE FROM staff WHERE username IN (:a, :b)"),
-                {"a": BOOTSTRAP_USERNAMES[0], "b": BOOTSTRAP_USERNAMES[1]},
-            )
-            db.commit()
+        # The audit entries as well as the rows, through the shared teardown.
+        # These walks drive the real change-password page, which records its
+        # change now that an actor is identified there, and audit_log has no
+        # foreign key to staff - so deleting the account alone leaves the entry
+        # behind in the one shared test database, where test_modelviews.py and
+        # test_taxonomy_rules.py read the whole table. It runs before the walk
+        # as well as after, which is why the helper tolerates a name with no
+        # row.
+        _cleanup_staff_named(admin_app, *BOOTSTRAP_USERNAMES)
 
     _delete()
     yield
     _delete()
+
+
+@pytest.fixture
+def owes_enrolment(admin_app):
+    """An account past the forced password change but not yet MFA-enrolled.
+
+    Copied from tests/admin/test_enrol_page.py's fixture of the same name,
+    for the reason every other fixture in this file is copied rather than
+    imported. This is the state ``AdminAuth.login`` routes to
+    ``admin:view-enrol``: ``must_change_password`` cleared, no confirmed
+    authenticator yet.
+    """
+    username = f"u{uuid.uuid4().hex[:10]}"
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
+        db.flush()
+        set_password(db, username, "a-long-enough-password")
+        db.commit()
+    yield username, "a-long-enough-password"
+    _cleanup_staff_named(admin_app, username)
 
 
 @pytest.fixture
@@ -110,7 +146,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -124,9 +160,7 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 # --- Walk 1: the full gauntlet from a bootstrapped, account-less database ---
@@ -155,7 +189,7 @@ async def test_walk1_bootstrap_login_change_password_enrol_index(
     factory = admin_app.state.session_factory
     with factory() as db:
         assert count_active_admins(db) == 0
-        created = ensure_bootstrap_admins(db)
+        created = ensure_bootstrap_admins(db, secret_key=SECRET_KEY)
         db.commit()
     passwords = dict(created)
     username, password = "admin", passwords["admin"]
@@ -392,7 +426,8 @@ async def test_walk4_a_half_onboarded_account_cannot_reach_any_panel_url_by_typi
     factory = admin_app.state.session_factory
     with factory() as db:
         _, password = create_staff(
-            db, username=username, display_name="Half Onboarded"
+            db, username=username, display_name="Half Onboarded", actor="test",
+            secret_key=SECRET_KEY,
         )
         db.commit()
     try:
@@ -420,9 +455,7 @@ async def test_walk4_a_half_onboarded_account_cannot_reach_any_panel_url_by_typi
         )
         assert change_password.status_code == 200
     finally:
-        with factory() as db:
-            db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-            db.commit()
+        _cleanup_staff_named(admin_app, username)
 
 
 # --- Walk 5: deactivation mid-session refuses the very next request --------
@@ -564,3 +597,86 @@ async def test_walk6_a_password_change_mid_session_refuses_its_very_next_request
     refused = await client.get("/admin/", follow_redirects=False)
     assert refused.status_code in (302, 307)
     assert "/admin/login" in refused.headers["location"]
+
+
+# --- Walk 7: an enrolment slower than the pending login still completes -----
+
+
+async def test_walk7_an_enrolment_slower_than_the_pending_login_still_shows_its_recovery_codes(
+    admin_app, client, owes_enrolment, monkeypatch
+):
+    """A first-time user takes longer than ``PENDING_LOGIN_TTL_SECONDS`` to
+    install an authenticator, scan the QR and type a code - and still lands on
+    the recovery codes.
+
+    This is the walk the reported defect takes, and it is a seam defect of
+    exactly the shape this file exists for. The pending login's ``expires_at``
+    is written once, by ``AdminAuth.login``, and refreshed in exactly one
+    other place - ``ChangePasswordView`` (admin/views.py), whose own comment
+    already names the hazard: "Choosing a password and then scanning a QR
+    routinely outlasts the five-minute pending login". That refresh covers the
+    password step. Nothing covers the *enrolment* step, which is the longer
+    one: it is not typing, it is installing an app on a second device.
+
+    When the deadline passes mid-scan, ``_may_open_pre_login_page`` refuses
+    /admin/enrol and sqladmin's ``login_required`` turns that refusal into a
+    302 to /admin/login - so ``EnrolView.enrol`` never runs, and the page that
+    shows the recovery codes is never reached. **The codes are shown once and
+    cannot be recovered**, so a bounce here is not merely an extra login: it
+    is the one moment the account's fallback credential is legible, spent on a
+    redirect.
+
+    The assertions below are deliberately not just "200". A fix that let the
+    request through without finishing the enrolment, or that finished it
+    without rendering the codes, would leave the user in the same place; so
+    the walk pins the confirmed device, the five stored code hashes, and the
+    codes themselves being on the page.
+    """
+    username, password = owes_enrolment
+
+    base = int(time.time())
+    monkeypatch.setattr(views_time, "time", lambda: base)
+
+    login_response = await _login_password_step(client, username, password)
+    assert login_response.status_code == 302
+    assert login_response.headers["location"].endswith("/admin/enrol")
+
+    enrol_token = await _csrf_from(client, "/admin/enrol")
+    secret = _stored_secret(admin_app, username)
+
+    # The slow part, and the whole point of the walk: the QR is on screen and
+    # the person is across the room with a phone, an app store and a camera.
+    # One second past the deadline is enough to show the seam; a real first
+    # enrolment is not close to it.
+    slow = base + PENDING_LOGIN_TTL_SECONDS + 1
+    monkeypatch.setattr(views_time, "time", lambda: slow)
+
+    enrol_response = await client.post(
+        "/admin/enrol",
+        data={
+            "code": pyotp.TOTP(secret, interval=TOTP_INTERVAL).at(slow),
+            "csrf_token": enrol_token,
+        },
+        follow_redirects=False,
+    )
+    assert enrol_response.status_code == 200, (
+        "a correct code typed after the pending login lapsed was bounced to "
+        "/admin/login, spending the one render of the recovery codes"
+    )
+
+    with admin_app.state.session_factory() as db:
+        staff = get_staff(db, username)
+        assert staff.mfa_enrolled, "the authenticator was not confirmed"
+        assert [d.enrolled_at is not None for d in staff.totp_devices] == [True]
+        stored = db.execute(
+            text("SELECT COUNT(*) FROM staff_recovery_code WHERE staff_id = :i"),
+            {"i": staff.id},
+        ).scalar()
+    assert stored == RECOVERY_CODE_COUNT, (
+        "the account finished enrolment without a recovery path"
+    )
+
+    codes = re.findall(r"<li>([A-Za-z0-9-]+)</li>", enrol_response.text)
+    assert len(codes) == RECOVERY_CODE_COUNT, (
+        "the recovery codes were not rendered; they exist only in this response"
+    )

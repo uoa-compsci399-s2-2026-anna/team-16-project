@@ -43,6 +43,7 @@ from db.models import (
     utcnow,
 )
 from db.types import (
+    PREVENTION_CODE,
     DestinationGroupSpec,
     DestinationSpec,
     FoodCategorySpec,
@@ -82,9 +83,34 @@ BundleFactory = Callable[[dict[str, Any]], Any]
 REDACTED_FIELDS = {
     "password_hash",
     "mfa_secret_enc",
+    #: The column `mfa_secret_enc` became in contract v1.13, when TOTP
+    #: secrets moved off `staff` onto `staff_totp_device` so that an account
+    #: can enrol a second phone before losing the first. The old name is kept
+    #: above rather than replaced: `audit_log` rows written before that
+    #: migration still carry it, and this set is also what a future
+    #: `before_json` reader would consult.
+    "secret_enc",
     "code_hash",
     "ip_hmac",
     "token",
+    #: The unclaimed password (contract v1.15 §8.3, renamed and widened in
+    #: v1.16). Added here in the same change that added the column, not after
+    #: it, because `row_to_dict` snapshots *every* mapped column of a `staff`
+    #: row and `audit_log` is append-only — a value that reaches this table
+    #: cannot be taken back out, and the whole point of the column is that its
+    #: contents stop existing the moment the password is claimed. An audit copy
+    #: would outlive that by the life of the deployment.
+    #:
+    #: It is the ciphertext that is redacted, and that is not belt-and-braces:
+    #: the key is derived from SECRET_KEY, which is available to anything that
+    #: can read `audit_log` in the first place, so the ciphertext in this
+    #: table is the plaintext.
+    "unclaimed_password_enc",
+    #: What that column was called between v1.15 and v1.16 (migration `0012`
+    #: renamed it). Kept for the same reason `mfa_secret_enc` is kept above,
+    #: and it is the cheaper half of the two: a redaction that is one string
+    #: out of date fails open and says nothing while it does.
+    "initial_password_enc",
 }
 
 _bundle_cache: dict[int, Any] = {}
@@ -232,10 +258,17 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
     if factor_set is None:
         raise FactorSetNotFoundError(f"Unknown factor set id: {factor_set_id}")
     taxonomy = get_taxonomy_for_bundle(session)
+    #: The outer join on Destination is the O-7 half of §2.2 (v1.8):
+    #: `destination_id` is nullable and NULL means "every destination", so an
+    #: inner join here would publish only the `prevention` overrides and drop
+    #: every general row — the exact inverse of the bug O-7 closed, and just as
+    #: silent. `factor_downstream` outer-joins FoodCategory for the same reason.
     upstream = session.execute(
-        select(FactorUpstream, Sector.code, FoodCategory.code, Metric.code)
+        select(FactorUpstream, Sector.code, FoodCategory.code, Destination.code,
+               Metric.code)
         .join(Sector, FactorUpstream.sector_id == Sector.id)
         .join(FoodCategory, FactorUpstream.food_category_id == FoodCategory.id)
+        .outerjoin(Destination, FactorUpstream.destination_id == Destination.id)
         .join(Metric, FactorUpstream.metric_id == Metric.id)
         .where(FactorUpstream.factor_set_id == factor_set_id)
     ).all()
@@ -279,12 +312,17 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
             {
                 "sector": sector,
                 "food_category": food,
+                #: §2.2/§10.2 (v1.8): `null` is a legal value meaning "every
+                #: destination", not a missing field, and must survive both
+                #: directions of the round trip — §4.1's lookup order is exact
+                #: destination, then this row, then zero.
+                "destination": destination,
                 "metric": metric,
                 "value_per_kg": str(x.value_per_kg),
                 "source_note": x.source_note,
                 "data_quality": x.data_quality,
             }
-            for x, sector, food, metric in upstream
+            for x, sector, food, destination, metric in upstream
         ],
         "downstream": [
             {
@@ -412,7 +450,121 @@ def _row_dict(row: Any) -> dict[str, Any]:
     return {column.name: getattr(row, column.name) for column in row.__table__.columns}
 
 
+def find_missing_prevention_upstream(
+    session: Session, factor_set_id: int
+) -> list[tuple[str, str, str]]:
+    """Which `(sector, food_category, metric)` tuples of this set would still
+    charge a prevented line an upstream factor. Contract §2.2, O-7.
+
+    A tuple qualifies when it has a general upstream row (`destination_id IS
+    NULL`) and **no `prevention` row at zero** — whether because the
+    `prevention` row is absent or because it carries a non-zero value. For
+    those tuples a line moved to `prevention` keeps some or all of the entry's
+    upstream burden and the calculator reverts towards its pre-v1.8 behaviour,
+    understating the benefit of wasting less.
+
+    **Existence is not the rule; the value is.** An earlier revision of this
+    function checked only that a `prevention` row was present, while both
+    callers' messages told the staff member to add one "at 0". A row at 1.9
+    satisfied an existence check completely and reopened O-7 for that tuple
+    silently — the same failure this guard was written for, with one extra
+    step, and against a `source_note` and an `architecture.md` §4.1 that now
+    state the whole offset as fact. Zero here is a modelling decision, not a
+    default: prevented food was never produced, so there is no upstream burden
+    to attribute, and any other value is a claim nothing in the system
+    supports.
+
+    **This is worse than the original O-7, not better, which is why it is
+    checked rather than filed.** O-7 was wrong everywhere and therefore
+    discoverable; this is wrong for one sector while every other sector on the
+    same results page is right, and it arrives with no error, no warning and
+    nothing in the log. A staff member adds a sector to a draft, publishes,
+    and sees exactly what they expected to see.
+
+    Returns **codes, not ids** (§1.1) and sorted, so a caller can put them
+    straight into a message a human has to act on. An empty list is the
+    healthy state.
+
+    Returns empty when the taxonomy has no `prevention` destination at all.
+    That is an unseeded database rather than an incomplete factor set, and it
+    is `admin/taxonomy_rules.check_prevention_intact`'s to refuse — a second
+    rule stated in terms of the same row would be a second thing to keep in
+    step, and this one would report every tuple in the set.
+    """
+    prevention_id = session.scalar(
+        select(Destination.id).where(Destination.code == PREVENTION_CODE)
+    )
+    if prevention_id is None:
+        return []
+
+    covered = (
+        select(FactorUpstream.sector_id, FactorUpstream.food_category_id,
+               FactorUpstream.metric_id)
+        .where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.destination_id == prevention_id,
+            #: The whole of the difference between "a row exists" and "the
+            #: offset is whole". Compared against `Decimal` rather than `0` so
+            #: that no float is bound into the statement (§1.2); DECIMAL(20,10)
+            #: compares exactly on both MySQL and SQLite.
+            FactorUpstream.value_per_kg == Decimal("0"),
+        )
+        .subquery()
+    )
+    rows = session.execute(
+        select(Sector.code, FoodCategory.code, Metric.code)
+        #: Explicit left side: every selected column belongs to a *joined*
+        #: table, so without this SQLAlchemy cannot infer which FROM the
+        #: joins hang off and raises InvalidRequestError.
+        .select_from(FactorUpstream)
+        .join(Sector, FactorUpstream.sector_id == Sector.id)
+        .join(FoodCategory, FactorUpstream.food_category_id == FoodCategory.id)
+        .join(Metric, FactorUpstream.metric_id == Metric.id)
+        .outerjoin(
+            covered,
+            (FactorUpstream.sector_id == covered.c.sector_id)
+            & (FactorUpstream.food_category_id == covered.c.food_category_id)
+            & (FactorUpstream.metric_id == covered.c.metric_id),
+        )
+        .where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.destination_id.is_(None),
+            covered.c.sector_id.is_(None),
+        )
+    ).all()
+    return sorted((sector, food, metric) for sector, food, metric in rows)
+
+
+def _refuse_incomplete_prevention(session: Session, factor_set_id: int) -> None:
+    missing = find_missing_prevention_upstream(session, factor_set_id)
+    if not missing:
+        return
+    listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
+    raise FactorSetStateError(
+        f"{len(missing)} factor combinations have an upstream factor but no "
+        f"'{PREVENTION_CODE}' upstream row at 0 — either it is missing or it "
+        f"carries a non-zero value — so a prevented line would still be "
+        f"charged upstream impact: {listed}. Add or correct a "
+        f"'{PREVENTION_CODE}' upstream row at 0 for each before publishing."
+    )
+
+
 def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None:
+    """Contract §5.2, plus the O-7 completeness check of §2.2.
+
+    The check belongs here rather than on the upstream-factor form: this is
+    the single transactional choke point, it is where the one-published-row
+    invariant is already settled, and a form-level guard cannot see a row that
+    has not been written yet — a staff member adds the general row, saves, and
+    is refused for a `prevention` row they were about to add next.
+
+    **Publish only, deliberately, not `rollback_to`.** Rollback is the "put the
+    calculator back to a state that worked" operation, and a set archived
+    before v1.8 will legitimately fail this check. Refusing an emergency
+    rollback over a completeness rule would be a worse failure than the one the
+    rule prevents.
+    """
+    _refuse_incomplete_prevention(session, factor_set_id)
     _transition_factor_set(
         session,
         factor_set_id,
@@ -480,7 +632,14 @@ def clone_factor_set(
     session.add(clone)
     session.flush()
     copy_specs = (
-        (FactorUpstream, ("sector_id", "food_category_id", "metric_id", "value_per_kg")),
+        #: `destination_id` is in this tuple because leaving it out is how O-7
+        #: comes back. Clone-edit-publish is the recommended staff workflow
+        #: (§5.2), so a clone that dropped the column would collapse every
+        #: `prevention` zero onto its general row on the first real factor set
+        #: — and the clone would still have the right row *count*, which is all
+        #: the older half of test_clone_is_deep asserted.
+        (FactorUpstream, ("sector_id", "food_category_id", "destination_id",
+                          "metric_id", "value_per_kg")),
         (FactorDownstream, ("destination_id", "food_category_id", "metric_id", "value_per_kg")),
         (Constant, ("code", "value", "unit", "note")),
         (Formula, ("metric_id", "expression", "notes")),

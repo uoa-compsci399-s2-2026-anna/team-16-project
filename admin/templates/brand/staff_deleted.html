@@ -1,0 +1,39 @@
+{% extends "brand/base.html" %}
+{% block title %}Accounts deleted{% endblock %}
+
+{% block shell %}
+<main class="page">
+
+  <header class="page__head">
+    <div class="page__mark" aria-hidden="true"></div>
+    <h1>Deleted</h1>
+    <p class="page__who">
+      {{ deleted | length }} account{% if deleted | length != 1 %}s{% endif %}
+      removed.
+    </p>
+  </header>
+
+  <section class="panel" aria-labelledby="deleted-heading">
+    <h2 id="deleted-heading">What was removed</h2>
+    <ul>
+      {% for account in deleted %}
+        <li>
+          <strong>{{ account.username }}</strong> — {{ account.display_name }}
+          ({{ account.role }})
+        </li>
+      {% endfor %}
+    </ul>
+    <p class="muted">
+      Each of these is now in the audit log as a deletion naming you, alongside
+      everything the account itself did — which is unchanged and still names
+      the account. If one of these people needs access again, create a new
+      account for them from the accounts screen; the username is free to reuse.
+    </p>
+  </section>
+
+  <div class="actions">
+    <a class="button" href="{{ list_url }}">Back to accounts</a>
+  </div>
+
+</main>
+{% endblock %}

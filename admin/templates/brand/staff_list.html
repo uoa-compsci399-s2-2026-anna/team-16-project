@@ -1,0 +1,18 @@
+{# Extends brand/model_list.html rather than sqladmin/list.html directly, so
+   this view keeps the page-level guidance mechanism every other list page has
+   (brand/_guidance.html) while still replacing `model_menu_bar` below. Same
+   shape, and the same reason, as brand/ip_block_list.html.
+
+   sqladmin renders a "New" button here only when `can_create` is true, and it
+   is deliberately false on this view (see admin/accounts_view.py for why the
+   generic create form cannot be used). Without this block, /admin/staff/new
+   would be reachable only by somebody who already knew the URL. #}
+{% extends "brand/model_list.html" %}
+{% block model_menu_bar %}
+<div class="ms-3 d-inline-block">
+  <a href="{{ url_for('admin:view-staff-new_staff') }}" class="btn btn-primary">
+    {{ _("Add a staff member") }}
+  </a>
+</div>
+{{ super() }}
+{% endblock %}

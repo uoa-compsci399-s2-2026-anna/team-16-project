@@ -1,0 +1,15 @@
+{
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector_code": "primary_production",
+      "food_category_code": "vegetables",
+      "current": [
+        { "destination_code": "not_harvested", "qty_kg": "800.000" }
+      ],
+      "alternative": [
+        { "destination_code": "prevention", "qty_kg": "800.000" }
+      ]
+    }
+  ]
+}

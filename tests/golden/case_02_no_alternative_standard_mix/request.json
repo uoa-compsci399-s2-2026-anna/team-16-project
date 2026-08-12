@@ -1,0 +1,20 @@
+{
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector_code": "consumer_hospitality",
+      "food_category_code": null,
+      "current": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "250.500"
+        },
+        {
+          "destination_code": "compost",
+          "qty_kg": "120.250"
+        }
+      ],
+      "alternative": null
+    }
+  ]
+}

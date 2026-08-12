@@ -27,6 +27,7 @@ from sqlalchemy import text
 
 from admin.accounts import create_staff, set_password
 from admin.app import create_app
+from tests.admin.conftest import _cleanup_staff_named
 from tests.conftest import TEST_URL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
@@ -74,14 +75,14 @@ def account(secure_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = secure_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User")
+        create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, PASSWORD)
         db.commit()
     yield username
-    with factory() as db:
-        db.execute(text("DELETE FROM staff WHERE username = :u"), {"u": username})
-        db.commit()
+    # See tests/admin/test_enrol_page.py's `pending` fixture for why this is
+    # conftest's helper rather than a bare `DELETE FROM staff`.
+    _cleanup_staff_named(secure_app, username)
 
 
 async def _login_set_cookie(app, username: str) -> str:

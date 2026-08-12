@@ -24,32 +24,51 @@ from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     get_staff,
+    resume_mfa_enrolment,
     set_password,
     unused_recovery_code_count,
 )
 from admin.auth import (
+    ENROLMENT_WINDOW_SECONDS,
     PENDING_LOGIN_TTL_SECONDS,
     SESSION_KEY,
     authenticate_recovery_code,
     authenticate_totp,
     stamp_session,
 )
+from admin.audit import write_audit
 from admin.backend import (
     PENDING_SESSION_KEY,
     _pending_login_from_session,
     current_username,
+    extend_pending_login,
 )
 from admin.csrf import check_token, issue_token
 from admin.models import utcnow
 from admin.runtime import get_runtime
-from admin.security import BCRYPT_MAX_BYTES, decrypt_totp_secret, verify_password
-from admin.totp import provisioning_uri, qr_svg
+from admin.security import BCRYPT_MAX_BYTES, verify_password
+from admin.totp import qr_svg
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
 
-#: Contract 8.3 sets no policy. Twelve is comfortably above the eight NIST
-#: treats as a floor, and well under bcrypt's 72-byte ceiling.
-MIN_PASSWORD_LENGTH = 12
+#: Contract 8.3 sets no policy. This was twelve and is now eight, at the
+#: repository owner's decision, taken with the argument against in front of
+#: them. What was weighed, recorded here so the next person to ask "why
+#: eight?" reads it rather than re-deriving it:
+#:
+#: Against a lower floor - this panel edits the formulas a public calculator
+#: quotes and reads submission records, and there is no email recovery, so a
+#: compromised administrator is recovered only by another administrator or by
+#: shell access. Part of why twelve cost nothing to hold is that
+#: ``admin/accounts.py`` issues 20-character random passwords, and the floor
+#: only ever bites on the one a person then chooses for themselves.
+#:
+#: For it - this is a staff panel behind TOTP MFA and the login throttle in
+#: ``admin/throttle.py``, not a public signup, and a floor people work around
+#: (a twelfth character appended to an eight-character password) helps nobody.
+#: Eight is also what NIST SP 800-63B sets as the floor for a memorised
+#: secret. Well under bcrypt's 72-byte ceiling either way.
+MIN_PASSWORD_LENGTH = 8
 
 #: Contract 8.3: "The panel prompts for regeneration once 2 codes remain."
 LOW_RECOVERY_CODE_THRESHOLD = 2
@@ -244,7 +263,18 @@ class ChangePasswordView(BaseView):
         if not username:
             return _redirect(request, "admin:login")
 
-        context = {"csrf_token": issue_token(request.session), "error": None}
+        # min_password_length is rendered as the page's own guidance rather
+        # than left to surface only in a refusal - a person should not have to
+        # be told no to learn the rule. Passed, never written into the
+        # template, so the number on screen cannot drift from the number
+        # enforced. `username` is here for the browser's password manager,
+        # not for this view: see change_password.html.
+        context = {
+            "csrf_token": issue_token(request.session),
+            "error": None,
+            "min_password_length": MIN_PASSWORD_LENGTH,
+            "username": username,
+        }
         if request.method == "GET":
             return templates.TemplateResponse(
                 request, "brand/change_password.html", context
@@ -266,6 +296,29 @@ class ChangePasswordView(BaseView):
             if problem is None:
                 set_password(db, username, new)
                 enrolled = staff.mfa_enrolled
+                # This page used to write nothing, on the reasoning that it
+                # runs mid-onboarding, before an actor exists in any
+                # meaningful sense. That was wrong twice over. `username` is
+                # an actor - it names the account whose password this is, and
+                # nobody else could have reached the page - and this is the
+                # page every account passes through on first login, so for a
+                # fresh account the trail carried no record of the only
+                # password change that ever happened. The security screen's
+                # "last changed on ..." line reads this trail, and without
+                # this entry it could only ever say "not recorded" for an
+                # account that had in fact just chosen its password.
+                #
+                # Same shape as the self-service entry, minus its
+                # `self_service` marker, which is what tells the two apart.
+                # No plaintext and no hash: naming the field is enough to say
+                # what happened, and `password_hash` is in write_audit's
+                # REDACTED_FIELDS besides.
+                write_audit(
+                    db, actor=username, action="update", table_name="staff",
+                    row_id=staff.id, before=None,
+                    after={"username": username, "changed": "password",
+                           "self_service": False},
+                )
                 db.commit()
                 if not enrolled:
                     target = "admin:view-enrol"
@@ -300,10 +353,16 @@ class ChangePasswordView(BaseView):
                 # screen explaining why. Refreshed on a *completed step*
                 # rather than on every page view: a pending login is a
                 # one-factor credential, so idling still expires it.
-                stored = request.session.get(PENDING_SESSION_KEY)
-                if isinstance(stored, dict):
-                    stored["expires_at"] = time.time() + PENDING_LOGIN_TTL_SECONDS
-                    request.session[PENDING_SESSION_KEY] = stored
+                #
+                # This covers the password step only. The scan itself gets
+                # its own, longer grant where it begins - see EnrolView
+                # below, which is what actually made the sentence above
+                # true rather than merely intended.
+                extend_pending_login(
+                    request.session,
+                    now=time.time(),
+                    seconds=PENDING_LOGIN_TTL_SECONDS,
+                )
 
                 # set_password bumped the generation, which just invalidated
                 # the session this request arrived on. Re-stamp it: this user
@@ -321,7 +380,9 @@ class ChangePasswordView(BaseView):
         )
 
 
-def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
+def _enrolment_view_context(
+    db, username: str, secret_key: str, issuer: str
+) -> dict | None:
     """The QR and secret this page should show, for every one of its paths.
 
     Every branch of EnrolView goes through here - the initial GET, a
@@ -344,9 +405,10 @@ def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
     Minting here rather than only in the GET handler is also what keeps a
     POST with no prior GET off the 500 path: nothing enforces the browser's
     GET-then-POST order, and curl, a scripted login, a scanner, or a
-    replayed request can all arrive with mfa_secret_enc still NULL. Handing
-    decrypt_totp_secret a None raises TypeError, an unhandled 500 on the
-    page that fronts the takeover guard.
+    replayed request can all arrive with no device row at all. Since v1.13
+    that case is a `resume_mfa_enrolment` returning None rather than a
+    `decrypt_totp_secret(None)` raising TypeError, but the branch that
+    answers it is the same one and is still required.
 
     Returns None when the account is already fully enrolled, which the
     caller turns into a redirect. That is E-1's account-takeover guard
@@ -362,19 +424,31 @@ def _enrolment_view_context(db, username: str, secret_key: str) -> dict | None:
     staff = get_staff(db, username)
     if staff.mfa_enrolled:
         return None
-    if staff.mfa_secret_enc is None:
+    # Resume first, mint only if there is nothing to resume. Both branches go
+    # through admin/accounts.py so that the otpauth:// label is built in one
+    # place: this branch used to pass a bare `staff.username` while
+    # begin_mfa_enrolment passed `_device_label(username, DEFAULT_DEVICE_NAME)`.
+    # Identical output today - the default device's label *is* the bare
+    # username - and two entries on the person's phone the moment that stops
+    # being true, because a re-render after a rejected code would encode a
+    # different label from the one they scanned.
+    #
+    # `resume` finds the *unconfirmed* device, never merely "a device": since
+    # contract v1.13 an account can hold several, and the one this page is
+    # finishing is the one whose enrolled_at is still NULL. Reading any other
+    # device's secret would render a QR for an authenticator the person
+    # already has, and complete_mfa_enrolment would refuse the code it made.
+    resumed = resume_mfa_enrolment(db, username, secret_key=secret_key, issuer=issuer)
+    if resumed is None:
         try:
-            secret, uri = begin_mfa_enrolment(db, username, secret_key=secret_key)
+            resumed = begin_mfa_enrolment(
+                db, username, secret_key=secret_key, issuer=issuer
+            )
         except MfaAlreadyEnrolledError:
             return None
-        return {"qr": qr_svg(uri), "secret": secret,
-                "secret_grouped": _grouped(secret)}
-    secret = decrypt_totp_secret(staff.mfa_secret_enc, secret_key=secret_key)
-    return {
-        "qr": qr_svg(provisioning_uri(secret, username=staff.username)),
-        "secret": secret,
-        "secret_grouped": _grouped(secret),
-    }
+    secret, uri = resumed
+    return {"qr": qr_svg(uri), "secret": secret,
+            "secret_grouped": _grouped(secret)}
 
 
 class EnrolView(BaseView):
@@ -417,6 +491,31 @@ class EnrolView(BaseView):
         if not username:
             return _redirect(request, "admin:login")
 
+        # Reaching this line means the gate admitted the request, so there is
+        # a live pending login here and this is where the enrolment step
+        # begins. Extend it, before anything below can spend the time.
+        #
+        # This is the fix for the defect the step's own shape produces, and
+        # the fix has to be *here*, not on the way out. What outlasts the
+        # pending login is the gap between this page rendering and the code
+        # being typed: the user is across the room installing an
+        # authenticator. The deadline therefore falls on the POST, which
+        # `_may_open_pre_login_page` refuses before this handler runs at all -
+        # a bare 302 to /admin/login, indistinguishable at the log from a
+        # rejected code, and it lands on the one request that carries the
+        # recovery codes. They are rendered once and are not recoverable, so
+        # the user who does not happen to try again keeps a second factor
+        # with no fallback behind it, on a system with no email recovery.
+        #
+        # Granted on every method, not only GET. The POST paths below
+        # re-render the same QR after a rejected code or an expired form, and
+        # a user who mistyped is exactly the user who needs the rest of the
+        # window; the completing POST clears the pending login outright a few
+        # lines on, so extending it there is moot rather than generous.
+        extend_pending_login(
+            request.session, now=time.time(), seconds=ENROLMENT_WINDOW_SECONDS
+        )
+
         secret_key = runtime.settings.secret_key
 
         if request.method == "GET":
@@ -425,7 +524,9 @@ class EnrolView(BaseView):
                 # tab, or Back/Forward after scanning reuses the secret the
                 # user already has on their phone rather than silently
                 # invalidating it. Only a genuinely absent secret mints one.
-                context = _enrolment_view_context(db, username, secret_key)
+                context = _enrolment_view_context(
+                    db, username, secret_key, runtime.settings.totp_issuer
+                )
                 # Commits whether or not a secret was minted: a no-op commit
                 # costs nothing, and leaving a freshly minted secret
                 # uncommitted would show a QR the next request never sees.
@@ -445,7 +546,9 @@ class EnrolView(BaseView):
         form = await request.form()
         with runtime.session_factory() as db:
             if not check_token(request.session, form.get("csrf_token")):
-                context = _enrolment_view_context(db, username, secret_key)
+                context = _enrolment_view_context(
+                    db, username, secret_key, runtime.settings.totp_issuer
+                )
                 if context is None:
                     # The race _enrolment_view_context's own docstring
                     # describes: a concurrent request finished enrolment
@@ -479,7 +582,9 @@ class EnrolView(BaseView):
                 )
             except MfaNotEnrolledError as exc:
                 db.rollback()
-                context = _enrolment_view_context(db, username, secret_key)
+                context = _enrolment_view_context(
+                    db, username, secret_key, runtime.settings.totp_issuer
+                )
                 if context is None:
                     db.commit()
                     return _redirect(request, "admin:index")
@@ -528,5 +633,14 @@ class EnrolView(BaseView):
         return templates.TemplateResponse(
             request,
             "brand/enrol_done.html",
-            {"codes": codes, "next_url": "/admin/"},
+            {
+                "codes": codes,
+                "next_url": "/admin/",
+                # Named so the page, and anything copied off it, says which
+                # system and which account these belong to. Somebody holding
+                # recovery codes for more than one system cannot tell them
+                # apart by their contents alone.
+                "issuer": runtime.settings.totp_issuer,
+                "username": username,
+            },
         )

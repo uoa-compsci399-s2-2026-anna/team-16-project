@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en-NZ">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="Estimate the environmental and financial impact of food waste in New Zealand food businesses.">
+    <title>Food Waste Impact Calculator | Kai Commitment</title>
+    <link rel="stylesheet" href="./css/styles.css">
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">Skip to calculator</a>
+    <header class="site-header intro-header" id="site-header">
+      <div class="header-inner">
+        <button class="brand brand-home-button" id="home-button" type="button" aria-label="Clear calculator data and return to the introduction">
+          <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label">Impact calculator</span>
+        </button>
+        <button class="text-button" id="clear-button" type="button" hidden>Clear all data</button>
+      </div>
+    </header>
+
+    <nav class="step-indicator" id="step-indicator" aria-label="Calculator progress" hidden></nav>
+    <main id="main-content" class="main-content" tabindex="-1">
+      <p class="loading-state" role="status">Loading calculator…</p>
+    </main>
+
+    <footer>
+      <p>Kai Commitment · Food Waste Impact Calculator</p>
+      <p class="transparency-notice">This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</p>
+    </footer>
+    <script type="module" src="./js/main.js"></script>
+  </body>
+</html>

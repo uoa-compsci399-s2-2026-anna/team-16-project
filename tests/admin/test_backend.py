@@ -5,13 +5,15 @@ enrolment pages is refused while onboarding is incomplete.
 """
 
 import json
+import re
 import time
 from base64 import b64decode, b64encode
 
 import itsdangerous
 import pyotp
 import pytest
-from sqlalchemy import delete
+from httpx import ASGITransport, AsyncClient
+from sqlalchemy import delete, text
 
 from admin.accounts import (
     begin_mfa_enrolment,
@@ -22,10 +24,12 @@ from admin.accounts import (
     reset_mfa,
     set_password,
 )
+from admin.app import create_app
 from admin.auth import SESSION_GENERATION_KEY, SESSION_KEY
 from admin.backend import PENDING_SESSION_KEY, _is_pre_login_page, current_username
 from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
+from tests.conftest import TEST_URL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -121,7 +125,8 @@ def _make_staff(
     secret_key = admin_app.state.settings.secret_key
     with admin_app.state.session_factory() as db:
         _, password = create_staff(
-            db, username=username, display_name=username.title(), role=StaffRole.staff
+            db, username=username, display_name=username.title(), role=StaffRole.staff, actor="test",
+            secret_key="test-secret-key-not-used-anywhere-real",
         )
         db.flush()
         if password_changed:
@@ -180,9 +185,26 @@ def _reset_staff_table(admin_app):
     created it - invisible to the transactional ``session`` fixture other
     test modules use, but not to a fresh count query against the same
     schema. staff_recovery_code cascades via its FK's ON DELETE CASCADE.
+
+    The ``audit_log`` sweep is the second half of the same job and was added
+    when ``admin/accounts.py::create_staff`` began auditing itself: this
+    module creates 75 accounts across its walks, so without it every later
+    file in the run that reads ``audit_log`` as a whole - four tests in
+    test_modelviews.py and test_taxonomy_rules.py assert the table is empty
+    or that its first row is theirs - fails on rows belonging to a module
+    that finished half an hour of test-time earlier. ``audit_log`` has no
+    foreign key into ``staff`` (an audit entry must outlive the row it
+    describes, or a delete would erase its own record), so the cascade above
+    does not reach it and the deletion has to be explicit.
     """
     yield
     with admin_app.state.session_factory() as db:
+        db.execute(
+            text(
+                "DELETE FROM audit_log WHERE table_name = 'staff' "
+                "AND row_id IN (SELECT id FROM staff)"
+            )
+        )
         db.execute(delete(Staff))
         db.commit()
 
@@ -231,7 +253,7 @@ async def test_a_wrong_password_re_renders_the_login_page_with_an_error(
     )
 
     assert response.status_code == 400
-    assert "Invalid credentials." in response.text
+    assert "Those sign-in details were not accepted." in response.text
     assert "location" not in response.headers
 
 
@@ -1059,7 +1081,7 @@ def _evict_l2(admin_app, username: str) -> str:
     """
     new_password = generate_initial_password()
     with admin_app.state.session_factory() as db:
-        reset_mfa(db, username)
+        reset_mfa(db, username, actor="admin")
         set_password(db, username, new_password)
         db.commit()
     return new_password
@@ -1322,3 +1344,311 @@ async def test_a_deactivated_session_is_cleared_not_merely_refused(
 
     assert response.status_code in (302, 307)
     assert _clearing_set_cookie(response), response.headers.get_list("set-cookie")
+
+
+# ===========================================================================
+# A lockout must stop being reported as a wrong password
+# ===========================================================================
+#
+# The incident: an administrator's password was reset by a second
+# administrator, the 20-character issued value was mistyped a few times, the
+# throttle locked the account, and every correct attempt after that came back
+# as "Invalid credentials." - which reads as the reset having failed, and the
+# move after that reading is to reset it again.
+#
+# The refusal itself is unchanged and must stay unchanged:
+# authenticate_password returns None for a wrong password, an unknown
+# username and a locked account alike, which is what stops the throttle being
+# an oracle for which usernames exist. What changed is what the page says -
+# the same sentence to everyone, but a true one, naming the configured
+# lockout period.
+#
+# Then a second reading of the same page found a second defect, in the
+# weighting rather than the wording. The lockout policy sat in the alert box
+# directly under the line reporting the outcome, at the same size and in the
+# present tense, and the owner read it on the FIRST wrong password as "I am
+# locked out now". The rule now sits outside the alert, in muted text, and
+# opens with its own condition. So there are two properties under test here
+# and not one:
+#
+#   * the page still says the SAME thing to all three refusals (the byte
+#     comparisons below, which compare whole bodies and not fragments), and
+#   * the outcome and the standing rule are not the same kind of statement -
+#     what `role="alert"` announces is only what just happened.
+
+
+def _squashed(response) -> str:
+    """The response body with every run of whitespace collapsed to one space.
+
+    The message spans several source lines in the template, so a substring
+    assertion written the way a person reads the sentence would fail on the
+    newlines and indentation Jinja preserves.
+    """
+    return " ".join(response.text.split())
+
+
+async def test_the_refusal_explains_that_a_lockout_refuses_a_correct_password(
+    client, admin_app
+):
+    """The sentence the incident needed, on the page a real request renders.
+
+    Asserted against the served HTML rather than the template file: a
+    template that is not the one the app loads is exactly the failure this
+    project has already been caught by twice.
+    """
+    _make_staff(admin_app, "wanda")
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": "not-the-right-password"},
+        follow_redirects=False,
+    )
+
+    body = _squashed(response)
+    assert response.status_code == 400
+    assert "Those sign-in details were not accepted." in body
+    assert "After 5 failed attempts an account is locked for 15 minutes" in body
+    assert "the correct password is refused as well" in body
+    assert "Waiting is what lifts a lock" in body
+    assert "issuing a new password does not" in body
+
+
+def _alert_region(response) -> str:
+    """The contents of the one element carrying role="alert", squashed.
+
+    Parsed off the served page rather than assumed, because the whole point
+    of the assertion it serves is WHERE a sentence sits.
+    """
+    body = _squashed(response)
+    match = re.search(r'<div[^>]*\brole="alert"[^>]*>(.*?)</div>', body)
+    assert match is not None, "no role=alert region on the page"
+    return match.group(1).strip()
+
+
+async def test_the_lockout_rule_is_ranked_below_what_just_happened(
+    client, admin_app
+):
+    """The standing rule is not inside the alert, and is not full-size text.
+
+    The defect this pins is not that the rule is missing - the test above
+    already had it present, and the page shipped with it present. The defect
+    was that one wrong password ANNOUNCED a lockout, because a rule about
+    repeated attempts sat in the alarm box, at full size, in the present
+    tense, immediately under the line reporting the outcome.
+
+    Three things are asserted, and the first is the one that matters:
+
+      1. what `role="alert"` encloses - which is what a screen reader
+         announces on arrival - is only the outcome;
+      2. the rule is still on the page, outside it, in `.muted`;
+      3. `.muted` is a real reduction in the stylesheet the page actually
+         links, so (2) is not a class that does nothing.
+
+    **What this does NOT prove, stated plainly rather than implied away: that
+    a human reads the rule as subordinate.** There is no browser here. It
+    pins the structure that carries the hierarchy - a refactor cannot move
+    the rule back into the alert or drop the class silently - and the
+    perception itself needs the owner's eyes on 18080.
+    """
+    _make_staff(admin_app, "wanda")
+
+    response = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": "not-the-right-password"},
+        follow_redirects=False,
+    )
+    body = _squashed(response)
+    alert = _alert_region(response)
+
+    # 1. The alert says what happened, and nothing about the standing rule.
+    assert "Those sign-in details were not accepted." in alert
+    assert "locked for" not in alert
+    assert "failed attempt" not in alert
+    assert "new password" not in alert
+
+    # 2. The rule is on the page all the same, in muted text outside it.
+    assert (
+        '<p class="muted notice-note"> After 5 failed attempts an account is locked'
+        in body
+    )
+
+    # 3. And `.muted` is a reduction in the stylesheet this page links.
+    stylesheet = await client.get("/admin/static/brand.css")
+    assert stylesheet.status_code == 200
+    # Anchored: `.muted` also appears inside other selectors in the file, and
+    # an unanchored match lands on one of those, which carries no font-size.
+    rule = re.search(r"^\.muted\s*\{([^}]*)\}", stylesheet.text, re.M)
+    assert rule is not None, "the page asks for .muted; brand.css must define it"
+    size = re.search(r"font-size:\s*([0-9.]+)rem", rule.group(1))
+    assert size is not None and float(size.group(1)) < 1.0, rule.group(1)
+
+
+async def test_the_login_page_carries_no_refusal_before_anything_is_refused(
+    client,
+):
+    """`{% if error %}` and not a block that is always on: a login page that
+    greets every visitor with a refusal notice would pass every assertion
+    above.
+
+    Both halves are checked, because they are now two elements: a visitor who
+    has been refused nothing must meet neither the alert nor the rule. A
+    lockout policy standing on an untouched login page is the same defect
+    this section exists for, one step earlier.
+    """
+    response = await client.get("/admin/login")
+
+    body = _squashed(response)
+    assert response.status_code == 200
+    assert "Those sign-in details were not accepted." not in body
+    assert "an account is locked for" not in body
+    assert "failed attempt" not in body
+
+
+@pytest.mark.parametrize(
+    ("max_failures", "minutes", "expected"),
+    [
+        (1, 7, "After 1 failed attempt an account is locked for 7 minutes,"),
+        (3, 1, "After 3 failed attempts an account is locked for 1 minute,"),
+    ],
+)
+async def test_the_refusal_names_the_configured_lockout_not_a_literal(
+    monkeypatch, max_failures, minutes, expected
+):
+    """LOGIN_MAX_FAILURES and LOGIN_LOCKOUT_MINUTES, not numbers typed in.
+
+    Built against values that are not the shipped defaults, so a hard-coded
+    "5" or "15" fails here rather than agreeing with itself. It needs its own
+    app because tests/conftest.py's admin_app fixture never sets either
+    variable - the same reason tests/admin/test_session_cookie.py builds its
+    own.
+
+    The two cases also cover the grammar in both directions: a deployment
+    configured to 1 must not be told "1 attempts", and the message on a
+    real request is the only place that can be seen. `LOGIN_MAX_FAILURES=1`
+    locks on the first failure, which is exactly what this test does.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
+    monkeypatch.setenv("LOGIN_MAX_FAILURES", str(max_failures))
+    monkeypatch.setenv("LOGIN_LOCKOUT_MINUTES", str(minutes))
+    app = create_app()
+    try:
+        transport = ASGITransport(app=app)
+        async with AsyncClient(
+            transport=transport, base_url="http://testserver"
+        ) as configured_client:
+            response = await configured_client.post(
+                "/admin/login",
+                data={"username": "nobody-at-all", "password": "wrong"},
+                follow_redirects=False,
+            )
+    finally:
+        app.state.session_factory.kw["bind"].dispose()
+
+    body = _squashed(response)
+    assert response.status_code == 400
+    assert expected in body
+    assert "5 failed attempts" not in body
+    assert "15 minutes" not in body
+
+
+async def test_a_locked_account_refuses_a_correct_password_with_the_same_page(
+    client, admin_app
+):
+    """The incident itself, walked end to end.
+
+    The comparison is what carries the test. Asserting only that the locked
+    attempt is refused would pass against a panel that refuses everything, so
+    what is asserted is that the locked-with-the-correct-password refusal and
+    an ordinary wrong-password refusal are the *same* response - same status,
+    same rendered page - which is the property the design deliberately keeps
+    and the reason the message had to change instead of the code path.
+
+    The successful password step first is not decoration: without it, a
+    refusal at the end could equally be explained by the password never
+    having been right.
+    """
+    password = _make_staff(admin_app, "wanda", password_changed=True, mfa=True)
+    max_failures = admin_app.state.settings.login_max_failures
+
+    accepted = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": password},
+        follow_redirects=False,
+    )
+    assert accepted.status_code in (302, 307), "the password really is correct"
+    assert "/admin/verify" in accepted.headers["location"]
+
+    # A completed password step never clears the counter (admin/auth.py), so
+    # exactly these failures stand between here and the lock.
+    for _ in range(max_failures):
+        wrong = await client.post(
+            "/admin/login",
+            data={"username": "wanda", "password": "not-the-right-password"},
+            follow_redirects=False,
+        )
+        assert wrong.status_code == 400
+
+    locked = await client.post(
+        "/admin/login",
+        data={"username": "wanda", "password": password},
+        follow_redirects=False,
+    )
+
+    assert locked.status_code == 400
+    assert "location" not in locked.headers
+    # The whole body, not a fragment of it: what must hold is that the two
+    # refusals are indistinguishable, and a substring comparison would let a
+    # single differing word through anywhere else on the page.
+    assert locked.text == wrong.text
+    assert "an account is locked for" in _squashed(locked)
+
+
+async def test_the_throttle_is_still_not_an_oracle_for_which_usernames_exist(
+    client, admin_app
+):
+    """Two properties together, because either one alone is hollow.
+
+    Asserting that an unknown username is refused proves nothing at all - a
+    panel that refuses everything satisfies it. Asserting only that the two
+    responses match is barely better: a short circuit that skipped
+    record_failure for an unknown username would leave the two pages byte
+    for byte identical and still hand over an oracle, because only the real
+    username would ever go on to lock. So both are checked on every attempt:
+    the responses are indistinguishable, and the counter advances in step for
+    a username that exists and one that does not.
+
+    The counter is read off the app's own throttle rather than inferred from
+    a later response, so the assertion is about the state the mutation would
+    change and not about a symptom of it.
+    """
+    _make_staff(admin_app, "wanda")
+    throttle = admin_app.state.throttle
+    max_failures = admin_app.state.settings.login_max_failures
+    now = time.time()
+
+    assert not throttle.is_locked("wanda", now=now)
+    assert not throttle.is_locked("ghost-account", now=now)
+
+    real = ghost = None
+    for attempt in range(1, max_failures + 1):
+        real = await client.post(
+            "/admin/login",
+            data={"username": "wanda", "password": "not-the-right-password"},
+            follow_redirects=False,
+        )
+        ghost = await client.post(
+            "/admin/login",
+            data={"username": "ghost-account", "password": "not-the-right-password"},
+            follow_redirects=False,
+        )
+
+        expected_locked = attempt >= max_failures
+        assert throttle.is_locked("wanda", now=now) is expected_locked, attempt
+        assert throttle.is_locked("ghost-account", now=now) is expected_locked, attempt
+
+        assert real.status_code == ghost.status_code == 400
+        assert real.text == ghost.text
+        assert "location" not in real.headers
+        assert "location" not in ghost.headers

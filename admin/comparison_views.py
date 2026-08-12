@@ -59,8 +59,52 @@ class ComparisonScenarioAdmin(AuditedModelView, model=ComparisonScenario):
     # and landed on MySQL's own CHECK-violation text (error 3819). A
     # two-option select can't be typed into wrong.
     form_overrides = {"gwp_horizon": SelectField}
+    # Every editable field carries help text; tests/admin/test_field_help.py
+    # fails until a new one does. See admin/taxonomy_views.py's note on the
+    # register these are written in.
     form_args = {
-        "gwp_horizon": {"choices": _GWP_HORIZON_CHOICES, "coerce": int},
+        "code": {"description": (
+            "The short name for this saved test case. Lower case, no spaces. "
+            "Scenarios never leave the panel, so no member of the public "
+            "ever sees it."
+        )},
+        "name": {"description": (
+            "What this scenario is for, in words — the heading it appears "
+            "under on the comparison screen. 'Household, mixed, mostly "
+            "landfill' tells the next person why it is worth running; "
+            "'Scenario 3' does not."
+        )},
+        "sector": {"description": (
+            "The supply-chain stage this scenario is run for. It decides "
+            "which upstream factors the comparison exercises, so a set of "
+            "scenarios that all name one sector leaves the rest untested."
+        )},
+        "food_category": {"description": (
+            "Leave blank for the standard mix, which is what a visitor who "
+            "does not know their composition gets — and so the case most "
+            "worth having a scenario for."
+        )},
+        "gwp_horizon": {
+            "choices": _GWP_HORIZON_CHOICES,
+            "coerce": int,
+            "description": (
+                "Which methane time horizon to run this scenario at. The "
+                "20-year value weights methane several times more heavily "
+                "than the 100-year one, so the same formula and the same "
+                "factors give different greenhouse-gas figures on each. "
+                "Visitors can pick either, so it is worth having a scenario "
+                "on each."
+            ),
+        },
+        "sort_order": {"description": (
+            "Order on the comparison screen, lowest first; equal values fall "
+            "back to the order the rows were created in."
+        )},
+        "active": {"description": (
+            "Only ticked scenarios are run by the pre-publish comparison. "
+            "Untick one that is no longer worth checking rather than "
+            "deleting it, so the reason it existed is not lost."
+        )},
     }
 
 
@@ -82,6 +126,23 @@ class ComparisonScenarioLineAdmin(AuditedModelView, model=ComparisonScenarioLine
         ComparisonScenarioLine.scenario, ComparisonScenarioLine.destination,
         ComparisonScenarioLine.qty_kg,
     ]
+    form_args = {
+        "scenario": {"description": (
+            "Which saved test case this line belongs to. Deleting a scenario "
+            "deletes its lines with it."
+        )},
+        "destination": {"description": (
+            "Where this line's waste goes. A scenario cannot name the same "
+            "destination twice — put the whole quantity for a destination on "
+            "one line."
+        )},
+        "qty_kg": {"description": (
+            "Kilograms on this line. Stored to three decimal places, the "
+            "same limit the public calculator accepts, so anything finer is "
+            "lost. A scenario is a saved request: what you enter here is "
+            "what gets sent when the comparison runs."
+        )},
+    }
     column_filters = [
         ForeignKeyFilter(ComparisonScenarioLine.scenario_id, ComparisonScenario.code,
                          title="Scenario"),

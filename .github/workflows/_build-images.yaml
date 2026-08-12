@@ -1,0 +1,327 @@
+# The three images, built once per architecture. ONE COPY, TWO CALLERS.
+#
+# ci.yaml calls this for the alpha images; release.yaml calls it for a
+# semantic release. That is the entire reason this file exists as a file: two
+# copies of a `docker build` loop drift, and the one that drifts is the release
+# one, because nobody watches it. A change to the hygiene assertion, the tag
+# scheme or the base images now lands in both paths or in neither.
+#
+# WHAT THE CALLER DECIDES, AND WHAT IT DOES NOT.
+#   version          - the exact string stamped into pyproject.toml. This
+#                      workflow does not derive it; deriving it here would put
+#                      the release/alpha distinction inside the shared code,
+#                      which is the one decision that must stay visible in the
+#                      caller.
+#   arch_tag_prefix  - the `X` in `kaicalc-api:X-amd64`. `<short-sha>` for an
+#                      alpha, `1.2.0` for a release.
+#   push             - false on a pull request, which builds to verify and
+#                      publishes nothing.
+#
+# ARCHITECTURE INDEPENDENCE IS THE POINT AND IS PRESERVED HERE UNCHANGED. Two
+# legs of one matrix with `fail-fast: false` and `continue-on-error: true`:
+# each is scheduled, run and reported on its own, and neither can sink the
+# other or the run. The caller's manifest step reads the REGISTRY to find out
+# which of them actually shipped - it never reads these jobs' results, because
+# a job result is a claim and a pushed tag is a fact.
+
+name: Build the three images
+
+on:
+  workflow_call:
+    inputs:
+      version:
+        description: >-
+          Exact version to stamp into pyproject.toml before building, so that
+          `pip show kaicalc` inside the image matches what the caller
+          published.
+        required: true
+        type: string
+      arch_tag_prefix:
+        description: >-
+          Tag stem for the per-architecture images: `<prefix>-amd64`,
+          `<prefix>-arm64`. These are evidence, not tags anyone pulls.
+        required: true
+        type: string
+      push:
+        description: Push the per-architecture tags. False on a pull request.
+        required: false
+        default: true
+        type: boolean
+      ref:
+        description: >-
+          Commit to build. Empty means the ref the run started from, which is
+          what CI wants. release.yaml passes the VERSION BUMP COMMIT, so that
+          the images are built from the exact tree the tag names - the one
+          whose pyproject.toml already carries the released version.
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+  packages: write
+
+env:
+  # ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project/kaicalc-{api,admin,web}
+  #
+  # Namespaced under the repository rather than bare under the organisation:
+  # GITHUB_TOKEN is always permitted to create and write a package in its own
+  # repository's namespace, whereas `ghcr.io/<org>/<name>` can collide with a
+  # package another repository in the organisation already owns and fail at
+  # push time with a permission error that reads like a token problem.
+  #
+  # `github.repository` in a called workflow is the CALLER's repository, which
+  # is what we want - this resolves identically however it is invoked.
+  IMAGE_PREFIX: ghcr.io/${{ github.repository }}
+
+jobs:
+  build:
+    name: Build ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
+    continue-on-error: true
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: amd64
+            runner: ubuntu-latest
+          - arch: arm64
+            # Billed by the minute on a private repository, out of an
+            # allowance this organisation has not measured. If this leg cannot
+            # be scheduled at all, that is a handled outcome, not a broken run
+            # - the caller's manifest job publishes amd64 alone and says so.
+            #
+            # Measured since task 3: ubuntu-24.04-arm scheduled within seconds
+            # on every run so far, and built faster than amd64 on one of them.
+            # The try-and-report shape stays regardless; "it worked in August"
+            # is not an entitlement.
+            runner: ubuntu-24.04-arm
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - name: Log in to GHCR
+        # Not on pull requests: a PR builds to verify and pushes nothing. On a
+        # fork PR the token is read-only anyway, so a login step there would
+        # fail for a reason that has nothing to do with the change under review.
+        if: inputs.push
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Stamp the version into pyproject.toml
+        # Before the build, so the wheel the Dockerfile's build stage produces
+        # carries it. Not committed - it lives for the length of this job.
+        uses: ./.github/actions/stamp-version
+        with:
+          version: ${{ inputs.version }}
+
+      - name: Build the three images
+        # Plain `docker build`, natively, on a runner of this architecture -
+        # no QEMU and no cross-build. Emulated arm64 builds of a pip install
+        # take twenty minutes and occasionally produce a different wheel set.
+        #
+        # NO BUILD ARGUMENTS. docker/compose.yaml passes none either, and the
+        # reproducibility work in task 2 lives inside the Dockerfiles:
+        # docker/constraints.txt pins 40 packages and all three bases are
+        # pinned by MANIFEST-LIST digest (manifest-list specifically, so arm64
+        # resolves the same index). If CI passed different arguments than
+        # compose does, the thing CI tests would not be the thing that ships.
+        # The version is stamped into the source tree above for the same
+        # reason - a build argument would be a difference between this build
+        # and the one a client runs from the same checkout.
+        #
+        # Output is teed so the failure step below has something to put in the
+        # log artefact.
+        run: |
+          # -e as well as pipefail: without it the loop would carry on past a
+          # broken image and the step would report only the LAST build's
+          # status, which is the one way this step could go green while an
+          # image failed to build.
+          set -euo pipefail
+          for spec in api:docker/api.Dockerfile \
+                      admin:docker/admin.Dockerfile \
+                      web:docker/web.Dockerfile; do
+            name="${spec%%:*}"
+            file="${spec#*:}"
+            echo "::group::docker build ${name} (${{ matrix.arch }})"
+            docker build -f "$file" -t "kaicalc-${name}:ci" . 2>&1 \
+              | tee -a "$RUNNER_TEMP/build.log"
+            echo "::endgroup::"
+          done
+
+      - name: Assert the images ship no repository debris
+        # THE GUARANTEE THIS WHOLE PLAN EXISTS TO PROVIDE, automated in task 3.
+        #
+        # The images are a deliverable the client may run, and the client is
+        # not the audience for tests/, docs/, Journal/ or .superpowers/. Until
+        # task 3 that rested on .dockerignore plus two manual checks. A
+        # `COPY . .` added in a hurry is exactly the change nobody reviews for
+        # this.
+        #
+        # Run as uid 0 (`--user 0:0`): the images run as an unprivileged user
+        # and an unprivileged `find /` reports "Permission denied" on /root and
+        # a handful of /var paths, which is both noise and a blind spot in the
+        # one check that has to see everything.
+        #
+        # `-not -path "*/site-packages/*/*"` is load-bearing. Third-party
+        # distributions genuinely ship directories called `tests` - greenlet,
+        # qrcode and certifi all do in these images - so an unscoped find is
+        # three false positives that would teach the next person to ignore this
+        # step. The pattern excludes anything at least one level INSIDE a
+        # package directory, and deliberately not site-packages itself: a
+        # top-level `site-packages/tests` would be a real regression in the
+        # wheel's package list (pyproject.toml declares exactly admin, api, db,
+        # engine) and is still reported.
+        #
+        # The positive assertion at the end matters as much as the negative
+        # one: a find over an empty or wrongly-built root filesystem also
+        # prints nothing.
+        run: |
+          set -eu
+          fail=0
+          for name in api admin web; do
+            echo "::group::hygiene: kaicalc-${name}"
+            hits="$(docker run --rm --user 0:0 --entrypoint sh "kaicalc-${name}:ci" -c '
+              find / -xdev \
+                \( -name tests -o -name docs -o -name Journal -o -name .superpowers \
+                   -o -name .git -o -name pytest.ini -o -name conftest.py \
+                   -o -name CLAUDE.md -o -name project.md \) \
+                -not -path "*/site-packages/*/*" \
+                -not -path "*/dist-packages/*/*" \
+                -print
+            ')"
+            if [ -n "$hits" ]; then
+              # Newlines are folded out of the annotation: a raw newline
+              # truncates a GitHub annotation at the first line, which would
+              # show one offending path and hide the rest. The full list is
+              # printed to the log immediately below it either way.
+              echo "::error title=Repository debris in kaicalc-${name}::$(printf '%s' "$hits" | tr '\n' ' ')"
+              printf '%s\n' "$hits"
+              # Also into the file the failure artefact is built from. Without
+              # this the artefact would carry only docker build output and the
+              # offending paths would live in the job log alone - which is the
+              # thing the artefact exists so that nobody has to go and read.
+              {
+                echo "--- hygiene failure: repository debris in kaicalc-${name} ---"
+                printf '%s\n' "$hits"
+              } >> "$RUNNER_TEMP/build.log"
+              fail=1
+            else
+              echo "clean"
+            fi
+            echo "::endgroup::"
+          done
+
+          # Prove the filesystem the find walked was the right one.
+          for name in api admin; do
+            docker run --rm --entrypoint sh "kaicalc-${name}:ci" -c \
+              'python -c "import admin, api, db, engine"' >/dev/null
+          done
+          docker run --rm --user 0:0 --entrypoint sh kaicalc-web:ci -c \
+            'test -f /usr/share/nginx/html/index.html'
+          echo "all three images carry what they should and nothing they should not"
+
+          exit "$fail"
+
+      - name: Assert the images carry the version that was asked for
+        # ASK THE IMAGE, NOT THE STEP THAT EDITED THE FILE. The stamp action
+        # already re-parses pyproject.toml, but that proves the source tree,
+        # not the artefact: the wheel is built in a separate Dockerfile stage
+        # from a `COPY pyproject.toml`, and any future Dockerfile change that
+        # stopped copying it - or copied a cached layer - would leave the
+        # images on the base version with every earlier check still green.
+        #
+        # This is the difference between "we stamped 1.2.0" and "the thing we
+        # are about to publish as 1.2.0 says it is 1.2.0". Task 3 shipped two
+        # checks that confused those and caught both on the first run.
+        #
+        # kaicalc-web carries no Python and is deliberately not checked here;
+        # it is nginx plus web/, and its content is asserted above.
+        env:
+          WANT_VERSION: ${{ inputs.version }}
+        run: |
+          set -eu
+          for name in api admin; do
+            got="$(docker run --rm --entrypoint sh "kaicalc-${name}:ci" -c \
+              'python -c "import importlib.metadata as m; print(m.version(\"kaicalc\"))"')"
+            echo "kaicalc-${name}: installed kaicalc==${got}"
+            if [ "$got" != "$WANT_VERSION" ]; then
+              echo "::error title=Version mismatch in kaicalc-${name}::image reports kaicalc==${got}, this build was asked for ${WANT_VERSION}"
+              {
+                echo "--- version mismatch in kaicalc-${name} ---"
+                echo "image reports : ${got}"
+                echo "asked for     : ${WANT_VERSION}"
+              } >> "$RUNNER_TEMP/build.log"
+              exit 1
+            fi
+          done
+          echo "both Python images report kaicalc==${WANT_VERSION}"
+
+      - name: Push the architecture-specific tags
+        # ONE TAG PER ARCHITECTURE, `<prefix>-<arch>`. These are not the tags
+        # anyone is meant to pull; they are the evidence the manifest job reads
+        # to decide what actually exists. Keeping them in the registry
+        # afterwards is deliberate - "which architectures made it" stays
+        # answerable months later without reading a workflow log.
+        if: inputs.push
+        env:
+          PREFIX: ${{ inputs.arch_tag_prefix }}
+        run: |
+          set -eu
+          for name in api admin web; do
+            target="${IMAGE_PREFIX}/kaicalc-${name}:${PREFIX}-${{ matrix.arch }}"
+            docker tag "kaicalc-${name}:ci" "$target"
+            docker push "$target"
+            echo "pushed $target"
+          done
+
+      - name: Record what went wrong
+        # THE EVIDENCE IS AN ARTEFACT WHOSE PRESENCE MEANS FAILURE. On success
+        # this step does not run and nothing is written; an absent log means
+        # that architecture built. Symmetrical for amd64 and arm64 - neither is
+        # privileged, because "the one we assumed would work" is exactly the
+        # one whose silent absence would be shipped.
+        #
+        # `if: failure()` still runs after the step that failed, which a job
+        # -level `continue-on-error` on its own does not give you.
+        if: failure()
+        run: |
+          {
+            echo "ARCHITECTURE ${{ matrix.arch }} DID NOT SHIP"
+            echo
+            echo "commit    : ${GITHUB_SHA}"
+            echo "version   : ${{ inputs.version }}"
+            echo "tag stem  : ${{ inputs.arch_tag_prefix }}"
+            echo "job       : Build ${{ matrix.arch }} on ${{ matrix.runner }}"
+            echo "run       : ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "attempt   : ${GITHUB_RUN_ATTEMPT}"
+            echo
+            echo "The likely causes, in the order worth checking:"
+            echo "  - the arm64 runner allowance is exhausted, or this private"
+            echo "    repository is not entitled to ubuntu-24.04-arm at all"
+            echo "    (the job log says so before any step runs);"
+            echo "  - a genuine build error, in which case it is below;"
+            echo "  - the hygiene assertion found repository debris in an"
+            echo "    image, in which case the offending paths are below;"
+            echo "  - the images did not carry the stamped version, in which"
+            echo "    case the two versions are below."
+            echo
+            echo "--- last 200 lines of the build and assertion output ---"
+            tail -n 200 "$RUNNER_TEMP/build.log" 2>/dev/null \
+              || echo "(none: the job failed before docker build ran)"
+          } > "${{ matrix.arch }}.log"
+          cat "${{ matrix.arch }}.log"
+
+      - name: Upload the failure log
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: build-detail-${{ matrix.arch }}
+          path: ${{ matrix.arch }}.log
+          retention-days: 30

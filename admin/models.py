@@ -18,6 +18,7 @@ from sqlalchemy import (
     Integer,
     LargeBinary,
     String,
+    UniqueConstraint,
 )
 from sqlalchemy.dialects import mysql
 from sqlalchemy.orm import Mapped, mapped_column, relationship
@@ -57,12 +58,64 @@ class Staff(Base):
     must_change_password: Mapped[bool] = mapped_column(
         Boolean, nullable=False, default=True
     )
-    # VARBINARY on MySQL; LargeBinary elsewhere so the model stays portable.
-    mfa_secret_enc: Mapped[bytes | None] = mapped_column(
+    #: When this account's second factor came into force; NULL means no
+    #: confirmed authenticator. **The secret itself no longer lives here** —
+    #: contract §2.4 v1.13 moved it, and the replay counter with it, to
+    #: ``staff_totp_device``, because one column can hold one phone and the
+    #: honest answer to a lost phone is to have enrolled a second one first.
+    #:
+    #: This column stays, and it is deliberately derived state: it is true
+    #: exactly when ``totp_devices`` holds at least one row with
+    #: ``enrolled_at`` set. Keeping it means ``count_usable_admins``,
+    #: ``AdminAuth`` and ``require_staff_username`` go on asking one indexed
+    #: column the same question they always asked, rather than each growing
+    #: its own EXISTS subquery — four onboarding gates whose symmetry three
+    #: rounds of review on admin/backend.py were spent establishing. The
+    #: price is that two places can disagree, and the mitigation is that
+    #: ``admin/accounts.py`` is the only module that writes either of them
+    #: (the same rule that already makes it the only module that mutates
+    #: ``staff``); ``tests/admin/test_accounts.py`` pins the invariant after
+    #: every operation that can move it.
+    mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+
+    #: **The password this system last minted for this account and nobody has
+    #: claimed yet**, encrypted. Contract §8.3, v1.15 item 3 as widened by
+    #: v1.16. **The only reversibly-stored credential in this system** —
+    #: everything else a person types is hashed and cannot be read back at all.
+    #:
+    #: **It is not only the *initial* password, and the column was renamed in
+    #: v1.16 (migration `0012`) because it used to be.** Two writers put a value
+    #: here, and both mint a password the holder did not choose:
+    #: ``create_staff`` (the password an account is created with) and
+    #: ``issue_password`` (an administrator's replacement). Reading a non-NULL
+    #: value as "this account has never been used" was true under v1.15 and is
+    #: false now — an account three years old whose owner lost their password
+    #: this morning has one too.
+    #:
+    #: NULL means "there is nothing to reveal". ``admin/accounts.py`` is the
+    #: only module that writes the column: ``create_staff`` and
+    #: ``issue_password`` set it, ``set_password`` clears it unconditionally,
+    #: and ``delete_staff`` takes it with the row. **That list is the
+    #: invariant** — a path that changes a password without either setting or
+    #: clearing this column leaves a dead value on a live account, which is the
+    #: one failure mode worth more than the feature.
+    #:
+    #: **A non-NULL value here is still not the same fact as
+    #: ``must_change_password``, and the two must not be conflated even though
+    #: v1.16 made them agree on both writing paths.** ``must_change_password``
+    #: survives a lost or spent reveal — an account created before v1.15, or one
+    #: whose stored copy could not be decrypted after a SECRET_KEY change, owes
+    #: a password change with nothing to show. ``StaffAdmin`` renders the two as
+    #: separate columns for that reason, and reading one off the other would
+    #: have the list promise a reveal the reveal page then refuses.
+    #:
+    #: VARBINARY on MySQL, LargeBinary elsewhere, matching
+    #: ``StaffTotpDevice.secret_enc``. A Fernet token over a 24-character
+    #: password is around 160 bytes, well inside 255.
+    unclaimed_password_enc: Mapped[bytes | None] = mapped_column(
         LargeBinary(255).with_variant(mysql.VARBINARY(255), "mysql"), nullable=True
     )
-    mfa_enrolled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
-    mfa_last_counter: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime, nullable=False, default=utcnow
     )
@@ -81,14 +134,53 @@ class Staff(Base):
         back_populates="staff", cascade="all, delete-orphan"
     )
 
+    totp_devices: Mapped[list["StaffTotpDevice"]] = relationship(
+        back_populates="staff",
+        cascade="all, delete-orphan",
+        order_by="StaffTotpDevice.id",
+    )
+
     @property
     def mfa_enrolled(self) -> bool:
         return self.mfa_enrolled_at is not None
 
+    @property
+    def enrolled_totp_devices(self) -> list["StaffTotpDevice"]:
+        """The confirmed authenticators, in enrolment order.
+
+        An unconfirmed row (``enrolled_at`` NULL) is a scan someone started
+        and did not finish. It holds a perfectly usable secret, which is
+        exactly why it must never satisfy a login — the same distinction
+        ``verify_staff_totp`` has always drawn between a stored secret and a
+        finished enrolment, now drawn per device.
+        """
+        return [d for d in self.totp_devices if d.enrolled_at is not None]
+
+    @property
+    def has_unclaimed_password(self) -> bool:
+        """Whether a system-minted password is still there to be revealed.
+
+        True from the moment an account is created, and again from the moment
+        an administrator issues a replacement, until whoever holds the account
+        sets a password of their own. It says nothing about *which* of the two
+        minted it: the answer the person asking needs is "is there something
+        here I can read out", and both have the same answer.
+
+        A derived boolean and never the value itself, so that a list page, a
+        details page or an audit snapshot can say *that* a password is waiting
+        without any of them being a path to reading it. ``StaffAdmin`` puts
+        this in ``column_list``; the plaintext has exactly one route
+        (``/admin/staff/unclaimed-password``) and that route asks for proof.
+        """
+        return self.unclaimed_password_enc is not None
+
     def __str__(self) -> str:
         #: username, never id - a staff member is identified by how they log
-        #: in, and no other column here is safe to show (password_hash and
-        #: mfa_secret_enc are secrets).
+        #: in, and no other column here is safe to show (password_hash is a
+        #: secret; unclaimed_password_enc is a *reversibly* stored one, which is
+        #: worse; the TOTP secret is no longer a column of this table at all
+        #: since v1.13, and StaffTotpDevice.__str__ withholds it for the same
+        #: reason).
         return self.username
 
 
@@ -114,6 +206,71 @@ class StaffRecoveryCode(Base):
         #: row exists. The id is the only thing left to distinguish one
         #: recovery code from another for the same account.
         return f"recovery code #{self.id}"
+
+
+class StaffTotpDevice(Base):
+    """One enrolled authenticator. Contract §2.4.
+
+    **Why this is a table and not the three columns it replaced.** A single
+    ``staff.mfa_secret_enc`` holds one phone, so "enrol a new authenticator"
+    could only ever mean "replace the one you have" — which is impossible to
+    do once the phone is gone, and leaves recovery layer L2 (another
+    administrator resetting your MFA) as the only way back from a lost
+    device. That was already the weakest link, and it got stricter: the
+    self-recovery guard means the administrator who rescues you can never be
+    you. Enrolling a second phone *before* losing the first is the only fix
+    that does not depend on a colleague being reachable.
+
+    ``last_counter`` is per device and must stay that way. It is TOTP replay
+    protection, and replay is a property of a secret: two phones hold two
+    different secrets and produce two different codes for the same time step,
+    so a counter shared between them would let a login on one phone refuse a
+    genuine, unused code from the other for the rest of that step.
+
+    ``enrolled_at`` NULL means an enrolment that was begun and not confirmed
+    — a QR that was displayed, possibly scanned, never proved. Such a row is
+    resumable (see ``begin_mfa_enrolment``) and is never accepted as a second
+    factor.
+    """
+
+    __tablename__ = "staff_totp_device"
+    __table_args__ = (
+        # One name per account, so the list on the security screen and the
+        # entry on the phone can be matched up by eye. The name reaches the
+        # otpauth:// label, which is the whole point of having one.
+        UniqueConstraint("staff_id", "name", name="uq_staff_totp_device_name"),
+    )
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    staff_id: Mapped[int] = mapped_column(
+        ForeignKey("staff.id", ondelete="CASCADE"), nullable=False
+    )
+    #: Shown to the person, and carried into the authenticator app's own
+    #: label so a second device is distinguishable from the first there too.
+    name: Mapped[str] = mapped_column(String(64), nullable=False)
+    # VARBINARY on MySQL; LargeBinary elsewhere so the model stays portable.
+    # NOT NULL, unlike the column it replaces: a device row exists because a
+    # secret was minted for it, so there is no state in which one is present
+    # without the other.
+    secret_enc: Mapped[bytes] = mapped_column(
+        LargeBinary(255).with_variant(mysql.VARBINARY(255), "mysql"), nullable=False
+    )
+    enrolled_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
+    last_counter: Mapped[int | None] = mapped_column(BigInteger, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime, nullable=False, default=utcnow
+    )
+
+    staff: Mapped[Staff] = relationship(back_populates="totp_devices")
+
+    def __str__(self) -> str:
+        #: The name is the human identifier - it is what the person typed and
+        #: what their phone shows. secret_enc must never appear here for the
+        #: same reason StaffRecoveryCode.__str__ withholds code_hash. The id
+        #: is withheld too: a name exists, so the row has a human identifier
+        #: and the primary key is not needed to tell two apart.
+        state = "enrolled" if self.enrolled_at is not None else "not confirmed"
+        return f"{self.name} ({state})"
 
 
 class AuditLog(Base):

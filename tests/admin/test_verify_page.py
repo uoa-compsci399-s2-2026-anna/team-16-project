@@ -22,6 +22,7 @@ from admin.app import create_app
 from admin.auth import SESSION_KEY
 from admin.backend import PENDING_SESSION_KEY
 from admin.totp import TOTP_INTERVAL
+from tests.admin.conftest import _cleanup_staff_named
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -47,7 +48,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -70,12 +71,9 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    # See tests/admin/test_enrol_page.py's `pending` fixture for why this is
+    # conftest's helper rather than a bare `DELETE FROM staff`.
+    _cleanup_staff_named(admin_app, username)
 
 
 async def _login_password_step(client, username, password):

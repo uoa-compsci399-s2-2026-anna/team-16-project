@@ -1,0 +1,38 @@
+{# Included by brand/dry_run.html, and the only one of the five that is not
+   a sqladmin page: DryRunView is a BaseView with a hand-written template
+   (admin/dryrun_views.py), so this one carries brand.css markup rather than
+   the Tabler card the other four use.
+
+   It replaces the page's original two-sentence lede, which said the same
+   thing in less: contract §8.2's "staff will run dozens of calculations
+   while tuning a formula, and persisting them would directly pollute the
+   public statistics" is the whole reason `X-Dry-Run: true` exists, and the
+   header's name means nothing to the person reading the page. The
+   mechanism is admin/calc_client.py, which sets that header on every
+   request this view can make.
+
+   Pinned by tests/admin/test_guidance.py. #}
+<section class="guidance">
+  <h2>What this page is for</h2>
+  <p>
+    This runs one line through the real calculator, against whichever version of
+    the numbers you choose, and shows you what comes back. The request is marked
+    as a dry run, so nothing is written down: no calculation is stored, and
+    nothing you do here reaches the public statistics. Run it as many times as
+    tuning a formula takes.
+  </p>
+  <p>
+    It is also the only way to watch a draft's numbers work. The public
+    calculator only ever uses the published set, so until you publish, this page
+    and Compare with published are the only places a draft can be seen running.
+  </p>
+  <p>
+    <strong>Do not test on the public calculator instead.</strong> Every
+    calculation a visitor runs is counted, and those counts are what the public
+    statistics page reports on the client's behalf. Twenty runs while you tune a
+    formula are twenty calculations that never happened, sitting inside a figure
+    that may be quoted in public — and nobody can take them out again afterwards,
+    because the calculator deliberately stores nothing that would say which were
+    yours.
+  </p>
+</section>

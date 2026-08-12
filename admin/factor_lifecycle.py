@@ -37,6 +37,8 @@ from admin.factor_models import (
 )
 from admin.models import utcnow
 from admin.taxonomy_rules import TaxonomyInvariantError
+from db.repository import find_missing_prevention_upstream
+from db.types import PREVENTION_CODE
 
 
 class LifecycleError(Exception):
@@ -233,6 +235,38 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
         revalidate_formulas(session, factor_set_id)
     except TaxonomyInvariantError as exc:
         raise LifecycleError(str(exc)) from exc
+
+    # Contract §2.2's O-7 completeness rule, enforced here as well as in
+    # db/repository.publish_factor_set because **this is the copy the panel
+    # calls** — admin/factor_views.py's publish action imports from this
+    # module, and the repository's copy has no caller outside its own tests
+    # until the two implementations are unified (see this module's docstring).
+    # A guard placed only there would leave the staff path, which is the only
+    # path a human takes, entirely unguarded.
+    #
+    # The *query* lives in db/repository.py and is imported rather than
+    # repeated: `admin/` may import from `db/` and this module already relies
+    # on that direction being legal. Two copies of a rule drift, and the copy
+    # that stops matching is the one nobody notices — the same reasoning
+    # db/types.PREVENTION_CODE was moved to one home for.
+    #
+    # Not applied to rollback_to below: rollback is the "put the calculator
+    # back to a state that worked" operation, and a set archived before v1.8
+    # will legitimately fail this check. Refusing an emergency rollback over a
+    # completeness rule would be a worse failure than the one it prevents.
+    missing = find_missing_prevention_upstream(session, factor_set_id)
+    if missing:
+        listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
+        raise LifecycleError(
+            f"{len(missing)} factor combinations have an upstream factor but "
+            f"no '{PREVENTION_CODE}' upstream row at 0 — either it is missing "
+            f"or it carries a non-zero value — so a line moved to "
+            f"'{PREVENTION_CODE}' would still be charged upstream "
+            "impact and the calculator would understate the benefit of "
+            f"preventing waste for them: {listed}. Add or correct an upstream "
+            f"factor of 0 with destination '{PREVENTION_CODE}' for each, then "
+            "publish."
+        )
 
     changes: list[tuple[FactorSet, dict, str]] = []
 

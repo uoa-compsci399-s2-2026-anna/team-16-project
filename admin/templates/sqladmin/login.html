@@ -3,7 +3,63 @@
 {% block content %}
   <h1>Kai Commitment</h1>
   <p class="muted">Impact calculator administration</p>
-  {% if error %}<div class="notice notice--error" role="alert">{{ error }}</div>{% endif %}
+  {# One message for every refusal, deliberately - but two levels of it.
+
+     `error` is sqladmin's own flag for "the password step was refused". It
+     carries a single fixed string for every refusal, because
+     admin/backend.py's login() can only answer True or False - and that is
+     the shape the design wants: admin/auth.py's authenticate_password
+     returns None for a wrong password, for an unknown username and for a
+     locked account alike, so that the throttle cannot be used as an oracle
+     for which usernames exist. The flag is used as a boolean and its text
+     is not rendered; nothing is lost, since sqladmin only ever sets it to
+     "Invalid credentials.".
+
+     What was missing was not precision but truth. A correct password IS
+     refused while a lockout is in force, and a panel that says only
+     "invalid credentials" reads as though the password itself were wrong -
+     which is how a reset password came to be reset a second time.
+
+     The first version of that fix put the lockout policy in the alert box
+     as a second paragraph, and the owner read it on the FIRST wrong
+     password as "I am locked out now". Both sentences were true; the
+     weighting was wrong. Present tense, full-size, on the alarm ground, and
+     directly under the one line that reports the actual outcome, a standing
+     rule about the future reads as a diagnosis of the present.
+
+     So the two are separated by rank, not by wording:
+
+       - the alert box - and `role="alert"`, which is what a screen reader
+         announces - carries ONLY what just happened;
+       - the rule sits outside it, in muted body text on the card's own
+         white ground, and opens with its own condition ("After N failed
+         attempts") so it cannot be read as a report on this attempt.
+
+     It is still one block under one `{% if error %}`, byte-identical for a
+     wrong password, an unknown username and a locked account. Both numbers
+     come from the settings through Jinja globals set in admin/app.py; a
+     literal here is confidently wrong the first time a deployment changes
+     either. The count is named rather than left as "repeated" precisely
+     because this defect was a reader mistaking one failure for five - and
+     it tells an attacker nothing they could not measure in five tries.
+
+     The two facts the rule exists to carry, and which must survive any
+     future edit: waiting is what lifts a lock, and issuing a new password
+     does not. The incident ended with an administrator about to reset a
+     password for the second time. #}
+  {% if error %}
+    <div class="notice notice--error" role="alert">
+      <p>Those sign-in details were not accepted.</p>
+    </div>
+    <p class="muted notice-note">
+      After {{ login_max_failures }} failed
+      attempt{{ 's' if login_max_failures != 1 else '' }} an account is
+      locked for {{ login_lockout_minutes }}
+      minute{{ 's' if login_lockout_minutes != 1 else '' }}, and while a lock
+      is in force the correct password is refused as well. Waiting is what
+      lifts a lock — issuing a new password does not.
+    </p>
+  {% endif %}
   <form method="post">
     <label for="username">Username</label>
     <input type="text" id="username" name="username"

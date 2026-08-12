@@ -1,0 +1,15 @@
+{# The edit-page counterpart of brand/model_create.html. Both are needed:
+   sqladmin renders create and edit from two different templates, and a
+   description that is unreadable is unreadable on whichever of them a staff
+   member happens to open. #}
+{% extends "sqladmin/edit.html" %}
+
+{% block head_css %}
+{{ super() }}
+{% include "brand/_field_help_css.html" %}
+{% endblock %}
+
+{% block content %}
+{% include "brand/_guidance.html" %}
+{{ super() }}
+{% endblock %}

@@ -1,0 +1,282 @@
+# THE WHOLE SYSTEM. One command:
+#
+#     docker compose -f docker/compose.yaml up
+#
+# and then http://localhost:18080/ is a working calculator - migrated, seeded,
+# with a published (placeholder) factor set and two administrator accounts
+# whose one-time passwords are printed in `docker compose logs migrate`.
+#
+# TWO COMPOSE FILES, TWO JOBS. Do not confuse them:
+#
+#   ../docker-compose.yml   the DEVELOPMENT DATABASE ONLY. One MySQL container,
+#                           published on host port 3307, for running the test
+#                           suite and the application from a checkout. It
+#                           starts no application service and never will.
+#   docker/compose.yaml     THIS FILE. The whole deployment: database, a
+#                           one-shot migrate/seed job, the API, the admin panel
+#                           and nginx.
+#
+# The two can run side by side: this file's database is not published at all
+# and its containers are named differently.
+#
+# PORTS. Nothing binds 80, 8000, 8080, 3000 or 5000 - a clean machine very
+# often has something on all of them already, and a port clash on the first
+# `up` is precisely the out-of-the-box failure this arrangement exists to
+# prevent (8000 was already occupied on the machine this was developed on).
+# Every published port is an environment variable with a high default:
+#
+#   KAICALC_WEB_PORT     18080   nginx - the only one that MUST be published
+#   KAICALC_API_PORT     18000   the public API, direct (development only)
+#   KAICALC_ADMIN_PORT   18001   the admin panel, direct (development only)
+#   MySQL                 ----   NOT PUBLISHED. Compose-internal only.
+#
+# RUNNING AN ADMIN COMMAND AGAINST A LIVE STACK.
+#
+#     docker exec kaicalc-admin kaicalc unblock 203.0.113.5
+#     docker exec kaicalc-admin kaicalc issue-password alice
+#
+# `kaicalc` (not `kaicalc-admin`) is the wrapper that resolves SECRET_KEY
+# first - `docker exec` does not run the image's entrypoint and inherits none
+# of its environment. `kaicalc-admin --help` still works directly, because
+# argparse prints help before any setting is read. docker/kaicalc-wrapper.sh.
+#
+# TEARDOWN.
+#   docker compose -f docker/compose.yaml down      keeps the data and the secret
+#   docker compose -f docker/compose.yaml down -v   destroys both, and the next
+#                                                   `up` bootstraps from nothing
+#                                                   (new SECRET_KEY, new
+#                                                   administrator passwords)
+
+name: kaicalc
+
+services:
+
+  # -------------------------------------------------------------------------
+  # The database. Not published: nothing outside this network needs it, and a
+  # published MySQL is the one service on this list that an unattended machine
+  # will be scanned for. Reach it with
+  #   docker compose -f docker/compose.yaml exec db mysql -ukaicalc -p kaicalc
+  # -------------------------------------------------------------------------
+  db:
+    # Pinned by digest for the same reason the Dockerfiles pin theirs: a
+    # floating tag means the database a client starts in six months is not the
+    # one this was verified against, and a MySQL point release that changes a
+    # default is exactly the kind of thing nobody attributes correctly. YAML
+    # does have end-of-line comments, so the human tag can sit inline here.
+    image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b   # mysql:8.0
+    container_name: kaicalc-stack-db
+    restart: unless-stopped
+    environment:
+      # Change these for anything that is not a laptop. They are not reachable
+      # from outside the compose network, but "not reachable today" is a
+      # property of this file rather than of the password.
+      MYSQL_ROOT_PASSWORD: ${MYSQL_ROOT_PASSWORD:-devroot}
+      MYSQL_DATABASE: ${MYSQL_DATABASE:-kaicalc}
+      MYSQL_USER: ${MYSQL_USER:-kaicalc}
+      MYSQL_PASSWORD: ${MYSQL_PASSWORD:-devpass}
+    # utf8mb4 throughout: the taxonomy carries macrons (Kai, te reo names) and
+    # the metric display units carry a subscript ("kg CO₂e").
+    command: >
+      --character-set-server=utf8mb4
+      --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - db-data:/var/lib/mysql
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-devroot}"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 30s
+
+  # -------------------------------------------------------------------------
+  # The one-shot job that makes an empty database usable: migrate, seed the
+  # taxonomy, publish the mock factor set, create the administrators.
+  # docker/init.sh is the sequence and says why each step is there.
+  #
+  # THIS IS DEPLOYMENT FACT 1 EXPRESSED IN THE TOPOLOGY RATHER THAN IN A
+  # README NOBODY READS. MySQL autocommits DDL, so two replicas running
+  # `alembic upgrade head` at the same time interleave and leave a half-applied
+  # schema stamped at a revision it does not match; recovery is DROP DATABASE.
+  # One service, runs to completion, and every application service waits on
+  # `service_completed_successfully` - so there is no arrangement of this file
+  # in which two processes migrate concurrently, and no way to start the
+  # application against a database that was never migrated.
+  #
+  # It runs the ADMIN image because the commands it runs are the admin CLI's.
+  # The `build:` block is duplicated rather than omitted on purpose: with only
+  # `image:` here, a first `up` on a clean machine would try to PULL
+  # kaicalc-admin:local from a registry before the admin service had built it.
+  # Two services naming one tag and one Dockerfile build once.
+  # -------------------------------------------------------------------------
+  migrate:
+    build:
+      context: ..
+      dockerfile: docker/admin.Dockerfile
+    image: kaicalc-admin:local
+    container_name: kaicalc-migrate
+    restart: "no"
+    depends_on:
+      db:
+        condition: service_healthy
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
+      # Not used by the migration itself, but admin/config.py's load_settings()
+      # is all-or-nothing - `kaicalc-admin seed-taxonomy` reads the whole
+      # Settings object, so a missing SECRET_KEY would fail the seed step. The
+      # entrypoint is what puts one there; see below.
+      SECRET_KEY: ${SECRET_KEY:-}
+    volumes:
+      - secret:/var/lib/kaicalc
+    command: ["/app/init.sh"]
+
+  # -------------------------------------------------------------------------
+  # The public JSON API.
+  # -------------------------------------------------------------------------
+  api:
+    build:
+      context: ..
+      dockerfile: docker/api.Dockerfile
+    image: kaicalc-api:local
+    container_name: kaicalc-api
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
+      # Empty by default. The entrypoint then generates one into the shared
+      # `secret` volume, ONCE, and every service reads that same file - which
+      # is deployment fact 2. Set this (or a real secret manager) in
+      # production and the generation path becomes a no-op.
+      #
+      # Both applications derive the contract 2.3 blocklist fingerprint from
+      # this value independently, with a pinned info string. Two different
+      # secrets mean two different fingerprints for one address: a block
+      # applied in the panel silently fails to hold at the API, with nothing
+      # raised on either side. That is why it is a shared volume and not two
+      # `openssl rand` calls.
+      SECRET_KEY: ${SECRET_KEY:-}
+      # See docker/nginx-proxy-headers.conf for the full argument. False while
+      # the direct `ports:` below are published; flip it and remove them
+      # together, never one without the other.
+      #
+      # THE COST OF LEAVING IT FALSE IS NOT ABSTRACT. api/router.py allows 600
+      # GETs and 120 calculates per hour, keyed on the caller's address - and
+      # behind this proxy every caller IS the proxy, so those become 600 and
+      # 120 SITE-WIDE per hour rather than per visitor. In production the
+      # pairing below is required, not a refinement.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+    volumes:
+      - secret:/var/lib/kaicalc
+    ports:
+      # DEVELOPMENT CONVENIENCE, NOT A REQUIREMENT. nginx reaches this service
+      # over the compose network as `api:18000` and does not need it published.
+      # Remove this block (and admin's) when you set
+      # PROTECTION_TRUSTED_PROXY=true - while it is here, a caller can bypass
+      # nginx and send any X-Forwarded-For they like.
+      - "${KAICALC_API_PORT:-18000}:18000"
+    healthcheck:
+      # No curl in python:3.11-slim, and adding one for a health check is 4 MB
+      # of attack surface for a one-line urllib call.
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18000/openapi.json', timeout=5).status == 200 else 1)"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # The staff admin panel.
+  # -------------------------------------------------------------------------
+  admin:
+    build:
+      context: ..
+      dockerfile: docker/admin.Dockerfile
+    image: kaicalc-admin:local
+    container_name: kaicalc-admin
+    restart: unless-stopped
+    depends_on:
+      db:
+        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
+    environment:
+      DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
+      SECRET_KEY: ${SECRET_KEY:-}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+
+      # WHERE THE PANEL FINDS POST /api/v1/calculate. Used by /admin/try (the
+      # dry-run view) and by the pre-publish comparison view; both fail with
+      # "service not reachable" without it.
+      #
+      # A SERVICE NAME, not a loopback address. 127.0.0.1 inside this
+      # container is this container - the panel calling itself. admin/config.py
+      # still defaults to http://127.0.0.1:8000, which is wrong in both the
+      # port and the shape for any container deployment; this line is what
+      # makes it right here. See the task 2 report for the recommendation on
+      # the code default.
+      API_BASE_URL: ${KAICALC_API_BASE_URL:-http://api:18000}
+
+      # DEFAULTED TO FALSE HERE, AND THAT IS A DECISION WITH A COST.
+      #
+      # The setting marks the staff session cookie `Secure`, so a browser will
+      # not send it over plain http. The shipped arrangement out of the box is
+      # http://localhost:18080 with no TLS anywhere, and with this true the
+      # login form accepts the password, sets a cookie the browser then
+      # refuses to return, and bounces straight back to the login page - a
+      # panel nobody can enter, which fails the whole point of this file.
+      #
+      # SET IT TO true THE MOMENT TLS IS IN FRONT. Over https, false is what
+      # lets one plain-http navigation on the admin origin hand over a live
+      # staff session.
+      SESSION_HTTPS_ONLY: ${KAICALC_SESSION_HTTPS_ONLY:-false}
+    volumes:
+      - secret:/var/lib/kaicalc
+    ports:
+      # Same note as the api service above: development convenience. nginx
+      # reaches the panel as `admin:18001`.
+      - "${KAICALC_ADMIN_PORT:-18001}:18001"
+    healthcheck:
+      # A TCP connect, not an HTTP request. Every HTML path under /admin is
+      # behind ProtectionMiddleware's headless-client detection, which refuses
+      # a caller with no browser headers - a health check written as a GET
+      # would report the panel unhealthy for doing its job correctly.
+      test: ["CMD", "python", "-c", "import socket,sys; s=socket.create_connection(('127.0.0.1',18001),5); s.close()"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  # -------------------------------------------------------------------------
+  # nginx: the static front end, and the only origin the browser talks to.
+  # -------------------------------------------------------------------------
+  web:
+    build:
+      context: ..
+      dockerfile: docker/web.Dockerfile
+    image: kaicalc-web:local
+    container_name: kaicalc-web
+    restart: unless-stopped
+    depends_on:
+      # BOTH must be resolvable before nginx starts, not just reachable. nginx
+      # resolves an upstream host once, at configuration load, and refuses to
+      # start at all if either name is unknown ("host not found in upstream").
+      # `admin` waits on service_healthy rather than service_started for that
+      # reason - a container that exists but has not bound its port yet is
+      # resolvable, but a container that has failed to start is not.
+      api:
+        condition: service_healthy
+      admin:
+        condition: service_healthy
+    ports:
+      - "${KAICALC_WEB_PORT:-18080}:18080"
+
+volumes:
+  db-data:
+  # One file: the generated SECRET_KEY. Mounted into every application service
+  # and into the migrate job, which is what guarantees they all read the same
+  # value and that it survives a restart. `down -v` removes it, which is
+  # correct - it removes the database in the same breath, and a secret that
+  # outlived the data it protects would be the worse of the two states.
+  secret:

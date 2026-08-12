@@ -68,12 +68,50 @@ class FactorUpstream(Base):
     """Per-kilogram impact of producing the food, by sector and category.
 
     Contract §2.2. Roughly 270 rows per factor set.
+
+    `destination_id` is nullable and means "applies to every destination for
+    this (sector, food_category, metric)" — the same pattern
+    `FactorDownstream.food_category_id` uses, and the lookup order is the same
+    shape: exact destination, then the NULL row, then zero. Almost every row is
+    the NULL one; producing a kilogram of dairy costs what it costs whatever
+    later becomes of it.
+
+    **The column exists for `prevention`, and closing open item O-7 is the
+    whole of its job.** `docs/architecture.md` §4.1 says `prevention`'s factors
+    are all zero — a 100% offset — and that this is what stops `net_benefit`
+    being inflated by simply assuming less waste. Before v1.8 the data model
+    could not express it: upstream was keyed on (sector, food_category, metric)
+    and could not see the destination, so a line moved to `prevention` kept the
+    entry's full upstream factor and only the downstream delta survived into
+    the net benefit. Measured on `tests/fixtures/`, 800 kg of `not_harvested`
+    moved to `prevention` yielded 96.000 kg CO2e where a true offset yields
+    456.000 — 78.9% of the benefit missing, one-directional, and always
+    understating the client's "wasting less" story.
+
+    The same NULL trap applies as on `factor_downstream`, for the same reason
+    and with the same fix: MySQL compares NULLs as distinct inside a UNIQUE
+    key, so the declared UNIQUE below is silent on precisely the generic rows.
+    `uq_factor_upstream_generic` collapses NULL to 0 with COALESCE before
+    comparing. It is declared here so `Base.metadata.create_all()` produces it,
+    created again as raw SQL in
+    alembic/versions/0009_upstream_destination.py because the migration chain
+    is an independent path to the same schema, and excluded from
+    `compare_metadata` in tests/test_migrations.py because SQLAlchemy reflects
+    the expression key part back out as a plain column. See
+    `FactorDownstream`'s docstring below for the full account.
     """
 
     __tablename__ = "factor_upstream"
     __table_args__ = (
         UniqueConstraint("factor_set_id", "sector_id", "food_category_id",
-                         "metric_id", name="uq_factor_upstream"),
+                         "destination_id", "metric_id", name="uq_factor_upstream"),
+        Index(
+            "uq_factor_upstream_generic",
+            "factor_set_id", "sector_id", "food_category_id",
+            text("(COALESCE(destination_id, 0))"),
+            "metric_id",
+            unique=True,
+        ),
     )
 
     #: Contract §2.2 specifies BIGINT here, not INT: roughly 270 upstream
@@ -87,6 +125,12 @@ class FactorUpstream(Base):
     food_category_id: Mapped[int] = mapped_column(
         ForeignKey("food_category.id"), nullable=False
     )
+    #: NULL means "every destination for this (sector, food_category, metric)".
+    #: See the class docstring: this column is what makes `prevention` a real
+    #: 100% offset rather than a downstream-only one.
+    destination_id: Mapped[int | None] = mapped_column(
+        ForeignKey("destination.id"), nullable=True
+    )
     metric_id: Mapped[int] = mapped_column(ForeignKey("metric.id"), nullable=False)
     value_per_kg: Mapped[Decimal] = mapped_column(DECIMAL(20, 10), nullable=False)
     source_note: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -95,13 +139,19 @@ class FactorUpstream(Base):
     factor_set: Mapped[FactorSet] = relationship()
     sector: Mapped[Sector] = relationship()
     food_category: Mapped[FoodCategory] = relationship()
+    destination: Mapped[Destination | None] = relationship()
     metric: Mapped[Metric] = relationship()
 
     def __str__(self) -> str:
         #: No natural name of its own - composed from the sector/category
         #: pair and the metric it prices, the combination the unique
-        #: constraint above is keyed on.
-        return f"{self.sector.code}/{self.food_category.code} — {self.metric.code}"
+        #: constraint above is keyed on. `destination` is nullable ("every
+        #: destination"), and a row that overrides one - `prevention` at zero
+        #: - must be distinguishable from the general row in a select box,
+        #: which is the whole reason the column exists.
+        scope = f" → {self.destination.code}" if self.destination else ""
+        return (f"{self.sector.code}/{self.food_category.code}{scope}"
+                f" — {self.metric.code}")
 
 
 class FactorDownstream(Base):

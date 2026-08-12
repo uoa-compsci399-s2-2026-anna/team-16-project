@@ -1,0 +1,76 @@
+# Frozen runtime dependency set. Passed to pip with --constraint in both
+# docker/api.Dockerfile and docker/admin.Dockerfile.
+#
+# WHY THIS FILE EXISTS
+#
+# pyproject.toml states every dependency as a `>=` FLOOR and there is no
+# lockfile anywhere in the tree. Without this file, `docker build` resolves
+# each floor to whatever is newest on PyPI on the day it runs - so the image
+# verified in the task 2 report and the image the client builds in six months
+# are different software, and a FastAPI, Starlette or SQLAdmin major bump
+# lands in the deliverable with no signal at all. The bases are pinned by
+# digest in the Dockerfiles for the same reason.
+#
+# THIS IS A CONSTRAINT FILE, NOT A REQUIREMENTS FILE. It does not install
+# anything and it does not add a dependency. It only says "if you install this
+# package, install exactly this version", so pyproject.toml remains the single
+# statement of WHAT is required and this file fixes WHICH VERSION was tested.
+# A dependency that stops being required simply stops being consulted here.
+#
+# HOW TO REFRESH IT, when a dependency is deliberately moved:
+#
+#   docker compose -f docker/compose.yaml build --no-cache api
+#   docker run --rm --entrypoint pip kaicalc-api:local freeze #       | grep -v '^kaicalc @' | sort > docker/constraints.txt
+#   (then re-add this header, rebuild from down -v, and re-run the task 2
+#    verification - at minimum POST /api/v1/calculate against
+#    tests/golden/case_01_canonical_two_entry/expected.json)
+#
+# `kaicalc` itself is deliberately absent: it is installed from the locally
+# built wheel, and a constraint naming a file:// path would break every build
+# on every other machine.
+#
+# Frozen from the build verified in
+# .superpowers/sdd/2026-08-10-packaging-and-ci/task-2-report.md, on
+# python:3.11-slim / linux/amd64. These are the versions whose calculate
+# response matched the golden suite byte for byte.
+#
+Jinja2==3.1.6
+Mako==1.4.1
+MarkupSafe==3.0.3
+PyMySQL==1.2.0
+PyOTP==2.10.0
+PyYAML==6.0.3
+SQLAlchemy==2.0.51
+WTForms==3.2.2
+alembic==1.19.1
+annotated-doc==0.0.5
+annotated-types==0.8.0
+anyio==4.14.2
+bcrypt==5.0.0
+certifi==2026.7.22
+cffi==2.1.1
+click==8.4.2
+cryptography==50.0.0
+fastapi==0.141.1
+greenlet==3.5.4
+h11==0.16.0
+httpcore==1.0.9
+httptools==0.8.0
+httpx==0.28.1
+idna==3.18
+itsdangerous==2.2.0
+packaging==26.3
+pycparser==3.0
+pydantic==2.13.4
+pydantic_core==2.46.4
+python-dotenv==1.2.2
+python-multipart==0.0.32
+qrcode==8.2
+sqladmin==0.31.0
+starlette==1.6.0
+typing-inspection==0.4.2
+typing_extensions==4.16.0
+uvicorn==0.52.1
+uvloop==0.22.1
+watchfiles==1.2.0
+websockets==17.0.1

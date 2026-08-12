@@ -3,19 +3,26 @@
 Contract: docs/interfaces.md 8.3.
 """
 
+import re
 import time
 
 import pyotp
 import pytest
+from sqlalchemy import select
 
 from admin.accounts import (
     begin_mfa_enrolment,
     complete_mfa_enrolment,
     create_staff,
     get_staff,
+    last_password_change,
     set_password,
 )
+from admin.models import AuditLog
 from admin.totp import TOTP_INTERVAL
+from admin.views import MIN_PASSWORD_LENGTH
+
+from tests.admin.conftest import _cleanup_staff_named
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
 
@@ -26,6 +33,16 @@ SECRET_KEY = "test-secret-key-not-used-anywhere-real"
 # app fixture is named `admin_app` and disposes its engine on teardown. Do
 # not redefine them here; Tasks 4 onward all share those definitions, and a
 # private copy would leak an engine per test.
+
+
+# The account teardown is `tests/admin/conftest.py::_cleanup_staff_named`, not
+# a copy of it here. It deletes the audit entries as well as the staff row, on
+# both of the two predicates that matter, and the audit half is not tidiness:
+# these tests commit to the one shared `kaicalc_test` database, and
+# test_modelviews.py and test_taxonomy_rules.py both read the whole of
+# `audit_log` - one of them asserting it is empty. A row left behind here fails
+# those files, and only when the whole directory runs. That became reachable
+# from this file the moment ChangePasswordView started auditing its own change.
 
 
 @pytest.fixture
@@ -42,15 +59,10 @@ def not_onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.commit()
     yield username, password
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 @pytest.fixture
@@ -74,7 +86,7 @@ def enrolled_but_owes_password_change(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
         now = int(time.time()) - 2 * TOTP_INTERVAL
@@ -87,12 +99,7 @@ def enrolled_but_owes_password_change(admin_app):
         )
         db.commit()
     yield username, password, secret, codes
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 @pytest.fixture
@@ -110,7 +117,7 @@ def onboarded(admin_app):
     username = f"u{uuid.uuid4().hex[:10]}"
     factory = admin_app.state.session_factory
     with factory() as db:
-        _, password = create_staff(db, username=username, display_name="Test User")
+        _, password = create_staff(db, username=username, display_name="Test User", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, "a-long-enough-password")
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -124,12 +131,7 @@ def onboarded(admin_app):
         )
         db.commit()
     yield username, "a-long-enough-password", secret, codes
-    with factory() as db:
-        db.execute(
-            __import__("sqlalchemy").text("DELETE FROM staff WHERE username = :u"),
-            {"u": username},
-        )
-        db.commit()
+    _cleanup_staff_named(admin_app, username)
 
 
 async def _login_password_step(client, username, password):
@@ -207,6 +209,56 @@ async def test_a_valid_change_clears_the_flag_and_sends_an_unenrolled_account_to
     assert response.status_code == 302
     assert response.headers["location"].endswith("/admin/enrol")
     assert _must_change_password(admin_app, username) is False
+
+
+async def test_the_change_is_recorded_in_the_audit_trail(
+    admin_app, client, not_onboarded
+):
+    """This page wrote nothing until now, and the gap was not academic.
+
+    It is the page every account passes through on first login, so for a fresh
+    account the trail held no record of the only password change that had ever
+    happened - and /admin/security's "last changed on ⟨date⟩" reads that trail.
+    The reason given for writing nothing was that no actor exists in any
+    meaningful sense mid-onboarding; `current_username` identifies one, and it
+    is the only account that could have reached this page.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+    token = await _csrf_from(client, "/admin/change-password")
+
+    response = await client.post(
+        "/admin/change-password",
+        data={
+            "password": "a-brand-new-password",
+            "confirm": "a-brand-new-password",
+            "csrf_token": token,
+        },
+        follow_redirects=False,
+    )
+    assert response.status_code == 302
+
+    with admin_app.state.session_factory() as db:
+        staff = get_staff(db, username)
+        rows = db.scalars(
+            select(AuditLog).where(
+                AuditLog.actor == username, AuditLog.table_name == "staff"
+            )
+        ).all()
+        assert len(rows) == 1, rows
+        entry = rows[0]
+        assert entry.action == "update"
+        assert entry.row_id == staff.id
+        assert entry.after_json["changed"] == "password"
+        # Not the self-service screen. The trail says which page did it.
+        assert entry.after_json["self_service"] is False
+        # Neither the plaintext nor the hash: audit_log is readable by every
+        # staff member.
+        assert "a-brand-new-password" not in str(entry.after_json)
+        assert "password_hash" not in entry.after_json
+
+        # ...and this is the row the security screen's date comes from.
+        assert last_password_change(db, staff) == entry.at
 
 
 # --- Behaviour 4 -------------------------------------------------------------
@@ -305,6 +357,123 @@ async def test_a_too_short_password_is_refused_and_the_flag_stays_set(
 
     assert response.status_code == 400
     assert _must_change_password(admin_app, username) is True
+
+
+async def test_the_floor_refuses_one_short_and_accepts_exactly_the_minimum(
+    admin_app, client, not_onboarded
+):
+    """Both sides of the length boundary, against one account.
+
+    The refusing half on its own would pass against a page that refuses
+    every password, so the accepting half is the one carrying the weight:
+    a password of exactly MIN_PASSWORD_LENGTH characters must go through.
+
+    Lengths are derived from the constant rather than written out. The floor
+    has already moved once - twelve to eight - and a literal 12 here would
+    have stayed green across that change while asserting nothing about the
+    rule actually in force.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+
+    one_short = "a" * (MIN_PASSWORD_LENGTH - 1)
+    refused = await client.post(
+        "/admin/change-password",
+        data={
+            "password": one_short,
+            "confirm": one_short,
+            "csrf_token": await _csrf_from(client, "/admin/change-password"),
+        },
+        follow_redirects=False,
+    )
+
+    assert refused.status_code == 400
+    # The message names the real floor; a hard-coded number in the copy
+    # would fail here rather than mislead a user.
+    assert f"at least {MIN_PASSWORD_LENGTH} characters" in refused.text
+    assert _must_change_password(admin_app, username) is True
+
+    exactly = "a" * MIN_PASSWORD_LENGTH
+    accepted = await client.post(
+        "/admin/change-password",
+        data={
+            "password": exactly,
+            "confirm": exactly,
+            "csrf_token": await _csrf_from(client, "/admin/change-password"),
+        },
+        follow_redirects=False,
+    )
+
+    assert accepted.status_code == 302, accepted.text
+    assert _must_change_password(admin_app, username) is False
+
+
+async def test_the_page_states_the_length_rule_before_anyone_is_refused(
+    admin_app, client, not_onboarded
+):
+    """The number on screen comes from MIN_PASSWORD_LENGTH.
+
+    Prose carrying its own copy of the number is worse than no guidance: it
+    goes quietly wrong the first time the constant moves, and this one has
+    moved. The page is fetched with no error on it, because a rule that is
+    only stated in a refusal is a rule you learn by failing.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+
+    page = await client.get("/admin/change-password", follow_redirects=False)
+
+    assert page.status_code == 200
+    assert f"At least {MIN_PASSWORD_LENGTH} characters" in page.text
+    # And no second, stale number anywhere else on the page. Written as a
+    # sweep rather than "12 is absent" so it keeps working if the floor moves
+    # again, in either direction.
+    stated = set(re.findall(r"(\d+) characters", page.text))
+    assert stated == {str(MIN_PASSWORD_LENGTH)}, stated
+
+
+async def test_the_form_carries_the_attributes_a_password_manager_needs(
+    admin_app, client, not_onboarded
+):
+    """The attributes are in the markup. That, and nothing beyond it.
+
+    This test cannot show that Chrome offers to *update* the stored
+    credential instead of saving a second one - only a browser with a
+    password manager signed in can show that, and it was checked by hand.
+    What it does hold is that a later edit of this template cannot drop them
+    without turning something red. That matters because every one of these
+    attributes reads as decoration: a readonly field nobody can see, an
+    autocomplete value on a field the server never fills. Removing them
+    breaks no behaviour any other test in this file observes, and the
+    symptom appears weeks later in somebody's password manager.
+    """
+    username, password = not_onboarded
+    await _login_password_step(client, username, password)
+
+    page = await client.get("/admin/change-password", follow_redirects=False)
+    assert page.status_code == 200
+    body = page.text
+
+    # The username the browser will file the credential under, and it is the
+    # account actually signing in.
+    assert 'autocomplete="username"' in body
+    assert f'value="{username}"' in body
+    username_field = re.search(r"<input[^>]*autocomplete=\"username\"[^>]*>", body)
+    assert username_field, body
+    field = username_field.group(0)
+    # type="hidden" is the obvious way to write this and the one that does
+    # not work: password managers skip hidden inputs. It must be a text
+    # input that is merely off screen, and readonly so it cannot be edited.
+    assert 'type="text"' in field, field
+    assert 'type="hidden"' not in field, field
+    assert "readonly" in field, field
+    assert "sr-only" in field, field
+
+    assert body.count('autocomplete="new-password"') == 2
+    # The form must not switch autocomplete off wholesale; that is the state
+    # this page was in when the browser treated a password change as a new
+    # signup.
+    assert 'autocomplete="off"' not in body
 
 
 # --- Behaviour 6 -------------------------------------------------------------
@@ -413,8 +582,9 @@ async def test_a_password_short_in_characters_but_over_the_byte_limit_is_refused
     panel, and the error message this page shows explicitly names
     "accented or non-Latin characters" as the reason the two counts differ.
 
-    "e"-with-acute times 40 is 40 *characters* (under MIN_PASSWORD_LENGTH's
-    floor by a mile, nowhere near a character-count limit of 72) but 80
+    "e"-with-acute times 40 is 40 *characters* (well clear of
+    MIN_PASSWORD_LENGTH's floor, and nowhere near a character-count limit of
+    72, so no other check accounts for the refusal) but 80
     *bytes* in UTF-8 (over BCRYPT_MAX_BYTES=72) - so this input is accepted
     by a character-counting mutant and correctly refused only by the real
     byte-counting check.

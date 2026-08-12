@@ -1,0 +1,194 @@
+# The suite, against a real MySQL 8. ONE COPY, TWO CALLERS.
+#
+# ci.yaml runs it on every push; release.yaml runs it before it publishes
+# anything. A release cut from a red commit is the failure that extraction
+# prevents here - the alternative was either a second copy of this job or a
+# release that trusts that somebody looked at CI first.
+#
+# WHAT THIS FILE EXISTS TO GUARANTEE: that the suite runs against MySQL 8 and
+# not something that merely accepts the same SQL. `pytest -m "not db"` skips
+# the half of the suite that is about the database that ships, which is the
+# half that cannot be proven any other way - see the comments on the service
+# block and on the pytest step.
+
+name: Tests against MySQL 8
+
+on:
+  workflow_call:
+    inputs:
+      ref:
+        description: >-
+          Commit to test. Empty means the ref the run started from, which is
+          what CI wants. release.yaml passes the VERSION BUMP COMMIT, because
+          that - not the commit the operator dispatched from - is the tree the
+          tag points at and the tree the images are built from. Testing a
+          different commit to the one being published would make this job a
+          statement about something nobody ships.
+        required: false
+        default: ''
+        type: string
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests (MySQL 8)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    services:
+      # A REAL MySQL 8, not SQLite and not `-m "not db"`.
+      #
+      # ENUM, VARBINARY and DATETIME all behave differently on SQLite; the two
+      # functional COALESCE unique indexes (contract 2.2, 2.3) do not exist
+      # there at all, so tests/test_mysql_integration.py would prove nothing;
+      # and a MySQL CHECK violation surfaces as OperationalError rather than
+      # IntegrityError, which this suite asserts directly. Skipping the `db`
+      # marker would leave exactly the assertions that are about the shipped
+      # database unrun, and green.
+      #
+      # Credentials, database name and PORT are the root docker-compose.yml's,
+      # because tests/conftest.py hardcodes
+      # `mysql+pymysql://root:devroot@127.0.0.1:3307/` and creates its own
+      # scratch databases through it. Matching them means `python -m pytest` is
+      # the same command here and on a developer's machine.
+      mysql:
+        # PINNED BY DIGEST, and by the SAME digest docker/compose.yaml uses.
+        #
+        # A floating `mysql:8.0` here was the reproducibility argument applied
+        # to the deliverable but not to the gate standing in front of it. The
+        # images pin their bases by digest and docker/constraints.txt pins 40
+        # packages, all so that the thing verified today is the thing a client
+        # builds in six months - and then the suite that decides whether any of
+        # it ships ran against whatever `8.0` happened to mean that morning. A
+        # MySQL point release that changes a default is exactly the kind of
+        # thing nobody attributes correctly, and it would arrive as a test
+        # failure on an unrelated pull request.
+        #
+        # Same digest as the deployment, deliberately: this suite's whole claim
+        # is that it ran against the database that ships. Change the two
+        # together or the claim quietly stops being true.
+        #
+        # (The root docker-compose.yml - the developer convenience the suite
+        # uses locally - still floats. Lower stakes, and not this file's to
+        # change; noted so the next person pinning it knows where the pair is.)
+        image: mysql@sha256:7dcddc01f13bab2f15cde676d44d01f61fc9f99fe7785e86196dfc07d358ae2b   # mysql:8.0
+        env:
+          MYSQL_ROOT_PASSWORD: devroot
+          MYSQL_DATABASE: kaicalc
+          MYSQL_USER: kaicalc
+          MYSQL_PASSWORD: devpass
+        ports:
+          # 3307 on the runner, 3306 in the container - the same mapping
+          # docker-compose.yml uses, and the port tests/conftest.py names.
+          - 3307:3306
+        options: >-
+          --health-cmd "mysqladmin ping -h 127.0.0.1 -pdevroot"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 30
+          --health-start-period 30s
+
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ inputs.ref }}
+
+      - uses: actions/setup-python@v6
+        with:
+          # 3.11 because that is what the images run (python:3.11-slim, pinned
+          # by digest in docker/*.Dockerfile). Testing on a different minor
+          # version to the one that ships is testing something else.
+          python-version: '3.11'
+          cache: pip
+          cache-dependency-path: pyproject.toml
+
+      - name: Install the package and its dev extra
+        # `-e` is deliberate and safe HERE, unlike in an image: the PEP 660
+        # editable backend drops [tool.setuptools.data-files], so an editable
+        # install has no <prefix>/share/kaicalc - but the tests that run
+        # Alembic (tests/test_migrations.py, tests/test_mysql_integration.py)
+        # load `Config("alembic.ini")` relative to the checkout, which is
+        # present. The images build a real wheel; see docker/api.Dockerfile.
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e ".[dev]"
+
+      - name: Wait for MySQL, and match the local server defaults
+        # Two jobs in one step.
+        #
+        # (1) The service health check is `mysqladmin ping`, which answers
+        #     before the server is done initialising the data directory on a
+        #     cold start; connecting for real is the only check that means
+        #     anything.
+        #
+        # (2) docker-compose.yml starts MySQL with
+        #     `--character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci`.
+        #     A GitHub `services:` block cannot pass a command to the container,
+        #     so the same two settings are applied as globals instead. This is
+        #     not cosmetic: tests/test_migrations.py creates
+        #     `kaicalc_migrationtest` with NO explicit charset, so it inherits
+        #     whatever the server default is - utf8mb4_0900_ai_ci out of the
+        #     box here, utf8mb4_unicode_ci on every developer machine. A
+        #     collation difference between CI and the desk is the kind of
+        #     divergence that produces a failure nobody can reproduce.
+        run: |
+          python - <<'PY'
+          import sys, time
+          import pymysql
+
+          last = None
+          for attempt in range(60):
+              try:
+                  conn = pymysql.connect(
+                      host="127.0.0.1", port=3307, user="root", password="devroot",
+                      connect_timeout=5,
+                  )
+                  break
+              except Exception as exc:      # noqa: BLE001 - any failure is "not up yet"
+                  last = exc
+                  time.sleep(2)
+          else:
+              sys.exit(f"MySQL never accepted a connection on 127.0.0.1:3307: {last}")
+
+          with conn.cursor() as cur:
+              cur.execute("SET GLOBAL character_set_server = 'utf8mb4'")
+              cur.execute("SET GLOBAL collation_server = 'utf8mb4_unicode_ci'")
+              # @@GLOBAL., NOT the bare name. A bare `@@collation_server`
+              # resolves the SESSION copy, which was initialised from the old
+              # global when this connection opened and does not change under
+              # `SET GLOBAL` - so it reports utf8mb4_0900_ai_ci here however
+              # well the statement above worked, and a genuinely failed SET
+              # would look identical. This read is the only thing standing
+              # between "the settings match the developer's machine" and
+              # "someone believes they do".
+              cur.execute(
+                  "SELECT VERSION(), @@GLOBAL.character_set_server,"
+                  " @@GLOBAL.collation_server"
+              )
+              version, charset, collation = cur.fetchone()
+          conn.close()
+
+          print(f"MySQL {version}: server charset {charset}, collation {collation}")
+          expected = ("utf8mb4", "utf8mb4_unicode_ci")
+          if (charset, collation) != expected:
+              sys.exit(
+                  "The MySQL service does not match docker-compose.yml's server "
+                  f"settings: got {(charset, collation)}, expected {expected}. "
+                  "Every scratch database a test creates without an explicit "
+                  "CHARACTER SET inherits these, so CI would be running against "
+                  "a different collation than every developer machine."
+              )
+          PY
+
+      - name: pytest
+        # No `-m` selector and no `-n`. The whole suite, one process.
+        #
+        # NOT parallelised on purpose: tests/admin's fixtures commit against
+        # one shared database and delete by prefix in teardown, and two runs
+        # overlapping on one database deadlock on those files. Each CI run gets
+        # a MySQL service container of its own, so runs cannot collide with
+        # each other - but a `-n auto` inside one run would recreate exactly
+        # that overlap.
+        run: python -m pytest

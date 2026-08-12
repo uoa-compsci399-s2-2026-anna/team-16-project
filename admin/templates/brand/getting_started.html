@@ -1,0 +1,17 @@
+{# The first-run walkthrough's page. All of its content is the block, which
+   lives beside the other five in brand/guidance/ so that test_guidance.py's
+   orphan test covers it (HAND_INCLUDED there).
+
+   Extends sqladmin's own layout rather than brand/base.html, unlike every
+   other hand-written page in this panel. Those are the login gauntlet and
+   the dry-run form - pages somebody is sent to, and sent on from. This one
+   is a page somebody is meant to read *and then navigate from*, and half of
+   what it says is "go to that screen". brand/base.html paints a card on an
+   empty background with no menu at all, so a reader would have to come back
+   here after every step. The layout gives them the panel's own navigation
+   down the side, with each screen this page names already in it. #}
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+{% include "brand/guidance/getting-started.html" %}
+{% endblock %}

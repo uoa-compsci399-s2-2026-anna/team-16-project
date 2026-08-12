@@ -15,6 +15,13 @@ pymysql>=1.1               # pure Python; avoids the mysqlclient build toolchain
 
 # --- Admin panel ---
 sqladmin>=0.20
+httpx>=0.28                # admin/calc_client.py imports it at module level,
+                           # so the panel does not start without it. It was
+                           # listed under "--- Testing ---" below until the
+                           # packaging pass installed a wheel without the test
+                           # group and watched create_app die with
+                           # ModuleNotFoundError. It is also the ASGI test
+                           # client, but that is not why it is required.
 
 # --- Security (module E) ---
 bcrypt>=4.2                # used directly, not through passlib: passlib has
@@ -25,12 +32,17 @@ pyotp>=2.9                 # TOTP
 qrcode>=8.0                # SVG factory only - no Pillow dependency
 
 # --- Calculation engine (module A) ---
-simpleeval>=1.0
+# No dependency. engine/evaluator.py is written over the standard library's
+# `ast` rather than simpleeval, so that admin/expressions.py can be its static
+# twin over the same tree and the two can be held to the same verdict; see
+# docs/interfaces.md 4.3. simpleeval was listed here through v1.9 and never
+# imported.
 
 # --- Config ---
 python-dotenv>=1.0
 
 # --- Testing ---
+# pyproject.toml carries these as the optional `dev` extra, so a client
+# installing the package does not get a test runner:  pip install -e ".[dev]"
 pytest>=8.3
 pytest-asyncio>=0.24
-httpx>=0.28                # ASGI test client

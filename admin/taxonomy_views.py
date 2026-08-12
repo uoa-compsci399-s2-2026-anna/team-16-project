@@ -40,6 +40,28 @@ from admin.taxonomy_rules import (
 
 _CATEGORY = "Taxonomy"
 
+#: Every editable field on this panel carries help text, and
+#: tests/admin/test_field_help.py fails until a new one does. The register is
+#: "what does this mean, and what happens if I get it wrong", written for
+#: somebody who has never seen this system - not a restatement of the label,
+#: which teaches a reader that the help text is not worth reading.
+#:
+#: These two are shared because they genuinely say the same thing on all six
+#: tables. Everything else below is written per field: `code` on `metric` and
+#: `code` on `destination` are not the same field with a different name.
+_SORT_ORDER_HELP = (
+    "Position in the list a visitor sees, lowest first. Rows sharing a "
+    "number fall back to alphabetical order by code, so leave gaps between "
+    "the values if you expect to slot something in later."
+)
+_ACTIVE_HELP = (
+    "Untick to retire this row. It stays in the database and anything that "
+    "already points at it — a stored result, an existing factor — keeps "
+    "resolving, but it disappears from the calculator and from the lists "
+    "this panel offers when you build a new row. Nothing on these screens "
+    "can be deleted; this is how a row leaves service."
+)
+
 
 class _TaxonomyAdmin(AuditedModelView):
     """Common base for the six taxonomy screens below: the bulk deactivate/
@@ -226,6 +248,33 @@ class DestinationGroupAdmin(_TaxonomyAdmin, model=DestinationGroup):
         DestinationGroup.code, DestinationGroup.name, DestinationGroup.is_waste,
         DestinationGroup.sort_order, DestinationGroup.active,
     ]
+    form_args = {
+        "code": {"description": (
+            "The short name the API and the front end use for this group — "
+            "'reuse', 'recycle_recovery', 'disposal'. Lower case, no spaces. "
+            "Destinations reference their group by row, not by this text, so "
+            "renaming it does not detach them."
+        )},
+        "name": {"description": (
+            "The wording a visitor reads. The code above is never shown to "
+            "the public; this is."
+        )},
+        "is_waste": {"description": (
+            "Whether destinations in this group count as waste under the "
+            "Ministry for the Environment's definition — reuse does not, the "
+            "rest do. It is published with the taxonomy so the public site "
+            "can separate waste from diversion. It is a setting rather than "
+            "a rule in the code because the definition is expected to move: "
+            "the 2025 Otago baseline already recommends reclassifying "
+            "bioprocessing from waste to reuse."
+        )},
+        "sort_order": {"description": _SORT_ORDER_HELP},
+        "active": {"description": (
+            _ACTIVE_HELP + " Retiring a group takes every destination in it "
+            "out of service too, because the calculator lists destinations by "
+            "joining through their group."
+        )},
+    }
     column_searchable_list = [DestinationGroup.code, DestinationGroup.name]
     column_filters = [BooleanFilter(DestinationGroup.is_waste),
                       BooleanFilter(DestinationGroup.active)]
@@ -262,6 +311,33 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
         Destination.group, Destination.code, Destination.name,
         Destination.description, Destination.sort_order, Destination.active,
     ]
+    form_args = {
+        "group": {"description": (
+            "Which grouping this destination belongs to, and so whether it "
+            "counts as waste. A destination in a retired group is out of "
+            "service even while this row is still ticked active."
+        )},
+        "code": {"description": (
+            "The short name the API and the front end use for this "
+            "destination — 'landfill', 'compost', 'animal_feed'. Lower case, "
+            "no spaces. 'prevention' is the one code this system knows by "
+            "name: it stands for waste that did not happen, and the "
+            "calculator finds it by this exact text, so renaming it and "
+            "deleting it are the same event. The panel refuses either."
+        )},
+        "name": {"description": (
+            "The wording a visitor picks from on the calculator, and reads "
+            "on the results page."
+        )},
+        "description": {"description": (
+            "What actually happens to food sent here, in a sentence or two, "
+            "shown to a visitor beside the name. Optional — but a visitor "
+            "who cannot tell two destinations apart will guess, and the "
+            "guess goes into the numbers."
+        )},
+        "sort_order": {"description": _SORT_ORDER_HELP},
+        "active": {"description": _ACTIVE_HELP},
+    }
     column_searchable_list = [Destination.code, Destination.name]
     column_filters = [OperationColumnFilter(Destination.code),
                       BooleanFilter(Destination.active)]
@@ -291,6 +367,27 @@ class SectorAdmin(_TaxonomyAdmin, model=Sector):
     form_columns = [
         Sector.code, Sector.name, Sector.description, Sector.sort_order, Sector.active,
     ]
+    form_args = {
+        "code": {"description": (
+            "The short name the API and the front end use for this stage of "
+            "the supply chain — 'primary_production', 'processing', "
+            "'consumer_household'. Lower case, no spaces. Upstream factors "
+            "point at this row rather than at the text, so renaming it does "
+            "not detach the numbers filed under it."
+        )},
+        "name": {"description": (
+            "The wording a visitor picks from when they say where in the "
+            "supply chain their waste arose."
+        )},
+        "description": {"description": (
+            "The whole of the explanatory text a visitor reads about this "
+            "stage — there is only one such field, so the longer wording "
+            "that would have gone in a separate 'more detail' panel belongs "
+            "here too."
+        )},
+        "sort_order": {"description": _SORT_ORDER_HELP},
+        "active": {"description": _ACTIVE_HELP},
+    }
     column_searchable_list = [Sector.code, Sector.name]
     column_filters = [BooleanFilter(Sector.active)]
     column_default_sort = ("sort_order", False)
@@ -313,6 +410,31 @@ class FoodCategoryAdmin(_TaxonomyAdmin, model=FoodCategory):
         FoodCategory.code, FoodCategory.name, FoodCategory.is_standard_mix,
         FoodCategory.sort_order, FoodCategory.active,
     ]
+    form_args = {
+        "code": {"description": (
+            "The short name the API and the front end use for this category "
+            "— 'bread_bakery', 'standard_mix'. Lower case, no spaces. Factor "
+            "rows point at this row rather than at the text, so renaming it "
+            "does not detach the numbers filed under it."
+        )},
+        "name": {"description": (
+            "The wording a visitor picks from when they say what kind of "
+            "food was wasted."
+        )},
+        "is_standard_mix": {"description": (
+            "Marks the fallback for a visitor who does not know how their "
+            "waste breaks down, which is most visitors. Exactly one active "
+            "category must carry it: with none, that visitor's calculation "
+            "cannot be run at all, and with two it is ambiguous. The panel "
+            "refuses any edit — including a bulk deactivation — that would "
+            "leave either."
+        )},
+        "sort_order": {"description": _SORT_ORDER_HELP},
+        "active": {"description": (
+            _ACTIVE_HELP + " Retiring the standard mix is refused unless "
+            "another active category carries it."
+        )},
+    }
     column_searchable_list = [FoodCategory.code, FoodCategory.name]
     column_filters = [BooleanFilter(FoodCategory.is_standard_mix),
                       BooleanFilter(FoodCategory.active)]
@@ -344,6 +466,44 @@ class MetricAdmin(_TaxonomyAdmin, model=Metric):
         Metric.code, Metric.name, Metric.unit, Metric.display_unit,
         Metric.display_precision, Metric.sort_order, Metric.active,
     ]
+    form_args = {
+        "code": {"description": (
+            "The short name everything else refers to this metric by — "
+            "'co2e', 'water', 'cost', 'mass'. Lower case, no spaces. It "
+            "appears in the API response and is how the formula screen picks "
+            "which metric an expression computes."
+        )},
+        "name": {"description": (
+            "The heading a visitor reads above this figure — 'Greenhouse "
+            "gas', not 'co2e'."
+        )},
+        "unit": {"description": (
+            "The unit the stored number is actually in, which is whatever "
+            "this metric's formula produces — 'kg CO2e', 'L', 'NZD'. Nothing "
+            "anywhere converts a metric total, so if this should be reported "
+            "in tonnes, that is a change to the formula, not to a label."
+        )},
+        "display_unit": {"description": (
+            "A typographic variant of the unit above, used for display only "
+            "— 'kg CO₂e' for 'kg CO2e'. Leave blank to show the unit as "
+            "typed. It must be the same scale. Putting 't CO2e' here against "
+            "a unit of 'kg CO2e' divides nothing by a thousand; it relabels "
+            "the number, and every greenhouse-gas figure on the public page "
+            "then reads a thousand times too small. That was live until "
+            "August 2026."
+        )},
+        "display_precision": {"description": (
+            "How many decimal places a visitor sees. It changes what is "
+            "printed and nothing else — the calculation and the stored "
+            "figure keep their full precision either way."
+        )},
+        "sort_order": {"description": _SORT_ORDER_HELP},
+        "active": {"description": (
+            _ACTIVE_HELP + " A retired metric drops out of the taxonomy every "
+            "calculation is built from, so it stops appearing on the results "
+            "page; its factors and its formula stay where they are."
+        )},
+    }
     column_searchable_list = [Metric.code, Metric.name]
     column_filters = [BooleanFilter(Metric.active)]
     column_default_sort = ("sort_order", False)
@@ -369,5 +529,38 @@ class UnitPresetAdmin(_TaxonomyAdmin, model=UnitPreset):
         UnitPreset.code, UnitPreset.label, UnitPreset.food_category,
         UnitPreset.kg_per_unit, UnitPreset.source_note, UnitPreset.active,
     ]
+    form_args = {
+        "code": {"description": (
+            "The short name the front end uses for this container — "
+            "'bucket_20l_full'. Lower case, no spaces. A visitor never sees "
+            "it; they see the label below."
+        )},
+        "label": {"description": (
+            "What a visitor picks from the container list — '20 L bucket "
+            "(full)'. Say how full it is, because the weight below is the "
+            "weight of it in that state."
+        )},
+        "food_category": {"description": (
+            "Leave blank unless the weight genuinely depends on what is in "
+            "the container — blank means the preset applies to every "
+            "category, which is the usual case. A bucket of bread and a "
+            "bucket of potatoes weigh different amounts; a wheelie bin is a "
+            "wheelie bin."
+        )},
+        "kg_per_unit": {"description": (
+            "Kilograms one of these holds. The calculator multiplies it by "
+            "the number of containers a visitor types, so this figure is the "
+            "whole of the conversion — get it wrong and every calculation "
+            "made through this preset is wrong, with nothing on screen to "
+            "say so."
+        )},
+        "source_note": {"description": (
+            "Where the weight came from. Every preset shipped with this "
+            "panel is an unmeasured estimate — open item O-6 — and says so "
+            "here; replace the note along with the number when real data "
+            "arrives."
+        )},
+        "active": {"description": _ACTIVE_HELP},
+    }
     column_searchable_list = [UnitPreset.code, UnitPreset.label]
     column_filters = [BooleanFilter(UnitPreset.active)]

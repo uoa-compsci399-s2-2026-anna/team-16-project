@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-09 (v1.5 draft)"
+date: "2026-08-12 (v1.17 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,163 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.17 — 2026-08-12 (from merging `main` back into this line, affects nobody's code)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§10's fixture note is rewritten: `tests/fixtures/` exists.** The note merged in from `main` was written at v1.2 and says in the present tense that the directory "does not exist on any branch a reader of this document is likely to be standing on", that two disagreeing sets sit on two unmerged branches, and that the canonical set will land with B's integration PR. All three were true then; none is true now. B's integration merged as PR #12, and the directory holds the seven files, `errors/`'s seven — `blocked.json` among them, the one the note called the only genuinely missing file — and `tests/golden/`'s nine cases. **A contract that describes work as outstanding when it is finished is worse than one that is silent about it**, because the next reader does the work again. The reasoning is kept in the past tense: why one canonical set rather than two, and the four content requirements that were argued for on their own merits and remain binding | §10 |
+
+### v1.16 — 2026-08-12 (raised by the repository owner, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **An administrator-issued password is kept and re-readable on exactly the same terms as a created one.** `issue_password` **overwrites** `staff.unclaimed_password_enc` with the password it mints, where v1.15 had it *clear* the column. v1.15's asymmetry had no defence: the loss the feature exists to prevent — a closed tab taking a password nobody wrote down — was prevented for a created password and not for an issued one, and the only recovery from the second was to issue *yet another*, which stops the one already read out to the colleague from working. That is the same exchange v1.15 removed from account creation, left in place one screen away. The overwrite is unconditional: a stale value here is a password that no longer opens the account, so "leave it alone if something is there" would have the panel offering a dead string. `secret_key` becomes a **required, keyword-only** argument of `issue_password` and of `kaicalc-admin issue-password`'s `cmd_issue_password`, for the reason it is required on `create_staff` — an optional one is a caller that silently forgot, and the state that produces is precisely the NULL column this revision abolishes | §8.3 |
+| 2 | **`staff.initial_password_enc` is renamed `staff.unclaimed_password_enc`** (migration `0012`, an in-place `ALTER TABLE ... CHANGE`: same type, same nullability, same data, same key). Under v1.15 a non-NULL value meant "this account has never been used"; after item 1 it can belong to an account three years old whose owner lost their password this morning, so the old name would go on telling every future reader something false — in the model, on the accounts list ("Initial password still unclaimed"), and in `audit_log`'s `after_json`. The Python surface renames with it: `Staff.initial_password_unclaimed` → `Staff.has_unclaimed_password`, `encrypt/decrypt_initial_password` → `encrypt/decrypt_unclaimed_password`, `reveal_initial_password` → `reveal_unclaimed_password`, `INITIAL_PASSWORD_ENCRYPTION_INFO` → `UNCLAIMED_PASSWORD_ENCRYPTION_INFO`, `/admin/staff/initial-password` → `/admin/staff/unclaimed-password`, and the `show-initial-password` action → `show-unclaimed-password`. **The HKDF `info` byte string is deliberately unchanged** (`b"initial-password-encryption"`): it is key-derivation material, so editing it to match the name would derive a different key and turn every stored value into a blob nothing can open. Both `REDACTED_FIELDS` (§5.5) hold the old name alongside the new, the way `mfa_secret_enc` has been kept since v1.13 | §2.4, §5.5, §8.2, §8.3 |
+| 3 | **`audit_log`'s reveal entry now reads `{"username": ..., "revealed": "unclaimed_password"}`.** The value was `"initial_password"`, which the trail — append-only, and the one table that must not say anything untrue — would have gone on asserting about passwords that were not initial | §2.3, §8.3 |
+| 4 | **Wording corrected wherever it claimed a one-time reveal, including two places that were already wrong before this revision.** `brand/issued_credential.html` said "This is shown once and is not recoverable"; `brand/staff_created.html` said "This password is shown once and is not stored anywhere", which stopped being true when v1.15 landed and would send an administrator to mint a replacement for a password sitting one proof away. The bootstrap output's "These passwords are shown once and cannot be recovered" is corrected the same way: bootstrap goes through `create_staff`, so one lost line is recoverable *by the other administrator*, and only losing both is terminal — for which the output now names `kaicalc-admin issue-password` | §8.3 |
+| 5 | **`staff.unclaimed_password_enc` is added to §2.4's `staff` table**, which v1.15 changed the schema without doing | §2.4 |
+
+### v1.15 — 2026-08-12 (raised by the repository owner, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The audit log becomes `role = admin` only.** §8.3's role table has granted "view audit log" to both roles since v0.2, and the panel implemented that faithfully — a `staff` account reached **Audit log** in the sidebar and read every actor's entries, administrators' password issues, account creations and deletions included. **That was the specification, not a defect in the code**, and it is the specification that is being changed: the trail is an administrator's oversight tool, and a staff member reading their colleagues' account administration is not doing anything the role exists for. Enforced through `is_accessible`, which sqladmin consults for `/list`, `/details/{pk}` **and** `/export/{export_type}` separately (three handlers, not one); `AuditLogAdmin` declares no `@expose` and no `@action`, the two route kinds sqladmin registers with `login_required` alone, so those three are the whole of its surface. The rejected alternative was "their own entries only", and it was rejected on two grounds: a `ModelView` reads through four different queries (`list_query`, `get_object_for_details`, `get_model_objects`, `ajax_lookup`) so a filter on one leaves the others open to a guessed `id` or a single export request; and `actor` is a plain `VARCHAR(128)` that also holds `cli`, `bootstrap`, `deploy-seed` and `unknown`, so a per-actor view is a trail with holes and nothing on the page saying so | §8.2, §8.3 |
+| 2 | **`write_audit`'s `REDACTED_FIELDS` is unchanged, and the six passages justifying it with "`audit_log` is readable by every staff member" now read as historical.** Narrowing the audience is not a reason to widen what is written. `password_hash`, `mfa_secret_enc`, `code_hash`, `token` and `ip_hmac` are credentials and identifiers no screen should render at any role, and the trail is exportable, pasted into tickets and read over shoulders. A redaction dropped because "only administrators see it now" is one that has to be found again the first time a read-only auditor role is added | §5.5 |
+| 3 | **The initial password is stored, reversibly encrypted, until it is claimed.** New nullable column `staff.initial_password_enc`. **This is a deliberate weakening of credential storage and it was the repository owner's decision, taken with the cost stated.** It exists because a one-time reveal is easy to lose and this project has already lost a set of recovery codes to exactly that shape. Written only by `create_staff`; cleared unconditionally by `set_password` (self-service *and* the forced change at first login) and by `issue_password`; gone with the row on `delete_staff`. Read only through `/admin/staff/initial-password`, which is `role = admin`, takes the same re-authentication proof as account creation and deletion, and writes an `audit_log` entry per reveal. Encrypted with Fernet under a key derived from `SECRET_KEY` by HKDF with its own `info`, never the one `mfa_secret_enc` uses. **The cost, plainly:** anyone holding both a database dump and `SECRET_KEY` can log in as every account that has not yet claimed its password, and those accounts are pre-MFA — the attacker enrols the authenticator — so the password is the whole of their protection. The exposure is bounded by the column being NULL at every other moment of an account's life | §2.4, §8.3 |
+| 4 | **`audit_log.action` gains `reveal`.** Written by `/admin/staff/initial-password` on each successful display. Recorded here rather than reused as `read`, because the enumeration is already the thing that has drifted twice (v1.14 added `archive` and `refuse` after both were already being written) and a reader branching on the documented set would silently drop these rows | §2.3 |
+| 5 | **§8.2's audit-log path is `/admin/audit-log`, not `/admin/audit`.** sqladmin derives a `ModelView`'s identity from its model class name (`AuditLog` → `audit-log`), so the URL this document has named since v0.2 has never been the one the panel serves. Corrected in the document, not in the code: the identity is what every `request.url_for("admin:list", identity=...)` call and every menu link already resolve to | §8.2 |
+
+### v1.14 — 2026-08-11 (raised by E, affects E only)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Accounts can be deleted.** `/admin/staff/delete` and `kaicalc-admin delete-staff`, both through `admin.accounts.delete_staff`. Only `deactivate_staff` existed, so an account created by mistake became permanent furniture in the list administrators read to answer "who can get into this system". The deletion is a **hard delete and costs the audit trail nothing**: `audit_log` holds no foreign key to `staff` and cannot — `actor` is `VARCHAR(128)` and also carries `cli`, `bootstrap` and `deploy-seed` — so every entry a deleted account wrote stays complete and still names it. A tombstone would have bought a property the trail already has while leaving the row and the username in place. **No migration**; nothing in the schema changes. | §8.3 |
+| 2 | **Deletion requires the account to be deactivated first, and `reactivate_staff` ships with it.** Deletion then acts on a row whose sessions are already gone rather than racing one in flight. Requiring it is only defensible if the mandatory step is reversible, and it was not: deactivating the wrong account had no undo. Also guarded by the two-administrator floor, by the refusal of self-deletion (which runs *before* the deactivation check), and by re-authentication at the point of the action. | §8.3 |
+| 3 | **`last_password_change()` is scoped to entries at or after `staff.created_at`.** It reads the trail by `(table_name='staff', row_id)`, and **SQLite reuses a deleted rowid** while MySQL does not — this module is imported by both. Without the scope, an account created after a deletion could be handed the dead account's id and be shown its password history. Fixed on the read side, so `audit_log` stays append-only. | §8.3 |
+| 4 | **An authenticator can be renamed at any time, and an unconfirmed enrolment is destroyed rather than left in the list.** Auto-generated names carried no information and nothing could revise them; "Set-up not finished" was not a state anybody could act on, since the secret and QR are shown once, so the row could only ever be litter that a manual Remove cleared. It now dies on a GET of `/admin/security` and on beginning a new enrolment — no timer — and cannot touch a confirmed device. Renaming does **not** bump `session_generation`: a name is a note, not a credential. | §8.3 |
+
+### v1.13 — 2026-08-10 (raised by E, affects B)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New table `staff_totp_device`; `staff.mfa_secret_enc` and `staff.mfa_last_counter` are dropped** (migration `0010`, which backfills every existing secret, confirmed or not). One secret column holds one phone, so "enrol a new authenticator" could only mean "replace the one you have" — impossible once the phone is gone. That left an administrator reset as the only way back from a lost device, and v1.12 made that administrator necessarily *somebody else*, so a lost phone became a lockout waiting on a colleague. An account may now enrol several devices and verification tries each. **`last_counter` is per device and must stay so:** two phones emit different codes for the same time step, so a shared counter would refuse the other phone's current, unused code as a replay — a lockout that appears only on two-device accounts. `staff.mfa_enrolled_at` **stays**, as documented derived state, so the onboarding gates and the two-administrator floor keep reading one indexed column. | §2.4 |
+| 2 | **`REDACTED_FIELDS` gains `secret_enc`.** The old name is kept alongside it: `audit_log` rows written before `0010` still carry `mfa_secret_enc`. Anyone who copied the set by value now redacts one field too few. | §5.5 |
+| 3 | **`rotate-key` re-encrypts every device row, not one secret per account.** A rotation that walked `staff` would leave every *second* phone readable only with the old key, report success, and fail silently until somebody reached for their backup device. | §8.3 |
+| 4 | **New screen `/admin/security`, reachable by any signed-in account including `staff`.** It restores what v1.12 removed — changing your own password, alone — through a path that re-proves who is asking: the current password for a password change (a TOTP code is deliberately *not* accepted there), and the password or an existing code for adding or removing a device. Recovery layer **L0** is added to the ladder: a second authenticator enrolled *before* the first is lost. | §8.3 |
+
+### v1.12 — 2026-08-10 (raised by E, affects B and D)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | `audit_log.action`'s enumeration gained `archive` and `refuse`. **Both were already being written and neither was listed.** `archive` has been written by `factor_lifecycle.py` since E-6; `refuse` is new, and records an attempt that was rejected rather than a change that happened — a self-targeted `issue-password` or `reset-mfa`, which the service layer now refuses because they are recovery actions meant for *another* administrator to perform and become a privilege escalation applied to oneself. Anyone reading the audit trail and branching on the documented five would have silently dropped rows; anyone adding a CHECK constraint from this table would have rejected writes the application makes. | §2.3 |
+
+### v1.11 — 2026-08-10 (the O-7 guard checks the value, and one fixture edit gets the row it should have had, **affects B and E**)
+
+**v1.9's guard refused a *missing* `prevention` upstream row and never looked at what the row said.** A staff member satisfied it completely with a `prevention` row at 1.9 — the same value as the general row — and reopened O-7 for that tuple with no error, no warning and nothing in the log. It is a worse position than the absent row, because both callers' messages already told the staff member to add one "at 0": a set that failed the existence check got fixed, and a set that passed it looked finished. The code did not enforce its own sentence.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`find_missing_prevention_upstream` now reports a tuple whose `prevention` upstream row exists but is non-zero**, not only one where the row is absent. The query gains `value_per_kg = 0` on its covering subquery; the return shape, the sort and the two callers are unchanged, so `publish_factor_set` in both `db/repository.py` and `admin/factor_lifecycle.py` tighten together — which is the whole reason v1.9 gave the query one home. **Zero is a modelling decision, not a default**: prevented food was never produced, so there is no upstream burden to attribute, and any other value is a claim nothing in the system supports. There is no tolerance and no "small enough" — one unit in the last place `DECIMAL(20,10)` carries is refused. Both messages now say "no `prevention` upstream row at 0 — either it is missing or it carries a non-zero value" | §5.2 | **B, E** |
+| 2 | **`tests/fixtures/factors.json`'s `prevention`/`co2e` downstream `source_note` was corrected and no change-log row was written for it.** The note still said `prevention` is not a whole offset and that a prevention figure must not be quoted — forty lines below the v1.8 rows that made it false, in the one file §10 calls a public export. Content only; no shape, no number and no key moved, which is exactly why it slipped through, and it is the same class as the v1.7 entry this document already calls out as "the change that was made without a row" | §10 | **B, E** |
+
+> **This is the first entry in the sequence that changes a refusal a staff member can hit.** A draft that publishes today may stop publishing tomorrow, and that is the intent: the sets it now refuses are sets that would have shipped a partial offset. `rollback_to` stays exempt for v1.9's reason — a set archived before v1.8 will legitimately fail the check, and refusing an emergency rollback over a completeness rule is a worse failure than the one the rule prevents.
+>
+> **No request shape, no response shape, no engine signature, no front-end module. A, C and D have nothing to do.** The fixtures already satisfy the tightened rule: every `prevention` upstream row in `factors.json` and in `tests/support/sqlite.py`'s seed is at zero, so no fixture changes with this either.
+
+### v1.10 — 2026-08-10 (the golden suite lands, and three descriptions catch up with the code, **affects A**)
+
+**Nothing computes differently in this revision.** Every change below either describes what was already built or writes down a rule the code has been following with nothing behind it — which is precisely the category that goes unrecorded, because none of it breaks a test and none of it moves a fixture. The suite §10.1 has specified since v0.2 now exists: `tests/golden/test_golden.py` as the runner, and the first two cases built from the response fixtures rather than from the engine, so at least one case is a cross-check between two implementations rather than a recording of one.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **§10.1 now specifies the two files it only named.** `request.json` and `expected.json` are §3's domain objects rendered as JSON — **not** §6.2's wire shapes — because a golden case written against §6.2 would certify `api/engine_adapter.py` as well as the engine, and a hoist or an omitted key there would then read as an engine defect. Adds the four rules the suite is worth nothing without: self-contained cases, no regenerate mode, a failure that names the case and the metric and both values, and a stated purpose per case. Records where each case's numbers came from, since only the first two can avoid certifying the engine against itself | §10.1 | **A** |
+| 2 | **§4.3 said the evaluator is built on `simpleeval`. It never was** — `engine/evaluator.py` is hand-written over Python's `ast`, and the entry now records that and the four reasons. The load-bearing one: `admin/expressions.py` is its static twin and the two must reach the same verdict on every expression, which is only checkable because both walk the same `ast` objects; when that agreement was first measured it found **eight** disagreements where a hand survey had listed three. Also documents six rules the four-line summary omits, all of them things the panel already enforced. `simpleeval` is dropped from `requirements.txt`, where it was an install nothing imported | §4.3 | **A**, and E should know the twin is now documented |
+| 3 | **§3 rule 5 gains the row for a value that rounds to zero from below.** `Decimal("-0.4")` rounds to `Decimal("-0")` and `format(Decimal("-0"), ",")` is `"-0"`, so the rule as written produced `Equivalent to driving -0 km` on a results page. The engine has normalised it since v1.9; the rule did not exist. **No fixture changes with it** — no fixture value rounds to zero from below — which is exactly why it would otherwise never have been written down, and it is the same position the half-up rule was in | §3 | **A, C, D** |
+| 4 | **§10.2 settles what `tests/fixtures/factors.json` is.** It is a `GET /factors` response, as §10's table has always said, and it is **not** a bundle: it nests `version_label` and `is_mock` inside `factor_set` and carries none of the five taxonomy sections, so `from_json()` refuses it. §10.2 now states that no fixture is a bundle and gives the composition — `taxonomy.json`'s five taxonomy sections plus `factors.json`'s five factor sections plus those two keys hoisted, which is `db/repository.build_bundle_data`'s own projection. A fourteenth fixture holding a pre-composed bundle was rejected: it would be a second copy of every factor row | §10.2 | **A, B** |
+
+> **No request shape, no response shape, no schema and no front-end module signature moves. C and D have nothing to do**, beyond knowing that a label can now read `0` where the underlying `value` is negative — `value` is unchanged and still carries its sign at full precision.
+>
+> **The fixture step of §0's process is a genuine no-op this time, and that is worth stating rather than skipping.** Nothing in `tests/fixtures/` changed, because neither of the two behavioural rules written down here has a fixture that can express it: no fixture value rounds to zero from below, and no fixture value lands on a half. Both are held instead by the golden suite — `case_07_negative_total_and_zero_label` and `case_08_mixed_alternative_rollup` respectively.
+>
+> **Still open after this revision.** **O-1** remains the hard blocker; everything runs on mock factors and the placeholder banner stays mandatory. **O-2 is still the one to read carefully** — see v1.9. O-7 stays closed, and `case_03_prevention_whole_offset` is now the test that keeps it closed: it fails with **96.000** if `factor_upstream`'s destination dimension is removed. Carried forward unchanged: `landfill_diverted` as a real `metric` row, the container-preset input, `gwpHorizon`'s missing control, and the positive/negative colour pair.
+
+### v1.9 — 2026-08-09 (publishing refuses to reopen O-7, **affects B and E**)
+
+**v1.8 made `prevention`'s offset a property of the data, and data can stop being true.** A `(sector, food_category, metric)` given a general upstream row with no `prevention` counterpart reverts to pre-v1.8 behaviour **for that tuple alone** — and that is harder to catch than O-7 was, because O-7 was wrong everywhere and this is wrong for one sector while every other sector on the same results page is right. It arrives with no error, no warning and nothing in the log: a staff member adds a sector to a draft, publishes, and sees exactly what they expected.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`publish_factor_set` gains a second refusal condition and §5.2 now states both.** Publishing is refused, naming the offending tuples, when any `(sector, food_category, metric)` in the target set has a general upstream row and no `prevention` row. **Publish rather than the upstream-factor form**, for two reasons that both matter: it is the single transactional choke point, and a form-level guard cannot see a row that has not been written yet — it would refuse the general row for the sake of a `prevention` row the staff member was about to add next. **`rollback_to` is deliberately exempt**: a set archived before v1.8 will legitimately fail the check, and refusing an emergency rollback over a completeness rule is a worse failure than the one the rule prevents | §5.2 | **B, E** |
+| 2 | **`find_missing_prevention_upstream(session, factor_set_id)` is named in §5.2** because it has two callers in two layers. The query lives in `db/repository.py`; `admin/factor_lifecycle.py`'s publish — **the copy the panel actually calls**, until §5.2's two implementations are unified — imports it and raises `LifecycleError` instead. Two copies of a rule drift, and the copy that stops matching is the one nobody notices; the same reasoning `db/types.PREVENTION_CODE` was given one home for | §5.2 | **B, E** |
+
+> **No fixture, request or response shape changes.** A and C and D have nothing to do. The one thing E should know is the new refusal message, which names the tuples — "something is incomplete" would leave a staff member to find it among roughly 270 rows.
+>
+> **Recorded in `architecture.md` §10 rather than here: O-2 is O-7 again, in the constant dimension.** `cost`'s formula carries `const_FOOD_VALUE_PER_KG`, a constant is bound once per formula and has no destination to vary by, so a prevented line carries the full food value and `net_benefit.cost` nets it to zero. Harmless only while O-2 leaves the constant at zero — and **no test would catch it**, because the O-7 fixture check asserts `upstream` rather than the line value, deliberately (`mass`'s formula is `qty_kg`, so a prevented line must still weigh what it weighs). The fix needs no schema change: model the food's value as an upstream factor, which is what it is and which varies by `(sector, food_category)` as a single constant cannot, and v1.8's column offsets it automatically.
+>
+> **Still open after this revision.** **O-1** remains the hard blocker. **O-2 is now the one to read carefully before answering** — see above. O-7 stays closed. Carried forward unchanged: `landfill_diverted` as a real `metric` row, the container-preset input, `gwpHorizon`'s missing control, and the positive/negative colour pair.
+
+### v1.8 — 2026-08-09 (O-7 closes, **affects A, B and E**)
+
+**One change, and it is the one defect in this system that made the client's headline message wrong.** `architecture.md` §4.1 has said since the first revision that the special destination `prevention` has "factors are all zero — a 100% offset", and that this is what stops `net_benefit` being inflated by simply assuming less waste. **The data model could not express it.** `factor_upstream` was keyed on `(sector, food_category, metric)` and could not see the destination, so a line moved to `prevention` kept the entry's *full upstream factor* and only the downstream delta reached the net benefit. Measured on the canonical fixtures, 800 kg of `not_harvested` moved to `prevention` yielded `net_benefit.co2e` of **96.000** where a true offset yields **456.000** — 78.9% of the benefit missing, always in the same direction, on exactly the number the client's "wasting less" story is built from.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`factor_upstream` gains a nullable `destination_id`.** NULL means "applies to every destination for this `(sector, food_category, metric)`" — the same pattern `factor_downstream.food_category_id` already uses — so the lookup order becomes **exact destination, then the NULL row, then zero**, structurally identical to the one §4.1's `downstream()` already implements. Every upstream row written before this revision keeps meaning exactly what it meant. **The same NULL trap applies and is closed the same way**: MySQL compares NULLs as distinct inside a UNIQUE key, so `uq_factor_upstream` alone permits unlimited duplicate generic rows; a unique functional index over `COALESCE(destination_id, 0)` is what actually enforces it. Third appearance of the defect B first found on `factor_downstream` | §2.1, §2.2 | **A, B, E** |
+| 2 | **`FactorBundle.upstream()` gains a `destination` parameter** — `upstream(sector, food_cat, destination, metric)` — with the three-step fallback documented on it. §10.2's `bundle.json` gains a `destination` key on every `upstream[]` row, `null` for the generic case, and `validate()`'s upstream check gains a destination resolution. §6.3's export carries the key for the same reason: both are built from `build_bundle_data` | §4.1, §6.3, §10.2 | **A, B** |
+| 3 | **The rejected alternative, recorded because it was the one this document's O-7 section previously recommended.** A `prevented` line variable derived from `destination_group.is_waste`, with the default formula becoming `qty_kg * (upstream * (1 - prevented) + downstream)`, would have added a fifth line variable to §4.3 and required `admin/expressions.py`'s `BASE_VARIABLES` to gain a member in lockstep with the engine's evaluator — **two whitelists, written by two people, that must agree or the panel accepts formulas the engine rejects.** The schema option leaves `line_value = f(qty_kg, upstream, downstream, const_*)` with its exact shape: only the value bound to `upstream` changes, because the destination is resolved in the *lookup*. §4.3, the formula language and `BASE_VARIABLES` are **untouched by this revision** | §4.3 (unchanged, deliberately) | **A, E** |
+
+> **Both fixtures that encoded the old answer have been corrected**, per §0's process. `factors.json` gains a `destination` on every upstream row plus a `prevention` row at zero for each `(sector, food_category, metric)` that has a general row; `calculate_response.json` was **regenerated from the published factors** rather than hand-edited, and the only values that moved are the ones this change causes — entry 2's alternative scenario and the totals and net benefits above it. `net_benefit.co2e` for that entry is now **456.000**. `calculate_request.json`, `taxonomy.json`, `stats.json` and the seven error bodies are untouched.
+>
+> **What this does not change.** No request shape, no response shape, no front-end module signature. C and D have nothing to do. The one thing worth their attention is that the canonical response fixture's numbers moved, so a hard-coded expectation taken from it will need refreshing.
+>
+> **Still open after this revision.** **O-1** (real emissions factors) remains the hard blocker and everything still runs on mock factors, so the placeholder banner stays mandatory. **O-7 is closed** — see `architecture.md` §10, which records what was done and what was rejected. Carried forward unchanged: `landfill_diverted` as a real `metric` row, the container-preset input, `gwpHorizon`'s missing control, and the positive/negative colour pair. New and small: nothing refuses a general upstream row created without a matching `prevention` row, which is how this item could come back one tuple at a time; the fixtures are held to it by a test, the panel is not.
+
+### v1.7 — 2026-08-09 (the change that was made without a row, **affects B, C, D and E**)
+
+**Change 1 is a §2.1 and §6.1 ruling that has been in the code and the fixtures since 2026-08-09 and in this change log nowhere.** §0's process is document, notify, fixture — and the change log *is* the notify step. A rule that only exists in a commit message has been applied to `tests/fixtures/taxonomy.json` and `admin/seed.py` without being announced to the two people who consume them, and v1.6's own closing note then asserted the opposite, that §1–§6 were untouched and the fixtures were clean. **A false "nothing changed" is worse than no note**: it tells a reader not to look.
+
+The rest are the four defects and three omissions the whole-branch review turned up in `web/`. None changes a wire shape.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **`display_unit` is a presentation variant of `unit` at the same scale, never a different scale, and nothing anywhere converts between the two.** `tests/fixtures/taxonomy.json` and `admin/seed.py` both carried `t CO2e` against a `unit` of `kg CO2e`, `kL` against `L`, and `t` against `kg`. **§7.6.1 is what makes that unfixable rather than merely wrong**: the front end performs no arithmetic on an API figure, so there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label — the number is relabelled and every greenhouse-gas figure on the page reads a thousand times too small. It was live: C's results table rendered "3,993 t CO2e" and "1,530,000 kL" one section below the same two figures labelled correctly. The column is for a typographic variant — `kg CO₂e` against `kg CO2e` — which is how §6.1's example is written, with the two identical. **If a metric should be reported in tonnes, that is the metric's `unit` and the formula produces tonnes**: scale is a property of a formula, which is data (§2.1), not of a label. Corrected in **both** the fixture and the seed, and the seed is the half that matters, because it is what ships to the database. Ruled in §2.1 and §6.1 on 2026-08-09; **recorded here, which is the step that was missed** | §2.1, §6.1, §10 | **B, D, E** |
+| 2 | **§7.2 gains `entryResultsFrom(entries, response)`, the one export §7 still did not name.** It is imported by `calculator.js` and its output is read by `results.js`, so it is already a cross-module call — which is the definition §0 gives of what this document governs. Documented with the distinction a consumer has to get right: cross-entry figures come from `result.totals`, per-entry figures from `result.entry_results`, and never a sum over the latter (§7.6.1) | §7.2 | **C, D, E** |
+| 3 | **`improvement.js` interpolated `destination.code` into `for="…"` and `id="…"` through neither `escapeHtml` nor `slug`** — the only unescaped interpolation left on the branch. `destination.code` is `VARCHAR(64)` with no pattern constraint in `db/`, `api/` or `admin/`, and staff edit it through §8.1's generic CRUD, so a code containing a double quote breaks the attribute on a **public** page. Fixed with `slug`, which `calculator.js` already uses for the identical case. Recorded rather than fixed quietly because it names a standing hazard: **§7.3a's escaping guarantee holds only for values that pass through `view.js`**, and a taxonomy `code` reads as safe while being staff-authored content on a public page, exactly like the `formula.expression` §7.3a already calls out | §7.3a | **C, D, E** |
+| 4 | **§7.6 rule 3's 375px baseline was being met at 375px and broken between 481px and 849px.** `.results-page`'s −80px bleed sat outside every media query while its `.wide` counterpart existed only at ≥850px and its reset only at ≤480px, so in the band between them the results page was pulled 80px past a container with 20px of padding: 60px off the left edge, unreachable in LTR, plus horizontal body scroll. **A tablet is the likeliest non-desktop demo device.** Written into the section because "mobile-first, baseline 375px" reads as a floor and is not one — a layout can pass at the baseline and at desktop and fail in between, and only a rule that says so will get the middle checked | §7.6 | **C, D** |
+| 5 | **The stylesheet asked for seven weights the project does not have, and now asks for two.** Self-hosting (v1.6 change 10) replaced a five-weight CDN request with the two static faces the brand authorises — Geologica Bold and Kumbh Sans Regular — leaving 500, 600, 750, 800 and 900 with no face behind them. `font-synthesis: weight` kept them looking bold by synthesising; collapsing every declaration to 400 or 700 makes them bold **and** removes the synthesis, and `font-synthesis: none` is back. The brand-correct answer and the technically clean one were the same answer. **A weight that is not 400 or 700 now requires a font file to go with it** | §7.6 | **C, D, E** |
+| 6 | **`RATE_LIMITED`'s 60-second timer cleared the deadline and not the banner**, so Calculate re-enabled underneath a paragraph still telling the user to wait 60 seconds — the button and the copy saying opposite things, with the copy the more believable of the two. The banner is now cleared with the deadline, but only if it is still the rate-limit banner: another failure may have replaced it inside the minute, and that message is about something the wait does not fix. §9.2's `BLOCKED` rule is the same shape and was already right; this was the one code with a timed recovery and no matching copy reset | §9, §7.3a | **B, C** |
+| 7 | **`web/README.md` now says not to run a client demo on `?mock=1`.** §7.1 documents that mock mode re-derives only the mass figures and serves every impact figure from the fixture, cycled by entry index — so **a user who enters 5 kg is shown 4,449 kg CO2e**. That is correct behaviour for a fixture server and a catastrophic thing to put in front of the client, and the file the team actually opens said nothing about it. The instruction is to demo against the real API with the mock **factor set**: the figures are still placeholders, but they are placeholders the engine computed from what was entered, and the mandatory banner (§7.6.2) says so on screen | §7.1 | **all** |
+
+> **Change 1 is the only one that touches a fixture, and the fixture was already changed** — this row is the announcement, not a new edit. Nothing in this revision alters a request or response shape.
+>
+> **Still open after this revision.** Unchanged: **O-1** (real emissions factors, the hard blocker), **O-7** (on A's critical path), `landfill_diverted` as a real `metric` row, the container-preset input (v1.6 change 4), and `gwpHorizon`, which still has no control. The positive/negative colour pair stays partly open on the same terms as v1.6. Recorded and **deliberately not fixed here**, because each is a refactor rather than a correction: `main.js` shows the taxonomy-failure screen's raw `error.message` because `publicError` is not exported from `calculator.js`; an all-`standard_mix` submission renders "no food category data was provided", which is untrue; and `.stage-fieldset.has-error` and `.destination-list.has-error` are dead as written, because `has-error` is only ever applied to `.form-field`.
+
+### v1.6 — 2026-08-09 (§7 caught up with the front-end branch, **affects C, D and E**)
+
+**Every row here is §7 describing code that no longer exists.** The `integrate/frontend` branch removed thirteen violations of §7.6 over six tasks, and §7 was written from a survey of the branch *before* them — so the section D and E are told to read before consuming C's modules has spent a week telling them that `formatNumber` has a rounding gap it does not have, that `results.js` hard-codes three metric columns it no longer names, and that `compareImprovement` takes one argument when it takes two. **A stale §7 is not a cosmetic problem: it is a second implementation.** §7.3a exists so D and E use C's one `escapeHtml` instead of each writing their own, and a reader who finds the described module and the real module disagreeing has no reason to trust either.
+
+Two rows are not corrections. Row 9 settles an ambiguity nobody had ruled on, and row 10 adds a constraint the branch had already broken once.
+
+| # | Change | Section | Affects |
+| --- | --- | --- | --- |
+| 1 | **§7.1's mock-mode blockquote described the rewrite it was asking for as still owed.** It required the mock path to move to the `entries` / `totals` shape and to "serve the fixture as written"; it has moved, and it **cannot** serve the fixture as written — `mass` and the whole `totals` roll-up are functions of a request whose entry count a static file cannot know. Stated as it is, with the licence named as `mockRequest`'s alone, because the sentence a reader takes from a stale requirement is that mock mode is untrustworthy in ways it is not, and the sentence they need is which two figures are browser-derived | §7.1 | **C, D, E** |
+| 2 | **§7.1's "known defect" on the fixture path was fixed and replaced by a different one that no version stated.** The absolute `fetch('/tests/fixtures/…')` is gone — the URL now resolves against the module's own URL, so it follows the page. What survives is structural and unfixable in JavaScript: a browser clamps `../` at the origin root, so **the document root must be an ancestor of both `web/` and `tests/`**, and FastAPI serving `web/` as the static root makes every mock call 404. Recorded with an owner (**B**, a dev-only mount) because all three of C, D and E develop in mock mode and would each rediscover it separately | §7.1 | **B, C, D, E** |
+| 3 | **§7.2's key table is now exhaustive, and says so.** `state.alternative` and `state.compareAlternative` were on the object and in neither the table nor any reader: initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, read by nothing. Removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one rather than into `improvedAllocations`, which is where the live one is | §7.2 | **C** |
+| 4 | **§7.2's `unitPreset` / `unitCount` requirement now states what building it costs**, because "not built" was hiding a decision. `toKg` returns kilograms at **three** decimal places and `calculator.js` validates `totalAmount` at **two**, so a preset whose `kg_per_unit` is not a whole number produces a total the form then refuses. Every `kg_per_unit` in `tests/fixtures/taxonomy.json` is integral and the column is `DECIMAL(12,4)`, so the collision is invisible on the fixture and certain on real data. **This is why `toKg` is still imported by nothing and was not wired up in this revision** — it needs a ruling on what a user may type, not a refactor | §7.2, §7.3 | **B, C** |
+| 5 | **§7.2's fast-path exception claimed a drift wider than the one that exists.** The typed and re-rendered paths no longer disagree about server-supplied field errors — `updateLine` clears them, deliberately, because blanking or filling a row changes which lines the request carries and the server's line positions stop meaning what they meant. What remains is narrower and still real: on a negative amount `updateLine` marks only the row being typed in while `destinationRows` marks every negative row. An overstated warning and an understated one fail the same way — the reader stops believing the section | §7.2 | **C, D** |
+| 6 | **§7.3 said `tonnes ? 1000 : 1` was duplicated at six sites. It is duplicated at none.** The last of them — `improvement.js`'s `lineKg`, the denominator of every allocation percentage — now calls `massToKg`, and the three sites that rounded a conversion to the API's three decimal places call `kgString`, which the section described as imported by nothing. §7.3's rule is that the front end's arithmetic can be audited in one file, and a rule observed at five of six sites is worth less than none, because a reader who checks one site concludes it holds. The section now states the auditable form of the rule: **a `*`, `/` or `.toFixed()` on a mass anywhere else in `web/` is a defect on sight** | §7.3 | **C, D** |
+| 7 | **§7.3a's `formatNumber` JSDoc and its "known gap" described opposite behaviours, and both were wrong.** The signature said `{maximumFractionDigits: precision}` and the note beneath said a cost of `825.00` therefore renders as "825"; the function sets **both** bounds and has since 2026-08-09, and it clamps the digits to Intl's legal 0–20 because `display_precision` arrives from the database and an out-of-range value makes `toLocaleString` throw a `RangeError` that would take out the whole render rather than one figure. Added in its place is the precondition the calling modules actually depend on: `Number('')` is `0`, so a `\|\| 0` on an API figure makes absent, malformed and zero the same figure on screen, and every caller maps absent to `NaN` so that `formatNumber` prints "Not available" | §7.3a | **C, D, E** |
+| 8 | **§7.3a's `results.js` and `calculator.js` notes were both to-do lists for work that is done.** The client-side aggregation layer, the hard-coded `CO₂e / Cost / Water` columns and the three hard-coded equivalence labels are gone; `aggregateResults` and `differenceData` no longer exist. So are all three of `calculator.js`'s silent field-binding failures — the `field` format, the index mismatch, and a third the section never named: `fieldErrorMap` stored the **envelope's** message against every field, so a correctly bound row would still have read "Request validation failed" and discarded the only prose that said what was wrong with that row. Replaced by what the modules now are, plus the two things a reader will otherwise re-litigate: why `mass` may be named in both modules without breaching §7.6.5, and why a bar width is not a figure | §7.3a | **C, D** |
+| 9 | **Ruled: the arrow beside a comparison figure shows the direction of the impact, not the sign of the number.** An up arrow beside "1,104.0 kg CO2e saved" reads as "better" to one person and "went up" to another, and nothing in this document had ever said which. `net_benefit` is `current − alternative` (§3), so a positive net benefit is a saving, the impact fell, and the arrow points **down**. The ambiguity had a structural cause worth naming: `.value-negative` was carrying two different statements — "this change moved the wrong way" and "this quantity is below zero, because a destination offsets more than it costs" — so no single arrow could be right for both. They are now two sets of classes, tabulated in §7.3a, and `.value-negative` deliberately carries **no** arrow because `formatNumber` already prints the minus sign and a quantity is not a movement. §7.6.6 sends D to the same four classes so the statistics page does not grow a second convention | §7.3a, §7.6 | **C, D** |
+| 10 | **New rule §7.6.7: no page may request an asset from a third-party host at runtime.** `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to Google before the first paint — on a calculator whose privacy position is §2.3's and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The two brand faces were already in `admin/static/fonts/` and are now in `web/assets/fonts/` as well. **The rule is written down because §7.4 is the next place it would break:** that section tells D to return a Chart.js instance and says nothing about where Chart.js comes from, and the one-line CDN `<script>` is the documented way to add it | §7.6, §7.4 | **C, D, E** |
+| 11 | **§7.3a's `main.js` "known defect" was fixed in the first task of the branch, and the fix is now a requirement rather than an implementation detail.** `main.focus()` after every `setState` ejected a keyboard user from the sector radio group, so step 1 could not be passed without a mouse. Both halves of the replacement are stated, because the obvious half is not sufficient: focus moves to `<main>` on a **step transition** and returns to the element that had it, by `id`, on a **same-step** re-render — merely scoping the focus call leaves the user on `<body>`, which is worse than where they started | §7.3a | **C** |
+| 12 | **`compareImprovement(state)` takes two arguments.** The second is `calculator.js`'s `publicError` — §9's code-to-copy map — passed in rather than imported, because `calculator.js` already imports this module and the import back would be a cycle. Without it the improvement panel showed raw backend prose for the codes the main flow words carefully, and §9.1 rules that a public `FORMULA_ERROR` never echoes the expression or its location. A wrong arity in a section whose purpose is to be called from D's and E's code is the cheapest possible defect to introduce and among the more annoying to diagnose | §7.3a | **C, D, E** |
+| 13 | **`improvementValidation`'s tolerance was a percentage-point tolerance where §6.2's is an absolute 0.010 kg**, and §7.3a described neither. 0.01 percentage points is 0.15 kg on a 1,500 kg entry — fifteen times the limit — so the panel enabled Compare on a submission the server then refused with a 400, **for the whole submission**, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. Two consequences are recorded with it: the seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so the rounding remainder goes to the largest share; and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3, because step 4 deliberately permits allocating less than the total and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario | §7.3a | **B, C** |
+
+> **Corrected in v1.7 — the two sentences that stood here were false.** They read "Nothing in §1–§6 or §8–§10 changed" and "`tests/fixtures/` is untouched", and both were written from this revision's own edits rather than from the branch's. The `display_unit` same-scale ruling had already changed **§2.1**, **§6.1**, `tests/fixtures/taxonomy.json` and `admin/seed.py`, with no change-log row anywhere. See **v1.7 change 1**, which is that row. What is true of *this* revision's own edits: they touch §7 only, plus §7.6's new rule 7, and moved no request or response shape.
+>
+> **Still open after this revision.** **O-1** (real emissions factors) remains the hard blocker and **O-7** is still on A's critical path. Carried forward and unchanged: `landfill_diverted` as a real `metric` row (the client's). The **positive/negative semantic colour pair**, carried since v1.2, is *partly* closed — change 9 fixes the four classes, their arrows and their brand colours for the calculator page, and D can adopt them as they stand — but whether the client wants Kale-and-Beetroot for better-and-worse, rather than a green-and-red pair the brand does not contain, has still not been asked. New and unclosed: **the container-preset input (change 4)**, which needs a ruling on the two-decimal rule before `toKg` can be wired to anything, and **`gwpHorizon`**, which still has no control.
 
 ### v1.5 — 2026-08-09 (from the whole-branch review, **affects B, C, D and E**)
 
@@ -310,7 +467,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 
 > **`prevention` is the one destination code this system knows by name.** It expresses "waste avoided" and keeps the two scenarios mass-conserving. Three rules are stated in terms of it and none of them is optional: `admin/taxonomy_rules.check_prevention_intact` refuses any edit that would remove or deactivate it (or its group); §6.2 refuses it in a **current** scenario, because it is by construction the destination for waste that did not happen; and §5.4 reads the current scenario only, so it can never become a public statistic. The literal lives once, in `db/types.PREVENTION_CODE`, and `admin/taxonomy_rules` re-exports that object — `api/` may not import from `admin/` and needs the same string.
 >
-> **Its *downstream* factors are zero. Its upstream factors are not, and cannot be.** This blockquote read "with all factors set to zero" for five revisions and that is not true of the data model: `factor_upstream` is keyed on `(sector, food_category, metric)` and has no destination column, so a line moved to `prevention` keeps its entry's full upstream factor. See `architecture.md` **O-7**, which measures the gap and states the three options; it is unsettled and it is on A's critical path. Corrected here in v1.5 because this is the normative schema section, the first place a new reader meets the word, and the last site still asserting the original claim.
+> **Both its downstream and its upstream factors are zero, and since v1.8 that is a statement about the data rather than about the prose.** This blockquote read "with all factors set to zero" for five revisions while `factor_upstream` had no destination column, so a line moved to `prevention` kept its entry's full upstream factor; v1.5 corrected it to downstream-only and pointed at `architecture.md` O-7. **O-7 is closed** — `factor_upstream.destination_id` is the column, and `prevention` carries a row at zero for every `(sector, food_category, metric)` that has a general row. That last clause is the load-bearing one: the offset is now data, so a general row created without a matching `prevention` row reverts to the old behaviour for that tuple alone, and nothing in the panel refuses it.
 
 ### `sector`
 
@@ -360,7 +517,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | `co2e`, `ch4`, `water`, `cost`, `mass` |
 | `name` | VARCHAR(128) | NOT NULL | |
 | `unit` | VARCHAR(32) | NOT NULL | Internal unit, e.g. `kg CO2e` |
-| `display_unit` | VARCHAR(32) | NULL | Falls back to `unit` when null |
+| `display_unit` | VARCHAR(32) | NULL | Falls back to `unit` when null. **A presentation variant of `unit` at the same scale, never a different scale — see §6.1** |
 | `display_precision` | TINYINT | NOT NULL, DEFAULT 2 | Decimal places |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
@@ -413,12 +570,23 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `factor_set_id` | INT | FK, NOT NULL | |
 | `sector_id` | INT | FK, NOT NULL | |
 | `food_category_id` | INT | FK, NOT NULL | |
+| `destination_id` | INT | FK, **NULL** | **NULL means the row applies to every destination for that `(sector, food_category, metric)`** |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | |
 | `source_note` | TEXT | NULL | Where this number came from |
 | `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
-UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `metric_id`)
+UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `destination_id`, `metric_id`)
+
+> **The nullable `destination_id` exists so that `prevention` can be a real 100% offset — open item O-7, closed in v1.8.** NULL is the normal case and almost every row carries it: producing a kilogram of dairy costs what it costs whatever later becomes of it. Lookup order: exact match on `destination_id` first, then fall back to the NULL row, then treat as zero — the same three-step `factor_downstream` uses for `food_category_id`, and the same one `FactorBundle.downstream()` already implements.
+>
+> Before this column existed, `factor_upstream` could not see the destination, so a line moved to `prevention` kept its entry's full upstream factor and only the downstream delta reached `net_benefit`. On the canonical fixtures, 800 kg of `not_harvested` moved to `prevention` yielded 96.000 kg CO2e where a true offset yields 456.000 — 78.9% of the benefit missing, one-directionally, on the client's headline claim. The engine's `line_value = f(qty_kg, upstream, downstream, const_*)` is unchanged by the fix: the destination is resolved in the lookup, not applied in the formula.
+>
+> **The column is not restricted to `prevention` and must not be.** Factors are data (that is §2.1's whole premise); a future factor set may legitimately give `animal_feed` an upstream row of its own, and a CHECK naming one destination code would have to be migrated away the first time the client asked for that.
+
+> **This UNIQUE has the same defect `factor_downstream`'s does, for the same reason, and needs the same functional index.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — and here the generic rows are not the exception, they are almost the whole table. Two of them and the fallback lookup picks one nondeterministically: the same input returning a different net benefit run to run, with nothing in the logs. A unique index over `COALESCE(destination_id, 0)` is what enforces it, and it must be written by hand — autogenerate detected this one as a plain four-column index with the expression silently dropped. Test it by inserting the second generic row and asserting `IntegrityError`, against **MySQL**; on SQLite it proves nothing.
+>
+> Third instance of the trap, after `factor_downstream` (below) and `submission_entry` (§2.3). Raised by B on the first; found twice more by looking for it.
 
 ### `factor_downstream`
 
@@ -651,13 +819,13 @@ row, and it must survive the account of whoever made it being deleted.
 | `id` | BIGINT | PK, AI | |
 | `at` | DATETIME | NOT NULL | |
 | `actor` | VARCHAR(128) | NOT NULL | Staff username |
-| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `delete` / `publish` / `rollback` |
+| `action` | VARCHAR(32) | NOT NULL | `create` / `update` / `delete` / `publish` / `rollback` / `archive` / `refuse` / `reveal` |
 | `table_name` | VARCHAR(64) | NOT NULL | |
 | `row_id` | BIGINT | NULL | |
 | `before_json` | JSON | NULL | |
 | `after_json` | JSON | NULL | |
 
-> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). `audit_log` is readable by every staff member, so an unfiltered dump of a `staff` row would hand out password hashes and TOTP secrets.
+> Both JSON columns pass through the field blocklist in `write_audit()` (§5.5). An unfiltered dump of a `staff` row would hand out password hashes, TOTP secrets and — since v1.15 — the reversibly-encrypted unclaimed password. This table is `role = admin` only from v1.15 (§8.2); the blocklist is unchanged and is not conditional on the audience, since the trail is exportable and append-only.
 
 ## 2.4 Staff and Access Control
 
@@ -674,9 +842,8 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 | `role` | ENUM(`admin`, `staff`) | NOT NULL, DEFAULT `staff` | |
 | `is_active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 | `must_change_password` | BOOLEAN | NOT NULL, DEFAULT TRUE | Set on creation and on an administrator reset |
-| `mfa_secret_enc` | VARBINARY(255) | NULL | TOTP secret, encrypted at rest; NULL means not yet enrolled |
-| `mfa_enrolled_at` | DATETIME | NULL | |
-| `mfa_last_counter` | BIGINT | NULL | Last accepted TOTP time step; blocks replay within the window |
+| `unclaimed_password_enc` | VARBINARY(255) | NULL | **The password this system last minted for this account, until somebody claims it** (v1.15; renamed from `initial_password_enc` and widened to cover issued replacements in v1.16, migration `0012`). Fernet under an HKDF-derived key of its own, never the one `staff_totp_device.secret_enc` uses. Written by `create_staff` and `issue_password`, cleared unconditionally by `set_password`, gone with the row on `delete_staff`. **The only reversibly-stored credential in the system** — see §8.3 for the decision and its cost |
+| `mfa_enrolled_at` | DATETIME | NULL | When the account's second factor came into force. **Derived state:** true exactly when `staff_totp_device` holds at least one row with `enrolled_at` set. Kept as a column so the onboarding gates, `require_staff()` and the two-administrator floor go on reading one indexed value; `admin/accounts.py` is its only writer |
 | `created_at` | DATETIME | NOT NULL | |
 | `created_by` | VARCHAR(64) | NULL | |
 | `last_login_at` | DATETIME | NULL | |
@@ -692,9 +859,28 @@ Owned by E. Carried in this document so that Alembic keeps a single migration ch
 | `used_at` | DATETIME | NULL | Single use |
 | `created_at` | DATETIME | NOT NULL | |
 
+### `staff_totp_device`
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `staff_id` | INT | FK → `staff.id`, NOT NULL, ON DELETE CASCADE | |
+| `name` | VARCHAR(64) | NOT NULL | What the person called this device. Reaches the `otpauth://` label, so two devices on one account are distinguishable in the authenticator app |
+| `secret_enc` | VARBINARY(255) | NOT NULL | TOTP secret, encrypted at rest. NOT NULL: a row exists because a secret was minted for it |
+| `enrolled_at` | DATETIME | NULL | NULL means an enrolment begun and not confirmed — a QR displayed, never proved. Such a row is resumable and is **never** accepted as a second factor |
+| `last_counter` | BIGINT | NULL | Last accepted TOTP time step for **this device**; blocks replay within the window |
+| `created_at` | DATETIME | NOT NULL | |
+| | UNIQUE (`staff_id`, `name`) | | One name per account; everybody's first phone may share a name across accounts |
+
+> **Why an account may hold several, and why the counter is per row.** One column holds one phone, so "enrol a new authenticator" could only ever mean "replace the one you have" — impossible once the phone is gone, which left another administrator resetting your MFA as the only way back. §8.3's self-recovery rule makes that administrator necessarily somebody else, so a lost phone with one device enrolled is a lockout waiting on a colleague's availability. Enrolling a second device *before* losing the first is the only fix that does not depend on one.
+>
+> `last_counter` **must not** be shared across an account's devices. TOTP replay protection is a property of a secret: two phones hold two secrets and emit two *different* codes for the same time step, so a shared counter would let a login on one device push the counter past the step the other's current, entirely unused code belongs to — and that code would be refused as a replay for the rest of its life. The symptom is "the backup phone does not work", intermittently, only on accounts with two devices.
+
+> **Recovery codes are minted for an account's first confirmed device only.** They are the account-level fallback for when *no* authenticator is available (§8.3, layer L1), not a per-device credential. Minting five more on a second phone would leave somebody holding two printed sheets with no way to tell which is current — and the older sheet just as valid as the newer one.
+
 > **Recovery codes are hashed with SHA-256, not bcrypt, and this is deliberate.** bcrypt is slow in order to resist brute force against low-entropy human-chosen passwords. A recovery code is a high-entropy string we generate ourselves, so brute force is already infeasible and a slow hash buys nothing but latency.
 
-> `mfa_secret_enc` is encrypted with a **sub-key derived from `SECRET_KEY` via HKDF-SHA256** (`info=b"totp-secret-encryption"`), not with `SECRET_KEY` itself — that key already signs session cookies, and reusing one key for two purposes is a defect waiting to happen. This protects the case where a database dump leaks on its own, which is the common one: a committed backup, a misconfigured export. It does not protect against losing the database and the key together.
+> `staff_totp_device.secret_enc` is encrypted with a **sub-key derived from `SECRET_KEY` via HKDF-SHA256** (`info=b"totp-secret-encryption"`), not with `SECRET_KEY` itself — that key already signs session cookies, and reusing one key for two purposes is a defect waiting to happen. This protects the case where a database dump leaks on its own, which is the common one: a committed backup, a misconfigured export. It does not protect against losing the database and the key together.
 >
 > **Consequence: rotating `SECRET_KEY` invalidates every enrolled TOTP secret.** A rotation command (§8.3) must decrypt with the old key and re-encrypt with the new one. Without it, the day the client decides to rotate their key is the day nobody can log in.
 
@@ -810,6 +996,7 @@ class CalculationResult:
 > | Thousands separator | A comma every three digits: `18,597` |
 > | Decimal separator | Not applicable; there is no fractional part |
 > | Negative values | A leading `-`, same grouping. Possible: a metric total can be negative when a downstream offset dominates (§4.2) |
+> | A value that rounds to zero | `0`, with **no sign**. The row above is for values that are actually negative; a magnitude that rounds away is not one. `Decimal("-0.4")` rounds to `Decimal("-0")` and `format(Decimal("-0"), ",")` is `"-0"`, so without this row the rule as written produces `Equivalent to driving -0 km` on a results page. `value` itself is unaffected and keeps its sign at full precision |
 > | Anything else in the template | Copied **verbatim**. `{value}` is the only placeholder substituted, and any other brace sequence is literal text — `label_template` is staff-authored (§8.1) and must never behave as a format string |
 >
 > `Equivalent to driving {value} km` with `value = Decimal("18596.8200000000")` gives `Equivalent to driving 18,597 km`.
@@ -818,7 +1005,7 @@ class CalculationResult:
 >
 > **Why this is A's to produce and not C's.** §7.6 rule 1: the browser computes nothing. Rounding is arithmetic — a client that formatted the label itself would be the second place a number is turned into the figure a user reads, and the golden suite (§10.1) could not cover it. It is also the client's approved wording (§7.3a warns against C's hard-coded equivalence labels for the same reason).
 >
-> **Why it needs stating at all, in these words.** This is a convention that `tests/fixtures/calculate_response.json` instantiated to match §6.2's samples, which show `21,400` and `14,500`. Neither §2.2, §4.3 nor §6.2 defined it, so the fixtures C and D build against carried a format A had no way to know he had to reproduce — and the mismatch would be invisible to every test in the tree: `_assert_shape` compares types, not text, and a `label` reading `Equivalent to driving 18596.8200000000 km` is a well-formed string of the right type in the right key. The half-up rule in particular is **not** pinned by any fixture, because no fixture value lands on a half; it is stated because half-even would silently round `2.5` down and nobody would find out from a test.
+> **Why it needs stating at all, in these words.** This is a convention that `tests/fixtures/calculate_response.json` instantiated to match §6.2's samples, which show `21,400` and `14,500`. Neither §2.2, §4.3 nor §6.2 defined it, so the fixtures C and D build against carried a format A had no way to know he had to reproduce — and the mismatch would be invisible to every test in the tree: `_assert_shape` compares types, not text, and a `label` reading `Equivalent to driving 18596.8200000000 km` is a well-formed string of the right type in the right key. The half-up rule in particular is **not** pinned by any fixture, because no fixture value lands on a half; it is stated because half-even would silently round `2.5` down and nobody would find out from a test. **The round-to-zero row is in the same position and for the same reason** — no fixture value rounds to zero from below, so no fixture changed when the row was added and nothing in `tests/fixtures/` would have forced anyone to write it down. Both rules are held instead by the golden suite (§10.1): `case_08_mixed_alternative_rollup` lands an equivalence on `7210.5`, where half-up and half-even disagree, and `case_07_negative_total_and_zero_label` lands one on `-0.4`.
 
 
 
@@ -844,8 +1031,14 @@ class FactorBundle:
     is_mock: bool
     metrics: tuple[MetricSpec, ...]         # active only, sorted by sort_order
 
-    def upstream(self, sector: str, food_cat: str, metric: str) -> Decimal:
-        """Returns Decimal('0') when no row matches."""
+    def upstream(self, sector: str, food_cat: str, destination: str,
+                 metric: str) -> Decimal:
+        """Exact match on destination first; then fall back to the generic row
+        (destination NULL); then Decimal('0'). The generic row is the normal
+        case — the destination-specific one exists so `prevention` can be a
+        real 100% offset (§2.2, open item O-7). Same three-step shape as
+        downstream() below, and (destination, None, metric)-style misses must
+        be *looked up*, not assumed absent."""
 
     def downstream(self, destination: str, food_cat: str, metric: str) -> Decimal:
         """Exact match on food_cat first; then fall back to the generic row
@@ -878,7 +1071,8 @@ class FactorBundle:
         raise — the API layer decides how to present the problems.
 
         Checks: every upstream row's sector / food_category / metric exists
-        in this bundle; every downstream row's destination / metric exists
+        in this bundle and its destination is null or exists; every
+        downstream row's destination / metric exists
         and its food_category is null or exists; every destination.group
         exists; exactly one food_category has is_standard_mix; every
         formula.metric and every equivalence.source_metric exists."""
@@ -965,7 +1159,9 @@ That signature is illustrative, not contractual. No caller outside `engine/` may
 ```python
 def evaluate_expression(expression: str, variables: dict[str, Decimal]) -> Decimal:
     """
-    Restricted expression evaluation (built on simpleeval).
+    Restricted expression evaluation over Python's own `ast`, in
+    `engine/evaluator.py`. `evaluate` is the implemented name and
+    `evaluate_expression` is an alias for it.
 
     Permitted
       Literals  : decimal numbers
@@ -982,6 +1178,18 @@ def evaluate_expression(expression: str, variables: dict[str, Decimal]) -> Decim
       division by zero / non-finite result
     """
 ```
+
+> **This is hand-written over `ast`, not built on `simpleeval`, and the change from v1.9 is only that this document now says so.** No library was removed; none was ever imported. Four things were wanted from the evaluator, and three of them are properties of holding the tree yourself.
+>
+> **`admin/expressions.py` is its static twin (§8.1) and the two must reach the same verdict.** The panel validates the text at save time and the engine runs it; an expression one accepts and the other refuses is a formula a staff member saves and the public then receives `FORMULA_ERROR` 500 from. The two are deliberately independent implementations of one language — one walks the tree checking node types, the other walks it computing — and they are only comparable because they are looking at the same `ast` objects. `tests/test_evaluator.py::test_the_panel_and_the_engine_reach_the_same_verdict` runs the panel's whole expression corpus through both. **When that agreement was first measured it found eight disagreements, not the three a hand survey had listed**, and in all eight the panel was right.
+>
+> **§4.4 requires `FormulaError` to carry `line` and `column`.** Every `ast` node already has `lineno` and `col_offset`, so the error is located at the offending token rather than at the whole expression, which is the whole point of §9.1's staff presentation.
+>
+> **Refusal is by default.** `_evaluate_node` names the node types it permits and refuses everything else by falling through, so a construct nobody anticipated is refused rather than admitted. That is what makes the security-boundary argument hold without enumerating what is dangerous.
+>
+> **Arithmetic never leaves `Decimal`.** Operands are `Decimal`, literals are converted without a `float` intermediate, and a non-finite result is refused (§1.2).
+>
+> **Six rules the four lines above do not spell out, all of them things the panel already enforced.** Unary `+` is refused, since §4.3 lists unary minus and nothing else. Keyword arguments are refused — `round(qty_kg, ndigits=2)` was silently dropping the keyword and evaluating `round(qty_kg)`, returning a plausible number from a formula nobody wrote. `round`'s second argument must be a whole-number literal, optionally negated, checked statically on the node rather than coerced from the evaluated value. Arity comes from a table (`min`/`max` at least two, `abs` exactly one, `round` one or two) so the verdict belongs to the whitelist rather than to a CPython builtin's signature. `**`, `%`, `//` and the bitwise and shift operators are refused, `**` because a large exponent can exhaust memory before any timeout notices. And `ast.Constant` covers every Python literal, so strings, bytes, `None` and `bool` are refused by type — `bool` by name, because it is an `int` subclass — and a `float` literal that parses to infinity (`1e999`) is refused before it can propagate as a valid `Decimal('Infinity')` through every subsequent operation.
 
 **Formula scope: an expression computes the contribution of a single line. Summation is performed by the engine.**
 
@@ -1001,6 +1209,8 @@ Variables available on each line:
 | `const_GWP_CH4` | Decimal | **Special binding:** resolves to `GWP_CH4_20` or `GWP_CH4_100` according to the request's `gwp_horizon` |
 
 Because no aggregation is required, the expression language has **no arrays, no loops and no `sum()`**, which keeps the evaluator's security boundary unambiguous.
+
+> **This table did not change in v1.8, and that is the interesting part of O-7's closing.** `upstream` is now resolved with the line's destination taken into account (§2.2, §4.1) — but the resolution happens in the *lookup*, before the evaluator is called, so the variable set, the language and `admin/expressions.py`'s `BASE_VARIABLES` are all exactly as they were. The rejected alternative would have added a fifth variable here and required the panel's whitelist to gain the same member in lockstep with the engine's. A formula never names a destination and never should.
 
 **Default formulas**
 
@@ -1081,13 +1291,37 @@ def load_factor_bundle(session, factor_set_id: int | None = None) -> FactorBundl
     **Only a `published` set is cached (v1.4).** A draft or archived set is
     rebuilt on every load."""
 
+def find_missing_prevention_upstream(
+        session, factor_set_id: int) -> list[tuple[str, str, str]]:
+    """Which (sector, food_category, metric) tuples of this set would still
+    charge a prevented line an upstream factor (§2.2, open item O-7).
+
+    A tuple qualifies when it has a general upstream row (destination NULL)
+    and **no `prevention` row at zero** — whether the row is absent or
+    carries a non-zero value. Existence is not the rule; the value is
+    (v1.11). Returns codes, not ids (§1.1), sorted, so a
+    caller can put them straight into a message a human has to act on. An
+    empty list is the healthy state. Empty also when the taxonomy has no
+    `prevention` destination at all — that is an unseeded database rather
+    than an incomplete factor set, and it is
+    admin/taxonomy_rules.check_prevention_intact's to refuse."""
+
 def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     """Within one transaction: archive the current published set, publish the
     target, write an audit_log entry, invalidate the cache. Rolls back if the
-    'at most one published' invariant would be violated."""
+    'at most one published' invariant would be violated.
+
+    **Also refuses, naming the tuples, when find_missing_prevention_upstream
+    is non-empty (v1.9).** Publishing is where this is checked because it is
+    the single transactional choke point; a form-level guard cannot see a row
+    that has not been written yet."""
 
 def rollback_to(session, factor_set_id: int, actor: str) -> None:
-    """Restores an archived version to published. Same semantics as publish."""
+    """Restores an archived version to published. Same semantics as publish,
+    **except the O-7 completeness check, which rollback deliberately does not
+    apply** — a set archived before v1.8 will legitimately fail it, and
+    refusing an emergency rollback over a completeness rule is a worse failure
+    than the one the rule prevents."""
 
 def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int:
     """Deep-copies a version into a new draft (all factors, constants,
@@ -1120,6 +1354,16 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 > goes and the other is imported. `admin/` may import from `db/`, never the
 > reverse. Cache invalidation is the repository's half and is not implemented
 > in the admin copy.
+>
+> **This duplication is why v1.9's O-7 check is enforced twice and written
+> once.** The panel calls the `admin/` copy and nothing outside its own tests
+> calls the repository's, so a guard placed only in `db/repository.py` would
+> leave the staff path — the only path a human takes — entirely unguarded,
+> while a guard placed only in `admin/` would vanish the day the two are
+> unified. `find_missing_prevention_upstream` lives in `db/repository.py` and
+> the `admin/` copy imports it, which is the legal direction; each raises its
+> own layer's exception type. When the implementations merge, one call site
+> goes and the query does not move.
 
 ## 5.3 Submissions
 
@@ -1240,8 +1484,9 @@ class PublicStats:
 ## 5.5 Audit
 
 ```python
-REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "code_hash",
-                   "ip_hmac", "token"}
+REDACTED_FIELDS = {"password_hash", "mfa_secret_enc", "secret_enc", "code_hash",
+                   "ip_hmac", "token", "unclaimed_password_enc",
+                   "initial_password_enc"}
 
 def write_audit(session, actor: str, action: str, table_name: str,
                 row_id: int | None,
@@ -1252,11 +1497,24 @@ def write_audit(session, actor: str, action: str, table_name: str,
     leave no audit record claiming it happened.
 
     Every key in REDACTED_FIELDS is replaced with "[redacted]" before
-    serialisation. audit_log is readable by every staff member through
-    /admin/audit, so an unfiltered staff row would expose password hashes
-    and TOTP secrets to anyone holding an account.
+    serialisation. Written when audit_log was readable by every staff
+    member; v1.15 closed /admin/audit-log to role=admin only, and the set
+    is unchanged all the same. Narrowing the audience is not a reason to
+    widen what is written: these are credentials, the trail is exportable
+    and append-only, and a redaction dropped because "only administrators
+    see it now" is one that has to be found again the first time a
+    read-only auditor role exists.
 
-    ip_hmac is in that set for a different reason from the other three:
+    unclaimed_password_enc (v1.15; named initial_password_enc until v1.16,
+    and both names are in the set for the reason mfa_secret_enc's old name is)
+    is there for a reason of its own: it is the one reversibly-encrypted
+    credential in the system, and its whole design is that it stops existing
+    when the password is claimed. A copy in an append-only table would outlive
+    that by the life of the deployment. It is the *ciphertext* that is
+    redacted, and that is not belt-and-braces: the key is derived from
+    SECRET_KEY, which anything able to read audit_log already has.
+
+    ip_hmac is in that set for a different reason again:
     it is not a credential, it is derived from a visitor's address, and
     §2.3 permits storing such a derivation in exactly one place — the
     ip_block table, which only administrators can read. audit_log has a
@@ -1322,6 +1580,12 @@ Called once on page load to build every dropdown and input row.
 }
 ```
 
+> **`display_unit` is a presentation variant of `unit` at the same scale. It is never a different scale, and nothing anywhere converts between the two.** A typographic difference — `kg CO₂e` against `kg CO2e` — is what the column is for. It is not a unit conversion, and the example above is written with the two identical for that reason.
+>
+> **The rule is forced by §7.6.1 rather than chosen.** Every figure the front end prints comes from the API, and the only arithmetic it may perform is unit conversion on what the *user typed*, in `units.js`. So there is no layer that could divide a `kg CO2e` total by 1,000 on its way to a `t CO2e` label: the number would simply be relabelled, and every greenhouse-gas figure on the page would read a thousand times too small. §6.2 returns each metric total in `unit`, and a consumer that has both should prefer the `unit` travelling with the figure.
+>
+> **This was live in the fixtures.** `tests/fixtures/taxonomy.json` and `admin/seed.py` carried `t CO2e` against `kg CO2e`, `kL` against `L` and `t` against `kg` until 2026-08-09, and C's results table rendered "3,993 t CO2e" and "1,530,000 kL" one section below the same two figures labelled correctly. Both were corrected; the seed matters more than the fixture, because it is what ships to the database. **If a metric should be reported in tonnes, that is the metric's `unit` and the formula produces tonnes** — a metric's scale is a property of its formula, which is data (§2.1), not of a label.
+
 ## 6.2 `POST /api/v1/calculate`
 
 **Calculates and persists. One call equals one submission** (Decision 8).
@@ -1375,7 +1639,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 
 > **The two scenarios of an entry must describe the same mass, and until v1.2 nothing enforced it.** The dual-scenario design rests on this: `architecture.md` §4.1 states that the `prevention` destination exists precisely so that `net_benefit` cannot be inflated by simply assuming less waste in the alternative — "wasting less" is expressed by *moving* mass to `prevention`, whose factors are all zero, not by sending less of it. That is a 100% offset and it conserves mass by construction.
 >
-> **The half of that sentence this rule depends on is the mass half, and it holds.** The "100% offset" half does not, as built — see `architecture.md` **O-7**: only `prevention`'s *downstream* factors are zero, and a prevented line keeps its entry's upstream factor. It is repeated here because it is the stated motivation for this rule, and the rule survives it: mass conservation is a property of the *request*, which O-7 does not touch. Do not read the phrase as a description of what the engine computes until O-7 is settled.
+> **Both halves of that sentence now hold, and the two are independent.** The mass half is a property of the *request* and has always held — this rule is what enforces it. The "100% offset" half did not hold as built, and `architecture.md` **O-7** measured the gap: only `prevention`'s *downstream* factors were zero, so a prevented line kept its entry's upstream factor. **O-7 closed in v1.8** — `factor_upstream` gained a nullable `destination_id` (§2.2) and `prevention` carries an upstream row at zero. The independence is worth keeping in mind: this rule was never weakened by O-7 and is not strengthened by its closing, so if the offset ever stops being complete again, *this* check will not be the one that notices.
 >
 > **Without a rule, an implementer building from §6.2 alone permits exactly what `prevention` was designed to prevent**, and nothing downstream exposes it. An alternative that simply drops a 1,200 kg landfill line produces a large, entirely fictitious `net_benefit`. The response cannot reveal it: `totals.total_kg` reports the **current** scenario's mass only (§3), so the two figures a reader would compare are never both on the page. The golden suite cannot catch it either — it exercises `calculate()` against a fixed request, and this is a property of the *request*. The only place it can be caught is here.
 >
@@ -1558,10 +1822,14 @@ Factors and formulas are published openly (Decision 7).
     { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": "" }
   ],
   "upstream": [
-    { "sector": "processing", "food_category": "dairy",
+    { "sector": "processing", "food_category": "dairy", "destination": null,
       "metric": "co2e", "value_per_kg": "1.9000000000",
       "source_note": "Otago 2025 baseline, table 14",
-      "data_quality": "measured" }
+      "data_quality": "measured" },
+    { "sector": "processing", "food_category": "dairy", "destination": "prevention",
+      "metric": "co2e", "value_per_kg": "0.0000000000",
+      "source_note": "Prevented waste was never produced, so no upstream burden is attributable to it.",
+      "data_quality": "definitional" }
   ],
   "downstream": [
     { "destination": "landfill", "food_category": "dairy",
@@ -1650,7 +1918,7 @@ Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or 
 
 # 7. Front-End Modules (owners: C and D)
 
-ES modules, no build step. Located in `web/js/`.
+ES modules, no build step. Located in `web/js/`. `web/README.md` is the operational companion to this section — how to run the front end, and how to run it against the fixtures with no backend — and this document is the authority where the two disagree.
 
 **Eleven modules, nine of them C's and built.** Until v1.2 this section named five and described two of those inaccurately — six real modules were absent, including `view.js`, which holds the escaping and formatting primitives D and E would otherwise each reimplement. The signatures below are transcribed from the branch, not proposed for it. Where C's code and the old contract disagreed on shape, **the contract has changed to match her code** and says so at the point of change; where a contract requirement is genuinely unmet, it is marked **Not built** and stays a requirement.
 
@@ -1698,9 +1966,9 @@ export async function getFactors(opts = {});
 
 Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stats` → `stats.json`, `POST /calculate` → `calculate_response.json`.
 
-> **Current behaviour, not a requirement — do not reimplement this.** The mock path re-synthesises the `mass` metric from the request body in JavaScript before returning the fixture. It is simulating a server rather than violating §7.6, but it means the numbers on screen in a mock demo were computed in the browser, which is the one property mock mode should not have in common with a bug. It must be rewritten when the fixtures move to the `entries` / `totals` shape (§10), and the rewrite should **serve the fixture as written** rather than deriving anything from the request.
+> **Current behaviour, not a requirement — do not reimplement this.** The mock path was rewritten for the `entries` / `totals` shape on 2026-08-09 and now reproduces §6.2 end to end: one request carrying `entries[]`, one response carrying `totals` beside a per-entry result in request order. It still **derives** two things in JavaScript rather than serving them verbatim — the `mass` metric, which is an identity (`value === qty_kg`, §4.3) and not a formula, and the `totals` roll-up, including the rule that an entry with no `alternative` contributes its current figures to the alternative side. Neither can come from a static file, because both are functions of a request whose entry count the fixture cannot know. Every other figure is the fixture's own. **This is `mockRequest`'s licence and nothing else's** — no module outside it may derive an impact figure (§7.6.1), and the numbers on screen in a mock demo are still partly browser-computed, which is the one property mock mode should not share with a bug.
 
-**Known defect, not a contract question:** the fixture path is absolute from the site root (`fetch('/tests/fixtures/…')`). That works under `python3 -m http.server` at the repo root and breaks the moment FastAPI serves `web/` as the static root — which breaks C, D and E simultaneously, because all three develop in mock mode.
+**Mock mode constrains the document root, and this is not fixable in JavaScript.** The fixture URL is resolved against this module's own URL (`new URL('../../tests/fixtures/', import.meta.url)`), so it follows the page wherever the site is served from — that much was a real defect and is fixed. What remains is structural: a browser clamps `../` at the origin root, so the root **must be an ancestor of both `web/` and `tests/`**. `python3 -m http.server` at the repository root satisfies it; FastAPI serving `web/` as the static root does not, and every mock call 404s. C, D and E all develop in mock mode, so **B owns a dev-only static mount that exposes `tests/fixtures/`**; until it exists, mock mode runs only under the plain HTTP server.
 
 ## 7.2 `state.js` (written by C)
 
@@ -1716,6 +1984,23 @@ export function subscribe(fn);
 
 /** Clears the sessionStorage token and returns to the intro step. */
 export function resetCalculator();
+
+/**
+ * Pairs the entries the user typed with the per-entry results §6.2 returns, which
+ * preserve request order. Each paired `response` is one entry's `current` /
+ * `alternative` / `net_benefit` plus the submission-level `factor_set`,
+ * `factor_source` and `gwp_horizon`, which the rendering modules read
+ * `is_mock` and `version_label` from.
+ *
+ * `state.result` carries both this and the whole response, so a consumer reads
+ * cross-entry figures from `result.totals` (§7.6.1) and per-entry figures from
+ * `result.entry_results` — never a sum over the latter.
+ *
+ * @param {Array<object>} entries   Draft entries, in the order they were sent
+ * @param {object} response         The §6.2 response
+ * @returns {Array<{entry: object, response: object}>}
+ */
+export function entryResultsFrom(entries, response);
 ```
 
 Keys, grouped. **This is C's shape and the contract has adopted it**; the previous ten-key object in this section was a proposal that her code superseded.
@@ -1732,16 +2017,18 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
+> **The table above is exhaustive as of 2026-08-09.** `alternative: []` and `compareAlternative: false` were also on the object — initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, and **read by nothing.** The alternative scenario is built from `improvedAllocations` by `improvement.js`, which never looks at either. Both are removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one.
+
 **Still requirements, and still unmet:**
 
-- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission.
+- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission. **What it will cost, so the next person is not surprised:** `toKg` returns kilograms at **three** decimal places (§7.3, API-ready) and `calculator.js` validates `totalAmount` against `/^\d+(\.\d{1,2})?$/`, so a preset whose `kg_per_unit` is not a whole number produces a total the form then refuses. `unit_preset.kg_per_unit` is `DECIMAL(12,4)` (§2.1) and every value in `tests/fixtures/taxonomy.json` happens to be integral, so the collision is invisible on the current fixture and certain on real data. Building the input therefore requires a decision — either the two-decimal rule moves, or the preset writes a rounded amount and `units.js` gains the rounding — and it is a decision about what a user is allowed to type, not a refactor.
 - **`gwpHorizon` is set to 100 at initialisation and no control ever writes it.** §6.2 makes the horizon user-selectable between 20 and 100; a stated requirement is currently unmet and invisible on screen.
 
-> **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths have already drifted: the typed path and the re-rendered path apply **different validity rules to the same field**. Any change to a validation rule has to be made in both.
+> **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths **apply different validity rules to the same field**. As of 2026-08-09 the divergence is narrower than it was and is not zero: on a negative amount `updateLine` marks only the row being typed in, while `destinationRows` marks every negative row on the screen; and `destinationRows` additionally marks a row named by `state.fieldErrors`, which `updateLine` clears on the first keystroke because blanking or filling a row changes which lines the request would carry, so the server's line positions stop meaning what they meant. Any change to a validation rule has to be made in both.
 
 ## 7.3 `units.js` (written by C)
 
-**All front-end mass arithmetic belongs in this module.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It currently is not — `tonnes ? 1000 : 1` is duplicated at six sites across `results.js` and `improvement.js`, which is not a correctness bug today and defeats the rule.
+**All front-end mass arithmetic belongs in this module, and as of 2026-08-09 all of it is here.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It was not — `tonnes ? 1000 : 1` and `.toFixed(3)` were spelled out at six sites across `results.js`, `improvement.js` and `calculator.js` while `calculator.js` also called this module for the same conversion, so the front end held two copies of its only arithmetic rule and either could be changed without the other. The last of them moved here in the same revision that added `kgToTonnes`. **A `*`, `/` or `.toFixed()` on a mass anywhere else in `web/` is now a defect on sight.**
 
 ```js
 /**
@@ -1753,7 +2040,8 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
  *                             ready to send to the API
  * @throws {Error}             presetCode does not exist, or the product is
  *                             not finite
- * ** Currently imported by nothing — see §7.2, the preset input is not built. **
+ * ** Still imported by nothing — see §7.2, the preset input is not built, and
+ *    the note there states what building it costs. **
  */
 export function toKg(count, presetCode, presets);
 
@@ -1761,13 +2049,31 @@ export function toKg(count, presetCode, presets);
  * @param {number|string} amount
  * @param {'kilograms'|'tonnes'} unit
  * @returns {number|null}  null when amount is not finite
+ * Imported by calculator.js (the review step's kg figure) and improvement.js
+ * (lineKg, which is every allocation percentage's denominator).
  */
 export function massToKg(amount, unit);
 
 /** massToKg(...) fixed to 3 decimal places, i.e. API-ready.
- *  @returns {string|null}  Currently imported by nothing. */
+ *  @returns {string|null}  null when massToKg returns null.
+ *  Imported by calculator.js (both line-normalising helpers) and
+ *  improvement.js (currentLines). Note that kgString('', unit) is "0.000":
+ *  a row the user has not filled is not a row holding zero, so the two
+ *  callers that render blank rows keep their own '' check. */
 export function kgString(amount, unit);
+
+/**
+ * Kilograms to tonnes, for display. The only arithmetic §7.6.1 permits on a
+ * figure the API supplied, and therefore the only one of these functions whose
+ * input is an API decimal string rather than something the user typed.
+ * @param {number|string} kilograms
+ * @returns {number}  NaN when the input is not finite, so an absent figure
+ *                    reaches formatNumber() as absent rather than as zero
+ */
+export function kgToTonnes(kilograms);
 ```
+
+> `kgToTonnes` was added on 2026-08-09 for `results.js`, which printed `totals.total_kg / 1000` inline at two sites — the summary card's "2.300 tonnes" note and the same line in the downloaded report. §7.6.1's exception is stated in terms of *this module*, and neither site was in it. It is a one-line function and it exists so the rule reads the same everywhere: **outside `units.js`, nothing divides, multiplies or adds a number the API supplied.** Bar and chart widths scaled against a local maximum are not figures and are not covered by this.
 
 ## 7.3a Calculator Modules (written by C)
 
@@ -1781,8 +2087,17 @@ Six modules that no version of §7 named. Transcribed from the branch.
 /** &, <, >, " and ' -> entities. Safe for text and double-quoted attributes. */
 export function escapeHtml(value = '');
 
-/** Number(value).toLocaleString('en-NZ', {maximumFractionDigits: precision});
- *  returns 'Not available' for a non-finite input. */
+/** An API figure printed at the metric's own precision. toLocaleString('en-NZ')
+ *  with `precision` as BOTH minimumFractionDigits and maximumFractionDigits, so
+ *  825.00 at display_precision 2 prints "825.00" rather than "825" one row above
+ *  "1,204.50" in the same column of money.
+ *
+ *  `precision` arrives from the database (§2.1 metric.display_precision), not
+ *  from this file, so it is clamped to Intl's legal 0-20: an out-of-range value
+ *  makes toLocaleString throw a RangeError, which would take out the whole
+ *  render rather than one figure.
+ *
+ *  Returns 'Not available' for a non-finite input — see the note below. */
 export function formatNumber(value, precision = 2);
 
 /** lower-case, non-alphanumerics -> '-', trimmed. For DOM ids and class names. */
@@ -1795,7 +2110,9 @@ export function buttonRow(backStep, label = 'Continue', disabled = false, action
 
 > **Precondition, stated because D and E will now depend on it:** `escapeHtml` does not escape backticks or `/`, so it is safe only in **double-quoted** attribute contexts and in text. Every attribute in C's branch is double-quoted. An unquoted attribute breaks the guarantee silently.
 >
-> **Known gap:** `formatNumber` sets no `minimumFractionDigits`, so a cost of exactly `825.00` renders as "825" at `display_precision: 2`. §6.1 supplies `display_precision` for both bounds.
+> **Precondition on `formatNumber`, and the reason the calling modules coerce their own inputs:** `Number(null)`, `Number('')` and `Number(undefined)` are `0`, `0` and `NaN`, so a plain `Number(value) || 0` makes "the engine did not return this metric", "this value is malformed" and "this value is zero" the same figure on screen. Every caller in `results.js` and `improvement.js` therefore maps absent to `NaN` before calling in, and `formatNumber` renders that as "Not available". **An absent figure has to read as absent** — a `|| 0` on an API figure is the defect this guards.
+>
+> The v1.2 "known gap" — `formatNumber` setting no `minimumFractionDigits` — **is closed**; the JSDoc above is the current behaviour.
 
 ### `calculator.js` — the wizard
 
@@ -1816,30 +2133,39 @@ export function bindCalculator(main, retryTaxonomy);
 
 `data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `retry`, `view-methodology`.
 
-Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `publicError(error)` maps a §9 code to user copy; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `submitCalculation()` issues the request.
+Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **`prevention` is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — `prevention` is how the alternative scenario expresses waste avoided (§2.1), and offering it as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting.
 >
-> **Two defects here are contract-relevant.** `fieldErrorMap` keys on the raw `details[].field` string while the render loop looks up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never binds; and the index is the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differ whenever any destination is left empty, which is the normal case. Both fail silently: no error, no console warning, the user sees only the generic banner. The index half is a bug under any `field` format.
+> **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftFieldPaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies and roots it at `entries[state.entries.length]`, because the draft entry travels last.
+>
+> **`api/errors.py::bracket_path` is the server half of that agreement** and `tests/api/test_api_entries.py` asserts the exact string, so both ends of the `field` format are pinned by a test in one tree.
 
 ### `results.js` — the results screen
 
 ```js
-/** The step-5 screen: mock banner (when any response has factor_set.is_mock),
- *  impact summary cards, tangible equivalents, a three-tab breakdown
- *  (stage / destination / food), a methodology-and-limitations block naming
- *  the factor version, action buttons, and the improvement panel.
+/** The step-5 screen: placeholder banner (conditional on the submission-level
+ *  factor_set.is_mock, §7.6.2), impact summary cards read from totals.current,
+ *  tangible equivalents printed as the engine worded them, a three-tab
+ *  breakdown (stage / destination / food) built per entry from entries[], a
+ *  methodology-and-limitations block naming the factor version, action buttons,
+ *  and the improvement panel.
  *  @returns {string} HTML */
 export function renderResults(state);
 
 /** Builds a plain-text report and triggers a Blob download as
- *  'food-waste-impact-results.txt'. */
+ *  'food-waste-impact-results.txt'. Carries the placeholder notice only when
+ *  factor_set.is_mock, and always the factor version (§7.6.2). */
 export function downloadResults(state);
 ```
 
-> Most of this module is currently a client-side aggregation layer that sums engine-computed metric totals, equivalence values and destination rows across entries. **All of it is deleted** by reading `totals` and `net_benefit` from §6.2 instead; the destination tab is rebuilt per entry per the ruling in §6.2. What survives is `summaryCards` (which already iterates metrics correctly), the tab/table/bar markup, and the download plumbing.
+> **The client-side aggregation layer is gone.** This module summed engine-computed metric totals, equivalence values and destination rows across entries; the two largest numbers on the page were numbers the engine never produced. It now reads `totals` and `net_benefit` from §6.2, and the destination tab is rendered per entry per the ruling there. `aggregateResults` and `differenceData` no longer exist.
 >
-> Two hard-codings must go with it: the breakdown table hard-codes the columns `CO₂e / Cost / Water`, and the equivalence list hard-codes its own labels for `km_driven` / `meals` / `showers`, discarding the `label` the API renders from `label_template`. Both defeat the promise that a new metric or equivalence costs one `INSERT` (§2.1), and the second overrides the client's approved wording with C's.
+> The two hard-codings went with it: the breakdown columns are collected from the response's own key order (which §4.1 already sorts by `sort_order`), and the equivalence list prints `label` — the sentence the engine interpolated from `label_template` — rather than three English labels of its own for three hard-coded codes.
+>
+> **`mass` is named in this module, and that is not a §7.6.5 violation.** Rule 5 exists because a view listing `['co2e','water','cost']` *omits* the metric a staff member inserted; every metric the response carries still appears here. `mass` is held out of the impact cards and the breakdown columns because §3 hoists it — its formula is `qty_kg` (§4.3), so `scenario.total_kg` and `by_destination[].qty_kg` are the same figure, and it is already on screen as the primary card and the "Waste amount" column. `improvement.js` holds it out for a different reason, stated there. Both are single-code exclusions with a stated cause, not lists.
+>
+> **Bar widths are not figures.** A bar is scaled against the widest bar on the tab, across every section so two per-entry sections stay comparable, and no width is printed. §6.2 defines no share for an entry or a destination, so the percentage-of-total that used to sit beside each bar was a number the engine never produced.
 
 ### `improvement.js` — the alternative scenario
 
@@ -1852,20 +2178,44 @@ export function resetImprovement(state);
 export function updateImprovementInput(control, state);
 export function allocationTotal(allocations);
 export function improvementValidation(state);         // '' when valid
-export async function compareImprovement(state);
+/** @param {object} state
+ *  @param {(e: Error & {code?: string}) => string} [toPublicMessage]
+ *  calculator.js's publicError — §9's code-to-copy map — PASSED IN rather than
+ *  imported, because calculator.js already imports this module and the import
+ *  back would be a cycle. Without it this panel showed raw backend prose for
+ *  the codes the main flow words carefully, and §9.1 rules that a public
+ *  FORMULA_ERROR never echoes the expression or its location. */
+export async function compareImprovement(state, toPublicMessage);
 export function ImprovementScenario(state);           // collapsed CTA or open panel
 export function ComparisonResults(state);             // '' until a comparison exists
 ```
 
-> **Charts must render negative values.** `downstream` may be negative (§2.2) and a metric total therefore may be too, but the comparison bars currently apply `Math.abs()` to their widths, so −500 and +500 draw identically. The reuse-and-offset story is the client's headline message and it is currently invisible. The `.value-positive` / `.value-negative` / `.value-zero` CSS already exists in the stylesheet and is referenced by nothing.
+> **Charts must render negative values, and these do.** `downstream` may be negative (§2.2) and a metric total therefore may be too. `Math.abs()` stood on both comparison-bar widths, so a −500 kg CO2e offset drew a bar identical to +500 and the reuse-and-offset story — the client's headline message — was invisible. A group containing a negative value now draws against a **centred zero line**: each bar takes at most half the track and grows right from the centre when positive, left when negative, and a group with no negative value keeps the full-width left-anchored bar so the common case is unchanged.
+>
+> **The arrow shows the direction of the impact, not the sign of the number.** This was ambiguous — an up arrow beside "1,104.0 kg CO2e saved" reads as "better" to one person and "went up" to another — and is now ruled. `net_benefit` is `current − alternative` (§3), so a positive net benefit is a saving, the impact fell, and the arrow points **down**. The two meanings that were sharing one class are now two sets:
+>
+> | Class | Applied by | Meaning | Mark |
+> | --- | --- | --- | --- |
+> | `.change-down` | `signClass()`, on `net_benefit > 0` | the impact fell — a saving | ↓, Kale |
+> | `.change-up` | `signClass()`, on `net_benefit < 0` | the impact rose | ↑, Beetroot |
+> | `.change-none` | `signClass()`, on \|`net_benefit`\| < 1e-9 | no change | —, muted |
+> | `.value-negative` | `results.js` and `scenarioValue()` | this **quantity** is below zero | no arrow, Beetroot |
+>
+> **`.value-negative` carries no arrow deliberately.** `formatNumber` already prints the minus sign, and a quantity is not a movement. D's charts (§7.4) should use the same four classes rather than a second set. Nothing marks an ordinary positive quantity: a green mark against every figure on the page is decoration, not a signal.
+>
+> **`mass` is held out of the comparison lists** because §6.2 requires an entry's two scenarios to describe the same mass, so its `net_benefit` is zero by construction — "Mass: No change" on every comparison, in a list whose subject is what changed. Same exclusion as `results.js`, different reason.
+>
+> **The mass check is §6.2's own rule, applied in kilograms.** `improvementValidation` compared allocation percentages to within ±0.01 **percentage points**, which is a different rule at every tonnage: 0.01 points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's absolute 0.010 kg limit, so the panel enabled Compare on a submission the server then refused with a 400 — for the whole submission, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. The seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so `currentAllocationPercentages` gives the rounding remainder to the largest share, and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3 — step 4 deliberately permits allocating less than the total, and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario.
 >
 > The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. **Settled in v1.2, in C's favour:** §6.2's mass-conservation rule is derived from exactly this behaviour and its 0.010 kg tolerance is 20 lines × 0.0005 kg, so the drift this module produces is accepted rather than rejected — but only because §6.2 also caps a scenario at 20 lines per entry. The worst case sits on the boundary, and the comparison is `<=`. If that cap ever rises, this allocation must round to a running remainder instead.
 
 ### `main.js` — entry point for `index.html`
 
-No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`, binds the header home and "Clear all data" buttons, defines `loadTaxonomy({preserveError})` (also passed to `bindCalculator` as the `UNKNOWN_CODE` reload path), and performs the first render and taxonomy fetch.
+No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`, binds the header home and "Clear all data" buttons, defines `loadTaxonomy({preserveError})` (also passed to `bindCalculator` as the `UNKNOWN_CODE` reload path), and performs the first render and taxonomy fetch. It does **not** retry the taxonomy on load; the retry is the user's, through the `retry` action on the failure screen.
 
-> **Known defect:** it calls `main.focus()` after *every* `setState`. Arrow-key navigation inside the sector radio group fires `change` → full re-render → focus yanked to `<main>`, so a keyboard-only user cannot get past step 1. This undoes a substantial and otherwise well-built accessibility layer.
+> **The focus policy, which is now a requirement rather than an implementation detail.** `render()` replaces `main.innerHTML` wholesale, so every re-render detaches whatever the user had focused. This module called `main.focus()` after *every* `setState`, so arrow-keying the sector radio group fired `change` → full re-render → focus yanked to `<main>`, and a keyboard-only user could not get past step 1.
+>
+> Moving focus to `<main>` is right on a **step transition** and wrong on every other `setState`. On a **same-step** re-render, focus goes back to the element that had it, looked up by `id` — which is why the food-category radios needed ids. Scoping the focus call alone is not sufficient and was the first attempted fix: the focused radio is detached regardless, so the keyboard user lands on `<body>` instead of `<main>`, which is worse. Any change here has to preserve both halves.
 
 ### `methodology.js` — entry point for `methodology.html`
 
@@ -1914,10 +2264,11 @@ Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embe
 
 1. **The front end performs no impact calculation.** Apart from unit conversion in `units.js`, every number comes from the API. This includes cross-entry totals: read `totals` and `net_benefit` from §6.2, never a sum over `entries[]`.
 2. **When `is_mock` is true, the warning banner is mandatory** and cannot be dismissed. This covers **every results view and every export**, and it must be conditional on `is_mock` rather than unconditional — an export that always carries the placeholder disclaimer becomes an export that disclaims real data the day real factors are published, which is the more damaging direction of the same bug.
-3. The calculator page is **mobile-first**, baseline width 375px.
+3. The calculator page is **mobile-first**, baseline width 375px. **The baseline is not a floor — check the band between the breakpoints.** A layout can pass at 375px and at desktop and fail in between: `.results-page`'s −80px bleed had its reset at ≤480px and its desktop counterpart at ≥850px and nothing in between, so from 481px to 849px the results page sat 60px off the left edge with the body scrolling sideways. A tablet is the likeliest non-desktop device a demo runs on.
 4. After every successful calculation, write the returned `token` back to `sessionStorage`.
 5. **Iterate over metrics and equivalences; never hard-code their codes.** A view that lists `['co2e','water','cost']` silently omits the metric a staff member added, and adding a metric is meant to cost one `INSERT` and one formula (§2.1).
-6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show.
+6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show. The sign classes and the arrow convention are in §7.3a under `improvement.js`; use those four classes rather than a second set.
+7. **No page may request an asset from a third-party host at runtime.** Fonts, scripts, stylesheets, icons and images are served from this origin. `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to a third party before the first paint — on a calculator whose stated privacy position is §2.3's, and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The brand fonts are in `web/assets/fonts/`. **This binds §7.4:** Chart.js is self-hosted, never loaded from a CDN.
 
 ---
 
@@ -1949,7 +2300,7 @@ Requirements: list views must offer search and filtering.
 | Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
-| Audit log | `/admin/audit` | Read-only, filterable by actor, time and table |
+| Audit log | `/admin/audit-log` | Read-only, filterable by actor, time and table. **`role = admin` only** from v1.15 — see the change log for why "their own entries only" was rejected |
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
@@ -1966,25 +2317,114 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Capability | `staff` | `admin` |
 | --- | --- | --- |
 | Taxonomy, factor and formula CRUD | ✅ | ✅ |
-| Dry run, view submissions, view audit log | ✅ | ✅ |
+| Dry run, view submissions | ✅ | ✅ |
+| View the audit log | ❌ | ✅ |
 | Set `excluded_from_public` | ✅ | ✅ |
 | Publish, roll back | ✅ | ✅ |
-| Create, deactivate and re-role accounts | ❌ | ✅ |
+| Create, deactivate, re-role and delete accounts | ❌ | ✅ |
+| Reveal an unclaimed password | ❌ | ✅ |
 | Reset another account's MFA, issue a random password | ❌ | ✅ |
 
 Publishing is available to both roles deliberately: `audit_log` records who published and rollback is one action, so accountability and recovery are already covered. Restricting it would stall routine work whenever the administrator is unavailable, in a team of three to five people.
+
+### The unclaimed password (v1.15, widened v1.16)
+
+`staff.unclaimed_password_enc` holds **the password this system last minted for
+an account and nobody has claimed yet** — the one it was created with, or a
+replacement an administrator issued since — encrypted with Fernet under a key
+derived from `SECRET_KEY` by HKDF with its own `info` (never the one
+`staff_totp_device.secret_enc` uses). It is NULL for the whole of an account's
+life except the window between a minting and the next password change.
+
+**This is the only reversibly-stored credential in the system, and it is a
+deliberate weakening taken by the repository owner with the cost stated.**
+Everything else a person types is hashed and cannot be read back: `password_hash`
+is bcrypt from the instant the row exists, and `must_change_password` says
+nothing whatever about how the password is stored. What v1.15 added is a second,
+separately encrypted copy — not the removal of a hash.
+
+**Why.** A one-time reveal is easy to lose. The page that mints a password shows
+it once; a closed tab loses it, and the administrator then has to issue a
+replacement, which stops the password already read out to the colleague from
+working. This project has already lost a set of recovery codes to exactly that
+shape.
+
+**Why it covers issued passwords too (v1.16).** v1.15 stored only the creation
+password and had `issue_password` clear the column. So the loss just described
+was prevented on one screen and not on the one next to it, and the only recovery
+from losing an issued password was to issue *another* — invalidating one that
+may already have been handed over. The two are now aligned: `issue_password`
+**overwrites** the column with what it mints. Overwrites, never leaves alone: a
+previous value is a password that no longer opens the account, and a row that
+went on offering it would hand an administrator a dead string to read out.
+
+**The cost, and how it changed.** Anyone holding both a database dump and
+`SECRET_KEY` can log in as every account holding an unclaimed password. A newly
+created account is pre-MFA in the way that matters — the attacker reaches the
+forced-enrolment page and enrols their own authenticator, so the password is the
+whole of the protection; an account that has only had a password *issued* still
+holds its second factor, so there the password is one of two. What bounds the
+exposure is the column's lifetime, and v1.16 lengthened it: no longer "between
+creation and first login" but "until whoever holds the account sets a password
+of their own", which for a password issued on a Friday may be Monday. Note that
+in the shipped container arrangement `SECRET_KEY` lives in a named volume that
+is **not** mounted into the database container, so an ordinary dump does not
+carry it; a compromise of the Docker host carries both.
+
+**Written by** `create_staff` and `issue_password` — the two functions that mint
+a password its holder did not choose — and by nothing else. **Cleared
+unconditionally by** `set_password`, which is what both the self-service screen
+and the forced change at first login call, and which is the only place a
+password arrives that its holder chose. **Gone with the row** on `delete_staff`.
+`kaicalc-admin rotate-key` re-wraps it alongside the TOTP secrets, in the same
+decrypt-everything-before-writing-anything window.
+
+`must_change_password` and a non-NULL column now agree on both writing paths,
+and they are still **different facts that must not be read off each other**: an
+account created before v1.15, or one whose stored copy went undecryptable across
+an unrotated `SECRET_KEY` change, owes a password change with nothing to reveal.
+`StaffAdmin` renders them as separate columns for that reason — conflating them
+would have the list promising a reveal the reveal page then refuses.
+
+**Reading it.** `/admin/staff/unclaimed-password`, `role = admin`, reached from
+the `Show the password waiting to be collected` action on `/admin/staff/list`.
+It takes the same re-authentication proof as creating an account and deleting
+one — the current password or a live TOTP code, on top of the administrator
+session — because being signed in is the one thing somebody holding a stolen
+session would also have. Every successful reveal writes an `audit_log` entry
+with `action = "reveal"` and `after_json = {"username": ..., "revealed":
+"unclaimed_password"}`; the entry never carries the value, and
+`unclaimed_password_enc` is in §5.5's `REDACTED_FIELDS` so that a whole-row
+snapshot cannot land the ciphertext in an append-only table either. The list
+page shows *that* a password is waiting without showing it.
+
+There is no CLI command for the reveal. Anyone with a shell on the container can
+read the column and `SECRET_KEY` directly, so one would add a path without
+adding a capability.
+
+**The column was named `initial_password_enc` in v1.15.** Migration `0012`
+renames it in place; the HKDF `info` byte string is deliberately left as
+`b"initial-password-encryption"`, because it is key-derivation material and
+editing it to match would make every stored value undecryptable.
 
 ### Mandatory MFA
 
 Every account enrols a TOTP authenticator. There is no opt-out.
 
 ```
-admin creates account  ->  random initial password, shown once,
-                           handed over out of band
+admin creates account  ->  random password, shown once on the page,
+                           handed over out of band; also kept
+                           encrypted (staff.unclaimed_password_enc)
+                           and re-readable at
+                           /admin/staff/unclaimed-password
+        |                  (an administrator issuing a replacement
+        |                   later re-enters this state: same column,
+        |                   same reveal, same forced change)
         v
 first login            ->  must_change_password = true
         v
-forced password change
+forced password change ->  unclaimed_password_enc cleared; nothing
+                           left to reveal, for good
         v
 forced TOTP enrolment  ->  QR code plus 5 single-use recovery codes,
                            shown once; one correct TOTP required to finish
@@ -1993,6 +2433,36 @@ mfa_enrolled_at set    ->  access granted
 ```
 
 **While `mfa_enrolled_at IS NULL`, every route except the password-change and enrolment pages is refused, `require_staff()` included.** Without that, enrolment is advisory — a user can navigate straight past it by typing a URL.
+
+### The account's own security screen — `/admin/security` (owner: E)
+
+**Not an administrator screen.** Any signed-in account reaches it, `staff` included, and it acts only on the account named in the session — no form here carries a username or an account id. A `staff` member must be able to manage their own security without asking anyone; `/admin/staff` stays administrator-only.
+
+It exists because §8.3's self-recovery rule removed the only way to change one's own credentials alone: `issue_password` and `reset_mfa` are refused against the actor's own account, and `/admin/change-password` opens only while `must_change_password` is set, so it is the forced-change page and not a self-service one.
+
+| Action | Requires |
+| --- | --- |
+| Change the password | **The current password.** A TOTP code is *not* accepted — the session presenting it has already cleared the second factor, so a code proves nothing the cookie did not, while the current password is the one secret a stolen session does not carry |
+| Add an authenticator | The current password, **or** a code from a device already enrolled |
+| Remove an authenticator | The same, **and** it must not be the last confirmed device |
+| Rename an authenticator | The same. Any device may be renamed, including an unconfirmed one |
+
+Every one of the four writes an `audit_log` entry naming the actor. Changing the password and removing a device each bump `session_generation` — a credential change ends every other session — and each re-stamps the acting session, which did the thing deliberately and is not what is being evicted. **Renaming deliberately does not bump it:** a name is a note on the row, not a credential, and signing every session out over an edited caption would be a cost with nothing bought.
+
+**A device name is editable at any time, and the screen says what renaming does not do.** The name reaches the authenticator app through the `otpauth://` label, which is consumed once, at the scan — so renaming changes this list and nothing on the phone. Re-minting the secret so the app could be relabelled is not on offer: it would invalidate a working second factor to correct a caption. Names are matched to devices by the ordinal, the date added and "last used". The alternative considered and rejected was dropping the name for the bare ordinal; the ordinal already exists and says nothing about the device, and a name is useless only while nothing can revise it.
+
+**An unconfirmed enrolment is destroyed rather than left in the list.** `staff_totp_device.enrolled_at IS NULL` is a QR that was displayed and never proved, and it **cannot be continued** — the secret and the QR exist only in the response to the re-authenticated `POST` that minted them. It therefore dies at two moments, both in `admin/self_service_view.py`, calling `admin.accounts.discard_unconfirmed_devices`:
+
+* on a **GET of `/admin/security`**, which is what leaving the page means here (the enrolment dialog's own Cancel is a link to this route), and
+* on **beginning a new enrolment**, before the new secret is minted.
+
+There is no timer, and no scheduled job. A deadline would leave a stored TOTP secret that has never authenticated anything sitting there for the length of it, in exchange for nothing — the row's only possible future is to be destroyed. The reap is audited and the page states it when it happens; a row vanishing silently reads as data loss.
+
+**The reap can never touch a confirmed device.** It filters on `enrolled_at IS NULL` and nothing else, it removes rows individually rather than clearing the collection, and `/admin/security` is unreachable until `mfa_enrolled_at` is set, so a confirmed device always remains. `_sync_mfa_enrolled_at` stays the sole writer of `mfa_enrolled_at` and is called by every path that adds or removes a device, `begin_mfa_enrolment` now included.
+
+**The last confirmed device cannot be removed.** An account whose only second factor is deleted does not announce it: the session in hand goes on working exactly as before, and the discovery comes at the next login when `require_staff()` refuses the account. Recovery codes do not count as the other factor — they are single-use, there are five, and an account holding only those is counting down.
+
+Re-authentication failures are charged to the **same throttle** as the login steps, for the reason given just below: this page accepts a six-digit code from a caller who by construction already holds a session.
 
 Implementation notes: `pyotp` with `valid_window=1` (±30 s clock drift); `qrcode` with the SVG factory, which avoids a Pillow dependency; initial passwords and recovery codes from `secrets`, never `random`.
 
@@ -2008,6 +2478,7 @@ The project builds no email capability, so there is no reset link. Three layers,
 
 | Layer | Mechanism | Covers |
 | --- | --- | --- |
+| L0 | A second authenticator enrolled in advance at `/admin/security` | Lost phone, **before** it is lost; needs no second person and spends nothing |
 | L1 | 5 single-use recovery codes issued at enrolment | Lost or wiped authenticator; needs no second person |
 | L2 | Another administrator resets MFA and issues a random password | Recovery codes also lost |
 | L3 | `python -m admin.cli reset-mfa <username>` on the server | Every administrator locked out |
@@ -2024,6 +2495,38 @@ The second count exists because bootstrap creates two administrators carrying `m
 This must be enforced in the service layer, not only in the form — `sqladmin`'s form validation can be bypassed.
 
 > Consequence worth knowing: while fewer than two administrators are usable, **no** administrator can be deactivated or demoted, including one that was never onboarded. Eviction is still possible without deactivation — reset the account's MFA and issue a new password — but it is indirect. This errs toward "cannot be locked out" over "can always evict", which is the correct side for a small organisation with no email recovery.
+
+### Removing an account — `/admin/staff/delete` (owner: E)
+
+An account list that cannot shrink stops being an answer to "who can get into this system". Accounts are **deleted outright**, and the deletion costs the audit trail nothing.
+
+**Why a hard delete rather than a tombstone.** `audit_log` holds **no foreign key to `staff`**, in the model or in `0002_audit_log.py`'s DDL, and cannot: `audit_log.actor` is `VARCHAR(128)` and also carries `cli`, `bootstrap`, `deploy-seed` and `unknown`, none of which is a row in `staff`. The trail therefore already stores identity the way a tombstone would be introduced to make it store it. Every entry a deleted account wrote **stays complete and still names it**; the same holds for `staff.created_by`, `factor_set.published_by` and `ip_block.created_by`, all text and all unaffected. A tombstone would leave the row and the username in place — not the capability asked for — while buying a property the trail already has.
+
+**What is destroyed with the account** is exactly its credentials: `staff_recovery_code` and `staff_totp_device` cascade, at the database and through the ORM. That is correct rather than incidental — a stored TOTP secret must not outlive the account it authenticates.
+
+Four guards, all in `admin/accounts.py::delete_staff` except the last:
+
+| Guard | Why |
+| --- | --- |
+| **The account must already be deactivated** | Deletion then acts on a row `deactivate_staff` has made inert — sessions ended, generation bumped — rather than racing a request in flight, and the floor is checked at both steps. Refused with `AccountStillActiveError`, deliberately a different class from `LastAdministratorsError`: they are different problems with different next steps |
+| **The two-administrator floor** | Named for deletion by the rule above. In practice it bites at deactivation, since a deactivated row is already past it |
+| **No self-deletion** | `_guard_not_self`, the guard `issue_password` and `reset_mfa` already carry. It runs **before** the deactivation check, so aiming this at your own account is refused for being yours rather than for being active. An administrator deleting their own account removes the second party from a procedure whose whole value is that there was one |
+| **Re-authentication** | The current password or a live code, at the point of the action — the proof `/admin/staff/new` already takes. A stolen session otherwise empties the staff list holding only the cookie |
+
+Deletion writes its own `audit_log` entry carrying the whole identity — username, display name, role, and the counts of authenticators and recovery codes destroyed — rather than a reference to a row that is about to stop resolving. After the commit it is the only record the account existed.
+
+**`reactivate_staff` ships with it**, because requiring deactivation first is defensible only if that step can be undone; without it, deactivating the wrong account is a trap whose only exits are leaving it in the list for ever and deleting it. It takes no floor guard (it only ever adds an active account) and no self guard (`authenticate()` refuses an inactive account, so nobody can be signed in as the account they would be reactivating — a guard there could never fire).
+
+**One consequence to know about.** `last_password_change()` reads the trail by `(table_name='staff', row_id)`, and `staff.id` is a plain autoincrement integer. MySQL 8 persists its counter and does not reuse ids, but **SQLite hands out `max(rowid) + 1` and reuses one immediately**, and `admin/accounts.py` is imported by both. That read is therefore additionally scoped to `AuditLog.at >= staff.created_at` — an account cannot have changed its password before it existed. Scoped on the read side rather than by rewriting the deleted account's rows, so `audit_log` stays append-only.
+
+Operational commands (`admin/cli.py`), both pass-throughs to the same service functions:
+
+```
+python -m admin.cli delete-staff <username>
+python -m admin.cli reactivate-staff <username>
+```
+
+`delete-staff` passes `allow_self=True`, the exemption `reset-mfa` and `issue-password` already carry: layer L3 has no acting session to be the second party. **It reaches the self-recovery guard and nothing else** — the floor and the deactivation requirement are unconditional there, exactly as in the panel.
 
 **Session invalidation.** Every credential change — password change, MFA
 reset, deactivation — increments `staff.session_generation`. The signed
@@ -2051,7 +2554,7 @@ changes, check the other.
 
 
 
-`admin.accounts.issue_password(session, username, *, actor) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned once, to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
+`admin.accounts.issue_password(session, username, *, actor, secret_key, allow_self=False) -> str` performs the L2 half named above: it sets a random password, forces `must_change_password = True` (an issued password is in the same position as a bootstrap one and gets the same forced change — this is what distinguishes it from `set_password`, which clears that flag because the user chose the password themselves), stores that password encrypted in `staff.unclaimed_password_enc` so it can be read back until it is claimed (v1.16 — hence `secret_key`, required and keyword-only), and bumps `session_generation` so the account's live sessions end immediately. The plaintext is returned to be read out and handed over out of band, and never reaches `audit_log` — the entry records that `password_hash` changed, not what it changed to.
 
 The CLI account-creation command is exempt from that rule; it only ever adds, and a system with no accounts yet must be able to bootstrap. While exactly one active administrator exists, the panel displays a non-dismissible banner advising that a second be created.
 
@@ -2063,13 +2566,13 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | --- | --- |
 | Trigger | Application start, only when the active administrator count is zero |
 | Accounts | `admin` and `admin2` |
-| Passwords | **Randomly generated per deployment, printed once to standard output.** There is no default password and no fixed value anywhere in the source. |
+| Passwords | **Randomly generated per deployment, printed once to standard output.** There is no default password and no fixed value anywhere in the source. Since v1.15 each is also kept encrypted until that account claims it, so one lost line is recoverable by the *other* administrator from `/admin/staff/unclaimed-password`; losing both is terminal for the panel and the way back is `kaicalc-admin issue-password` on the container. |
 | State | Both carry `must_change_password` and no MFA enrolment, so `require_staff()` refuses them until both steps are completed |
 | Idempotence | Runs once. A restart with administrators present creates nothing. |
 
-**A fixed default password would be the single worst defect this system could ship.** `admin`/`admin` on a public panel is exactly how community-sector accounts get taken over, and it is the reason MFA is mandatory here in the first place. The generated passwords exist only in the start-up output; they cannot be recovered afterwards, only reset via `reset-mfa` and a new password.
+**A fixed default password would be the single worst defect this system could ship.** `admin`/`admin` on a public panel is exactly how community-sector accounts get taken over, and it is the reason MFA is mandatory here in the first place. The generated passwords are shown in the start-up output and kept encrypted until claimed (see the row above); once both accounts have logged in and changed them there is nothing left to recover, and the way back is `kaicalc-admin issue-password`.
 
-> Deployment note for the handover documentation: the start-up output contains live credentials. Capture them, log in with both accounts, change both passwords, enrol both authenticators, then discard the output. Do not pipe first-start output into a shared log collector.
+> Deployment note for the handover documentation: the start-up output contains live credentials. Capture them, log in with both accounts, change both passwords, enrol both authenticators, then discard the output. Do not pipe first-start output into a shared log collector. Changing both passwords is also what clears the stored copies, so it is the step that ends the exposure described under §8.3's unclaimed password, not merely good hygiene.
 
 > Two administrators is not sufficient on its own. A small organisation is likely to hand both accounts to the same person, or to replace phones at the same time. L1 is the layer that does not depend on a second human being available, which is why it is mandatory rather than a convenience. The panel prompts for regeneration once 2 codes remain.
 
@@ -2080,7 +2583,7 @@ The CLI account-creation command is exempt from that rule; it only ever adds, an
 | `python -m admin.cli create-staff <username> "<name>" [--admin]` | Bootstrap and routine account creation |
 | `python -m admin.cli reset-mfa <username>` | L3 break-glass |
 | `python -m admin.cli issue-password <username>` | L3 break-glass — issues a random password and forces a change at next login; ends the account's live sessions |
-| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `mfa_secret_enc` after a `SECRET_KEY` change — **and clear `ip_block`**, because an HMAC cannot be re-keyed; it reports how many blocks were cleared and that they must be re-applied |
+| `python -m admin.cli rotate-key --old <k> --new <k>` | Re-encrypt every `staff_totp_device.secret_enc` after a `SECRET_KEY` change — **every device row, not one per account**, or every second phone is left readable only with the old key — **and clear `ip_block`**, because an HMAC cannot be re-keyed; it reports how many blocks were cleared and that they must be re-applied |
 | `python -m admin.cli unblock <address>` | E-8's own break-glass: remove a block from the server when the panel itself is unreachable because of it. Rejects a value that is not a single IP address rather than silently doing nothing |
 | `python -m admin.cli bootstrap` | Create the initial administrator accounts if none exist |
 
@@ -2106,7 +2609,7 @@ Three differences between the two, each deliberate and each explained where it i
 
 Both key on `db.detection.client_ip`, so a caller with no usable address is skipped by both rather than given a stand-in key — and both inherit the deployment hazards §6.5 records.
 
-The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in a table every staff member can read.
+The admin screen, `/admin/ip-block/list` (`admin.blocklist_views.IpBlockAdmin`), is where a block is actually created or removed by a person: `column_list` shows `reason`, `created_by`, `created_at` and `expires_at` — never `ip_hmac` — and is restricted to `role = admin`, the same floor `StaffAdmin` sets for account management. A manual block is entered through its own form at `/admin/ip-block/block` (address, reason, an optional duration in minutes); removal is an audited `unblock` action, not sqladmin's generic delete. Both write their own `audit_log` entry, built from `reason`/`created_by`/`created_at`/`expires_at` only — never from `ip_hmac` — since `db/blocklist.py` itself writes none (see §2.3). `ip_hmac` is additionally named in `write_audit`'s `REDACTED_FIELDS` (§5.5), so a future caller that serialises a whole `IpBlock` row through `row_to_dict` still cannot land the fingerprint in `audit_log` — which since v1.15 only administrators can read, but which is also exportable and append-only, so the redaction does not depend on that.
 
 **Where an operator gets an address to type into that form.** Nowhere in this system — and that is worth stating, because the form otherwise reads as more capable than the panel is. Nothing here ever shows staff a caller's address: §2.3 forbids storing one, and the panel deliberately does not log one either. The address has to come from outside: the reverse proxy's or hosting platform's own access log, an alert from the host, or a report from someone who can see the traffic. The form's purpose is to *apply* an address an operator already has in hand from one of those, during an incident, with no CDN or upstream firewall available to do it for them. Anyone planning to rely on this screen should confirm the deployment keeps a proxy access log at all, before an incident rather than during one.
 
@@ -2293,7 +2796,7 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 | `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry and absent at the totals level |
 | `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4) |
 | `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
-| `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, all three `prevention` rows at zero, and `source_note` / `data_quality` on every row |
+| `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, and `source_note` / `data_quality` on every row. **`prevention` is at zero on both sides** — all three downstream rows, and since v1.8 an upstream row for every `(sector, food_category, metric)` that has a general one (open item O-7). `test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what keeps the upstream half complete |
 | `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
 
 `errors/` does not carry the four codes v1.4 added to §9 — `NOT_FOUND`, `METHOD_NOT_ALLOWED`, `INTERNAL_ERROR`, `ENGINE_UNAVAILABLE` — and that is deliberate rather than an omission: their bodies are the same three-key envelope with a fixed `message` and an empty `details`, none is reachable from a front-end code path C or D can exercise, and a fixture per framework failure would add four files that pin nothing the envelope check does not already pin. `HTTP_ERROR` has no fixture for the same reason **and** because its status varies. If a code ever gains a body worth reading, it gains a fixture.
@@ -2311,49 +2814,64 @@ Both matter, and neither substitutes for the other. The shape check proves the A
 
 > **`_assert_shape` compares types, not text.** A string is a string. Anything whose correctness lives in the *content* of a string — §3 rule 5's `label` format is the case that has already bitten — is invisible to it and needs an assertion in `test_fixture_consistency.py` or a rule in this document. Preferably both.
 
-> **As of v1.2 this section describes an intention, not a directory. `tests/fixtures/` does not exist on any branch a reader of this document is likely to be standing on** — not on `main`, not on `admin_panel` (which owns this document), not on `docs/contract-v1.0`. **Two sets exist, on two unmerged branches, and they disagree with each other and with this contract:**
+> **Settled in v1.17. `tests/fixtures/` now exists, in the v1.2 shape, as one canonical set** — the seven files above plus `errors/`'s seven, and `tests/golden/`'s nine cases beside them. What follows is why there is one set and not two, because the reasoning outlives the situation that produced it.
 >
-> | Branch | Files | Shape |
-> | --- | --- | --- |
-> | `origin/database` (B) | 12 | Flat, pre-v1.0: top-level `sector` / `food_category` / `current`. Carries `factor_source`. `details[].field` is Pydantic's dotted `current.0.qty_kg` |
-> | `origin/Demo-UI` (C) | 10 | Flat, pre-v1.0. **No `factor_source`.** `details[].field` is the bracket form `current[0].qty_kg` |
+> Between v1.2 and the B integration two sets existed on two unmerged branches, and they disagreed with each other and with this contract: `origin/database` carried twelve files with `factor_source` and Pydantic's dotted `current.0.qty_kg`; `origin/Demo-UI` carried ten without `factor_source` and with the bracket form `current[0].qty_kg`. **A fixture that disagrees with the contract does not fail** — it quietly produces code bound to fields the API will never send, and the two front ends built against the two forms would never have bound to each other. v1.0 §9 ratified the bracket form and extended it to `entries[0].current[1].qty_kg`; B's set was the one that changed, and it landed once, with her integration PR, rather than twice in parallel.
 >
-> Neither matches §6.2, and a fixture that disagrees with the contract does not fail — it produces code bound to fields the API will never send. The `field` disagreement is the sharpest example: v1.0 §9 ratified C's bracket form and extended it to `entries[0].current[1].qty_kg`, so **B's fixture is the one that must change**, and until it does her handlers and C's lookup keys will never bind to each other.
+> **That is the rule worth keeping: two people writing fixtures from one contract produce two sets that differ wherever the contract is silent, which is exactly where a fixture is load-bearing.** The owner of the section owns the shape. B owns §6, so B owned these; C's `taxonomy.json` supplied the content, being the better one (six sectors with real descriptions, ten NZ-appropriate food categories, nine MfE destinations).
 >
-> **The canonical set lands once, in the v1.2 shape, with the B integration PR.** Not twice and not in parallel: two people writing fixtures from one contract produce two sets that differ wherever the contract is silent, which is exactly where a fixture is load-bearing. B owns §6 and therefore owns the shape. **Start from B's twelve, not C's ten** — hers is the superset, it already has `factor_source` and the two files C lacks, and it is the set her contract tests assert against. C's `taxonomy.json` is by far the better *content* (six sectors with real descriptions, ten NZ-appropriate food categories, nine MfE destinations) and should fill it.
->
-> What each file needs:
->
-> | File | State |
-> | --- | --- |
-> | `calculate_request.json`, `calculate_response.json` | On both branches, both flat. Rewrite to `entries[]` and `totals` + `entries[]`, and make the pair **correspond** — B's currently do not, and hers is not mass-conserving either, which §6.2's new validation rule now rejects outright |
-> | `calculate_response_single.json` | **On `origin/database` only.** Reshape; also `"total_kg": "1"` breaks the 3-decimal rule her own validator enforces |
-> | `errors/unauthorized.json` | **On `origin/database` only.** Shape-correct; carry it across |
-> | `errors/blocked.json` | **Absent from every branch — the only genuinely missing file.** `BLOCKED` was added in v0.13 and has never had a fixture. It is the one error whose `details` is `null` rather than `[]` (§9.2), and every existing error fixture on both branches uses `[]`; a set that makes `[]` universal is how that requirement gets implemented away |
-> | `errors/validation_error.json` | On both, in **two different `field` formats**. §9's bracket path is the ratified one |
-> | `errors/{unknown_code,rate_limited,formula_error,no_published_factor_set}.json` | On both, shape-correct under §9 |
-> | `taxonomy.json` | On both. Must contain a `prevention` destination and at least one destination in the `reuse` group — without them the mass-conserving offset and the entire non-waste half of the MfE taxonomy, which is the client's headline story, cannot be demonstrated at all |
-> | `stats.json` | On both, both effectively empty. Must contain a suppressed `other` bucket: §6.4's copy constraint is the thing D has to write against and there is nothing to write against without one |
-> | `factors.json` | On both. Must not be all-empty arrays, or the methodology page renders "No published formulas were returned" in every demo |
+> Two of them were worth the argument on their own and still are, so they are requirements and not history. **`errors/blocked.json` is the one error whose `details` is `null` rather than `[]`** (§9.2) — it was absent from every branch, and every other error fixture uses `[]`, so a set that made `[]` universal is precisely how that requirement would have been implemented away. **`taxonomy.json` must contain a `prevention` destination and at least one destination in the `reuse` group**, or the mass-conserving offset and the entire non-waste half of the MfE taxonomy — the client's headline story — cannot be demonstrated at all. `stats.json` must carry a suppressed `other` bucket, since §6.4's copy constraint is what D writes against, and `factors.json` must not be all-empty arrays, or the methodology page renders "No published formulas were returned" in every demo.
 
 ## 10.1 Golden Test Suite (owner: A)
 
-Under `tests/golden/`, three files per case:
+Under `tests/golden/`, three files per case, and the directory name says what the case is for:
 
 ```
-case_01_landfill_dairy/
-  bundle.json     a fixed factor set          <- shape defined in §10.2
-  request.json    a fixed request
-  expected.json   the expected full CalculationResult
+tests/golden/
+  test_golden.py                 the runner
+  case_03_prevention_whole_offset/
+    bundle.json     a fixed factor set          <- shape defined in §10.2
+    request.json    a fixed request             <- §3 CalculationRequest, as JSON
+    expected.json   the expected full CalculationResult   <- §3, as JSON
 ```
 
-Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover.
+Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover. `tests/golden/test_golden.py` discovers `case_*/`, loads the three files, calls `calculate()` and compares.
+
+**The runner lives beside the cases** so that `pytest tests/golden` means what everyone will assume it means. It was `tests/test_golden.py` for one commit, and `pytest tests/golden` then collected zero tests and reported green — which put the guard against a renamed case directory inside a module the obvious command never loaded.
+
+**`request.json` and `expected.json` are §3's domain objects, not §6.2's wire shapes.** Field for field: `sector_code` and `food_category_code` rather than `sector` and `food_category`, `destination_code` rather than `destination`, `source_metric_code` rather than `source_metric`, `by_destination` present and empty at the totals level rather than omitted, and a `total_kg` on `totals.alternative` for which §6.2's single hoisted `totals.total_kg` has no room. A golden case written against §6.2's body would certify `api/engine_adapter.py` as well as the engine, and a hoist or an omitted key there would then read as an engine defect. Decimals are strings (§1.2) rendered as `format(value, "f")` — the same rendering `api/serialization.wire()` performs, so `"0.0000000000"` and `"0"` are different answers in a golden file exactly as they are on the wire.
+
+| Rule | Reason |
+| --- | --- |
+| A case is **self-contained**: its `bundle.json` is the whole factor set, not a reference to a fixture | The engine is a pure function of two documents (§4.2). A case that reached out to `tests/fixtures/` would change its answer when a fixture was corrected, which is how a suite starts failing for reasons that have nothing to do with the engine |
+| **The runner never writes an expected file.** There is no regenerate mode | A runner that can rewrite its own expectations certifies whatever the engine currently does. §10.0's warning applies with more force here than anywhere: a suite certifying the wrong semantics certifies them very convincingly |
+| **A failure names the case, the path, the metric and both values** | A golden failure reading only `assert False` wastes the debugging session it exists to shorten |
+| **Every case states what it is evidence of**, in `_PROVENANCE` in the runner | A case nobody can state the purpose of is the case that gets deleted the first time it fails |
+
+> **Where a case's numbers come from is the whole question, and only the first case can avoid the circle.** `case_01` and `case_02` are derived from `calculate_response.json` and `calculate_response_single.json` — figures produced on B's line from the published formulas, independently of A's engine, so those two cases are a genuine cross-check between two implementations. Every case after them would otherwise be the engine certifying itself, so cases 03 to 08 are **hand-computed**: each is small enough to check on paper, each is designed so that the failure mode it targets changes the answer by an amount nobody could mistake for rounding, and the arithmetic is written out in the task-7 report.
+>
+> **`case_03_prevention_whole_offset` is the one that carries open item O-7.** 800 kg moved from `not_harvested` to `prevention` gives `net_benefit.co2e` of **456.000**, the figure v1.8 recomputed independently. `test_case_03_fails_if_the_upstream_destination_dimension_is_removed` reverts `FactorBundle.upstream()` to its pre-v1.8 behaviour and asserts that the case then fails **with 96.000** — not merely that it fails. A case that only proves today's engine agrees with today's expected file is not evidence that a closed defect stays closed.
 
 ## 10.2 `bundle.json` Shape (owner: A)
 
 One shape, three consumers: the golden suite above, `FactorBundle.from_json()` (§4.1), and the `dry_run.bundle` field of `POST /calculate` (§6.2.1).
 
 It is a **complete, self-contained snapshot** — the taxonomy as well as the factors. §4.1's `has_destination()`, `has_sector()`, `has_food_category()` and `standard_mix_code()` are unimplementable otherwise, and staff must be able to trial a destination or food category that does not yet exist in the database.
+
+> **No file in `tests/fixtures/` is a bundle, and `factors.json` in particular is not one.** §10's table has always called it a `GET /factors` response and that is exactly what it is: it wraps `version_label` and `is_mock` inside a `factor_set` object, and it carries **none** of the five taxonomy sections. Passing it to `from_json()` raises `BundleFormatError` naming the seven missing keys — the five taxonomy sections plus `version_label` and `is_mock`, which are present but nested — correctly, since a bundle without the taxonomy cannot answer `has_destination()` and would otherwise reject every destination in the request with `UNKNOWN_CODE`. This is not a defect in either file. `db/repository.build_bundle_data` is the projection **both** shapes come from, and §6.3's export is that dictionary with the taxonomy sections dropped and those two keys nested.
+>
+> **A bundle is composed, not fetched**, and the composition is a re-keying with no arithmetic in it:
+>
+> ```
+> bundle.version_label   <- factors.json  .factor_set.version_label
+> bundle.is_mock         <- factors.json  .factor_set.is_mock
+> sectors, food_categories, destination_groups, destinations, metrics
+>                        <- taxonomy.json (the same five keys)
+> constants, formulas, upstream, downstream, equivalences
+>                        <- factors.json  (the same five keys)
+> ```
+>
+> `tests/test_bundle.py::canonical_bundle_json` is that composition, and it is what `tests/golden/case_01_*/bundle.json` and `case_02_*/bundle.json` were built with — so the canonical numbers reach the golden suite without a thirteenth fixture being added and without either existing file having to change shape. **A fourteenth file holding a pre-composed bundle was rejected**: it would be a second copy of every factor row, and the copy that stops matching is the one nobody notices.
 
 ```json
 {
@@ -2385,8 +2903,10 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
     { "metric": "co2e", "expression": "qty_kg * (upstream + downstream)", "notes": "" }
   ],
   "upstream": [
-    { "sector": "processing", "food_category": "dairy",
-      "metric": "co2e", "value_per_kg": "1.9000000000" }
+    { "sector": "processing", "food_category": "dairy", "destination": null,
+      "metric": "co2e", "value_per_kg": "1.9000000000" },
+    { "sector": "processing", "food_category": "dairy", "destination": "prevention",
+      "metric": "co2e", "value_per_kg": "0.0000000000" }
   ],
   "downstream": [
     { "destination": "landfill", "food_category": "dairy",
@@ -2417,3 +2937,5 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 > **The database and §6.3 are the authoritative provenance surface, not the bundle.** Provenance may be dropped on a round trip through a dry run; that is acceptable because an inline bundle is never written back (§6.2.1) and a golden case is not a factor source. If provenance ever has to survive a round trip, this convention is the line that changes.
 
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
+
+`upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.

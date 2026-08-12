@@ -39,7 +39,7 @@ def enrolled_staff(session) -> Staff:
     admits — the same reasoning as test_auth.py's own `enrolled()` helper.
     """
     username = "erin"
-    _, password = create_staff(session, username=username, display_name="Erin")
+    _, password = create_staff(session, username=username, display_name="Erin", actor="test", secret_key=SECRET_KEY)
     session.flush()
     set_password(session, username, "a-strong-initial-password")
     secret, _ = begin_mfa_enrolment(session, username, secret_key=SECRET_KEY)
@@ -79,7 +79,7 @@ def test_an_mfa_reset_invalidates_the_session_that_predates_it(
     session_data = {}
     stamp_session(session_data, enrolled_staff)
 
-    reset_mfa(session, enrolled_staff.username)
+    reset_mfa(session, enrolled_staff.username, actor="admin")
     session.flush()
 
     with pytest.raises(StaffAuthRequired):

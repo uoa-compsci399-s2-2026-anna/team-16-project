@@ -81,6 +81,43 @@ def _pending_login_from_session(session_data: dict) -> PendingLogin | None:
     return PendingLogin(username=username, expires_at=expires_at)
 
 
+def extend_pending_login(session_data: dict, *, now: float, seconds: float) -> None:
+    """Give the pending login ``seconds`` more from ``now``, if there is one.
+
+    ``login()`` above writes ``expires_at`` once, at the password step, which
+    is the only clock the onboarding ladder has. Onboarding is three requests
+    long and the deadline does not move between them, so the budget for
+    "choose a password, then install an authenticator, then scan it" is the
+    budget for "read a code off a phone" — the case
+    ``PENDING_LOGIN_TTL_SECONDS`` was written for. Each step that can outlast
+    it therefore extends it as it begins.
+
+    **The onboarding pages are the only callers, and this is why the
+    extension is granted per step rather than per request.** A pending login
+    is one factor; a rolling extension on every request would make it
+    indefinite for anyone who kept the tab open. Granting it where a step
+    starts keeps idling fatal and keeps the grant auditable: two call sites,
+    both in ``admin/views.py``, both on a page the gate opens only while the
+    account still owes that step.
+
+    Silently does nothing without a pending login in the session. Both
+    callers run on pages an established SESSION_KEY can also reach in
+    principle, and there is nothing to extend in that case — the session is
+    no longer waiting on a second factor.
+
+    Writes the dict back rather than mutating it in place: Starlette's
+    SessionMiddleware re-serialises ``request.session`` wholesale, so the
+    in-place mutation is in fact enough today, and the assignment is what
+    keeps that true if the session is ever backed by something that tracks
+    key assignment instead.
+    """
+    stored = session_data.get(PENDING_SESSION_KEY)
+    if not isinstance(stored, dict):
+        return
+    stored["expires_at"] = now + seconds
+    session_data[PENDING_SESSION_KEY] = stored
+
+
 def current_username(session_data: dict) -> str | None:
     """The account a request is acting on, before or after the second factor.
 

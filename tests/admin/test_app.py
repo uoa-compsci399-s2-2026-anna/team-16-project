@@ -31,6 +31,7 @@ from admin.config import Settings
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
 from db.session import create_session_factory
+from tests.admin.conftest import _cleanup_staff_named
 from tests.conftest import ROOT_URL
 
 pytestmark = [pytest.mark.db, pytest.mark.asyncio]
@@ -189,14 +190,24 @@ async def test_startup_creates_two_administrators_on_an_empty_database(empty_dat
 async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     empty_database, capsys
 ):
-    """The passwords exist in readable form exactly once, in this output.
+    """The start-up output has to say what these two lines are worth.
 
-    Pinned against the CLI's own wording rather than a paraphrase: an
-    operator following the handover documentation has read the ``python -m
-    admin.cli bootstrap`` instructions, and a start-up that says something
-    different is a start-up they will not recognise as the same event. The
-    "shown once and cannot be recovered" sentence is the load-bearing part -
-    output that does not say it invites someone to close the terminal.
+    Pinned against the CLI's own wording rather than a paraphrase: an operator
+    following the handover documentation has read the ``python -m admin.cli
+    bootstrap`` instructions, and a start-up that says something different is
+    a start-up they will not recognise as the same event.
+
+    **The load-bearing sentence changed with contract v1.15 and this test
+    changed with it.** It used to be "shown once and cannot be recovered",
+    which was true when it was written: bootstrap goes through
+    ``create_staff``, which since v1.15 stores each password encrypted until
+    the account claims it, so one lost line is recoverable *by the other
+    administrator* from /admin/staff. Losing both is still terminal for the
+    panel — a reveal needs a signed-in administrator and there is nobody else —
+    and the output has to name the way back from that, which is
+    ``kaicalc-admin issue-password`` on the container. An operator told the
+    flat "cannot be recovered" would rebuild a deployment they could have
+    logged in to.
     """
     await _run_startup(empty_database)
 
@@ -204,7 +215,11 @@ async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     assert "Created initial administrator accounts." in out
     for username in BOOTSTRAP_USERNAMES:
         assert re.search(rf"^  {username}: \S{{20}}$", out, re.MULTILINE), out
-    assert "These passwords are shown once and cannot be recovered." in out
+    assert "cannot be recovered" not in out, (
+        "the sentence that stopped being true in v1.15 is back"
+    )
+    assert "the other administrator can read it back from /admin/staff" in out
+    assert "kaicalc-admin issue-password admin" in out
     assert "Do not send them by email." in out
 
 
@@ -259,7 +274,7 @@ async def logged_in_client(admin_app, client, monkeypatch):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Route Check")
+        create_staff(db, username=username, display_name="Route Check", actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -298,9 +313,34 @@ async def logged_in_client(admin_app, client, monkeypatch):
     assert verify.status_code == 302, "TOTP step should have completed the login"
 
     yield client
+    # This fixture had no teardown at all, and committed both a `staff` row
+    # and (since admin/accounts.py::create_staff began auditing itself) an
+    # `audit_log` row against a database every other test in the directory
+    # shares. The stray audit entry is the more damaging half: four tests in
+    # test_audit.py and test_modelviews.py read the first row of that table
+    # and assert what it is, so a leftover `create staff` row makes them fail
+    # for a reason that has nothing to do with what they check.
+    _cleanup_staff_named(admin_app, username)
 
 
-async def test_the_audit_log_view_is_reachable(logged_in_client):
+async def test_the_audit_log_view_is_registered_and_administrator_only(
+    logged_in_client,
+):
+    """403, not 200, and 403 is what "registered" looks like from here.
+
+    `logged_in_client` is a plain `staff` account (create_staff's default
+    role), and contract v1.15 closed the audit log to that role - the trail is
+    an administrator's oversight tool. This test was written to prove the view
+    is *registered* rather than to prove anything about roles, and 403 proves
+    that just as well as 200 did: an unregistered identity answers 404 from
+    sqladmin's `_find_model_view`, so the two are distinguishable and this
+    assertion still fails if `AuditLogAdmin` stops being added in
+    `create_app`.
+
+    The role rule itself is held at both roles, over real HTTP, in
+    tests/admin/test_role_matrix.py - including the details and export routes,
+    which are separate handlers from this one.
+    """
     response = await logged_in_client.get("/admin/audit-log/list")
 
-    assert response.status_code == 200
+    assert response.status_code == 403

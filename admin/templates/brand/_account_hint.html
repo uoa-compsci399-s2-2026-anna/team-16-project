@@ -1,0 +1,59 @@
+{# WHO THE PASSWORD IN THIS FORM BELONGS TO, said to the browser.
+
+   Call this from **every** form carrying an `autocomplete="current-password"`
+   field. Chrome reads such a form as a credential form whether or not it is
+   one, and then has to decide which field holds the account name. Its order is
+   documented and was measured directly against this panel through
+   `chrome://password-manager-internals`:
+
+     1. a field declaring `autocomplete="username"`, if there is one;
+     2. failing that, the text input nearest above the password field, skipping
+        anything that declares `autocomplete="one-time-code"`.
+
+   With no field of the first kind, rule 2 picks whatever text input happens to
+   be there. On /admin/security that is the authenticator's **nickname**, and
+   Chrome's own parser output said so in as many words -
+
+       device_name: type=text, renderer_id=4
+       current_code: type=text, autocomplete=one-time-code
+       current_password: type=password, autocomplete=current-password
+       ...
+       Username element :  device_name
+
+   - for the Add dialog and the Rename dialog alike, which is why renaming a
+   device made Google Password Manager offer to change the stored username. On
+   /admin/staff/new it picked the **new colleague's username**, an unreported
+   instance of the same fault that would have offered to rename the signed-in
+   administrator to whoever was just added.
+
+   Naming the real account settles rule 1 and rule 2 never runs. The value is
+   the signed-in account, taken from the session by the view - the same account
+   whose password the proof field asks for, so it is true as well as
+   convenient.
+
+   Every attribute is load-bearing:
+
+     * `type="text"`, not `hidden` — password managers skip hidden inputs.
+     * `.sr-only`, not `display: none` — Chromium treats a zero-sized element
+       as invisible and ignores it. See brand.css, which also explains why that
+       class has to be element-qualified to survive on an input.
+     * `readonly` and `tabindex="-1"` — it is for the browser, not the person.
+     * an `id`, passed in — Chrome identifies a field by its `name` and falls
+       back to its `id`, and this field has no name. Without one its own log
+       reads `Username element :` followed by nothing, which is not the state
+       the change-password form was verified in.
+     * **no `name`** — it is never submitted. The account acted on is read from
+       the session and from nowhere else, and this field must not become a
+       second answer to that question.
+
+   A macro rather than an `include` precisely so the id can differ: four of
+   these appear on /admin/security and ids must stay unique.
+
+   brand/change_password.html carries its own copy of this field rather than
+   calling this macro. That page is the forced first-login change, reached
+   before an ordinary session exists, and it has its own account variable; it
+   is verified and left alone. #}
+{% macro account_hint(account, id) -%}
+<input class="sr-only" type="text" id="{{ id }}" value="{{ account }}"
+       autocomplete="username" readonly tabindex="-1" aria-hidden="true">
+{%- endmacro %}

@@ -1,4 +1,8 @@
-{% extends "sqladmin/list.html" %}
+{# Extends brand/model_list.html rather than sqladmin/list.html directly, so
+   this view keeps the page-level guidance mechanism every other list page
+   has (brand/_guidance.html) while still replacing `model_menu_bar` below.
+   IpBlockAdmin declares no guidance blocks today and so renders none. #}
+{% extends "brand/model_list.html" %}
 {% block model_menu_bar %}
 <div class="ms-3 d-inline-block">
   <a href="{{ url_for('admin:view-ip-block-block_form') }}" class="btn btn-primary">

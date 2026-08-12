@@ -2,11 +2,7 @@
 {% block title %}Try a scenario{% endblock %}
 {% block content %}
   <h1>Try a scenario</h1>
-  <p class="muted">
-    Sends one line to the calculation service with <code>X-Dry-Run:
-    true</code>. Nothing here is saved, and it never reaches the public
-    statistics — run this as many times as tuning a formula takes.
-  </p>
+  {% include "brand/guidance/dry_run_purpose.html" %}
   <form method="post" autocomplete="off">
     <label for="factor_set">Factor set</label>
     <select id="factor_set" name="factor_set">
@@ -15,6 +11,12 @@
         <option value="{{ fs.version_label }}">{{ fs.version_label }} — {{ fs.status.value }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Which version's numbers to calculate against. Leave it on
+      <em>Published</em> to see what the public sees right now; pick a draft
+      to check an edit before publishing it. This is the only way to run a
+      draft's numbers without making them live.
+    </p>
 
     <label for="sector">Sector</label>
     <select id="sector" name="sector" required>
@@ -22,6 +24,11 @@
         <option value="{{ sector.code }}">{{ sector.name }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Which stage of the supply chain the line is attributed to. It, and the
+      food category below, are what decide the upstream factor this run picks
+      up.
+    </p>
 
     <label for="food_category">Food category</label>
     <select id="food_category" name="food_category">
@@ -30,12 +37,22 @@
         <option value="{{ category.code }}">{{ category.name }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Leaving this on the standard mix is what a visitor who does not know
+      their composition gets, and so the case most worth checking.
+    </p>
 
     <label for="gwp_horizon">Methane horizon</label>
     <select id="gwp_horizon" name="gwp_horizon">
       <option value="100" selected>100 years</option>
       <option value="20">20 years</option>
     </select>
+    <p class="muted">
+      Which methane constant the formulas are given. The 20-year value weights
+      methane several times more heavily, so the same numbers produce a
+      different greenhouse-gas figure on each — a formula worth checking is
+      worth checking on both.
+    </p>
 
     <label for="destination">Destination</label>
     <select id="destination" name="destination" required>
@@ -43,9 +60,24 @@
         <option value="{{ destination.code }}">{{ destination.name }}</option>
       {% endfor %}
     </select>
+    <p class="muted">
+      Where the line's waste goes, which decides its downstream factor.
+      <em>Prevented — waste avoided</em> is in this list because it is a
+      destination like any other, but it cannot be used on this page: what
+      you enter here is one line of a <em>current</em> scenario, and
+      prevention is waste that did not happen, which only ever belongs in a
+      what-if. Choosing it is refused, with a validation error naming
+      <code>current</code>. To watch a prevention line compute, use the
+      public calculator, which sends both scenarios.
+    </p>
 
     <label for="qty_kg">Quantity (kg)</label>
     <input type="text" id="qty_kg" name="qty_kg" required value="1000.000">
+    <p class="muted">
+      Three decimal places at most, the same limit the public calculator
+      accepts. A round thousand makes a per-kilogram factor easy to read
+      straight off the result.
+    </p>
 
     <button type="submit">Run</button>
   </form>

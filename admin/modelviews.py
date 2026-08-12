@@ -34,10 +34,12 @@ from sqladmin.filters import OperationColumnFilter
 from sqlalchemy import event
 from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.orm import Session, sessionmaker
+from starlette.exceptions import HTTPException
 
+from admin.accounts import UnknownStaffError, get_staff
 from admin.audit import row_to_dict, write_audit
 from admin.auth import SESSION_KEY
-from admin.models import AuditLog
+from admin.models import AuditLog, StaffRole
 
 #: The acting username for whichever AuditedModelView write is in flight on
 #: the current asyncio task. Set by insert_model/update_model/delete_model
@@ -212,6 +214,66 @@ def _audited_session_maker(
     return audited
 
 
+class AdministratorOnly:
+    """The ``role = admin`` floor, written once for every view that has one.
+
+    Mixed in ahead of ``ModelView`` (or ``AuditedModelView``) so that
+    ``is_visible``/``is_accessible`` resolve here rather than to sqladmin's
+    "allow access for everyone" defaults.
+
+    **Three separate things have to be said for a view to be genuinely
+    administrator-only, and each of them closes a different hole.**
+
+    1. ``is_visible`` keeps the entry out of the sidebar. On its own it hides
+       a menu item and leaves the URL wide open, which is worse than nothing:
+       it makes the panel *look* restricted.
+    2. ``is_accessible`` is what sqladmin actually consults, and only for the
+       routes it generates itself — ``_list``, ``_create``, ``_details``,
+       ``_edit``, ``_delete``, ``_export``, ``_import``, ``_file_access`` and
+       ``ajax_lookup`` (verified in the installed ``sqladmin/application.py``,
+       ``BaseAdminView`` and siblings). Those nine are covered for free once
+       this returns False, the details page and the CSV export included —
+       which matters, because both are separate handlers from the list and
+       neither inherits a filter applied to the other.
+    3. ``_require_admin`` is for everything sqladmin does *not* consult
+       ``is_accessible`` for: every ``@expose`` and every ``@action`` route.
+       Both decorators wrap their handler in ``login_required`` and nothing
+       else (``sqladmin/application.py``'s ``expose``/``action`` both end
+       ``return login_required(func)``), and ``login_required`` calls
+       ``AuthenticationBackend.authenticate()`` — "is there *some* onboarded
+       staff session" — never this view's role check. A custom route with no
+       explicit call to ``_require_admin`` is reachable by any signed-in
+       account, whatever ``is_accessible`` says, and no amount of hiding the
+       menu changes that.
+
+    ``session_maker`` rather than a request-scoped session: the role has to be
+    re-read from the database on every request. The signed cookie carries the
+    username, and nothing else about the account — a session minted while
+    somebody was an administrator would otherwise keep the capability after
+    the role was taken away.
+    """
+
+    def _is_admin(self, request) -> bool:
+        username = request.session.get(SESSION_KEY)
+        if not username:
+            return False
+        with self.session_maker() as session:
+            try:
+                return get_staff(session, username).role is StaffRole.admin
+            except UnknownStaffError:
+                return False
+
+    def is_visible(self, request) -> bool:
+        return self._is_admin(request)
+
+    def is_accessible(self, request) -> bool:
+        return self._is_admin(request)
+
+    def _require_admin(self, request) -> None:
+        if not self.is_accessible(request):
+            raise HTTPException(status_code=403)
+
+
 class AuditedModelView(ModelView):
     """Base for every CRUD view. Contract §8.1.
 
@@ -248,6 +310,40 @@ class AuditedModelView(ModelView):
        ``_audited_session_maker`` below for what the audit trail does and
        does not capture from an ORM cascade.
     """
+
+    #: sqladmin's own create and edit pages, extended with one style rule.
+    #: Set here rather than on each of the fourteen subclasses because the
+    #: defect it works around is a property of sqladmin's checkbox widget,
+    #: not of any one screen: `BooleanInputWidget` hard-codes `h-100` on the
+    #: switch wrapper, which pushes the field's own description outside its
+    #: column, where the next row draws over it. Every boolean field on this
+    #: panel - `is_mock`, `is_waste`, `is_standard_mix` and every `active` -
+    #: was explaining itself invisibly until this existed. See
+    #: `admin/templates/brand/_field_help_css.html` for the full account and
+    #: for what to delete when sqladmin fixes it.
+    create_template = "brand/model_create.html"
+    edit_template = "brand/model_edit.html"
+
+    #: sqladmin's own list page, extended the same way, so that a view can
+    #: declare `guidance_blocks` below and have them appear on all three of
+    #: its routes without knowing which template renders which.
+    #: `brand/ip_block_list.html` extends this rather than
+    #: `sqladmin/list.html` for that reason.
+    list_template = "brand/model_list.html"
+
+    #: Page-level explanations to render above the table and above the form,
+    #: as template paths under `templates/brand/guidance/`. Empty here, so
+    #: the eleven views that declare none render exactly what they always
+    #: did.
+    #:
+    #: **Not field help.** A description in `form_args` explains one box and
+    #: is required of every editable field (tests/admin/test_field_help.py).
+    #: A block here explains a *sequence*: the order operations have to
+    #: happen in, and what goes silently wrong - wrong numbers rather than an
+    #: error message - when they happen in another order. Four of them exist
+    #: today; tests/admin/test_guidance.py holds each to its page and refuses
+    #: a block that is written but never shown.
+    guidance_blocks: list[str] = []
 
     def __init__(self) -> None:
         super().__init__()
@@ -335,8 +431,55 @@ class AuditedModelView(ModelView):
             _view_var.reset(view_token)
 
 
-class AuditLogAdmin(ModelView, model=AuditLog):
-    """Contract §8.2: read-only, filterable by actor, time and table."""
+class AuditLogAdmin(AdministratorOnly, ModelView, model=AuditLog):
+    """Contract §8.2: read-only, filterable by actor, time and table.
+    Contract §8.3 from v1.15: ``role = admin`` only.
+
+    **This was open to ``staff`` until v1.15, and that was the specification,
+    not an oversight.** §8.3's role table granted "view audit log" to both
+    roles from v0.2 onwards, and six separate passages of §5.5 and §2.3 justify
+    ``write_audit``'s field blocklist with the words "``audit_log`` is readable
+    by every staff member". The decision was reversed deliberately: the trail
+    is an administrator's oversight tool, it records who created, deleted and
+    re-credentialled every account, and a `staff` member reading their
+    colleagues' account administration is not doing anything the role is for.
+
+    **``REDACTED_FIELDS`` stays exactly as it is.** Narrowing the audience is
+    not a reason to widen what is written. ``password_hash``,
+    ``mfa_secret_enc``, ``code_hash``, ``token`` and ``ip_hmac`` are
+    credentials and identifiers that no screen should render at any role, and
+    the trail is exported (``can_export``), copied into tickets and read over
+    shoulders. A redaction removed because "only administrators see it now"
+    would have to be put back the first time a read-only auditor role is
+    added.
+
+    **Why not "their own entries only", the other candidate.** Two reasons,
+    and the first is structural rather than a matter of taste:
+
+    * A ``ModelView`` reads through more than one query. ``list_query`` feeds
+      ``/list``; ``get_object_for_details`` feeds ``/details/{pk}``;
+      ``get_model_objects`` feeds ``/export/{export_type}``; ``ajax_lookup``
+      has its own path again. Narrowing one narrows one. Filtering the list
+      and leaving the detail route open means the filter is defeated by
+      guessing an integer in a URL, and the export hands over the whole table
+      in a single request — the "guard in the wrong layer" shape that has
+      produced four defects on this branch already. Every one of those paths
+      would need its own override, and a future sqladmin version that adds a
+      fifth inherits none of them.
+    * Even implemented perfectly it would mislead. ``actor`` is a plain
+      ``VARCHAR(128)`` that also holds ``cli``, ``bootstrap``, ``deploy-seed``
+      and ``unknown``, so a per-actor view is a trail with holes in it and
+      nothing on the page saying so. Somebody would eventually answer "did
+      that change get made?" from it and be wrong. Refusing the screen
+      outright is at least honest about what it is not showing.
+
+    Every read path is covered by ``is_accessible`` alone here, and that is
+    checked rather than assumed: this class declares no ``@expose`` and no
+    ``@action`` — the two route kinds sqladmin registers with
+    ``login_required`` only — and ``can_create``/``can_edit``/``can_delete``
+    are all False below, so ``/list``, ``/details/{pk}`` and
+    ``/export/{export_type}`` are the whole of its surface.
+    """
 
     name = "Audit entry"
     name_plural = "Audit log"

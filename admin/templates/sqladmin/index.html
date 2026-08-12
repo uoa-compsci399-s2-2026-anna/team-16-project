@@ -1,0 +1,40 @@
+{# The panel index. sqladmin's own is this file with an empty `content`
+   block - a page with a menu down the side and nothing on it - which is the
+   first thing a new staff member sees after saving their recovery codes.
+
+   Overridden here for one reason: the first-run walkthrough has to be
+   findable by somebody who does not know it exists. The menu entry alone is
+   not that; it is one line among sixteen, and the person who needs it most
+   is the one who does not yet know which of those sixteen matter. So the
+   landing page says it.
+
+   Same override mechanism as templates/sqladmin/login.html - sqladmin's
+   template loader looks in this panel's own `templates_dir` before its own
+   package (`Admin.init_templating_engine`), so a file at this path replaces
+   its namesake. Pinned by tests/admin/test_getting_started.py, which is what
+   stops a template refactor quietly restoring the empty page. #}
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div style="max-width: 78ch;">
+        <h3 class="card-title">New here?</h3>
+        <p>
+          <a href="{{ url_for('admin:view-getting-started') }}">Getting
+          started</a> is the four things to do first. It takes a few minutes,
+          and the order is the point of it.
+        </p>
+        <p class="text-muted">
+          Everything this panel can do is in the menu. Each screen explains
+          itself: every box has a line under it saying what it is for, and
+          the screens where the order matters carry an explanation at the
+          top.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

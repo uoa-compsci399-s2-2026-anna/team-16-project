@@ -45,12 +45,12 @@ import pyotp
 import pytest
 import pytest_asyncio
 from sqlalchemy import bindparam as sa_bindparam
-from sqlalchemy import text
+from sqlalchemy import select, text
 
 from admin.accounts import (
     begin_mfa_enrolment, complete_mfa_enrolment, create_staff, get_staff, set_password,
 )
-from admin.models import StaffRole
+from admin.models import Staff, StaffRole
 from admin.totp import TOTP_INTERVAL
 from admin.views import time as views_time
 
@@ -102,7 +102,7 @@ def _create_onboarded_account(admin_app, *, role=StaffRole.admin):
     password = "a-long-enough-password"
     factory = admin_app.state.session_factory
     with factory() as db:
-        create_staff(db, username=username, display_name="Test User", role=role)
+        create_staff(db, username=username, display_name="Test User", role=role, actor="test", secret_key=SECRET_KEY)
         db.flush()
         set_password(db, username, password)
         secret, _ = begin_mfa_enrolment(db, username, secret_key=SECRET_KEY)
@@ -178,6 +178,49 @@ def _cleanup_staff(admin_app, *staff_rows):
         db.commit()
 
 
+def _cleanup_staff_named(admin_app, *usernames):
+    """``_cleanup_staff`` for a fixture that holds a username, not a row.
+
+    Several files build their accounts with ``create_staff`` and keep only the
+    name. Each grew its own teardown, and every one of those copies kept the
+    ``actor`` predicate and dropped the ``table_name``/``row_id`` one - which
+    is the predicate that catches an entry written **against** these staff rows
+    by a *different* actor, the shape ``admin/accounts.py::issue_password``
+    writes when one administrator acts on another. Five weaker copies of the
+    block that exists to stop audit rows leaking between files is how the
+    leak comes back, so the deletion itself stays written once, above, and
+    this only resolves names to rows.
+
+    A name with no row is not an error: these teardowns also run *before* a
+    walk, to clear anything an interrupted earlier run left behind, and a
+    bootstrap account may legitimately not exist yet. There is no id to key
+    the second predicate on in that case, and no staff row to delete, so the
+    actor predicate is all there is - and all there can be.
+    """
+    factory = admin_app.state.session_factory
+    with factory() as db:
+        rows = {
+            username: db.scalar(
+                select(Staff).where(Staff.username == username)
+            )
+            for username in usernames
+        }
+
+    found = [row for row in rows.values() if row is not None]
+    if found:
+        _cleanup_staff(admin_app, *found)
+
+    missing = [username for username, row in rows.items() if row is None]
+    if missing:
+        with factory() as db:
+            for username in missing:
+                db.execute(
+                    text("DELETE FROM audit_log WHERE actor = :username"),
+                    {"username": username},
+                )
+            db.commit()
+
+
 @pytest_asyncio.fixture
 async def admin_client(admin_app, client, monkeypatch):
     """A client logged in as a fully onboarded administrator.
@@ -192,6 +235,13 @@ async def admin_client(admin_app, client, monkeypatch):
         _cleanup_staff(admin_app, staff)
         raise
     client.staff = staff
+    # Both factors are hung off the client alongside the row. Any screen that
+    # re-authenticates on top of an established session - /admin/security, and
+    # /admin/staff/new - needs one of them to drive its permitted case, and a
+    # test that could only drive the *refused* case would be asserting that a
+    # system which refuses everything works correctly.
+    client.password = password
+    client.secret = secret
     yield client
     _cleanup_staff(admin_app, staff)
 
@@ -210,6 +260,8 @@ async def staff_client(admin_app, client, monkeypatch):
         _cleanup_staff(admin_app, staff)
         raise
     client.staff = staff
+    client.password = password
+    client.secret = secret
     yield client
     _cleanup_staff(admin_app, staff)
 
@@ -363,9 +415,23 @@ def _cleanup_e6_rows(admin_app) -> None:
                 {"ids": factor_set_ids},
             )
 
+        #: `destination` is matched by its *group* as well as by its own code.
+        #: A test needing the reserved `prevention` row (contract §2.1 fixes
+        #: that literal, so it cannot carry an "e6_" prefix) hangs it off an
+        #: "e6_" group — tests/admin/test_factor_lifecycle.py's O-7 publish
+        #: guard test does exactly that. Without this clause the destination
+        #: survives the sweep and the *group* delete below then fails on its
+        #: foreign key, leaving both behind for every later run.
+        _EXTRA_MATCH = {
+            "destination": (
+                " OR group_id IN (SELECT id FROM destination_group "
+                "WHERE code LIKE 'e6\\_%' ESCAPE '\\\\')"
+            ),
+        }
         for table in ("metric", "destination", "sector", "food_category"):
             ids = db.execute(
-                text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'")
+                text(f"SELECT id FROM {table} WHERE code LIKE 'e6\\_%' ESCAPE '\\\\'"
+                     + _EXTRA_MATCH.get(table, ""))
             ).scalars().all()
             if ids:
                 db.execute(

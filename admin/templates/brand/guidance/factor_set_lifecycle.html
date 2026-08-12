@@ -1,0 +1,64 @@
+{# Declared by FactorSetAdmin.guidance_blocks (admin/factor_views.py).
+
+   Contract §5.2 and §8.2. The sequence this block exists for is
+   clone -> edit -> publish, and the mistake it exists to prevent is editing
+   a published set in place: the panel refuses that, but a refusal explains
+   what stopped, not why anyone would want it stopped. The reason is that
+   `submission.factor_set_id` makes every stored result a claim about a
+   named version.
+
+   Pinned by tests/admin/test_guidance.py. #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div style="max-width: 78ch;">
+        <h3 class="card-title">Draft, published, archived</h3>
+        <p>
+          A factor set is one complete set of the numbers the calculator runs
+          on: every upstream and downstream factor, every constant, every
+          formula, every equivalence. Each set is either a <strong>draft</strong>
+          you can change, the one <strong>published</strong> set the public
+          calculator is using, or an <strong>archived</strong> set that has been
+          retired. Exactly one set is published at a time — publishing a new one
+          archives the old one in the same step, so there is never a moment with
+          two.
+        </p>
+        <p>
+          <strong>A published set's numbers must never change, and the panel
+          refuses to change them.</strong> Every calculation a visitor has run
+          records the set it used, and the result they were shown names that
+          version. Editing that set does not correct their result; it quietly
+          changes what their result claimed, long after they read it.
+        </p>
+        <p>
+          <strong>So the way to change the live numbers is clone, edit,
+          publish.</strong> Select the published set and choose Clone. You get a
+          draft with a copy of everything in it, and editing that draft cannot
+          change what the public sees. Check it on Try a scenario and on Compare
+          with published, then publish it.
+        </p>
+        <p>
+          <strong>Roll back</strong> returns an archived set to published and
+          archives whatever is live in its place — the undo for a publish that
+          turned out wrong, in one action and with nothing retyped. It works only
+          on a set that has been published before; a draft has never been live,
+          and Publish is its button.
+        </p>
+        <p>
+          <strong>Archive</strong> retires a set with nothing promoted to take
+          its place. If you archive the published set, nothing is published and
+          the public calculator shows a maintenance message until you publish
+          something. That is deliberate: it is how you take the calculator down
+          when a live number is wrong and there is nothing ready to replace it.
+        </p>
+        <p>
+          Archiving deletes nothing and tidies nothing away. An old result still
+          names the set it was calculated against, and running it again gives the
+          answer it gave then. That is why no factor set can be deleted here at
+          all.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>

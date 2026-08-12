@@ -1,0 +1,165 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "kaicalc"
+# THE VERSION OF THIS TREE, and the repository is where it lives.
+#
+# 0.0.0 because nothing has been released yet, and that is the only honest
+# thing an unreleased tree can say. The 1.0.0 that stood here was picked
+# arbitrarily when the package was first made installable; it claimed a release
+# that had not happened, and it would have gone on claiming it while real
+# releases moved past it.
+#
+# THIS LINE IS MAINTAINED BY THE RELEASE, NOT BY HAND. `.github/workflows/
+# release.yaml` writes the released version here, commits it to the default
+# branch and tags that commit, so the tag always points at a tree carrying the
+# version the tag names. Editing it manually is not forbidden, but it will be
+# overwritten by the next release and it is not how a version gets recorded.
+#
+# Alpha builds never touch it: CI derives `<this>.dev0+<short-sha>` per build,
+# which sorts BELOW this version in PEP 440 and so can never be mistaken for,
+# or preferred over, a release.
+version = "0.0.0"
+description = "Kai Commitment food waste impact calculator - New Zealand impact calculator API, calculation engine and staff admin panel"
+# No `readme`: README.md is the course template and is git-ignored in this
+# tree, so it is neither ours to describe the package with nor reliably present.
+requires-python = ">=3.11"
+authors = [{ name = "UoA COMPSCI 399 Team 16 (502 Bad Gateway)" }]
+keywords = ["food-waste", "impact-calculator", "new-zealand", "kai-commitment"]
+classifiers = [
+    "Private :: Do Not Upload",
+    "Framework :: FastAPI",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+# Runtime only. Mirrors requirements.txt with the "--- Testing ---" group
+# removed; read that file's comments before changing a pin here, several of
+# them record why a dependency was chosen or rejected. In particular there is
+# deliberately no `simpleeval`: engine/evaluator.py is written over the
+# standard library's `ast` so that admin/expressions.py can be its static twin.
+dependencies = [
+    # Web
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "itsdangerous>=2.2",       # required by Starlette SessionMiddleware
+    "python-multipart>=0.0.20",# form posts (login, admin forms)
+    # Database
+    "sqlalchemy>=2.0",
+    "alembic>=1.14",
+    "pymysql>=1.1",            # pure Python; avoids the mysqlclient toolchain
+    # Admin panel
+    "sqladmin>=0.20",
+    # NOT test-only, despite sitting under "--- Testing ---" in
+    # requirements.txt until now. admin/calc_client.py does a module-level
+    # `import httpx`, and admin/app.py imports it, so the panel does not start
+    # without it: uvicorn dies in create_app with ModuleNotFoundError. Found
+    # by starting the panel from a wheel installed without the dev extra.
+    "httpx>=0.28",
+    # Security
+    "bcrypt>=4.2",             # used directly, not through passlib
+    "cryptography>=44.0",      # Fernet, for mfa_secret_enc at rest
+    "pyotp>=2.9",              # TOTP
+    "qrcode>=8.0",             # SVG factory only - no Pillow dependency
+    # Config
+    "python-dotenv>=1.0",
+]
+
+# Deliberately not in the runtime set: a client installing this to run the
+# calculator should not be made to install a test runner.
+#   pip install -e ".[dev]"
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.3",
+    "pytest-asyncio>=0.24",
+    # httpx is deliberately absent here: it is a runtime dependency (see
+    # above), and listing it twice would let someone "tidy up" the runtime
+    # copy on the strength of this one.
+]
+
+# `kaicalc-admin unblock <address>` instead of
+# `python -m admin.cli unblock <address>`. The difference matters inside a
+# container, where `docker exec kaicalc-admin ...` needs no interpreter flag,
+# no PYTHONPATH and no working directory.
+#
+# admin/cli.py:main is the only `main` in the tree. db/ and engine/ expose no
+# command-line entry point of any kind - engine.calculate() is a pure function
+# and db/repository.py is a library - so nothing else is listed here. Adding
+# one would mean writing new code, which this packaging change does not do.
+[project.scripts]
+kaicalc-admin = "admin.cli:main"
+
+[tool.setuptools]
+# Explicit, not auto-discovered. The repository root also holds alembic/,
+# tests/, web/ and docs/, and flat-layout auto-discovery either fails on that
+# or quietly ships the wrong set.
+#
+# NOT restructured into src/: every import in this tree is top-level
+# (`from db.base import Base`, `import admin.models`), and moving them under a
+# src/ directory is a refactor of the import graph rather than packaging.
+packages = ["admin", "api", "db", "engine"]
+include-package-data = false
+
+# The panel renders from these at runtime, so they are part of the code, not
+# documentation. Listed one level at a time rather than with `**`: setuptools'
+# recursive glob support has moved between versions, and an over-clever
+# pattern that silently matches nothing produces a wheel whose admin panel
+# raises at start-up - the failure this file exists to prevent.
+[tool.setuptools.package-data]
+admin = [
+    "templates/*.html",
+    "templates/brand/*.html",
+    # Added late, and its absence was invisible for a whole task. The five
+    # page-level guidance blocks landed in this directory and the wheel
+    # shipped without them: every screen that includes one - factor sets,
+    # upstream factors, formulas and the dry-run page - raised
+    # TemplateNotFound and returned 500 in the built image, while the whole
+    # test suite passed against the checkout, where the file is simply on
+    # disk. tests/admin/test_packaging.py now fails when any template is not
+    # covered by a pattern here, so the next directory added under
+    # templates/ cannot leave the same way.
+    "templates/brand/guidance/*.html",
+    "templates/sqladmin/*.html",
+    "static/*.css",
+    # The security screen's dialogs are a plain ES module, and a wheel built
+    # without this line ships a page whose Add, Remove and Change-password
+    # buttons do nothing - the same failure as the guidance templates above,
+    # one directory over, and just as invisible from the checkout.
+    "static/*.js",
+    "static/fonts/*.woff2",
+]
+
+# Migrations ship OUTSIDE site-packages, under <sys.prefix>/share/kaicalc/.
+#
+# They cannot ship as a top-level `alembic` package: that import name already
+# belongs to the Alembic distribution itself, so installing one would leave
+# two distributions writing into one site-packages/alembic/ directory - and
+# adding the __init__.py setuptools wants for a regular package would
+# overwrite Alembic's own. Nor can they ship as package-data of admin/, api/,
+# db/ or engine/, since package-data cannot reach outside its package
+# directory.
+#
+# Installing alembic.ini alongside the tree, in the same relative arrangement
+# as the repository root, means the SAME ini file works in both places: its
+# `script_location = %(here)s/alembic` is resolved against the ini's own
+# location, not the working directory. One file, no second copy to drift.
+#
+# run.sh / run.ps1 `migrate` finds whichever of the two exists. See the
+# resolution order in those scripts.
+#
+# WARNING FOR ANY CONTAINER BUILD: `pip install -e .` installs NONE of this.
+# setuptools' PEP 660 editable backend drops data-files entirely - there is no
+# <prefix>/share/kaicalc at all after an editable install. It goes unnoticed
+# locally only because the launcher probes $ROOT/alembic.ini first and finds
+# the checkout's copy. An image built on `pip install -e .` and then stripped
+# of its source tree has no migrations. Build images with `pip install .`.
+[tool.setuptools.data-files]
+"share/kaicalc" = ["alembic.ini"]
+"share/kaicalc/alembic" = [
+    "alembic/env.py",
+    "alembic/script.py.mako",
+    "alembic/README",
+]
+"share/kaicalc/alembic/versions" = ["alembic/versions/*.py"]

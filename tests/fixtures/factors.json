@@ -56,6 +56,7 @@
     {
       "sector": "processing",
       "food_category": "dairy",
+      "destination": null,
       "metric": "co2e",
       "value_per_kg": "1.9000000000",
       "source_note": "PLACEHOLDER derived from ReFED (United States). Not a New Zealand figure.",
@@ -64,6 +65,7 @@
     {
       "sector": "processing",
       "food_category": "dairy",
+      "destination": null,
       "metric": "water",
       "value_per_kg": "1020.0000000000",
       "source_note": "PLACEHOLDER. Order-of-magnitude only.",
@@ -72,6 +74,7 @@
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "destination": null,
       "metric": "co2e",
       "value_per_kg": "0.4500000000",
       "source_note": "PLACEHOLDER derived from ReFED (United States). The Otago 2025 baseline notes that New Zealand primary-production loss rates are largely borrowed from Australian figures.",
@@ -80,6 +83,7 @@
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "destination": null,
       "metric": "water",
       "value_per_kg": "322.0000000000",
       "source_note": "PLACEHOLDER. Order-of-magnitude only.",
@@ -88,6 +92,7 @@
     {
       "sector": "consumer_hospitality",
       "food_category": "standard_mix",
+      "destination": null,
       "metric": "co2e",
       "value_per_kg": "2.6000000000",
       "source_note": "PLACEHOLDER. Applies to the standard mix, which is what a null food_category resolves to.",
@@ -96,10 +101,65 @@
     {
       "sector": "consumer_hospitality",
       "food_category": "standard_mix",
+      "destination": null,
       "metric": "water",
       "value_per_kg": "640.0000000000",
       "source_note": "PLACEHOLDER. Order-of-magnitude only.",
       "data_quality": "modelled"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "O-7: prevented waste was never produced, so no upstream burden is attributable to it. Zero is a modelling decision, not missing data - it is what makes `prevention` a 100% offset (architecture.md 4.1) and keeps the two scenarios mass-conserving.",
+      "data_quality": "definitional"
     }
   ],
   "downstream": [
@@ -204,7 +264,7 @@
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0000000000",
-      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. The default formula still applies the entry's upstream factor to a prevented line, so this is not the 100% offset docs/architecture.md §4.1 describes — see open item O-7, which measures the gap at 79% of the benefit on these factors and states the three options. Unsettled; do not quote a prevention figure from this factor set.",
+      "source_note": "Zero by construction. `prevention` is the destination for waste that did not happen, so it contributes no downstream impact. Since open item O-7 closed (contract v1.8) the upstream half is zero too — this factor set carries a `prevention` upstream row per (sector, food_category), so both terms of the line value vanish and prevention is the whole 100% offset docs/architecture.md §4.1 describes. A prevention figure from this set is quotable, subject to the placeholder-data warning every figure here carries.",
       "data_quality": null
     },
     {

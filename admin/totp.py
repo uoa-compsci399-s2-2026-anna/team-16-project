@@ -29,10 +29,35 @@ def generate_totp_secret() -> str:
     return pyotp.random_base32()
 
 
+#: What an authenticator app lists this entry under.
+#:
+#: An authenticator groups by issuer, so this string is what a person scans
+#: down their phone looking for. `Kai Commitment` alone named the
+#: organisation and not the system: the two administrators this design
+#: requires appeared as two identical entries, and a second deployment - a
+#: staging stack, or a developer's own - added two more with the same name
+#: again. The account has always been in the URI; the issuer is what is shown.
+#:
+#: `Admin` is the load-bearing word. It distinguishes the staff panel from
+#: anything else the same organisation might later ask someone to enrol
+#: against, including the public calculator if it ever grows an account.
+DEFAULT_ISSUER = "Kai Commitment Admin"
+
+
 def provisioning_uri(
-    secret: str, *, username: str, issuer: str = "Kai Commitment"
+    secret: str, *, username: str, issuer: str = DEFAULT_ISSUER
 ) -> str:
-    """Build the otpauth:// URI that an authenticator app scans."""
+    """Build the otpauth:// URI that an authenticator app scans.
+
+    The label comes out as ``issuer:username``, which authenticators render
+    as ``issuer (username)``. Both halves matter: the issuer to find the
+    right entry among everything else on the phone, the username to tell two
+    administrators of the same system apart.
+
+    A deployment running more than one instance sets ``ADMIN_TOTP_ISSUER`` to
+    distinguish them - ``Kai Commitment Admin (staging)``. Nothing in the
+    application picks that; it is a property of where it is running.
+    """
     return pyotp.TOTP(secret, interval=TOTP_INTERVAL).provisioning_uri(
         name=username, issuer_name=issuer
     )

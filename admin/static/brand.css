@@ -68,6 +68,256 @@ h1, h2, h3 {
   padding: 2rem;
 }
 
+/* ---------------------------------------------------------------------------
+   The page layout, for screens that are not gates.
+
+   /admin/security is a settings screen somebody opens on purpose, and it read
+   as an alarm while it wore `.gate`: a 32rem card marooned on a full-bleed
+   Kale field is the login gauntlet's shape, and the shape is most of what a
+   person reads before they read a word. Light ground, a page-shaped column,
+   sections that look like sections.
+   --------------------------------------------------------------------------- */
+.page {
+  /* Wider than --measure, which is the width of a login form and not of a
+     five-column table. */
+  max-width: 52rem;
+  margin: 0 auto;
+  padding: 2rem 1rem 3rem;
+}
+.page__head { margin-bottom: 1.5rem; }
+.page__who { margin: 0.25rem 0 0; }
+
+/* The half-circle, at the small end of the guidelines' single-use scale: this
+   is a page header rather than a card, so it sits beside the heading's weight
+   instead of above a centred one. */
+.page__mark {
+  width: 3rem; height: 1.5rem;
+  border-radius: 3rem 3rem 0 0;
+  background: var(--pea);
+  margin-bottom: 0.75rem;
+}
+
+.panel {
+  border: 2px solid var(--kale);
+  border-radius: var(--radius-card);
+  padding: 1.25rem 1.25rem 1.5rem;
+  margin-bottom: 1.5rem;
+}
+.panel__fact { font-weight: 700; margin: 0 0 0.75rem; }
+
+/* Actions on a list, above the list. */
+.actions { display: flex; flex-wrap: wrap; gap: 0.75rem; margin: 1rem 0; }
+
+/* A wide table scrolls inside its own container. The page itself must never
+   scroll sideways - at 320px this is five columns of dates, and the
+   alternative is a horizontal scrollbar on the whole document. */
+.table-scroll { overflow-x: auto; }
+
+.devices {
+  width: 100%;
+  border-collapse: collapse;
+  /* Below this the columns wrap into unreadable stacks; past it the container
+     above scrolls instead. */
+  min-width: 34rem;
+}
+.devices caption { text-align: left; }
+.devices th, .devices td {
+  text-align: left;
+  padding: 0.5rem 0.75rem;
+  /* Kale at a fifth, from the token rather than a fourth hex literal for the
+     same colour. The rgba() line is the fallback for a browser without
+     color-mix and is the same value; both are #003223. */
+  border-bottom: 1px solid rgba(0, 50, 35, 0.2);
+  border-bottom-color: color-mix(in srgb, var(--kale) 20%, transparent);
+  vertical-align: top;
+}
+.devices thead th {
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  border-bottom: 2px solid var(--kale);
+  white-space: nowrap;
+}
+/* The number the owner asked for is a column, not a list marker, so it is
+   scoped as a row header and sized like one. */
+.devices__num { width: 2.5rem; }
+
+/* ---------------------------------------------------------------------------
+   Dialogs. Contained over the page, never a takeover.
+   --------------------------------------------------------------------------- */
+dialog.dialog {
+  border: 2px solid var(--kale);
+  border-radius: var(--radius-card);
+  padding: 1.5rem;
+  /* Contained: it is a panel over the current page, and the page stays
+     visible around it. The viewport clamp is what keeps that true at 320px. */
+  width: min(30rem, calc(100vw - 2rem));
+  max-height: min(85vh, 44rem);
+  overflow-y: auto;
+  background: var(--white);
+  color: var(--ink);
+}
+/* The QR code needs more room than a form does. */
+dialog.dialog--wide { width: min(34rem, calc(100vw - 2rem)); }
+dialog.dialog h2 { margin-top: 0; }
+dialog.dialog::backdrop {
+  /* Kale at partial opacity: the page behind stays legible, which is the
+     difference between a dialog and a takeover. Same value twice - the first
+     is the fallback where color-mix is unsupported, and #003223 is
+     rgb(0, 50, 35).
+
+     Deliberately NOT var(--kale) or a color-mix over it. ::backdrop only
+     began inheriting custom properties from its originating element
+     recently, and where it does not, `var(--kale)` resolves to nothing and
+     the declaration is invalid *at computed-value time* - which discards the
+     fallback declaration above it as well and leaves the backdrop
+     transparent. A dropped colour here is not cosmetic: the backdrop is what
+     says the page behind the dialog is inert. */
+  background: rgba(0, 50, 35, 0.55);
+}
+/* Pinned to the foot of the dialog, never scrolled out of it.
+ *
+ * `dialog.dialog` above is the scroll container: `max-height: min(85vh, 44rem)`
+ * with `overflow-y: auto`. An action row in normal flow is therefore part of
+ * the scrolled content, and once a dialog's content is taller than that clamp
+ * the row is simply clipped out of the visible box - the submit button cannot
+ * be seen, cannot be reached, and a press where it is laid out lands on the
+ * dialog itself. That is a button that does nothing: no submission, no
+ * request, no error, nothing to read. Measured in Chrome against this panel:
+ * /admin/staff/new's confirmation is 470px of content and loses its button
+ * entirely below a 460px viewport, and /admin/security's change-password
+ * dialog is 594px and loses it below 600px - so every dialog here has the
+ * defect and the tallest one has it worst.
+ *
+ * The negative `bottom` and `margin-bottom` cancel the dialog's own 1.5rem
+ * padding so the bar sits flush with the bottom edge, and the white ground
+ * and top rule keep scrolled content from appearing to run through it. Do not
+ * return this to static flow without giving the dialog a separate scrolling
+ * body - the clamp above makes the two a pair.
+ *
+ * `flex-wrap: nowrap`, and this half was missed the first time. A wrapped bar
+ * is two button rows tall - 145px measured at a 390px width, where the dialog
+ * has 300px of content box and `Cancel` (102px) plus a primary button named
+ * after its action (186-225px) cannot share a line. A sticky bar that tall
+ * cannot be held inside the 336px scrollport a 400px viewport leaves, so the
+ * primary button lands below the dialog's own bottom edge and a press on it
+ * hits the dialog: exactly the defect this rule was written to fix, surviving
+ * in the one case nobody measured. Verified in Chromium at 390x400 - the
+ * rename dialog's submit sat at y=355..401 against a dialog ending at y=370 -
+ * and at 390x360, where the change-password dialog had it too.
+ *
+ * The buttons shrink instead (`min-width: 0`, and `flex-shrink` left at its
+ * default of 1). Their labels wrap inside them, which costs a line of text and
+ * keeps the bar a single row. Do not put `flex-wrap: wrap` back without
+ * re-measuring every dialog below a 400px viewport height. */
+.dialog__actions {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 0.75rem;
+  margin-top: 1.25rem;
+  position: sticky;
+  /* `0`, not `-1.5rem`, and the negative `margin-bottom` that went with it is
+   * gone. A negative `bottom` says in as many words "this bar may sit 1.5rem
+   * below the scroll container's bottom edge" - and `overflow-y: auto` then
+   * clips exactly that much of it. On a short dialog nothing scrolls, so the
+   * bar never reaches its sticky threshold and the overhang never appears;
+   * measured in Chromium at 390x360 the rename dialog's buttons were cut off
+   * 40% of the way down, live at the top and dead at the bottom, which is the
+   * worst version of this defect - a control that answers a press in one half
+   * and ignores it in the other.
+   *
+   * With `bottom: 0` the bar's own bottom edge is held at the scroll
+   * container's, so it is flush and whole. Its `padding-bottom` supplies the
+   * space the dialog's cancelled bottom padding used to, and the white ground
+   * still covers content scrolling underneath. */
+  bottom: 0;
+  padding: 0.75rem 0 1rem;
+  background: var(--white);
+  border-top: 2px solid var(--kale);
+}
+/* So a long label wraps inside its button rather than pushing the bar to a
+   second row. Without `min-width: 0` a flex item refuses to shrink below its
+   content's intrinsic width and the bar overflows instead. */
+.dialog__actions .button { min-width: 0; }
+
+/* The third thing the sticky bar needs, and the least obvious one.
+ *
+ * `position: sticky` pins an element relative to the scrollport, but it may
+ * never be moved outside its own **containing block** - and on /admin/security
+ * the bar's containing block is the `<form>` it sits in, not the dialog. Those
+ * dialogs open with a heading and a paragraph of explanation *above* the form,
+ * so the form's top edge starts well down the dialog; pinning the bar to the
+ * scrollport's bottom would place it above that edge, which sticky is not
+ * allowed to do, so it is left unpinned and runs off the bottom instead.
+ * Measured in Chromium at 390x360: the rename dialog's form began at y=257
+ * inside a scrollport ending at y=331, and the bar sat at y=277..377 - the
+ * lower 40% clipped, so a press answered in one half of the button and did
+ * nothing in the other.
+ *
+ * `display: contents` removes the form's own box while leaving the form itself
+ * in the DOM, so the bar's containing block becomes the dialog and pinning
+ * works. Confirmed by injecting exactly this rule against the live panel: the
+ * same bar moved to y=207..307, inside a dialog ending at y=333.
+ *
+ * Two things make it safe here rather than merely convenient. Nothing in this
+ * stylesheet styles a `form` box, so no layout is lost. And these forms carry
+ * no accessible name, so they were never `form` landmarks - there is no
+ * exposed role for `display: contents` to drop. Submission is unaffected:
+ * a control's form association is by DOM ancestry, not by layout.
+ *
+ * Scoped to a *direct child* form on purpose. brand/new_staff.html and
+ * brand/delete_staff.html put the dialog inside the form rather than the other
+ * way round, so their action bars are already direct children of the dialog
+ * and this rule correctly does not match them. */
+dialog.dialog > form { display: contents; }
+/* Radio and proof groups: a fieldset's default border and padding fight the
+   card it sits in. `.panel` is named alongside `.dialog` because the role
+   chooser on brand/new_staff.html is a fieldset on the page rather than
+   inside a dialog, and a group that styled itself one way in a dialog and
+   another on the page would read as two different controls. Nothing on
+   /admin/security is affected: every fieldset there is inside a dialog. */
+.dialog fieldset, .panel fieldset {
+  border: 0;
+  border-top: 2px solid var(--kale);
+  padding: 0.75rem 0 0;
+  margin: 1.25rem 0 0;
+}
+.dialog legend, .panel legend {
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  padding: 0 0.5rem 0 0;
+}
+.choose__option { display: flex; gap: 0.5rem; align-items: baseline; font-weight: 400; }
+.choose__option input { margin: 0; }
+/* The role chooser's options carry a sentence each rather than two words, so
+   they need room between them and a top-aligned control. */
+.panel .choose__option { align-items: start; margin-bottom: 0.9rem; }
+.panel .choose__option:last-child { margin-bottom: 0; }
+.qr { margin: 0.5rem 0; }
+
+/* Buttons. `button` already carries the Kale ground; these are the two
+   variants this screen needs. Orange is the brand's danger colour and takes
+   white text, per the guidelines' dark-ground rule. */
+.button--danger { background: var(--orange); color: var(--white); }
+.button--danger:hover { background: var(--beetroot); }
+.button--quiet {
+  background: var(--white);
+  color: var(--kale);
+  border: 2px solid var(--kale);
+}
+.button--quiet:hover { background: var(--lavender); color: var(--kale); }
+/* The enrolment dialog's Cancel is a link, because it navigates rather than
+   closing something - it has to work with no JavaScript. It still has to look
+   like the button beside it. */
+a.button {
+  display: inline-block;
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  border-radius: var(--radius);
+  padding: 0.65rem 1.4rem;
+  text-decoration: none;
+}
+a:focus-visible, button:focus-visible {
+  outline: 3px solid var(--blueberry);
+  outline-offset: 1px;
+}
+
 /* The hand-entered TOTP key. The view groups it in fours; this gives the
    groups room to read as groups rather than one 32-character run. */
 code.key {
@@ -121,6 +371,46 @@ button:hover { background: var(--blueberry); }
 /* The mandatory, non-dismissible mock-data banner (contract §2.2): Banana
    ground takes Kale text per the brand guidelines' light-ground rule. */
 .notice--warning { background: var(--banana); color: var(--kale); font-weight: bold; }
+/* A notice may hold its message in a <p>, as the login page's refusal does.
+   The browser's default 1em margin would push past the notice's own padding
+   at both ends, so the block is spaced from the inside instead. No other
+   notice in the panel holds a <p> today - the ones near a <p> in
+   compare.html and dry_run_result.html are siblings of it, not parents. */
+.notice p       { margin: 0; }
+
+/* A muted line that qualifies the notice above it rather than continuing it.
+   The login page's standing lockout rule is the one user: it sits OUTSIDE
+   the refusal notice, in .muted on the card's white ground, because it is a
+   rule about repeated attempts and not a report on this one - read at full
+   size on the Orange alarm ground it was taken for a diagnosis. Being
+   outside costs a paragraph gap it does not want (the notice's 1rem below
+   plus the <p>'s own 1em above), so the two are pulled back together:
+   adjacent margins collapse to the sum, 0.5rem, and the rule reads as
+   attached to the thing it qualifies rather than as the next section.
+
+   Deliberately its own class and not `.notice + .muted`: security.html's two
+   dialogs put an explanatory .muted paragraph directly under an error
+   notice, and the sibling selector would have quietly retuned a screen this
+   change has no business touching.
+
+   Contrast, not opacity, is what separates the two here: white on Orange is
+   already 3.3:1, and thinning it to make the rule quieter would have put the
+   secondary text near 2.5:1. Moving it to the white ground makes it quieter
+   AND more legible than it was. */
+.notice-note { margin-top: -0.5rem; }
+
+/* Page-level guidance: what this screen is for, and in what order to do
+   things. The Kale rule down the left is the same signal the four
+   guidance blocks on the sqladmin screens carry as a Tabler
+   `card-status-start` (admin/templates/brand/guidance/), so the reader
+   meets one kind of block across the whole panel rather than two. */
+.guidance {
+  border-left: 4px solid var(--kale);
+  padding-left: 1rem;
+  margin-bottom: 1.75rem;
+}
+.guidance h2 { font-size: 1.15rem; }
+.guidance p:last-child { margin-bottom: 0; }
 
 /* One-time secrets: initial passwords, recovery codes. */
 .secrets {
@@ -134,3 +424,49 @@ button:hover { background: var(--blueberry); }
 .secrets li { margin: 0.25rem 0; }
 
 .muted { font-size: 0.9rem; opacity: 0.75; }
+
+/* In the DOM, off the screen. Same declaration and same name as
+   web/css/styles.css's .sr-only, so the project has one convention for this
+   and not two.
+
+   The change-password forms carry a readonly username field in this class,
+   which is the documented way to let a password manager offer to *update* the
+   stored credential instead of saving a second one - without a username a
+   change-password form is indistinguishable from a signup. Two details are
+   load-bearing and neither is cosmetic: password managers skip
+   `type="hidden"` inputs outright, and Chromium's autofill treats an element
+   with a zero client width or height as invisible, so `display: none` and
+   `visibility: hidden` fail for the same reason. 1px plus clip is a field
+   that is measurably there and still shows nothing.
+
+   `input.sr-only` IS LOAD-BEARING, and leaving it off is what put a horizontal
+   scrollbar on the change-password dialog. `.sr-only` is one class - 0,1,0 -
+   and `input[type="text"], input[type="password"]` above is a type plus an
+   attribute - 0,1,1 - so that rule's `width: 100%`, `padding` and `border`
+   beat every one of the declarations below on an input, whichever order the
+   two rules are written in. The field is `position: absolute` inside a
+   `<dialog>`, and the UA stylesheet gives `dialog` `position: absolute`, so
+   the dialog is its containing block and `100%` resolves to the dialog's
+   *padding* box - 476px - while the field is laid out at the *content* box's
+   left edge. Its right edge therefore lands one padding-width past the
+   dialog's, and the dialog scrolls sideways by exactly that: measured in
+   Chrome, `scrollWidth` 499 against `clientWidth` 476 on `#dialog-password`,
+   identical at 2000, 1280, 768, 390, 360 and 320px wide, because both numbers
+   are fixed by the 2 x 1.5rem padding rather than by the viewport.
+
+   Repeating the class with the element beside it makes these 0,1,1 as well,
+   and they are later in the file, so they win. This is not cosmetic tidying:
+   any dialog carrying one of these fields grows the scrollbar, and the fix for
+   the password manager's username prompt puts one in five more of them. */
+.sr-only,
+input.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}

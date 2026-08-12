@@ -44,7 +44,7 @@ from admin.comparison_models import ComparisonScenario, ComparisonScenarioLine
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorUpstream, Formula,
 )
-from admin.models import AuditLog, Staff, StaffRecoveryCode
+from admin.models import AuditLog, Staff, StaffRecoveryCode, StaffTotpDevice
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
@@ -77,6 +77,18 @@ _FACTORIES = {
         lambda: StaffRecoveryCode(id=555, staff_id=1, code_hash="SECRET_CODE_HASH_VALUE"),
         identifying=["555"],
         forbidden=["SECRET_CODE_HASH_VALUE"],
+    ),
+    StaffTotpDevice: _case(
+        #: The name is the human identifier here, so the id is `forbidden`
+        #: alongside the secret - two devices are told apart by what their
+        #: owner called them, which is the whole reason the column exists.
+        lambda: StaffTotpDevice(
+            id=666, staff_id=1, name="Backup phone",
+            secret_enc=b"SECRET_TOTP_SECRET_VALUE",
+            enrolled_at=datetime(2026, 3, 4, 5, 6),
+        ),
+        identifying=["Backup phone", "enrolled"],
+        forbidden=["666", "SECRET_TOTP_SECRET_VALUE"],
     ),
     AuditLog: _case(
         lambda: AuditLog(id=1, actor="staff1", action="update",
@@ -124,14 +136,24 @@ _FACTORIES = {
         forbidden=["9007"],
     ),
     FactorUpstream: _case(
+        #: Carries a destination, which since v1.8 is the nullable column that
+        #: distinguishes `prevention`'s zero row from the general row it
+        #: overrides (O-7). This case covers the destination-bearing branch;
+        #: the *generic* branch — which is what almost every production row is
+        #: — has its own test below, because this dict holds one case per
+        #: class and one case cannot cover both.
         lambda: FactorUpstream(
             id=9008, value_per_kg=Decimal("1"),
             sector=Sector(code="up_sector", name="S"),
             food_category=FoodCategory(code="up_cat", name="C"),
+            destination=Destination(
+                code="up_dest", name="UD",
+                group=DestinationGroup(code="g1", name="G1", is_waste=False),
+            ),
             metric=Metric(code="up_metric", name="M", unit="kg"),
             factor_set=FactorSet(version_label="fs1"),
         ),
-        identifying=["up_sector", "up_cat", "up_metric"],
+        identifying=["up_sector", "up_cat", "up_dest", "up_metric"],
         forbidden=["9008"],
     ),
     FactorDownstream: _case(
@@ -261,6 +283,41 @@ def test_str_identifies_the_row(cls):
         assert token in text, f"{cls.__name__}.__str__() == {text!r} is missing {token!r}"
     for token in case["forbidden"]:
         assert token not in text, f"{cls.__name__}.__str__() == {text!r} leaks {token!r}"
+
+
+def test_upstream_generic_row_reads_as_a_row_rather_than_raising():
+    """`destination` is nullable and means 'applies to every destination for
+    this (sector, food_category, metric)' — and unlike `factor_downstream`'s
+    nullable category, **this is the case almost every row takes**. Producing
+    a kilogram of dairy costs what it costs whatever later becomes of it; the
+    non-null rows are the handful that give `prevention` its zero.
+
+    `_FACTORIES` above is keyed by class and holds one case per model, so it
+    covers the destination-bearing branch and cannot also cover this one.
+    Without this test, reducing `__str__`'s conditional to a bare
+    `f" → {self.destination.code}"` raises AttributeError on a None
+    relationship in the panel's list view and in every select box that renders
+    an upstream factor — **with the whole suite green.** The same reasoning as
+    `test_downstream_generic_row_names_the_destination_without_a_category`
+    below, which is the precedent this follows.
+    """
+    row = FactorUpstream(
+        value_per_kg=Decimal("1.9"),
+        sector=Sector(code="generic_sector", name="Generic Sector"),
+        food_category=FoodCategory(code="generic_cat", name="Generic Category"),
+        destination=None,
+        metric=Metric(code="generic_metric", name="Generic Metric", unit="kg"),
+        factor_set=FactorSet(version_label="fs7"),
+    )
+
+    text = str(row)
+
+    assert "generic_sector" in text
+    assert "generic_cat" in text
+    assert "generic_metric" in text
+    assert "object at 0x" not in text
+    #: No dangling arrow: the scope marker belongs to rows that have a scope.
+    assert "→" not in text
 
 
 def test_downstream_generic_row_names_the_destination_without_a_category():

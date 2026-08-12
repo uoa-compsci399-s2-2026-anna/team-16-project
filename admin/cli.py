@@ -3,6 +3,8 @@
 Contract: docs/interfaces.md 8.3, "Operational commands".
 
     python -m admin.cli create-staff <username> "<display name>" [--admin]
+    python -m admin.cli delete-staff <username>
+    python -m admin.cli reactivate-staff <username>
     python -m admin.cli reset-mfa <username>
     python -m admin.cli issue-password <username>
     python -m admin.cli rotate-key --old <key> --new <key>
@@ -14,6 +16,12 @@ out, re-encrypting TOTP secrets after a SECRET_KEY change, and (E-8) the way
 back in for an administrator who has blocked the address they are sitting
 behind. They are covered by tests rather than only exercised by hand for
 that reason.
+
+Every command here is a pass-through to ``admin/accounts.py``, which is the
+only module permitted to mutate ``staff`` and holds every rule. The panel
+reaches the same functions. Where the two paths differ it is stated at the
+call site and nowhere else — see ``cmd_delete_staff`` for the one exemption
+this file takes and the two guards it deliberately does not.
 """
 
 import argparse
@@ -22,12 +30,29 @@ import sys
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 
-from admin.accounts import UnknownStaffError, create_staff, issue_password, reset_mfa
+from admin.accounts import (
+    AccountStillActiveError,
+    DuplicateUsernameError,
+    InvalidDisplayNameError,
+    InvalidUsernameError,
+    LastAdministratorsError,
+    UnknownStaffError,
+    create_staff,
+    delete_staff,
+    issue_password,
+    reactivate_staff,
+    reset_mfa,
+)
 from admin.audit import write_audit
 from admin.bootstrap import ensure_bootstrap_admins
 from admin.config import load_settings
-from admin.models import Staff, StaffRole
-from admin.security import decrypt_totp_secret, encrypt_totp_secret
+from admin.models import Staff, StaffRole, StaffTotpDevice
+from admin.security import (
+    decrypt_totp_secret,
+    decrypt_unclaimed_password,
+    encrypt_totp_secret,
+    encrypt_unclaimed_password,
+)
 from admin.seed import seed_taxonomy
 from admin.taxonomy_rules import TaxonomyInvariantError
 from db.blocklist import InvalidAddressError, ip_fingerprint, unblock_ip
@@ -42,11 +67,23 @@ def cmd_create_staff(
     role: StaffRole,
     *,
     actor: str,
+    secret_key: str,
 ) -> tuple[str, str]:
-    """Create an account. Returns (username, one-time initial password).
+    """Create an account. Returns (username, its first password).
 
     Exempt from the two-administrator floor: that rule guards removal, and a
     system with no accounts has to be able to bootstrap its first one.
+
+    **A pass-through, and it has to stay one.** ``StaffAdmin.new_staff``
+    reaches the same ``create_staff``, and every rule about what a username may
+    be, what is refused, and what is written to ``audit_log`` lives there.
+    A check added here would be a check the panel does not have, and the path
+    with fewer of them is the one that ends up mattering. This function exists
+    only to keep ``main()`` from holding a service call inline, the same shape
+    ``cmd_reset_mfa`` and ``cmd_issue_password`` have.
+
+    ``create_staff`` flushes on its own behalf (it needs the primary key for
+    its audit entry), so there is no flush here.
     """
     staff, password = create_staff(
         db_session,
@@ -54,25 +91,104 @@ def cmd_create_staff(
         display_name=display_name,
         role=role,
         actor=actor,
+        secret_key=secret_key,
     )
-    db_session.flush()
     return staff.username, password
+
+
+# Both recovery commands below pass `allow_self=True` to admin/accounts.py's
+# self-recovery guard. This is the one exemption from it, and it is
+# deliberate.
+#
+# The guard refuses `issue_password`/`reset_mfa` aimed at the account
+# performing them, because from a stolen session that pair is a complete
+# account takeover rather than recovery. That reasoning needs an account
+# performing them. Here there is none: layer L3 is what layer L2 (the panel,
+# one administrator recovering another) falls back to when *every*
+# administrator is locked out and there is no second party left to be, and
+# whoever runs it already holds shell access to the server and the database
+# behind it. A guard here would refuse the last way back in while stopping an
+# attacker who, by definition, no longer needs this command for anything.
+#
+# Passed explicitly rather than left to fall out of `actor="cli"` never
+# matching a username. It would, today, for every username except `cli`
+# itself - `staff.username` is a plain VARCHAR with no reserved values, so
+# that account can exist, and the only command able to recover it would be
+# the one that refused. An exemption nobody wrote down is an accident that
+# reads like a decision; this one is a decision.
 
 
 def cmd_reset_mfa(db_session: Session, username: str) -> None:
     """Recovery layer L3: clear an enrolment from the server."""
-    reset_mfa(db_session, username)
+    reset_mfa(db_session, username, actor="cli", allow_self=True)
 
 
-def cmd_issue_password(db_session: Session, username: str) -> str:
+def cmd_issue_password(
+    db_session: Session, username: str, *, secret_key: str
+) -> str:
     """Recovery layer L3: issue a password from the server when no
-    administrator can. Returns the plaintext, shown once."""
-    return issue_password(db_session, username, actor="cli")
+    administrator can. Returns the plaintext.
+
+    ``secret_key`` is required and keyword-only, exactly as it is on
+    ``cmd_create_staff`` and for the same reason: since contract v1.16
+    ``issue_password`` *stores* the password it mints, encrypted under this
+    key, until the account claims it. A default here would be a second, wrong
+    key, and an optional one would be a path that quietly issued a password
+    with nothing stored — the asymmetry v1.16 exists to remove, reintroduced on
+    the CLI side only, which is the path that gets used when everything else
+    has failed.
+    """
+    return issue_password(
+        db_session, username, actor="cli", secret_key=secret_key, allow_self=True
+    )
 
 
-def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[int, int]:
-    """Re-encrypt every stored TOTP secret, and clear the blocklist, under a
-    new SECRET_KEY. Returns (secrets re-encrypted, blocks cleared).
+def cmd_delete_staff(db_session: Session, username: str) -> dict:
+    """Remove an account outright. Returns what was destroyed.
+
+    **A pass-through, and it has to stay one**, the same statement
+    ``cmd_create_staff`` carries from the other side. ``StaffAdmin.delete_page``
+    reaches the same ``delete_staff``, and every rule — the two-administrator
+    floor, the refusal of self-deletion, the requirement that the account be
+    deactivated first — lives there. A check added here would be a check the
+    panel does not have, and the path with fewer of them is the one that ends
+    up mattering.
+
+    ``allow_self=True``, for the reason ``cmd_reset_mfa`` and
+    ``cmd_issue_password`` already carry it and no more: layer L3 has no acting
+    session to be the second party, and whoever runs this already holds shell
+    access to the database behind it. **It is the only guard the exemption
+    reaches.** The floor and the deactivation requirement are unconditional
+    here exactly as they are in the panel — the CLI is the way back in when
+    every administrator is locked out, which is an argument for skipping the
+    *second party*, not for letting a server-side command leave the deployment
+    with one administrator.
+    """
+    return delete_staff(db_session, username, actor="cli", allow_self=True)
+
+
+def cmd_reactivate_staff(db_session: Session, username: str) -> None:
+    """Let a deactivated account log in again. Pass-through, as above."""
+    reactivate_staff(db_session, username)
+
+
+def cmd_rotate_key(
+    db_session: Session, *, old_key: str, new_key: str
+) -> tuple[int, int, int]:
+    """Re-encrypt every stored secret, and clear the blocklist, under a new
+    SECRET_KEY. Returns (TOTP secrets re-encrypted, unclaimed passwords
+    re-encrypted, blocks cleared).
+
+    **Two encrypted columns now, not one.** `staff.unclaimed_password_enc`
+    (contract v1.15) is Fernet under a key derived from SECRET_KEY exactly as
+    `staff_totp_device.secret_enc` is, only under a different HKDF `info`, so
+    it has to be carried across a rotation the same way. Left out, a rotation
+    would turn every unclaimed password into a blob that
+    `reveal_unclaimed_password` raises `TotpSecretUndecryptableError` on - a
+    500 on an administrator screen, for accounts that were mid-onboarding
+    when the key changed, with the recovery ("issue a new password") not
+    obvious from the error. Both columns are decrypted before either is
+    written, for the reason the next paragraph gives.
 
     Decrypts everything before writing anything. A partial rotation would
     leave some secrets readable only with the old key and some only with the
@@ -104,26 +220,54 @@ def cmd_rotate_key(db_session: Session, *, old_key: str, new_key: str) -> tuple[
     printed output and this docstring are the record. (Contrast
     ``cmd_unblock``, which *is* one person's decision about one row.)
     """
-    accounts = db_session.scalars(
-        select(Staff).where(Staff.mfa_secret_enc.is_not(None))
-    ).all()
+    # Every device row, not every account. Since contract v1.13 the secrets
+    # live on `staff_totp_device` and one account can hold several - a
+    # rotation that walked accounts and re-encrypted "the" secret would
+    # leave every second phone readable only with the old key, which is
+    # precisely the half-rotated state the all-at-once ordering below exists
+    # to prevent. `secret_enc` is NOT NULL, so there is no "has a secret"
+    # predicate left to write: a device row exists because a secret was
+    # minted for it. Unconfirmed devices are included deliberately - an
+    # abandoned scan that is resumed after a rotation must still decrypt.
+    devices = db_session.scalars(select(StaffTotpDevice)).all()
 
     # Decrypt all first; a failure here must leave the table untouched -
     # including the blocklist, which is why the delete below comes after this
     # comprehension rather than before it.
     plaintext = [
-        (staff, decrypt_totp_secret(staff.mfa_secret_enc, secret_key=old_key))
-        for staff in accounts
+        (device, decrypt_totp_secret(device.secret_enc, secret_key=old_key))
+        for device in devices
     ]
 
-    for staff, secret in plaintext:
-        staff.mfa_secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
+    # The unclaimed passwords, same all-at-once ordering and for the
+    # same reason: this comprehension is inside the "decrypt everything before
+    # writing anything" window, so a single undecryptable row aborts the whole
+    # rotation with nothing written rather than leaving half the table under
+    # each key.
+    unclaimed = db_session.scalars(
+        select(Staff).where(Staff.unclaimed_password_enc.is_not(None))
+    ).all()
+    unclaimed_plaintext = [
+        (
+            staff,
+            decrypt_unclaimed_password(staff.unclaimed_password_enc, secret_key=old_key),
+        )
+        for staff in unclaimed
+    ]
+
+    for device, secret in plaintext:
+        device.secret_enc = encrypt_totp_secret(secret, secret_key=new_key)
+
+    for staff, password in unclaimed_plaintext:
+        staff.unclaimed_password_enc = encrypt_unclaimed_password(
+            password, secret_key=new_key
+        )
 
     blocks = db_session.scalars(select(IpBlock)).all()
     for row in blocks:
         db_session.delete(row)
 
-    return len(plaintext), len(blocks)
+    return len(plaintext), len(unclaimed_plaintext), len(blocks)
 
 
 def cmd_unblock(db_session: Session, address: str, *, secret_key: str) -> bool:
@@ -178,10 +322,18 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """Print freshly created bootstrap credentials to standard output.
 
     Contract 8.3, "Bootstrap": the passwords are "randomly generated per
-    deployment, printed once to standard output" and cannot be recovered
-    afterwards. This is the only moment they exist in readable form, so the
-    wording has to carry that - an operator who does not realise it will
-    close the terminal.
+    deployment, printed once to standard output".
+
+    **They are no longer the only copy, and this function must not say they
+    are.** Bootstrap goes through ``create_staff``, so since contract v1.15
+    each password is also stored encrypted until that account claims it — which
+    means one lost line is recoverable *by the other administrator*, from
+    /admin/staff. Losing both is still terminal for the panel, because a reveal
+    needs a signed-in administrator and there is nobody else; the way back
+    there is ``kaicalc-admin issue-password`` on the container. The message
+    below says exactly that, rather than the flat "cannot be recovered" it used
+    to carry, which was true when it was written and would now send an operator
+    to rebuild a deployment they could have logged in to.
 
     Shared with ``admin.app``'s startup hook rather than written twice.
     Both the CLI subcommand and application start reach the same
@@ -202,14 +354,29 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
         print(f"  {username}: {password}")
     print()
     print(
-        "These passwords are shown once and cannot be recovered. Log in "
-        "with both accounts now, change both passwords, and enrol both "
+        "Log in with both accounts now, change both passwords, and enrol both "
         "authenticators. Do not send them by email."
+    )
+    print(
+        "If you lose one of these lines, the other administrator can read it "
+        "back from /admin/staff until that account changes its password. If "
+        "you lose both, nobody can log in: run `kaicalc-admin issue-password "
+        "admin` on the container."
     )
 
 
 def _build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(prog="python -m admin.cli")
+    # Both spellings reach this parser: `kaicalc-admin <command>` from an
+    # installed package (pyproject.toml's [project.scripts]) and
+    # `python -m admin.cli <command>` from a checkout. argparse's own default
+    # for prog would print "cli.py", which is neither, so name the one an
+    # operator is most likely to have - the console script, which is what
+    # `docker exec` uses - and note the other alongside it.
+    parser = argparse.ArgumentParser(
+        prog="kaicalc-admin",
+        epilog="Without the package installed, run the same commands as "
+        "`python -m admin.cli <command>` from a checkout.",
+    )
     sub = parser.add_subparsers(dest="command", required=True)
 
     create = sub.add_parser("create-staff", help="Create a staff account")
@@ -226,6 +393,18 @@ def _build_parser() -> argparse.ArgumentParser:
         "issue-password", help="Issue a random password and force a change at next login"
     )
     issue.add_argument("username")
+
+    delete = sub.add_parser(
+        "delete-staff",
+        help="Delete a deactivated account outright, with its authenticators "
+        "and recovery codes. What it did stays in the audit log",
+    )
+    delete.add_argument("username")
+
+    reactivate = sub.add_parser(
+        "reactivate-staff", help="Let a deactivated account log in again"
+    )
+    reactivate.add_argument("username")
 
     rotate = sub.add_parser("rotate-key", help="Re-encrypt TOTP secrets")
     rotate.add_argument("--old", required=True)
@@ -257,15 +436,35 @@ def main(argv: list[str] | None = None) -> int:
     with factory() as db_session:
         if args.command == "create-staff":
             role = StaffRole.admin if args.admin else StaffRole.staff
-            username, password = cmd_create_staff(
-                db_session, args.username, args.display_name, role, actor="cli"
-            )
+            try:
+                username, password = cmd_create_staff(
+                    db_session, args.username, args.display_name, role,
+                    actor="cli", secret_key=settings.secret_key,
+                )
+            except (
+                DuplicateUsernameError,
+                InvalidDisplayNameError,
+                InvalidUsernameError,
+            ) as exc:
+                # Before this, a name already in use reached the operator as
+                # an IntegrityError traceback out of the flush, which reads
+                # like the command is broken rather than like the argument is
+                # - the same reason `unblock` catches InvalidAddressError.
+                print(f"Refused: {exc}")
+                return 1
             db_session.commit()
             print(f"Created {username} ({role.value}).")
             print(f"Initial password: {password}")
             print(
                 "Hand this over in person or by phone. Do not send it by email, "
                 "and do not reuse it."
+            )
+            print(
+                "If it is lost before they use it, it is still recoverable: an "
+                "administrator can read it back from /admin/staff, under `Show "
+                "the password waiting to be collected`, until the account "
+                f"changes it. Failing that, `kaicalc-admin issue-password "
+                f"{username}` mints another."
             )
         elif args.command == "reset-mfa":
             cmd_reset_mfa(db_session, args.username)
@@ -276,7 +475,9 @@ def main(argv: list[str] | None = None) -> int:
             )
         elif args.command == "issue-password":
             try:
-                password = cmd_issue_password(db_session, args.username)
+                password = cmd_issue_password(
+                    db_session, args.username, secret_key=settings.secret_key
+                )
             except UnknownStaffError:
                 print(f"No such account: {args.username}")
                 return 1
@@ -284,12 +485,60 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Issued a new password for {args.username}.")
             print(f"  Password: {password}")
             print("  They must change it at their next login. Hand it over in person.")
+            print(
+                "  If this line is lost, the password is not: an administrator "
+                "can read it back from /admin/staff, under `Show the password "
+                "waiting to be collected`, until the account changes it."
+            )
+        elif args.command == "delete-staff":
+            try:
+                removed = cmd_delete_staff(db_session, args.username)
+            except UnknownStaffError:
+                print(f"No such account: {args.username}")
+                return 1
+            except (AccountStillActiveError, LastAdministratorsError) as exc:
+                # Refused rather than crashed, the same treatment
+                # `create-staff` gives a name already in use: an operator
+                # reaching for this is usually tidying up, and a traceback out
+                # of a service function reads like the command is broken
+                # rather than like the account is not ready to be removed.
+                print(f"Refused: {exc}")
+                return 1
+            db_session.commit()
+            print(f"Deleted {removed['username']} ({removed['role']}).")
+            print(
+                f"  Destroyed {removed['totp_devices_destroyed']} "
+                f"authenticator(s) and {removed['recovery_codes_destroyed']} "
+                "recovery code(s) with it."
+            )
+            print(
+                "  Everything the account did stays in the audit log and still "
+                "names it. The username is now free to reuse."
+            )
+        elif args.command == "reactivate-staff":
+            try:
+                cmd_reactivate_staff(db_session, args.username)
+            except UnknownStaffError:
+                print(f"No such account: {args.username}")
+                return 1
+            db_session.commit()
+            print(
+                f"Reactivated {args.username}. Their password and authenticator "
+                "are unchanged, so they can log in as before."
+            )
         elif args.command == "rotate-key":
-            count, cleared = cmd_rotate_key(
+            count, unclaimed_count, cleared = cmd_rotate_key(
                 db_session, old_key=args.old, new_key=args.new
             )
             db_session.commit()
             print(f"Re-encrypted {count} TOTP secret(s).")
+            if unclaimed_count:
+                print(
+                    f"Re-encrypted {unclaimed_count} unclaimed password(s). "
+                    "These belong to accounts that have been given a password "
+                    "and have not yet set one of their own; they stay readable "
+                    "from /admin/staff/unclaimed-password."
+                )
             if cleared:
                 print(
                     f"Cleared {cleared} IP block(s). A block is stored as an "
@@ -321,7 +570,9 @@ def main(argv: list[str] | None = None) -> int:
             else:
                 print(f"No block found for {args.address}. Nothing to do.")
         elif args.command == "bootstrap":
-            created = ensure_bootstrap_admins(db_session)
+            created = ensure_bootstrap_admins(
+                db_session, secret_key=settings.secret_key
+            )
             db_session.commit()
             if not created:
                 print("Administrator accounts already exist. Nothing to do.")

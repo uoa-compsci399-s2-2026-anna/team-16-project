@@ -123,6 +123,36 @@ def test_a_proof_is_still_valid_just_inside_the_window():
 # --- the salt, which is what keeps the two credentials apart ----------------
 
 
+def test_the_salt_alone_refuses_a_default_salt_signature():
+    """**The salt, isolated from every other check.**
+
+    The cookie-replay test below signs a *session-shaped* payload, so it is
+    refused twice over — wrong salt, and no `sub` key. That makes it pass even
+    with the salt removed, which a mutation confirmed: dropping
+    `salt=_PROOF_SALT` left it green. Defence in depth is worth having, but a
+    test that cannot fail for the reason it names is not pinning that reason.
+
+    So this one signs the **proof's own payload**, byte for byte, with
+    itsdangerous' default salt — the salt `SessionMiddleware` uses. The only
+    thing that can refuse it is the salt.
+    """
+    from base64 import b64encode
+    import json
+
+    payload = b64encode(json.dumps({"sub": "alice"}).encode("utf-8"))
+    default_salt = itsdangerous.TimestampSigner(SECRET).sign(payload).decode("ascii")
+
+    assert verify_staff_proof(default_salt, secret_key=SECRET) is None
+    # And the same payload under the right salt verifies, so the refusal above
+    # is about the salt and not about the payload being malformed.
+    pinned = (
+        itsdangerous.TimestampSigner(SECRET, salt=b"kaicalc-staff-dry-run-proof")
+        .sign(payload)
+        .decode("ascii")
+    )
+    assert verify_staff_proof(pinned, secret_key=SECRET) == "alice"
+
+
 def test_a_session_cookie_cannot_be_replayed_as_a_proof():
     """**The load-bearing security property.** The panel's session cookie and a
     dry-run proof are both signed under the one SECRET_KEY the deployment

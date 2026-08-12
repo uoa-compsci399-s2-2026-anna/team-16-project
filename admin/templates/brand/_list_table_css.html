@@ -1,7 +1,10 @@
-{# Makes a wide list table reachable. Included by brand/model_list.html, which
-   is AuditedModelView's `list_template` - and which brand/staff_list.html and
-   brand/ip_block_list.html extend - so this covers every ModelView list page
-   in the panel and no other screen.
+{# Makes a wide list table reachable. Included by brand/list_table.html, which
+   is the root of the brand list-template chain - AuditLogAdmin's
+   `list_template` directly, and AuditedModelView's through
+   brand/model_list.html, which brand/staff_list.html and
+   brand/ip_block_list.html extend in turn. So this reaches all seventeen
+   ModelView list pages in the panel and no other screen; that is asserted,
+   page by page, in tests/admin/test_list_table.py.
 
    THE DEFECT. sqladmin already wraps its list table in
    `<div class="table-responsive">`, and Tabler already gives that

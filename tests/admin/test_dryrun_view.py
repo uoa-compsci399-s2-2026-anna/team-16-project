@@ -24,7 +24,7 @@ def session(_committed_session):
 @dataclass
 class _Call:
     body: dict
-    cookies: dict
+    actor: str
     factor_set_version: str | None
 
 
@@ -49,10 +49,10 @@ class FakeCalculateClient:
         #: check one failing scenario does not take the others with it.
         self.refuse_on_call: int | None = None
 
-    def dry_run(self, request_body: dict, *, cookies: dict,
+    def dry_run(self, request_body: dict, *, actor: str,
                 factor_set_version: str | None) -> dict:
         index = len(self.calls)
-        self.calls.append(_Call(request_body, cookies, factor_set_version))
+        self.calls.append(_Call(request_body, actor, factor_set_version))
         if self.unavailable:
             raise CalculateUnavailable("the calculation service is not reachable")
         if self.refuse is not None or self.refuse_on_call == index:

@@ -30,6 +30,7 @@ from api.router import router
 from db.blocklist import InvalidAddressError, is_blocked
 from db.detection import client_ip
 from db.session import create_session_factory
+from db.staff_proof import STAFF_PROOF_HEADER, verify_staff_proof
 
 load_dotenv()
 
@@ -116,6 +117,34 @@ def _blocklist_check(request: Request) -> bool:
     return is_blocked(request.state.db, ip, secret_key=request.app.state.secret_key)
 
 
+def _default_staff_authenticator(request: Request) -> str:
+    """§6.2's staff gate on the dry-run path. Contract §8.2, open item O-9.
+
+    Raises rather than returning a falsy value on refusal: ``router.py``'s
+    ``_authenticate_dry_run`` treats any exception, and any non-string or empty
+    return, as `UNAUTHORIZED` - so both shapes are already safe. Raising is the
+    clearer of the two here, because there is no username to return and an
+    empty string is not one.
+
+    The secret comes off ``app.state``, which ``create_app`` has already refused
+    to start without. It must be the *same* ``SECRET_KEY`` the panel signs with,
+    which is the deployment fact ``docker/compose.yaml``'s shared ``secret``
+    volume exists to guarantee - a second value here means every proof fails to
+    verify and every dry run 401s, which is O-9 again wearing a different cause.
+    """
+    username = verify_staff_proof(
+        request.headers.get(STAFF_PROOF_HEADER),
+        secret_key=request.app.state.secret_key,
+    )
+    if username is None:
+        raise StaffProofRejected("no valid staff proof on the request")
+    return username
+
+
+class StaffProofRejected(Exception):
+    """No usable ``X-Staff-Proof``. Mapped to `UNAUTHORIZED` (401) by the router."""
+
+
 def create_app(
     *,
     database_url: str | None = None,
@@ -144,7 +173,28 @@ def create_app(
     app = FastAPI(title="Kai Commitment Impact Calculator")
     app.state.session_factory = create_session_factory(database_url)
     app.state.engine_adapter = engine_adapter or DefaultEngineAdapter()
-    app.state.staff_authenticator = staff_authenticator
+    #: §6.2's "requires an authenticated staff session", and O-9's close.
+    #:
+    #: **``staff_authenticator=None`` here means "use the default", not "no
+    #: authenticator"** - the same correction ``blocklist_check`` below already
+    #: carries, arrived at the same way. It meant the latter, and nothing in any
+    #: deployment ever passed one: the only callers that did were two test
+    #: files. So `/admin/try` answered `UNAUTHORIZED` on every dry run in every
+    #: real stack while rendering it inside a 200 page, and §8.2 was a feature
+    #: that had never worked outside a test.
+    #:
+    #: The default verifies `db/staff_proof.py`'s header - a short-lived signed
+    #: assertion the panel mints once per call, after its own authentication has
+    #: passed. Read that module for why the panel's session cookie is
+    #: deliberately not what is checked here.
+    #:
+    #: Assigning ``app.state.staff_authenticator = None`` *after* construction
+    #: still disables it, exactly as for the blocklist: a deliberate act on a
+    #: built app is a thing a test may want and a deployment may not.
+    app.state.staff_authenticator = (
+        _default_staff_authenticator if staff_authenticator is None
+        else staff_authenticator
+    )
     app.state.secret_key = secret_key
     #: One deployment fact, one setting: the same ``PROTECTION_TRUSTED_PROXY``
     #: the panel reads (``admin/config.py``). False by default, because

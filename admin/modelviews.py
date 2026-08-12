@@ -486,6 +486,19 @@ class AuditLogAdmin(AdministratorOnly, ModelView, model=AuditLog):
     icon = "fa-solid fa-clipboard-list"
     category = "Administration"
 
+    #: The one list screen in the panel that is not an ``AuditedModelView``,
+    #: and so the one that inherits none of the brand list templates by
+    #: default. Pointed at ``brand/list_table.html`` — the base of that chain,
+    #: which carries the scrollport rules and nothing else — rather than at
+    #: ``brand/model_list.html``, which would additionally require this class
+    #: to declare ``guidance_blocks`` it has no use for.
+    #:
+    #: Without this line /admin/audit-log keeps sqladmin's own template, whose
+    #: table wrapper has no height: five columns of timestamps, actors and
+    #: table names at 50 rows a page, clipped at the right with the scrollbar
+    #: drawn 2300px below the fold. See brand/_list_table_css.html.
+    list_template = "brand/list_table.html"
+
     # Contract §8.1 hard-codes all three. The audit trail is the record of
     # who changed what; a trail that can be edited records nothing.
     can_create = False

@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en-NZ">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="description" content="Aggregated and privacy-protected patterns among Kai Commitment calculator entries.">
+  <title>Calculator statistics | Kai Commitment</title>
+  <link rel="stylesheet" href="./css/styles.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.7/dist/chart.umd.min.js" defer></script>
+</head>
+<body>
+  <a class="skip-link" href="#main">Skip to content</a>
+  <header class="site-header"><nav class="nav" aria-label="Main navigation"><a class="brand" href="./index.html" aria-label="Kai Commitment home"><img src="./assets/kai-commitment-logo-white.webp" alt="Kai Commitment — leading action on food waste" width="300" height="54"></a><button class="menu-button" data-menu-button aria-expanded="false" aria-controls="nav-links">Menu</button><div class="nav-links" id="nav-links" data-nav-links><a href="./index.html">Home</a><a aria-current="page" href="./stats.html">Statistics</a><a href="./methodology.html">Methodology</a><a href="./factors.html">Open factors</a></div></nav></header>
+  <main id="main" class="container">
+    <header class="page-head"><p class="eyebrow">Calculator usage</p><h1>What calculator entries show</h1><p>These are aggregated entries from people using this calculator. They are a self-selected sample and do not represent the distribution of food waste across New Zealand.</p></header>
+    <div data-status class="loading">Loading statistics…</div>
+    <section class="dashboard-summary" aria-label="Statistics summary"><article class="summary-card"><span>Calculator uses</span><strong data-total>—</strong></article><article class="summary-card"><span>Generated at</span><strong data-generated>—</strong></article><article class="summary-card"><span>Suppression threshold</span><strong data-threshold>—</strong></article></section>
+    <section class="grid chart-grid-3" aria-label="Calculator usage charts">
+      <article class="card chart-card"><h2>Destination</h2><p>Share of calculator entries by reported destination.</p><div class="chart-wrap"><canvas id="destination-chart" aria-label="Doughnut chart of destination shares" role="img"></canvas></div></article>
+      <article class="card chart-card"><h2>Supply-chain sector</h2><p>Share of calculator entries grouped by business sector.</p><div class="chart-wrap"><canvas id="sector-chart" aria-label="Bar chart of supply-chain sector shares" role="img"></canvas></div></article>
+      <article class="card chart-card"><h2>Food category</h2><p>Share of calculator entries grouped by food category.</p><div class="chart-wrap"><canvas id="food-chart" aria-label="Bar chart of food category shares" role="img"></canvas></div></article>
+    </section>
+    <section class="section"><h2>Destination detail</h2><div class="table-wrap"><table><thead><tr><th>Destination</th><th>Calculator entries</th><th>Share</th></tr></thead><tbody data-destination-list></tbody></table></div><div class="callout"><strong>Privacy protection:</strong> categories with fewer entries than the suppression threshold are combined into “Other” by the server before data reaches this page.</div></section>
+  </main>
+  <footer class="site-footer"><div class="container footer-grid"><div><img class="footer-logo" src="./assets/kai-commitment-logo-white.webp" alt="Kai Commitment — leading action on food waste" width="300" height="54"><p>These figures describe calculator use, not nationwide food waste.</p></div><div><h3>What we record</h3><p>Sector, food category, destinations and quantities are stored for aggregate statistics. No identifying person or company information is stored.</p></div></div></footer>
+  <script type="module" src="./js/stats.js"></script>
+</body>
+</html>
+

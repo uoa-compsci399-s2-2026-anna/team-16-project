@@ -117,6 +117,29 @@ def test_a_destination_covered_only_by_the_generic_downstream_row_is_present(see
     assert "levy_only" in codes(get_taxonomy(seeded_session).destinations)
 
 
+def test_a_food_category_covered_only_by_a_downstream_row_is_present(seeded_session):
+    """The two factor tables are read for food categories as well.
+
+    A category with a downstream factor and no upstream one prices at zero
+    upstream and non-zero downstream, which is a real figure — §2.2's lookup
+    order treats a missing upstream row as zero, not as an error. Reading
+    `factor_upstream` alone would hide a category the set can genuinely price.
+    """
+    seeded_session.add(FoodCategory(code="bakery_grains", name="Bakery", sort_order=40))
+    seeded_session.flush()
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published_id(seeded_session),
+            destination_id=row_id(seeded_session, Destination, "landfill"),
+            food_category_id=row_id(seeded_session, FoodCategory, "bakery_grains"),
+            metric_id=row_id(seeded_session, Metric, "co2e"),
+            value_per_kg=Decimal("1.10"),
+        )
+    )
+    seeded_session.flush()
+    assert "bakery_grains" in codes(get_taxonomy(seeded_session).food_categories)
+
+
 def test_a_destination_covered_only_by_an_upstream_row_is_present(seeded_session):
     """`factor_upstream.destination_id` became nullable in O-7 (v1.8) and a
     non-NULL value is a per-destination override. §2.2 states the column is not

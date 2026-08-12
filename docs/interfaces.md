@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.19 draft)"
+date: "2026-08-12 (v1.20 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,13 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.20 — 2026-08-12 (raised by the repository owner; affects C and D)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§7.3a: the results export carries the results.** `downloadResults` produced `food-waste-impact-results.txt` containing the total mass, each entry, its destinations and quantities, the factor version and the placeholder notice — and **not one output figure.** No greenhouse gas, no methane, no water, no cost. The file name says "results" and the file is the one somebody attaches to an email, so this is not a missing nicety: it is a deliverable that names itself after the thing it omits. It now carries the impact summary (every metric in `totals.current.metrics` except `mass`, at that metric's own `display_precision`, labelled with the `unit` that travelled with the figure), the tangible equivalents as the engine worded them, each entry's own metric totals, each destination's `by_destination[].value`, and — when a comparison was run — `totals.net_benefit` per metric. `mass` stays out of the impact list for the reason `summaryCards` keeps it out and is the "Total food waste" line instead. Every figure is read from the response; nothing is summed, differenced or re-scaled on the way to the file (§7.6.1) | §7.3a, §7.6.2 |
+| 2 | **New export `buildResultsReport(state)`, and `downloadResults` becomes the two lines that touch the browser.** The report is worth asserting on and a `Blob` is not. `tests/web/test_results_export.py` is the first test in this repository that executes a line of `web/js/`: it runs the real module under Node against `tests/fixtures/calculate_response.json` and asserts the figures — `4,449.0 kg CO2e`, `3,468.0` against landfill — appear as whole anchored lines. Node is the runner only and does not enter the stack (`architecture.md` §3): there is still no build step, no `package.json` and nothing for a browser to load | §7.3a |
 
 ### v1.19 — 2026-08-12 (adds an external benchmark; affects A, and reserves a code prefix for everyone)
 
@@ -2170,11 +2177,27 @@ Module-private and worth knowing: `validateCurrentStep()` returns a display stri
  *  @returns {string} HTML */
 export function renderResults(state);
 
-/** Builds a plain-text report and triggers a Blob download as
- *  'food-waste-impact-results.txt'. Carries the placeholder notice only when
- *  factor_set.is_mock, and always the factor version (§7.6.2). */
+/** The plain-text report, returned rather than downloaded.
+ *
+ *  Carries, in this order: the total mass in kg and tonnes; an impact summary
+ *  holding every metric in totals.current.metrics except `mass`, each at its
+ *  own display_precision and labelled with the unit that travelled with the
+ *  figure; the tangible equivalents as `label` — the sentence the engine
+ *  interpolated — copied verbatim; the improvement comparison read from
+ *  totals.net_benefit, when one was run; then per entry, the inputs the user
+ *  typed, that entry's own metric totals and each destination's
+ *  by_destination[].value; then the factor version, the placeholder notice
+ *  when and only when factor_set.is_mock (§7.6.2), and the percentage-waste
+ *  limitation. No figure is summed, differenced or re-scaled here (§7.6.1).
+ *  @returns {string} */
+export function buildResultsReport(state);
+
+/** Wraps buildResultsReport in a Blob and triggers the download as
+ *  'food-waste-impact-results.txt'. */
 export function downloadResults(state);
 ```
+
+> **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
 
 > **The client-side aggregation layer is gone.** This module summed engine-computed metric totals, equivalence values and destination rows across entries; the two largest numbers on the page were numbers the engine never produced. It now reads `totals` and `net_benefit` from §6.2, and the destination tab is rendered per entry per the ruling there. `aggregateResults` and `differenceData` no longer exist.
 >

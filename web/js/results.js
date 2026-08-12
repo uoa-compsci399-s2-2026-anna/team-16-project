@@ -200,14 +200,99 @@ function downloadButton() {
   return '<button class="button button-primary" type="button" data-action="download-results">Download results</button>'
 }
 
-export function downloadResults(state) {
+// One metric, worded the way the summary card words it: the taxonomy's name, the figure at
+// the metric's own `display_precision`, and the unit that travelled with the figure. Nothing
+// is recomputed and nothing is re-scaled — §7.6.1 leaves no layer that could.
+function metricText(code, cell, taxonomy) {
+  const definition = findByCode(taxonomy.metrics, code)
+  const precision = Number(cell.display_precision ?? definition?.display_precision ?? 2)
+  return `${definition?.name || code}: ${formatNumber(number(cell.total), precision)} ${metricUnit(cell, definition)}`.trimEnd()
+}
+
+// The response's own key order, which §4.1 already sorted by `sort_order`. `mass` is held
+// out for the reason `summaryCards` holds it out — it is the "Total food waste" line above,
+// printed twice otherwise — and that single-code exclusion is not the hard-coded list
+// §7.6.5 forbids: every other metric the response carries is printed, whatever it is.
+const metricLines = (scenario, taxonomy, indent) => Object.entries(scenario?.metrics || {})
+  .filter(([code]) => code !== MASS_METRIC)
+  .map(([code, cell]) => `${indent}${metricText(code, cell, taxonomy)}`)
+
+// The destination breakdown table, in text: one line per destination of one entry, carrying
+// that destination's mass and every metric the engine computed against it.
+const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario, taxonomy).map(row => {
+  const figures = Object.entries(row.metrics)
+    .filter(([code]) => code !== MASS_METRIC)
+    .map(([code, cell]) => metricText(code, cell, taxonomy))
+  return `  - ${row.label} (${formatNumber(row.kilograms, 3)} kg): ${figures.join('; ') || 'no impact figures were returned'}`
+})
+
+// The comparison screen, in text, and only when one was run. `net_benefit` is read from the
+// response — §6.2 computes `current − alternative` per metric and the browser must not
+// subtract the two itself (§7.6.1), which is the defect `improvement.js` already had removed
+// from the screen and which this file must not reintroduce on its way to a file.
+function comparisonLines(state) {
+  const totals = state.improvementResult?.totals
+  if (!totals?.alternative) return []
+  const netBenefit = totals.net_benefit || {}
+  const lines = []
+  for (const [code, cell] of Object.entries(totals.current?.metrics || {})) {
+    if (code === MASS_METRIC) continue
+    const improved = totals.alternative?.metrics?.[code]
+    if (!improved) continue
+    const definition = findByCode(state.taxonomy.metrics, code)
+    const precision = Number(cell.display_precision ?? definition?.display_precision ?? 2)
+    const unit = metricUnit(cell, definition)
+    const difference = number(netBenefit[code])
+    // The screen's own wording, from `changeCopy`: a positive `net_benefit` is a saving.
+    const change = !Number.isFinite(difference)
+      ? 'Not available'
+      : Math.abs(difference) < 1e-9
+        ? 'no change'
+        : `${formatNumber(Math.abs(difference), precision)} ${unit} ${difference > 0 ? 'saved' : 'increase'}`.trimEnd()
+    const figure = value => `${formatNumber(number(value), precision)} ${unit}`.trimEnd()
+    lines.push(`  - ${definition?.name || code}: ${figure(cell.total)} → ${figure(improved.total)} (${change})`)
+  }
+  if (!lines.length) return []
+  return ['', 'Improved scenario (Current → Improved)', ...lines]
+}
+
+/**
+ * The plain-text report, built and returned rather than downloaded.
+ *
+ * Split out of `downloadResults` because it is the half worth asserting on: the export was
+ * shipping the total mass, the entries and the factor version and **not one output figure**
+ * — no greenhouse gas, no methane, no water, no cost — under the file name
+ * `food-waste-impact-results.txt`. A results export with no results is the file somebody
+ * attaches to an email, and every number in it now comes from `state.result`, which is the
+ * engine's, never from arithmetic performed here (§7.6.1).
+ *
+ * @param {object} state
+ * @returns {string}
+ */
+export function buildResultsReport(state) {
   const totals = state.result?.totals || {}
   const totalKg = number(totals.total_kg)
-  const entryLines = (state.result?.entry_results || []).flatMap(({ entry }, index) => {
+  const summary = metricLines(totals.current, state.taxonomy, '  - ')
+  // §3: `label` is `label_template` with the value already interpolated and formatted by the
+  // engine. It is copied verbatim, the same as on screen — nothing here re-derives a figure
+  // or rewords the client's approved sentence.
+  const equivalents = (totals.current?.equivalences || []).map(row => `  - ${row.label}`)
+  const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
     const sector = findByCode(state.taxonomy.sectors, entry.sector)
     const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)
     const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => `  - ${findByCode(state.taxonomy.destinations, line.destination)?.name || line.destination}: ${typed(line.qtyInput).toFixed(2)} ${entry.totalUnit}`)
-    return [`Entry ${index + 1}: ${sector?.name || entry.sector}`, `Food type: ${food?.name || 'Not provided'}`, `Waste amount: ${typed(entry.totalAmount).toFixed(2)} ${entry.totalUnit}`, 'Destinations:', ...destinations, '']
+    const scenario = response?.current || {}
+    const impact = metricLines(scenario, state.taxonomy, '  - ')
+    const byDestination = destinationImpactLines(scenario, state.taxonomy)
+    return [
+      `Entry ${index + 1}: ${sector?.name || entry.sector}`,
+      `Food type: ${food?.name || 'Not provided'}`,
+      `Waste amount: ${typed(entry.totalAmount).toFixed(2)} ${entry.totalUnit}`,
+      'Destinations:', ...destinations,
+      ...(impact.length ? ['Impact for this entry:', ...impact] : []),
+      ...(byDestination.length ? ['Impact by destination:', ...byDestination] : []),
+      '',
+    ]
   })
   // §7.6.2: the placeholder notice is conditional on `is_mock`, on **every** export, and it
   // was appended unconditionally. That reads as correct while every factor set is mock and
@@ -215,8 +300,28 @@ export function downloadResults(state) {
   // data is the more damaging half of the same bug. The factor version replaces it as the
   // line that says which numbers these are, so a real export is not left saying nothing.
   const notice = state.result?.factor_set?.is_mock ? [DEMONSTRATION_NOTICE] : []
-  const report = ['Food Waste Impact Calculator — Results', '', `Total food waste: ${formatNumber(totalKg, 2)} kg`, `Total food waste: ${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes`, '', ...entryLines, `Factor version: ${state.result?.factor_set?.version_label || 'Not supplied'}`, ...notice, 'Percentage waste is not available because total food handled data is required.'].join('\n')
-  const url = URL.createObjectURL(new Blob([report], { type: 'text/plain;charset=utf-8' }))
+  return [
+    'Food Waste Impact Calculator — Results',
+    '',
+    `Total food waste: ${formatNumber(totalKg, 2)} kg`,
+    `Total food waste: ${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes`,
+    '',
+    'Impact summary',
+    ...(summary.length ? summary : ['  - No impact metrics were returned.']),
+    '',
+    'Tangible equivalents',
+    ...(equivalents.length ? equivalents : ['  - Tangible equivalents are available once approved conversion factors are supplied.']),
+    ...comparisonLines(state),
+    '',
+    ...entryLines,
+    `Factor version: ${state.result?.factor_set?.version_label || 'Not supplied'}`,
+    ...notice,
+    'Percentage waste is not available because total food handled data is required.',
+  ].join('\n')
+}
+
+export function downloadResults(state) {
+  const url = URL.createObjectURL(new Blob([buildResultsReport(state)], { type: 'text/plain;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
   link.download = 'food-waste-impact-results.txt'

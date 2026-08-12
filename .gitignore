@@ -5,6 +5,17 @@
 # Local Chinese drafts - the English .md files are canonical in this repo
 *.zh.md
 
+# Course submission material: pitch slides, demo recordings, and the notes
+# kept beside them. The deliverable is source and documentation; none of this
+# is either, and the pitch deck alone is 11 MB. Both of these reached a commit
+# on 2026-08-11 by being in the working tree when one was made, which is the
+# whole reason this rule exists rather than a reminder to be careful.
+*.pptx
+*.ppt
+*.mp4
+*.mov
+录像*
+
 # Python
 __pycache__/
 *.py[cod]

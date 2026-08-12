@@ -39,7 +39,11 @@ import pytest
 from admin.cli import UNCLAIMED_PASSWORD_SCREEN, main, report_bootstrap_result
 from tests.admin.conftest import _cleanup_staff_named
 
-pytestmark = [pytest.mark.db, pytest.mark.asyncio]
+#: `db` for the whole file; `asyncio` per test rather than file-wide. This file
+#: mixes async HTTP tests with synchronous ones that only capture stdout, and
+#: pytest-asyncio warns on every synchronous test carrying the mark. pytest.ini
+#: sets `asyncio_mode = strict`, so each `async def` below needs it explicitly.
+pytestmark = [pytest.mark.db]
 
 #: Repository root: tests/admin/test_operator_guidance.py -> parents[2].
 _ROOT = Path(__file__).resolve().parents[2]
@@ -109,6 +113,7 @@ def _cli_paths_are_not_empty(paths: set[str]) -> None:
 # --- the paths resolve ------------------------------------------------------
 
 
+@pytest.mark.asyncio
 async def test_the_screen_the_cli_names_is_one_the_panel_serves(admin_client):
     """The single load-bearing case, spelled out rather than parametrised.
 
@@ -130,6 +135,7 @@ async def test_the_screen_the_cli_names_is_one_the_panel_serves(admin_client):
     )
 
 
+@pytest.mark.asyncio
 async def test_the_screen_the_cli_names_carries_the_action_it_promises(
     admin_client,
 ):
@@ -146,6 +152,7 @@ async def test_the_screen_the_cli_names_carries_the_action_it_promises(
     assert "Show the password waiting to be collected" in flat
 
 
+@pytest.mark.asyncio
 async def test_every_admin_path_the_cli_names_is_served(admin_client):
     """The whole class, not just the one that was wrong.
 
@@ -168,6 +175,7 @@ async def test_every_admin_path_the_cli_names_is_served(admin_client):
     )
 
 
+@pytest.mark.asyncio
 async def test_every_admin_path_init_sh_names_is_served(admin_client):
     """``docker/init.sh``'s closing block, which is what an operator reads in
     `docker compose logs migrate` — for most deployments the *first* thing

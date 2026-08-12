@@ -42,7 +42,7 @@ Recommended mock source: ReFED's published department-level factors. The magnitu
 
 | Layer | Choice | Rationale |
 | --- | --- | --- |
-| Front end | Plain HTML, CSS and JavaScript (ES modules); Chart.js for charts | No React experience on the team; interaction complexity here is manageable; no build step |
+| Front end | Plain HTML, CSS and JavaScript (ES modules). Chart.js is **selected but not yet present** — see the note below | No React experience on the team; interaction complexity here is manageable; no build step |
 | Back end | Python 3.11+ / **FastAPI** | An existing in-house framework can be ported; single-language stack |
 | ORM | SQLAlchemy 2.x with Alembic migrations | Do not hand-roll a database abstraction layer |
 | Database | MySQL 8 (or PostgreSQL) | Chosen for concurrent writes and operability, not for capacity |
@@ -247,15 +247,21 @@ No framework, but structure is still required: **a single state object plus rend
 
 ```
 web/js/
-  api.js         fetch wrapper and unified error handling
-  state.js       single state object with subscribe/setState
-  units.js       volume-to-kilogram conversion
-  calculator.js  calculator page
-  results.js     results rendering
-  stats.js       statistics page
-  charts.js      Chart.js wrapper
-  news.js        WordPress news feed
+  api.js         fetch wrapper and unified error handling     built
+  state.js       single state object with subscribe/setState  built
+  units.js       volume-to-kilogram conversion                built
+  calculator.js  calculator page                              built
+  results.js     results rendering                            built
+  view.js        escaping and formatting primitives           built
+  main.js        calculator page entry point                  built
+  methodology.js documentation page                           built
+  improvement.js improvement-scenario controls                built
+  stats.js       statistics page                              not built (D)
+  charts.js      Chart.js wrapper                             not built (D)
+  news.js        WordPress news feed                          not built (D)
 ```
+
+**Chart.js is selected, not vendored.** No file under `web/` imports it — there is no `<script src>`, no `new Chart(` and no copy of the library in the tree. `calculator.js` draws its one graphic as hand-written inline SVG and `results.js` renders bars as CSS-width `<span>` elements, so nothing built so far has needed a charting library. Chart.js is the library the statistics page will use when D builds it, and `interfaces.md` §7.6 rule 7 requires it to be **self-hosted** under `web/assets/` rather than loaded from a CDN. `interfaces.md` §7.4 specifies the wrapper's interface in advance; that section is a specification, not a description.
 
 ## 7.3 Responsive Design
 

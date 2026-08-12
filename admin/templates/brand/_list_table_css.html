@@ -50,7 +50,11 @@
 
      `max(70vh, 16rem)`: 70vh keeps the box inside the viewport, and the 16rem
      floor keeps roughly five rows and a scrollbar usable on a short landscape
-     phone, where 70vh is 250px or less.
+     phone, where 70vh is 250px or less. The two disagree only below a 366px
+     viewport, and the floor only outgrows the viewport below 257px of it -
+     measured at 1280x240, port 256 against a 240px viewport, and correct at
+     every height from 300px up. A browser window shorter than one dialog is
+     not a case worth a third term in the expression.
 
      A table shorter than the clamp is untouched - `max-height` is a ceiling,
      not a height - so /admin/metric and /admin/formula still end where their

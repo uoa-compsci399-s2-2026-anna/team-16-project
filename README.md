@@ -67,10 +67,11 @@ What runs today:
   draft/publish/rollback lifecycle, editable formulas, the audit log, staff accounts with
   TOTP two-factor authentication, and an IP blocklist.
 
-The public statistics page and its charts are not built. Two known defects in the
-deployed system are recorded as open items **O-9** (`/admin/try`, the staff dry-run view,
-answers `UNAUTHORIZED` in a deployed stack) and **O-6** (the seeded bucket-to-kilogram
-conversions are placeholders too). See `docs/architecture.md` §10 for the full list.
+The public statistics page and its charts are not built. One known defect in the deployed
+system is recorded as open item **O-6** (the seeded bucket-to-kilogram conversions are
+placeholders too). **O-9** — `/admin/try`, the staff dry-run view, answering
+`UNAUTHORIZED` in a deployed stack — was closed on 2026-08-12. See
+`docs/architecture.md` §10 for the full list.
 
 ---
 

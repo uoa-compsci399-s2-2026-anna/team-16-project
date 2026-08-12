@@ -620,7 +620,7 @@ Roughly 150 translatable strings exist in `web/js` today, concentrated in `calcu
 
 ### The admin panel is a separate question, and probably a no
 
-`sqladmin` renders its own templates; translating them means overriding or forking them. The panel has five users, all in New Zealand, working in English. Unless the client asks, this is effort better spent on the field-level help in O-9.
+`sqladmin` renders its own templates; translating them means overriding or forking them. The panel has five users, all in New Zealand, working in English. Unless the client asks, this is effort better spent on the field-level help in O-7.
 
 
 ## O-9 — the dry-run authenticator was never wired — **CLOSED 2026-08-12**

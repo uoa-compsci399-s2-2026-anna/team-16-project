@@ -1,7 +1,21 @@
 """Standalone composition root for Part B.
 
-When E's branch is merged, its existing FastAPI app can include ``router`` and
-pass ``admin.auth.require_staff`` as the staff authenticator instead.
+**This module said, until v1.18, that E's app could "include ``router`` and pass
+``admin.auth.require_staff`` as the staff authenticator instead". Do not.** That
+instruction predates the layering rule and cannot be followed: ``api/`` may not
+import ``admin/``, and the two run as separate services with separate images in
+any case (``docker/compose.yaml``). ``admin.auth.require_staff`` additionally
+reads ``request.state.db``, placed there by middleware its own docstring says
+"the next plan installs" and which was never installed - so it has never been
+callable from a live request from either side.
+
+Following it was impossible, so nobody did, and the argument was left with no
+authenticator at all: every dry run in every deployment answered
+``UNAUTHORIZED`` while ``/admin/try`` rendered that refusal inside a 200 page.
+That is open item O-9. The staff gate is now ``db/staff_proof.py``, verified by
+``_default_staff_authenticator`` below and minted by the panel - shared through
+``db/``, which both layers may import, rather than across a boundary neither
+may cross.
 """
 
 from __future__ import annotations

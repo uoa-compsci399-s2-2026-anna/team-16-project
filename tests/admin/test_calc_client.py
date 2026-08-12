@@ -45,12 +45,20 @@ def test_a_staff_proof_is_sent_and_names_the_signed_in_staff_member():
 
     **This replaces a test that asserted the browser's cookie jar was
     forwarded**, on the stated ground that "the API authenticates it with
-    require_staff()". There is no `require_staff()` and there never was; the
-    API cannot read the panel's session cookie and deliberately must not learn
-    how (db/staff_proof.py). So the forwarding proved nothing, every dry run in
-    every real deployment answered UNAUTHORIZED, and this test passed anyway -
-    open item O-9, and as exact an instance of "passes for the wrong reason" as
-    this project has produced.
+    require_staff()".
+
+    `admin.auth.require_staff` does exist - the claim was not invented - but it
+    could never have been what authenticated this call, for two independent
+    reasons. It reads `request.state.db`, placed there by middleware its own
+    docstring says "the next plan installs" and which was never installed; and
+    `api/` may not import `admin/`, so the API could not have called it in any
+    case. Its docstring still says "B calls this and nothing else"; B never
+    did, and could not.
+
+    So the forwarding proved nothing, every dry run in every real deployment
+    answered UNAUTHORIZED, and this test passed anyway - open item O-9, and as
+    exact an instance of "passes for the wrong reason" as this project has
+    produced.
 
     Asserted by *verifying* the proof rather than by checking the header is
     non-empty: a header carrying any other string would satisfy the weaker

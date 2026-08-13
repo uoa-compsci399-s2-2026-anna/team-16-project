@@ -291,16 +291,20 @@ def test_publishing_a_set_whose_prevention_upstream_is_missing_is_refused(
     not been written yet — it would refuse the general row for the sake of a
     `prevention` row the staff member was about to add next.
 
-    `prevention` is committed under the "e6_" destination group rather than
-    with an "e6_" code of its own: contract §2.1 fixes the literal, and
-    `_cleanup_e6_rows` sweeps destinations by group for exactly this case.
+    The row is committed under the "e6_" destination group rather than with an
+    "e6_" code of its own only because `_cleanup_e6_rows` sweeps destinations
+    by group; **the code itself no longer matters to anything** — since v1.22
+    the role is `destination.is_prevention` and it is the tick, not the name,
+    that this test sets. See
+    `test_an_unflagged_destination_named_prevention_satisfies_nothing` below.
     """
     from admin.taxonomy_models import Destination
 
     session = _committed_session
     _, draft = two_sets
     session.add(Destination(group_id=taxonomy_for_factors.destination.group_id,
-                            code="prevention", name="Prevented — waste avoided"))
+                            code="prevention", name="Prevented — waste avoided",
+                            is_prevention=True))
     session.flush()
 
     with pytest.raises(LifecycleError) as excinfo:
@@ -325,7 +329,8 @@ def test_publishing_succeeds_once_the_prevention_row_is_added(
     session = _committed_session
     _, draft = two_sets
     prevention = Destination(group_id=taxonomy_for_factors.destination.group_id,
-                             code="prevention", name="Prevented — waste avoided")
+                             code="prevention", name="Prevented — waste avoided",
+                             is_prevention=True)
     session.add(prevention)
     session.flush()
     session.add(FactorUpstream(
@@ -346,6 +351,100 @@ def test_publishing_succeeds_once_the_prevention_row_is_added(
     assert session.get(FactorSet, draft.id).status is FactorSetStatus.published
 
 
+def test_an_unflagged_destination_named_prevention_satisfies_nothing(
+    _committed_session, taxonomy_for_factors, two_sets,
+):
+    """What proves the string is gone from the panel's own publish path.
+
+    A row *called* `prevention` with the tick cleared is an ordinary
+    destination, so its zero upstream override satisfies no tuple and the set
+    must still be refused. The mirror of
+    `test_publishing_succeeds_once_the_prevention_row_is_added` above, which is
+    the identical arrangement with the tick set.
+    """
+    from admin.taxonomy_models import Destination
+
+    session = _committed_session
+    _, draft = two_sets
+    named = Destination(group_id=taxonomy_for_factors.destination.group_id,
+                        code="prevention", name="Prevented — waste avoided",
+                        is_prevention=False)
+    flagged = Destination(group_id=taxonomy_for_factors.destination.group_id,
+                          code="waste_avoided", name="Waste avoided",
+                          is_prevention=True)
+    session.add_all([named, flagged])
+    session.flush()
+    session.add(FactorUpstream(
+        factor_set_id=draft.id,
+        sector_id=taxonomy_for_factors.sector.id,
+        food_category_id=taxonomy_for_factors.category.id,
+        destination_id=named.id,
+        metric_id=taxonomy_for_factors.metric.id,
+        value_per_kg=Decimal("0.0000000000"),
+        source_note="Zero, against a destination that carries no role.",
+        data_quality="definitional",
+    ))
+    session.flush()
+
+    with pytest.raises(LifecycleError) as excinfo:
+        publish_factor_set(session, draft.id, actor="kim")
+
+    assert "e6_processing/e6_dairy/e6_co2e" in str(excinfo.value)
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
+
+
+def test_publishing_a_prevention_destination_priced_above_zero_is_refused(
+    _committed_session, taxonomy_for_factors, two_sets,
+):
+    """The half nothing checked at all before v1.22, on the path the panel
+    actually takes.
+
+    `find_missing_prevention_upstream` can only see a non-zero upstream value
+    where a generic row exists to compare it against, and no rule anywhere read
+    `factor_downstream`. A prevention destination priced at anything is not a
+    100% offset, so the improved scenario stops describing the same mass at no
+    cost and the net benefit is silently smaller than the scenario the user
+    built.
+    """
+    from admin.taxonomy_models import Destination
+
+    session = _committed_session
+    _, draft = two_sets
+    prevention = Destination(group_id=taxonomy_for_factors.destination.group_id,
+                             code="prevention", name="Prevented — waste avoided",
+                             is_prevention=True)
+    session.add(prevention)
+    session.flush()
+    session.add_all([
+        FactorUpstream(
+            factor_set_id=draft.id,
+            sector_id=taxonomy_for_factors.sector.id,
+            food_category_id=taxonomy_for_factors.category.id,
+            destination_id=prevention.id,
+            metric_id=taxonomy_for_factors.metric.id,
+            value_per_kg=Decimal("0.0000000000"),
+            source_note="Prevented waste was never produced.",
+            data_quality="definitional",
+        ),
+        FactorDownstream(
+            factor_set_id=draft.id,
+            destination_id=prevention.id,
+            food_category_id=None,
+            metric_id=taxonomy_for_factors.metric.id,
+            value_per_kg=Decimal("0.5000000000"),
+            source_note="Wrong: a prevention destination costs nothing.",
+            data_quality="definitional",
+        ),
+    ])
+    session.flush()
+
+    with pytest.raises(LifecycleError) as excinfo:
+        publish_factor_set(session, draft.id, actor="kim")
+
+    assert "downstream prevention" in str(excinfo.value)
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
+
+
 def test_rollback_is_not_blocked_by_an_incomplete_prevention_set(
     _committed_session, taxonomy_for_factors, two_sets,
 ):
@@ -363,7 +462,8 @@ def test_rollback_is_not_blocked_by_an_incomplete_prevention_set(
     session = _committed_session
     live, draft = two_sets
     session.add(Destination(group_id=taxonomy_for_factors.destination.group_id,
-                            code="prevention", name="Prevented — waste avoided"))
+                            code="prevention", name="Prevented — waste avoided",
+                            is_prevention=True))
     live.status = FactorSetStatus.archived
     session.flush()
 

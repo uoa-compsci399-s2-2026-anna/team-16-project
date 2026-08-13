@@ -80,8 +80,14 @@ VARY_HEADER = "vary"
 #: with no picker still needs one.
 #:
 #: **An unrecognised value is ignored**, and the request then negotiates
-#: exactly as if the parameter had been absent: ``Accept-Language`` first,
-#: English last. Not an error, not a redirect, and not remembered.
+#: exactly as if the parameter had been absent: the browser's highest-priority
+#: tag, then English. Not an error, not a redirect, and not remembered.
+#:
+#: It is deliberately *not* folded into the single-tag rule below. ``?lang=``
+#: is somebody typing a language on purpose, which is the one signal here that
+#: is not a browser setting - so a typo in it falls back to the negotiation
+#: rather than consuming it. ``?lang=qq`` on a Chinese browser is still
+#: Chinese.
 QUERY_PARAM = "lang"
 
 #: A single ``Accept-Language`` entry: a tag and an optional quality.
@@ -291,9 +297,12 @@ def match(tag: str | None) -> str | None:
       through to Simplified. Truncation alone would send both to ``zh``, so
       the Traditional catalogue claims them by name (``Catalogue.tags``) and
       an exact claim is tried before any truncation.
-    * A tag nobody claims returns ``None`` rather than a guess, so the caller
-      can try the visitor's next-preferred language before giving up on
-      English.
+    * A tag nobody claims returns ``None`` rather than a guess. ``negotiate``
+      turns that into English; it does **not** try the visitor's next
+      preference, and the reason is written out there.
+
+    ``*`` reaches nothing by either route: no catalogue claims it and it has no
+    subtag to drop. That is what makes ``Accept-Language: *`` mean English.
 
     A single-letter or grandfathered subtag is dropped by the same loop it
     would confuse: ``i-klingon`` truncates to ``i``, which nothing claims.
@@ -318,14 +327,27 @@ def parse_accept_language(header: str | None) -> list[str]:
     reads the header in written order gets that backwards. ``q=0`` means
     *not acceptable* and the tag is dropped rather than ranked last.
 
-    ``*`` is dropped: it says "anything", which is what falling through to
-    English already does, and ranking it would let a wildcard outrank a real
-    preference further down the header.
+    **Ordering happens here, and the single-tag rule in ``negotiate`` is
+    applied to the result.** That sequence is the whole content of
+    ``zh;q=0.8, en;q=0.9`` reaching English: rank first, then take the head.
+    Taking the head of the written header instead would answer Chinese.
+
+    ``*`` is **kept, and ranked like any other tag.** It used to be dropped on
+    the reading that "anything" is what falling through to English already
+    does - which was true while the negotiation walked the list, and stopped
+    being true when it stopped walking. Dropped, ``*, zh`` would promote
+    ``zh`` into the one slot that decides, and a header whose first statement
+    is "no preference" would answer Chinese. Kept, it holds its own rank, no
+    catalogue claims it, and ``*`` at the head means English - while
+    ``zh, *;q=0.5`` still means Chinese, because ``*`` is not at the head.
 
     A malformed entry is dropped rather than defaulted. ``en;q=high`` is not
     a request for English at full quality - it is a header this code does not
     understand, and guessing at it is how a parser starts making decisions on
-    input it cannot read.
+    input it cannot read. A dropped entry does not hold a rank, so
+    ``en;q=high, zh`` is a header whose highest-priority *readable* tag is
+    ``zh``; a header with no readable tag at all is an empty list, which
+    ``negotiate`` answers with English.
     """
     if not header:
         return []
@@ -335,8 +357,6 @@ def parse_accept_language(header: str | None) -> list[str]:
         if entry is None:
             continue
         tag, quality = entry.group(1), entry.group(2)
-        if tag == "*":
-            continue
         if quality is None:
             weight = 1.0
         else:
@@ -359,17 +379,47 @@ def negotiate(accept_language: str | None, requested: str | None = None) -> str:
     it, and an unrecognised value is ignored, after which the request
     negotiates as though it had not been there at all.
 
-    Then the browser's own ordered preference. Then English, which needs no
-    catalogue because its strings are its keys.
+    **Then the highest-priority tag the browser sent, and only that one. If it
+    has no catalogue the answer is English; the rest of the list is not
+    consulted.**
+
+    This is the rule most likely to be "fixed" back, because walking the list
+    is what RFC 4647 lookup does with a list and is the more obvious reading of
+    a header that offers several languages. It was the behaviour here until
+    2026-08-13, and the repository owner ruled against it. The reasoning:
+
+    * **A browser's language list does not reliably describe what a person can
+      read.** The first entry is usually deliberate. The second and third are
+      frequently residue - a preinstalled system locale, an input method added
+      once, a setting changed years ago and forgotten. Honouring them as a
+      genuine second language means letting an unreliable signal override a
+      reliable fallback.
+    * **English is a safe floor for this audience and an unfamiliar language is
+      not.** Everyone who reaches this calculator or this panel reads English;
+      that is the assumption the ruling makes explicit. So the worst outcome
+      under this rule is a page in English, and the worst outcome under the
+      walk is a page in a language the reader does not have - which the reader
+      cannot even navigate out of, because there is no picker.
+
+    What the rule does **not** change is the lookup *within* that one tag.
+    ``en-NZ`` still reaches English by truncation, ``zh-CN`` still reaches
+    ``zh``, and a catalogue's own claims still beat truncation - the panel has
+    no Traditional catalogue, but on the calculator ``zh-TW`` still reaches
+    Traditional Chinese. Removing the walk down the list is not removing the
+    match.
+
+    Ordering is still by quality and happens first (``parse_accept_language``),
+    so ``zh;q=0.8, en;q=0.9`` has ``en`` at its head and answers English. The
+    single tag consulted is the highest-*priority* one, not the first one
+    written.
     """
     forced = match(requested)
     if forced is not None:
         return forced
-    for tag in parse_accept_language(accept_language):
-        language = match(tag)
-        if language is not None:
-            return language
-    return DEFAULT_LANGUAGE
+    preferred = parse_accept_language(accept_language)
+    if not preferred:
+        return DEFAULT_LANGUAGE
+    return match(preferred[0]) or DEFAULT_LANGUAGE
 
 
 class _TranslatedAttribute:

@@ -76,6 +76,31 @@ async def test_quality_values_decide_which_language_wins(client):
     assert '<html lang="en-NZ">' in response.text
 
 
+async def test_an_unsupported_first_tag_renders_english_on_the_page(client):
+    """The rule, on a rendered page rather than only in the negotiator.
+
+    `fr` has no panel catalogue, and the `zh` behind it does not get a turn:
+    a browser's second and third entries are frequently residue rather than a
+    second language, and English is the floor everyone who reaches this panel
+    can read.
+
+    **The second half is what makes the first half evidence.** A panel that
+    had lost the ability to render Chinese at all would satisfy the English
+    assertion and fail here.
+    """
+    english = await client.get(
+        "/admin/login", headers={"Accept-Language": "fr-CA,fr;q=0.9,zh;q=0.8"}
+    )
+    assert '<html lang="en-NZ">' in english.text
+    assert "登录" not in english.text
+
+    chinese = await client.get(
+        "/admin/login", headers={"Accept-Language": "zh-CN,fr;q=0.9,en;q=0.8"}
+    )
+    assert '<html lang="zh">' in chinese.text
+    assert "登录" in chinese.text
+
+
 async def test_nothing_is_persisted_and_the_next_request_negotiates_again(client):
     """The cookie is gone. A language is a property of a request, not of a browser.
 

@@ -148,14 +148,46 @@ def test_en_nz_reaches_english_and_nothing_is_translated(browser):
         context.close()
 
 
-def test_a_language_with_no_catalogue_steps_aside_for_the_next_one(browser):
-    """`sv` has no catalogue. A visitor sending `sv, ko, en` reads Korean, not
-    English - which is the entire reason `navigator.languages` is read rather
-    than `navigator.language`."""
+def test_only_the_first_language_is_consulted_and_the_rest_is_not_walked(browser):
+    """v1.26, in a real browser, with a real `navigator.languages`.
+
+    `sv` has no catalogue, so this visitor reads English — the Korean behind
+    it does not get a turn. A browser's second and third entries are
+    frequently residue (a preinstalled locale, an input method added once)
+    rather than a second language, and English is the floor every reader of
+    this tool has.
+
+    **The second half is the test.** The first assertion alone would pass
+    against a calculator that had lost the ability to render Korean at all, so
+    the same list with Korean at the head is asserted beside it, on the same
+    element, against Korean's own catalogue entry.
+    """
     context, page = open_page(browser, ["sv-SE", "ko", "en"])
     try:
+        assert page.get_attribute("html", "lang") == "en-NZ"
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
+    finally:
+        context.close()
+
+    korean = i18n_keys.catalogue("ko")["strings"]["Food Waste Impact Calculator"]
+    context, page = open_page(browser, ["ko", "sv-SE", "en"])
+    try:
         assert page.get_attribute("html", "lang") == "ko"
-        assert page.inner_text("h1#page-title") != "Food Waste Impact Calculator"
+        assert page.inner_text("h1#page-title") == korean
+    finally:
+        context.close()
+
+
+def test_a_regional_first_tag_still_truncates_to_its_catalogue(browser):
+    """`de-AT, xx` reads German. The rule took away the walk between tags, not
+    the lookup inside one — and this is the case that tells the two apart: a
+    negotiator that had stopped truncating would answer English here and still
+    pass every assertion above."""
+    german = i18n_keys.catalogue("de")["strings"]["Food Waste Impact Calculator"]
+    context, page = open_page(browser, ["de-AT", "xx"])
+    try:
+        assert page.get_attribute("html", "lang") == "de"
+        assert page.inner_text("h1#page-title") == german
     finally:
         context.close()
 
@@ -451,11 +483,45 @@ def test_the_panel_ranks_the_header_by_quality(browser):
         context.close()
 
 
-def test_a_language_with_no_panel_catalogue_steps_aside(browser):
-    """`fr-CA, fr, zh` reaches Chinese. A tag nobody claims has to resolve to
-    nothing rather than to English, or the visitor's second preference never
-    gets a turn."""
+def test_a_wildcard_at_the_head_is_no_preference_and_renders_english(browser):
+    """`*` says "anything", which under v1.26 is a statement that the visitor
+    has expressed no preference — and no preference is English.
+
+    Paired with the same wildcard *behind* a real preference, which decides
+    nothing: `*` is ranked like any other entry rather than dropped, precisely
+    so that it can hold the one slot that matters when it is at the head.
+    """
+    context, page, _ = _admin_login(browser, "*, zh;q=0.9")
+    try:
+        assert page.get_attribute("html", "lang") == "en-NZ"
+    finally:
+        context.close()
+
+    context, page, _ = _admin_login(browser, "zh, *;q=0.9")
+    try:
+        assert page.get_attribute("html", "lang") == "zh"
+    finally:
+        context.close()
+
+
+def test_the_panel_consults_only_the_highest_priority_tag(browser):
+    """`fr-CA, fr, zh` reaches **English**, not Chinese (v1.26).
+
+    The same rule as the calculator, on the surface that reads
+    `Accept-Language` instead of `navigator.languages`, because two surfaces
+    that answered one visitor differently would be the defect.
+
+    Asserted in a pair: the second request is the same header with a supported
+    tag at its head, and it still reaches Chinese. Without it this file would
+    pass against a panel whose catalogue had stopped loading.
+    """
     context, page, _ = _admin_login(browser, "fr-CA,fr;q=0.9,zh;q=0.5")
+    try:
+        assert page.get_attribute("html", "lang") == "en-NZ"
+    finally:
+        context.close()
+
+    context, page, _ = _admin_login(browser, "zh-CN,fr;q=0.9,en;q=0.5")
     try:
         assert page.get_attribute("html", "lang") == "zh"
     finally:

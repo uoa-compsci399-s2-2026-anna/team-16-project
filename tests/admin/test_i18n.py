@@ -327,13 +327,24 @@ def test_a_catalogue_s_claims_are_what_make_a_tag_reachable():
         ("de;q=0.5, fr;q=0.5", ["de", "fr"]),
         # q=0 means "not acceptable" and is dropped, not ranked last.
         ("en;q=0, zh", ["zh"]),
-        # `*` says "anything", which falling back to English already does.
-        ("*", []),
-        ("zh, *;q=0.5", ["zh"]),
-        # Malformed entries are dropped rather than guessed at.
+        # `*` is RANKED, not dropped. Dropping it would promote the tag behind
+        # it into the one slot `negotiate` consults, so a header whose first
+        # statement is "no preference" would answer Chinese.
+        ("*", ["*"]),
+        ("*, zh", ["*", "zh"]),
+        ("zh, *;q=0.5", ["zh", "*"]),
+        # And it is ranked by quality like anything else, so a wildcard offered
+        # as a last resort does not outrank a real preference.
+        ("*;q=0.1, zh;q=0.9", ["zh", "*"]),
+        # Malformed entries are dropped rather than guessed at. A dropped entry
+        # holds no rank - there is no quality to rank it by, which is the whole
+        # reason it was dropped - so the next readable tag becomes the head.
         ("en;q=high, zh", ["zh"]),
         ("!!!, zh", ["zh"]),
         ("en;q=1.5, zh", ["zh"]),
+        # Nothing readable at all, which `negotiate` answers with English.
+        ("en;q=high", []),
+        ("!!!", []),
     ],
 )
 def test_accept_language_is_parsed_by_quality(header, expected):
@@ -352,22 +363,69 @@ def test_a_pathological_accept_language_header_is_bounded():
         ("zh-CN,zh;q=0.9,en;q=0.8", None, "zh"),
         ("en-NZ,en;q=0.9", None, "en"),
         (None, None, "en"),
-        # A language with no catalogue steps aside for the next preference
-        # rather than ending the negotiation.
-        ("fr-CA,fr;q=0.9,zh;q=0.8", None, "zh"),
+        # THE RULE: only the highest-priority tag is consulted. `fr` has no
+        # panel catalogue, and the `zh` behind it does not get a turn.
+        ("fr-CA,fr;q=0.9,zh;q=0.8", None, "en"),
         ("fr-CA,fr;q=0.9", None, "en"),
+        # ...and its pair, which is what makes the line above mean something.
+        # A negotiator that simply always answered English would pass every
+        # assertion about an unsupported tag and fail these.
+        ("zh,fr", None, "zh"),
+        ("zh-CN,fr;q=0.9,de;q=0.8", None, "zh"),
+        # Ordering happens BEFORE the rule, not after: `en` is the
+        # highest-priority tag here even though `zh` is written first.
+        ("zh;q=0.8, en;q=0.9", None, "en"),
+        # And the same mechanism the other way round, so that "ranked first"
+        # cannot be confused with "English wins".
+        ("en;q=0.4, zh;q=0.9", None, "zh"),
+        # Truncation still applies to that one tag - the rule removed the walk
+        # down the list, not the lookup within a tag.
+        ("zh-Hans-CN", None, "zh"),
+        ("zh-SG,en", None, "zh"),
+        # `*` at the head is "no preference", which is English. Behind a real
+        # preference it decides nothing.
+        ("*", None, "en"),
+        ("*, zh", None, "en"),
+        ("zh, *", None, "zh"),
+        ("*;q=0.1, zh;q=0.9", None, "zh"),
+        # q=0 is an explicit refusal, so the tag is not the head - it is not in
+        # the list at all. `zh` behind a refused `en` is still the head.
+        ("en;q=0, zh", None, "zh"),
+        ("zh;q=0", None, "en"),
+        # A header with nothing readable in it, and an absent one.
+        ("en;q=high", None, "en"),
+        ("!!!", None, "en"),
+        ("", None, "en"),
         # `?lang=` overrides the header, for testing, screenshots and support.
         ("en-NZ", "zh", "zh"),
         ("en-NZ", "zh-CN", "zh"),
-        # An unrecognised override is ignored, and the header still decides.
+        # An unrecognised override is ignored and does NOT consume the single
+        # slot: the header still decides, and lands on English only because
+        # its own head has no catalogue.
         ("zh-CN", "qq", "zh"),
         ("en-NZ", "qq", "en"),
+        ("fr,zh", "qq", "en"),
     ],
 )
 def test_negotiation_reads_the_header_honours_the_override_and_keeps_nothing(
     header, requested, expected
 ):
     assert i18n.negotiate(header, requested) == expected
+
+
+def test_only_the_highest_priority_tag_is_consulted():
+    """The rule, stated on its own rather than only as parametrised rows.
+
+    **Both halves are the test.** `fr-CA, zh, en` answering English proves
+    nothing by itself - it passes against a negotiator that has stopped
+    matching anything at all. The second assertion is what separates "the
+    list is not walked" from "the matcher is broken", and the third keeps the
+    tag-claim mechanism inside the same statement: the rule takes away the
+    walk between tags, not the lookup inside one.
+    """
+    assert i18n.negotiate("fr-CA,zh;q=0.9,en;q=0.8") == "en"
+    assert i18n.negotiate("zh-CN,fr;q=0.9,en;q=0.8") == "zh"
+    assert i18n.match("zh-Hans") == "zh"
 
 
 def test_no_catalogue_claims_a_tag_another_one_claims():

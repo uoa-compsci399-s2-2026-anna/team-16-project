@@ -15,10 +15,16 @@
  * picker, no cookie, no `localStorage`. The owner's ruling is that the browser
  * already says what it reads and the interface should simply honour it.
  *
- * `navigator.languages` and not `navigator.language`: the second is one tag,
- * and a visitor whose first preference this calculator has no catalogue for
- * would drop straight to English while their second preference sat unread in a
- * list the browser was already sending. The ordered list is the whole point.
+ * **Only the highest-priority tag is consulted.** If it has no catalogue the
+ * page renders in English; the rest of the list is not walked. The reasoning
+ * is on `negotiate` below, and it is the same rule `admin/i18n.py::negotiate`
+ * implements against `Accept-Language` — the two surfaces cannot be allowed to
+ * answer a visitor differently.
+ *
+ * `navigator.languages` is still read rather than `navigator.language`,
+ * because it is the *ordered* list and order is what identifies the
+ * highest-priority tag. What changed is how far down it the negotiation is
+ * allowed to reach, not which property is read.
  *
  * **The calculator is static files served by nginx and never reaches
  * FastAPI**, which is why this is done here and not with `Accept-Language`.
@@ -29,8 +35,11 @@
  *
  * `?lang=` forces a language for one page load. Nothing emits it: it exists
  * for testing, screenshots and support. **An unrecognised value is ignored**,
- * and the page then negotiates as though it had not been there —
- * `navigator.languages` first, English last.
+ * and the page then negotiates as though it had not been there — the browser's
+ * highest-priority tag, then English. It is deliberately outside the
+ * single-tag rule: `?lang=` is somebody typing a language on purpose rather
+ * than a browser setting, so a typo in it falls back to the negotiation rather
+ * than consuming it. `?lang=qq` on a Chinese browser is still Chinese.
  *
  * ## The flash of English
  *
@@ -87,8 +96,9 @@ async function readJson(url) {
  * tags it speaks for in `index.json`, and an exact claim is matched before any
  * truncation runs. `zh-Hant` claims `zh-TW`, `zh-HK` and `zh-MO`.
  *
- * A tag nobody claims returns `null` rather than a guess, so the caller tries
- * the visitor's next preference before falling back to English.
+ * A tag nobody claims returns `null` rather than a guess. `negotiate` turns
+ * that into English; it does **not** try the visitor's next preference, and
+ * the reason is written out there.
  */
 export function match(tag, index) {
   if (!tag) return null
@@ -115,17 +125,38 @@ export function tagIndex(catalogues) {
 }
 
 /**
- * The first of `candidates` that has a catalogue, or English.
+ * The catalogue for the visitor's **highest-priority** tag, or English.
  *
- * @param {string[]} candidates Ordered preference — a forced `?lang=` first,
- *   then `navigator.languages`.
+ * **Only `preferred[0]` is consulted. The rest of the list is not walked.**
+ * This is the rule most likely to be "fixed" back, because walking the list is
+ * what RFC 4647 lookup does with a list and is the more obvious reading of a
+ * browser that offers several languages. It was the behaviour here until
+ * 2026-08-13, and the repository owner ruled against it. The reasoning:
+ *
+ * - **A browser's language list does not reliably describe what a person can
+ *   read.** The first entry is usually deliberate. The second and third are
+ *   frequently residue — a preinstalled system locale, an input method added
+ *   once, a setting changed years ago and forgotten. Honouring them as a
+ *   genuine second language means letting an unreliable signal override a
+ *   reliable fallback.
+ * - **English is a safe floor for this audience and an unfamiliar language is
+ *   not.** Everyone who reaches this calculator reads English; that is the
+ *   assumption the ruling makes explicit. The worst outcome under this rule is
+ *   an English page. The worst outcome under the walk is a page in a language
+ *   the reader does not have — and with no picker, cannot navigate out of.
+ *
+ * The rule removes the walk, not the lookup: `en-NZ` still reaches `en`,
+ * `zh-CN` still reaches `zh`, and `zh-TW` still reaches Traditional Chinese
+ * through its catalogue's own claim, because all three happen *inside*
+ * `match` on that one tag.
+ *
+ * @param {string[]} preferred `navigator.languages`, in the browser's own
+ *   priority order. A forced `?lang=` is **not** passed through here — it is
+ *   matched by the caller before this runs, so that an unrecognised one falls
+ *   back to this negotiation instead of consuming its single slot.
  */
-export function negotiate(candidates, index) {
-  for (const candidate of candidates) {
-    const language = match(candidate, index)
-    if (language) return language
-  }
-  return DEFAULT_LANGUAGE
+export function negotiate(preferred, index) {
+  return match((preferred || [])[0], index) || DEFAULT_LANGUAGE
 }
 
 const active = {
@@ -151,11 +182,13 @@ async function load() {
   const manifest = await readJson(new URL('index.json', LOCALES_BASE))
   if (!manifest) return
   const index = tagIndex(manifest.catalogues)
-  // `navigator.languages` is the ordered list the browser already sends; the
-  // forced value goes in front of it rather than replacing it, so an
-  // unrecognised `?lang=` leaves the negotiation exactly as it was.
-  const candidates = [forced, ...(navigator.languages || [navigator.language])].filter(Boolean)
-  const language = negotiate(candidates, index)
+  // The forced value is matched on its own rather than pushed onto the front
+  // of the list. Since only the head of the list is consulted, prepending it
+  // would make an unrecognised `?lang=` eat the browser's own first
+  // preference and land every typo on English.
+  const language =
+    match(forced, index) ||
+    negotiate(navigator.languages || [navigator.language], index)
   if (language === DEFAULT_LANGUAGE) return
   const catalogue = await readJson(new URL(`${language}.json`, LOCALES_BASE))
   // A catalogue that is missing or malformed leaves the page in English. A

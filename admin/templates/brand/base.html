@@ -1,5 +1,11 @@
 <!doctype html>
-<html lang="en-NZ">
+{# `lang` is the active language, not a constant. It is what tells a screen
+   reader which voice to use and a browser whether to offer translation, and
+   a page of Chinese labelled en-NZ is announced by a screen reader in
+   English phonetics - unreadable rather than merely wrong. en-NZ is kept for
+   English specifically: the copy is New Zealand English and the region is
+   part of that. #}
+<html lang="{{ 'en-NZ' if kaicalc_language() == 'en' else kaicalc_language() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

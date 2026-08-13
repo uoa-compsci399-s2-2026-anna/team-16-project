@@ -17,6 +17,7 @@ from admin.bootstrap import ensure_bootstrap_admins
 from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
+from admin import i18n as admin_i18n
 from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
@@ -136,6 +137,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         ProtectionMiddleware, session_factory=session_factory, settings=settings
     )
 
+    # Added last, so it is the OUTERMOST middleware: Starlette builds the
+    # stack in reverse registration order. That ordering is the point - a
+    # request ProtectionMiddleware refuses still has a language resolved by
+    # the time its refusal is rendered, and the login page (the one page a
+    # locked-out person can still reach) is the page most in need of being
+    # readable by somebody who does not read English.
+    app.add_middleware(admin_i18n.LanguageMiddleware)
+
     # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
     # Starlette sub-application at "/admin" as the *last* line of its
     # __init__ (a Mount whose path_regex matches any "/admin/..." prefix).
@@ -176,6 +185,30 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         settings.login_lockout_minutes
     )
     admin.templates.env.globals["login_max_failures"] = settings.login_max_failures
+
+    # TRANSLATION. Contract open item O-8, and admin/i18n.py says why it is
+    # shaped this way rather than as gettext or as sqladmin's own i18n.
+    #
+    # `install_gettext_callables` REPLACES the null translations sqladmin
+    # installed for itself a few lines earlier in its own constructor
+    # (application.py's init_templating_engine: with no I18nConfig it calls
+    # install_null_translations, which makes `_()` the identity). Ours goes in
+    # afterwards and wins - which is what puts sqladmin's OWN twenty-five
+    # strings ("Save", "Delete", the pagination line, the empty-list text)
+    # through this panel's catalogue without forking a single one of its
+    # templates.
+    #
+    # newstyle=True because that is what sqladmin's templates are written
+    # against: Jinja applies `translated % variables` itself after our
+    # callable returns, so `_("Showing %(start)s to %(end)s of %(count)s
+    # items")` still interpolates. A translation that damages one of those
+    # placeholders is a rendering error rather than a wrong word, which is
+    # why tests/admin/test_i18n.py asserts they survive translation.
+    # The switcher's globals go in alongside, named rather than reusing
+    # sqladmin's `get_locale`/`get_locale_display_name`: those are only
+    # defined when an I18nConfig is passed, and this panel deliberately
+    # passes none.
+    admin_i18n.install(admin.templates.env)
 
     # `admin.admin` is sqladmin's own mounted Starlette application - the
     # exact object `request.app` resolves to inside a view (see

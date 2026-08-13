@@ -1,0 +1,49 @@
+{# The panel chrome, with a language switcher in the top bar.
+
+   Shadows sqladmin/layout.html and extends the original through the
+   `sqladmin_original` prefix - a loader sqladmin registers for exactly this
+   (`Admin.init_templating_engine`), so nothing of its own layout is copied
+   here. Only the `topbar` block is replaced.
+
+   sqladmin ships a switcher of its own in this block, and it is not the one
+   used: it renders only when an `I18nConfig` is passed to `Admin()`, and
+   that path requires `babel` and offers only the five locales sqladmin
+   compiled into its own package. Chinese is not among them and cannot be
+   added from a wheel of ours. See admin/i18n.py's docstring.
+
+   THE MACHINE-TRANSLATION NOTICE LIVES HERE, on the option itself, because
+   this is where somebody chooses. A note in a document is read by whoever
+   maintains the system; this is read by whoever is about to rely on it.
+   Driven by `machine_translated` in each catalogue file, so a language that
+   arrives from a machine pass labels itself and no list in code has to be
+   extended nineteen times. #}
+{% extends "sqladmin_original/layout.html" %}
+
+{% block topbar %}
+<header class="navbar navbar-expand-md d-print-none sticky-top shadow-sm" data-bs-theme="dark">
+  <div class="container-fluid">
+    <div class="navbar-nav flex-row ms-auto align-items-center gap-2" id="topbar-end">
+      <div class="nav-item dropdown">
+        <a href="#" class="btn btn-outline-light dropdown-toggle d-flex align-items-center px-3"
+          data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Language') }}"
+          id="language-switcher">
+          <i class="fa fa-language me-2"></i>
+          <span>{{ kaicalc_endonym(kaicalc_language()) }}</span>
+        </a>
+        <div class="dropdown-menu dropdown-menu-end">
+          {% for choice in kaicalc_languages() %}
+          <a class="dropdown-item {% if choice.language == kaicalc_language() %}active{% endif %}"
+            hreflang="{{ choice.language }}"
+            href="{{ request.url.include_query_params(lang=choice.language) }}">
+            <span class="d-block">{{ choice.endonym }}</span>
+            {% if choice.machine_translated %}
+            <small class="d-block text-muted">{{ _("Machine translation, not reviewed") }}</small>
+            {% endif %}
+          </a>
+          {% endfor %}
+        </div>
+      </div>
+    </div>
+  </div>
+</header>
+{% endblock %}

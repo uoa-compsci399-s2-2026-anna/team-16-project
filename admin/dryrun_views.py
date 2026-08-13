@@ -39,8 +39,13 @@ from admin.comparison_models import ComparisonScenario
 from admin.factor_models import FactorSet, FactorSetStatus
 from admin.runtime import get_runtime
 from admin.taxonomy_models import Destination, FoodCategory, Sector
+from admin import i18n as admin_i18n
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Contract O-8. This environment is not sqladmin's, so it does not inherit
+# `_()` from it - see admin/i18n.py::install.
+admin_i18n.install(templates.env)
 
 
 def _form_context(db) -> dict:

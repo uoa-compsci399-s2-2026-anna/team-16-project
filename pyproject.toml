@@ -154,6 +154,16 @@ admin = [
     # one directory over, and just as invisible from the checkout.
     "static/*.js",
     "static/fonts/*.woff2",
+    # The translation catalogues (contract O-8). Same failure mode as the
+    # guidance blocks above, one directory over: admin/i18n.py reads these at
+    # import, so a wheel built without this line ships a panel whose language
+    # switcher offers English and nothing else - and the checkout cannot
+    # reproduce that, because the files are simply on disk there. They live
+    # inside the package rather than in a top-level i18n/ directory precisely
+    # because package-data cannot reach outside its own package (see the
+    # data-files note below) and docker/admin.Dockerfile copies only
+    # admin/ api/ db/ engine/.
+    "locales/*.json",
 ]
 
 # Migrations ship OUTSIDE site-packages, under <sys.prefix>/share/kaicalc/.

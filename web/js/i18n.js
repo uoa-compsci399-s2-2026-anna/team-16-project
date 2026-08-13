@@ -137,13 +137,17 @@ const active = {
 }
 
 async function load() {
-  // `tests/web/` runs these modules under Node against a taxonomy it builds,
-  // which is the seam `buildResultsReport` and `entryDestinations` were pulled
-  // out for. There is no `window` and no catalogue to fetch there, and English
-  // is the right answer: `t()` becomes the identity and every existing
-  // assertion on English output keeps holding.
+  // **The scheme, not the presence of `window`.** `tests/web/` runs these
+  // modules under Node against a taxonomy it builds - the seam
+  // `buildResultsReport` and `entryDestinations` were pulled out for - and it
+  // supplies a `window` stub of its own, so a `typeof window` check passes
+  // there and then throws on `fetch('file:///…')`, which Node refuses. Under
+  // Node the module URL is `file:`; in a browser it is `http:` or `https:`.
+  // English is the right answer for the Node runs: `t()` becomes the identity
+  // and every existing assertion on English output keeps holding.
+  if (!LOCALES_BASE.protocol.startsWith('http')) return
   if (typeof window === 'undefined' || typeof fetch !== 'function') return
-  const forced = new URLSearchParams(window.location.search).get('lang')
+  const forced = new URLSearchParams(window.location?.search || '').get('lang')
   const manifest = await readJson(new URL('index.json', LOCALES_BASE))
   if (!manifest) return
   const index = tagIndex(manifest.catalogues)

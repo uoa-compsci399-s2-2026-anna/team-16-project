@@ -284,6 +284,35 @@ def test_the_panel_has_no_traditional_catalogue_so_zh_tw_degrades_to_simplified(
     assert i18n.match("zh-TW") == "zh"
 
 
+def test_a_catalogue_s_claims_are_what_make_a_tag_reachable():
+    """The claim mechanism, tested where it is load-bearing rather than where
+    it happens to be exercised.
+
+    Every tag `admin/locales/zh.json` claims is ALSO reachable by truncation -
+    `zh-CN` truncates to `zh` on its own - so deleting the claims changes
+    nothing about the panel as it ships, and no test of the panel would
+    notice. The calculator's `zh-Hant` is the case that needs them, and this
+    builds it here so the mechanism is held in the module that implements it.
+    """
+    traditional = i18n.Catalogue(
+        language="zh-Hant",
+        endonym="中文（繁體）",
+        machine_translated=True,
+        strings={},
+        tags=("zh-Hant", "zh-TW", "zh-HK", "zh-MO"),
+    )
+    index = i18n._tag_index(
+        {"zh": i18n.catalogue("zh"), "zh-Hant": traditional, "en": i18n.catalogue("en")}
+    )
+    # Claimed by name, and truncation would have sent all three to `zh`.
+    assert index["zh-tw"] == "zh-Hant"
+    assert index["zh-hk"] == "zh-Hant"
+    assert index["zh-mo"] == "zh-Hant"
+    # While the Simplified claims still point where they should.
+    assert index["zh-cn"] == "zh"
+    assert index["zh-hans"] == "zh"
+
+
 @pytest.mark.parametrize(
     "header, expected",
     [

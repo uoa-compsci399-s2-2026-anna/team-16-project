@@ -43,8 +43,28 @@ _INDIRECT = (
 
 _LITERAL = re.compile(r"'((?:[^'\\]|\\.)*)'")
 
+#: Comments, stripped before anything is scanned for a key.
+#:
+#: **This is not tidiness.** ``web/js/i18n.js`` documents itself with
+#: ``t('Start calculator')`` inside a JSDoc block, so a scan of the raw text
+#: found that key whether or not any code still rendered it - and a mutation
+#: that deleted the real ``t()`` call from ``calculator.js`` survived the whole
+#: suite because of it. A key has to be evidence that something renders the
+#: string, and a sentence about the string is not that.
+_BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
+_LINE_COMMENT = re.compile(r"^\s*//.*$", re.M)
+
 _ELEMENT = re.compile(r"<(\w+)([^>]*\bdata-i18n\b[^>]*)>(.*?)</\1>", re.S)
 _ATTRIBUTE_HOST = re.compile(r"<\w+[^>]*\bdata-i18n-attr=\"([^\"]+)\"[^>]*>")
+
+
+def _strip_comments(text: str) -> str:
+    """Remove JSDoc blocks and whole-line `//` comments.
+
+    Both front-end modules explain themselves at length, and an explanation
+    is not a render.
+    """
+    return _LINE_COMMENT.sub("", _BLOCK_COMMENT.sub("", text))
 
 
 def _unescape(value: str) -> str:
@@ -55,11 +75,11 @@ def _unescape(value: str) -> str:
 def javascript_keys() -> set[str]:
     keys: set[str] = set()
     for path in sorted((WEB / "js").glob("*.js")):
-        text = path.read_text(encoding="utf-8")
+        text = _strip_comments(path.read_text(encoding="utf-8"))
         for single, double in _CALL.findall(text):
             keys.add(_unescape(single or double))
     for relative, pattern in _INDIRECT:
-        text = (WEB / relative).read_text(encoding="utf-8")
+        text = _strip_comments((WEB / relative).read_text(encoding="utf-8"))
         match = pattern.search(text)
         assert match, f"{relative}: the indirect key source {pattern.pattern!r} is gone"
         keys.update(_unescape(literal) for literal in _LITERAL.findall(match.group(1)))

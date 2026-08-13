@@ -314,7 +314,7 @@ Audit logging and rollback in Stage 3 must not be dropped.
 
 `alembic/env.py` calls `load_settings()` to resolve the database URL, so `SECRET_KEY` (and every other setting `load_settings()` requires) must already be set in the environment for `alembic upgrade head` to run at all — a migration cannot be the step that first establishes the environment.
 
-**`python -m admin.cli seed-taxonomy` must be run after `alembic upgrade head` against a fresh database.** The migration creates the six taxonomy tables empty; without the seed there are no destination groups, destinations, sectors, food categories, metrics or unit presets for the calculator or the admin panel to show. `admin/seed.py`'s `seed_taxonomy()` matches on `code` and only ever creates rows that are absent, so the command is safe to re-run on every deployment — a database that already has the taxonomy prints zero rows created per table and leaves every name a staff member has already edited through the panel untouched. It does *not* leave every edit untouched, though: `code` is itself an editable field (`FoodCategoryAdmin.form_columns` includes it), and re-running the seed against a taxonomy whose `code` has been changed does not recognise the renamed row as the one it already created — it creates a fresh row alongside it instead. For most tables that is merely a duplicate a staff member can deactivate. For `food_category.standard_mix` and `destination.prevention` it is worse: a renamed `standard_mix` plus a freshly seeded one both carry `is_standard_mix=True`, an invariant the calculator's engine depends on. `seed_taxonomy()` now flushes and calls `check_single_standard_mix()` and `check_prevention_intact()` (`admin/taxonomy_rules.py`) before returning, so this case aborts the whole transaction rather than committing a taxonomy the panel's own views would refuse — see `tests/admin/test_seed.py`'s `test_seed_refuses_to_commit_a_taxonomy_it_would_leave_broken`.
+**`python -m admin.cli seed-taxonomy` must be run after `alembic upgrade head` against a fresh database.** The migration creates the six taxonomy tables empty; without the seed there are no destination groups, destinations, sectors, food categories, metrics or unit presets for the calculator or the admin panel to show. `admin/seed.py`'s `seed_taxonomy()` matches on `code` and only ever creates rows that are absent, so the command is safe to re-run on every deployment — a database that already has the taxonomy prints zero rows created per table and leaves every name a staff member has already edited through the panel untouched. It does *not* leave every edit untouched, though: `code` is itself an editable field (`FoodCategoryAdmin.form_columns` includes it), and re-running the seed against a taxonomy whose `code` has been changed does not recognise the renamed row as the one it already created — it creates a fresh row alongside it instead. For most tables that is merely a duplicate a staff member can deactivate. For `food_category.standard_mix` it is worse: a renamed `standard_mix` plus a freshly seeded one both carry `is_standard_mix=True`, an invariant the calculator's engine depends on. The prevention destination is no longer in this position — since contract v1.22 its role is `destination.is_prevention` and a rename carries the tick with it, so a re-seed adds an unflagged duplicate rather than a second claimant. `seed_taxonomy()` flushes and calls `check_single_standard_mix()` and `check_prevention_destination()` (`admin/taxonomy_rules.py`) before returning, so this case aborts the whole transaction rather than committing a taxonomy the panel's own views would refuse — see `tests/admin/test_seed.py`'s `test_seed_refuses_to_commit_a_taxonomy_it_would_leave_broken`.
 
 A correctly installed system answers `NO_PUBLISHED_FACTOR_SET` (503,
 "calculator under maintenance") until staff create and publish a factor set.
@@ -516,7 +516,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
-| O-8 | **Interface translation. Nothing here is promised** — the shape below is a sketch pending the client's word, and dropping it entirely is a likely outcome. Sibling of O-4. See below. | Client, C, D, E |
+| O-8 | **Interface translation is delivered** (v1.25; negotiation rule amended at v1.26): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from **the browser's highest-priority tag only — an unmatched one is English rather than a walk down the list** — and stored nowhere. **The taxonomy inside a translated page stays in the language staff typed it — ruled 2026-08-14, and not a gap: anything a staff member can edit is published exactly as written.** What remains open is only that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
 | ~~O-9~~ | ~~**`/admin/try` cannot succeed in a deployed system.**~~ **Closed 2026-08-12.** The panel now mints a short-lived signed proof (`db/staff_proof.py`) and the API verifies it by default. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
@@ -576,51 +576,553 @@ The claim is now enforced by data, and data can stop enforcing it. A `(sector, f
 
 That last one closes the gap this paragraph originally described as an open follow-up. It also means the rule is now something a staff member meets as a refusal rather than a convention they are trusted to remember — which is why the field-level help on the upstream screen states it as a consequence and not as advice. If that guard is ever relaxed, this section and that help text both become untrue.
 
-## O-8 — interface translation — **OPEN, and unpromised**
+## O-8 — interface translation — **DELIVERED 2026-08-13: the panel in Chinese, the calculator in twenty languages**
 
-Recorded so the shape of the question survives the conversation that produced it. **No commitment is made here.** CLAUDE.md and §1.1's scope list both place te reo Māori bilingual support outside this project, the client has not asked for translation, and dropping this item entirely is a likely and acceptable outcome. It is written down because two of its decisions are cheap now and expensive later, not because the work is agreed.
+Recorded as unpromised until the first client demonstration. Two of the
+positions this entry used to hold were overturned there and one was confirmed,
+so it now describes what exists rather than what might.
 
-### The boundary the owner drew, and why it is the right one
+### What the client settled
 
-**Static text is translated. Anything staff can edit is not** — what a staff member types in English is what every visitor sees, in every language.
+**te reo Māori is out of scope.** Not deferred — removed at the client's
+request. The long argument this entry used to carry, that te reo must not be
+machine translated with the others, is kept below because it is now the reason
+te reo is *absent* rather than pending: if it is ever asked for again, it needs
+a human translator and not a pass through the same pipeline as the rest.
 
-That line is drawn where it is because the alternative does not survive contact with operations. `destination`, `food_category`, `sector`, `metric` and `unit_preset` rows are the things the panel exists to let staff change; a translated copy of each would fall out of date the first time somebody renames one, and nobody would know whose job it was to fix. A calculator showing a stale translation of a category name is worse than one showing the English the staff member actually wrote.
+**Around twenty other languages, static interface strings only.** Unchanged
+and confirmed.
 
-So: the interface chrome, the step instructions, the button labels, the error copy, the methodology prose — translated. The taxonomy, the factor provenance notes, the version labels — not.
+### What is delivered
 
-### Three places English leaks through that boundary anyway
+| Surface | Languages | State | Reviewed? |
+| --- | --- | --- | --- |
+| Admin panel | English | ~900 strings, the source language | Written by hand |
+| Admin panel | Chinese (`zh`) | **Built.** 177 catalogue entries | **Yes** — by the people who use the panel daily |
+| Admin panel | any other | Mechanism ready; no catalogue written | — |
+| Public calculator | English | 198 translatable strings, the source language | Written by hand |
+| Public calculator | Chinese (`zh`) | **Built.** 198 entries | Reviewable by the team; **not yet re-read for these 198** |
+| Public calculator | 19 others | **Built.** 198 entries each | **No. Machine translated and unread — and the page says so** |
 
-1. **`equivalence.label_template` is a whole sentence, not a label.** It ships as `"Equivalent to driving {value} km"`, it is staff-editable, and it renders on the most prominent card of the results page. Under the rule above it stays English in every language.
+**The calculator's other nineteen**, in the client's own ordering: Traditional
+Chinese, Hindi, Tagalog, Panjabi, Korean, Afrikaans, French, German, Spanish,
+Dutch, Japanese, Gujarati, Arabic, Tamil, Vietnamese, Thai, Russian, Urdu —
+eighteen — plus **Malayalam**, proposed here as the twentieth: the client's
+list came to nineteen counting Simplified Chinese, and Malayalam is the next
+language in the same census ordering, sitting between Russian and Thai.
 
-   **This is the one worth changing regardless of whether O-8 proceeds**, and changing it is cheap only until O-1 lands: split the column into a unit fragment staff own (`"{value} km"`) and a static prefix the language pack owns. After real factors arrive, the same change is a migration over client data.
+**Samoan, Tongan and every other Pacific language are out, for te reo's
+reason.** A census-ordered list of New Zealand's languages puts Samoan third
+and Tongan fourteenth — above most of what did ship — so their absence has to
+be stated rather than left to the ordering to explain. They have exactly the
+problem the te reo section below sets out: machine translation trained on very
+little data, and a community expectation that the language is handled by
+somebody who speaks it. A machine pass of either would be the same mistake
+under a different name.
 
-2. **`details[].field`'s companion `message` is composed by the API.** Top-level errors are already fine — `web/js/api.js`'s `publicError()` branches on the §9 `code` and renders its own copy, so the envelope's English never reaches a visitor. Field-level messages are the exception, and they were only recently wired through to the user deliberately (they carry the specific reason a row was rejected). Translating them means the API returns a code plus parameters and the front end composes the sentence.
+**The Chinese calculator catalogue carries no notice**, on the panel's basis:
+it is the one language with speakers on this project. It is new, it has not yet
+been read line by line for these 198 strings, and that read is the first
+follow-up below rather than a claim made here.
 
-3. **`metric.unit`.** `kg CO2e`, `L` and `NZD` need no translation; `kg` has local spellings in some scripts. Low risk, and the rule as drawn leaves it alone.
+**The admin panel came into scope, and went first.** This entry previously
+concluded "probably a no", on the grounds that the panel has five users all
+working in English. That premise was wrong: the panel's users are the
+development team, and the repository owner reported that half of them could no
+longer follow its English domain vocabulary at working speed during a
+debugging session. Chinese is therefore not one of twenty — **it is the only
+language with real users today, and the only one that will have native
+speakers noticing when a translation is wrong.**
 
-### te reo Māori should not be machine translated with the other thirty
+**That difference is a difference in kind, not in priority.** A mistranslated
+label on the public calculator confuses one visitor for one session. A
+mistranslated field description in the panel leads a staff member to enter the
+wrong factor, and that factor reaches a public number. Chinese is reviewed by
+the people who use it daily; everything else will ship machine translated and
+unread. **The two promises are made visibly different in the interface** — see
+the notice, below — and not only recorded here.
 
-This is not a technical objection.
+### The mechanism
 
-Te reo Māori is an official language of New Zealand under the Māori Language Act 1987. Machine translation for it is trained on very little data and is unreliable in ways that are not obvious to a non-speaker. The client is a New Zealand trust, the deliverable carries a te reo word in its own name — **Kai** Commitment — and the project sponsor is a former Prime Minister's Chief Science Advisor.
+**One key scheme: the English source string is the key.** `_("Save")` looks up
+`"Save"`. There is no second namespace, no key file, and no way for a key to
+point at a description that has since been reworded.
 
-Bad te reo on a public New Zealand government-adjacent tool is not read as a rough translation. It is read as carelessness about the language, and it is the kind of thing that gets pointed out publicly.
+It is the source text rather than an invented key for a reason that decided
+itself: `sqladmin` already wraps its own fifty user-visible strings in `_()`
+with the English as the msgid, so any other scheme would have left two
+mechanisms in one panel. It also means the 82 field descriptions stay in
+`form_args` in English and are translated on the way out — no view file was
+edited to translate one.
 
-**If O-8 proceeds:** English hand-written; te reo Māori translated by a person, which is a question to put to the client because a trust at this level usually has that resource or knows who does; the remaining languages machine translated **and labelled as such in the language switcher**. If a human te reo translation is not available, shipping no te reo is the better answer than shipping a machine one.
+**Catalogues are JSON, one file per language per surface.**
+
+```
+admin/locales/zh.json     read by Python, shipped as wheel package data
+web/locales/<lang>.json   fetched by the browser (not yet written)
+```
+
+Two locations rather than one, and the deployment forces it: package-data
+cannot reach outside its own package directory, `docker/admin.Dockerfile`
+copies only `admin/ api/ db/ engine/`, and `docker/web.Dockerfile` copies only
+`web/`. A top-level `i18n/` directory would be in neither image — which is how
+the guidance blocks went missing from a built image once already. What the two
+share is everything that matters: one JSON shape, one key rule, one fallback
+rule, one cookie, one notice rule. A Python process and a browser cannot share
+a reader; they can share a contract.
+
+```json
+{ "language": "zh", "endonym": "中文", "machine_translated": false,
+  "strings": { "Save": "保存" } }
+```
+
+`endonym` and `machine_translated` live in the file so that **adding a language
+is adding a file.** No list in code has to be extended nineteen times.
+
+**No new dependency, and no build step.** `sqladmin` ships an `I18nConfig` of
+its own and it is unusable here for two independent reasons: it requires
+`babel`, which this project may not add, and it loads compiled catalogues from
+inside its own installed package — `en, de, az, ru, tr` — so Chinese cannot be
+added to it from a wheel of ours. What *is* reachable is the seam underneath
+it, `jinja2.ext.i18n`'s `install_gettext_callables`, which sqladmin calls
+itself and which takes any callable. Installing ours there translates
+**sqladmin's own fifty strings through our catalogue**, with no fork of its
+templates. A dictionary lookup is enough; gettext's plural forms, domains and
+`.mo` files buy nothing at this size and cost a dependency and a build step.
+
+**Four Jinja environments, not one.** sqladmin builds its own, and
+`admin/views.py`, `admin/dryrun_views.py` and `admin/self_service_view.py` each
+construct a module-level `Jinja2Templates`. `admin/i18n.py::install` is applied
+to all four; an environment that missed it raises `'_' is undefined` on its own
+pages and nowhere else.
+
+**Two render-time hooks have no substitute**, and both are named because each
+closes a gap the other cannot:
+
+* `admin/templates/sqladmin/_macros.html` is a **copy** of sqladmin's, with
+  four strings wrapped. Jinja can override a block but not a macro, and every
+  translatable string in that file is inside one. It carries the 82 field
+  descriptions and the navigation menu. A test compares it against the
+  installed original with the `_()` calls stripped back out, so a version bump
+  that edits it fails loudly instead of silently reverting a translation.
+* `admin/i18n.py::_TranslatedAttribute` makes a view's `name`, `name_plural`
+  and `category` answer in the request's language. sqladmin composes its create
+  heading as `_("New %(name)s", name=model_view.name)` — it translates the
+  sentence and interpolates the model name into it *untranslated* — and writes
+  the list heading as `{{ model_view.name_plural }}` with no `_()` at all.
+  Without this, a complete catalogue still renders `新建Constant`.
+
+### How a language is chosen — negotiated per request, stored nowhere
+
+**There is no picker, and nothing is persisted.** This section previously
+specified a `kaicalc_lang` cookie set by a `?lang=` switcher, and declined
+`Accept-Language` on the grounds that §2.3 forbids reading a visitor that way.
+That reading was too strict, and §2.3 is its own correction: it forbids
+**storing** an address, a user agent or a fingerprint, and it says in terms
+that "user agents, headers and paths are read within a request and forgotten".
+Reading a header to decide what to render, and keeping nothing, is the
+behaviour that sentence describes.
+
+The repository owner ruled directly: negotiate per session from what the
+browser already sends, store nothing, and add no language-selection control.
+
+**Two surfaces, two mechanisms, and the split is forced by the deployment
+rather than chosen.**
+
+| Surface | Reads | Why it cannot be the other one |
+| --- | --- | --- |
+| Calculator | `navigator.languages` | Static files served by nginx, which never reach FastAPI. There is no server in the path that could negotiate |
+| Admin panel | `Accept-Language`, with quality values | Rendered through FastAPI, so the header is the only thing available before the first byte |
+
+`navigator.languages`, never `navigator.language`: the second is one tag and
+the first is the *ordered* list, and order is what identifies the
+highest-priority tag. How far down that list the negotiation may reach is the
+subject of the next section; which property is read is settled here.
+
+Quality values are honoured because they decide the answer: `zh;q=0.8, en;q=0.9`
+is a request for English, and a parser that reads the header in written order
+gets it backwards. `q=0` means *not acceptable* and is dropped rather than
+ranked last; a malformed entry is dropped rather than defaulted, because
+guessing at input this code cannot read is how a parser starts making decisions
+on nonsense. `*` is **kept and ranked like any other tag** — see the next
+section, where that stopped being a technicality. The header is read to a
+bounded length and a bounded number of entries.
+
+**Matching is RFC 4647 lookup, not equality.** Try the whole tag, then drop the
+last subtag, and repeat: `en-NZ` reaches `en`, `zh-CN` and `zh-Hans-CN` reach
+`zh`.
+
+**Truncation alone gets one case badly wrong**, and it is the case with the
+most speakers: `zh-TW` truncates to `zh` and hands a Traditional reader
+Simplified Chinese, which is the wrong script rather than a degraded
+translation. So each catalogue file declares the tags it speaks for and an
+**exact claim is matched before any truncation runs** — `zh-Hant` claims
+`zh-TW`, `zh-HK` and `zh-MO`; `zh` claims `zh-Hans`, `zh-CN`, `zh-SG` and
+`zh-MY`; `tl` claims `fil`, which is what browsers actually send for Filipino.
+The claims live in the file for the reason `endonym` and `machine_translated`
+do: adding a language is adding a file. **No two catalogues may claim one tag**,
+and a test fails if they do — otherwise filename order would decide which
+script a Hong Kong browser gets.
+
+The panel ships no Traditional catalogue, so `zh-TW` truncates to Simplified
+there. That is the right answer for a panel whose five users all read
+Simplified, it is asserted by a test, and the test is the reminder to delete
+itself if a Traditional catalogue is ever added to `admin/locales/`.
+
+### Only the first language is consulted (v1.26)
+
+**A tag nobody claims resolves to nothing, and `negotiate` turns that into
+English. The rest of the visitor's list is not read.** A browser sending
+`fr-CA, zh, en` to the panel gets **English**, not Chinese.
+
+Until 2026-08-13 it got Chinese: a tag with no catalogue stepped aside so the
+next preference could have a turn, and English arrived only once the list was
+exhausted. The repository owner ruled against that, and the reasoning is
+recorded here and repeated as a comment in both negotiators, because walking
+the list is the more obvious behaviour and someone will eventually try to
+restore it as a fix.
+
+* **A browser's language list does not reliably describe what a person can
+  read.** The first entry is usually deliberate. The second and third are
+  frequently residue — a preinstalled system locale, an input method added
+  once, a setting changed years ago and forgotten. Honouring them as a genuine
+  second language means letting an unreliable signal override a reliable
+  fallback.
+* **English is a safe floor for this audience; an unfamiliar language is not.**
+  Everyone who reaches this calculator or this panel reads English — that is
+  the assumption the ruling makes explicit, and it is the assumption this
+  project is already making everywhere else, since the taxonomy inside a
+  translated page is English regardless. So the worst outcome under this rule
+  is a page in English. The worst outcome under the walk is a page in a
+  language the reader does not have, **and with no picker on either surface
+  there is no way back out of it.**
+
+**The rule removes the walk between tags, not the match inside one.** Every
+paragraph above about truncation and tag claims still holds, applied to the
+single tag consulted: `en-NZ` reaches English, `zh-CN` reaches Simplified,
+`zh-TW` reaches Traditional, `fil` reaches `tl`. `de-AT, xx` reaching German is
+the case that separates "the walk is gone" from "the matcher is broken", and it
+is asserted as such.
+
+**Ordering happens before the rule.** The tag consulted is the
+highest-*priority* one, not the first one written: `zh;q=0.8, en;q=0.9` puts
+`en` at the head and answers English, while `en;q=0.4, zh;q=0.9` answers
+Chinese. `q=0` is an explicit refusal rather than a low rank, so `en;q=0, zh`
+has `zh` at its head.
+
+**`*` is why the parser changed.** It used to be dropped, on the reading that
+"anything" is what falling through to English already does — true while the
+list was walked, false the moment only the head is read, because dropping it
+promotes the tag *behind* it into the one slot that decides. A header whose
+first statement is "no preference" would then have answered Chinese. So `*` is
+ranked like any other tag, nothing claims it and it has no subtag to drop:
+**`*` at the head means English**, and `zh, *;q=0.5` still means Chinese.
+
+A malformed entry is still dropped rather than defaulted, and a dropped entry
+holds no rank — there is no quality to rank it by, which is the reason it was
+dropped in the first place. So `en;q=high, zh` answers Chinese, and a header
+with nothing readable in it at all answers English, as do an empty header and
+an absent one.
+
+**`?lang=` survives as a one-request override, and stays outside the rule.**
+Nothing emits it; it exists for testing, screenshots and support, which is the
+whole of why an interface with no picker still needs one. It is persisted
+nowhere. **An unrecognised value is ignored**, and the request then negotiates
+exactly as though the parameter had been absent — not an error, not a redirect,
+not remembered. A typo in a support email must not look like a broken panel.
+
+It is deliberately not folded into the single-tag rule: `?lang=` is somebody
+typing a language on purpose, which is the one signal here that is *not* a
+browser setting, so a typo in it falls back to the negotiation rather than
+consuming its slot. `?lang=qq` on a `zh-CN` browser is still Chinese. On the
+calculator that meant matching the forced value *before* the list rather than
+prepending it to a list whose head is now all that is read.
+
+**`Vary: Accept-Language` wherever the server negotiates.** The panel appends
+it — appends, not assigns, because FastAPI sets `Vary: Cookie` on session
+responses and overwriting it would let a cache serve one staff member's page to
+another. It is applied by the **outermost** middleware, so it reaches the
+responses the inner ones refuse: a 403 cached without it is served to everyone.
+
+It is deliberately **not** set on the static origin. The calculator does not
+negotiate, so nothing there varies by the header, and `Vary` on a header that
+is near-unique per browser would tell every shared cache to keep a separate
+copy of `index.html`, `styles.css` and both font faces per value — a cache that
+stores everything and hits on nothing.
+
+**Nothing about the negotiation is written down anywhere.** Not in
+`submission`, not in `audit_log`, not in a statistic. `docker/nginx.conf` now
+declares its own access log format rather than inheriting the base image's
+`main`, which logged `$remote_addr`, `$http_user_agent`, `$http_referer` and
+`$http_x_forwarded_for` on every request to a calculator whose stated position
+is that it stores nothing identifying about a visitor. `Accept-Language` was
+absent from that format and is absent from ours; it is named in the file so
+that adding it later has to be a decision somebody writes down rather than a
+variable somebody appends.
+
+### A missing key falls back to English, and a test says so
+
+Silently at runtime, loudly in the suite. A half-translated language ships as
+English-in-places, which is readable; it never ships as a blank label or a raw
+key, which are not.
+
+`tests/admin/test_i18n.py` walks the live `form_args` of every registered view,
+every view and base-view name, and the msgid set read out of the installed
+sqladmin, and fails on anything without a translation. Rewording an English
+string orphans its translation — the known cost of source-text keys — and this
+is what turns that into a failing test on the commit that reworded it. A
+separate check fails on any entry whose translation is blank or still equal to
+its English source, because such an entry looks complete to every other test
+and is not.
+
+### The machine-translation notice
+
+It used to sit on the switcher's option, where somebody was about to choose.
+**With the switcher gone there is nothing to hang it on**, so it is now a
+**non-dismissible strip at the very top of every page**, on both surfaces — the
+calculator's inserted by `web/js/i18n.js`, the panel's in `brand/base.html` and
+`sqladmin/layout.html` so that it reaches the five gate pages as well as the
+panel proper.
+
+**It is written twice: once in the language being read, and once in English.**
+The one sentence a machine-translated page has to get right is the sentence
+saying it was machine translated, and that sentence went through the same
+machine as everything else in the file. The English half carries `lang="en"` so
+a screen reader switches voice for it.
+
+**It is also appended to the results export**, which leaves the browser and is
+read by somebody who did not choose the language it was written in.
+
+Driven by `machine_translated` in the catalogue, so a language arriving from a
+machine pass labels itself and no list in code has to be extended nineteen
+times. **English and Simplified Chinese carry no notice**: English is written
+by hand, and Chinese is the one language with speakers on this project. That
+exactly one calculator catalogue is unflagged is asserted by a test — flagging
+Chinese would put a notice on a language that has reviewers, and unflagging any
+other would make a claim about a review that has not happened.
+
+### What must never be translated — rules, not practice
+
+1. **Anything a staff member typed.** Factor provenance notes, taxonomy names
+   and descriptions, formula labels, factor set version labels, audit log
+   contents. This is what makes the panel WYSIWYG: what a staff member types is
+   what the public sees, in the language they typed it. A translated copy would
+   fall out of date the first time somebody renamed a row, and nobody would
+   know whose job it was to fix.
+2. **`code` identifiers**, on every table. §0 already forbids the front end
+   learning a primary key; a translated code would be worse.
+3. **Decimals.** They cross the wire as strings because JavaScript's `Number`
+   is a double. No locale-aware decimal separator and no digit grouping, on
+   either surface. `Number()` stays display-only.
+4. **Metric units** — `kg CO2e`, `L`, `NZD` — and `metric.name`, which is a
+   staff-typed row under rule 1.
+5. **The equivalence sentences.** §3 defines `label` as `label_template` with
+   the value already interpolated **by the engine**, and the results export
+   copies it verbatim. They are data on their way through rather than
+   interface, and translating them in the browser would override wording the
+   client approved.
+6. **`toLocaleString('en-NZ')`, in every language.** §1.2 puts decimals on the
+   wire as strings because `Number` is a double, and a locale-aware separator
+   would additionally make `1.200,50` and `1,200.50` the same figure written
+   two ways on a page whose whole subject is a number. The interface is
+   translated; the figures are not localised.
+7. **Operator messages** from `admin/cli.py` and `docker/init.sh`. They are
+   read in a terminal by whoever deploys the system, quoted verbatim in
+   `docker/compose.yaml` and the README, and are what an operator pastes into a
+   search engine. Translating them makes a deployment problem harder to
+   diagnose, not easier.
+
+### Right-to-left: shipped, and what it cost
+
+Arabic and Urdu are two of the twenty, and both are right-to-left. The choice
+was between shipping them with `dir="rtl"`, shipping them left-to-right, and
+not shipping them — and **a half-mirrored page is worse than not shipping the
+language**, because a reader cannot tell a layout bug from a translation error
+and has no reason to trust either.
+
+They ship. The condition was that the layout could actually carry it, and
+making that true was twenty-six declarations in `styles.css`: every
+`margin-left`, `padding-left`, `border-left` and `text-align: left` that
+carried meaning became its `-inline-start` / `text-align: start` form, and the
+symmetric pairs collapsed into `margin-inline` / `padding-inline`, which is the
+same rendering in both directions. The whole layout now mirrors from the `dir`
+attribute alone; there is no second stylesheet to keep in step.
+
+Three things do not follow from `dir` and are handled by hand: the two
+decorative arrows (`aria-hidden`, and not mirrored by the bidi algorithm — a
+"current → improved" arrow pointing the wrong way reads as improved → current),
+the progress and bar-chart fills, and the diverging comparison bar's inline
+offset, which is `margin-inline-start` rather than `margin-left` — a physical
+offset there would draw the negative half of a bar on the same side as the
+positive half.
+
+`tests/web/test_i18n_web.py` refuses a physical direction property in
+`styles.css`, so the trade cannot be quietly undone by one convenient
+`margin-left` added later.
+
+### What a translated page actually looks like — the honest answer
+
+**The interface is translated. The taxonomy inside it is not.** On the
+calculator this is not a detail: destination names, food category names, sector
+names, sector descriptions, metric names and units, and the equivalence
+sentences all come from the database in the language staff entered them, which
+is English. A Thai visitor gets Thai headings, Thai instructions, Thai
+validation messages and Thai results wording — around a list that reads
+`Landfill`, `Composting`, `Animal feed`.
+
+**Is that coherent?** Yes, in the sense that matters: the reader can tell which
+words belong to the tool and which are the names of things, and every word that
+tells them what to do is in their language. It is the arrangement most public
+tools with a controlled vocabulary end up in, and it is much better than an
+English page. It is also plainly not finished, and calling it finished would be
+the kind of claim this document exists to stop.
+
+**This will not be closed. Ruled 2026-08-14 by the repository owner:
+anything a staff member can edit is published exactly as written.**
+
+The mechanism was costed first — a translated name column per taxonomy table
+in §2.1, a panel screen to enter them, and a client decision about who writes
+them — and rejected on what it would do to the panel's guarantee rather than on
+its size. Today a staff member reads `Landfill` in the factor table and
+`Landfill` is what the public sees; the row they maintain and the word a
+visitor reads are the same string, so a question about a published number can
+be traced to a field somebody can open. Nineteen unreviewed translations of
+that word would break the trace in the place it is least affordable: a
+destination name is not decoration, it is what tells a visitor which pathway a
+figure belongs to, and a wrong one silently reassigns an impact.
+
+It would also put the vocabulary on a different footing from every other
+translated string. The interface strings are ours — a wrong one is a defect in
+this repository and we fix it. Taxonomy names belong to the client and change
+with MfE's definitions; a machine translation of them would be a claim about
+the client's own terminology that nobody on this project is in a position to
+make, and it would go stale the moment a name is edited.
+
+**Consequence, stated so nobody reads the gap as an oversight:** a translated
+page carries an English controlled vocabulary. That is the intended result, not
+an unfinished one. If the client ever wants translated taxonomy, the shape is
+that *they* supply the terms and staff enter them through the panel — the same
+path as every other editable field — and not that a pipeline generates them.
+
+### The strings where a translation error becomes a data error
+
+Flagged because they are worth a second reviewer, and because the difference
+between Chinese and the other nineteen is at its sharpest here. Each one, read
+wrongly, produces a wrong number on the public site rather than a confused
+staff member:
+
+| Field | What a wrong reading does |
+| --- | --- |
+| `metric.display_unit` | "It must be the same scale." `t CO2e` against a `kg CO2e` unit relabels rather than divides, and every public greenhouse-gas figure reads a thousand times too small. This was live until August 2026 |
+| `factor_upstream.value`, `destination.is_prevention` | A prevention destination's factors must be **zero**; that zero is the whole of the saving |
+| `factor_downstream.value` | A negative number is legitimate and nothing clamps it. "Do not enter a negative" would delete the animal-feed credit |
+| `factor_downstream.food_category`, `factor_upstream.destination` | **Leave blank** means "applies to every category / destination". Inverting this in translation mis-files every per-tonne charge, the waste levy included |
+| `unit_preset.kg_per_unit` | "Get it wrong and every calculation made through this preset is wrong, with nothing on screen to say so" |
+| `formula.expression` | Computes **one line**, never a total. Read as "write the total" it double-counts every calculation |
+| `constant.name` | The `const_` prefix, and that `GWP_CH4_20`/`GWP_CH4_100` bind to `const_GWP_CH4` |
+| `equivalence.metric`, `.label_template` | The metric must match the factor's basis, and `{value}` is template syntax rather than prose — a localised placeholder renders a sentence with no number in it |
+| `factor_set.is_mock` | Unticking would remove the placeholder warning while the numbers underneath stayed placeholders |
+
+`tests/admin/test_i18n.py` asserts that `{value}` and every `%(name)s`
+placeholder survive translation, because those two fail as rendering errors
+rather than as wrong words.
+
+### te reo Māori — why it is absent rather than pending
+
+Not a technical objection, and it survives the client's decision because it is
+the answer if the question returns.
+
+Te reo Māori is an official language of New Zealand under the Māori Language
+Act 1987. Machine translation for it is trained on very little data and is
+unreliable in ways that are not obvious to a non-speaker. The client is a New
+Zealand trust, the deliverable carries a te reo word in its own name — **Kai**
+Commitment — and the project sponsor is a former Prime Minister's Chief Science
+Advisor. Bad te reo on a public New Zealand government-adjacent tool is not
+read as a rough translation; it is read as carelessness about the language, and
+it is the kind of thing that gets pointed out publicly.
+
+**If it is ever asked for:** a human translator, which is a question to put to
+the client because a trust at this level usually has that resource or knows who
+does. If one is not available, shipping no te reo is the better answer than
+shipping a machine one.
 
 ### One implementation route is closed
 
-**Runtime translation through an external service is out of the question.** This site's stated position is that it stores nothing about a visitor; sending the page a visitor is reading to a third-party translation API contradicts §2.3's whole argument and the statistics page's own restraint about what may be claimed. If O-8 proceeds it is static language packs, fetched at runtime the same way `?mock=1` already fetches fixtures — which also keeps the no-build-step decision intact.
+**Runtime translation through an external service is out of the question.**
+This site's stated position is that it stores nothing about a visitor; sending
+the page a visitor is reading to a third-party translation API contradicts
+§2.3's whole argument and the statistics page's own restraint about what may be
+claimed. Static language packs only, fetched at runtime the same way `?mock=1`
+already fetches fixtures — which also keeps the no-build-step decision intact.
 
-### Timing, if it is going to happen at all
+### Three places English still leaks through the boundary
 
-**D has not started.** The statistics and content pages will add the next batch of user-facing copy, and its wording is the most constrained on the project — §6.4's rule that the subject is the calculator and never New Zealand. Building the key mechanism before she writes means she writes against it; building it afterwards means revisiting exactly the copy that is most delicate to revisit.
+Unchanged by this work, and all three still open. **Item 1 is no longer
+theoretical**: it now renders on the calculator's most prominent card in
+twenty languages, and the case for splitting the column is correspondingly
+stronger.
 
-Roughly 150 translatable strings exist in `web/js` today, concentrated in `calculator.js` (67), `results.js` (35) and `improvement.js` (27). The two HTML files are 33 and 18 lines — this front end builds its pages in JavaScript, so the work is in the modules rather than in templates.
+1. **`equivalence.label_template` is a whole sentence, not a label.** It ships
+   as `"Equivalent to driving {value} km"`, it is staff-editable, and it
+   renders on the most prominent card of the results page. Under rule 1 above
+   it stays English in every language. **Worth changing regardless**, and cheap
+   only until O-1 lands: split the column into a unit fragment staff own
+   (`"{value} km"`) and a static prefix the language pack owns. After real
+   factors arrive, the same change is a migration over client data.
+2. **`details[].field`'s companion `message` is composed by the API.**
+   Top-level errors are already fine — `web/js/api.js`'s `publicError()`
+   branches on the §9 `code` and renders its own copy. Field-level messages are
+   the exception. Translating them means the API returns a code plus parameters
+   and the front end composes the sentence.
+3. **`metric.unit`.** `kg CO2e`, `L` and `NZD` need no translation; `kg` has
+   local spellings in some scripts. Low risk, and rule 4 leaves it alone.
 
-### The admin panel is a separate question, and probably a no
+### What is not translated yet, and why the number is written down
 
-`sqladmin` renders its own templates; translating them means overriding or forking them. The panel has five users, all in New Zealand, working in English. Unless the client asks, this is effort better spent on the field-level help in O-7.
+**The calculator is complete: 198 of 198 strings, in twenty languages.** The
+count is read out of the front end by `tests/web/i18n_keys.py` rather than
+maintained by hand — `t('...')` calls, the `data-i18n` markers in the two HTML
+files, and four module-level constants whose contents reach `t()` by reference
+— so a label added without a translation fails the suite rather than shipping
+in English. A key nobody asks for any more fails it too, because a stale entry
+makes a reworded string look translated.
+
+**The panel is not.** Roughly 900 user-visible English strings exist there and
+177 are translated: every field description, every view and menu name,
+sqladmin's own chrome, the login gauntlet and this project's own template
+strings. That last set was covered by nothing until this pass added a test that
+walks the msgids in `admin/templates/`, which immediately found "Add a staff
+member" and "Block an address" rendering in English on an otherwise Chinese
+panel. **Deliberately left, with reasons:**
+
+* **The six guidance blocks (123 strings).** Long-form prose in six template
+  files, and the highest-value remaining work. They need a decision first:
+  string-by-string `_()` wrapping loses the document; per-locale template files
+  duplicate it and let the two drift structurally with no test able to compare
+  them. The recommendation is the wrapping, for one mechanism.
+* **~170 validation and error strings** in Python (`admin/accounts.py`,
+  `factor_lifecycle.py`, `expressions.py`, `auth.py` and seven others). Raised
+  as exception messages and surfaced through `{"error": ...}`; translating them
+  means wrapping at each raise site — mechanical, but across eleven modules.
+* **The staff-management and `/admin/security` templates (~270 strings).**
+* **The login page's lockout paragraph**, alone among its neighbours: it
+  composes English plurals inline (`attempt{{ 's' if ... }}`), so making it one
+  translatable string means dropping that handling. A copy decision for the
+  owner, not one to take silently.
+* **Operator messages and seed display names** — never, per rules 5 and 1.
+
+### The calculator's language list is still the client's to choose
+
+Roughly 150 translatable strings exist in `web/js` today, concentrated in
+`calculator.js` (67), `results.js` (35) and `improvement.js` (27); this front
+end builds its pages in JavaScript, so the work is in the modules rather than
+in the two HTML files. D's statistics and content pages will add the next
+batch, and its wording is the most constrained on the project — §6.4's rule
+that the subject is the calculator and never New Zealand.
+
+A proposed list drawn from New Zealand's census language distribution rather
+than from a generic global top twenty is with the repository owner; it is not
+recorded here until the client has picked one.
 
 
 ## O-9 — the dry-run authenticator was never wired — **CLOSED 2026-08-12**
@@ -637,7 +1139,7 @@ There was a second thread leading to the same place. `admin/auth.py::require_sta
 
 ### The ruling
 
-**A short-lived signed proof, minted by the panel, verified by the API: `db/staff_proof.py`.** The panel signs `{"sub": "<username>"}` with `itsdangerous.TimestampSigner` under the deployment's one `SECRET_KEY` and a **pinned salt**, sends it as `X-Staff-Proof` on the server-to-server call, and the API's default `staff_authenticator` verifies it. It lives in `db/` because both layers need it and `api/` may not import `admin/` — v1.3's ruling on `db/detection.py`, and the reason `PREVENTION_CODE` sits in `db/types.py`.
+**A short-lived signed proof, minted by the panel, verified by the API: `db/staff_proof.py`.** The panel signs `{"sub": "<username>"}` with `itsdangerous.TimestampSigner` under the deployment's one `SECRET_KEY` and a **pinned salt**, sends it as `X-Staff-Proof` on the server-to-server call, and the API's default `staff_authenticator` verifies it. It lives in `db/` because both layers need it and `api/` may not import `admin/` — v1.3's ruling on `db/detection.py`, and the reason `db/repository.prevention_destination_codes` — not `admin/taxonomy_rules` — is what §6.2 reads the prevention flag through (v1.22).
 
 | Option | Verdict |
 | --- | --- |

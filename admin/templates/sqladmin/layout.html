@@ -1,0 +1,41 @@
+{# The panel chrome, carrying the machine-translation notice.
+
+   Shadows sqladmin/layout.html and extends the original through the
+   `sqladmin_original` prefix - a loader sqladmin registers for exactly this
+   (`Admin.init_templating_engine`), so nothing of its own layout is copied
+   here. Only the `topbar` block is replaced.
+
+   THERE IS NO LANGUAGE SWITCHER, AND THAT IS THE DECISION THIS FILE
+   RECORDS. A dropdown writing a `kaicalc_lang` cookie stood here until the
+   repository owner ruled it out: the language is negotiated per request from
+   `Accept-Language`, nothing is persisted, and there is no control to
+   operate. `?lang=` still forces a language for one request - for testing,
+   screenshots and support - but nothing on the page emits it.
+
+   sqladmin ships a switcher of its own in this block, and it is not used
+   either: it renders only when an `I18nConfig` is passed to `Admin()`, and
+   that path requires `babel` and offers only the five locales sqladmin
+   compiled into its own package. See admin/i18n.py's docstring.
+
+   THE MACHINE-TRANSLATION NOTICE HAD TO MOVE WHEN THE SWITCHER WENT. It sat
+   on the option a person was about to choose; with nothing to choose, the
+   only place it can be read is the page itself. It is a strip at the top of
+   every screen, it is not dismissible, and it is driven by
+   `machine_translated` in the active catalogue - so a language that arrives
+   from a machine pass labels itself and no list in code has to be extended.
+
+   The panel's only catalogue today is Chinese, which is reviewed by the
+   people who use it daily and is NOT flagged, so this strip renders on no
+   screen in the panel as it ships. It is here so that the first
+   machine-translated catalogue dropped into admin/locales/ cannot ship
+   silently. #}
+{% extends "sqladmin_original/layout.html" %}
+
+{% block topbar %}
+{% if kaicalc_machine_translated() %}
+<div class="alert alert-warning m-0 rounded-0 text-center" role="status" id="machine-translation-notice">
+  {{ _("This page was machine translated and has not been reviewed by a speaker of this language. Check anything that decides a number against the English.") }}
+</div>
+{% endif %}
+{{ super() }}
+{% endblock %}

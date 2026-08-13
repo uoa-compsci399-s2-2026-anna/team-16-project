@@ -10,9 +10,11 @@ from db.errors import FactorSetStateError
 from db.models import (
     AuditLog,
     Constant,
+    FactorDownstream,
     FactorSet,
     FactorSetStatus,
     FactorUpstream,
+    Metric,
     Scenario,
     Submission,
     SubmissionEntry,
@@ -467,7 +469,7 @@ def test_rollback_is_deliberately_not_subject_to_the_o7_check(seeded_session):
 
 
 def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_session):
-    """An unseeded taxonomy is `check_prevention_intact`'s problem, not this
+    """An unseeded taxonomy is `check_prevention_destination`'s problem, not this
     function's. Reporting every combination in the set would be noise, and a
     second rule stated in terms of the same reserved row is a second thing to
     keep in step."""
@@ -483,6 +485,136 @@ def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_sess
     seeded_session.flush()
 
     assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+
+def test_the_o7_guard_reads_the_flag_and_not_the_code(seeded_session):
+    """What proves the string is gone from this guard.
+
+    Clear the tick on the row called `prevention` and give the role to another
+    row. The seed's `prevention` upstream override is then an override against
+    an ordinary destination and satisfies nothing, so the guard must report the
+    tuple — and must stop reporting it once the *flagged* row has its own zero.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention = seeded_session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    prevention.is_prevention = False
+    avoided = Destination(group_id=prevention.group_id, code="waste_avoided",
+                          name="Waste avoided", is_prevention=True, sort_order=6)
+    seeded_session.add(avoided)
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == [
+        ("processing", "dairy", "co2e")
+    ]
+
+    row = seeded_session.scalar(
+        select(FactorUpstream).where(
+            FactorUpstream.factor_set_id == draft_id,
+            FactorUpstream.destination_id == prevention.id,
+        )
+    )
+    row.destination_id = avoided.id
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+
+
+def test_one_flagged_destination_with_a_zero_override_satisfies_the_tuple(
+    seeded_session,
+):
+    """Not "every flagged destination", deliberately.
+
+    Two vocabularies share these tables (§10.3) and `MOCK-v0` has no
+    `refed_prevention` rows and never will. Requiring one per flagged row would
+    refuse a set for a vocabulary it was never built in.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention = seeded_session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    seeded_session.add(
+        Destination(group_id=prevention.group_id, code="refed_prevention",
+                    name="Prevention (ReFED)", is_prevention=True, sort_order=803)
+    )
+    seeded_session.flush()
+
+    assert find_missing_prevention_upstream(seeded_session, draft_id) == []
+    publish_factor_set(seeded_session, draft_id, "alice")
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.published
+
+
+def test_publish_refuses_a_prevention_destination_priced_at_anything_but_zero(
+    seeded_session,
+):
+    """The half nothing checked at all until the flag existed.
+
+    `find_missing_prevention_upstream` can only see a non-zero upstream value
+    where a generic row exists to compare it against, and no rule anywhere read
+    `factor_downstream`. A prevention destination priced at anything is not a
+    100% offset, so the improved scenario stops describing the same mass at no
+    cost and `net_benefit` silently reports a smaller improvement than the
+    scenario the user built.
+    """
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.is_prevention.is_(True))
+    )
+    metric_id = seeded_session.scalar(select(Metric.id).where(Metric.code == "co2e"))
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=draft_id, destination_id=prevention_id,
+            food_category_id=None, metric_id=metric_id,
+            value_per_kg=Decimal("0.5"),
+        )
+    )
+    seeded_session.flush()
+
+    with pytest.raises(FactorSetStateError) as excinfo:
+        publish_factor_set(seeded_session, draft_id, "alice")
+
+    message = str(excinfo.value)
+    assert "downstream prevention" in message
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.draft
+
+
+def test_an_absent_prevention_factor_row_is_still_legal(seeded_session):
+    """§4.1's lookup returns zero for a missing factor, so absence already *is*
+    zero. The new refusal must only ever fire on a row that exists and
+    disagrees — otherwise it would contradict the hold-out in
+    `get_taxonomy`, which is built around a set that prices a prevention
+    destination nowhere at all."""
+    from db.models import Destination
+
+    draft_id = seeded_session.scalar(
+        select(FactorSet.id).where(FactorSet.status == FactorSetStatus.draft)
+    )
+    prevention_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.is_prevention.is_(True))
+    )
+    seeded_session.execute(
+        delete(FactorDownstream).where(
+            FactorDownstream.factor_set_id == draft_id,
+            FactorDownstream.destination_id == prevention_id,
+        )
+    )
+    seeded_session.flush()
+
+    publish_factor_set(seeded_session, draft_id, "alice")
+    assert seeded_session.get(FactorSet, draft_id).status == FactorSetStatus.published
 
 
 def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_session):

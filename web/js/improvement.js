@@ -2,6 +2,7 @@ import { calculate } from './api.js'
 import { setState } from './state.js'
 import { kgString, massToKg } from './units.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
+import { t } from './i18n.js'
 
 // Display-only coercion of an API decimal string (§7.6.1). `Number(value) || 0` stood here
 // and made "the engine did not return this figure", "this figure is malformed" and "this
@@ -130,9 +131,9 @@ export function allocationTotal(allocations) {
  */
 export function improvementValidation(state) {
   const values = Object.values(state.improvedAllocations || {})
-  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return 'Enter a percentage from 0 to 100 for every destination.'
+  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return t('Enter a percentage from 0 to 100 for every destination.')
   const total = allocationTotal(state.improvedAllocations)
-  const mismatch = `Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: ${total.toFixed(2)}%.`
+  const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
   if (Math.abs(total - 100) > 0.01) return mismatch
   for (const entry of submissionEntries(state)) {
     const currentKg = sumQtyKg(currentLines(entry))
@@ -172,7 +173,7 @@ function improvedLines(entry, allocations) {
  * @param {object} state
  * @param {(error: Error & {code?: string}) => string} [toPublicMessage]
  */
-export async function compareImprovement(state, toPublicMessage = error => error.message || 'The improvement comparison could not be completed.') {
+export async function compareImprovement(state, toPublicMessage = error => error.message || t('The improvement comparison could not be completed.')) {
   const validationError = improvementValidation(state)
   if (validationError) {
     setState({ improvementError: validationError })
@@ -218,15 +219,15 @@ function DestinationAllocationRow(destination, current, improved) {
   // keystroke path reads — so two codes that slug alike share a label association but never
   // a value.)
   const id = `improved-${slug(destination.code)}`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>Current: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="100" step="0.01" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="Improved ${escapeHtml(destination.name)} percentage"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="Improved ${escapeHtml(destination.name)} percentage value"><span>%</span></div></div></div>`
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="100" step="0.01" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>%</span></div></div></div>`
 }
 
 export function ImprovementScenario(state) {
-  if (!state.improvementOpen) return `<section class="explore-improvements"><h2>Want to explore potential improvements?</h2><p>Adjust how your food waste is managed to see how the environmental and economic impacts could change.</p><button class="button button-primary" type="button" data-action="explore-improvements">Explore Improvements</button></section>`
+  if (!state.improvementOpen) return `<section class="explore-improvements"><h2>${escapeHtml(t('Want to explore potential improvements?'))}</h2><p>${escapeHtml(t('Adjust how your food waste is managed to see how the environmental and economic impacts could change.'))}</p><button class="button button-primary" type="button" data-action="explore-improvements">${escapeHtml(t('Explore Improvements'))}</button></section>`
   const current = currentAllocationPercentages(state)
   const total = allocationTotal(state.improvedAllocations)
   const error = improvementValidation(state)
-  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">Create an Improvement Scenario</h2><p>Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.</p><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>Total allocation</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">Reset to Current</button><button class="button button-secondary" type="button" data-action="cancel-improvement">Cancel</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${state.improvementLoading ? 'Comparing…' : 'Compare Impact'}</button></div></section>`
+  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div></section>`
 }
 
 /**
@@ -274,11 +275,11 @@ function changeCopy(metric) {
   // and v1.5 rules it removed rather than relocated, because `net_benefit` already carries
   // the same information in the unit the user entered.
   const difference = metric.difference
-  if (!Number.isFinite(difference)) return { className: 'neutral', valueClass: '', text: 'Not available' }
+  if (!Number.isFinite(difference)) return { className: 'neutral', valueClass: '', text: t('Not available') }
   const valueClass = signClass(difference)
-  if (Math.abs(difference) < 1e-9) return { className: 'neutral', valueClass, text: 'No change' }
+  if (Math.abs(difference) < 1e-9) return { className: 'neutral', valueClass, text: t('No change') }
   const positive = difference > 0
-  return { className: positive ? 'positive' : 'negative', valueClass, text: `${formatNumber(Math.abs(difference), metric.precision ?? 2)} ${escapeHtml(metric.unit || '')} ${positive ? 'saved' : 'increase'}` }
+  return { className: positive ? 'positive' : 'negative', valueClass, text: `${formatNumber(Math.abs(difference), metric.precision ?? 2)} ${escapeHtml(metric.unit || '')} ${escapeHtml(positive ? t('saved') : t('increase'))}` }
 }
 
 const metricName = (code, taxonomy) => (taxonomy.metrics || []).find(item => item.code === code)?.name || code
@@ -289,15 +290,15 @@ const scenarioValue = (value, metric) => `<strong class="${Number.isFinite(value
 
 function ImpactComparisonCard(code, metric, taxonomy) {
   const change = changeCopy(metric)
-  return `<article class="impact-comparison-card"><h3>${escapeHtml(metricName(code, taxonomy))}</h3><div class="comparison-values"><div><span>Current</span>${scenarioValue(metric.current, metric)}</div><span class="comparison-arrow" aria-hidden="true">→</span><div><span>Improved</span>${scenarioValue(metric.improved, metric)}</div></div><div class="comparison-change ${change.className}"><strong class="${change.valueClass}">${change.text}</strong></div></article>`
+  return `<article class="impact-comparison-card"><h3>${escapeHtml(metricName(code, taxonomy))}</h3><div class="comparison-values"><div><span>${escapeHtml(t('Current'))}</span>${scenarioValue(metric.current, metric)}</div><span class="comparison-arrow" aria-hidden="true">→</span><div><span>${escapeHtml(t('Improved'))}</span>${scenarioValue(metric.improved, metric)}</div></div><div class="comparison-change ${change.className}"><strong class="${change.valueClass}">${change.text}</strong></div></article>`
 }
 
 function ComparisonSummary(data, taxonomy) {
   const codes = comparableCodes(data.metrics)
-  return `<section class="comparison-summary"><h2>Potential Improvement</h2><ul>${codes.map(code => {
+  return `<section class="comparison-summary"><h2>${escapeHtml(t('Potential Improvement'))}</h2><ul>${codes.map(code => {
     const change = changeCopy(data.metrics[code])
     return `<li class="${change.className}"><strong>${escapeHtml(metricName(code, taxonomy))}:</strong> <span class="${change.valueClass}">${change.text}</span></li>`
-  }).join('') || '<li>No comparable impact metrics were returned.</li>'}</ul></section>`
+  }).join('') || `<li>${escapeHtml(t('No comparable impact metrics were returned.'))}</li>`}</ul></section>`
 }
 
 /**
@@ -325,13 +326,17 @@ function ComparisonBars(metrics, taxonomy) {
       if (!Number.isFinite(value)) return ''
       const width = Math.abs(value) / max * (diverging ? 50 : 100)
       const offset = diverging ? (value < 0 ? 50 - width : 50) : 0
-      return `<span class="${className}${value < 0 ? ' negative-bar' : ''}" style="width:${width}%;margin-left:${offset}%"></span>`
+      // `margin-inline-start`, not `margin-left`: Arabic and Urdu render this page with
+      // `<html dir="rtl">`, and a physical left offset would place the negative half of a
+      // diverging bar on the same side as the positive half - two opposite quantities
+      // drawn on top of each other. The logical property mirrors with the document.
+      return `<span class="${className}${value < 0 ? ' negative-bar' : ''}" style="width:${width}%;margin-inline-start:${offset}%"></span>`
     }
     const row = (label, value, className) => `<div><span>${label}</span><div class="comparison-bar-track${diverging ? ' diverging' : ''}">${bar(value, className)}</div>${scenarioValue(value, metric)}</div>`
-    return `<div class="comparison-bar-group"><h3>${escapeHtml(metricName(code, taxonomy))}</h3>${row('Current', metric.current, 'current-bar')}${row('Improved', metric.improved, 'improved-bar')}</div>`
+    return `<div class="comparison-bar-group"><h3>${escapeHtml(metricName(code, taxonomy))}</h3>${row(escapeHtml(t('Current')), metric.current, 'current-bar')}${row(escapeHtml(t('Improved')), metric.improved, 'improved-bar')}</div>`
   }).join('')
-  const note = anyDiverging ? '<p class="comparison-bar-note">A metric total can be negative when a destination offsets more than it costs. Those bars are drawn from a centre line marking zero and run to the left.</p>' : ''
-  return `<section class="comparison-bars" aria-labelledby="comparison-chart-title"><h2 id="comparison-chart-title">Current and Improved comparison</h2>${note}${groups}</section>`
+  const note = anyDiverging ? `<p class="comparison-bar-note">${escapeHtml(t('A metric total can be negative when a destination offsets more than it costs. Those bars are drawn from a centre line marking zero and run to the left.'))}</p>` : ''
+  return `<section class="comparison-bars" aria-labelledby="comparison-chart-title"><h2 id="comparison-chart-title">${escapeHtml(t('Current and Improved comparison'))}</h2>${note}${groups}</section>`
 }
 
 /**
@@ -346,9 +351,9 @@ function ComparisonBars(metrics, taxonomy) {
  * a subtracted number glued to the front of the engine's own sentence.)
  */
 function equivalentComparison(rows) {
-  if (!rows.length) return '<p class="empty-state">No comparable tangible equivalents were returned.</p>'
-  const side = (label, value) => `<div><span>${label}</span><strong>${value ? escapeHtml(value) : 'Not available'}</strong></div>`
-  return `<p class="comparison-equivalent-note">Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.</p><ul class="comparison-equivalents">${rows.map(row => `<li><div class="comparison-values">${side('Current', row.current)}<span class="comparison-arrow" aria-hidden="true">→</span>${side('Improved', row.improved)}</div></li>`).join('')}</ul>`
+  if (!rows.length) return `<p class="empty-state">${escapeHtml(t('No comparable tangible equivalents were returned.'))}</p>`
+  const side = (label, value) => `<div><span>${escapeHtml(label)}</span><strong>${value ? escapeHtml(value) : escapeHtml(t('Not available'))}</strong></div>`
+  return `<p class="comparison-equivalent-note">${escapeHtml(t('Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.'))}</p><ul class="comparison-equivalents">${rows.map(row => `<li><div class="comparison-values">${side(t('Current'), row.current)}<span class="comparison-arrow" aria-hidden="true">→</span>${side(t('Improved'), row.improved)}</div></li>`).join('')}</ul>`
 }
 
 export function ComparisonResults(state) {
@@ -356,5 +361,5 @@ export function ComparisonResults(state) {
   if (!result?.totals?.alternative) return ''
   const data = comparisonData(result)
   const mock = result.factor_set?.is_mock
-  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">Current Results → Improved Scenario</p><h2 id="comparison-results-title">Compare Results</h2>${mock ? '<p class="comparison-estimate-note">Demonstration only — this comparison uses mock factors and is not a verified impact result.</p>' : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>Tangible equivalents</h2>${equivalentComparison(data.equivalences)}</section></section>`
+  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">${escapeHtml(t('Current Results → Improved Scenario'))}</p><h2 id="comparison-results-title">${escapeHtml(t('Compare Results'))}</h2>${mock ? `<p class="comparison-estimate-note">${escapeHtml(t('Demonstration only — this comparison uses mock factors and is not a verified impact result.'))}</p>` : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>${escapeHtml(t('Tangible equivalents'))}</h2>${equivalentComparison(data.equivalences)}</section></section>`
 }

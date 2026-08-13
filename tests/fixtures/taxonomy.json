@@ -61,6 +61,7 @@
       "name": "Prevented — waste avoided",
       "group": "reuse",
       "description": "Food that is never wasted in the first place. Used only in the alternative scenario: moving mass here is how the calculator expresses wasting less, and it keeps the two scenarios describing the same total mass.",
+      "is_prevention": true,
       "sort_order": 5
     },
     {
@@ -68,6 +69,7 @@
       "name": "Food redistribution",
       "group": "reuse",
       "description": "Surplus food given or sold on for people to eat — food rescue organisations, food banks and secondary markets.",
+      "is_prevention": false,
       "sort_order": 10
     },
     {
@@ -75,6 +77,7 @@
       "name": "Upcycling to other food products",
       "group": "reuse",
       "description": "Surplus food remade into another food product, such as bread into beer or fruit into preserves.",
+      "is_prevention": false,
       "sort_order": 20
     },
     {
@@ -82,6 +85,7 @@
       "name": "Animal feed",
       "group": "reuse",
       "description": "Food diverted to feed livestock or other animals, either directly or after processing.",
+      "is_prevention": false,
       "sort_order": 30
     },
     {
@@ -89,6 +93,7 @@
       "name": "Composting (aerobic digestion)",
       "group": "recycle_recovery",
       "description": "Food broken down aerobically into a soil conditioner, on site or at a commercial facility.",
+      "is_prevention": false,
       "sort_order": 40
     },
     {
@@ -96,6 +101,7 @@
       "name": "Anaerobic digestion",
       "group": "recycle_recovery",
       "description": "Food broken down without oxygen to produce biogas and digestate.",
+      "is_prevention": false,
       "sort_order": 50
     },
     {
@@ -103,6 +109,7 @@
       "name": "Land application",
       "group": "recycle_recovery",
       "description": "Food spread directly onto land, without composting or digestion first.",
+      "is_prevention": false,
       "sort_order": 60
     },
     {
@@ -110,6 +117,7 @@
       "name": "Not harvested or ploughed in",
       "group": "recycle_recovery",
       "description": "Edible crop left in the field or ploughed back into the soil. Relevant mainly to primary production.",
+      "is_prevention": false,
       "sort_order": 70
     },
     {
@@ -117,6 +125,7 @@
       "name": "Processing into non-food items",
       "group": "recycle_recovery",
       "description": "Food converted into bio-based materials or chemicals. The 2025 Otago baseline recommends reclassifying this as reuse; the grouping is a table row precisely so that change is an edit, not a migration.",
+      "is_prevention": false,
       "sort_order": 80
     },
     {
@@ -124,6 +133,7 @@
       "name": "Other recovery, including biodiesel",
       "group": "recycle_recovery",
       "description": "Energy or material recovery not covered by the other routes, such as rendering to biodiesel.",
+      "is_prevention": false,
       "sort_order": 90
     },
     {
@@ -131,6 +141,7 @@
       "name": "Combustion",
       "group": "disposal",
       "description": "Food burned, with or without energy recovery.",
+      "is_prevention": false,
       "sort_order": 100
     },
     {
@@ -138,6 +149,7 @@
       "name": "Landfill",
       "group": "disposal",
       "description": "Food sent to a landfill, where it breaks down without oxygen and releases methane.",
+      "is_prevention": false,
       "sort_order": 110
     },
     {
@@ -145,6 +157,7 @@
       "name": "Refuse or discard",
       "group": "disposal",
       "description": "Food dumped, littered or otherwise discarded outside a managed waste system.",
+      "is_prevention": false,
       "sort_order": 120
     },
     {
@@ -152,6 +165,7 @@
       "name": "Sewer or wastewater",
       "group": "disposal",
       "description": "Food flushed to the sewer, including through an in-sink waste disposal unit.",
+      "is_prevention": false,
       "sort_order": 130
     }
   ],

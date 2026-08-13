@@ -3,30 +3,36 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Estimate the environmental and financial impact of food waste in New Zealand food businesses.">
-    <title>Food Waste Impact Calculator | Kai Commitment</title>
+    <!-- `data-i18n-attr` names the attributes whose current values are catalogue keys;
+         `data-i18n` with no value means "my own trimmed text is the key". The English
+         therefore lives in exactly one place on this page, the same rule the JS follows. -->
+    <meta name="description" data-i18n-attr="content" content="Estimate the environmental and financial impact of food waste in New Zealand food businesses.">
+    <title data-i18n>Food Waste Impact Calculator | Kai Commitment</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body>
-    <a class="skip-link" href="#main-content">Skip to calculator</a>
+    <a class="skip-link" href="#main-content" data-i18n>Skip to calculator</a>
     <header class="site-header intro-header" id="site-header">
       <div class="header-inner">
-        <button class="brand brand-home-button" id="home-button" type="button" aria-label="Clear calculator data and return to the introduction">
-          <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" alt="Kai Commitment - Leading action on food waste">
-          <span class="prototype-label">Impact calculator</span>
+        <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and return to the introduction">
+          <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label" data-i18n>Impact calculator</span>
         </button>
-        <button class="text-button" id="clear-button" type="button" hidden>Clear all data</button>
+        <button class="text-button" id="clear-button" type="button" hidden data-i18n>Clear all data</button>
       </div>
     </header>
 
-    <nav class="step-indicator" id="step-indicator" aria-label="Calculator progress" hidden></nav>
+    <!-- The step progress band that stood here is now inside each step's own
+         navigation bar (web/js/view.js `stepNav`). It cost 87px at the top of
+         every step and the calculator's whole scrolling complaint was measured
+         in that currency. -->
     <main id="main-content" class="main-content" tabindex="-1">
-      <p class="loading-state" role="status">Loading calculator…</p>
+      <p class="loading-state" role="status" data-i18n>Loading calculator…</p>
     </main>
 
     <footer>
-      <p>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice">This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</p>
+      <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
+      <p class="transparency-notice" data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</p>
     </footer>
     <script type="module" src="./js/main.js"></script>
   </body>

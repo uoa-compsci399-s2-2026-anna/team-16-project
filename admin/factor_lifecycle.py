@@ -37,8 +37,12 @@ from admin.factor_models import (
 )
 from admin.models import utcnow
 from admin.taxonomy_rules import TaxonomyInvariantError
-from db.repository import find_missing_prevention_upstream
-from db.types import PREVENTION_CODE
+from db.errors import FactorSetStateError
+from db.repository import (
+    find_missing_prevention_upstream,
+    prevention_destination_codes,
+    refuse_nonzero_prevention_factors,
+)
 
 
 class LifecycleError(Exception):
@@ -248,25 +252,43 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     # repeated: `admin/` may import from `db/` and this module already relies
     # on that direction being legal. Two copies of a rule drift, and the copy
     # that stops matching is the one nobody notices — the same reasoning
-    # db/types.PREVENTION_CODE was moved to one home for.
+    # that put the prevention *role* on one column instead of leaving a
+    # code literal in five modules.
     #
     # Not applied to rollback_to below: rollback is the "put the calculator
     # back to a state that worked" operation, and a set archived before v1.8
     # will legitimately fail this check. Refusing an emergency rollback over a
     # completeness rule would be a worse failure than the one it prevents.
+    #: Never empty where this message is built: with no flagged destination
+    #: `find_missing_prevention_upstream` returns [] and there is nothing to
+    #: report. A fallback literal here would be the magic string coming back
+    #: in the one place a staff member reads.
+    codes = ", ".join(sorted(prevention_destination_codes(session)))
     missing = find_missing_prevention_upstream(session, factor_set_id)
     if missing:
         listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
         raise LifecycleError(
             f"{len(missing)} factor combinations have an upstream factor but "
-            f"no '{PREVENTION_CODE}' upstream row at 0 — either it is missing "
-            f"or it carries a non-zero value — so a line moved to "
-            f"'{PREVENTION_CODE}' would still be charged upstream "
-            "impact and the calculator would understate the benefit of "
-            f"preventing waste for them: {listed}. Add or correct an upstream "
-            f"factor of 0 with destination '{PREVENTION_CODE}' for each, then "
-            "publish."
+            "no prevention upstream row at 0 — either it is missing or it "
+            "carries a non-zero value — so a prevented line would still be "
+            "charged upstream impact and the calculator would understate the "
+            f"benefit of preventing waste for them: {listed}. Add or correct "
+            f"an upstream factor of 0 against a prevention destination "
+            f"({codes}) for each, then publish."
         )
+
+    # The other half of the same property, and the half nothing checked at all
+    # until the flag existed: a prevention destination priced at anything but
+    # zero is not a 100% offset, so the improved scenario stops describing the
+    # same mass at no cost. `_refuse_incomplete_prevention` above can only see
+    # a non-zero value where a generic row exists to compare it against, which
+    # a set built §10.3's way — one explicit row per destination, no generic
+    # rows — has none of. An *absent* row is still zero by §4.1's lookup and
+    # stays legal; this refuses only a row that exists and disagrees.
+    try:
+        refuse_nonzero_prevention_factors(session, factor_set_id)
+    except FactorSetStateError as exc:
+        raise LifecycleError(str(exc)) from exc
 
     changes: list[tuple[FactorSet, dict, str]] = []
 

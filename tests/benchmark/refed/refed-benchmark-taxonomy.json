@@ -292,6 +292,7 @@
       "name": "ReFED Prevention",
       "group_code": "reuse",
       "description": "ReFED destination 'Prevention' (ReFED slug 'prevention'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": true,
       "sort_order": 205,
       "active": true
     },

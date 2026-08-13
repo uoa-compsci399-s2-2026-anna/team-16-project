@@ -35,7 +35,8 @@ from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
 from admin.taxonomy_rules import (
-    TaxonomyInvariantError, check_prevention_intact, check_single_standard_mix,
+    TaxonomyInvariantError, check_prevention_destination,
+    check_single_standard_mix,
 )
 
 _CATEGORY = "Taxonomy"
@@ -101,11 +102,12 @@ class _TaxonomyAdmin(AuditedModelView):
     installed by `_audited_session_maker` returns early for a commit an
     `@action` makes itself, and `validate_before_commit` never runs. Built
     naively (`for pk in pks: row.active = False; session.commit()`), this
-    would let a staff member deactivate `prevention` - the destination the
-    engine resolves by code to express "waste avoided", without which the
-    alternative scenario cannot be built at all - or the destination group
-    containing it (`check_prevention_intact` already checks the group's own
-    `active`, since every active-destination listing joins through it), or
+    would let a staff member deactivate every destination flagged
+    `is_prevention` - the row an alternative scenario moves mass to in order
+    to express "waste avoided", without which that scenario cannot be built at
+    all - or the destination group containing them
+    (`check_prevention_destination` already checks the group's own `active`,
+    since every active-destination listing joins through it), or
     the last active standard-mix food category (what the calculator falls
     back to when a visitor does not know their waste composition, which is
     most visitors).
@@ -282,13 +284,13 @@ class DestinationGroupAdmin(_TaxonomyAdmin, model=DestinationGroup):
 
     #: Same rule the bulk deactivate action below must not break either -
     #: see _TaxonomyAdmin's own docstring.
-    _bulk_invariant_check = staticmethod(check_prevention_intact)
+    _bulk_invariant_check = staticmethod(check_prevention_destination)
 
     def validate_before_commit(self, session) -> None:
-        """`prevention`'s group must survive every edit made through this
-        screen - deactivating the group takes `prevention` out of service
-        just as surely as deactivating `prevention` itself would."""
-        check_prevention_intact(session)
+        """A prevention destination's group must survive every edit made
+        through this screen - deactivating the group takes the destination out
+        of service just as surely as deactivating the destination would."""
+        check_prevention_destination(session)
 
 
 class DestinationAdmin(_TaxonomyAdmin, model=Destination):
@@ -301,15 +303,17 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
 
     column_list = [
         Destination.code, Destination.name, Destination.group,
-        Destination.sort_order, Destination.active,
+        Destination.is_prevention, Destination.sort_order, Destination.active,
     ]
     column_details_list = [
         Destination.code, Destination.name, Destination.description,
-        Destination.group, Destination.sort_order, Destination.active,
+        Destination.group, Destination.is_prevention, Destination.sort_order,
+        Destination.active,
     ]
     form_columns = [
         Destination.group, Destination.code, Destination.name,
-        Destination.description, Destination.sort_order, Destination.active,
+        Destination.description, Destination.is_prevention,
+        Destination.sort_order, Destination.active,
     ]
     form_args = {
         "group": {"description": (
@@ -320,10 +324,10 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
         "code": {"description": (
             "The short name the API and the front end use for this "
             "destination — 'landfill', 'compost', 'animal_feed'. Lower case, "
-            "no spaces. 'prevention' is the one code this system knows by "
-            "name: it stands for waste that did not happen, and the "
-            "calculator finds it by this exact text, so renaming it and "
-            "deleting it are the same event. The panel refuses either."
+            "no spaces. No code has any special meaning to this system; the "
+            "one destination that plays a special part is marked by the "
+            "prevention tick below, not by what it is called, so you may "
+            "rename any row here freely."
         )},
         "name": {"description": (
             "The wording a visitor picks from on the calculator, and reads "
@@ -335,6 +339,17 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
             "who cannot tell two destinations apart will guess, and the "
             "guess goes into the numbers."
         )},
+        "is_prevention": {"description": (
+            "Tick this for the destination that means the waste never "
+            "happened at all. It is what an improved scenario moves waste "
+            "onto in order to say 'we wasted less', and it is the only way "
+            "the calculator can say that while both scenarios still describe "
+            "the same total amount. Its factors must all be zero — that zero "
+            "is the whole of the saving. At least one destination must carry "
+            "this tick and stay active; more than one is allowed, and each "
+            "set of factors brings its own. A ticked destination cannot be "
+            "chosen for current waste, only for an improved scenario."
+        )},
         "sort_order": {"description": _SORT_ORDER_HELP},
         "active": {"description": _ACTIVE_HELP},
     }
@@ -345,11 +360,12 @@ class DestinationAdmin(_TaxonomyAdmin, model=Destination):
 
     #: Same rule the bulk deactivate action below must not break either -
     #: see _TaxonomyAdmin's own docstring.
-    _bulk_invariant_check = staticmethod(check_prevention_intact)
+    _bulk_invariant_check = staticmethod(check_prevention_destination)
 
     def validate_before_commit(self, session) -> None:
-        """`prevention` must survive every edit made through this screen."""
-        check_prevention_intact(session)
+        """A usable prevention destination must survive every edit made
+        through this screen."""
+        check_prevention_destination(session)
 
 
 class SectorAdmin(_TaxonomyAdmin, model=Sector):

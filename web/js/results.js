@@ -1,8 +1,14 @@
-import { escapeHtml, formatNumber } from './view.js'
+import { escapeHtml, formatNumber, stepNav } from './view.js'
+import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
 import { kgToTonnes } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
+
+// The English source strings, which are also the catalogue keys. `TAB_LABELS` is
+// keyed by tab and read in three places, one of which is a table caption, so the
+// translation happens where it is rendered rather than here - a module-level t()
+// would be evaluated once and would be right only by accident.
 const TAB_LABELS = { stage: 'By supply-chain stage', destination: 'By waste destination', food: 'By food type' }
 
 // The one metric code this module names, and it is not the hard-coded list §7.6.5 forbids:
@@ -50,7 +56,7 @@ function summaryCards(totals, taxonomy) {
     return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
   }).join('')
   const totalKg = number(totals.total_kg)
-  return `<article class="result-card primary-result"><p class="result-label">Total food waste</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes</p></article>${impactCards}<article class="result-card"><p class="result-label">Percentage waste</p><p class="result-value">Not available</p><p class="result-note">Total food handled data is required.</p></article>`
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(t('Not available'))}</p><p class="result-note">${escapeHtml(t('Total food handled data is required.'))}</p></article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and
@@ -60,7 +66,7 @@ function summaryCards(totals, taxonomy) {
 // wording was overridden (§7.6.5).
 function equivalences(totals) {
   const rows = totals.current?.equivalences || []
-  if (!rows.length) return '<p class="empty-state">Tangible equivalents are available once approved conversion factors are supplied.</p>'
+  if (!rows.length) return `<p class="empty-state">${escapeHtml(t('Tangible equivalents are available once approved conversion factors are supplied.'))}</p>`
   return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3></article>`).join('')}</div>`
 }
 
@@ -124,14 +130,14 @@ function breakdowns(entryResults, taxonomy) {
   }
   return {
     stage: { sections: [{ rows: stage }] },
-    destination: destination.length ? { sections: destination, note: 'Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.' } : { unavailable: 'Waste-destination breakdown is not available because no destination data was provided.' },
-    food: food.length ? { sections: [{ rows: food }] } : { unavailable: 'Food-type breakdown is not available because no food category data was provided.' },
+    destination: destination.length ? { sections: destination, note: t('Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.') } : { unavailable: t('Waste-destination breakdown is not available because no destination data was provided.') },
+    food: food.length ? { sections: [{ rows: food }] } : { unavailable: t('Food-type breakdown is not available because no food category data was provided.') },
   }
 }
 
 function metricCell(row, code, taxonomy) {
   const cell = row.metrics[code]
-  if (!cell) return 'Not available'
+  if (!cell) return t('Not available')
   const definition = findByCode(taxonomy.metrics, code)
   const total = number(cell.total)
   const text = `${formatNumber(total, Number(cell.display_precision ?? definition?.display_precision ?? 2))} ${escapeHtml(metricUnit(cell, definition))}`
@@ -177,11 +183,13 @@ function breakdownTable(section, tabLabel, taxonomy, widest, columns) {
     const width = widest && Number.isFinite(row.kilograms) ? Math.min(Math.abs(row.kilograms) / widest * 100, 100) : 0
     return `<div class="bar-row"><div><strong>${escapeHtml(row.label)}</strong><span>${formatNumber(row.kilograms, 2)} kg</span></div><div class="bar-track"><span style="width:${width}%"></span></div></div>`
   }).join('')
-  const caption = section.label ? `${tabLabel} data — ${section.label}` : `${tabLabel} data`
+  const caption = section.label
+    ? t('%(tab)s data — %(entry)s', { tab: tabLabel, entry: section.label })
+    : t('%(tab)s data', { tab: tabLabel })
   const heading = section.label ? `<h3 class="breakdown-entry-heading">${escapeHtml(section.label)}</h3>` : ''
   const head = columns.map(code => `<th scope="col">${escapeHtml(metricName(code, taxonomy))}</th>`).join('')
   const body = section.rows.map(row => `<tr><th scope="row">${escapeHtml(row.label)}</th><td>${formatNumber(row.kilograms, 2)} kg</td>${columns.map(code => `<td>${metricCell(row, code, taxonomy)}</td>`).join('')}</tr>`).join('')
-  return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">Category</th><th scope="col">Waste amount</th>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`
+  return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">${escapeHtml(t('Category'))}</th><th scope="col">${escapeHtml(t('Waste amount'))}</th>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`
 }
 
 function breakdownSection(state, entryResults) {
@@ -192,12 +200,8 @@ function breakdownSection(state, entryResults) {
   const columns = current.sections ? metricColumns(current.sections) : []
   const panel = current.unavailable
     ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
-    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, TAB_LABELS[active], state.taxonomy, scale, columns)).join('')}`
-  return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">Breakdown by category</h2><p>Explore how the recorded waste is distributed.</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="Waste breakdown">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${label}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
-}
-
-function downloadButton() {
-  return '<button class="button button-primary" type="button" data-action="download-results">Download results</button>'
+    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
+  return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 
 // One metric, worded the way the summary card words it: the taxonomy's name, the figure at
@@ -223,7 +227,7 @@ const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario,
   const figures = Object.entries(row.metrics)
     .filter(([code]) => code !== MASS_METRIC)
     .map(([code, cell]) => metricText(code, cell, taxonomy))
-  return `  - ${row.label} (${formatNumber(row.kilograms, 3)} kg): ${figures.join('; ') || 'no impact figures were returned'}`
+  return `  - ${row.label} (${formatNumber(row.kilograms, 3)} kg): ${figures.join('; ') || t('no impact figures were returned')}`
 })
 
 // The comparison screen, in text, and only when one was run. `net_benefit` is read from the
@@ -245,15 +249,15 @@ function comparisonLines(state) {
     const difference = number(netBenefit[code])
     // The screen's own wording, from `changeCopy`: a positive `net_benefit` is a saving.
     const change = !Number.isFinite(difference)
-      ? 'Not available'
+      ? t('Not available')
       : Math.abs(difference) < 1e-9
-        ? 'no change'
-        : `${formatNumber(Math.abs(difference), precision)} ${unit} ${difference > 0 ? 'saved' : 'increase'}`.trimEnd()
+        ? t('no change')
+        : `${formatNumber(Math.abs(difference), precision)} ${unit} ${difference > 0 ? t('saved') : t('increase')}`.trimEnd()
     const figure = value => `${formatNumber(number(value), precision)} ${unit}`.trimEnd()
     lines.push(`  - ${definition?.name || code}: ${figure(cell.total)} → ${figure(improved.total)} (${change})`)
   }
   if (!lines.length) return []
-  return ['', 'Improved scenario (Current → Improved)', ...lines]
+  return ['', t('Improved scenario (Current → Improved)'), ...lines]
 }
 
 /**
@@ -285,12 +289,12 @@ export function buildResultsReport(state) {
     const impact = metricLines(scenario, state.taxonomy, '  - ')
     const byDestination = destinationImpactLines(scenario, state.taxonomy)
     return [
-      `Entry ${index + 1}: ${sector?.name || entry.sector}`,
-      `Food type: ${food?.name || 'Not provided'}`,
-      `Waste amount: ${typed(entry.totalAmount).toFixed(2)} ${entry.totalUnit}`,
-      'Destinations:', ...destinations,
-      ...(impact.length ? ['Impact for this entry:', ...impact] : []),
-      ...(byDestination.length ? ['Impact by destination:', ...byDestination] : []),
+      t('Entry %(number)s: %(sector)s', { number: index + 1, sector: sector?.name || entry.sector }),
+      `${t('Food type')}: ${food?.name || t('Not provided')}`,
+      `${t('Waste amount')}: ${typed(entry.totalAmount).toFixed(2)} ${t(entry.totalUnit === 'tonnes' ? 'tonnes' : 'kilograms')}`,
+      `${t('Destinations')}:`, ...destinations,
+      ...(impact.length ? [`${t('Impact for this entry')}:`, ...impact] : []),
+      ...(byDestination.length ? [`${t('Impact by destination')}:`, ...byDestination] : []),
       '',
     ]
   })
@@ -299,24 +303,29 @@ export function buildResultsReport(state) {
   // inverts the day a real one is published — a client-facing report that disclaims real
   // data is the more damaging half of the same bug. The factor version replaces it as the
   // line that says which numbers these are, so a real export is not left saying nothing.
-  const notice = state.result?.factor_set?.is_mock ? [DEMONSTRATION_NOTICE] : []
+  const notice = state.result?.factor_set?.is_mock ? [t(DEMONSTRATION_NOTICE)] : []
+  // The export leaves the browser and is read by somebody who did not choose the
+  // language it was written in, so a machine-translated interface has to say so on
+  // the file as well as on the screen it came from.
+  const translationNotice = isMachineTranslated() ? ['', MACHINE_TRANSLATION_NOTICE] : []
   return [
-    'Food Waste Impact Calculator — Results',
+    t('Food Waste Impact Calculator — Results'),
     '',
-    `Total food waste: ${formatNumber(totalKg, 2)} kg`,
-    `Total food waste: ${formatNumber(kgToTonnes(totals.total_kg), 3)} tonnes`,
+    `${t('Total food waste')}: ${formatNumber(totalKg, 2)} kg`,
+    `${t('Total food waste')}: ${formatNumber(kgToTonnes(totals.total_kg), 3)} ${t('tonnes')}`,
     '',
-    'Impact summary',
-    ...(summary.length ? summary : ['  - No impact metrics were returned.']),
+    t('Impact summary'),
+    ...(summary.length ? summary : [`  - ${t('No impact metrics were returned.')}`]),
     '',
-    'Tangible equivalents',
-    ...(equivalents.length ? equivalents : ['  - Tangible equivalents are available once approved conversion factors are supplied.']),
+    t('Tangible equivalents'),
+    ...(equivalents.length ? equivalents : [`  - ${t('Tangible equivalents are available once approved conversion factors are supplied.')}`]),
     ...comparisonLines(state),
     '',
     ...entryLines,
-    `Factor version: ${state.result?.factor_set?.version_label || 'Not supplied'}`,
+    `${t('Factor version')}: ${state.result?.factor_set?.version_label || t('Not supplied')}`,
     ...notice,
-    'Percentage waste is not available because total food handled data is required.',
+    t('Percentage waste is not available because total food handled data is required.'),
+    ...translationNotice,
   ].join('\n')
 }
 
@@ -362,22 +371,33 @@ export function downloadResults(state) {
 export function renderResults(state) {
   const result = state.result
   const entryResults = result?.entry_results || []
-  if (!entryResults.length) return '<section class="content-section"><h1>Results unavailable</h1><p>No calculation result has been returned.</p></section>'
+  if (!entryResults.length) return `<section class="content-section"><h1>${escapeHtml(t('Results unavailable'))}</h1><p>${escapeHtml(t('No calculation result has been returned.'))}</p></section>`
   // §6.2: `totals` is what the headline figures are rendered from, and the engine computes
   // it. The `aggregateResults` this replaced added each entry's metric total up in the
   // browser and rendered the user's own step-3 arithmetic as the total mass, so the two
   // largest numbers on the page were numbers the engine never produced (§7.6.1).
   const totals = result.totals || {}
   const mock = result.factor_set?.is_mock
-  const warning = mock ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>Placeholder data</strong><p>${DEMONSTRATION_NOTICE}</p></div></aside>` : ''
-  const version = result.factor_set?.version_label || 'Not supplied'
-  return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">Step 6</p><h1 id="results-title">Your estimated impact</h1><p class="section-intro">Results returned by the calculation service for ${entryResults.length} supply-chain ${entryResults.length === 1 ? 'entry' : 'entries'}.</p>${warning}
-    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">Impact summary</h2><p>A high-level view of the recorded food waste.</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div></section>
-    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">Tangible equivalents</h2><p>Plain-language comparisons appear when supplied by the calculation service.</p></div></div>${equivalences(totals)}</section>
+  const warning = mock ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Placeholder data'))}</strong><p>${escapeHtml(t(DEMONSTRATION_NOTICE))}</p></div></aside>` : ''
+  const version = result.factor_set?.version_label || t('Not supplied')
+  // `stepNav` is the LAST child of this section and has to stay there: it is
+  // `position: sticky; bottom: 0`, which pins only while its containing block
+  // extends past the fold. The improvement panel renders above it for that
+  // reason — appending anything after the bar unpins it early, and its first
+  // action was 1,230-2,075px past the fold before it existed. "Edit your data"
+  // and "Download results" moved into it; "Start a new calculation" did not,
+  // because it is a confirm-guarded reset rather than a step action, and the
+  // header's home button already offers it.
+  return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
+      ? t('Results returned by the calculation service for one supply-chain entry.')
+      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${warning}
+    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div></section>
+    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
-    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">Methodology &amp; Limitations</h2><p>Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.</p><p>Factor version: ${escapeHtml(version)}.</p><details><summary>View methodology</summary><div><p>Data sources and calculation factors are maintained and approved by Kai Commitment.</p><p>Percentage waste remains unavailable until total food handled data is supplied.</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="go-step" data-step="4">Edit your data</button><button class="button button-secondary" type="button" data-action="start-over">Start a new calculation</button>${downloadButton()}</div>
+    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Percentage waste remains unavailable until total food handled data is supplied.'))}</p></div></details></section>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button></div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
+    ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), label: t('Download results'), action: 'download-results' })}
   </section>`
 }

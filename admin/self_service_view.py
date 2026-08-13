@@ -92,8 +92,13 @@ from admin.csrf import check_token, issue_token
 from admin.runtime import get_runtime
 from admin.totp import TOTP_INTERVAL, qr_svg
 from admin.views import MIN_PASSWORD_LENGTH, _grouped, _password_problem
+from admin import i18n as admin_i18n
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
+
+# Contract O-8. This environment is not sqladmin's, so it does not inherit
+# `_()` from it - see admin/i18n.py::install.
+admin_i18n.install(templates.env)
 
 #: ``MAX_DEVICE_NAME_LENGTH`` moved to ``admin/accounts.py`` and is imported
 #: above. It is now enforced by ``rename_totp_device`` as well as rendered as

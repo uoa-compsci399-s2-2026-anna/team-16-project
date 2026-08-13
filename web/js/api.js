@@ -1,3 +1,5 @@
+import { t } from './i18n.js'
+
 const API_BASE = '/api/v1'
 const searchParams = new URLSearchParams(window.location.search)
 const MOCK_MODE = searchParams.get('mock') === '1'
@@ -26,20 +28,20 @@ async function request(path, options = {}) {
       },
     })
   } catch {
-    throw new ApiError('NETWORK_ERROR', 'The calculator service could not be reached. Check your connection and try again.')
+    throw new ApiError('NETWORK_ERROR', t('The calculator service could not be reached. Check your connection and try again.'))
   }
 
   let body = null
   try {
     body = await response.json()
   } catch {
-    if (!response.ok) throw new ApiError('HTTP_ERROR', 'The calculator service returned an unexpected response.', [], response.status)
+    if (!response.ok) throw new ApiError('HTTP_ERROR', t('The calculator service returned an unexpected response.'), [], response.status)
   }
 
   if (!response.ok) {
     throw new ApiError(
       body?.error?.code || body?.code || 'HTTP_ERROR',
-      body?.error?.message || body?.message || 'The request could not be completed.',
+      body?.error?.message || body?.message || t('The request could not be completed.'),
       body?.error?.details || body?.details || [],
       response.status,
     )

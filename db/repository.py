@@ -43,7 +43,6 @@ from db.models import (
     utcnow,
 )
 from db.types import (
-    PREVENTION_CODE,
     DestinationGroupSpec,
     DestinationSpec,
     FoodCategorySpec,
@@ -237,19 +236,27 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
     **Two rows are kept whatever the factor tables say, and neither is an
     exception to the rule so much as a row the rule cannot speak about.**
 
-    ``prevention``'s factors are zero *by construction* -- that is the whole of
-    what makes it a 100% offset and what keeps the two scenarios
+    A **prevention** destination's factors are zero *by construction* -- that is
+    the whole of what makes it a 100% offset and what keeps the two scenarios
     mass-conserving (§6.2). An absence of factor rows is therefore not evidence
     that a set does not support it, which is the inference this function draws
-    for every other row, so it is held out of the inference by name. In the
-    deployed database it is covered anyway, because ``publish_factor_set``
-    refuses a set whose general upstream rows have no matching ``prevention``
-    row at zero -- but that is a coincidence of two other rules rather than a
-    guarantee, and the improvement panel is unusable the day it stops holding.
-    The ReFED set's own ``refed_prevention`` carries 156 rows in each factor
-    table and needs no special case; both may appear at once and that is
-    harmless, since a prevention destination is a zero-factor offset under any
-    set and §6.2 refuses ``prevention`` in a *current* scenario outright.
+    for every other row, so every row flagged ``is_prevention`` is held out of
+    the inference. **By the flag, not by a code**: this read
+    ``x.code == PREVENTION_CODE`` until the flag existed, which meant §10.3's
+    ``refed_prevention`` -- a prevention destination by every property that
+    matters -- was subject to an inference that cannot be true of it.
+
+    In the deployed database ``prevention`` is covered anyway, because
+    ``publish_factor_set`` refuses a set whose general upstream rows have no
+    matching zero override -- but that is a coincidence of two other rules
+    rather than a guarantee, and the improvement panel is unusable the day it
+    stops holding. Both prevention rows may appear at once, which is what
+    happens under a set that prices only one vocabulary. That crossing is
+    accepted rather than hidden: §6.2 refuses every flagged destination in a
+    *current* scenario outright, and a line to a foreign prevention destination
+    in the *alternative* falls back to the generic upstream row and is charged
+    for it -- which understates the benefit of wasting less rather than
+    overstating it.
 
     The **standard mix** is kept for the structural half of the same reason:
     §2.1 requires exactly one active row to carry ``is_standard_mix`` and §6.2
@@ -326,7 +333,7 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
     ]
     destinations = [
         (x, group_code) for x, group_code in destinations
-        if x.id in covered["destinations"] or x.code == PREVENTION_CODE
+        if x.id in covered["destinations"] or x.is_prevention
     ]
     #: A group appears iff a destination that survived belongs to it. Derived
     #: from the surviving rows rather than computed a second time, so
@@ -354,7 +361,10 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
             for x in groups
         ),
         destinations=tuple(
-            DestinationSpec(x.code, x.name, group_code, x.description, x.sort_order)
+            DestinationSpec(
+                x.code, x.name, group_code, x.description, x.sort_order,
+                x.is_prevention,
+            )
             for x, group_code in destinations
         ),
         metrics=tuple(
@@ -594,11 +604,20 @@ def find_missing_prevention_upstream(
     charge a prevented line an upstream factor. Contract §2.2, O-7.
 
     A tuple qualifies when it has a general upstream row (`destination_id IS
-    NULL`) and **no `prevention` row at zero** — whether because the
-    `prevention` row is absent or because it carries a non-zero value. For
-    those tuples a line moved to `prevention` keeps some or all of the entry's
-    upstream burden and the calculator reverts towards its pre-v1.8 behaviour,
+    NULL`) and **no prevention destination has a row at zero for it** — whether
+    because every such row is absent or because each carries a non-zero value.
+    For those tuples a prevented line keeps some or all of the entry's upstream
+    burden and the calculator reverts towards its pre-v1.8 behaviour,
     understating the benefit of wasting less.
+
+    **"No prevention destination", not "every prevention destination."** The
+    role is a flag now (§2.1) and more than one row may carry it, because two
+    vocabularies share these global tables (§10.3). Requiring a zero override
+    per flagged row would refuse `MOCK-v0` the moment §10.3's fixture is
+    loaded, since `MOCK-v0` has no `refed_prevention` rows and never will —
+    including on a rollback to it. What this guard exists to protect is that an
+    alternative scenario **can** express wasting less without an upstream
+    charge, and one working offset per tuple is what that takes.
 
     **Existence is not the rule; the value is.** An earlier revision of this
     function checked only that a `prevention` row was present, while both
@@ -622,16 +641,18 @@ def find_missing_prevention_upstream(
     straight into a message a human has to act on. An empty list is the
     healthy state.
 
-    Returns empty when the taxonomy has no `prevention` destination at all.
+    Returns empty when the taxonomy has no prevention destination at all.
     That is an unseeded database rather than an incomplete factor set, and it
-    is `admin/taxonomy_rules.check_prevention_intact`'s to refuse — a second
-    rule stated in terms of the same row would be a second thing to keep in
-    step, and this one would report every tuple in the set.
+    is `admin/taxonomy_rules.check_prevention_destination`'s to refuse — a
+    second rule stated in terms of the same row would be a second thing to keep
+    in step, and this one would report every tuple in the set.
     """
-    prevention_id = session.scalar(
-        select(Destination.id).where(Destination.code == PREVENTION_CODE)
+    prevention_ids = list(
+        session.scalars(
+            select(Destination.id).where(Destination.is_prevention.is_(True))
+        )
     )
-    if prevention_id is None:
+    if not prevention_ids:
         return []
 
     covered = (
@@ -639,7 +660,7 @@ def find_missing_prevention_upstream(
                FactorUpstream.metric_id)
         .where(
             FactorUpstream.factor_set_id == factor_set_id,
-            FactorUpstream.destination_id == prevention_id,
+            FactorUpstream.destination_id.in_(prevention_ids),
             #: The whole of the difference between "a row exists" and "the
             #: offset is whole". Compared against `Decimal` rather than `0` so
             #: that no float is bound into the statement (§1.2); DECIMAL(20,10)
@@ -672,17 +693,91 @@ def find_missing_prevention_upstream(
     return sorted((sector, food, metric) for sector, food, metric in rows)
 
 
+def prevention_destination_codes(session: Session) -> frozenset[str]:
+    """The codes of every destination flagged `is_prevention` (§2.1).
+
+    `db/` is the only layer that touches the database, and `api/` may not
+    import `admin/`, so this is how §6.2's validator learns which destinations
+    are the offset. It reads the **taxonomy**, not a factor set: `destination`
+    carries no `factor_set_id`, so the answer does not depend on what is
+    published and is the same for a dry run as for a public request.
+
+    Not restricted to `active` rows on purpose. A deactivated prevention row is
+    still a destination for which "this waste did not happen" is true, and a
+    caller who names one in a *current* scenario must be refused rather than
+    told the code is merely unknown — `check_prevention_destination` is what
+    refuses the deactivation, and this must not depend on having won that race.
+    """
+    return frozenset(
+        session.scalars(
+            select(Destination.code).where(Destination.is_prevention.is_(True))
+        )
+    )
+
+
 def _refuse_incomplete_prevention(session: Session, factor_set_id: int) -> None:
     missing = find_missing_prevention_upstream(session, factor_set_id)
     if not missing:
         return
     listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
+    #: Never empty where this message is built: with no flagged destination
+    #: `find_missing_prevention_upstream` returns [] and there is nothing to
+    #: report. A fallback literal here would be the magic string coming back
+    #: in the one place a staff member reads.
+    codes = ", ".join(sorted(prevention_destination_codes(session)))
     raise FactorSetStateError(
         f"{len(missing)} factor combinations have an upstream factor but no "
-        f"'{PREVENTION_CODE}' upstream row at 0 — either it is missing or it "
-        f"carries a non-zero value — so a prevented line would still be "
-        f"charged upstream impact: {listed}. Add or correct a "
-        f"'{PREVENTION_CODE}' upstream row at 0 for each before publishing."
+        f"prevention upstream row at 0 — either it is missing or it carries a "
+        f"non-zero value — so a prevented line would still be charged upstream "
+        f"impact: {listed}. Add or correct an upstream row at 0 against a "
+        f"prevention destination ({codes}) for each before publishing."
+    )
+
+
+def refuse_nonzero_prevention_factors(session: Session, factor_set_id: int) -> None:
+    """A prevention destination priced at anything but zero. §2.1, §2.2.
+
+    Until this existed the zero was **assumed on the downstream side and
+    unenforced on the upstream side of any set with no generic rows.**
+    `_refuse_incomplete_prevention` above catches a non-zero upstream value
+    only where a generic row exists to compare it against, so a set built the
+    ReFED way — an explicit row per destination and no generic rows at all —
+    could carry a prevention row at 1.9 and publish. Nothing anywhere looked at
+    `factor_downstream`.
+
+    A destination flagged `is_prevention` whose factors are not zero is not a
+    100% offset, so the alternative scenario stops being the same mass at no
+    cost and `net_benefit` silently reports a smaller improvement than the
+    scenario describes. That is the same class of failure as O-7 and it is
+    invisible in exactly the same way.
+
+    **An absent row stays legal.** §4.1's lookup returns `Decimal('0')` for a
+    missing factor, so absence already *is* zero; this refuses only a row that
+    exists and disagrees. That is why it cannot regress a set that simply
+    prices a prevention destination nowhere — which is the case
+    `get_taxonomy`'s hold-out is built around.
+    """
+    problems: list[str] = []
+    for table, label in ((FactorUpstream, "upstream"), (FactorDownstream, "downstream")):
+        rows = session.execute(
+            select(Destination.code, table.value_per_kg)
+            .select_from(table)
+            .join(Destination, table.destination_id == Destination.id)
+            .where(
+                table.factor_set_id == factor_set_id,
+                Destination.is_prevention.is_(True),
+                table.value_per_kg != Decimal("0"),
+            )
+        ).all()
+        problems.extend(f"{label} {code} = {value}" for code, value in rows)
+    if not problems:
+        return
+    raise FactorSetStateError(
+        f"{len(problems)} factor rows price a prevention destination at "
+        f"something other than 0: {', '.join(sorted(problems))}. A prevention "
+        "destination is a 100% offset — that zero is what lets an alternative "
+        "scenario describe the same mass at no impact — so set each of these "
+        "to 0, or delete the row, before publishing."
     )
 
 
@@ -699,9 +794,11 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     calculator back to a state that worked" operation, and a set archived
     before v1.8 will legitimately fail this check. Refusing an emergency
     rollback over a completeness rule would be a worse failure than the one the
-    rule prevents.
+    rule prevents. `refuse_nonzero_prevention_factors` is scoped the same way
+    and for the same reason.
     """
     _refuse_incomplete_prevention(session, factor_set_id)
+    refuse_nonzero_prevention_factors(session, factor_set_id)
     _transition_factor_set(
         session,
         factor_set_id,

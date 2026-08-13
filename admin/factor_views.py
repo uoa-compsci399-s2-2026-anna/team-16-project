@@ -202,8 +202,9 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
 
     Empty means "every destination for this sector, food category and metric"
     — producing a kilogram of dairy costs what it costs whatever later becomes
-    of it. The column exists so that `prevention` can carry a row of its own at
-    zero (open item O-7): food that was never wasted was never produced, so
+    of it. The column exists so that a prevention destination can carry a row
+    of its own at zero (open item O-7): food that was never wasted was never
+    produced, so
     none of the upstream burden is attributable to it, and without that row the
     calculator understates the benefit of wasting less by most of its value.
 
@@ -218,7 +219,7 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
 
     #: The `destination` description below says what a blank destination
     #: means; this says what happens at publish time when a general row has
-    #: no `prevention` counterpart, and what the refusal message is asking
+    #: no prevention counterpart, and what the refusal message is asking
     #: for. See admin/modelviews.py's `guidance_blocks`.
     guidance_blocks = ["brand/guidance/prevention_zero.html"]
 
@@ -252,7 +253,7 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
             "one category."
         )},
         # Trimmed to the field when brand/guidance/prevention_zero.html
-        # arrived: what a general row left without its 'prevention'
+        # arrived: what a general row left without its prevention
         # counterpart costs, and the refusal at publish time, are a sequence
         # rather than a field, and they are now stated in full on this
         # screen's own guidance block - which the list page also carries,
@@ -262,10 +263,10 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
                 "Leave blank unless this factor is specific to one destination "
                 "— blank means it applies to every destination, and that is "
                 "the normal case: producing a kilogram of dairy costs what it "
-                "costs whatever later becomes of it. The one exception is "
-                "'prevention', which needs a row of its own at zero for every "
-                "combination that has a general row; publishing is refused "
-                "while any is missing."
+                "costs whatever later becomes of it. The one exception is the "
+                "destination ticked as the prevention destination, which needs "
+                "a row of its own at zero for every combination that has a "
+                "general row; publishing is refused while any is missing."
             ),
         },
         "metric": {"description": (
@@ -275,8 +276,9 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
         )},
         "value_per_kg": {"description": (
             "Impact of producing one kilogram of this food, in the metric's "
-            "own unit. A 'prevention' row is zero — that zero is what makes "
-            "preventing waste a full offset rather than a partial one."
+            "own unit. A row against a prevention destination is zero — that "
+            "zero is what makes preventing waste a full offset rather than a "
+            "partial one, and publishing is refused if it is anything else."
         )},
         "source_note": {"description": _SOURCE_NOTE_HELP},
         "data_quality": {"description": _DATA_QUALITY_HELP},

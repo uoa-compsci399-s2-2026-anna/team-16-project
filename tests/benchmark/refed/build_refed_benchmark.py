@@ -254,6 +254,12 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
                     f"ReFED destination '{label}' (ReFED slug '{slug}'). "
                     "Benchmark fixture only; not a New Zealand MfE destination."
                 ),
+                #: §2.1. The role is a flag now, so the fixture states it
+                #: rather than relying on a code the guards no longer read.
+                #: Every column of every ReFED Prevention row is zero, which is
+                #: what makes this a prevention destination and not merely a
+                #: destination called one.
+                "is_prevention": code == "refed_prevention",
                 "sort_order": sort,
                 "active": True,
             }
@@ -347,10 +353,11 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
             })
 
     # The publish gate (db/repository.py, find_missing_prevention_upstream)
-    # looks for a zero upstream row against the destination code 'prevention'.
-    # ReFED's prevention destination is refed_prevention, so emit the NZ-coded
-    # row as well.  Both are genuinely zero in ReFED's data: prevented food was
-    # never produced.
+    # needs a zero upstream row against *a* prevention destination for every
+    # generic tuple. refed_prevention already carries one; the NZ-coded row is
+    # emitted as well so that the gate still passes on a database seeded with
+    # the New Zealand taxonomy and nothing else. Both are genuinely zero in
+    # ReFED's data: prevented food was never produced.
     for sector_label, food_label in pairs:
         fcode = food_code(sector_label, food_label)
         for metric in UPSTREAM_COLS:
@@ -362,9 +369,9 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
                 "value_per_kg": q(Decimal(0)),
                 "source_note": (
                     "Zero by definition; ReFED publishes zero for every column "
-                    "of every Prevention row. Keyed on the NZ 'prevention' "
-                    "code so the publish-time check passes; the ReFED-coded "
-                    "twin is refed_prevention."
+                    "of every Prevention row. Carried against the New Zealand "
+                    "'prevention' row as well as refed_prevention so the "
+                    "publish-time check passes on either taxonomy."
                 ),
                 "data_quality": "definitional",
             })

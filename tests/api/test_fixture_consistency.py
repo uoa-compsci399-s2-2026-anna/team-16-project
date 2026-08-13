@@ -651,12 +651,18 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
         code: (name, is_waste, sort_order)
         for code, name, is_waste, sort_order in DESTINATION_GROUPS
     }
+    #: `is_prevention` is in the tuple because §6.1 puts it on the wire and
+    #: `web/js/calculator.js` keeps a flagged destination off the current-waste
+    #: list by reading it. A fixture that dropped the key, or set it on the
+    #: wrong row, would offer a destination the server answers 400 for.
     assert {
-        row["code"]: (row["group"], row["name"], row["sort_order"])
+        row["code"]: (
+            row["group"], row["name"], row["is_prevention"], row["sort_order"]
+        )
         for row in taxonomy["destinations"]
     } == {
-        code: (group_code, name, sort_order)
-        for group_code, code, name, sort_order in DESTINATIONS
+        code: (group_code, name, is_prevention, sort_order)
+        for group_code, code, name, is_prevention, sort_order in DESTINATIONS
     }
     assert {
         row["code"]: (
@@ -689,7 +695,7 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
 
     sectors = {code for code, _, _ in SECTORS}
     foods = {code for code, _, _, _ in FOOD_CATEGORIES}
-    destinations = {code for _, code, _, _ in DESTINATIONS}
+    destinations = {code for _, code, _, _, _ in DESTINATIONS}
 
     for name in (
         "calculate_request.json",

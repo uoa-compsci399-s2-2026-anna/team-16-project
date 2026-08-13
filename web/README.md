@@ -20,7 +20,7 @@ web/
   js/api.js             The only module that calls fetch()
   js/state.js           Single shared state object with a subscriber set
   js/units.js           Every mass conversion the front end performs
-  js/view.js            escapeHtml, formatNumber, slug, buttonRow
+  js/view.js            escapeHtml, formatNumber, slug, STEPS, stepNav
   js/calculator.js      The six-step wizard and its delegated listeners
   js/results.js         The results screen
   js/improvement.js     The alternative scenario and the comparison screen

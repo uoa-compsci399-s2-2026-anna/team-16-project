@@ -1,0 +1,135 @@
+{
+  "default": "en",
+  "catalogues": [
+    {
+      "language": "zh",
+      "tags": [
+        "zh",
+        "zh-Hans",
+        "zh-CN",
+        "zh-SG",
+        "zh-MY"
+      ]
+    },
+    {
+      "language": "zh-Hant",
+      "tags": [
+        "zh-Hant",
+        "zh-TW",
+        "zh-HK",
+        "zh-MO"
+      ]
+    },
+    {
+      "language": "hi",
+      "tags": [
+        "hi"
+      ]
+    },
+    {
+      "language": "tl",
+      "tags": [
+        "tl",
+        "fil"
+      ]
+    },
+    {
+      "language": "pa",
+      "tags": [
+        "pa",
+        "pa-Guru",
+        "pa-IN"
+      ]
+    },
+    {
+      "language": "ko",
+      "tags": [
+        "ko"
+      ]
+    },
+    {
+      "language": "af",
+      "tags": [
+        "af"
+      ]
+    },
+    {
+      "language": "fr",
+      "tags": [
+        "fr"
+      ]
+    },
+    {
+      "language": "de",
+      "tags": [
+        "de"
+      ]
+    },
+    {
+      "language": "es",
+      "tags": [
+        "es"
+      ]
+    },
+    {
+      "language": "nl",
+      "tags": [
+        "nl"
+      ]
+    },
+    {
+      "language": "ja",
+      "tags": [
+        "ja"
+      ]
+    },
+    {
+      "language": "gu",
+      "tags": [
+        "gu"
+      ]
+    },
+    {
+      "language": "ar",
+      "tags": [
+        "ar"
+      ]
+    },
+    {
+      "language": "ta",
+      "tags": [
+        "ta"
+      ]
+    },
+    {
+      "language": "vi",
+      "tags": [
+        "vi"
+      ]
+    },
+    {
+      "language": "th",
+      "tags": [
+        "th"
+      ]
+    },
+    {
+      "language": "ru",
+      "tags": [
+        "ru"
+      ]
+    },
+    {
+      "language": "ur",
+      "tags": [
+        "ur"
+      ]
+    },
+    {
+      "language": "ml",
+      "tags": [
+        "ml"
+      ]
+    }
+  ]
+}

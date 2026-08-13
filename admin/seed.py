@@ -30,7 +30,9 @@ from sqlalchemy.orm import Session
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
-from admin.taxonomy_rules import check_prevention_intact, check_single_standard_mix
+from admin.taxonomy_rules import (
+    check_prevention_destination, check_single_standard_mix,
+)
 
 DESTINATION_GROUPS = [
     # (code, name, is_waste, sort_order)
@@ -39,22 +41,26 @@ DESTINATION_GROUPS = [
     ("disposal", "Disposal", True, 30),
 ]
 
+#: `is_prevention` is seed *data*, not a rule: it says which row this seed
+#: gives the role to, and nothing reads the code `prevention` to find it
+#: afterwards. Staff may rename the row through the panel and every guard
+#: follows the tick.
 DESTINATIONS = [
-    # (group_code, code, name, sort_order)
-    ("reuse", "prevention", "Prevented — waste avoided", 5),
-    ("reuse", "food_redistribution", "Food redistribution", 10),
-    ("reuse", "upcycling", "Upcycling to other food products", 20),
-    ("reuse", "animal_feed", "Animal feed", 30),
-    ("recycle_recovery", "compost", "Composting (aerobic digestion)", 40),
-    ("recycle_recovery", "anaerobic_digestion", "Anaerobic digestion", 50),
-    ("recycle_recovery", "land_application", "Land application", 60),
-    ("recycle_recovery", "not_harvested", "Not harvested or ploughed in", 70),
-    ("recycle_recovery", "bioprocessing", "Processing into non-food items", 80),
-    ("recycle_recovery", "other_recovery", "Other recovery, including biodiesel", 90),
-    ("disposal", "combustion", "Combustion", 100),
-    ("disposal", "landfill", "Landfill", 110),
-    ("disposal", "refuse_discard", "Refuse or discard", 120),
-    ("disposal", "sewer", "Sewer or wastewater", 130),
+    # (group_code, code, name, is_prevention, sort_order)
+    ("reuse", "prevention", "Prevented — waste avoided", True, 5),
+    ("reuse", "food_redistribution", "Food redistribution", False, 10),
+    ("reuse", "upcycling", "Upcycling to other food products", False, 20),
+    ("reuse", "animal_feed", "Animal feed", False, 30),
+    ("recycle_recovery", "compost", "Composting (aerobic digestion)", False, 40),
+    ("recycle_recovery", "anaerobic_digestion", "Anaerobic digestion", False, 50),
+    ("recycle_recovery", "land_application", "Land application", False, 60),
+    ("recycle_recovery", "not_harvested", "Not harvested or ploughed in", False, 70),
+    ("recycle_recovery", "bioprocessing", "Processing into non-food items", False, 80),
+    ("recycle_recovery", "other_recovery", "Other recovery, including biodiesel", False, 90),
+    ("disposal", "combustion", "Combustion", False, 100),
+    ("disposal", "landfill", "Landfill", False, 110),
+    ("disposal", "refuse_discard", "Refuse or discard", False, 120),
+    ("disposal", "sewer", "Sewer or wastewater", False, 130),
 ]
 
 SECTORS = [
@@ -130,7 +136,7 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
     the rest of admin/ follows. That leaves this function, not the caller,
     responsible for refusing to leave a broken taxonomy staged for that
     commit: it goes nowhere near AuditedModelView, so neither
-    check_single_standard_mix nor check_prevention_intact would otherwise
+    check_single_standard_mix nor check_prevention_destination would otherwise
     ever run against what it writes. A staff member who has renamed
     `standard_mix`'s *code* through the panel (a supported edit -
     FoodCategoryAdmin.form_columns includes `code`) makes this a live case,
@@ -157,10 +163,11 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
     groups = {
         g.code: g.id for g in session.scalars(select(DestinationGroup)).all()
     }
-    for group_code, code, name, sort_order in DESTINATIONS:
+    for group_code, code, name, is_prevention, sort_order in DESTINATIONS:
         created["destination"] += _ensure(
             session, Destination, code,
-            group_id=groups[group_code], name=name, sort_order=sort_order,
+            group_id=groups[group_code], name=name,
+            is_prevention=is_prevention, sort_order=sort_order,
         )
 
     for code, name, sort_order in SECTORS:
@@ -192,6 +199,6 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
     # this function's own docstring for why nothing else stands guard here.
     session.flush()
     check_single_standard_mix(session)
-    check_prevention_intact(session)
+    check_prevention_destination(session)
 
     return created

@@ -52,10 +52,11 @@ class DestinationGroup(Base):
 class Destination(Base):
     """Contract §2.1. Where the food actually went.
 
-    `prevention` is a special row: all its factors are zero, so it expresses
+    One row carries `is_prevention`: all its factors are zero, so it expresses
     "this waste did not happen" while keeping the two scenarios
-    mass-conserving. admin/taxonomy_rules.py protects it from being renamed
-    or deactivated.
+    mass-conserving. admin/taxonomy_rules.py protects the *role* from being
+    deactivated or removed — the row may be renamed freely, which is the whole
+    point of the column existing.
     """
 
     __tablename__ = "destination"
@@ -67,6 +68,23 @@ class Destination(Base):
     code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     name: Mapped[str] = mapped_column(String(128), nullable=False)
     description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    #: Contract §2.1. The prevention offset: the destination an alternative
+    #: scenario moves mass to in order to say "this waste did not happen".
+    #:
+    #: A flag rather than a reserved code because a taxonomy row's identity is
+    #: data on this project — `DestinationGroup.is_waste` above is a column for
+    #: exactly the same reason — and the client has not settled what this
+    #: destination will be called or whether it survives under that name.
+    #:
+    #: **At least one active row must carry it; more than one is legal.**
+    #: Unlike `FoodCategory.is_standard_mix`, which is "exactly one", two
+    #: vocabularies share these global tables (§10.3) and each brings its own
+    #: prevention row. There is therefore no unique key here: nothing for one
+    #: to say. `admin/taxonomy_rules.check_prevention_destination` enforces the
+    #: lower bound, which no column constraint can express.
+    is_prevention: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
                                             server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,

@@ -62,7 +62,7 @@ from admin.taxonomy_models import (  # noqa: E402
 )
 from admin.taxonomy_rules import (  # noqa: E402
     TaxonomyInvariantError,
-    check_prevention_intact,
+    check_prevention_destination,
     check_single_standard_mix,
 )
 from db.session import create_session_factory  # noqa: E402
@@ -129,16 +129,24 @@ def load_taxonomy(session: Session, data: dict) -> dict[str, int]:
             session, Destination,
             row["code"], group_id=group_id, name=row["name"],
             description=row.get("description"),
+            #: §2.1. `refed_prevention` carries the role: its 156 upstream and
+            #: 156 downstream rows are every one of them zero, which is what a
+            #: prevention destination *is*. It went unflagged for as long as
+            #: the role was the literal `prevention`, and could therefore be
+            #: entered as current-scenario waste and reach the public
+            #: statistics -- v1.5's defect, one code along.
+            is_prevention=row.get("is_prevention", False),
             sort_order=row["sort_order"], active=row.get("active", True),
         )
 
     session.flush()
     # The same two invariants admin/seed.py checks after inserting. Neither
-    # should be able to trip here -- nothing in the fixture is a standard mix
-    # and nothing touches `prevention` -- which is exactly why they are worth
-    # asserting rather than assuming.
+    # should be able to trip here -- nothing in the fixture is a standard mix,
+    # and this fixture brings a prevention destination rather than removing
+    # one -- which is exactly why they are worth asserting rather than
+    # assuming.
     check_single_standard_mix(session)
-    check_prevention_intact(session)
+    check_prevention_destination(session)
     return created
 
 

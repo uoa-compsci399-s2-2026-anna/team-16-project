@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.21 draft)"
+date: "2026-08-13 (v1.26 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,67 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.26 — 2026-08-13 (only the first language is consulted; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **v1.25 item 3's last sentence is withdrawn: the visitor's language list is no longer walked. Only the highest-priority tag is consulted, and if it has no catalogue the answer is English.** v1.25 shipped the opposite — a tag nobody claims resolved to nothing so that the next preference got a turn, and `fr-CA, zh, en` reached Chinese. The repository owner ruled against it, and the reasoning is the part that has to survive, because walking the list is the more obvious behaviour and someone will try to restore it: **a browser's language list does not reliably describe what a person can read.** The first entry is usually deliberate; the second and third are frequently residue — a preinstalled system locale, an input method added once, a setting changed years ago and forgotten. Treating those as a genuine second language means using an unreliable signal to override a reliable fallback. **English is a safe floor for this audience and an unfamiliar language is not**: everyone who reaches this tool reads English, so the worst outcome under this rule is an English page, while the worst outcome under the walk is a page in a language the reader does not have — and with no picker on either surface, cannot navigate out of | O-8, §7 |
+| 2 | **Both surfaces, one rule, and that is not a nicety.** `admin/i18n.py::negotiate` (from `Accept-Language`) and `web/js/i18n.js::negotiate` (from `navigator.languages`) implement the same rule, and each carries the reasoning above as a comment. Two surfaces that answered one visitor differently would be the exact defect a shared rule exists to prevent. `negotiate` on the calculator now takes `navigator.languages` alone and returns `match(preferred[0]) ?? 'en'`; a forced `?lang=` is matched by the caller **before** it rather than prepended to the list | O-8, §7 |
+| 3 | **What the rule does *not* change: the lookup within that one tag.** v1.25 item 3's RFC 4647 truncation and per-catalogue `tags` claims are untouched — `en-NZ` still reaches English, `zh-CN` and `zh-Hans-CN` still reach Simplified, `zh-TW` still reaches Traditional through `zh-Hant`'s own claim, and `fil` still reaches `tl`. **The walk between tags is gone; the match inside a tag is not.** `de-AT, xx` reaching German is the case that tells the two apart, and it is asserted as such | O-8 |
+| 4 | **Ordering happens before the rule, not after.** Quality values still rank the header first, so `zh;q=0.8, en;q=0.9` has `en` at its head and answers English — the single tag consulted is the highest-*priority* one, never the first one written. `q=0` is still an explicit refusal and is dropped, so `en;q=0, zh` has `zh` at its head and answers Chinese | O-8 |
+| 5 | **`*` stops being dropped and is ranked like any other tag** (amending v1.25 item 2). Dropping it was right while the list was walked and is wrong now: it would promote the tag behind it into the one slot that decides, so `*, zh` — a header whose first statement is "no preference" — would have answered Chinese. Ranked, no catalogue claims `*` and it has no subtag to drop, so **`*` at the head means English**, while `zh, *;q=0.5` still means Chinese. A malformed entry is still dropped rather than defaulted, and a dropped entry holds no rank — there is no quality to rank it by, which is why it was dropped — so `en;q=high, zh` answers Chinese and a header with nothing readable in it answers English, as do an empty header and an absent one | O-8 |
+| 6 | **`?lang=` stays outside the rule** (amending v1.25 item 4). It is somebody typing a language on purpose rather than a browser setting, so an unrecognised value still falls back to the negotiation instead of consuming its single slot: `?lang=qq` on a `zh-CN` browser is still Chinese, and reaches English only when the browser's own highest-priority tag has no catalogue either. A typo in a support email must not look like a broken panel | O-8 |
+| 7 | **Unchanged and restated because a rule change is where they get dropped:** nothing is persisted (no cookie, no `localStorage`, no column, no picker); `Vary: Accept-Language` is still mandatory and appended wherever the server negotiates, and still absent from the static origin; and the machine-translation notice is still non-dismissible on every language except English and Chinese | O-8, §7.6 |
+| 8 | **`tests/web/test_i18n_negotiation.py` is new, and the shape of its assertions is the point.** A test that `fr-CA, zh, en` yields English passes against a negotiator that always returns English, so **every assertion of that form is written beside one that a supported tag still resolves** — `zh, sv` yields Chinese, `de-AT, xx` yields German, `zh-TW` yields Traditional. The pair is what proves the rule rather than a broken matcher. It runs `web/js/i18n.js` under Node against the real `web/locales/index.json`, so the rule has a check that does not need the stack up; Node is the runner only and there is still no build step | O-8, §7 |
+
+### v1.25 — 2026-08-13 (the language is negotiated, not chosen; the calculator gets twenty; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **v1.24 item 3 is withdrawn: the `kaicalc_lang` cookie is deleted and there is no language picker on either surface.** The header is negotiated per request and **nothing is persisted** — not a cookie, not `localStorage`, not a column. v1.24 declined `Accept-Language` on the reading that §2.3 forbids it; that reading is too strict, and §2.3's own wording is the correction: it forbids **storing** an address, a user agent or a fingerprint, and states that "user agents, headers and paths are read within a request and forgotten". Reading one to decide what to render is what that sentence describes. The repository owner ruled directly: negotiate per session, read the browser's language, store nothing, add no picker | O-8, §2.3 |
+| 2 | **Two surfaces, two mechanisms, and the difference is forced rather than chosen.** The **calculator is static files served by nginx and never reaches FastAPI**, so it reads `navigator.languages` — the *ordered list*, never `navigator.language`, because a visitor whose first preference has no catalogue must get their second before English. The **panel renders through FastAPI**, so it reads `Accept-Language` and honours its quality values: `zh;q=0.8, en;q=0.9` is a request for English, and a parser that reads the header in written order gets that backwards. `q=0` is dropped rather than ranked last; `*` is dropped; a malformed entry is dropped rather than defaulted | O-8, §7 |
+| 3 | **Matching is RFC 4647 lookup, not equality, and a catalogue claims its own tags.** Truncate one subtag at a time: `en-NZ`→`en`, `zh-CN`/`zh-Hans`→`zh`. Truncation alone sends `zh-TW` to Simplified Chinese, which is the **wrong script rather than a graceful degradation**, so each catalogue file carries a `tags` list and an exact claim is matched before any truncation — `zh-Hant` claims `zh-TW`, `zh-HK`, `zh-MO`; `tl` claims `fil`. **A tag nobody claims resolves to nothing rather than to English**, so the visitor's next preference gets a turn first. No two catalogues may claim one tag; a test enforces it | O-8 |
+| 4 | **`?lang=` survives as a one-request override with no persistence** — for testing, screenshots and support, emitted by no control. **An unrecognised value is ignored and the request then negotiates as though it were absent**: `Accept-Language` / `navigator.languages` first, English last. Not an error, not a redirect, not remembered | O-8 |
+| 5 | **`Vary: Accept-Language` is mandatory wherever the server negotiates, and is appended rather than assigned** — replacing the header would drop the `Vary: Cookie` FastAPI sets on session responses. It is set by the outermost middleware so it reaches responses the inner ones refuse; **a 403 cached without it is served to everyone.** It is deliberately **not** set on the static origin: the calculator does not negotiate, and `Vary` on a near-unique header would make a shared cache store a copy of every asset per browser and hit on none | O-8, §7.6 |
+| 6 | **The calculator ships twenty languages.** Simplified Chinese, Traditional Chinese, Hindi, Tagalog, Panjabi, Korean, Afrikaans, French, German, Spanish, Dutch, Japanese, Gujarati, Arabic, Tamil, Vietnamese, Thai, Russian, Urdu — nineteen from the client's list, plus **Malayalam** as the twentieth, taken from the same census ordering, where it sits between Russian and Thai. **Samoan, Tongan and every other Pacific language are out**, for te reo Māori's reason and not for a different one: low-resource machine translation plus a cultural expectation of native review. A census-ordered list puts them near the top, which is exactly why the exclusion has to be stated rather than left to the ordering | O-8 |
+| 7 | **Every language except English and Simplified Chinese ships machine translated and unreviewed, and the interface says so on the page.** The notice used to sit on the switcher's option, where somebody was choosing; with no switcher there is nothing to hang it on, so it is a **non-dismissible strip at the top of every page**, written twice — once in the language being read and once in English, because the one sentence a machine-translated page must get right went through the same machine as the rest. It is also appended to the **results export**, which leaves the browser and is read by somebody who did not choose the language. Driven by `machine_translated` in each catalogue file, so adding a language is adding a file | O-8, §7.6 |
+| 8 | **Arabic and Urdu ship right-to-left**, driven by a `dir` field in their catalogues. This was conditional on the layout being able to carry it: every `margin-left`, `padding-left`, `border-left` and `text-align: left` in `styles.css` that carried meaning is now its `-inline-start` form, and the one inline style in the front end — the diverging comparison bar's offset — is `margin-inline-start`. **A half-mirrored page would have been worse than not shipping the two languages**, and a test refuses a physical direction property in the stylesheet so the trade cannot be quietly undone | §7.6 |
+| 9 | **What is never translated, checked on the calculator as well as the panel.** Decimals (they cross the wire as strings; `toLocaleString('en-NZ')` stays, in every language, so `1.200,50` and `1,200.50` never become the same figure written two ways); `code` identifiers; factor set version labels; metric units and `metric.name`; the **equivalence sentences**, which §3 defines as `label_template` interpolated **by the engine** and which the export copies verbatim — they are data, not interface, and translating them here would override the client's approved wording; and **everything a staff member typed**, which on the calculator is most of the visible text: destination names, food categories and sector names all come from the database in the language they were entered in | O-8, §3, §7.6 |
+| 10 | **The consequence of item 9, stated rather than discovered:** a Thai visitor gets a Thai interface listing English destination names. The chrome, the instructions, the validation messages and the results wording are translated; the taxonomy inside them is not. This is coherent — the reader knows which words are the tool's and which are the data's — and it is not complete. Closing it needs translated taxonomy columns in `§2.1`, which is a schema change, a panel change and a client decision about who writes them, and is recorded in O-8 as the next step rather than done here | §2.1, O-8 |
+
+### v1.24 — 2026-08-13 (interface translation, and the admin panel in Chinese; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Open item O-8 stops being unpromised and describes what is delivered.** The client removed te reo Māori from scope at the first demonstration — not deferred, removed — and asked for roughly twenty other languages, static interface strings only. The repository owner then added the admin panel, and its reason changes its rank: the panel's users are the development team, half of whom could no longer follow its English domain vocabulary at working speed. **Chinese is therefore not one of twenty. It is the only language with real users today**, and the only one that will have native speakers noticing when a translation is wrong. `architecture.md` §10 O-8 | O-8 |
+| 2 | **The architecture: the English source string is the key, catalogues are JSON, one file per language per surface.** `admin/locales/<lang>.json` ships as wheel package data; `web/locales/<lang>.json` will be fetched by the browser. Two locations because package-data cannot reach outside its package and the two Dockerfiles copy disjoint trees — a top-level `i18n/` would be in neither image. The **key scheme, fallback rule, cookie and notice rule are one contract across both surfaces.** No new dependency and no build step: `sqladmin`'s own `I18nConfig` needs `babel` and ships no Chinese catalogue, but `jinja2.ext.i18n`'s `install_gettext_callables` takes ours, which translates **sqladmin's own fifty strings through our catalogue** with no fork of its templates | O-8 |
+| 3 | **Language is chosen by `?lang=` and remembered in a `kaicalc_lang` cookie, path `/`.** Not the staff session: the login page and the whole enrolment flow render before a session exists, and a person who cannot read English needs those pages most. Not a column on `staff`: the preference belongs to a browser, not a person. **No `Accept-Language` sniffing on either surface** — the header is a fingerprinting signal and §2.3 forbids reading a visitor that way. Absent, empty or unrecognised ⇒ English, and an unrecognised value is ignored rather than stored. **The cookie is never read into a submission, never logged and never aggregated** | O-8, §2.3 |
+| 4 | **A missing key renders its English source, silently at runtime and loudly in the suite.** A half-translated language ships as English-in-places rather than as blank labels or key names. `tests/admin/test_i18n.py` walks the live `form_args` of every registered view, every view name, and the msgid set read out of the installed `sqladmin`, and fails on anything untranslated — which is how rewording an English string, the known cost of source-text keys, becomes a failing test on the commit that reworded it rather than a paragraph in the wrong language weeks later | O-8 |
+| 5 | **The machine-translation notice goes at the language switcher, on the option itself**, driven by `machine_translated` in each catalogue file so that adding a language is adding a file. **English and Chinese carry no notice** — English is hand-written and Chinese is reviewed by its users — and that Chinese is *not* flagged is asserted by a test, because if it were the switcher would make a claim about it that is false | O-8 |
+| 6 | **What must never be translated, as rules rather than practice:** anything a staff member typed (factor notes, taxonomy names and descriptions, formula labels, version labels, audit log contents — this is what makes the panel WYSIWYG); `code` identifiers; decimals, which cross the wire as strings and take no locale-aware separator or grouping on either surface; metric units; and the operator messages in `admin/cli.py` and `docker/init.sh`, which are read in a terminal and pasted into search engines | O-8 |
+| 7 | **Nine field descriptions are flagged as data-error risks and listed in O-8**, because a wrong reading of each produces a wrong public number rather than a confused staff member — `metric.display_unit`'s same-scale rule (a `t CO2e` label against a `kg CO2e` unit reads a thousand times too small, and was live until August 2026), the prevention destination's zero factors, the legitimacy of a negative downstream factor, and "leave blank means every category", among them. This is the concrete reason the reviewed language and the machine-translated ones are two different promises | O-8 |
+
+### v1.23 — 2026-08-13 (Back and Next become a navigation bar; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`view.js` replaces `buttonRow(backStep, label, disabled, action)` with `stepNav({step, back, backLabel, label, disabled, action})`.** The client's first look at the calculator was that advancing requires scrolling at every step, and it was measured rather than argued: at 1278×983 the primary action sat **+2961px** past the fold on the food-type step, +796 on destinations, +630 on review and +1230 on results; at 938×898, +3046 / +899 / +715 / +1342; at 390×700 five of the seven screens failed, including the two that pass on a desktop. Every content-shrinking lever together (`h1` to 2rem, hiding the indicator, tighter `main` padding, two-column destinations) still left destinations at +238 / +395, so the row that advances the form stops being content competing with the form for height and becomes `position: sticky; bottom: 0`. Reachability is now −13px or better on every step at all three viewports. **The goal is not zero scrolling** — the food-type step is 40 categories long and always will be — it is that *advancing* never requires scrolling | §7.3 |
+| 2 | **The six-step progress band is deleted from `index.html` and folded into the bar.** `#step-indicator` cost a measured 87px at the top of every step for a list of names nothing could click, and that 87px is exactly the currency the complaint was denominated in. `renderChrome()` no longer writes it; the bar carries "Step N of 6", the step's name and a progress track. `.step-mobile` and the ≥850px `<ol>` were the same information at two widths and **both** go — one element, not three. The `<ol>` is not relocated: anywhere it could go re-spends the height this change was made to free | §7.3 |
+| 3 | **`sticky`, not `fixed`, and the difference is asserted.** Sticky sits in its natural place when the step is short — 235px clear of the fold on the amount step at 1278×983 — and pins only when the section would push it past the fold, so a short screen does not grow what reads as a cookie banner. At full scroll it un-pins and returns above the footer, which is why **no page-level padding is owed to it**; only `scroll-margin-bottom` is, so a control focused by Tab is not scrolled flush underneath it. It is also the half of the pair that survives a mobile soft keyboard: in flow, it moves with the layout viewport instead of being stranded behind the keyboard | §7.3 |
+| 4 | **`.main-content`'s `min-height: calc(100vh - 220px)` is deleted with the band it was arithmetic over.** 220 counted a header, that step-indicator band and a footer. Left alone with the band gone it would have floored every short step 87px taller than its content — invisible on screen, and a previous pass had already found short steps at 1920 measuring exactly the floor, so shrinking their content changed nothing. `body` is a flex column and `main` takes the leftover height, so there is no constant left to drift. `methodology.html` shares the stylesheet and gets a footer pinned to the bottom of short pages out of it | §7.3 |
+| 5 | **What the bar shows where there is no "Next".** The **intro has no bar**: it is a full-bleed dark hero whose own CTA already measures −447 / −362 / −273, and a second start action would both duplicate it and break the panel. The **results view does get one** — its first action was +1230 to +2075 past the fold — carrying `Edit your data` (back to review) and `Download results`. `Start a new calculation` stays in the page rather than the bar: it is a confirm-guarded reset rather than a step action, and the header's home button already offers it | §7.3 |
+
+### v1.22 — 2026-08-13 (the prevention destination stops being a code; affects B, C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New column `destination.is_prevention`, and `db.types.PREVENTION_CODE` is deleted.** `prevention` was the one destination code this system knew by name and five guards were stated in terms of the literal: §6.2's refusal of it in a *current* scenario, §6.1's coverage hold-out, §2.2's O-7 publish check, `admin/taxonomy_rules`'s existence rule and `web/js/calculator.js`'s current-scenario list. A taxonomy row's identity is **data** on this project — `destination_group.is_waste` is a column for exactly this reason, because MfE may revise which destinations count as waste — and the client has not settled what this destination will be called, whether it survives under that name, or how it appears. A structural *role* recognised by a magic string is the same mistake one level down. The row may now be renamed freely and every guard follows; `db/repository.prevention_destination_codes` is how a caller outside `db/` asks which codes carry it, since `api/` may not import `admin/`. Migration `0013`, which backfills the flag onto `prevention` and `refed_prevention` — **the only place in the repository that still writes either code into a guard-shaped statement**, and a one-time data statement about the rows that exist rather than a rule | §2.1, §5.1, §5.2, §6.1, §6.2, §7.2 |
+| 2 | **The defect that closes with it: a second vocabulary's prevention row could be entered as current-scenario waste and reach the public statistics.** §10.3's ReFED fixture brings `refed_prevention`, whose 156 upstream and 156 downstream rows are every one of them zero — a prevention destination by every property that matters. Because §6.2's guard tested a literal, it was refused for `prevention` and accepted for `refed_prevention`, which persisted as an ordinary `submission_line` with `scenario = 'current'` and became a `by_destination` bucket: waste that by construction did not happen, counted as real waste, on the page whose whole design problem is not overclaiming. **This is the defect v1.5 closed for `prevention` itself, arriving one code along**, and §5.4's scenario predicate structurally cannot catch it for the same reason it could not catch the first — it excludes the *alternative* scenario, and the line is not in the alternative scenario. Reproducible on the deployed stack, which has the ReFED set published and offers `refed_prevention` on the form | §6.2, §5.4 |
+| 3 | **"At least one active row", not "exactly one" — and this is where the `is_standard_mix` prior art is deliberately not followed.** §2.1 requires exactly one active `is_standard_mix` food category because §6.2 must resolve a null `food_category` to *one* code; nothing anywhere has to choose between prevention destinations, and v1.19 put a second vocabulary's rows in the same global tables, so `prevention` and `refed_prevention` both legitimately carry the role. "Exactly one" would refuse the state this deployment is already in. There is therefore **no UNIQUE key and no `COALESCE(...)` functional index** on the column: nothing for one to say. The lower bound is `admin/taxonomy_rules.check_prevention_destination` — renamed from `check_prevention_intact` — counted over **active** rows whose **group** is also active, and skipped on an empty destination table so the panel stays bootstrappable. **Zero is refused rather than given a meaning:** an alternative scenario that merely redirects mass between real destinations stays expressible without one, so nothing computes wrongly, but the improvement panel would render sliders that cannot express the only thing it is for. If the client removes the concept, that is a contract change — this row — and not a data edit | §2.1 |
+| 4 | **The zero-factor property becomes enforced where it was assumed.** `find_missing_prevention_upstream` checked the *value* of an upstream override since v1.11, but only where a generic row existed to compare it against — a set built §10.3's way, with an explicit row per destination and no generic rows at all, could carry a prevention row at 1.9 and publish. **Nothing anywhere read `factor_downstream`.** `publish_factor_set` now refuses any upstream **or downstream** row in the set that prices a flagged destination at something other than zero. An *absent* row stays legal, because §4.1's lookup already returns zero for a missing factor and the §6.1 hold-out is built around a set that prices a prevention destination nowhere. Both factor sets in this repository pass unchanged. The completeness check is generalised by **role, not per row**: a tuple qualifies when it has a generic upstream row and **no** flagged destination carries a zero override for it — requiring one per flagged row would refuse `MOCK-v0` the moment §10.3's fixture is loaded, and one working offset is what the guard exists to guarantee | §2.2, §5.2 |
+| 5 | **`destinations[].is_prevention` is a new key in the §6.1 response, and §6.2's rule moves out of Pydantic.** The front end needs the flag: `calculator.js` kept the offset off the current-waste list by comparing codes and so left every other prevention destination on it. On the server the rule is now in `entry_rule_problems`, because the set of prevention codes is a database read and a Pydantic validator has no session. `details[].field` is unchanged at `entries[i].current` — that placement was the point of the `AfterValidator` and it is written out by hand — and `details[].issue` changes from Pydantic's generic **`value_error`** to the stable slug **`prevention_in_current`**, which is what §9 asks a consumer to branch on | §6.1, §6.2, §7.2, §9 |
+| 6 | **Knowingly left, and recorded rather than hidden:** under a published set of one vocabulary, the *other* vocabulary's prevention row is now also offered, because flagged rows are held out of the coverage inference by role. That crossing already happens in the other direction and v1.21 accepts it. The residual is that an alternative-scenario line to a foreign prevention destination falls back to the generic upstream row and is charged for it — which **understates** the benefit of wasting less. Conservative in the direction this project cares about, and bounded to a database holding two vocabularies at once | §6.1 |
 
 ### v1.21 — 2026-08-12 (raised by the repository owner; affects B, C, D and E)
 
@@ -492,12 +553,19 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | `landfill`, `compost`, `animal_feed`, `anaerobic_digestion`, `prevention`, … |
 | `name` | VARCHAR(128) | NOT NULL | |
 | `description` | TEXT | NULL | User-facing explanation |
+| `is_prevention` | BOOLEAN | NOT NULL, DEFAULT FALSE | The prevention offset. **At least one active row must be TRUE; more than one is allowed** |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
-> **`prevention` is the one destination code this system knows by name.** It expresses "waste avoided" and keeps the two scenarios mass-conserving. Three rules are stated in terms of it and none of them is optional: `admin/taxonomy_rules.check_prevention_intact` refuses any edit that would remove or deactivate it (or its group); §6.2 refuses it in a **current** scenario, because it is by construction the destination for waste that did not happen; and §5.4 reads the current scenario only, so it can never become a public statistic. The literal lives once, in `db/types.PREVENTION_CODE`, and `admin/taxonomy_rules` re-exports that object — `api/` may not import from `admin/` and needs the same string.
+> **This system knows no destination code by name. It knows one destination *role*, and `is_prevention` is it (v1.22).** A prevention destination expresses "waste avoided" and keeps the two scenarios mass-conserving. Four rules are stated in terms of the flag and none of them is optional: `admin/taxonomy_rules.check_prevention_destination` refuses any edit that would leave no usable flagged row; §6.2 refuses **any** flagged destination in a **current** scenario, because it is by construction where waste that did not happen goes; §6.1 holds flagged rows out of its coverage inference; and §5.4 reads the current scenario only, so none can become a public statistic.
 >
-> **Both its downstream and its upstream factors are zero, and since v1.8 that is a statement about the data rather than about the prose.** This blockquote read "with all factors set to zero" for five revisions while `factor_upstream` had no destination column, so a line moved to `prevention` kept its entry's full upstream factor; v1.5 corrected it to downstream-only and pointed at `architecture.md` O-7. **O-7 is closed** — `factor_upstream.destination_id` is the column, and `prevention` carries a row at zero for every `(sector, food_category, metric)` that has a general row. That last clause is the load-bearing one: the offset is now data, so a general row created without a matching `prevention` row reverts to the old behaviour for that tuple alone, and nothing in the panel refuses it.
+> **It was the literal `"prevention"`, in `db/types.PREVENTION_CODE`, until v1.22, and that constant is now deleted.** Two things forced it. A taxonomy row's identity is data on this project — `destination_group.is_waste` above is a column for precisely this reason — and the client has not settled what this destination will be called or whether it survives under that name; the row can now be renamed freely. And §10.3's `refed_prevention` is a prevention destination by every property that matters and was covered by none of the four rules, so it could be entered as current-scenario waste and reach the public statistics. See v1.22 for the full account.
+>
+> **"At least one", not "exactly one", which is where this departs from `is_standard_mix` below.** Two vocabularies share these global tables (v1.19) and each brings its own prevention row, so an upper bound would refuse the state the deployment is in; and nothing has to *choose* between prevention destinations, which is the whole reason the standard mix needs one. There is consequently no UNIQUE key and no `COALESCE(...)` functional index on this column. The lower bound is counted over **active** rows whose **group** is also active — every active-destination listing joins through `destination_group` — and is skipped entirely on an empty `destination` table, so an unseeded database can still be bootstrapped by hand.
+>
+> **Zero flagged rows is refused rather than given a meaning.** An alternative scenario that redirects mass between real destinations stays expressible without one, so nothing computes a wrong number; but §6.2 still requires the two scenarios to conserve mass, so the improvement panel would render sliders that cannot express reduction — the only thing it is for. If the client removes the concept, that is a revision of this section, not a data edit.
+>
+> **The factors of a flagged destination are zero, and since v1.22 that is enforced rather than assumed.** `publish_factor_set` refuses any upstream or downstream row in the set that prices a flagged destination at anything else; an absent row stays legal, because §4.1's lookup already returns zero for one. Both its downstream and its upstream factors are zero, and since v1.8 that is a statement about the data rather than about the prose. This blockquote read "with all factors set to zero" for five revisions while `factor_upstream` had no destination column, so a line moved to `prevention` kept its entry's full upstream factor; v1.5 corrected it to downstream-only and pointed at `architecture.md` O-7. **O-7 is closed** — `factor_upstream.destination_id` is the column, and `prevention` carries a row at zero for every `(sector, food_category, metric)` that has a general row. That last clause is the load-bearing one: the offset is now data, so a general row created without a matching `prevention` row reverts to the old behaviour for that tuple alone, and nothing in the panel refuses it.
 
 ### `sector`
 
@@ -524,8 +592,8 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
 > **Where the taxonomy invariants are enforced.** "Exactly one row must be
-> TRUE" and the existence of `prevention` are statements about a table, not a
-> column, so neither is a database constraint. Both are checked in
+> TRUE" and the existence of a `destination.is_prevention` row are statements
+> about a table, not a column, so neither is a database constraint. Both are checked in
 > `admin/taxonomy_rules.py`, called from `AuditedModelView`'s
 > `validate_before_commit` hook — inside the transaction that is about to
 > commit, before the audit entries are written. A refused change rolls back
@@ -1330,14 +1398,32 @@ def find_missing_prevention_upstream(
     charge a prevented line an upstream factor (§2.2, open item O-7).
 
     A tuple qualifies when it has a general upstream row (destination NULL)
-    and **no `prevention` row at zero** — whether the row is absent or
-    carries a non-zero value. Existence is not the rule; the value is
-    (v1.11). Returns codes, not ids (§1.1), sorted, so a
-    caller can put them straight into a message a human has to act on. An
-    empty list is the healthy state. Empty also when the taxonomy has no
-    `prevention` destination at all — that is an unseeded database rather
-    than an incomplete factor set, and it is
-    admin/taxonomy_rules.check_prevention_intact's to refuse."""
+    and **no `is_prevention` destination has a row at zero for it** — whether
+    every such row is absent or each carries a non-zero value. Existence is
+    not the rule; the value is (v1.11). "No flagged destination", not "every
+    flagged destination" (v1.22): more than one row may carry the role and a
+    set built for one vocabulary will never hold rows for another, so one
+    working offset per tuple is what this guarantees. Returns codes, not ids
+    (§1.1), sorted, so a caller can put them straight into a message a human
+    has to act on. An empty list is the healthy state. Empty also when the
+    taxonomy has no prevention destination at all — that is an unseeded
+    database rather than an incomplete factor set, and it is
+    admin/taxonomy_rules.check_prevention_destination's to refuse."""
+
+def prevention_destination_codes(session) -> frozenset[str]:
+    """Every destination code flagged `is_prevention` (§2.1), for §6.2's
+    current-scenario rule. Reads the taxonomy, not a factor set: `destination`
+    carries no `factor_set_id`, so the answer is the same for a dry run as for
+    a public request. Not restricted to active rows — a deactivated prevention
+    row is still one, and a caller naming it in a current scenario must be
+    refused rather than told the code is unknown."""
+
+def refuse_nonzero_prevention_factors(session, factor_set_id: int) -> None:
+    """Raises FactorSetStateError when any factor_upstream or
+    factor_downstream row of this set prices an `is_prevention` destination at
+    something other than zero (v1.22). An absent row stays legal: §4.1's
+    lookup already returns zero for one, and §6.1's hold-out is built around a
+    set that prices a prevention destination nowhere at all."""
 
 def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     """Within one transaction: archive the current published set, publish the
@@ -1345,16 +1431,17 @@ def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     'at most one published' invariant would be violated.
 
     **Also refuses, naming the tuples, when find_missing_prevention_upstream
-    is non-empty (v1.9).** Publishing is where this is checked because it is
-    the single transactional choke point; a form-level guard cannot see a row
-    that has not been written yet."""
+    is non-empty (v1.9), and refuses a non-zero prevention factor row
+    (v1.22).** Publishing is where both are checked because it is the single
+    transactional choke point; a form-level guard cannot see a row that has
+    not been written yet."""
 
 def rollback_to(session, factor_set_id: int, actor: str) -> None:
     """Restores an archived version to published. Same semantics as publish,
-    **except the O-7 completeness check, which rollback deliberately does not
-    apply** — a set archived before v1.8 will legitimately fail it, and
-    refusing an emergency rollback over a completeness rule is a worse failure
-    than the one the rule prevents."""
+    **except the O-7 completeness check and the non-zero prevention refusal,
+    which rollback deliberately does not apply** — a set archived before v1.8
+    will legitimately fail the first, and refusing an emergency rollback over
+    a completeness rule is a worse failure than the one the rule prevents."""
 
 def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int:
     """Deep-copies a version into a new draft (all factors, constants,
@@ -1599,7 +1686,9 @@ Called once on page load to build every dropdown and input row.
 
 > **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
 
-> **`prevention` and the `is_standard_mix` food category are never filtered out.** `prevention`'s factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. It is held out by name (`db.types.PREVENTION_CODE`) and its group is kept with it. It happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching `prevention` row at zero — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding. A second vocabulary's own prevention (`refed_prevention`) is covered by the ordinary rule; both may appear at once, which is harmless, because a prevention destination is a zero-factor offset under any set and §6.2 refuses `prevention` in a *current* scenario outright.
+> **Every `is_prevention` destination and the `is_standard_mix` food category are never filtered out.** A prevention destination's factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. Flagged rows are held out **by the flag** (§2.1) and their groups are kept with them; this read `db.types.PREVENTION_CODE` until v1.22, which subjected every *other* vocabulary's prevention row to an inference that cannot be true of it. `prevention` happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching zero override — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding.
+>
+> **The cost, stated rather than hidden.** Under a published set of one vocabulary the *other* vocabulary's prevention row is also offered. That crossing already ran in the other direction before v1.22 and is accepted for the same reason. §6.2 refuses every flagged destination in a *current* scenario outright, so the exposure is confined to the alternative scenario, where a line to a foreign prevention destination falls back to the generic upstream row and is charged for it — which **understates** the benefit of wasting less. It is bounded to a database holding two vocabularies at once, and it errs in the direction this project cares about.
 >
 > The **standard mix** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry `is_standard_mix` and §6.2 resolves a null `food_category` to it, so filtering it out would leave a consumer with no legal way to say "composition unknown" while the server went on resolving null to a code the consumer was never offered. §2.1's "exactly one active row" invariant is still counted over the **active** rows rather than the narrowed ones.
 
@@ -1623,7 +1712,7 @@ Called once on page load to build every dropdown and input row.
   ],
   "destinations": [
     { "code": "landfill", "name": "Landfill", "group": "disposal",
-      "description": "…", "sort_order": 1 }
+      "description": "…", "is_prevention": false, "sort_order": 1 }
   ],
   "metrics": [
     { "code": "co2e", "name": "Greenhouse gas", "unit": "kg CO2e",
@@ -1714,7 +1803,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
 | Entry count `<= 20` | `VALIDATION_ERROR` |
 | **Per entry carrying an `alternative`: `\|Σ alternative.qty_kg − Σ current.qty_kg\| <= 0.010`** | `VALIDATION_ERROR`, `field` = `entries[i].alternative` |
-| **No `prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current` |
+| **No `destination.is_prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current`, `issue` = `prevention_in_current` |
 | No duplicate `destination` within one entry's scenario | `VALIDATION_ERROR` |
 | No duplicate `(sector, food_category)` across entries | `VALIDATION_ERROR` |
 | All codes exist | `UNKNOWN_CODE` |
@@ -1723,7 +1812,9 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | `dry_run.bundle` row count across all tables `<= 5000` | `VALIDATION_ERROR` |
 | `dry_run.bundle` fails `FactorBundle.validate()` | `VALIDATION_ERROR`, one `details` entry per problem |
 
-> **Why `prevention` in a `current` scenario is a rejection and not a curiosity.** Until v1.5 nothing on the server refused it — only C's own UI, which never offers it in the current column. A hand-rolled request carrying it persists an ordinary `submission_line` with `scenario = 'current'`, and §5.4 selects exactly that, so the line becomes a bucket in the public `by_destination` chart. `prevention` is the destination for waste that *did not happen*; counting it as real waste is the failure §5.4's scenario predicate exists to prevent, arriving through the one door that predicate cannot close — the predicate excludes the alternative scenario, and this line is not in the alternative scenario. It also makes no sense as an input: the current scenario is a description of what a business is doing now, and "we sent 900 kg to not existing" is not a description of anything. `tests/api/test_fixture_consistency.py` asserted this of the *fixture*, which is what made it look covered; a fixture constrains the fixture.
+> **Why a prevention destination in a `current` scenario is a rejection and not a curiosity.** Until v1.5 nothing on the server refused it — only C's own UI, which never offers it in the current column. A hand-rolled request carrying it persists an ordinary `submission_line` with `scenario = 'current'`, and §5.4 selects exactly that, so the line becomes a bucket in the public `by_destination` chart. A prevention destination is where waste that *did not happen* goes; counting it as real waste is the failure §5.4's scenario predicate exists to prevent, arriving through the one door that predicate cannot close — the predicate excludes the alternative scenario, and this line is not in the alternative scenario. It also makes no sense as an input: the current scenario is a description of what a business is doing now, and "we sent 900 kg to not existing" is not a description of anything. `tests/api/test_fixture_consistency.py` asserted this of the *fixture*, which is what made it look covered; a fixture constrains the fixture.
+>
+> **The rule tested one literal until v1.22, and that is how it missed `refed_prevention`.** §10.3's fixture puts a second vocabulary's prevention row in the same global tables; it carries 156 upstream and 156 downstream rows, every one of them zero, and it was refused by nothing. The whole defect above therefore stayed live for it, on the deployment that has the ReFED set published and offers the row on the form. The rule now reads `destination.is_prevention` (§2.1) by way of `db.repository.prevention_destination_codes`, which is also why it is checked in `entry_rule_problems` rather than in Pydantic: the set of prevention codes is a database read, and a field validator has no session. `details[].field` is unchanged; `details[].issue` is now the stable slug `prevention_in_current` rather than Pydantic's generic `value_error`.
 
 > **`food_category: null` and `"standard_mix"` are the same thing to the engine and different things to the duplicate check.** Two entries with the same sector, one carrying `null` and one carrying `"standard_mix"`, are **both accepted** — the duplicate rule compares the values as sent. They then draw identical upstream factors, appear as two entries in the response, and count as two entries in §5.4's `by_sector`, so one supply-chain point is described twice. This is deliberate and it follows from §5.4, which keeps the two distinct on purpose: `unspecified` records that the user did not break their waste down, `standard_mix` records that they chose the mixed-composition figure, and collapsing them here would make the statistics unable to tell those apart. It is written down because it is the kind of asymmetry that reads as a bug — the field table two paragraphs up says "Null is treated as `standard_mix`", and that is true of the *factor lookup* and of nothing else. A front end should send one or the other consistently and never both for one sector.
 
@@ -2162,10 +2253,22 @@ export function formatNumber(value, precision = 2);
 /** lower-case, non-alphanumerics -> '-', trimmed. For DOM ids and class names. */
 export function slug(value);
 
-/** HTML for the standard Back / primary-action pair. Emits
- *  data-action="go-step" data-step="<backStep>" and data-action="<action>". */
-export function buttonRow(backStep, label = 'Continue', disabled = false, action = 'continue');
+/** The six screens the wizard names, in order. Lives here rather than in
+ *  calculator.js because results.js needs the same vocabulary and
+ *  calculator.js already imports results.js. */
+export const STEPS;
+
+/** The step navigation bar: a step's Back and primary actions, and its
+ *  position in the flow, as one `position: sticky; bottom: 0` element.
+ *  Emits data-action="go-step" data-step="<back>" and data-action="<action>",
+ *  plus "Step N of 6" and the step's name.
+ *
+ *  Replaced `buttonRow(backStep, label, disabled, action)` at v1.23. */
+export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
+                         disabled = false, action = 'continue'});
 ```
+
+> **Two structural preconditions on `stepNav`, both silent when broken.** It must be the **last child of the step's `<section>`**: `position: sticky` with a `bottom` inset pins only for as long as its *containing block* extends below the fold, so anything rendered after it unpins the bar early — which is why `results.js` renders the improvement panel above it and not below. And it must come **after the content in the DOM**, so Tab reaches the form before the navigation. Neither is enforceable from inside the function; `tests/web/test_step_navigation.py` measures both.
 
 > **Precondition, stated because D and E will now depend on it:** `escapeHtml` does not escape backticks or `/`, so it is safe only in **double-quoted** attribute contexts and in text. Every attribute in C's branch is double-quoted. An unquoted attribute breaks the guarantee silently.
 >
@@ -2181,8 +2284,9 @@ export function buttonRow(backStep, label = 'Continue', disabled = false, action
  *  5 delegates to results.renderResults). */
 export function render(main);
 
-/** Updates the header, the "Clear all data" button and the six-step
- *  progress indicator. */
+/** Updates the header and the "Clear all data" button. It no longer writes a
+ *  progress indicator: at v1.23 the six-step band above <main> was folded into
+ *  view.js's stepNav, and index.html no longer carries #step-indicator. */
 export function renderChrome();
 
 /** Installs four delegated listeners on `main` (click / change / input /
@@ -2194,7 +2298,9 @@ export function bindCalculator(main, retryTaxonomy);
 
 Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
-> **`prevention` is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — `prevention` is how the alternative scenario expresses waste avoided (§2.1), and offering it as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting.
+> **Every `is_prevention` destination is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — a prevention destination is how the alternative scenario expresses waste avoided (§2.1), and offering one as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting. §6.2 answers 400 for it, so a form that offered it would be offering a refusal.
+>
+> **Read `destination.is_prevention` from §6.1, never the code.** `calculator.js`'s `entryDestinations` filtered `code !== 'prevention'` until v1.22 and therefore left every *other* prevention destination — §10.3's ReFED set brings its own, and the deployed stack offers it — on the current-waste list. The function is exported so `tests/web/test_entry_destinations.py` can run it under Node against a taxonomy it builds, the same seam `buildResultsReport` was pulled out for.
 >
 > **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftFieldPaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies and roots it at `entries[state.entries.length]`, because the draft entry travels last.
 >

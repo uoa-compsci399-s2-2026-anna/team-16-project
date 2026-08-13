@@ -470,3 +470,20 @@ input.sr-only {
   white-space: nowrap;
   border: 0;
 }
+
+/* The machine-translation notice. Banana ground and Kale text, which the
+   brand guidelines pair; a light ground takes Kale text.
+
+   Full-bleed and at the very top of the document rather than inside the
+   gate card, because it is a statement about the whole page and not about
+   the form. Not dismissible: there is no control that could dismiss it and
+   no state that would remember the dismissal. */
+.machine-translation-notice {
+  margin: 0;
+  padding: 12px 20px;
+  background: #FFD76E;
+  color: #003223;
+  font-size: 0.9rem;
+  line-height: 1.45;
+  text-align: center;
+}

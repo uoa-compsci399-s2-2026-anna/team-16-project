@@ -19,7 +19,10 @@
       </div>
     </header>
 
-    <nav class="step-indicator" id="step-indicator" aria-label="Calculator progress" hidden></nav>
+    <!-- The step progress band that stood here is now inside each step's own
+         navigation bar (web/js/view.js `stepNav`). It cost 87px at the top of
+         every step and the calculator's whole scrolling complaint was measured
+         in that currency. -->
     <main id="main-content" class="main-content" tabindex="-1">
       <p class="loading-state" role="status">Loading calculator…</p>
     </main>

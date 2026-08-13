@@ -1,11 +1,10 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
 import { kgString, massToKg } from './units.js'
-import { buttonRow, escapeHtml, formatNumber, slug } from './view.js'
+import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { downloadResults, renderResults } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 
-const STEPS = ['Supply-chain stage', 'Food type', 'Waste amount', 'Destinations', 'Review', 'Results']
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
 // Destination amounts are entered to two decimal places, so two sums that agree to
@@ -64,7 +63,7 @@ function sectorStep() {
       const expanded = state.expandedSectors.includes(sector.code)
       const id = `sector-${slug(sector.code)}`
       return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(sector.description || '')}</span></span>${isSelected ? '<span class="selected-label" aria-hidden="true">✓ Selected</span>' : ''}</label><button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${expanded ? 'Hide' : 'Show'} details for ${escapeHtml(sector.name)}">Details <span class="chevron ${expanded ? 'expanded' : ''}" aria-hidden="true">⌄</span></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(sector.details || sector.description || 'Additional details have not been supplied.')}</p></div></div>`
-    }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${buttonRow(-1)}</section>`
+    }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: -1 })}</section>`
 }
 
 function foodStep() {
@@ -72,11 +71,11 @@ function foodStep() {
   return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">Step 2 · Optional</p><h1 id="food-title">What type of food waste are you measuring?</h1><p class="section-intro">Choose one category if you know it, or continue without selecting an option.</p><fieldset class="choice-fieldset"><legend class="sr-only">Food type</legend><div class="simple-choice-list">${categories.map(category => {
     const isSelected = state.foodCategory === category.code
     return `<label class="simple-choice ${isSelected ? 'selected' : ''}"><input id="food-category-${slug(category.code)}" type="radio" name="food-category" value="${escapeHtml(category.code)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(category.name)}</strong>${category.is_standard_mix ? '<small>Recommended if you do not separate food waste by category</small>' : ''}</span>${isSelected ? '<span class="selected-label" aria-hidden="true">✓ Selected</span>' : ''}</label>`
-  }).join('')}</div></fieldset>${state.foodCategory ? '<button type="button" class="text-button" data-action="clear-food">Clear optional selection</button>' : ''}${buttonRow(0)}</section>`
+  }).join('')}</div></fieldset>${state.foodCategory ? '<button type="button" class="text-button" data-action="clear-food">Clear optional selection</button>' : ''}${stepNav({ step: 1, back: 0 })}</section>`
 }
 
 function amountStep() {
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">Step 3</p><h1 id="amount-title">How much food waste are you measuring?</h1><p class="section-intro">Enter the total amount. You will allocate this total across destinations in the next step.</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="total-waste">Waste amount <span class="required">(required)</span></label><p class="field-hint">Use up to two decimal places.</p><input id="total-waste" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalAmount)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</div><div class="form-field"><label for="total-unit">Unit <span class="required">(required)</span></label><p class="field-hint">Choose the measurement unit.</p><select id="total-unit"><option value="kilograms" ${state.totalUnit === 'kilograms' ? 'selected' : ''}>kilograms</option><option value="tonnes" ${state.totalUnit === 'tonnes' ? 'selected' : ''}>tonnes</option></select></div></div>${buttonRow(1)}</section>`
+  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">Step 3</p><h1 id="amount-title">How much food waste are you measuring?</h1><p class="section-intro">Enter the total amount. You will allocate this total across destinations in the next step.</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="total-waste">Waste amount <span class="required">(required)</span></label><p class="field-hint">Use up to two decimal places.</p><input id="total-waste" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalAmount)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</div><div class="form-field"><label for="total-unit">Unit <span class="required">(required)</span></label><p class="field-hint">Choose the measurement unit.</p><select id="total-unit"><option value="kilograms" ${state.totalUnit === 'kilograms' ? 'selected' : ''}>kilograms</option><option value="tonnes" ${state.totalUnit === 'tonnes' ? 'selected' : ''}>tonnes</option></select></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**
@@ -121,7 +120,7 @@ function destinationStep() {
   return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">Step 4</p><h1 id="destination-title">Where did the food waste go?</h1><p class="section-intro">Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.</p>
     <div class="allocation-summary ${summaryInvalid ? 'invalid' : ''}" id="current-summary" aria-live="polite"><div><span>Total waste</span><strong>${formatNumber(total, 2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Allocated</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(state.totalUnit)}</strong></div><div><span>Remaining</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(state.totalUnit)}</strong></div></div>
     <div class="destination-list">${destinationRows()}</div>
-    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${buttonRow(2, 'Continue', !canContinue, 'continue')}</section>`
+    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: 2, disabled: !canContinue })}</section>`
 }
 
 function reviewLines(entry) {
@@ -163,7 +162,13 @@ function reviewStep() {
     <article class="review-block"><div class="section-heading-row"><h2>Waste destinations</h2><button class="text-button" type="button" data-action="go-step" data-step="3">Edit</button></div>${reviewLines(draftEntry())}</article>
     <button class="button button-add add-entry-button" type="button" data-action="add-entry">+ Add another supply-chain entry</button>
     <aside class="disclaimer compact" aria-label="Important information"><span class="info-icon" aria-hidden="true">i</span><div><strong>Estimate notice</strong><p>${escapeHtml(estimateNotice)}</p></div></aside>
-    ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${buttonRow(3, state.loading ? 'Calculating…' : Date.now() < state.rateLimitedUntil ? 'Try again shortly' : state.entries.length ? `Calculate results for ${state.entries.length + 1} entries` : 'Calculate impact', state.loading || Date.now() < state.rateLimitedUntil || blocked(), 'calculate')}</section>`
+    ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${stepNav({
+      step: 4,
+      back: 3,
+      label: state.loading ? 'Calculating…' : Date.now() < state.rateLimitedUntil ? 'Try again shortly' : state.entries.length ? `Calculate results for ${state.entries.length + 1} entries` : 'Calculate impact',
+      disabled: state.loading || Date.now() < state.rateLimitedUntil || blocked(),
+      action: 'calculate',
+    })}</section>`
 }
 
 function validateCurrentStep() {
@@ -350,17 +355,25 @@ export function render(main) {
   main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
 }
 
+/**
+ * The header, and nothing else that costs vertical space.
+ *
+ * The six-step progress band that used to be written here — `.step-mobile` under
+ * 850px and an `<ol>` of names above it — is gone, and its job moved into
+ * `view.js`'s `stepNav`. It sat between the header and `<main>` on every step but
+ * the intro, cost a measured 87px at 1278x983, and named steps that were never
+ * clickable; the bar says the same thing on a line it was already occupying.
+ * **Do not reinstate a second progress element at the top of the page** — it
+ * takes back exactly the space this change was made to free.
+ */
 export function renderChrome() {
   const header = document.getElementById('site-header')
   const logo = document.getElementById('brand-logo')
-  const indicator = document.getElementById('step-indicator')
   const clearButton = document.getElementById('clear-button')
   const intro = state.step === -1
   header.classList.toggle('intro-header', intro)
   logo.src = intro ? './assets/kai-commitment-logo-white.webp' : './assets/kai-commitment-logo.png'
   clearButton.hidden = !hasData()
-  indicator.hidden = intro
-  if (!intro) indicator.innerHTML = `<p class="step-mobile">Step ${state.step + 1} of ${STEPS.length}: <strong>${escapeHtml(STEPS[state.step])}</strong></p><ol>${STEPS.map((label, index) => `<li class="${index < state.step ? 'complete' : index === state.step ? 'current' : 'upcoming'}" ${index === state.step ? 'aria-current="step"' : ''}><span class="step-number" aria-hidden="true">${index < state.step ? '✓' : index + 1}</span><span>${escapeHtml(label)}</span></li>`).join('')}</ol>`
 }
 
 export function bindCalculator(main, retryTaxonomy) {

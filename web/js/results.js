@@ -1,4 +1,4 @@
-import { escapeHtml, formatNumber } from './view.js'
+import { escapeHtml, formatNumber, stepNav } from './view.js'
 import { kgToTonnes } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 
@@ -196,10 +196,6 @@ function breakdownSection(state, entryResults) {
   return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">Breakdown by category</h2><p>Explore how the recorded waste is distributed.</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="Waste breakdown">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${label}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 
-function downloadButton() {
-  return '<button class="button button-primary" type="button" data-action="download-results">Download results</button>'
-}
-
 // One metric, worded the way the summary card words it: the taxonomy's name, the figure at
 // the metric's own `display_precision`, and the unit that travelled with the figure. Nothing
 // is recomputed and nothing is re-scaled — §7.6.1 leaves no layer that could.
@@ -371,13 +367,22 @@ export function renderResults(state) {
   const mock = result.factor_set?.is_mock
   const warning = mock ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>Placeholder data</strong><p>${DEMONSTRATION_NOTICE}</p></div></aside>` : ''
   const version = result.factor_set?.version_label || 'Not supplied'
+  // `stepNav` is the LAST child of this section and has to stay there: it is
+  // `position: sticky; bottom: 0`, which pins only while its containing block
+  // extends past the fold. The improvement panel renders above it for that
+  // reason — appending anything after the bar unpins it early, and its first
+  // action was 1,230-2,075px past the fold before it existed. "Edit your data"
+  // and "Download results" moved into it; "Start a new calculation" did not,
+  // because it is a confirm-guarded reset rather than a step action, and the
+  // header's home button already offers it.
   return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">Step 6</p><h1 id="results-title">Your estimated impact</h1><p class="section-intro">Results returned by the calculation service for ${entryResults.length} supply-chain ${entryResults.length === 1 ? 'entry' : 'entries'}.</p>${warning}
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">Impact summary</h2><p>A high-level view of the recorded food waste.</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div></section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">Tangible equivalents</h2><p>Plain-language comparisons appear when supplied by the calculation service.</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">Methodology &amp; Limitations</h2><p>Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.</p><p>Factor version: ${escapeHtml(version)}.</p><details><summary>View methodology</summary><div><p>Data sources and calculation factors are maintained and approved by Kai Commitment.</p><p>Percentage waste remains unavailable until total food handled data is supplied.</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="go-step" data-step="4">Edit your data</button><button class="button button-secondary" type="button" data-action="start-over">Start a new calculation</button>${downloadButton()}</div>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">Start a new calculation</button></div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
+    ${stepNav({ step: 5, back: 4, backLabel: 'Edit your data', label: 'Download results', action: 'download-results' })}
   </section>`
 }

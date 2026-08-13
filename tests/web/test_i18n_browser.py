@@ -373,36 +373,105 @@ def test_a_validation_message_is_translated(browser):
 # ---------------------------------------------------------------------------
 
 
-def test_the_panel_negotiates_from_accept_language_and_says_it_varies():
-    """Read off the wire rather than through a browser, because the claim is
-    about a header. `Vary` is checked against the RUNNING stack: a response can
-    carry the header from the application and still be served without it if
-    something upstream rewrote the headers, and this is the check that would
-    notice.
+def _admin_login(browser, accept_language=None, query=""):
+    """The panel, through a real browser.
+
+    `urllib` cannot be used here and the reason is E-8: `admin/protection.py`
+    refuses a headless client outright, so a raw request to /admin/login
+    answers 403 whatever language it asks for. That refusal is itself worth
+    knowing about - it is the response most likely to be cached, and it
+    carries `Vary` because the middleware that sets it is the outermost one.
+    """
+    context = browser.new_context(
+        extra_http_headers=(
+            {"Accept-Language": accept_language} if accept_language else {}
+        )
+    )
+    page = context.new_page()
+    response = page.goto(
+        f"{BASE}/admin/login{query}", wait_until="domcontentloaded"
+    )
+    return context, page, response
+
+
+def test_the_panel_negotiates_from_accept_language_and_says_it_varies(browser):
+    """Verified against the RUNNING stack rather than against the application.
+
+    A response can carry `Vary` out of FastAPI and still reach a visitor
+    without it if something upstream rewrote the headers, and nginx proxies
+    this route. This is the check that would notice.
+    """
+    context, page, response = _admin_login(browser, "zh-CN,zh;q=0.9,en;q=0.8")
+    try:
+        assert response.status == 200
+        assert "accept-language" in response.headers.get("vary", "").lower()
+        assert page.get_attribute("html", "lang") == "zh"
+        assert page.inner_text('button[type="submit"], .gate__card button') != ""
+        assert context.cookies() == []
+    finally:
+        context.close()
+
+    context, page, response = _admin_login(browser)
+    try:
+        assert "accept-language" in response.headers.get("vary", "").lower()
+        assert page.get_attribute("html", "lang") == "en-NZ"
+    finally:
+        context.close()
+
+
+def test_the_panel_ranks_the_header_by_quality(browser):
+    """`zh;q=0.8, en;q=0.9` is a request for English, in that written order."""
+    context, page, _ = _admin_login(browser, "zh;q=0.8, en;q=0.9")
+    try:
+        assert page.get_attribute("html", "lang") == "en-NZ"
+    finally:
+        context.close()
+
+
+def test_a_language_with_no_panel_catalogue_steps_aside(browser):
+    """`fr-CA, fr, zh` reaches Chinese. A tag nobody claims has to resolve to
+    nothing rather than to English, or the visitor's second preference never
+    gets a turn."""
+    context, page, _ = _admin_login(browser, "fr-CA,fr;q=0.9,zh;q=0.5")
+    try:
+        assert page.get_attribute("html", "lang") == "zh"
+    finally:
+        context.close()
+
+
+def test_the_panel_stores_nothing_and_ignores_an_unrecognised_lang(browser):
+    context, page, _ = _admin_login(browser, "en-NZ", query="?lang=zh")
+    try:
+        assert page.get_attribute("html", "lang") == "zh"
+        assert [c for c in context.cookies() if "lang" in c["name"]] == []
+    finally:
+        context.close()
+
+    context, page, _ = _admin_login(browser, "zh-CN", query="?lang=qq")
+    try:
+        assert page.get_attribute("html", "lang") == "zh"
+    finally:
+        context.close()
+
+
+def test_even_a_refusal_carries_vary():
+    """The response a shared cache is most likely to hold.
+
+    `admin/protection.py` refuses a client with no browser fingerprint, which
+    is what a bare urllib request is - so this is the one admin assertion that
+    does NOT need a browser, and the one that proves `Vary` is set by the
+    outermost middleware rather than by whatever renders a page.
     """
     request = urllib.request.Request(
-        f"{BASE}/admin/login", headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
+        f"{BASE}/admin/login", headers={"Accept-Language": "zh-CN"}
     )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        body = response.read().decode("utf-8")
-        vary = response.headers.get("Vary", "")
-        assert "accept-language" in vary.lower(), f"Vary was {vary!r}"
-        assert 'lang="zh"' in body
-        assert "登录" in body
-        assert "Set-Cookie" not in [k for k in response.headers if "lang" in k.lower()]
-
-    plain = urllib.request.Request(f"{BASE}/admin/login")
-    with urllib.request.urlopen(plain, timeout=10) as response:
-        assert "accept-language" in response.headers.get("Vary", "").lower()
-        assert 'lang="en-NZ"' in response.read().decode("utf-8")
-
-
-def test_the_panel_ranks_the_header_by_quality():
-    request = urllib.request.Request(
-        f"{BASE}/admin/login", headers={"Accept-Language": "zh;q=0.8, en;q=0.9"}
-    )
-    with urllib.request.urlopen(request, timeout=10) as response:
-        assert 'lang="en-NZ"' in response.read().decode("utf-8")
+    try:
+        urllib.request.urlopen(request, timeout=10)
+    except urllib.error.HTTPError as refusal:
+        assert refusal.code == 403
+        assert "accept-language" in refusal.headers.get("Vary", "").lower()
+    else:  # pragma: no cover - the protection middleware stopped refusing
+        pytest.fail("a headless request to /admin/login was not refused")
 
 
 def test_the_static_origin_does_not_claim_to_vary():

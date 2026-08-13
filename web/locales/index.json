@@ -1,0 +1,123 @@
+{
+  "default": "en",
+  "catalogues": [
+    {
+      "language": "af",
+      "tags": [
+        "af"
+      ]
+    },
+    {
+      "language": "ar",
+      "tags": [
+        "ar"
+      ]
+    },
+    {
+      "language": "de",
+      "tags": [
+        "de"
+      ]
+    },
+    {
+      "language": "es",
+      "tags": [
+        "es"
+      ]
+    },
+    {
+      "language": "fr",
+      "tags": [
+        "fr"
+      ]
+    },
+    {
+      "language": "hi",
+      "tags": [
+        "hi"
+      ]
+    },
+    {
+      "language": "ja",
+      "tags": [
+        "ja"
+      ]
+    },
+    {
+      "language": "ko",
+      "tags": [
+        "ko"
+      ]
+    },
+    {
+      "language": "nl",
+      "tags": [
+        "nl"
+      ]
+    },
+    {
+      "language": "pa",
+      "tags": [
+        "pa",
+        "pa-Guru",
+        "pa-IN"
+      ]
+    },
+    {
+      "language": "ru",
+      "tags": [
+        "ru"
+      ]
+    },
+    {
+      "language": "ta",
+      "tags": [
+        "ta"
+      ]
+    },
+    {
+      "language": "th",
+      "tags": [
+        "th"
+      ]
+    },
+    {
+      "language": "tl",
+      "tags": [
+        "tl",
+        "fil"
+      ]
+    },
+    {
+      "language": "ur",
+      "tags": [
+        "ur"
+      ]
+    },
+    {
+      "language": "vi",
+      "tags": [
+        "vi"
+      ]
+    },
+    {
+      "language": "zh-Hant",
+      "tags": [
+        "zh-Hant",
+        "zh-TW",
+        "zh-HK",
+        "zh-MO"
+      ]
+    },
+    {
+      "language": "zh",
+      "tags": [
+        "zh",
+        "zh-Hans",
+        "zh-CN",
+        "zh-SG",
+        "zh-MY"
+      ]
+    }
+  ]
+}

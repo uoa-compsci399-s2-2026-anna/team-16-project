@@ -720,7 +720,11 @@ def _refuse_incomplete_prevention(session: Session, factor_set_id: int) -> None:
     if not missing:
         return
     listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
-    codes = ", ".join(sorted(prevention_destination_codes(session))) or "prevention"
+    #: Never empty where this message is built: with no flagged destination
+    #: `find_missing_prevention_upstream` returns [] and there is nothing to
+    #: report. A fallback literal here would be the magic string coming back
+    #: in the one place a staff member reads.
+    codes = ", ".join(sorted(prevention_destination_codes(session)))
     raise FactorSetStateError(
         f"{len(missing)} factor combinations have an upstream factor but no "
         f"prevention upstream row at 0 — either it is missing or it carries a "

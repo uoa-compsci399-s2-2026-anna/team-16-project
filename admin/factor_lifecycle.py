@@ -259,7 +259,11 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     # back to a state that worked" operation, and a set archived before v1.8
     # will legitimately fail this check. Refusing an emergency rollback over a
     # completeness rule would be a worse failure than the one it prevents.
-    codes = ", ".join(sorted(prevention_destination_codes(session))) or "prevention"
+    #: Never empty where this message is built: with no flagged destination
+    #: `find_missing_prevention_upstream` returns [] and there is nothing to
+    #: report. A fallback literal here would be the magic string coming back
+    #: in the one place a staff member reads.
+    codes = ", ".join(sorted(prevention_destination_codes(session)))
     missing = find_missing_prevention_upstream(session, factor_set_id)
     if missing:
         listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)

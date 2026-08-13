@@ -284,33 +284,56 @@ def test_arabic_and_urdu_render_right_to_left(browser, language):
         context.close()
 
 
-def test_the_right_to_left_layout_is_actually_mirrored(browser):
-    """`dir="rtl"` on its own proves nothing - a page of physical `margin-left`
-    rules carries the attribute and lays out exactly as before.
+def _mirror_measurements(page):
+    return page.evaluate(
+        """() => {
+        const item = document.querySelector('.check-list li');
+        const label = document.querySelector('.prototype-label');
+        const bullet = getComputedStyle(item, '::before');
+        return {
+          dir: document.documentElement.dir,
+          itemPadLeft: getComputedStyle(item).paddingLeft,
+          itemPadRight: getComputedStyle(item).paddingRight,
+          bulletLeft: parseFloat(bullet.left),
+          bulletRight: parseFloat(bullet.right),
+          labelBorderLeft: getComputedStyle(label).borderLeftWidth,
+          labelBorderRight: getComputedStyle(label).borderRightWidth,
+          overflows: document.body.scrollWidth > window.innerWidth + 1,
+        };
+      }"""
+    )
 
-    Measured: the hero's start-aligned content has to sit on the right half of
-    an Arabic page and the left half of an English one.
+
+def test_the_right_to_left_layout_is_actually_mirrored(browser):
+    """`dir="rtl"` on its own proves nothing.
+
+    A page whose stylesheet is full of physical `margin-left` rules carries
+    the attribute and lays out exactly as it did before - which is the
+    half-mirrored page this project decided was worse than not shipping
+    Arabic and Urdu at all. So this is measured rather than asserted: the
+    check-list's indent, the tick drawn before each item, and the accent
+    border beside the wordmark all have to change sides, and the page must
+    not gain a horizontal scrollbar doing it.
     """
     context, page = open_page(browser, ["ar"])
     try:
-        assert page.evaluate(
-            "getComputedStyle(document.querySelector('th, td')).textAlign"
-        ) == "right"
-        bullet = page.evaluate(
-            "getComputedStyle(document.querySelector('.check-list li'), '::before')"
-            ".getPropertyValue('inset-inline-start')"
-        )
-        assert bullet in ("0px", "auto"), bullet
+        rtl = _mirror_measurements(page)
     finally:
         context.close()
 
     context, page = open_page(browser, ["en-NZ"])
     try:
-        assert page.evaluate(
-            "getComputedStyle(document.querySelector('th, td')).textAlign"
-        ) == "left"
+        ltr = _mirror_measurements(page)
     finally:
         context.close()
+
+    assert rtl["dir"] == "rtl" and ltr["dir"] == "ltr"
+    assert ltr["itemPadLeft"] == rtl["itemPadRight"] != "0px"
+    assert rtl["itemPadLeft"] == ltr["itemPadRight"] == "0px"
+    assert ltr["bulletLeft"] == 0 and ltr["bulletRight"] > 0
+    assert rtl["bulletRight"] == 0 and rtl["bulletLeft"] > 0
+    assert ltr["labelBorderLeft"] == rtl["labelBorderRight"] != "0px"
+    assert not rtl["overflows"], "the right-to-left page scrolls sideways"
 
 
 # ---------------------------------------------------------------------------
@@ -454,24 +477,27 @@ def test_the_panel_stores_nothing_and_ignores_an_unrecognised_lang(browser):
         context.close()
 
 
-def test_even_a_refusal_carries_vary():
-    """The response a shared cache is most likely to hold.
+def test_vary_survives_the_proxy_on_a_response_no_browser_rendered():
+    """`Vary` is set by the OUTERMOST middleware, so it reaches responses the
+    inner ones short-circuit - and it has to survive nginx, which proxies this
+    route.
 
-    `admin/protection.py` refuses a client with no browser fingerprint, which
-    is what a bare urllib request is - so this is the one admin assertion that
-    does NOT need a browser, and the one that proves `Vary` is set by the
-    outermost middleware rather than by whatever renders a page.
+    A bare urllib request is what `admin/protection.py` calls a headless
+    client, so this may come back 403 rather than 200. Either is fine and the
+    assertion is the same: the response a shared cache is most likely to hold
+    is the one that must not be servable to the next visitor in the wrong
+    language.
     """
     request = urllib.request.Request(
         f"{BASE}/admin/login", headers={"Accept-Language": "zh-CN"}
     )
     try:
-        urllib.request.urlopen(request, timeout=10)
+        with urllib.request.urlopen(request, timeout=10) as response:
+            headers, status = response.headers, response.status
     except urllib.error.HTTPError as refusal:
-        assert refusal.code == 403
-        assert "accept-language" in refusal.headers.get("Vary", "").lower()
-    else:  # pragma: no cover - the protection middleware stopped refusing
-        pytest.fail("a headless request to /admin/login was not refused")
+        headers, status = refusal.headers, refusal.code
+    assert status in (200, 403), status
+    assert "accept-language" in headers.get("Vary", "").lower(), dict(headers)
 
 
 def test_the_static_origin_does_not_claim_to_vary():

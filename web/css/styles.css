@@ -715,10 +715,10 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 /* Under 650px the bar wraps to two rows — the position label on its own line, then the two
    buttons side by side — rather than stacking the buttons, which is what `.navigation-buttons`
-   did. Stacked, the bar is 124px of a 700px screen; side by side it is 104px including the
-   label, against the 232px the old indicator band and button row cost together. */
+   did. Stacked, the bar is 124px of a 700px screen; side by side it is a measured 109px
+   including the label, against the 232px the old indicator band and button row cost together. */
 @media (max-width: 649px) {
-  :root { --step-nav-height: 104px; }
+  :root { --step-nav-height: 109px; }
   .step-nav { grid-template-columns: auto minmax(0, 1fr); padding: 10px 12px; gap: 8px 10px; }
   .step-nav-progress { grid-column: 1 / -1; grid-row: 1; font-size: 0.82rem; }
   .step-nav-track { max-width: none; }

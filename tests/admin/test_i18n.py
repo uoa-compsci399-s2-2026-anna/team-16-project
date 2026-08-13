@@ -63,12 +63,44 @@ def _live_descriptions() -> set[str]:
     }
 
 
+def _base_views() -> list[type]:
+    """The seven BaseViews: Getting started, My security, Try a scenario, ...
+
+    Enumerated separately because they are not ModelView subclasses, and the
+    first version of this file walked only ModelView - which is exactly how
+    three English entries survived in a navigation menu whose other eight
+    were Chinese. The tests were green; the panel was visibly half
+    translated. Found by opening it in a browser, which is the only thing
+    that finds this class of gap.
+    """
+    from sqladmin import BaseView, ModelView as _ModelView
+
+    import admin.dryrun_views  # noqa: F401
+    import admin.getting_started_view  # noqa: F401
+    import admin.self_service_view  # noqa: F401
+    import admin.views  # noqa: F401
+
+    found = []
+
+    def walk(cls):
+        for sub in cls.__subclasses__():
+            walk(sub)
+            # `identity` is empty on the class - sqladmin fills it at
+            # registration - so a view is recognised by carrying a `name`
+            # instead. ModelView inherits BaseView, hence the exclusion.
+            if not issubclass(sub, _ModelView) and getattr(sub, "name", None):
+                found.append(sub)
+
+    walk(BaseView)
+    return found
+
+
 def _live_view_names() -> set[str]:
     names = set()
-    for view in _concrete_model_views():
+    for view in [*_concrete_model_views(), *_base_views()]:
         for attribute in ("name", "name_plural", "category"):
             value = getattr(view, attribute, None)
-            if value:
+            if isinstance(value, str) and value:
                 names.add(value)
     return names
 

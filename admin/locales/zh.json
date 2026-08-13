@@ -169,6 +169,13 @@
   "Impact calculator administration": "影响计算器后台管理",
   "Those sign-in details were not accepted.": "这组登录信息未被接受。",
   "Continue": "继续",
-  "You will be asked for a code from your authenticator next.": "下一步会要求你输入身份验证器上的验证码。"
+  "You will be asked for a code from your authenticator next.": "下一步会要求你输入身份验证器上的验证码。",
+  "Getting started": "快速上手",
+  "Verification": "身份验证",
+  "Change password": "修改密码",
+  "Set up authenticator": "设置身份验证器",
+  "My security": "我的安全设置",
+  "Try a scenario": "试算一个场景",
+  "Compare with published": "与已发布版本对比"
  }
 }

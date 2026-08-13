@@ -516,7 +516,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
-| O-8 | **Interface translation is delivered** (v1.25; negotiation rule amended at v1.26): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from **the browser's highest-priority tag only — an unmatched one is English rather than a walk down the list** — and stored nowhere. What remains open is that **the taxonomy inside a translated page is still in the language staff typed it**, and that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
+| O-8 | **Interface translation is delivered** (v1.25; negotiation rule amended at v1.26): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from **the browser's highest-priority tag only — an unmatched one is English rather than a walk down the list** — and stored nowhere. **The taxonomy inside a translated page stays in the language staff typed it — ruled 2026-08-14, and not a gap: anything a staff member can edit is published exactly as written.** What remains open is only that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
 | ~~O-9~~ | ~~**`/admin/try` cannot succeed in a deployed system.**~~ **Closed 2026-08-12.** The panel now mints a short-lived signed proof (`db/staff_proof.py`) and the API verifies it by default. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
@@ -977,11 +977,32 @@ tools with a controlled vocabulary end up in, and it is much better than an
 English page. It is also plainly not finished, and calling it finished would be
 the kind of claim this document exists to stop.
 
-**Closing it is not a front-end change.** It needs a translated name column per
-taxonomy table in §2.1, a panel screen to enter them, and a client decision
-about who writes them — and the client has not yet supplied real factors (O-1),
-so this is not the moment to ask for translated vocabulary. Recorded here as
-the next step for O-8 rather than done.
+**This will not be closed. Ruled 2026-08-14 by the repository owner:
+anything a staff member can edit is published exactly as written.**
+
+The mechanism was costed first — a translated name column per taxonomy table
+in §2.1, a panel screen to enter them, and a client decision about who writes
+them — and rejected on what it would do to the panel's guarantee rather than on
+its size. Today a staff member reads `Landfill` in the factor table and
+`Landfill` is what the public sees; the row they maintain and the word a
+visitor reads are the same string, so a question about a published number can
+be traced to a field somebody can open. Nineteen unreviewed translations of
+that word would break the trace in the place it is least affordable: a
+destination name is not decoration, it is what tells a visitor which pathway a
+figure belongs to, and a wrong one silently reassigns an impact.
+
+It would also put the vocabulary on a different footing from every other
+translated string. The interface strings are ours — a wrong one is a defect in
+this repository and we fix it. Taxonomy names belong to the client and change
+with MfE's definitions; a machine translation of them would be a claim about
+the client's own terminology that nobody on this project is in a position to
+make, and it would go stale the moment a name is edited.
+
+**Consequence, stated so nobody reads the gap as an oversight:** a translated
+page carries an English controlled vocabulary. That is the intended result, not
+an unfinished one. If the client ever wants translated taxonomy, the shape is
+that *they* supply the terms and staff enter them through the panel — the same
+path as every other editable field — and not that a pipeline generates them.
 
 ### The strings where a translation error becomes a data error
 

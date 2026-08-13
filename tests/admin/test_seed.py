@@ -8,7 +8,8 @@ from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
 from admin.taxonomy_rules import (
-    TaxonomyInvariantError, check_prevention_intact, check_single_standard_mix,
+    TaxonomyInvariantError, check_prevention_destination,
+    check_single_standard_mix,
 )
 
 pytestmark = pytest.mark.db
@@ -22,7 +23,7 @@ def test_seeding_satisfies_the_invariants(session):
     session.flush()
 
     check_single_standard_mix(session)
-    check_prevention_intact(session)
+    check_prevention_destination(session)
 
 
 def test_seed_refuses_to_commit_a_taxonomy_it_would_leave_broken(session):

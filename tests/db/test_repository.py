@@ -467,7 +467,7 @@ def test_rollback_is_deliberately_not_subject_to_the_o7_check(seeded_session):
 
 
 def test_the_o7_check_is_silent_on_a_taxonomy_with_no_prevention_row(seeded_session):
-    """An unseeded taxonomy is `check_prevention_intact`'s problem, not this
+    """An unseeded taxonomy is `check_prevention_destination`'s problem, not this
     function's. Reporting every combination in the set would be noise, and a
     second rule stated in terms of the same reserved row is a second thing to
     keep in step."""

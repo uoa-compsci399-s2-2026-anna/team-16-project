@@ -316,6 +316,10 @@ def seed(db):
         group_id=reuse.id,
         code="prevention",
         name="Prevented — waste avoided",
+        #: §2.1. The role is the flag, not the code — `admin/seed.py` sets it
+        #: on the same row for the same reason. A seed that carried the code
+        #: and not the tick would leave §6.2's guard with nothing to refuse.
+        is_prevention=True,
         sort_order=5,
     )
     destinations = [

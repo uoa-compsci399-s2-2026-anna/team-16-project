@@ -28,7 +28,13 @@ function randomId() {
 
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
 const selected = (items, code) => items.find(item => item.code === code)
-const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => destination.code !== 'prevention')
+// §6.1's `is_prevention`, not a code. A prevention destination is where waste that did
+// not happen goes, so it belongs in the improvement scenario and nowhere else — and the
+// server refuses one in a `current` scenario (§6.2), so a form that offered it here
+// would be offering a 400. This read `code !== 'prevention'` until the flag existed,
+// which left every other prevention destination — the ReFED comparison set brings its
+// own — on the current-waste list.
+const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => !destination.is_prevention)
 const createLine = (destination, qtyInput = '') => ({ id: randomId(), destination, qtyInput })
 // §7.3: `kgString` is `massToKg(...).toFixed(3)`, and it exists so the rounding to the
 // API's three decimal places happens in `units.js` rather than at each call site. Both

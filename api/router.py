@@ -33,6 +33,7 @@ from db.repository import (
     get_published_factor_set_id,
     get_taxonomy,
     load_factor_bundle,
+    prevention_destination_codes,
     upsert_submission,
 )
 
@@ -148,7 +149,21 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
     if dry_run:
         _authenticate_dry_run(request)
 
-    problems = entry_rule_problems(payload)
+    #: §6.2's "no prevention destination in a current scenario". Read from the
+    #: taxonomy on every request rather than from a constant, because which
+    #: destinations carry the role is data (§2.1) — the literal this replaces
+    #: did not cover §10.3's `refed_prevention`, which could therefore be
+    #: entered as current-scenario waste and reach the public statistics.
+    #:
+    #: `destination` carries no `factor_set_id`, so this is one small indexed
+    #: read of a global table and is the same answer for a dry run as for a
+    #: public request. A failure here is a taxonomy failure, not a request one.
+    try:
+        prevention_codes = prevention_destination_codes(request.state.db)
+    except Exception as exc:
+        raise _repository_problem(exc) from exc
+
+    problems = entry_rule_problems(payload, prevention_codes)
     if problems:
         raise ApiProblem(400, "VALIDATION_ERROR", "Request validation failed", problems)
 

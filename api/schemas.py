@@ -1,17 +1,26 @@
 """Strict wire schemas for §6.2. Decimal inputs are JSON strings by contract.
 
-Two of §6.2's rules are enforced by `entry_rule_problems` below rather than by
-Pydantic, and the reason is `details[].field` (§9). A `model_validator` reports
-against the location of the *model*, so a mass-conservation failure raised
-inside `EntryPayload` would arrive on the wire as `entries[0]` — while §6.2
-requires `entries[0].alternative`, and a duplicate `(sector, food_category)`
-is a property of the whole array rather than of either entry alone. Everything
-Pydantic can locate precisely stays in Pydantic; the two rules it cannot are
-checked once, after parsing, where the path can be written exactly.
+Three of §6.2's rules are enforced by `entry_rule_problems` below rather than by
+Pydantic. Two of them are here because of `details[].field` (§9): a
+`model_validator` reports against the location of the *model*, so a
+mass-conservation failure raised inside `EntryPayload` would arrive on the wire
+as `entries[0]` — while §6.2 requires `entries[0].alternative`, and a duplicate
+`(sector, food_category)` is a property of the whole array rather than of
+either entry alone.
+
+The third — no prevention destination in a *current* scenario — is here for a
+different reason: **which destinations those are is data.** It was a comparison
+against the literal `"prevention"`, so §10.3's `refed_prevention` was not
+covered by it and could be entered as current-scenario waste and reach the
+public statistics. The set of prevention codes now comes from
+`destination.is_prevention` by way of `db.repository`, which a Pydantic
+validator has no session to reach. It keeps the `entries[i].current` path the
+`AfterValidator` gave it, written out by hand.
 """
 
 from __future__ import annotations
 
+from collections.abc import Collection
 from decimal import Decimal, InvalidOperation
 from typing import Annotated, Any
 
@@ -23,8 +32,6 @@ from pydantic import (
     field_validator,
     model_validator,
 )
-
-from db.types import PREVENTION_CODE
 
 MAX_LINE_QTY = Decimal("10000000")
 MAX_SCENARIO_QTY = Decimal("50000000")
@@ -94,14 +101,16 @@ def scenario_mass(lines: list[ScenarioLinePayload]) -> Decimal:
     return sum((line.qty_kg for line in lines), Decimal("0"))
 
 
-def _check_scenario(
-    lines: list[ScenarioLinePayload], *, is_current: bool
-) -> list[ScenarioLinePayload]:
-    """§6.2's per-scenario, per-entry rules.
+def _check_scenario(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayload]:
+    """§6.2's per-scenario, per-entry rules that need no taxonomy.
 
     An `AfterValidator` on the field rather than a validator on the model, so
     that the failure is located at `entries[0].current` instead of at
     `entries[0]`.
+
+    The prevention rule used to live here, keyed on one literal. It is in
+    `entry_rule_problems` now: it needs the taxonomy, and a Pydantic validator
+    has no session.
     """
     if len(lines) > MAX_SCENARIO_LINES:
         raise ValueError(f"must contain at most {MAX_SCENARIO_LINES} lines")
@@ -110,46 +119,17 @@ def _check_scenario(
         raise ValueError("contains a duplicate destination")
     if scenario_mass(lines) > MAX_SCENARIO_QTY:
         raise ValueError("exceeds 50,000,000 kg")
-    if is_current and PREVENTION_CODE in destinations:
-        raise ValueError(
-            f"may not send waste to '{PREVENTION_CODE}': it is the destination "
-            "for waste that did not happen, and belongs in an alternative "
-            "scenario only"
-        )
     return lines
 
 
-def _check_current(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayload]:
-    """The current scenario: what is happening now, so `prevention` is illegal.
-
-    Nothing but C's own UI kept `prevention` out of a current scenario until
-    this existed, and the two halves of the system that could have caught it
-    were each doing the opposite job. `_check_scenario` had no rule; §5.4's
-    aggregation filters `scenario = 'current'`, which *admits* such a line
-    rather than excluding it. So a hand-rolled `POST /calculate` carrying a
-    current-scenario `prevention` line persisted, and then surfaced as a
-    `by_destination` bucket in the public statistics - the exact outcome §5.4
-    says must never happen, since `prevention` is by construction waste that
-    did not occur and counting it as real waste roughly doubles the figure
-    §6.4 calls "the cumulative total entered into this tool".
-
-    `tests/api/test_fixture_consistency.py` asserts this of the *fixture*,
-    which is what made it look covered. A fixture cannot constrain a caller.
-    """
-    return _check_scenario(lines, is_current=True)
-
-
-def _check_alternative(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayload]:
-    """The alternative scenario: the what-if, and the only home of `prevention`."""
-    return _check_scenario(lines, is_current=False)
-
-
-CurrentScenarioPayload = Annotated[
-    list[ScenarioLinePayload], AfterValidator(_check_current)
+ScenarioPayload = Annotated[
+    list[ScenarioLinePayload], AfterValidator(_check_scenario)
 ]
-AlternativeScenarioPayload = Annotated[
-    list[ScenarioLinePayload], AfterValidator(_check_alternative)
-]
+#: Kept as distinct names because §6.2's two scenarios are distinct concepts
+#: and `EntryPayload` reads better for it; they are the same validator now
+#: that the one asymmetric rule between them has moved.
+CurrentScenarioPayload = ScenarioPayload
+AlternativeScenarioPayload = ScenarioPayload
 
 
 class DryRunPayload(BaseModel):
@@ -200,15 +180,42 @@ class CalculatePayload(BaseModel):
         return value
 
 
-def entry_rule_problems(payload: CalculatePayload) -> list[dict[str, Any]]:
-    """The two §6.2 rules whose `details[].field` Pydantic cannot express.
+def entry_rule_problems(
+    payload: CalculatePayload,
+    prevention_codes: Collection[str] = (),
+) -> list[dict[str, Any]]:
+    """The three §6.2 rules Pydantic cannot express. See the module docstring.
 
     Returns one `details` entry per problem, in `entries` order, so a caller
     with two bad entries is told about both rather than about the first.
+
+    `prevention_codes` is every destination flagged `is_prevention` (§2.1),
+    read from the taxonomy by `db.repository.prevention_destination_codes`.
+    **It defaults to empty and that default enforces nothing** — which is
+    correct for a caller checking only the two entry-shape rules, and is why
+    `api/router.py` passes the set explicitly on the one path that matters.
     """
     problems: list[dict[str, Any]] = []
+    prevention = frozenset(prevention_codes)
     first_seen: dict[tuple[str, str | None], int] = {}
     for index, entry in enumerate(payload.entries):
+        offsets = [
+            line.destination for line in entry.current
+            if line.destination in prevention
+        ]
+        if offsets:
+            listed = ", ".join(f"'{code}'" for code in sorted(set(offsets)))
+            problems.append(
+                {
+                    "field": f"entries[{index}].current",
+                    "issue": "prevention_in_current",
+                    "message": (
+                        f"may not send waste to {listed}: a prevention "
+                        "destination is where waste that did not happen goes, "
+                        "and belongs in an alternative scenario only"
+                    ),
+                }
+            )
         key = (entry.sector, entry.food_category)
         if key in first_seen:
             problems.append(

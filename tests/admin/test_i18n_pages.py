@@ -151,6 +151,28 @@ async def test_sqladmin_s_own_chrome_is_translated_on_a_real_page(admin_client):
     )
 
 
+async def test_the_page_heading_composed_from_a_view_name_is_translated(admin_client):
+    """`New Constant` and `Constants` - the biggest text on each screen.
+
+    sqladmin builds the create heading as `_("New %(name)s",
+    name=model_view.name)`: it translates the sentence and interpolates the
+    model name into it *untranslated*, so a complete catalogue still renders
+    "新建Constant" without admin/i18n.py's `_TranslatedAttribute`. The list
+    heading is `{{ model_view.name_plural }}` with no `_()` around it at all.
+
+    Anchored on the `card-title` element and on both headings, because
+    removing `translate_view_names` from create_app leaves the navigation
+    menu correct - that is translated by the vendored macro instead - and a
+    test that only looked at the menu would pass against a panel whose every
+    page heading had reverted to English.
+    """
+    create = await admin_client.get("/admin/constant/create", params={"lang": "zh"})
+    assert '<h3 class="card-title">新建常量</h3>' in create.text
+
+    listing = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
+    assert '<h3 class="card-title">常量</h3>' in listing.text
+
+
 async def test_the_language_switcher_offers_every_language_and_marks_the_active_one(
     admin_client,
 ):

@@ -47,35 +47,88 @@ async def test_the_login_page_renders_in_chinese_when_asked(client):
     assert "登录" in body
 
 
-async def test_the_choice_is_remembered_in_a_cookie_and_survives_the_next_request(
+async def test_the_browser_s_own_language_is_honoured_without_any_query_string(
     client,
 ):
-    """`?lang=` sets it once; every later request is Chinese without the query."""
-    first = await client.get("/admin/login", params={"lang": "zh"})
-    set_cookie = first.headers.get("set-cookie", "")
-    assert f"{i18n.COOKIE_NAME}=zh" in set_cookie
-    # Path "/" is what lets one choice cover the panel and the public
-    # calculator, which nginx serves from the same origin.
-    assert "Path=/" in set_cookie
+    """The whole of change 1: no picker, no cookie, no query string.
 
-    # httpx keeps the cookie jar, so this request carries it and names no lang.
+    A browser that says it prefers Chinese gets Chinese on the first request
+    it makes, on a URL that carries nothing at all.
+    """
+    response = await client.get(
+        "/admin/login", headers={"Accept-Language": "zh-CN,zh;q=0.9,en;q=0.8"}
+    )
+
+    assert response.status_code == 200
+    assert '<html lang="zh">' in response.text
+    assert "登录" in response.text
+
+
+async def test_quality_values_decide_which_language_wins(client):
+    """`zh;q=0.8, en;q=0.9` is a request for English, in that written order.
+
+    A parser that reads the header left to right gets this backwards, which
+    is why the header is ranked rather than split.
+    """
+    response = await client.get(
+        "/admin/login", headers={"Accept-Language": "zh;q=0.8, en;q=0.9"}
+    )
+    assert '<html lang="en-NZ">' in response.text
+
+
+async def test_nothing_is_persisted_and_the_next_request_negotiates_again(client):
+    """The cookie is gone. A language is a property of a request, not of a browser.
+
+    `kaicalc_lang` was written by `?lang=` and read on every later request.
+    Both halves are asserted absent: no Set-Cookie on the way out, and a
+    second request with no header renders English even though the first one
+    forced Chinese.
+    """
+    forced = await client.get("/admin/login", params={"lang": "zh"})
+    assert '<html lang="zh">' in forced.text
+    assert "kaicalc_lang" not in forced.headers.get("set-cookie", "")
+
     again = await client.get("/admin/login")
-    assert '<html lang="zh">' in again.text
-    assert "登录" in again.text
+    assert '<html lang="en-NZ">' in again.text
 
 
-async def test_a_request_with_no_choice_is_english(client):
+async def test_every_response_says_it_varies_by_accept_language(client):
+    """Without this, a shared cache serves one visitor's Chinese page to the next.
+
+    Asserted on a plain English response as well as a translated one: a cache
+    keys on what it was told varies, and the English entry stored without it
+    is the one that gets handed back to a Chinese-speaking browser.
+    """
+    for params in ({}, {"lang": "zh"}):
+        response = await client.get("/admin/login", params=params)
+        vary = response.headers.get("vary", "")
+        assert "accept-language" in vary.lower(), (
+            f"no Vary: Accept-Language on /admin/login with params={params!r}; "
+            f"got {vary!r}"
+        )
+
+
+async def test_a_request_with_no_choice_and_no_header_is_english(client):
     response = await client.get("/admin/login")
     assert '<html lang="en-NZ">' in response.text
     assert "Sign in" in response.text or "Continue" in response.text
 
 
-async def test_an_unrecognised_language_renders_english_and_is_not_persisted(client):
-    """Absent and unrecognised behave the same, and neither is written down."""
-    response = await client.get("/admin/login", params={"lang": "qq"})
+async def test_an_unrecognised_lang_is_ignored_and_the_header_still_decides(client):
+    """`?lang=qq` is not an error and not a veto - it simply is not there.
 
-    assert '<html lang="en-NZ">' in response.text
-    assert f"{i18n.COOKIE_NAME}=" not in response.headers.get("set-cookie", "")
+    The request then negotiates as though the parameter had been absent,
+    which is the only behaviour that does not make a typo in a support email
+    look like a broken panel.
+    """
+    response = await client.get(
+        "/admin/login",
+        params={"lang": "qq"},
+        headers={"Accept-Language": "zh-CN,zh;q=0.9"},
+    )
+
+    assert '<html lang="zh">' in response.text
+    assert "kaicalc_lang" not in response.headers.get("set-cookie", "")
 
 
 async def test_a_field_description_renders_translated_inside_its_own_element(
@@ -173,56 +226,71 @@ async def test_the_page_heading_composed_from_a_view_name_is_translated(admin_cl
     assert '<h3 class="card-title">常量</h3>' in listing.text
 
 
-async def test_the_language_switcher_offers_every_language_and_marks_the_active_one(
-    admin_client,
-):
+async def test_no_language_picker_is_rendered_anywhere(admin_client):
+    """The owner asked for no control, and a control is what this removes.
+
+    Anchored on the element the switcher had and on the query string it
+    emitted, so re-adding either fails here rather than being noticed in a
+    screenshot.
+    """
     response = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
     body = response.text
 
-    assert 'id="language-switcher"' in body
-    for catalogue in i18n.languages():
-        assert f'hreflang="{catalogue.language}"' in body, (
-            f"{catalogue.language} is a shipped catalogue but the switcher "
-            "does not offer it"
-        )
-    assert "中文" in body and "English" in body
+    assert 'id="language-switcher"' not in body
+    assert "hreflang=" not in body
 
 
 async def test_a_reviewed_language_carries_no_machine_translation_notice(admin_client):
     """Chinese is reviewed by the people using the panel; it must not be labelled.
 
     The counterpart - that a machine-translated language DOES carry the
-    notice - is asserted in test_the_notice_renders_for_a_machine_translated_language
-    below, against a catalogue built for the test, because no shipped
-    language is machine translated yet and a test that cannot run until the
-    nineteen arrive would prove nothing today.
+    notice - is asserted below against a catalogue built for the test,
+    because no language the panel ships is machine translated and a test that
+    cannot run until one arrives would prove nothing today.
     """
     response = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
-    assert "机器翻译，未经审校" not in response.text
-    assert "Machine translation, not reviewed" not in response.text
+    assert 'id="machine-translation-notice"' not in response.text
+
+
+def _machine_translated_german(monkeypatch):
+    fake = i18n.Catalogue(
+        language="de",
+        endonym="Deutsch",
+        machine_translated=True,
+        strings={},
+        tags=("de",),
+    )
+    monkeypatch.setitem(i18n._CATALOGUES, "de", fake)
+    monkeypatch.setitem(i18n._TAG_INDEX, "de", "de")
 
 
 async def test_the_notice_renders_for_a_machine_translated_language(
     admin_client, monkeypatch
 ):
-    """The promise the interface has to make, and where it makes it.
+    """The promise the interface has to make, and where it now makes it.
 
-    Nineteen languages will ship machine translated and unread. A person
-    choosing one has to be told at the moment of choosing, not in a document.
-    Built here rather than waiting for a real one so that the mechanism is
-    proven now, while somebody is looking at it.
+    It used to sit on the switcher's option, where somebody was choosing.
+    With no switcher there is nothing to choose and nowhere to hang it, so it
+    is a strip on the page itself - the only surface a reader of a
+    machine-translated page is guaranteed to be looking at.
     """
-    fake = i18n.Catalogue(
-        language="de", endonym="Deutsch", machine_translated=True, strings={}
-    )
-    monkeypatch.setitem(i18n._CATALOGUES, "de", fake)
+    _machine_translated_german(monkeypatch)
 
     response = await admin_client.get("/admin/constant/list", params={"lang": "de"})
     body = response.text
 
-    assert 'hreflang="de"' in body
-    assert "Deutsch" in body
-    assert "Machine translation, not reviewed" in body, (
-        "a machine-translated language was offered in the switcher without "
-        "the notice that says so"
-    )
+    assert 'id="machine-translation-notice"' in body
+    assert "machine translated and has not been reviewed" in body
+
+
+async def test_the_notice_reaches_the_pages_that_render_before_a_session(
+    client, monkeypatch
+):
+    """The login gauntlet uses a different base template and a different Jinja
+    environment - which is precisely how a block reaches every screen the
+    tests look at and none of the ones they do not.
+    """
+    _machine_translated_german(monkeypatch)
+
+    response = await client.get("/admin/login", params={"lang": "de"})
+    assert 'id="machine-translation-notice"' in response.text

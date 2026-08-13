@@ -51,30 +51,47 @@ from typing import Mapping
 #: the answer.
 DEFAULT_LANGUAGE = "en"
 
-#: Set only by an explicit ``?lang=`` choice, and read on every request.
+#: The header the panel negotiates from, and the only thing it reads about a
+#: visitor's language.
 #:
-#: A cookie rather than the staff session, and the reason is not preference.
-#: The login page renders before a session exists, and so do ``/admin/enrol``
-#: and ``/admin/verify`` - the whole enrolment flow runs before there is an
-#: account at all. A person who cannot read English needs those pages in
-#: their own language more than they need any other page in it. The session
-#: is also cleared on logout, so a language kept there would revert to
-#: English every time somebody signed out.
+#: **§2.3 forbids STORING an address, a user agent or a fingerprint. It does
+#: not forbid reading a header, deciding what to render, and keeping
+#: nothing** - its own wording is that "user agents, headers and paths are
+#: read within a request and forgotten". This module used to decline the
+#: header on the opposite reading, and shipped a ``?lang=`` switcher and a
+#: ``kaicalc_lang`` cookie instead. Both are gone: the cookie was the only
+#: thing here that outlived a request, and the switcher was a control the
+#: repository owner asked not to have.
 #:
-#: Not a column on ``staff`` either: that would need a migration and a write
-#: path through ``admin/accounts.py``, and the preference belongs to a
-#: browser rather than to a person.
-#:
-#: Path "/" so the panel and the public calculator are one choice on one
-#: origin - nginx serves both from the same host and port.
-COOKIE_NAME = "kaicalc_lang"
+#: What is read is discarded when the response is sent. Nothing derived from
+#: it reaches ``submission``, ``audit_log`` or any log line.
+ACCEPT_LANGUAGE_HEADER = "accept-language"
 
-#: One year. A language choice that expires is a language choice made twice.
-COOKIE_MAX_AGE = 365 * 24 * 60 * 60
+#: The response header that stops a shared cache serving one visitor's
+#: Chinese page to the next visitor. **Mandatory on every response**, not
+#: only on the ones that came out translated: a cache keys on what it was
+#: told varies, and an English response served without it is the entry that
+#: later gets returned to a Chinese-speaking browser.
+VARY_HEADER = "vary"
 
-#: ``?lang=zh`` on any URL switches and persists. The same spelling sqladmin's
-#: own middleware uses, so the two are not two things to remember.
+#: ``?lang=zh`` on any URL forces a language for that one request. It is not
+#: persisted anywhere and there is no control that emits it - it exists for
+#: testing, screenshots and support, which is the whole of why an interface
+#: with no picker still needs one.
+#:
+#: **An unrecognised value is ignored**, and the request then negotiates
+#: exactly as if the parameter had been absent: ``Accept-Language`` first,
+#: English last. Not an error, not a redirect, and not remembered.
 QUERY_PARAM = "lang"
+
+#: A single ``Accept-Language`` entry: a tag and an optional quality.
+_ACCEPT_ENTRY = re.compile(r"^\s*([A-Za-z0-9*-]{1,35})\s*(?:;\s*q\s*=\s*([0-9.]{1,8})\s*)?$")
+
+#: How much of the header is read at all. A browser sends a handful of tags;
+#: anything longer is either a mistake or an attempt to make this loop
+#: expensive, and the tail of a language list has never decided anything.
+_MAX_ACCEPT_LENGTH = 512
+_MAX_ACCEPT_ENTRIES = 24
 
 #: Where the catalogues live. Inside the package, because
 #: ``[tool.setuptools.package-data]`` cannot reach outside its own package
@@ -111,6 +128,19 @@ class Catalogue:
     endonym: str
     machine_translated: bool
     strings: Mapping[str, str]
+    #: Every BCP-47 tag this catalogue claims, itself included.
+    #:
+    #: **This is what stops ``zh-TW`` reaching Simplified Chinese.** RFC 4647's
+    #: lookup truncates a tag one subtag at a time, so ``zh-TW`` -> ``zh``
+    #: is what a plain implementation does, and for Traditional Chinese that
+    #: is not a graceful degradation - it is the wrong script. A catalogue
+    #: therefore names the regions and scripts it speaks for, and an exact
+    #: claim is matched before any truncation happens.
+    #:
+    #: In the catalogue file rather than in a table here, for the reason
+    #: ``endonym`` and ``machine_translated`` are: adding a language is
+    #: adding a file.
+    tags: tuple[str, ...] = ()
 
 
 def _load() -> dict[str, Catalogue]:
@@ -121,7 +151,7 @@ def _load() -> dict[str, Catalogue]:
     a second place for the English wording to drift.
     """
     catalogues = {
-        DEFAULT_LANGUAGE: Catalogue(DEFAULT_LANGUAGE, "English", False, {}),
+        DEFAULT_LANGUAGE: Catalogue(DEFAULT_LANGUAGE, "English", False, {}, ("en",)),
     }
     if LOCALES_DIR.is_dir():
         for path in sorted(LOCALES_DIR.glob("*.json")):
@@ -131,11 +161,30 @@ def _load() -> dict[str, Catalogue]:
                 endonym=raw["endonym"],
                 machine_translated=bool(raw["machine_translated"]),
                 strings=raw["strings"],
+                tags=tuple(raw.get("tags") or [raw["language"]]),
             )
     return catalogues
 
 
 _CATALOGUES: dict[str, Catalogue] = _load()
+
+
+def _tag_index(catalogues: Mapping[str, Catalogue]) -> dict[str, str]:
+    """Every claimed tag, lower-cased, to the language that claims it.
+
+    A tag claimed twice is a bug in the catalogue files rather than a
+    precedence question, and ``test_i18n.py`` fails on it - two catalogues
+    both answering to ``zh-HK`` would make the winner depend on filename
+    order.
+    """
+    index: dict[str, str] = {}
+    for catalogue_ in catalogues.values():
+        for tag in (catalogue_.language, *catalogue_.tags):
+            index.setdefault(tag.strip().lower(), catalogue_.language)
+    return index
+
+
+_TAG_INDEX: dict[str, str] = _tag_index(_CATALOGUES)
 
 #: The active language for the request being served.
 #:
@@ -148,7 +197,12 @@ _active: ContextVar[str] = ContextVar("kaicalc_admin_language", default=DEFAULT_
 
 
 def languages() -> list[Catalogue]:
-    """Every language the switcher offers, English first."""
+    """Every language with a catalogue, English first.
+
+    No screen renders this any more - there is no picker. It is what the
+    test suite parametrises over, and what a future surface with a picker
+    would read.
+    """
     rest = sorted(
         (c for c in _CATALOGUES.values() if c.language != DEFAULT_LANGUAGE),
         key=lambda c: c.language,
@@ -164,8 +218,8 @@ def set_language(code: str | None) -> str:
     """Activate `code` for this request, falling back to English.
 
     An unrecognised value is *ignored*, not corrected and not stored - the
-    panel renders in English and the switcher shows English as selected,
-    which is true.
+    panel renders in English, which is the readable answer and is what
+    ``negotiate`` would have produced anyway.
     """
     resolved = code if is_supported(code) else DEFAULT_LANGUAGE
     _active.set(resolved)
@@ -181,7 +235,7 @@ def catalogue(code: str | None = None) -> Catalogue:
 
 
 def endonym(code: str) -> str:
-    """A language's own name for itself, for the switcher."""
+    """A language's own name for itself, for a notice written in it."""
     return catalogue(code).endonym if is_supported(code) else code
 
 
@@ -224,22 +278,98 @@ def ngettext(singular: str, plural: str, n: int) -> str:
     return gettext(singular if n == 1 else plural)
 
 
-def resolve(cookie: str | None, requested: str | None) -> tuple[str, bool]:
-    """Decide the language for a request, and whether to persist the choice.
+def match(tag: str | None) -> str | None:
+    """One BCP-47 tag to a language with a catalogue, or ``None``.
 
-    ``?lang=`` wins over the cookie and is the only thing that sets it, so a
-    language is only ever remembered because somebody asked for it.
+    Not equality. Three things have to hold and none of them follows from
+    comparing strings:
 
-    **No ``Accept-Language``.** The header is a fingerprinting signal, and
-    contract §2.3's position is that this system reads nothing about a
-    visitor it was not given on purpose. Its absence here is a decision, not
-    an omission - see the O-8 entry in docs/architecture.md §10.
+    * ``en-NZ`` reaches English, and ``zh-CN`` and ``zh-Hans`` reach ``zh``.
+      That is RFC 4647 lookup: try the whole tag, then drop the last subtag,
+      and repeat.
+    * ``zh-TW`` and ``zh-HK`` reach Traditional Chinese and **must not** fall
+      through to Simplified. Truncation alone would send both to ``zh``, so
+      the Traditional catalogue claims them by name (``Catalogue.tags``) and
+      an exact claim is tried before any truncation.
+    * A tag nobody claims returns ``None`` rather than a guess, so the caller
+      can try the visitor's next-preferred language before giving up on
+      English.
+
+    A single-letter or grandfathered subtag is dropped by the same loop it
+    would confuse: ``i-klingon`` truncates to ``i``, which nothing claims.
     """
-    if is_supported(requested):
-        return requested, True  # type: ignore[return-value]
-    if is_supported(cookie):
-        return cookie, False  # type: ignore[return-value]
-    return DEFAULT_LANGUAGE, False
+    if not tag:
+        return None
+    normalised = tag.strip().lower().replace("_", "-")
+    while normalised:
+        language = _TAG_INDEX.get(normalised)
+        if language is not None:
+            return language
+        head, _, _tail = normalised.rpartition("-")
+        normalised = head
+    return None
+
+
+def parse_accept_language(header: str | None) -> list[str]:
+    """The tags of an ``Accept-Language`` header, most wanted first.
+
+    Quality values are honoured, which is the whole reason this is not a
+    ``split(",")``: ``zh;q=0.8, en;q=0.9`` means English, and a parser that
+    reads the header in written order gets that backwards. ``q=0`` means
+    *not acceptable* and the tag is dropped rather than ranked last.
+
+    ``*`` is dropped: it says "anything", which is what falling through to
+    English already does, and ranking it would let a wildcard outrank a real
+    preference further down the header.
+
+    A malformed entry is dropped rather than defaulted. ``en;q=high`` is not
+    a request for English at full quality - it is a header this code does not
+    understand, and guessing at it is how a parser starts making decisions on
+    input it cannot read.
+    """
+    if not header:
+        return []
+    ranked: list[tuple[float, int, str]] = []
+    for position, raw in enumerate(header[:_MAX_ACCEPT_LENGTH].split(",")[:_MAX_ACCEPT_ENTRIES]):
+        entry = _ACCEPT_ENTRY.match(raw)
+        if entry is None:
+            continue
+        tag, quality = entry.group(1), entry.group(2)
+        if tag == "*":
+            continue
+        if quality is None:
+            weight = 1.0
+        else:
+            try:
+                weight = float(quality)
+            except ValueError:
+                continue
+            if not 0.0 <= weight <= 1.0 or weight == 0.0:
+                continue
+        # `position` keeps the header's own order for equal qualities, which
+        # RFC 9110 leaves to the server and every browser expects.
+        ranked.append((-weight, position, tag))
+    return [tag for _weight, _position, tag in sorted(ranked)]
+
+
+def negotiate(accept_language: str | None, requested: str | None = None) -> str:
+    """The language to render this one request in. Nothing is persisted.
+
+    ``?lang=`` first and only as an override - there is no control that emits
+    it, and an unrecognised value is ignored, after which the request
+    negotiates as though it had not been there at all.
+
+    Then the browser's own ordered preference. Then English, which needs no
+    catalogue because its strings are its keys.
+    """
+    forced = match(requested)
+    if forced is not None:
+        return forced
+    for tag in parse_accept_language(accept_language):
+        language = match(tag)
+        if language is not None:
+            return language
+    return DEFAULT_LANGUAGE
 
 
 class _TranslatedAttribute:
@@ -292,7 +422,7 @@ def translate_view_names(views) -> None:
 
 
 def install(env) -> None:
-    """Give a Jinja environment ``_()`` and the switcher's globals.
+    """Give a Jinja environment ``_()`` and the language globals.
 
     Called four times, and it has to be: this panel renders from FOUR Jinja
     environments, not one. sqladmin builds its own per ``Admin`` instance,
@@ -316,12 +446,13 @@ def install(env) -> None:
     env.add_extension("jinja2.ext.i18n")
     env.install_gettext_callables(gettext, ngettext, newstyle=True)
     env.globals["kaicalc_language"] = active_language
-    env.globals["kaicalc_languages"] = languages
-    env.globals["kaicalc_endonym"] = endonym
+    env.globals["kaicalc_machine_translated"] = lambda: is_machine_translated(
+        active_language()
+    )
 
 
 class LanguageMiddleware:
-    """Resolves the active language, and persists an explicit choice.
+    """Negotiates the language for one request, and says so in ``Vary``.
 
     Pure ASGI rather than BaseHTTPMiddleware. The ContextVar has to be set in
     the same context the response is rendered in; a pure ASGI middleware
@@ -329,7 +460,16 @@ class LanguageMiddleware:
     question about which context the value lands in.
 
     Installed outermost (added last in ``create_app``), so that even a
-    request ProtectionMiddleware refuses has a language resolved.
+    request ProtectionMiddleware refuses has a language negotiated - and
+    carries ``Vary``, which matters most on exactly those responses. A 403
+    cached without it is served to everyone.
+
+    **``Vary: Accept-Language`` is appended rather than assigned.** FastAPI's
+    own machinery sets ``Vary: Cookie`` on session responses, and replacing
+    the header would drop that and let a cache serve one staff member's
+    session-dependent page to another. Appended to whatever is already there,
+    and skipped when the value is already present so a re-entrant mount
+    cannot produce ``Vary: Accept-Language, Accept-Language``.
     """
 
     def __init__(self, app) -> None:
@@ -343,25 +483,24 @@ class LanguageMiddleware:
         from starlette.requests import HTTPConnection
 
         conn = HTTPConnection(scope)
-        language, persist = resolve(
-            conn.cookies.get(COOKIE_NAME), conn.query_params.get(QUERY_PARAM)
+        set_language(
+            negotiate(
+                conn.headers.get(ACCEPT_LANGUAGE_HEADER),
+                conn.query_params.get(QUERY_PARAM),
+            )
         )
-        set_language(language)
 
-        if not persist:
-            await self.app(scope, receive, send)
-            return
-
-        async def send_with_cookie(message):
+        async def send_with_vary(message):
             if message["type"] == "http.response.start":
                 from starlette.datastructures import MutableHeaders
 
                 headers = MutableHeaders(scope=message)
-                headers.append(
-                    "set-cookie",
-                    f"{COOKIE_NAME}={language}; Path=/; Max-Age={COOKIE_MAX_AGE}; "
-                    "SameSite=Lax",
-                )
+                existing = headers.get(VARY_HEADER, "")
+                present = {part.strip().lower() for part in existing.split(",")}
+                if "accept-language" not in present:
+                    headers[VARY_HEADER] = (
+                        f"{existing}, Accept-Language" if existing else "Accept-Language"
+                    )
             await send(message)
 
-        await self.app(scope, receive, send_with_cookie)
+        await self.app(scope, receive, send_with_vary)

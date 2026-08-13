@@ -242,11 +242,129 @@ def test_chinese_carries_no_machine_translation_notice():
     assert not i18n.is_machine_translated("zh")
 
 
-def test_resolve_prefers_an_explicit_choice_and_only_then_persists():
-    assert i18n.resolve(cookie=None, requested="zh") == ("zh", True)
-    assert i18n.resolve(cookie="zh", requested=None) == ("zh", False)
-    assert i18n.resolve(cookie="zh", requested="qq") == ("zh", False)
-    assert i18n.resolve(cookie=None, requested=None) == ("en", False)
+@pytest.mark.parametrize(
+    "tag, expected",
+    [
+        # RFC 4647 lookup: truncate a subtag at a time.
+        ("en", "en"),
+        ("en-NZ", "en"),
+        ("en-nz", "en"),
+        ("en_NZ", "en"),
+        ("zh", "zh"),
+        ("zh-CN", "zh"),
+        ("zh-Hans", "zh"),
+        ("zh-Hans-CN", "zh"),
+        ("zh-SG", "zh"),
+        # A tag nobody claims resolves to nothing, so the caller can try the
+        # visitor's NEXT preference instead of jumping to English.
+        ("fr", None),
+        ("fr-CA", None),
+        ("i-klingon", None),
+        ("", None),
+        (None, None),
+        ("...", None),
+        ("x", None),
+    ],
+)
+def test_a_tag_is_matched_by_lookup_rather_than_by_equality(tag, expected):
+    assert i18n.match(tag) == expected
+
+
+def test_the_panel_has_no_traditional_catalogue_so_zh_tw_degrades_to_simplified():
+    """Stated rather than assumed, because the calculator does NOT do this.
+
+    `web/locales/` ships `zh-Hant`, which claims `zh-TW`, `zh-HK` and `zh-MO`
+    by name so that truncation never reaches Simplified. The panel ships no
+    Traditional catalogue, so the same tags truncate to `zh` here - the wrong
+    script, and still the most readable thing available. If a Traditional
+    catalogue is ever added to admin/locales/ with those claims, this test
+    fails and is the reminder to delete it.
+    """
+    assert "zh-hant" not in i18n._TAG_INDEX
+    assert i18n.match("zh-TW") == "zh"
+
+
+@pytest.mark.parametrize(
+    "header, expected",
+    [
+        (None, []),
+        ("", []),
+        ("en", ["en"]),
+        # Ranked, not read in written order. This one line is the reason the
+        # header is parsed at all rather than split on commas.
+        ("zh;q=0.8, en;q=0.9", ["en", "zh"]),
+        ("zh-CN,zh;q=0.9,en;q=0.8", ["zh-CN", "zh", "en"]),
+        # Equal quality keeps the header's own order.
+        ("de;q=0.5, fr;q=0.5", ["de", "fr"]),
+        # q=0 means "not acceptable" and is dropped, not ranked last.
+        ("en;q=0, zh", ["zh"]),
+        # `*` says "anything", which falling back to English already does.
+        ("*", []),
+        ("zh, *;q=0.5", ["zh"]),
+        # Malformed entries are dropped rather than guessed at.
+        ("en;q=high, zh", ["zh"]),
+        ("!!!, zh", ["zh"]),
+        ("en;q=1.5, zh", ["zh"]),
+    ],
+)
+def test_accept_language_is_parsed_by_quality(header, expected):
+    assert i18n.parse_accept_language(header) == expected
+
+
+def test_a_pathological_accept_language_header_is_bounded():
+    """A header is untrusted input, and this loop runs on every request."""
+    assert i18n.parse_accept_language("de," * 5000 + "zh") == ["de"] * 24
+
+
+@pytest.mark.parametrize(
+    "header, requested, expected",
+    [
+        # The browser decides, with no query string and nothing stored.
+        ("zh-CN,zh;q=0.9,en;q=0.8", None, "zh"),
+        ("en-NZ,en;q=0.9", None, "en"),
+        (None, None, "en"),
+        # A language with no catalogue steps aside for the next preference
+        # rather than ending the negotiation.
+        ("fr-CA,fr;q=0.9,zh;q=0.8", None, "zh"),
+        ("fr-CA,fr;q=0.9", None, "en"),
+        # `?lang=` overrides the header, for testing, screenshots and support.
+        ("en-NZ", "zh", "zh"),
+        ("en-NZ", "zh-CN", "zh"),
+        # An unrecognised override is ignored, and the header still decides.
+        ("zh-CN", "qq", "zh"),
+        ("en-NZ", "qq", "en"),
+    ],
+)
+def test_negotiation_reads_the_header_honours_the_override_and_keeps_nothing(
+    header, requested, expected
+):
+    assert i18n.negotiate(header, requested) == expected
+
+
+def test_no_catalogue_claims_a_tag_another_one_claims():
+    """Two catalogues answering to `zh-HK` would make filename order decide."""
+    seen: dict[str, str] = {}
+    for catalogue in i18n.languages():
+        for tag in (catalogue.language, *catalogue.tags):
+            key = tag.lower()
+            assert key not in seen or seen[key] == catalogue.language, (
+                f"{tag!r} is claimed by both {seen.get(key)!r} and "
+                f"{catalogue.language!r}"
+            )
+            seen[key] = catalogue.language
+
+
+def test_nothing_about_the_negotiation_is_persisted():
+    """The cookie is gone, and so is every constant that described it.
+
+    Asserted on the module rather than on a response because a reinstated
+    cookie would arrive as a constant here first.
+    """
+    for gone in ("COOKIE_NAME", "COOKIE_MAX_AGE", "resolve"):
+        assert not hasattr(i18n, gone), (
+            f"i18n.{gone} is back - the language is negotiated per request "
+            "and nothing about it is stored"
+        )
 
 
 def test_the_catalogue_file_declares_its_own_metadata():
@@ -263,6 +381,11 @@ def test_the_catalogue_file_declares_its_own_metadata():
         assert raw["endonym"].strip()
         assert isinstance(raw["machine_translated"], bool)
         assert raw["strings"]
+        # `tags` is what stops `zh-TW` reaching Simplified Chinese, and it
+        # lives in the file for the same reason the two above do: adding a
+        # language is adding a file. It must claim its own code, or the
+        # catalogue answers to no tag at all.
+        assert language in [t.lower() for t in raw.get("tags", [language])]
 
 
 def test_the_vendored_macros_copy_still_matches_its_original():
@@ -300,3 +423,40 @@ def test_the_vendored_macros_copy_still_matches_its_original():
 
 
 import admin  # noqa: E402  - imported for __file__ in the test above
+
+
+def _our_own_template_msgids() -> set[str]:
+    """Every `_("...")` this repository wrote into its own templates.
+
+    Read out of the templates rather than listed here, for the reason every
+    other coverage set in this file is: a list stops covering the panel the
+    moment somebody adds a string, and nothing fails. sqladmin's own msgids
+    are covered separately, and the vendored `_macros.html` is excluded
+    because its `_()` calls wrap variables rather than literals.
+    """
+    from pathlib import Path
+
+    import admin
+
+    root = Path(admin.__file__).parent / "templates"
+    pattern = re.compile(r"_\(\s*[\"']([^\"']{4,})[\"']\s*\)")
+    return {
+        match
+        for path in root.rglob("*.html")
+        if path.name != "_macros.html"
+        for match in pattern.findall(path.read_text(encoding="utf-8"))
+    }
+
+
+@pytest.mark.parametrize("language", TRANSLATED)
+def test_our_own_templates_are_translated(language):
+    """The strings this project wrote, as opposed to sqladmin's.
+
+    Nothing covered these until the machine-translation notice moved into
+    `brand/base.html` and `sqladmin/layout.html` - the two templates a
+    reader of a machine-translated page cannot avoid - and a notice that
+    renders in English on a page nobody can read in English says nothing.
+    """
+    strings = i18n.catalogue(language).strings
+    missing = sorted(m for m in _our_own_template_msgids() if m not in strings)
+    assert not missing, f"untranslated in {language}: {missing}"

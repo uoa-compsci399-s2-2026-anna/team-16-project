@@ -1,49 +1,41 @@
-{# The panel chrome, with a language switcher in the top bar.
+{# The panel chrome, carrying the machine-translation notice.
 
    Shadows sqladmin/layout.html and extends the original through the
    `sqladmin_original` prefix - a loader sqladmin registers for exactly this
    (`Admin.init_templating_engine`), so nothing of its own layout is copied
    here. Only the `topbar` block is replaced.
 
-   sqladmin ships a switcher of its own in this block, and it is not the one
-   used: it renders only when an `I18nConfig` is passed to `Admin()`, and
-   that path requires `babel` and offers only the five locales sqladmin
-   compiled into its own package. Chinese is not among them and cannot be
-   added from a wheel of ours. See admin/i18n.py's docstring.
+   THERE IS NO LANGUAGE SWITCHER, AND THAT IS THE DECISION THIS FILE
+   RECORDS. A dropdown writing a `kaicalc_lang` cookie stood here until the
+   repository owner ruled it out: the language is negotiated per request from
+   `Accept-Language`, nothing is persisted, and there is no control to
+   operate. `?lang=` still forces a language for one request - for testing,
+   screenshots and support - but nothing on the page emits it.
 
-   THE MACHINE-TRANSLATION NOTICE LIVES HERE, on the option itself, because
-   this is where somebody chooses. A note in a document is read by whoever
-   maintains the system; this is read by whoever is about to rely on it.
-   Driven by `machine_translated` in each catalogue file, so a language that
-   arrives from a machine pass labels itself and no list in code has to be
-   extended nineteen times. #}
+   sqladmin ships a switcher of its own in this block, and it is not used
+   either: it renders only when an `I18nConfig` is passed to `Admin()`, and
+   that path requires `babel` and offers only the five locales sqladmin
+   compiled into its own package. See admin/i18n.py's docstring.
+
+   THE MACHINE-TRANSLATION NOTICE HAD TO MOVE WHEN THE SWITCHER WENT. It sat
+   on the option a person was about to choose; with nothing to choose, the
+   only place it can be read is the page itself. It is a strip at the top of
+   every screen, it is not dismissible, and it is driven by
+   `machine_translated` in the active catalogue - so a language that arrives
+   from a machine pass labels itself and no list in code has to be extended.
+
+   The panel's only catalogue today is Chinese, which is reviewed by the
+   people who use it daily and is NOT flagged, so this strip renders on no
+   screen in the panel as it ships. It is here so that the first
+   machine-translated catalogue dropped into admin/locales/ cannot ship
+   silently. #}
 {% extends "sqladmin_original/layout.html" %}
 
 {% block topbar %}
-<header class="navbar navbar-expand-md d-print-none sticky-top shadow-sm" data-bs-theme="dark">
-  <div class="container-fluid">
-    <div class="navbar-nav flex-row ms-auto align-items-center gap-2" id="topbar-end">
-      <div class="nav-item dropdown">
-        <a href="#" class="btn btn-outline-light dropdown-toggle d-flex align-items-center px-3"
-          data-bs-toggle="dropdown" aria-expanded="false" title="{{ _('Language') }}"
-          id="language-switcher">
-          <i class="fa fa-language me-2"></i>
-          <span>{{ kaicalc_endonym(kaicalc_language()) }}</span>
-        </a>
-        <div class="dropdown-menu dropdown-menu-end">
-          {% for choice in kaicalc_languages() %}
-          <a class="dropdown-item {% if choice.language == kaicalc_language() %}active{% endif %}"
-            hreflang="{{ choice.language }}"
-            href="{{ request.url.include_query_params(lang=choice.language) }}">
-            <span class="d-block">{{ choice.endonym }}</span>
-            {% if choice.machine_translated %}
-            <small class="d-block text-muted">{{ _("Machine translation, not reviewed") }}</small>
-            {% endif %}
-          </a>
-          {% endfor %}
-        </div>
-      </div>
-    </div>
-  </div>
-</header>
+{% if kaicalc_machine_translated() %}
+<div class="alert alert-warning m-0 rounded-0 text-center" role="status" id="machine-translation-notice">
+  {{ _("This page was machine translated and has not been reviewed by a speaker of this language. Check anything that decides a number against the English.") }}
+</div>
+{% endif %}
+{{ super() }}
 {% endblock %}

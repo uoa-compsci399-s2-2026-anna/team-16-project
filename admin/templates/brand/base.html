@@ -14,6 +14,20 @@
   {% block head %}{% endblock %}
 </head>
 <body>
+  {# The machine-translation notice, on the five gate pages as well as on the
+     panel proper (admin/templates/sqladmin/layout.html carries the other
+     copy). It used to hang off the language switcher, on the option somebody
+     was about to pick; with the switcher gone there is nothing to hang it on
+     and the page itself is the only place it can be read.
+
+     Not dismissible, and not conditional on anything but the flag in the
+     active catalogue. The panel's only catalogue today is Chinese, which is
+     reviewed and not flagged, so this renders nowhere as the panel ships. #}
+  {% if kaicalc_machine_translated() %}
+  <p class="machine-translation-notice" role="status" id="machine-translation-notice">
+    {{ _("This page was machine translated and has not been reviewed by a speaker of this language. Check anything that decides a number against the English.") }}
+  </p>
+  {% endif %}
   {# The default shell is the login gauntlet's: one centred card on a Kale
      ground. Five pages depend on it exactly as it is - login, verify, enrol,
      change_password, low_codes - so it stays the default and nothing about it

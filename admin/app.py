@@ -139,10 +139,15 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     # Added last, so it is the OUTERMOST middleware: Starlette builds the
     # stack in reverse registration order. That ordering is the point - a
-    # request ProtectionMiddleware refuses still has a language resolved by
+    # request ProtectionMiddleware refuses still has a language negotiated by
     # the time its refusal is rendered, and the login page (the one page a
     # locked-out person can still reach) is the page most in need of being
     # readable by somebody who does not read English.
+    #
+    # Outermost is also the only position from which `Vary: Accept-Language`
+    # reaches EVERY response, including the ones the inner middlewares
+    # short-circuit. A 403 that omits Vary is the response a shared cache is
+    # most likely to hold and hand to the next visitor.
     app.add_middleware(admin_i18n.LanguageMiddleware)
 
     # NOTE (Task 3, deviation from the brief): Admin() mounts sqladmin's own
@@ -204,7 +209,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # items")` still interpolates. A translation that damages one of those
     # placeholders is a rendering error rather than a wrong word, which is
     # why tests/admin/test_i18n.py asserts they survive translation.
-    # The switcher's globals go in alongside, named rather than reusing
+    # The language globals go in alongside, named rather than reusing
     # sqladmin's `get_locale`/`get_locale_display_name`: those are only
     # defined when an I18nConfig is passed, and this panel deliberately
     # passes none.

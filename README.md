@@ -244,11 +244,25 @@ Expression evaluation is hand-rolled over the standard library's `ast`, delibera
 ```bash
 python -m venv .venv
 .venv/Scripts/activate          # Windows;  source .venv/bin/activate elsewhere
-pip install -e ".[dev]"
+pip install -e ".[dev]" -c docker/constraints.txt
 
 docker compose up -d            # the DEVELOPMENT DATABASE ONLY, MySQL on host port 3307
 cp .env.example .env            # then fill in SECRET_KEY
 ```
+
+**`-c docker/constraints.txt` is not optional, and leaving it off is not a slower
+install — it is a different one.** `pyproject.toml` states every dependency as a `>=`
+floor, so without the constraint file pip resolves each floor to whatever PyPI published
+most recently, and your checkout is running different software from the two images, which
+build with that same file. The gap is silent while it is small. It cost this project a
+release cycle once: sqladmin 0.30.0 on the desk against 0.31.0 in the image, which left
+`admin/templates/sqladmin/_macros.html` — a vendored copy of a template out of that
+package — copied from a version the panel never ran. `tests/admin/test_i18n.py` now fails
+if the installed version is not the pinned one, so a skewed environment reports itself
+rather than surfacing later as an unrelated-looking test failure.
+
+Use it on `pip install -r requirements.txt` too — that file now carries the constraint
+itself, so plain `-r requirements.txt` is already correct.
 
 Two compose files, two jobs, and confusing them wastes an afternoon:
 

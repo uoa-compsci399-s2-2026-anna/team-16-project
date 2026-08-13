@@ -102,7 +102,13 @@ jobs:
           # version to the one that ships is testing something else.
           python-version: '3.11'
           cache: pip
-          cache-dependency-path: pyproject.toml
+          # Both files, because both decide what gets installed: pyproject.toml
+          # says what is required, docker/constraints.txt says which version of
+          # it. A cache keyed on only the first would be reused across a
+          # deliberate version move and hide it.
+          cache-dependency-path: |
+            pyproject.toml
+            docker/constraints.txt
 
       - name: Install the package and its dev extra
         # `-e` is deliberate and safe HERE, unlike in an image: the PEP 660
@@ -111,9 +117,24 @@ jobs:
         # Alembic (tests/test_migrations.py, tests/test_mysql_integration.py)
         # load `Config("alembic.ini")` relative to the checkout, which is
         # present. The images build a real wheel; see docker/api.Dockerfile.
+        #
+        # `-c docker/constraints.txt` IS WHAT MAKES THIS RUN MEAN ANYTHING, and
+        # it is the same file both Dockerfiles build with. pyproject.toml states
+        # every dependency as a `>=` floor, so without it this step installed
+        # whatever PyPI had published most recently - which means CI tested a
+        # different set of software on Tuesday than it did on Monday, with no
+        # commit in between and nothing in the log to say so. That is exactly
+        # how `main` went red on a green tree: a developer had sqladmin 0.30.0,
+        # CI resolved the floor to 0.31.0, and the vendored copy of one of that
+        # package's own templates was compared against a version nobody on the
+        # team had installed.
+        #
+        # The same reasoning as the collation note below, and as the pinned
+        # python-version above: a divergence between CI and the desk produces a
+        # failure nobody can reproduce.
         run: |
           python -m pip install --upgrade pip
-          pip install -e ".[dev]"
+          pip install -e ".[dev]" -c docker/constraints.txt
 
       - name: Wait for MySQL, and match the local server defaults
         # Two jobs in one step.

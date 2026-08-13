@@ -53,6 +53,16 @@ playwright_api = pytest.importorskip(
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "calculate_response_single.json").read_text(encoding="utf-8"))
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/")
+
+
+def _english(url: str) -> str:
+    """`?lang=en`, the one-request override, so this file measures English.
+
+    Belt and braces beside `locale="en-NZ"`: the override is what a support
+    request or a screenshot uses, and it is the guarantee that does not depend
+    on Chromium honouring a context locale in `navigator.languages`.
+    """
+    return url + ("&" if "?" in url else "?") + "lang=en"
 MUTATION_CSS = os.environ.get("KAICALC_MUTATION_CSS", "")
 
 #: The owner's two machines, both high-resolution panels at the OS default
@@ -97,7 +107,20 @@ def page_at(browser):
     contexts = []
 
     def open_page(width, height, dpr=1.0):
-        ctx = browser.new_context(viewport={"width": width, "height": height}, device_scale_factor=dpr)
+        # `locale="en-NZ"` and the `?lang=en` below both pin the language, and
+        # both are needed. Since v1.25 the calculator negotiates from
+        # `navigator.languages`, so a machine whose browser prefers another
+        # language renders this page in it and every English string asserted
+        # below stops matching - which is exactly what happened on the
+        # repository owner's machine the first time this ran after the
+        # twenty catalogues landed. This file measures LAYOUT against the
+        # English copy it was calibrated on; the language itself is
+        # tests/web/test_i18n_browser.py's subject.
+        ctx = browser.new_context(
+            viewport={"width": width, "height": height},
+            device_scale_factor=dpr,
+            locale="en-NZ",
+        )
         contexts.append(ctx)
         page = ctx.new_page()
         page.route(
@@ -105,7 +128,7 @@ def page_at(browser):
             lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(FIXTURE)),
         )
         try:
-            page.goto(BASE, wait_until="networkidle", timeout=15000)
+            page.goto(_english(BASE), wait_until="networkidle", timeout=15000)
         except Exception as error:  # pragma: no cover - environment guard
             pytest.skip(f"the front end is not being served at {BASE}: {error}")
         page.add_style_tag(content=FORCE_AUTO)

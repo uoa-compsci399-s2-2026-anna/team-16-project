@@ -2,15 +2,61 @@
   "default": "en",
   "catalogues": [
     {
+      "language": "zh",
+      "tags": [
+        "zh",
+        "zh-Hans",
+        "zh-CN",
+        "zh-SG",
+        "zh-MY"
+      ]
+    },
+    {
+      "language": "zh-Hant",
+      "tags": [
+        "zh-Hant",
+        "zh-TW",
+        "zh-HK",
+        "zh-MO"
+      ]
+    },
+    {
+      "language": "hi",
+      "tags": [
+        "hi"
+      ]
+    },
+    {
+      "language": "tl",
+      "tags": [
+        "tl",
+        "fil"
+      ]
+    },
+    {
+      "language": "pa",
+      "tags": [
+        "pa",
+        "pa-Guru",
+        "pa-IN"
+      ]
+    },
+    {
+      "language": "ko",
+      "tags": [
+        "ko"
+      ]
+    },
+    {
       "language": "af",
       "tags": [
         "af"
       ]
     },
     {
-      "language": "ar",
+      "language": "fr",
       "tags": [
-        "ar"
+        "fr"
       ]
     },
     {
@@ -26,21 +72,9 @@
       ]
     },
     {
-      "language": "fr",
+      "language": "nl",
       "tags": [
-        "fr"
-      ]
-    },
-    {
-      "language": "gu",
-      "tags": [
-        "gu"
-      ]
-    },
-    {
-      "language": "hi",
-      "tags": [
-        "hi"
+        "nl"
       ]
     },
     {
@@ -50,29 +84,15 @@
       ]
     },
     {
-      "language": "ko",
+      "language": "gu",
       "tags": [
-        "ko"
+        "gu"
       ]
     },
     {
-      "language": "nl",
+      "language": "ar",
       "tags": [
-        "nl"
-      ]
-    },
-    {
-      "language": "pa",
-      "tags": [
-        "pa",
-        "pa-Guru",
-        "pa-IN"
-      ]
-    },
-    {
-      "language": "ru",
-      "tags": [
-        "ru"
+        "ar"
       ]
     },
     {
@@ -82,16 +102,21 @@
       ]
     },
     {
+      "language": "vi",
+      "tags": [
+        "vi"
+      ]
+    },
+    {
       "language": "th",
       "tags": [
         "th"
       ]
     },
     {
-      "language": "tl",
+      "language": "ru",
       "tags": [
-        "tl",
-        "fil"
+        "ru"
       ]
     },
     {
@@ -101,28 +126,9 @@
       ]
     },
     {
-      "language": "vi",
+      "language": "ml",
       "tags": [
-        "vi"
-      ]
-    },
-    {
-      "language": "zh-Hant",
-      "tags": [
-        "zh-Hant",
-        "zh-TW",
-        "zh-HK",
-        "zh-MO"
-      ]
-    },
-    {
-      "language": "zh",
-      "tags": [
-        "zh",
-        "zh-Hans",
-        "zh-CN",
-        "zh-SG",
-        "zh-MY"
+        "ml"
       ]
     }
   ]

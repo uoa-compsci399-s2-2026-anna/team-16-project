@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-13 (v1.22 draft)"
+date: "2026-08-13 (v1.23 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,16 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.23 — 2026-08-13 (Back and Next become a navigation bar; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`view.js` replaces `buttonRow(backStep, label, disabled, action)` with `stepNav({step, back, backLabel, label, disabled, action})`.** The client's first look at the calculator was that advancing requires scrolling at every step, and it was measured rather than argued: at 1278×983 the primary action sat **+2961px** past the fold on the food-type step, +796 on destinations, +630 on review and +1230 on results; at 938×898, +3046 / +899 / +715 / +1342; at 390×700 five of the seven screens failed, including the two that pass on a desktop. Every content-shrinking lever together (`h1` to 2rem, hiding the indicator, tighter `main` padding, two-column destinations) still left destinations at +238 / +395, so the row that advances the form stops being content competing with the form for height and becomes `position: sticky; bottom: 0`. Reachability is now −13px or better on every step at all three viewports. **The goal is not zero scrolling** — the food-type step is 40 categories long and always will be — it is that *advancing* never requires scrolling | §7.3 |
+| 2 | **The six-step progress band is deleted from `index.html` and folded into the bar.** `#step-indicator` cost a measured 87px at the top of every step for a list of names nothing could click, and that 87px is exactly the currency the complaint was denominated in. `renderChrome()` no longer writes it; the bar carries "Step N of 6", the step's name and a progress track. `.step-mobile` and the ≥850px `<ol>` were the same information at two widths and **both** go — one element, not three. The `<ol>` is not relocated: anywhere it could go re-spends the height this change was made to free | §7.3 |
+| 3 | **`sticky`, not `fixed`, and the difference is asserted.** Sticky sits in its natural place when the step is short — 235px clear of the fold on the amount step at 1278×983 — and pins only when the section would push it past the fold, so a short screen does not grow what reads as a cookie banner. At full scroll it un-pins and returns above the footer, which is why **no page-level padding is owed to it**; only `scroll-margin-bottom` is, so a control focused by Tab is not scrolled flush underneath it. It is also the half of the pair that survives a mobile soft keyboard: in flow, it moves with the layout viewport instead of being stranded behind the keyboard | §7.3 |
+| 4 | **`.main-content`'s `min-height: calc(100vh - 220px)` is deleted with the band it was arithmetic over.** 220 counted a header, that step-indicator band and a footer. Left alone with the band gone it would have floored every short step 87px taller than its content — invisible on screen, and a previous pass had already found short steps at 1920 measuring exactly the floor, so shrinking their content changed nothing. `body` is a flex column and `main` takes the leftover height, so there is no constant left to drift. `methodology.html` shares the stylesheet and gets a footer pinned to the bottom of short pages out of it | §7.3 |
+| 5 | **What the bar shows where there is no "Next".** The **intro has no bar**: it is a full-bleed dark hero whose own CTA already measures −447 / −362 / −273, and a second start action would both duplicate it and break the panel. The **results view does get one** — its first action was +1230 to +2075 past the fold — carrying `Edit your data` (back to review) and `Download results`. `Start a new calculation` stays in the page rather than the bar: it is a confirm-guarded reset rather than a step action, and the header's home button already offers it | §7.3 |
 
 ### v1.22 — 2026-08-13 (the prevention destination stops being a code; affects B, C, D and E)
 
@@ -2203,10 +2213,22 @@ export function formatNumber(value, precision = 2);
 /** lower-case, non-alphanumerics -> '-', trimmed. For DOM ids and class names. */
 export function slug(value);
 
-/** HTML for the standard Back / primary-action pair. Emits
- *  data-action="go-step" data-step="<backStep>" and data-action="<action>". */
-export function buttonRow(backStep, label = 'Continue', disabled = false, action = 'continue');
+/** The six screens the wizard names, in order. Lives here rather than in
+ *  calculator.js because results.js needs the same vocabulary and
+ *  calculator.js already imports results.js. */
+export const STEPS;
+
+/** The step navigation bar: a step's Back and primary actions, and its
+ *  position in the flow, as one `position: sticky; bottom: 0` element.
+ *  Emits data-action="go-step" data-step="<back>" and data-action="<action>",
+ *  plus "Step N of 6" and the step's name.
+ *
+ *  Replaced `buttonRow(backStep, label, disabled, action)` at v1.23. */
+export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
+                         disabled = false, action = 'continue'});
 ```
+
+> **Two structural preconditions on `stepNav`, both silent when broken.** It must be the **last child of the step's `<section>`**: `position: sticky` with a `bottom` inset pins only for as long as its *containing block* extends below the fold, so anything rendered after it unpins the bar early — which is why `results.js` renders the improvement panel above it and not below. And it must come **after the content in the DOM**, so Tab reaches the form before the navigation. Neither is enforceable from inside the function; `tests/web/test_step_navigation.py` measures both.
 
 > **Precondition, stated because D and E will now depend on it:** `escapeHtml` does not escape backticks or `/`, so it is safe only in **double-quoted** attribute contexts and in text. Every attribute in C's branch is double-quoted. An unquoted attribute breaks the guarantee silently.
 >
@@ -2222,8 +2244,9 @@ export function buttonRow(backStep, label = 'Continue', disabled = false, action
  *  5 delegates to results.renderResults). */
 export function render(main);
 
-/** Updates the header, the "Clear all data" button and the six-step
- *  progress indicator. */
+/** Updates the header and the "Clear all data" button. It no longer writes a
+ *  progress indicator: at v1.23 the six-step band above <main> was folded into
+ *  view.js's stepNav, and index.html no longer carries #step-indicator. */
 export function renderChrome();
 
 /** Installs four delegated listeners on `main` (click / change / input /

@@ -242,6 +242,55 @@ def resolve(cookie: str | None, requested: str | None) -> tuple[str, bool]:
     return DEFAULT_LANGUAGE, False
 
 
+class _TranslatedAttribute:
+    """A class attribute that answers in the language of the current request.
+
+    Installed by ``translate_view_names`` over a ModelView's ``name``,
+    ``name_plural`` and ``category``.
+
+    **Why a descriptor and not a catalogue entry.** sqladmin composes its own
+    headings as ``_("New %(name)s", name=model_view.name)`` - it translates
+    the sentence and interpolates the model's name into it *untranslated*.
+    So a fully translated catalogue still renders "新建Constant" at the top
+    of every create form, and there is no hook in between: the heading sits
+    between two blocks in sqladmin's create.html rather than inside one, so
+    it cannot be overridden, and the variable is resolved before our gettext
+    ever sees it.
+
+    Translating the attribute itself is what closes that, and it closes the
+    same gap in five other places at once - the list page's own heading
+    (``{{ model_view.name_plural }}``, which sqladmin does not wrap at all),
+    the delete modal's ``data-name``, and the menu.
+
+    Idempotent by construction: ``translate_view_names`` skips a class that
+    already has one, so building two apps in one process (which the test
+    suite does constantly) cannot wrap a wrapper and translate a translation.
+    """
+
+    __slots__ = ("source",)
+
+    def __init__(self, source: str) -> None:
+        self.source = source
+
+    def __get__(self, instance, owner=None) -> str:
+        return gettext(self.source)
+
+
+def translate_view_names(views) -> None:
+    """Make every registered view's name, plural and category translatable.
+
+    Applied to the concrete classes rather than to a shared base because the
+    subclasses assign ``name = "Constant"`` as plain class attributes, which
+    shadow anything a base class defines.
+    """
+    for view in views:
+        cls = type(view) if not isinstance(view, type) else view
+        for attribute in ("name", "name_plural", "category"):
+            current = vars(cls).get(attribute)
+            if isinstance(current, str) and current:
+                setattr(cls, attribute, _TranslatedAttribute(current))
+
+
 def install(env) -> None:
     """Give a Jinja environment ``_()`` and the switcher's globals.
 

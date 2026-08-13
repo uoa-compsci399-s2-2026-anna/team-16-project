@@ -298,4 +298,11 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     for view in (ComparisonScenarioAdmin, ComparisonScenarioLineAdmin):
         admin.add_view(view)
 
+    # After every view is registered, and it has to be after: this walks the
+    # registered set. sqladmin builds its menu from these same attributes, so
+    # the navigation, the page headings and the delete modal all follow from
+    # here. See admin/i18n.py::_TranslatedAttribute for why the attribute
+    # rather than the catalogue is the thing that has to change.
+    admin_i18n.translate_view_names(admin.views)
+
     return app

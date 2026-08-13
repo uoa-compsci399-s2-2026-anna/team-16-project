@@ -1,8 +1,8 @@
 {% extends "brand/base.html" %}
-{% block title %}Sign in{% endblock %}
+{% block title %}{{ _("Sign in") }}{% endblock %}
 {% block content %}
   <h1>Kai Commitment</h1>
-  <p class="muted">Impact calculator administration</p>
+  <p class="muted">{{ _("Impact calculator administration") }}</p>
   {# One message for every refusal, deliberately - but two levels of it.
 
      `error` is sqladmin's own flag for "the password step was refused". It
@@ -49,7 +49,7 @@
      password for the second time. #}
   {% if error %}
     <div class="notice notice--error" role="alert">
-      <p>Those sign-in details were not accepted.</p>
+      <p>{{ _("Those sign-in details were not accepted.") }}</p>
     </div>
     <p class="muted notice-note">
       After {{ login_max_failures }} failed
@@ -61,15 +61,15 @@
     </p>
   {% endif %}
   <form method="post">
-    <label for="username">Username</label>
+    <label for="username">{{ _("Username") }}</label>
     <input type="text" id="username" name="username"
            autocomplete="username" autofocus required>
-    <label for="password">Password</label>
+    <label for="password">{{ _("Password") }}</label>
     <input type="password" id="password" name="password"
            autocomplete="current-password" required>
-    <button type="submit">Continue</button>
+    <button type="submit">{{ _("Continue") }}</button>
   </form>
   <p class="muted">
-    You will be asked for a code from your authenticator next.
+    {{ _("You will be asked for a code from your authenticator next.") }}
   </p>
 {% endblock %}

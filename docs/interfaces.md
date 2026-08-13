@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-12 (v1.21 draft)"
+date: "2026-08-13 (v1.22 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,17 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.22 — 2026-08-13 (the prevention destination stops being a code; affects B, C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New column `destination.is_prevention`, and `db.types.PREVENTION_CODE` is deleted.** `prevention` was the one destination code this system knew by name and five guards were stated in terms of the literal: §6.2's refusal of it in a *current* scenario, §6.1's coverage hold-out, §2.2's O-7 publish check, `admin/taxonomy_rules`'s existence rule and `web/js/calculator.js`'s current-scenario list. A taxonomy row's identity is **data** on this project — `destination_group.is_waste` is a column for exactly this reason, because MfE may revise which destinations count as waste — and the client has not settled what this destination will be called, whether it survives under that name, or how it appears. A structural *role* recognised by a magic string is the same mistake one level down. The row may now be renamed freely and every guard follows; `db/repository.prevention_destination_codes` is how a caller outside `db/` asks which codes carry it, since `api/` may not import `admin/`. Migration `0013`, which backfills the flag onto `prevention` and `refed_prevention` — **the only place in the repository that still writes either code into a guard-shaped statement**, and a one-time data statement about the rows that exist rather than a rule | §2.1, §5.1, §5.2, §6.1, §6.2, §7.2 |
+| 2 | **The defect that closes with it: a second vocabulary's prevention row could be entered as current-scenario waste and reach the public statistics.** §10.3's ReFED fixture brings `refed_prevention`, whose 156 upstream and 156 downstream rows are every one of them zero — a prevention destination by every property that matters. Because §6.2's guard tested a literal, it was refused for `prevention` and accepted for `refed_prevention`, which persisted as an ordinary `submission_line` with `scenario = 'current'` and became a `by_destination` bucket: waste that by construction did not happen, counted as real waste, on the page whose whole design problem is not overclaiming. **This is the defect v1.5 closed for `prevention` itself, arriving one code along**, and §5.4's scenario predicate structurally cannot catch it for the same reason it could not catch the first — it excludes the *alternative* scenario, and the line is not in the alternative scenario. Reproducible on the deployed stack, which has the ReFED set published and offers `refed_prevention` on the form | §6.2, §5.4 |
+| 3 | **"At least one active row", not "exactly one" — and this is where the `is_standard_mix` prior art is deliberately not followed.** §2.1 requires exactly one active `is_standard_mix` food category because §6.2 must resolve a null `food_category` to *one* code; nothing anywhere has to choose between prevention destinations, and v1.19 put a second vocabulary's rows in the same global tables, so `prevention` and `refed_prevention` both legitimately carry the role. "Exactly one" would refuse the state this deployment is already in. There is therefore **no UNIQUE key and no `COALESCE(...)` functional index** on the column: nothing for one to say. The lower bound is `admin/taxonomy_rules.check_prevention_destination` — renamed from `check_prevention_intact` — counted over **active** rows whose **group** is also active, and skipped on an empty destination table so the panel stays bootstrappable. **Zero is refused rather than given a meaning:** an alternative scenario that merely redirects mass between real destinations stays expressible without one, so nothing computes wrongly, but the improvement panel would render sliders that cannot express the only thing it is for. If the client removes the concept, that is a contract change — this row — and not a data edit | §2.1 |
+| 4 | **The zero-factor property becomes enforced where it was assumed.** `find_missing_prevention_upstream` checked the *value* of an upstream override since v1.11, but only where a generic row existed to compare it against — a set built §10.3's way, with an explicit row per destination and no generic rows at all, could carry a prevention row at 1.9 and publish. **Nothing anywhere read `factor_downstream`.** `publish_factor_set` now refuses any upstream **or downstream** row in the set that prices a flagged destination at something other than zero. An *absent* row stays legal, because §4.1's lookup already returns zero for a missing factor and the §6.1 hold-out is built around a set that prices a prevention destination nowhere. Both factor sets in this repository pass unchanged. The completeness check is generalised by **role, not per row**: a tuple qualifies when it has a generic upstream row and **no** flagged destination carries a zero override for it — requiring one per flagged row would refuse `MOCK-v0` the moment §10.3's fixture is loaded, and one working offset is what the guard exists to guarantee | §2.2, §5.2 |
+| 5 | **`destinations[].is_prevention` is a new key in the §6.1 response, and §6.2's rule moves out of Pydantic.** The front end needs the flag: `calculator.js` kept the offset off the current-waste list by comparing codes and so left every other prevention destination on it. On the server the rule is now in `entry_rule_problems`, because the set of prevention codes is a database read and a Pydantic validator has no session. `details[].field` is unchanged at `entries[i].current` — that placement was the point of the `AfterValidator` and it is written out by hand — and `details[].issue` changes from Pydantic's generic **`value_error`** to the stable slug **`prevention_in_current`**, which is what §9 asks a consumer to branch on | §6.1, §6.2, §7.2, §9 |
+| 6 | **Knowingly left, and recorded rather than hidden:** under a published set of one vocabulary, the *other* vocabulary's prevention row is now also offered, because flagged rows are held out of the coverage inference by role. That crossing already happens in the other direction and v1.21 accepts it. The residual is that an alternative-scenario line to a foreign prevention destination falls back to the generic upstream row and is charged for it — which **understates** the benefit of wasting less. Conservative in the direction this project cares about, and bounded to a database holding two vocabularies at once | §6.1 |
 
 ### v1.21 — 2026-08-12 (raised by the repository owner; affects B, C, D and E)
 
@@ -492,12 +503,19 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `code` | VARCHAR(64) | UNIQUE, NOT NULL | `landfill`, `compost`, `animal_feed`, `anaerobic_digestion`, `prevention`, … |
 | `name` | VARCHAR(128) | NOT NULL | |
 | `description` | TEXT | NULL | User-facing explanation |
+| `is_prevention` | BOOLEAN | NOT NULL, DEFAULT FALSE | The prevention offset. **At least one active row must be TRUE; more than one is allowed** |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
-> **`prevention` is the one destination code this system knows by name.** It expresses "waste avoided" and keeps the two scenarios mass-conserving. Three rules are stated in terms of it and none of them is optional: `admin/taxonomy_rules.check_prevention_intact` refuses any edit that would remove or deactivate it (or its group); §6.2 refuses it in a **current** scenario, because it is by construction the destination for waste that did not happen; and §5.4 reads the current scenario only, so it can never become a public statistic. The literal lives once, in `db/types.PREVENTION_CODE`, and `admin/taxonomy_rules` re-exports that object — `api/` may not import from `admin/` and needs the same string.
+> **This system knows no destination code by name. It knows one destination *role*, and `is_prevention` is it (v1.22).** A prevention destination expresses "waste avoided" and keeps the two scenarios mass-conserving. Four rules are stated in terms of the flag and none of them is optional: `admin/taxonomy_rules.check_prevention_destination` refuses any edit that would leave no usable flagged row; §6.2 refuses **any** flagged destination in a **current** scenario, because it is by construction where waste that did not happen goes; §6.1 holds flagged rows out of its coverage inference; and §5.4 reads the current scenario only, so none can become a public statistic.
 >
-> **Both its downstream and its upstream factors are zero, and since v1.8 that is a statement about the data rather than about the prose.** This blockquote read "with all factors set to zero" for five revisions while `factor_upstream` had no destination column, so a line moved to `prevention` kept its entry's full upstream factor; v1.5 corrected it to downstream-only and pointed at `architecture.md` O-7. **O-7 is closed** — `factor_upstream.destination_id` is the column, and `prevention` carries a row at zero for every `(sector, food_category, metric)` that has a general row. That last clause is the load-bearing one: the offset is now data, so a general row created without a matching `prevention` row reverts to the old behaviour for that tuple alone, and nothing in the panel refuses it.
+> **It was the literal `"prevention"`, in `db/types.PREVENTION_CODE`, until v1.22, and that constant is now deleted.** Two things forced it. A taxonomy row's identity is data on this project — `destination_group.is_waste` above is a column for precisely this reason — and the client has not settled what this destination will be called or whether it survives under that name; the row can now be renamed freely. And §10.3's `refed_prevention` is a prevention destination by every property that matters and was covered by none of the four rules, so it could be entered as current-scenario waste and reach the public statistics. See v1.22 for the full account.
+>
+> **"At least one", not "exactly one", which is where this departs from `is_standard_mix` below.** Two vocabularies share these global tables (v1.19) and each brings its own prevention row, so an upper bound would refuse the state the deployment is in; and nothing has to *choose* between prevention destinations, which is the whole reason the standard mix needs one. There is consequently no UNIQUE key and no `COALESCE(...)` functional index on this column. The lower bound is counted over **active** rows whose **group** is also active — every active-destination listing joins through `destination_group` — and is skipped entirely on an empty `destination` table, so an unseeded database can still be bootstrapped by hand.
+>
+> **Zero flagged rows is refused rather than given a meaning.** An alternative scenario that redirects mass between real destinations stays expressible without one, so nothing computes a wrong number; but §6.2 still requires the two scenarios to conserve mass, so the improvement panel would render sliders that cannot express reduction — the only thing it is for. If the client removes the concept, that is a revision of this section, not a data edit.
+>
+> **The factors of a flagged destination are zero, and since v1.22 that is enforced rather than assumed.** `publish_factor_set` refuses any upstream or downstream row in the set that prices a flagged destination at anything else; an absent row stays legal, because §4.1's lookup already returns zero for one. Both its downstream and its upstream factors are zero, and since v1.8 that is a statement about the data rather than about the prose. This blockquote read "with all factors set to zero" for five revisions while `factor_upstream` had no destination column, so a line moved to `prevention` kept its entry's full upstream factor; v1.5 corrected it to downstream-only and pointed at `architecture.md` O-7. **O-7 is closed** — `factor_upstream.destination_id` is the column, and `prevention` carries a row at zero for every `(sector, food_category, metric)` that has a general row. That last clause is the load-bearing one: the offset is now data, so a general row created without a matching `prevention` row reverts to the old behaviour for that tuple alone, and nothing in the panel refuses it.
 
 ### `sector`
 
@@ -524,8 +542,8 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
 
 > **Where the taxonomy invariants are enforced.** "Exactly one row must be
-> TRUE" and the existence of `prevention` are statements about a table, not a
-> column, so neither is a database constraint. Both are checked in
+> TRUE" and the existence of a `destination.is_prevention` row are statements
+> about a table, not a column, so neither is a database constraint. Both are checked in
 > `admin/taxonomy_rules.py`, called from `AuditedModelView`'s
 > `validate_before_commit` hook — inside the transaction that is about to
 > commit, before the audit entries are written. A refused change rolls back
@@ -1330,14 +1348,32 @@ def find_missing_prevention_upstream(
     charge a prevented line an upstream factor (§2.2, open item O-7).
 
     A tuple qualifies when it has a general upstream row (destination NULL)
-    and **no `prevention` row at zero** — whether the row is absent or
-    carries a non-zero value. Existence is not the rule; the value is
-    (v1.11). Returns codes, not ids (§1.1), sorted, so a
-    caller can put them straight into a message a human has to act on. An
-    empty list is the healthy state. Empty also when the taxonomy has no
-    `prevention` destination at all — that is an unseeded database rather
-    than an incomplete factor set, and it is
-    admin/taxonomy_rules.check_prevention_intact's to refuse."""
+    and **no `is_prevention` destination has a row at zero for it** — whether
+    every such row is absent or each carries a non-zero value. Existence is
+    not the rule; the value is (v1.11). "No flagged destination", not "every
+    flagged destination" (v1.22): more than one row may carry the role and a
+    set built for one vocabulary will never hold rows for another, so one
+    working offset per tuple is what this guarantees. Returns codes, not ids
+    (§1.1), sorted, so a caller can put them straight into a message a human
+    has to act on. An empty list is the healthy state. Empty also when the
+    taxonomy has no prevention destination at all — that is an unseeded
+    database rather than an incomplete factor set, and it is
+    admin/taxonomy_rules.check_prevention_destination's to refuse."""
+
+def prevention_destination_codes(session) -> frozenset[str]:
+    """Every destination code flagged `is_prevention` (§2.1), for §6.2's
+    current-scenario rule. Reads the taxonomy, not a factor set: `destination`
+    carries no `factor_set_id`, so the answer is the same for a dry run as for
+    a public request. Not restricted to active rows — a deactivated prevention
+    row is still one, and a caller naming it in a current scenario must be
+    refused rather than told the code is unknown."""
+
+def refuse_nonzero_prevention_factors(session, factor_set_id: int) -> None:
+    """Raises FactorSetStateError when any factor_upstream or
+    factor_downstream row of this set prices an `is_prevention` destination at
+    something other than zero (v1.22). An absent row stays legal: §4.1's
+    lookup already returns zero for one, and §6.1's hold-out is built around a
+    set that prices a prevention destination nowhere at all."""
 
 def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     """Within one transaction: archive the current published set, publish the
@@ -1345,16 +1381,17 @@ def publish_factor_set(session, factor_set_id: int, actor: str) -> None:
     'at most one published' invariant would be violated.
 
     **Also refuses, naming the tuples, when find_missing_prevention_upstream
-    is non-empty (v1.9).** Publishing is where this is checked because it is
-    the single transactional choke point; a form-level guard cannot see a row
-    that has not been written yet."""
+    is non-empty (v1.9), and refuses a non-zero prevention factor row
+    (v1.22).** Publishing is where both are checked because it is the single
+    transactional choke point; a form-level guard cannot see a row that has
+    not been written yet."""
 
 def rollback_to(session, factor_set_id: int, actor: str) -> None:
     """Restores an archived version to published. Same semantics as publish,
-    **except the O-7 completeness check, which rollback deliberately does not
-    apply** — a set archived before v1.8 will legitimately fail it, and
-    refusing an emergency rollback over a completeness rule is a worse failure
-    than the one the rule prevents."""
+    **except the O-7 completeness check and the non-zero prevention refusal,
+    which rollback deliberately does not apply** — a set archived before v1.8
+    will legitimately fail the first, and refusing an emergency rollback over
+    a completeness rule is a worse failure than the one the rule prevents."""
 
 def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int:
     """Deep-copies a version into a new draft (all factors, constants,
@@ -1599,7 +1636,9 @@ Called once on page load to build every dropdown and input row.
 
 > **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
 
-> **`prevention` and the `is_standard_mix` food category are never filtered out.** `prevention`'s factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. It is held out by name (`db.types.PREVENTION_CODE`) and its group is kept with it. It happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching `prevention` row at zero — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding. A second vocabulary's own prevention (`refed_prevention`) is covered by the ordinary rule; both may appear at once, which is harmless, because a prevention destination is a zero-factor offset under any set and §6.2 refuses `prevention` in a *current* scenario outright.
+> **Every `is_prevention` destination and the `is_standard_mix` food category are never filtered out.** A prevention destination's factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. Flagged rows are held out **by the flag** (§2.1) and their groups are kept with them; this read `db.types.PREVENTION_CODE` until v1.22, which subjected every *other* vocabulary's prevention row to an inference that cannot be true of it. `prevention` happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching zero override — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding.
+>
+> **The cost, stated rather than hidden.** Under a published set of one vocabulary the *other* vocabulary's prevention row is also offered. That crossing already ran in the other direction before v1.22 and is accepted for the same reason. §6.2 refuses every flagged destination in a *current* scenario outright, so the exposure is confined to the alternative scenario, where a line to a foreign prevention destination falls back to the generic upstream row and is charged for it — which **understates** the benefit of wasting less. It is bounded to a database holding two vocabularies at once, and it errs in the direction this project cares about.
 >
 > The **standard mix** is kept for the structural half of the same reason: §2.1 requires exactly one active row to carry `is_standard_mix` and §6.2 resolves a null `food_category` to it, so filtering it out would leave a consumer with no legal way to say "composition unknown" while the server went on resolving null to a code the consumer was never offered. §2.1's "exactly one active row" invariant is still counted over the **active** rows rather than the narrowed ones.
 
@@ -1623,7 +1662,7 @@ Called once on page load to build every dropdown and input row.
   ],
   "destinations": [
     { "code": "landfill", "name": "Landfill", "group": "disposal",
-      "description": "…", "sort_order": 1 }
+      "description": "…", "is_prevention": false, "sort_order": 1 }
   ],
   "metrics": [
     { "code": "co2e", "name": "Greenhouse gas", "unit": "kg CO2e",
@@ -1714,7 +1753,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
 | Entry count `<= 20` | `VALIDATION_ERROR` |
 | **Per entry carrying an `alternative`: `\|Σ alternative.qty_kg − Σ current.qty_kg\| <= 0.010`** | `VALIDATION_ERROR`, `field` = `entries[i].alternative` |
-| **No `prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current` |
+| **No `destination.is_prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current`, `issue` = `prevention_in_current` |
 | No duplicate `destination` within one entry's scenario | `VALIDATION_ERROR` |
 | No duplicate `(sector, food_category)` across entries | `VALIDATION_ERROR` |
 | All codes exist | `UNKNOWN_CODE` |
@@ -1723,7 +1762,9 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | `dry_run.bundle` row count across all tables `<= 5000` | `VALIDATION_ERROR` |
 | `dry_run.bundle` fails `FactorBundle.validate()` | `VALIDATION_ERROR`, one `details` entry per problem |
 
-> **Why `prevention` in a `current` scenario is a rejection and not a curiosity.** Until v1.5 nothing on the server refused it — only C's own UI, which never offers it in the current column. A hand-rolled request carrying it persists an ordinary `submission_line` with `scenario = 'current'`, and §5.4 selects exactly that, so the line becomes a bucket in the public `by_destination` chart. `prevention` is the destination for waste that *did not happen*; counting it as real waste is the failure §5.4's scenario predicate exists to prevent, arriving through the one door that predicate cannot close — the predicate excludes the alternative scenario, and this line is not in the alternative scenario. It also makes no sense as an input: the current scenario is a description of what a business is doing now, and "we sent 900 kg to not existing" is not a description of anything. `tests/api/test_fixture_consistency.py` asserted this of the *fixture*, which is what made it look covered; a fixture constrains the fixture.
+> **Why a prevention destination in a `current` scenario is a rejection and not a curiosity.** Until v1.5 nothing on the server refused it — only C's own UI, which never offers it in the current column. A hand-rolled request carrying it persists an ordinary `submission_line` with `scenario = 'current'`, and §5.4 selects exactly that, so the line becomes a bucket in the public `by_destination` chart. A prevention destination is where waste that *did not happen* goes; counting it as real waste is the failure §5.4's scenario predicate exists to prevent, arriving through the one door that predicate cannot close — the predicate excludes the alternative scenario, and this line is not in the alternative scenario. It also makes no sense as an input: the current scenario is a description of what a business is doing now, and "we sent 900 kg to not existing" is not a description of anything. `tests/api/test_fixture_consistency.py` asserted this of the *fixture*, which is what made it look covered; a fixture constrains the fixture.
+>
+> **The rule tested one literal until v1.22, and that is how it missed `refed_prevention`.** §10.3's fixture puts a second vocabulary's prevention row in the same global tables; it carries 156 upstream and 156 downstream rows, every one of them zero, and it was refused by nothing. The whole defect above therefore stayed live for it, on the deployment that has the ReFED set published and offers the row on the form. The rule now reads `destination.is_prevention` (§2.1) by way of `db.repository.prevention_destination_codes`, which is also why it is checked in `entry_rule_problems` rather than in Pydantic: the set of prevention codes is a database read, and a field validator has no session. `details[].field` is unchanged; `details[].issue` is now the stable slug `prevention_in_current` rather than Pydantic's generic `value_error`.
 
 > **`food_category: null` and `"standard_mix"` are the same thing to the engine and different things to the duplicate check.** Two entries with the same sector, one carrying `null` and one carrying `"standard_mix"`, are **both accepted** — the duplicate rule compares the values as sent. They then draw identical upstream factors, appear as two entries in the response, and count as two entries in §5.4's `by_sector`, so one supply-chain point is described twice. This is deliberate and it follows from §5.4, which keeps the two distinct on purpose: `unspecified` records that the user did not break their waste down, `standard_mix` records that they chose the mixed-composition figure, and collapsing them here would make the statistics unable to tell those apart. It is written down because it is the kind of asymmetry that reads as a bug — the field table two paragraphs up says "Null is treated as `standard_mix`", and that is true of the *factor lookup* and of nothing else. A front end should send one or the other consistently and never both for one sector.
 
@@ -2194,7 +2235,9 @@ export function bindCalculator(main, retryTaxonomy);
 
 Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
-> **`prevention` is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — `prevention` is how the alternative scenario expresses waste avoided (§2.1), and offering it as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting.
+> **Every `is_prevention` destination is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — a prevention destination is how the alternative scenario expresses waste avoided (§2.1), and offering one as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting. §6.2 answers 400 for it, so a form that offered it would be offering a refusal.
+>
+> **Read `destination.is_prevention` from §6.1, never the code.** `calculator.js`'s `entryDestinations` filtered `code !== 'prevention'` until v1.22 and therefore left every *other* prevention destination — §10.3's ReFED set brings its own, and the deployed stack offers it — on the current-waste list. The function is exported so `tests/web/test_entry_destinations.py` can run it under Node against a taxonomy it builds, the same seam `buildResultsReport` was pulled out for.
 >
 > **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftFieldPaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies and roots it at `entries[state.entries.length]`, because the draft entry travels last.
 >

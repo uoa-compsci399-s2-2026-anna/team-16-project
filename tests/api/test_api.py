@@ -102,6 +102,36 @@ async def _client(app):
     return AsyncClient(transport=ASGITransport(app=app), base_url="http://testserver")
 
 
+def _add_destination(engine, code, *, is_prevention):
+    """A taxonomy row added to the running app's database mid-test.
+
+    The `app` fixture seeds through the same engine, so a row written here is
+    one `GET /taxonomy` and `POST /calculate` both see.
+    """
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import Destination, DestinationGroup
+
+    with sessionmaker(bind=engine, expire_on_commit=False)() as db:
+        group = db.scalar(select(DestinationGroup).where(DestinationGroup.code == "reuse"))
+        db.add(Destination(group_id=group.id, code=code, name=code.title(),
+                           is_prevention=is_prevention, sort_order=999))
+        db.commit()
+
+
+def _set_prevention_flag(engine, code, value):
+    from sqlalchemy.orm import sessionmaker
+
+    from db.models import Destination
+
+    with sessionmaker(bind=engine, expire_on_commit=False)() as db:
+        db.execute(
+            update(Destination).where(Destination.code == code)
+            .values(is_prevention=value)
+        )
+        db.commit()
+
+
 async def test_taxonomy_contract(app):
     async with await _client(app) as client:
         response = await client.get("/api/v1/taxonomy")
@@ -183,15 +213,15 @@ async def test_validation_uses_400_envelope(app):
     _assert_shape(response.json(), _fixture("errors/validation_error.json"))
 
 
-async def test_prevention_is_refused_in_a_current_scenario(app):
+async def test_a_prevention_destination_is_refused_in_a_current_scenario(app):
     """§6.2, v1.5. Nothing but C's UI enforced this before.
 
-    A current-scenario `prevention` line persists as an ordinary
+    A current-scenario prevention line persists as an ordinary
     `submission_line` with `scenario = 'current'`, which is exactly what §5.4
     selects — so it becomes a `by_destination` bucket in the public
-    statistics, and `prevention` is by construction the destination for waste
-    that did not happen. §5.4's scenario predicate is the *other* half of this
-    problem and cannot catch it: it excludes the alternative scenario, and
+    statistics, and a prevention destination is by construction where waste
+    that did not happen goes. §5.4's scenario predicate is the *other* half of
+    this problem and cannot catch it: it excludes the alternative scenario, and
     this line is not in the alternative scenario.
 
     The two halves of the tree that looked like coverage were not:
@@ -228,9 +258,71 @@ async def test_prevention_is_refused_in_a_current_scenario(app):
     assert [detail["field"] for detail in body["error"]["details"]] == [
         "entries[0].current"
     ]
+    assert body["error"]["details"][0]["issue"] == "prevention_in_current"
     assert "prevention" in body["error"]["details"][0]["message"]
 
     assert allowed.status_code == 200, allowed.text
+
+
+async def test_a_second_vocabularys_prevention_is_refused_too(app, sqlite_engine):
+    """The defect the flag closes.
+
+    §10.3's ReFED fixture brings `refed_prevention`, whose factors are all
+    zero and which is therefore a prevention destination by every property
+    that matters. While this rule compared against the literal `prevention`,
+    that row could be entered as **current**-scenario waste, persisted, and
+    became a public `by_destination` bucket — waste that by construction did
+    not happen, counted as real waste, on the page whose whole design problem
+    is not overclaiming. Reproducible against the deployed stack, which has
+    the ReFED set published and offers `refed_prevention` on the form.
+    """
+    _add_destination(sqlite_engine, "refed_prevention", is_prevention=True)
+
+    async with await _client(app) as client:
+        refused = await client.post(
+            "/api/v1/calculate",
+            json=_body(
+                [
+                    {"destination": "landfill", "qty_kg": "100.000"},
+                    {"destination": "refed_prevention", "qty_kg": "900.000"},
+                ]
+            ),
+        )
+
+    assert refused.status_code == 400, refused.text
+    body = refused.json()
+    assert [detail["field"] for detail in body["error"]["details"]] == [
+        "entries[0].current"
+    ]
+    assert "refed_prevention" in body["error"]["details"][0]["message"]
+
+
+async def test_a_destination_named_prevention_but_unflagged_is_not_special(
+    app, sqlite_engine
+):
+    """What proves the string is really gone.
+
+    Clear the tick on the row *called* `prevention` and give the role to
+    another row. A current-scenario line to `prevention` must now be an
+    ordinary accepted line: if this answers 400, something is still reading
+    the code.
+    """
+    _add_destination(sqlite_engine, "waste_avoided", is_prevention=True)
+    _set_prevention_flag(sqlite_engine, "prevention", False)
+
+    async with await _client(app) as client:
+        allowed = await client.post(
+            "/api/v1/calculate",
+            json=_body([{"destination": "prevention", "qty_kg": "1000.000"}]),
+        )
+        refused = await client.post(
+            "/api/v1/calculate",
+            json=_body([{"destination": "waste_avoided", "qty_kg": "1000.000"}]),
+        )
+
+    assert allowed.status_code == 200, allowed.text
+    assert refused.status_code == 400, refused.text
+    assert "waste_avoided" in refused.json()["error"]["details"][0]["message"]
 
 
 async def test_details_has_exactly_the_two_shapes_section_9_defines(app):

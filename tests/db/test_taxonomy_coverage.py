@@ -201,6 +201,76 @@ def test_prevention_survives_a_set_that_prices_it_nowhere(seeded_session):
     assert prevention.group in codes(snapshot.destination_groups)
 
 
+def test_the_hold_out_reads_the_flag_and_not_the_code(seeded_session):
+    """The other half of the test above, and what proves the string is gone.
+
+    Clear the tick on the row *called* `prevention` and it becomes an ordinary
+    destination, subject to the same inference as every other row — so once its
+    factor rows are gone it must disappear. A second row that carries the tick
+    and no factor row at all must appear in its place. If the first survives,
+    the filter is still reading the code.
+    """
+    factor_set_id = published_id(seeded_session)
+    prevention = seeded_session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    prevention.is_prevention = False
+    seeded_session.add(
+        Destination(
+            group_id=prevention.group_id, code="waste_avoided",
+            name="Waste avoided", is_prevention=True, sort_order=6,
+        )
+    )
+    seeded_session.execute(
+        delete(FactorUpstream).where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.destination_id == prevention.id,
+        )
+    )
+    seeded_session.execute(
+        delete(FactorDownstream).where(
+            FactorDownstream.factor_set_id == factor_set_id,
+            FactorDownstream.destination_id == prevention.id,
+        )
+    )
+    seeded_session.flush()
+
+    offered = codes(get_taxonomy(seeded_session).destinations)
+    assert "waste_avoided" in offered, "the flagged row is held out of the inference"
+    assert "prevention" not in offered, (
+        "an unflagged row named 'prevention' is an ordinary destination"
+    )
+
+
+def test_a_second_vocabularys_prevention_is_held_out_by_the_flag(seeded_session):
+    """§10.3's `refed_prevention` is a prevention destination by every property
+    that matters — 156 upstream and 156 downstream rows, every one of them
+    zero — and was subject to an inference that cannot be true of it while the
+    hold-out named one code."""
+    prevention = seeded_session.scalar(
+        select(Destination).where(Destination.code == "prevention")
+    )
+    seeded_session.add(
+        Destination(
+            group_id=prevention.group_id, code="refed_prevention",
+            name="Prevention (ReFED)", is_prevention=True, sort_order=803,
+        )
+    )
+    seeded_session.flush()
+
+    assert "refed_prevention" in codes(get_taxonomy(seeded_session).destinations)
+
+
+def test_the_flag_travels_to_the_front_end(seeded_session):
+    """§6.1 puts `is_prevention` on the wire because `web/js/calculator.js`
+    keeps a flagged destination off the current-waste list by reading it. A
+    snapshot that dropped the field would leave that list offering a
+    destination §6.2 answers 400 for."""
+    rows = {row.code: row for row in get_taxonomy(seeded_session).destinations}
+    assert rows["prevention"].is_prevention is True
+    assert rows["landfill"].is_prevention is False
+
+
 def test_the_standard_mix_survives_a_set_that_prices_it_nowhere(seeded_session):
     """§2.1 requires exactly one active `is_standard_mix` row and §6.2 resolves
     a null `food_category` to it. Filtering it out would leave a caller with no

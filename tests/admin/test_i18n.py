@@ -475,6 +475,135 @@ def test_the_catalogue_file_declares_its_own_metadata():
         assert language in [t.lower() for t in raw.get("tags", [language])]
 
 
+def _repository_root():
+    from pathlib import Path
+
+    import admin
+
+    return Path(admin.__file__).parent.parent
+
+
+def _normalised(name: str) -> str:
+    """PEP 503 package-name normalisation, so `SQLAlchemy` matches `sqlalchemy`."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _pinned_version(package: str) -> str | None:
+    """The version docker/constraints.txt freezes, or None if it names none.
+
+    That file is the authority on which version this repository is written
+    against: both images build with it and CI installs with it. Whatever
+    happens to be in a developer's site-packages is not.
+    """
+    pin = re.compile(r"^([A-Za-z0-9._-]+)==([^\s;#]+)")
+    text = (_repository_root() / "docker" / "constraints.txt").read_text(
+        encoding="utf-8"
+    )
+    for line in text.splitlines():
+        match = pin.match(line.strip())
+        if match and _normalised(match.group(1)) == _normalised(package):
+            return match.group(2)
+    return None
+
+
+def _installed_version(package: str) -> str:
+    from importlib.metadata import version
+
+    return version(package)
+
+
+def _undo_the_translation_edits(ours: str) -> str:
+    """Our copy, reduced to what it was copied from.
+
+    Drops the leading explanatory Jinja comment, then reverses the five `_()`
+    edits listed in that comment - so the only difference this can leave
+    behind is a difference sqladmin made.
+    """
+    ours = ours[ours.index("{% macro menu_category") :]
+    for translated, plain in (
+        ("_(menu.display_name)", "menu.display_name"),
+        ("_(sub_menu.display_name)", "sub_menu.display_name"),
+        ("_(field.description)", "field.description"),
+        ('_("This is a required field")', '"This is a required field"'),
+    ):
+        ours = ours.replace(translated, plain)
+    return ours
+
+
+def _macros_complaint(
+    ours: str, original: str, installed: str | None, pinned: str | None
+) -> str | None:
+    """What is wrong with the vendored copy, or None if nothing is.
+
+    Split out from the test so the two failures it can report are themselves
+    testable, and because they are two different failures. THE MESSAGE IS THE
+    DELIVERABLE HERE: the previous version of this check said only "the copy
+    has drifted, re-copy it", which sent the first reader of a red CI run to
+    inspect a file that was a faithful copy of the sqladmin on their own
+    machine. The cause was that CI had a different sqladmin, and no part of
+    the message pointed there.
+    """
+    if _undo_the_translation_edits(ours).strip() == original.strip():
+        return None
+
+    if installed != pinned:
+        return (
+            f"admin/templates/sqladmin/_macros.html does not match the installed "
+            f"sqladmin, and the installed sqladmin is not the pinned one: "
+            f"{installed} is installed, docker/constraints.txt pins {pinned}. "
+            f"THE COPY IS PROBABLY FINE - fix the environment first. Install "
+            f"with the constraints file (`pip install -e \".[dev]\" "
+            f"-c docker/constraints.txt`) and run this again. Only if it still "
+            f"fails on {pinned} is the copy itself out of date."
+        )
+
+    return (
+        f"admin/templates/sqladmin/_macros.html no longer matches sqladmin "
+        f"{installed}'s own _macros.html, and {installed} is the version "
+        f"docker/constraints.txt pins - so this is real drift, not a version "
+        f"skew. Re-copy the original and re-apply the five `_()` edits listed "
+        f"in that file's header comment, and check whether sqladmin added "
+        f"markup that its own CSS or JS depends on."
+    )
+
+
+def _installed_macros() -> str:
+    from pathlib import Path
+
+    import sqladmin
+
+    return (
+        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "_macros.html"
+    ).read_text(encoding="utf-8")
+
+
+def _our_macros() -> str:
+    return (
+        _repository_root() / "admin" / "templates" / "sqladmin" / "_macros.html"
+    ).read_text(encoding="utf-8")
+
+
+def test_the_installed_sqladmin_is_the_version_pinned_for_the_images():
+    """Asserted on its own, because it is its own cause with its own fix.
+
+    docker/constraints.txt is what the two images build with and what CI
+    installs with; pyproject.toml states only a `>=0.20` floor. A developer
+    who installs from that floor gets whatever PyPI published most recently,
+    which is how this repository spent a release cycle with 0.30.0 on the
+    desk and 0.31.0 in the image - the vendored macros copy was taken from
+    the wrong one, and the panel shipped 0.30.0's menu markup on 0.31.0.
+    """
+    pinned = _pinned_version("sqladmin")
+    assert pinned is not None, "docker/constraints.txt no longer pins sqladmin"
+    installed = _installed_version("sqladmin")
+    assert installed == pinned, (
+        f"sqladmin {installed} is installed but docker/constraints.txt pins "
+        f"{pinned}, so this suite is not testing the software that ships. "
+        f"Install with the constraints file: "
+        f'pip install -e ".[dev]" -c docker/constraints.txt'
+    )
+
+
 def test_the_vendored_macros_copy_still_matches_its_original():
     """admin/templates/sqladmin/_macros.html is a copy; copies drift silently.
 
@@ -484,32 +613,82 @@ def test_the_vendored_macros_copy_still_matches_its_original():
     of quietly reverting a translated menu or leaving the panel rendering an
     older version of sqladmin's own form markup.
     """
-    from pathlib import Path
+    complaint = _macros_complaint(
+        _our_macros(),
+        _installed_macros(),
+        _installed_version("sqladmin"),
+        _pinned_version("sqladmin"),
+    )
+    assert complaint is None, complaint
 
-    import sqladmin
 
-    original = (
-        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "_macros.html"
-    ).read_text(encoding="utf-8")
+def test_a_faithful_copy_is_accepted():
+    """The other half of the test above, which otherwise proves only refusal.
 
-    ours = (
-        Path(admin.__file__).parent / "templates" / "sqladmin" / "_macros.html"
-    ).read_text(encoding="utf-8")
-    # Drop our leading explanatory Jinja comment, then undo the five edits.
-    ours = ours[ours.index("{% macro menu_category") :]
-    undone = ours.replace("_(menu.display_name)", "menu.display_name")
-    undone = undone.replace("_(sub_menu.display_name)", "sub_menu.display_name")
-    undone = undone.replace("_(field.description)", "field.description")
-    undone = undone.replace('_("This is a required field")', '"This is a required field"')
+    A comparison that rejected everything would pass every "this must fail"
+    assertion below. This is the one that says the check can also say yes.
+    """
+    original = _installed_macros()
+    ours = "{# a header #}\n" + original.replace(
+        "{{ menu.display_name }}", "{{ _(menu.display_name) }}"
+    ).replace("{{ sub_menu.display_name }}", "{{ _(sub_menu.display_name) }}").replace(
+        "{{ field.description }}", "{{ _(field.description) }}"
+    ).replace(
+        '"This is a required field"', '_("This is a required field")'
+    )
+    assert _macros_complaint(ours, original, "9.9.9", "9.9.9") is None
 
-    assert undone.strip() == original.strip(), (
-        "the installed sqladmin's _macros.html no longer matches the copy in "
-        "admin/templates/sqladmin/. Re-copy it and re-apply the five `_()` "
-        "edits listed in that file's header comment."
+
+def test_a_drifted_copy_on_the_pinned_version_is_reported_as_drift():
+    original = _installed_macros()
+    drifted = "{# a header #}\n" + original.replace(
+        'class="nav-item dropdown"', 'class="nav-item dropdown" data-something="1"'
+    )
+    assert 'data-something="1"' in drifted, "anchor: the mutation did not apply"
+
+    complaint = _macros_complaint(drifted, original, "9.9.9", "9.9.9")
+    assert complaint is not None
+    assert "real drift" in complaint
+    assert "Re-copy" in complaint
+
+
+def test_a_version_skew_is_reported_as_a_version_skew_and_not_as_drift():
+    """The whole point of the split.
+
+    Same drifted copy as the test above; only the two versions differ. The
+    message must change, because the thing the reader has to go and fix has
+    changed.
+    """
+    original = _installed_macros()
+    drifted = "{# a header #}\n" + original.replace(
+        'class="nav-item dropdown"', 'class="nav-item dropdown" data-something="1"'
     )
 
+    complaint = _macros_complaint(drifted, original, "0.30.0", "0.31.0")
+    assert complaint is not None
+    assert "0.30.0 is installed" in complaint
+    assert "pins 0.31.0" in complaint
+    assert "THE COPY IS PROBABLY FINE" in complaint
+    # And it must NOT send the reader to re-copy the file, which is what the
+    # message said before this split existed.
+    assert "real drift" not in complaint
 
-import admin  # noqa: E402  - imported for __file__ in the test above
+
+def test_the_pin_is_read_out_of_the_constraints_file_rather_than_guessed():
+    """Anchors _pinned_version against the real file.
+
+    A `_pinned_version` that returned None for everything would make the skew
+    branch above unreachable in the real test, and every assertion about it
+    would still pass.
+    """
+    assert _pinned_version("sqladmin") is not None
+    # Normalisation is load-bearing: the file writes `SQLAlchemy`, not
+    # `sqlalchemy`, and a case-sensitive match would silently find no pin.
+    assert _pinned_version("sqlalchemy") == _pinned_version("SQLAlchemy") is not None
+    assert _pinned_version("a-package-nobody-pins") is None
+
+
+import admin  # noqa: E402  - imported for __file__ in the tests above
 
 
 def _our_own_template_msgids() -> set[str]:

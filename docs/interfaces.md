@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-13 (v1.23 draft)"
+date: "2026-08-13 (v1.24 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,18 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.24 — 2026-08-13 (interface translation, and the admin panel in Chinese; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Open item O-8 stops being unpromised and describes what is delivered.** The client removed te reo Māori from scope at the first demonstration — not deferred, removed — and asked for roughly twenty other languages, static interface strings only. The repository owner then added the admin panel, and its reason changes its rank: the panel's users are the development team, half of whom could no longer follow its English domain vocabulary at working speed. **Chinese is therefore not one of twenty. It is the only language with real users today**, and the only one that will have native speakers noticing when a translation is wrong. `architecture.md` §10 O-8 | O-8 |
+| 2 | **The architecture: the English source string is the key, catalogues are JSON, one file per language per surface.** `admin/locales/<lang>.json` ships as wheel package data; `web/locales/<lang>.json` will be fetched by the browser. Two locations because package-data cannot reach outside its package and the two Dockerfiles copy disjoint trees — a top-level `i18n/` would be in neither image. The **key scheme, fallback rule, cookie and notice rule are one contract across both surfaces.** No new dependency and no build step: `sqladmin`'s own `I18nConfig` needs `babel` and ships no Chinese catalogue, but `jinja2.ext.i18n`'s `install_gettext_callables` takes ours, which translates **sqladmin's own fifty strings through our catalogue** with no fork of its templates | O-8 |
+| 3 | **Language is chosen by `?lang=` and remembered in a `kaicalc_lang` cookie, path `/`.** Not the staff session: the login page and the whole enrolment flow render before a session exists, and a person who cannot read English needs those pages most. Not a column on `staff`: the preference belongs to a browser, not a person. **No `Accept-Language` sniffing on either surface** — the header is a fingerprinting signal and §2.3 forbids reading a visitor that way. Absent, empty or unrecognised ⇒ English, and an unrecognised value is ignored rather than stored. **The cookie is never read into a submission, never logged and never aggregated** | O-8, §2.3 |
+| 4 | **A missing key renders its English source, silently at runtime and loudly in the suite.** A half-translated language ships as English-in-places rather than as blank labels or key names. `tests/admin/test_i18n.py` walks the live `form_args` of every registered view, every view name, and the msgid set read out of the installed `sqladmin`, and fails on anything untranslated — which is how rewording an English string, the known cost of source-text keys, becomes a failing test on the commit that reworded it rather than a paragraph in the wrong language weeks later | O-8 |
+| 5 | **The machine-translation notice goes at the language switcher, on the option itself**, driven by `machine_translated` in each catalogue file so that adding a language is adding a file. **English and Chinese carry no notice** — English is hand-written and Chinese is reviewed by its users — and that Chinese is *not* flagged is asserted by a test, because if it were the switcher would make a claim about it that is false | O-8 |
+| 6 | **What must never be translated, as rules rather than practice:** anything a staff member typed (factor notes, taxonomy names and descriptions, formula labels, version labels, audit log contents — this is what makes the panel WYSIWYG); `code` identifiers; decimals, which cross the wire as strings and take no locale-aware separator or grouping on either surface; metric units; and the operator messages in `admin/cli.py` and `docker/init.sh`, which are read in a terminal and pasted into search engines | O-8 |
+| 7 | **Nine field descriptions are flagged as data-error risks and listed in O-8**, because a wrong reading of each produces a wrong public number rather than a confused staff member — `metric.display_unit`'s same-scale rule (a `t CO2e` label against a `kg CO2e` unit reads a thousand times too small, and was live until August 2026), the prevention destination's zero factors, the legitimacy of a negative downstream factor, and "leave blank means every category", among them. This is the concrete reason the reviewed language and the machine-translated ones are two different promises | O-8 |
 
 ### v1.23 — 2026-08-13 (Back and Next become a navigation bar; affects C, D and E)
 

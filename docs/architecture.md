@@ -516,7 +516,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
-| O-8 | **Interface translation is delivered** (v1.25): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from the browser and stored nowhere. What remains open is that **the taxonomy inside a translated page is still in the language staff typed it**, and that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
+| O-8 | **Interface translation is delivered** (v1.25; negotiation rule amended at v1.26): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from **the browser's highest-priority tag only — an unmatched one is English rather than a walk down the list** — and stored nowhere. What remains open is that **the taxonomy inside a translated page is still in the language staff typed it**, and that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
 | ~~O-9~~ | ~~**`/admin/try` cannot succeed in a deployed system.**~~ **Closed 2026-08-12.** The panel now mints a short-lived signed proof (`db/staff_proof.py`) and the API verifies it by default. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
@@ -734,18 +734,19 @@ rather than chosen.**
 | Calculator | `navigator.languages` | Static files served by nginx, which never reach FastAPI. There is no server in the path that could negotiate |
 | Admin panel | `Accept-Language`, with quality values | Rendered through FastAPI, so the header is the only thing available before the first byte |
 
-`navigator.languages`, never `navigator.language`: the second is one tag, and a
-visitor whose first preference has no catalogue would drop straight to English
-while their second sat unread in a list the browser was already sending.
+`navigator.languages`, never `navigator.language`: the second is one tag and
+the first is the *ordered* list, and order is what identifies the
+highest-priority tag. How far down that list the negotiation may reach is the
+subject of the next section; which property is read is settled here.
 
 Quality values are honoured because they decide the answer: `zh;q=0.8, en;q=0.9`
 is a request for English, and a parser that reads the header in written order
 gets it backwards. `q=0` means *not acceptable* and is dropped rather than
-ranked last; `*` is dropped, because "anything" is what falling through to
-English already does; a malformed entry is dropped rather than defaulted,
-because guessing at input this code cannot read is how a parser starts making
-decisions on nonsense. The header is read to a bounded length and a bounded
-number of entries.
+ranked last; a malformed entry is dropped rather than defaulted, because
+guessing at input this code cannot read is how a parser starts making decisions
+on nonsense. `*` is **kept and ranked like any other tag** — see the next
+section, where that stopped being a technicality. The header is read to a
+bounded length and a bounded number of entries.
 
 **Matching is RFC 4647 lookup, not equality.** Try the whole tag, then drop the
 last subtag, and repeat: `en-NZ` reaches `en`, `zh-CN` and `zh-Hans-CN` reach
@@ -768,17 +769,74 @@ there. That is the right answer for a panel whose five users all read
 Simplified, it is asserted by a test, and the test is the reminder to delete
 itself if a Traditional catalogue is ever added to `admin/locales/`.
 
-**A tag nobody claims resolves to nothing, not to English.** That is what lets
-the visitor's *next* preference have a turn: a browser sending `fr-CA, zh, en`
-to the panel gets Chinese. English is reached only when the whole list is
-exhausted.
+### Only the first language is consulted (v1.26)
 
-**`?lang=` survives as a one-request override.** Nothing emits it; it exists
-for testing, screenshots and support, which is the whole of why an interface
-with no picker still needs one. It is persisted nowhere. **An unrecognised
-value is ignored**, and the request then negotiates exactly as though the
-parameter had been absent — not an error, not a redirect, not remembered. A
-typo in a support email must not look like a broken panel.
+**A tag nobody claims resolves to nothing, and `negotiate` turns that into
+English. The rest of the visitor's list is not read.** A browser sending
+`fr-CA, zh, en` to the panel gets **English**, not Chinese.
+
+Until 2026-08-13 it got Chinese: a tag with no catalogue stepped aside so the
+next preference could have a turn, and English arrived only once the list was
+exhausted. The repository owner ruled against that, and the reasoning is
+recorded here and repeated as a comment in both negotiators, because walking
+the list is the more obvious behaviour and someone will eventually try to
+restore it as a fix.
+
+* **A browser's language list does not reliably describe what a person can
+  read.** The first entry is usually deliberate. The second and third are
+  frequently residue — a preinstalled system locale, an input method added
+  once, a setting changed years ago and forgotten. Honouring them as a genuine
+  second language means letting an unreliable signal override a reliable
+  fallback.
+* **English is a safe floor for this audience; an unfamiliar language is not.**
+  Everyone who reaches this calculator or this panel reads English — that is
+  the assumption the ruling makes explicit, and it is the assumption this
+  project is already making everywhere else, since the taxonomy inside a
+  translated page is English regardless. So the worst outcome under this rule
+  is a page in English. The worst outcome under the walk is a page in a
+  language the reader does not have, **and with no picker on either surface
+  there is no way back out of it.**
+
+**The rule removes the walk between tags, not the match inside one.** Every
+paragraph above about truncation and tag claims still holds, applied to the
+single tag consulted: `en-NZ` reaches English, `zh-CN` reaches Simplified,
+`zh-TW` reaches Traditional, `fil` reaches `tl`. `de-AT, xx` reaching German is
+the case that separates "the walk is gone" from "the matcher is broken", and it
+is asserted as such.
+
+**Ordering happens before the rule.** The tag consulted is the
+highest-*priority* one, not the first one written: `zh;q=0.8, en;q=0.9` puts
+`en` at the head and answers English, while `en;q=0.4, zh;q=0.9` answers
+Chinese. `q=0` is an explicit refusal rather than a low rank, so `en;q=0, zh`
+has `zh` at its head.
+
+**`*` is why the parser changed.** It used to be dropped, on the reading that
+"anything" is what falling through to English already does — true while the
+list was walked, false the moment only the head is read, because dropping it
+promotes the tag *behind* it into the one slot that decides. A header whose
+first statement is "no preference" would then have answered Chinese. So `*` is
+ranked like any other tag, nothing claims it and it has no subtag to drop:
+**`*` at the head means English**, and `zh, *;q=0.5` still means Chinese.
+
+A malformed entry is still dropped rather than defaulted, and a dropped entry
+holds no rank — there is no quality to rank it by, which is the reason it was
+dropped in the first place. So `en;q=high, zh` answers Chinese, and a header
+with nothing readable in it at all answers English, as do an empty header and
+an absent one.
+
+**`?lang=` survives as a one-request override, and stays outside the rule.**
+Nothing emits it; it exists for testing, screenshots and support, which is the
+whole of why an interface with no picker still needs one. It is persisted
+nowhere. **An unrecognised value is ignored**, and the request then negotiates
+exactly as though the parameter had been absent — not an error, not a redirect,
+not remembered. A typo in a support email must not look like a broken panel.
+
+It is deliberately not folded into the single-tag rule: `?lang=` is somebody
+typing a language on purpose, which is the one signal here that is *not* a
+browser setting, so a typo in it falls back to the negotiation rather than
+consuming its slot. `?lang=qq` on a `zh-CN` browser is still Chinese. On the
+calculator that meant matching the forced value *before* the list rather than
+prepending it to a list whose head is now all that is read.
 
 **`Vary: Accept-Language` wherever the server negotiates.** The panel appends
 it — appends, not assigns, because FastAPI sets `Vary: Cookie` on session

@@ -82,7 +82,7 @@ export function stepNav({ step, back, backLabel = 'Back', label = 'Continue', di
     : `<button class="button button-secondary" type="button" data-action="go-step" data-step="${back}">${escapeHtml(backLabel)}</button>`
   return `<div class="step-nav" role="group" aria-label="Step navigation">
     ${backButton}
-    <p class="step-nav-progress" aria-current="step"><span class="step-nav-label">${escapeHtml(position)}</span> <span class="step-nav-name">${escapeHtml(STEPS[step] || '')}</span><span class="step-nav-track" aria-hidden="true"><span style="width:${percent}%"></span></span></p>
+    <p class="step-nav-progress" aria-current="step"><span class="step-nav-label">${escapeHtml(position)}</span> · <span class="step-nav-name">${escapeHtml(STEPS[step] || '')}</span><span class="step-nav-track" aria-hidden="true"><span style="width:${percent}%"></span></span></p>
     <button class="button button-primary" type="button" data-action="${action}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>
   </div>`
 }

@@ -516,7 +516,7 @@ facts about the deployment that this code cannot establish for itself.
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
-| O-8 | **Interface translation. The architecture is built and the admin panel is delivered in Chinese** (v1.24). What remains open is the calculator's language list and the nineteen machine-translated packs. See below. | Client, C, D, E |
+| O-8 | **Interface translation is delivered** (v1.25): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from the browser and stored nowhere. What remains open is that **the taxonomy inside a translated page is still in the language staff typed it**, and that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
 | ~~O-9~~ | ~~**`/admin/try` cannot succeed in a deployed system.**~~ **Closed 2026-08-12.** The panel now mints a short-lived signed proof (`db/staff_proof.py`) and the API verifies it by default. See below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
@@ -576,7 +576,7 @@ The claim is now enforced by data, and data can stop enforcing it. A `(sector, f
 
 That last one closes the gap this paragraph originally described as an open follow-up. It also means the rule is now something a staff member meets as a refusal rather than a convention they are trusted to remember — which is why the field-level help on the upstream screen states it as a consequence and not as advice. If that guard is ever relaxed, this section and that help text both become untrue.
 
-## O-8 — interface translation — **ARCHITECTURE BUILT, CHINESE DELIVERED 2026-08-13**
+## O-8 — interface translation — **DELIVERED 2026-08-13: the panel in Chinese, the calculator in twenty languages**
 
 Recorded as unpromised until the first client demonstration. Two of the
 positions this entry used to hold were overturned there and one was confirmed,
@@ -595,11 +595,35 @@ and confirmed.
 
 ### What is delivered
 
-| Surface | Languages | State |
-| --- | --- | --- |
-| Admin panel | English, Chinese | **Built.** 174 catalogue entries |
-| Admin panel | ~19 others | Mechanism ready; no catalogues written |
-| Public calculator | — | Architecture accepts it unchanged; no catalogues written |
+| Surface | Languages | State | Reviewed? |
+| --- | --- | --- | --- |
+| Admin panel | English | ~900 strings, the source language | Written by hand |
+| Admin panel | Chinese (`zh`) | **Built.** 177 catalogue entries | **Yes** — by the people who use the panel daily |
+| Admin panel | any other | Mechanism ready; no catalogue written | — |
+| Public calculator | English | 198 translatable strings, the source language | Written by hand |
+| Public calculator | Chinese (`zh`) | **Built.** 198 entries | Reviewable by the team; **not yet re-read for these 198** |
+| Public calculator | 19 others | **Built.** 198 entries each | **No. Machine translated and unread — and the page says so** |
+
+**The calculator's other nineteen**, in the client's own ordering: Traditional
+Chinese, Hindi, Tagalog, Panjabi, Korean, Afrikaans, French, German, Spanish,
+Dutch, Japanese, Gujarati, Arabic, Tamil, Vietnamese, Thai, Russian, Urdu —
+eighteen — plus **Malayalam**, proposed here as the twentieth: the client's
+list came to nineteen counting Simplified Chinese, and Malayalam is the next
+language in the same census ordering, sitting between Russian and Thai.
+
+**Samoan, Tongan and every other Pacific language are out, for te reo's
+reason.** A census-ordered list of New Zealand's languages puts Samoan third
+and Tongan fourteenth — above most of what did ship — so their absence has to
+be stated rather than left to the ordering to explain. They have exactly the
+problem the te reo section below sets out: machine translation trained on very
+little data, and a community expectation that the language is handled by
+somebody who speaks it. A machine pass of either would be the same mistake
+under a different name.
+
+**The Chinese calculator catalogue carries no notice**, on the panel's basis:
+it is the one language with speakers on this project. It is new, it has not yet
+been read line by line for these 198 strings, and that read is the first
+follow-up below rather than a claim made here.
 
 **The admin panel came into scope, and went first.** This entry previously
 concluded "probably a no", on the grounds that the panel has five users all
@@ -688,36 +712,95 @@ closes a gap the other cannot:
   the list heading as `{{ model_view.name_plural }}` with no `_()` at all.
   Without this, a complete catalogue still renders `新建Constant`.
 
-### How a language is chosen and remembered
+### How a language is chosen — negotiated per request, stored nowhere
 
-**A cookie, `kaicalc_lang`, path `/`, set only by an explicit `?lang=`.**
+**There is no picker, and nothing is persisted.** This section previously
+specified a `kaicalc_lang` cookie set by a `?lang=` switcher, and declined
+`Accept-Language` on the grounds that §2.3 forbids reading a visitor that way.
+That reading was too strict, and §2.3 is its own correction: it forbids
+**storing** an address, a user agent or a fingerprint, and it says in terms
+that "user agents, headers and paths are read within a request and forgotten".
+Reading a header to decide what to render, and keeping nothing, is the
+behaviour that sentence describes.
 
-Not the staff session. The login page renders before a session exists, and so
-do `/admin/enrol` and `/admin/verify` — the whole enrolment flow runs before
-there is an account at all, and a person who cannot read English needs those
-pages in their own language more than any other. The session is also cleared on
-logout, so a language kept there would revert to English every time somebody
-signed out.
+The repository owner ruled directly: negotiate per session from what the
+browser already sends, store nothing, and add no language-selection control.
 
-Not a column on `staff`: that would need a migration and a write path through
-`admin/accounts.py`, for a preference that belongs to a browser rather than to
-a person.
+**Two surfaces, two mechanisms, and the split is forced by the deployment
+rather than chosen.**
 
-Path `/` so the panel and the calculator are **one choice on one origin** —
-nginx serves both.
+| Surface | Reads | Why it cannot be the other one |
+| --- | --- | --- |
+| Calculator | `navigator.languages` | Static files served by nginx, which never reach FastAPI. There is no server in the path that could negotiate |
+| Admin panel | `Accept-Language`, with quality values | Rendered through FastAPI, so the header is the only thing available before the first byte |
 
-**No `Accept-Language` sniffing, on either surface.** The header is a
-fingerprinting signal and §2.3's position is that this system reads nothing
-about a visitor it was not given on purpose. Its absence is a decision.
+`navigator.languages`, never `navigator.language`: the second is one tag, and a
+visitor whose first preference has no catalogue would drop straight to English
+while their second sat unread in a list the browser was already sending.
 
-**Absent, empty or unrecognised ⇒ English**, rendered without complaint; an
-unrecognised value is ignored rather than corrected or stored, and the switcher
-then shows English as selected, which is true.
+Quality values are honoured because they decide the answer: `zh;q=0.8, en;q=0.9`
+is a request for English, and a parser that reads the header in written order
+gets it backwards. `q=0` means *not acceptable* and is dropped rather than
+ranked last; `*` is dropped, because "anything" is what falling through to
+English already does; a malformed entry is dropped rather than defaulted,
+because guessing at input this code cannot read is how a parser starts making
+decisions on nonsense. The header is read to a bounded length and a bounded
+number of entries.
 
-**The cookie is never read into a submission, never logged and never
-aggregated.** It reaches `/api/v1/` because that is the same origin; the API
-ignores it. Stated as a rule because a later statistics change could otherwise
-quietly violate it.
+**Matching is RFC 4647 lookup, not equality.** Try the whole tag, then drop the
+last subtag, and repeat: `en-NZ` reaches `en`, `zh-CN` and `zh-Hans-CN` reach
+`zh`.
+
+**Truncation alone gets one case badly wrong**, and it is the case with the
+most speakers: `zh-TW` truncates to `zh` and hands a Traditional reader
+Simplified Chinese, which is the wrong script rather than a degraded
+translation. So each catalogue file declares the tags it speaks for and an
+**exact claim is matched before any truncation runs** — `zh-Hant` claims
+`zh-TW`, `zh-HK` and `zh-MO`; `zh` claims `zh-Hans`, `zh-CN`, `zh-SG` and
+`zh-MY`; `tl` claims `fil`, which is what browsers actually send for Filipino.
+The claims live in the file for the reason `endonym` and `machine_translated`
+do: adding a language is adding a file. **No two catalogues may claim one tag**,
+and a test fails if they do — otherwise filename order would decide which
+script a Hong Kong browser gets.
+
+The panel ships no Traditional catalogue, so `zh-TW` truncates to Simplified
+there. That is the right answer for a panel whose five users all read
+Simplified, it is asserted by a test, and the test is the reminder to delete
+itself if a Traditional catalogue is ever added to `admin/locales/`.
+
+**A tag nobody claims resolves to nothing, not to English.** That is what lets
+the visitor's *next* preference have a turn: a browser sending `fr-CA, zh, en`
+to the panel gets Chinese. English is reached only when the whole list is
+exhausted.
+
+**`?lang=` survives as a one-request override.** Nothing emits it; it exists
+for testing, screenshots and support, which is the whole of why an interface
+with no picker still needs one. It is persisted nowhere. **An unrecognised
+value is ignored**, and the request then negotiates exactly as though the
+parameter had been absent — not an error, not a redirect, not remembered. A
+typo in a support email must not look like a broken panel.
+
+**`Vary: Accept-Language` wherever the server negotiates.** The panel appends
+it — appends, not assigns, because FastAPI sets `Vary: Cookie` on session
+responses and overwriting it would let a cache serve one staff member's page to
+another. It is applied by the **outermost** middleware, so it reaches the
+responses the inner ones refuse: a 403 cached without it is served to everyone.
+
+It is deliberately **not** set on the static origin. The calculator does not
+negotiate, so nothing there varies by the header, and `Vary` on a header that
+is near-unique per browser would tell every shared cache to keep a separate
+copy of `index.html`, `styles.css` and both font faces per value — a cache that
+stores everything and hits on nothing.
+
+**Nothing about the negotiation is written down anywhere.** Not in
+`submission`, not in `audit_log`, not in a statistic. `docker/nginx.conf` now
+declares its own access log format rather than inheriting the base image's
+`main`, which logged `$remote_addr`, `$http_user_agent`, `$http_referer` and
+`$http_x_forwarded_for` on every request to a calculator whose stated position
+is that it stores nothing identifying about a visitor. `Accept-Language` was
+absent from that format and is absent from ours; it is named in the file so
+that adding it later has to be a decision somebody writes down rather than a
+variable somebody appends.
 
 ### A missing key falls back to English, and a test says so
 
@@ -736,15 +819,29 @@ and is not.
 
 ### The machine-translation notice
 
-**At the language switcher, on the option itself.** Not in this document —
-somebody choosing a language is the person who needs to know, and they are not
-reading this.
+It used to sit on the switcher's option, where somebody was about to choose.
+**With the switcher gone there is nothing to hang it on**, so it is now a
+**non-dismissible strip at the very top of every page**, on both surfaces — the
+calculator's inserted by `web/js/i18n.js`, the panel's in `brand/base.html` and
+`sqladmin/layout.html` so that it reaches the five gate pages as well as the
+panel proper.
+
+**It is written twice: once in the language being read, and once in English.**
+The one sentence a machine-translated page has to get right is the sentence
+saying it was machine translated, and that sentence went through the same
+machine as everything else in the file. The English half carries `lang="en"` so
+a screen reader switches voice for it.
+
+**It is also appended to the results export**, which leaves the browser and is
+read by somebody who did not choose the language it was written in.
 
 Driven by `machine_translated` in the catalogue, so a language arriving from a
-machine pass labels itself. **English and Chinese carry no notice**, because
-English is written by hand and Chinese is reviewed by its users. That Chinese
-is *not* flagged is asserted by a test: were it ever flagged, the switcher
-would say so and the claim this project makes about it would become false.
+machine pass labels itself and no list in code has to be extended nineteen
+times. **English and Simplified Chinese carry no notice**: English is written
+by hand, and Chinese is the one language with speakers on this project. That
+exactly one calculator catalogue is unflagged is asserted by a test — flagging
+Chinese would put a notice on a language that has reviewers, and unflagging any
+other would make a claim about a review that has not happened.
 
 ### What must never be translated — rules, not practice
 
@@ -759,12 +856,74 @@ would say so and the claim this project makes about it would become false.
 3. **Decimals.** They cross the wire as strings because JavaScript's `Number`
    is a double. No locale-aware decimal separator and no digit grouping, on
    either surface. `Number()` stays display-only.
-4. **Metric units** — `kg CO2e`, `L`, `NZD`.
-5. **Operator messages** from `admin/cli.py` and `docker/init.sh`. They are
+4. **Metric units** — `kg CO2e`, `L`, `NZD` — and `metric.name`, which is a
+   staff-typed row under rule 1.
+5. **The equivalence sentences.** §3 defines `label` as `label_template` with
+   the value already interpolated **by the engine**, and the results export
+   copies it verbatim. They are data on their way through rather than
+   interface, and translating them in the browser would override wording the
+   client approved.
+6. **`toLocaleString('en-NZ')`, in every language.** §1.2 puts decimals on the
+   wire as strings because `Number` is a double, and a locale-aware separator
+   would additionally make `1.200,50` and `1,200.50` the same figure written
+   two ways on a page whose whole subject is a number. The interface is
+   translated; the figures are not localised.
+7. **Operator messages** from `admin/cli.py` and `docker/init.sh`. They are
    read in a terminal by whoever deploys the system, quoted verbatim in
    `docker/compose.yaml` and the README, and are what an operator pastes into a
    search engine. Translating them makes a deployment problem harder to
    diagnose, not easier.
+
+### Right-to-left: shipped, and what it cost
+
+Arabic and Urdu are two of the twenty, and both are right-to-left. The choice
+was between shipping them with `dir="rtl"`, shipping them left-to-right, and
+not shipping them — and **a half-mirrored page is worse than not shipping the
+language**, because a reader cannot tell a layout bug from a translation error
+and has no reason to trust either.
+
+They ship. The condition was that the layout could actually carry it, and
+making that true was twenty-six declarations in `styles.css`: every
+`margin-left`, `padding-left`, `border-left` and `text-align: left` that
+carried meaning became its `-inline-start` / `text-align: start` form, and the
+symmetric pairs collapsed into `margin-inline` / `padding-inline`, which is the
+same rendering in both directions. The whole layout now mirrors from the `dir`
+attribute alone; there is no second stylesheet to keep in step.
+
+Three things do not follow from `dir` and are handled by hand: the two
+decorative arrows (`aria-hidden`, and not mirrored by the bidi algorithm — a
+"current → improved" arrow pointing the wrong way reads as improved → current),
+the progress and bar-chart fills, and the diverging comparison bar's inline
+offset, which is `margin-inline-start` rather than `margin-left` — a physical
+offset there would draw the negative half of a bar on the same side as the
+positive half.
+
+`tests/web/test_i18n_web.py` refuses a physical direction property in
+`styles.css`, so the trade cannot be quietly undone by one convenient
+`margin-left` added later.
+
+### What a translated page actually looks like — the honest answer
+
+**The interface is translated. The taxonomy inside it is not.** On the
+calculator this is not a detail: destination names, food category names, sector
+names, sector descriptions, metric names and units, and the equivalence
+sentences all come from the database in the language staff entered them, which
+is English. A Thai visitor gets Thai headings, Thai instructions, Thai
+validation messages and Thai results wording — around a list that reads
+`Landfill`, `Composting`, `Animal feed`.
+
+**Is that coherent?** Yes, in the sense that matters: the reader can tell which
+words belong to the tool and which are the names of things, and every word that
+tells them what to do is in their language. It is the arrangement most public
+tools with a controlled vocabulary end up in, and it is much better than an
+English page. It is also plainly not finished, and calling it finished would be
+the kind of claim this document exists to stop.
+
+**Closing it is not a front-end change.** It needs a translated name column per
+taxonomy table in §2.1, a panel screen to enter them, and a client decision
+about who writes them — and the client has not yet supplied real factors (O-1),
+so this is not the moment to ask for translated vocabulary. Recorded here as
+the next step for O-8 rather than done.
 
 ### The strings where a translation error becomes a data error
 
@@ -819,7 +978,10 @@ already fetches fixtures — which also keeps the no-build-step decision intact.
 
 ### Three places English still leaks through the boundary
 
-Unchanged by this work, and all three still open:
+Unchanged by this work, and all three still open. **Item 1 is no longer
+theoretical**: it now renders on the calculator's most prominent card in
+twenty languages, and the case for splitting the column is correspondingly
+stronger.
 
 1. **`equivalence.label_template` is a whole sentence, not a label.** It ships
    as `"Equivalent to driving {value} km"`, it is staff-editable, and it
@@ -838,9 +1000,21 @@ Unchanged by this work, and all three still open:
 
 ### What is not translated yet, and why the number is written down
 
-Roughly 900 user-visible English strings exist in the panel. 174 are
-translated: every field description, every view and menu name, sqladmin's own
-chrome, the login page and the switcher. **Deliberately left, with reasons:**
+**The calculator is complete: 198 of 198 strings, in twenty languages.** The
+count is read out of the front end by `tests/web/i18n_keys.py` rather than
+maintained by hand — `t('...')` calls, the `data-i18n` markers in the two HTML
+files, and four module-level constants whose contents reach `t()` by reference
+— so a label added without a translation fails the suite rather than shipping
+in English. A key nobody asks for any more fails it too, because a stale entry
+makes a reworded string look translated.
+
+**The panel is not.** Roughly 900 user-visible English strings exist there and
+177 are translated: every field description, every view and menu name,
+sqladmin's own chrome, the login gauntlet and this project's own template
+strings. That last set was covered by nothing until this pass added a test that
+walks the msgids in `admin/templates/`, which immediately found "Add a staff
+member" and "Block an address" rendering in English on an otherwise Chinese
+panel. **Deliberately left, with reasons:**
 
 * **The six guidance blocks (123 strings).** Long-form prose in six template
   files, and the highest-value remaining work. They need a decision first:

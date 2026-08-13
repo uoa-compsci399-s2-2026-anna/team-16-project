@@ -1,3 +1,5 @@
+import { t } from './i18n.js'
+
 export function escapeHtml(value = '') {
   return String(value)
     .replaceAll('&', '&amp;')
@@ -21,9 +23,14 @@ export function escapeHtml(value = '') {
  */
 export function formatNumber(value, precision = 2) {
   const number = Number(value)
-  if (!Number.isFinite(number)) return 'Not available'
+  if (!Number.isFinite(number)) return t('Not available')
   const requested = Number(precision)
   const digits = Number.isFinite(requested) ? Math.min(Math.max(Math.trunc(requested), 0), 20) : 2
+  // **'en-NZ' stays, in every language.** Section 1.2 puts decimals on the wire as
+  // strings because JavaScript's Number is a double, and 7.6.1 leaves the front end no
+  // arithmetic but unit conversion; a locale-aware separator would additionally make
+  // "1.200,50" and "1,200.50" the same figure written two ways on a page whose whole
+  // subject is a number. The interface is translated; the figures are not localised.
   return number.toLocaleString('en-NZ', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
@@ -39,6 +46,10 @@ export function slug(value) {
  * importing back would close a cycle for the sake of one array.
  */
 export const STEPS = ['Supply-chain stage', 'Food type', 'Waste amount', 'Destinations', 'Review', 'Results']
+
+/** The same six names, in the language being read. Kept apart from `STEPS` so the
+ *  English source strings stay the keys and stay in one place. */
+export const stepName = index => t(STEPS[index] || '')
 
 /**
  * The step navigation bar: a step's Back and primary actions, and its position
@@ -74,15 +85,15 @@ export const STEPS = ['Supply-chain stage', 'Food type', 'Waste amount', 'Destin
  * @param {string} options.action `data-action` for the primary action.
  * @returns {string}
  */
-export function stepNav({ step, back, backLabel = 'Back', label = 'Continue', disabled = false, action = 'continue' }) {
-  const position = `Step ${step + 1} of ${STEPS.length}`
+export function stepNav({ step, back, backLabel = t('Back'), label = t('Continue'), disabled = false, action = 'continue' }) {
+  const position = t('Step %(step)s of %(total)s', { step: step + 1, total: STEPS.length })
   const percent = Math.round(((step + 1) / STEPS.length) * 100)
   const backButton = back === null || back === undefined
     ? ''
     : `<button class="button button-secondary" type="button" data-action="go-step" data-step="${back}">${escapeHtml(backLabel)}</button>`
-  return `<div class="step-nav" role="group" aria-label="Step navigation">
+  return `<div class="step-nav" role="group" aria-label="${escapeHtml(t('Step navigation'))}">
     ${backButton}
-    <p class="step-nav-progress" aria-current="step"><span class="step-nav-label">${escapeHtml(position)}</span> · <span class="step-nav-name">${escapeHtml(STEPS[step] || '')}</span><span class="step-nav-track" aria-hidden="true"><span style="width:${percent}%"></span></span></p>
+    <p class="step-nav-progress" aria-current="step"><span class="step-nav-label">${escapeHtml(position)}</span> · <span class="step-nav-name">${escapeHtml(stepName(step))}</span><span class="step-nav-track" aria-hidden="true"><span style="width:${percent}%"></span></span></p>
     <button class="button button-primary" type="button" data-action="${action}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>
   </div>`
 }

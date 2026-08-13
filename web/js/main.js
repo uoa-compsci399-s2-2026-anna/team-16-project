@@ -1,6 +1,7 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, render, renderChrome } from './calculator.js'
+import { applyDocumentLanguage, applyToDocument, t } from './i18n.js'
 
 const main = document.getElementById('main-content')
 const homeButton = document.getElementById('home-button')
@@ -36,8 +37,15 @@ subscribe(() => {
 bindCalculator(main, loadTaxonomy)
 homeButton.addEventListener('click', () => resetCalculator())
 clearButton.addEventListener('click', () => {
-  if (window.confirm('Clear all calculator data and return to the introduction?')) resetCalculator()
+  if (window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
 })
+
+// The static HTML the browser parsed before any of this ran - the header, the skip
+// link, the footer, the transparency notice - plus `<html lang>`, `<html dir>` and
+// the machine-translation notice. Done once, before the first render, so nothing
+// below re-translates a string it already translated.
+applyDocumentLanguage()
+applyToDocument()
 
 renderChrome()
 render(main)

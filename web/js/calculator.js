@@ -34,7 +34,9 @@ const selected = (items, code) => items.find(item => item.code === code)
 // would be offering a 400. This read `code !== 'prevention'` until the flag existed,
 // which left every other prevention destination — the ReFED comparison set brings its
 // own — on the current-waste list.
-const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => !destination.is_prevention)
+// Exported for tests/web/test_entry_destinations.py, which runs it under Node against a
+// taxonomy it builds — the same seam `buildResultsReport` was pulled out for (§7.3a).
+export const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => !destination.is_prevention)
 const createLine = (destination, qtyInput = '') => ({ id: randomId(), destination, qtyInput })
 // §7.3: `kgString` is `massToKg(...).toFixed(3)`, and it exists so the rounding to the
 // API's three decimal places happens in `units.js` rather than at each call site. Both

@@ -87,7 +87,7 @@ def test_mass_conservation_is_checked_only_where_an_alternative_exists():
     payload = CalculatePayload.model_validate(
         _payload([{"destination": "landfill", "qty_kg": "1200"}])
     )
-    assert entry_rule_problems(payload) == []
+    assert entry_rule_problems(payload, prevention_codes=()) == []
 
 
 @pytest.mark.parametrize(
@@ -109,4 +109,4 @@ def test_the_mass_tolerance_is_ten_grams_inclusive_in_both_directions(
             alternative=[{"destination": "compost", "qty_kg": alternative_qty}],
         )
     )
-    assert (entry_rule_problems(payload) == []) is expected
+    assert (entry_rule_problems(payload, prevention_codes=()) == []) is expected

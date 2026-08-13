@@ -182,7 +182,8 @@ class CalculatePayload(BaseModel):
 
 def entry_rule_problems(
     payload: CalculatePayload,
-    prevention_codes: Collection[str] = (),
+    *,
+    prevention_codes: Collection[str],
 ) -> list[dict[str, Any]]:
     """The three §6.2 rules Pydantic cannot express. See the module docstring.
 
@@ -191,9 +192,12 @@ def entry_rule_problems(
 
     `prevention_codes` is every destination flagged `is_prevention` (§2.1),
     read from the taxonomy by `db.repository.prevention_destination_codes`.
-    **It defaults to empty and that default enforces nothing** — which is
-    correct for a caller checking only the two entry-shape rules, and is why
-    `api/router.py` passes the set explicitly on the one path that matters.
+    **Required, and keyword-only**, for the reason v1.16 made `secret_key`
+    required on `create_staff`: an argument that defaults to empty here
+    enforces nothing and looks identical at the call site to one that was
+    passed, so the caller that forgot it is the caller nobody notices. A
+    caller that genuinely wants only the two entry-shape rules passes an empty
+    collection and says so.
     """
     problems: list[dict[str, Any]] = []
     prevention = frozenset(prevention_codes)

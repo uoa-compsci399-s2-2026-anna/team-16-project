@@ -155,15 +155,15 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
     #: did not cover §10.3's `refed_prevention`, which could therefore be
     #: entered as current-scenario waste and reach the public statistics.
     #:
-    #: `destination` carries no `factor_set_id`, so this is one small indexed
-    #: read of a global table and is the same answer for a dry run as for a
+    #: `destination` carries no `factor_set_id`, so this is one small read of a
+    #: global table (tens of rows) and is the same answer for a dry run as for a
     #: public request. A failure here is a taxonomy failure, not a request one.
     try:
         prevention_codes = prevention_destination_codes(request.state.db)
     except Exception as exc:
         raise _repository_problem(exc) from exc
 
-    problems = entry_rule_problems(payload, prevention_codes)
+    problems = entry_rule_problems(payload, prevention_codes=prevention_codes)
     if problems:
         raise ApiProblem(400, "VALIDATION_ERROR", "Request validation failed", problems)
 

@@ -53,10 +53,19 @@ function sharePercent(value) {
   })
 }
 
+/** §1.2 decimals cross the wire as strings; §7.7.7 rules that they take no
+ *  locale-aware separator on either surface. So the transmitted string is
+ *  printed exactly as it arrived.
+ *
+ *  `toLocaleString('en-NZ', { maximumFractionDigits: 3 })` broke that twice
+ *  over. It grouped — `521952.691` rendered as `521,952.691 kg`, the only
+ *  place on the public front end still doing so — and it round-tripped through
+ *  `Number`, which dropped the significant trailing zero the service sent:
+ *  `139132.500` came out as `139,132.5`. Printing the string keeps both the
+ *  separator rule and the precision the service published. */
 function kilograms(value) {
-  const number = Number(value)
-  if (!Number.isFinite(number)) return 'Not available'
-  return `${number.toLocaleString('en-NZ', { maximumFractionDigits: 3 })} kg`
+  if (typeof value !== 'string' || !/^-?\d+(\.\d+)?$/.test(value.trim())) return 'Not available'
+  return `${value.trim()} kg`
 }
 
 function generatedTime(value) {
@@ -135,6 +144,10 @@ function createChart(key, canvas, rows, definition) {
     title: `${definition.title} (share)`,
     labelKey: 'label',
     valueKey: 'share',
+    // The same formatter the text list below the chart uses, so the y axis, the
+    // tooltip and the list all read `37.9%` rather than the axis reading `0.379`
+    // beside a list reading `37.9% share`.
+    formatValue: sharePercent,
   }
   const chart = definition.chart === 'donut'
     ? renderDonut(canvas, rows, options)

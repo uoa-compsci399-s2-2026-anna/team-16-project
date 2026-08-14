@@ -1211,3 +1211,320 @@ def test_choosing_a_right_to_left_language_survives_and_reverts(browser, width):
         assert len(stored) == 1 and stored[0]["value"] == "auto"
     finally:
         context.close()
+
+
+# ---------------------------------------------------------------------------
+# The three content pages: statistics, home and documentation
+#
+# They shipped in English at v1.29 and were translated at v1.30. Everything
+# below is asserted against `web/locales/<lang>.json` read by Python, inside the
+# element that carries it, in two languages - one of them right-to-left.
+# ---------------------------------------------------------------------------
+
+#: page path -> (selector, catalogue key) for a heading only that page renders.
+CONTENT_PAGES = {
+    "/stats.html": ("h1#stats-title", "Statistics from this tool"),
+    "/home.html": ("h1#home-title", "Turn food waste information into action"),
+    "/methodology.html": (
+        "h1#documentation-title",
+        "Methodology and published factors",
+    ),
+}
+
+_NAV_HREF = {
+    "Home": "home.html",
+    "Calculator": "index.html",
+    "Statistics": "stats.html",
+    "Documentation": "methodology.html",
+}
+
+_PAGE_TITLE = {
+    "/stats.html": "Statistics | Kai Commitment Food Waste Impact Calculator",
+    "/home.html": "Home | Kai Commitment Food Waste Impact Calculator",
+    "/methodology.html": "Documentation | Kai Commitment Food Waste Impact Calculator",
+}
+
+_TRANSPARENCY = (
+    "This calculator stores the sector, food category and quantities entered "
+    "for aggregate statistics. It stores nothing that identifies you or your "
+    "business."
+)
+
+
+@pytest.mark.parametrize("path,heading", sorted(CONTENT_PAGES.items()))
+@pytest.mark.parametrize("language", ["zh", "ar"])
+def test_the_content_pages_translate_their_own_prose(browser, path, heading, language):
+    """One string only this page has, plus the chrome every page shares.
+
+    Two languages, because a single one passes against a page hard-coded in it,
+    and Arabic because it is also the direction check. Every expectation is read
+    out of the catalogue file by Python and compared with what Chromium rendered
+    after fetching the same file over HTTP, so this cannot agree with itself.
+    """
+    selector, key = heading
+    catalogue = i18n_keys.catalogue(language)
+    strings = catalogue["strings"]
+    context, page = open_page(browser, [language, "en"], path=path)
+    try:
+        assert page.get_attribute("html", "lang") == language
+        assert page.get_attribute("html", "dir") == catalogue.get("dir", "ltr")
+        assert page.inner_text(selector) == strings[key]
+        # The four navigation links, which the key extractor lost until v1.30
+        # because each sits inside an element that is itself marked.
+        for label, href in _NAV_HREF.items():
+            assert page.inner_text('.public-nav a[href$="%s"]' % href) == strings[
+                label
+            ], "%s: the %s link did not translate" % (path, label)
+        # The footer sentence, which is a `<span>` beside a link precisely so
+        # that translating it cannot delete the link.
+        assert page.inner_text(".transparency-notice span") == strings[_TRANSPARENCY]
+        assert page.inner_text(".transparency-notice a") == strings["What we record"]
+        # `<title>`, which is neither text nor attribute.
+        assert page.title() == strings[_PAGE_TITLE[path]]
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("path", sorted(CONTENT_PAGES))
+def test_the_notice_and_the_chooser_reach_every_content_page(browser, path):
+    """The gap this batch was written to close.
+
+    A Thai session got English statistics, home and documentation pages with
+    nothing on them saying so and no way to change it, while the calculator one
+    link away had both. So: the notice is the first element in the body, it is
+    written in Thai and again in English, and the chooser is on the page, big
+    enough to touch and inside the viewport.
+    """
+    strings = i18n_keys.catalogue("th")["strings"]
+    notice = strings[
+        "This interface was machine translated and has not been reviewed by a "
+        "speaker of this language. The figures are unaffected; the wording may "
+        "be wrong."
+    ]
+    context, page = open_page(browser, ["th"], path=path)
+    try:
+        assert (
+            page.evaluate("() => document.body.firstElementChild?.id")
+            == "machine-translation-notice"
+        ), "%s: the notice is not the first element in the body" % path
+        assert notice in page.inner_text("#machine-translation-notice"), (
+            "%s: the notice is not in Thai" % path
+        )
+        # And in English underneath, because the sentence warning you about a
+        # machine pass went through the same machine as the rest of the file.
+        assert "machine translated" in page.inner_text(
+            "#machine-translation-notice .machine-translation-notice-en"
+        )
+
+        box = page.locator("#language-chooser").bounding_box()
+        assert box is not None, "%s: no chooser" % path
+        assert box["height"] >= 44, "%s: below the 44px touch target: %s" % (path, box)
+        assert box["y"] < page.evaluate("window.innerHeight"), (
+            "%s: the chooser is below the fold" % path
+        )
+        assert (
+            page.evaluate(
+                "() => document.querySelector('label[for=\"language-chooser\"]')"
+                "?.textContent.trim()"
+            )
+            == strings["Language"]
+        )
+    finally:
+        context.close()
+
+
+def test_chinese_carries_no_notice_on_the_content_pages_either(browser):
+    """Chinese has readers on this project, so it is not warned about.
+
+    The negative is asserted on these three pages as well, or "the notice
+    reaches every page" would be satisfied by a page that showed it
+    unconditionally.
+    """
+    for path in CONTENT_PAGES:
+        context, page = open_page(browser, ["zh"], path=path)
+        try:
+            assert page.locator("#machine-translation-notice").count() == 0, path
+            assert page.locator("#language-chooser").count() == 1, path
+        finally:
+            context.close()
+
+
+# ---------------------------------------------------------------------------
+# The charts, which `applyToDocument()` cannot reach
+# ---------------------------------------------------------------------------
+
+_CHART_STATE = """
+() => [...document.querySelectorAll('.stats-chart-region canvas')].map((canvas) => {
+  const chart = window.Chart.getChart(canvas);
+  return {
+    id: chart?.id,
+    title: chart?.titleBlock?.options?.text,
+    titleHeight: chart?.titleBlock?.height,
+    legend: (chart?.legend?.legendItems || []).map((item) => item.text),
+    aria: canvas.getAttribute('aria-label'),
+  };
+})
+"""
+
+_CHART_TITLES = (
+    "Destinations entered (share)",
+    "Sectors selected (share)",
+    "Food categories selected (share)",
+)
+
+_BREAKDOWN_TITLES = (
+    "Destinations entered",
+    "Sectors selected",
+    "Food categories selected",
+)
+
+_CANVAS_LABEL = (
+    "%(title)s, charted using the API-provided share for every published "
+    "bucket. The full values follow in a text list."
+)
+
+
+def _wait_for_charts(page):
+    page.wait_for_function(
+        """() => [...document.querySelectorAll('.stats-chart-region canvas')]
+             .filter((canvas) => window.Chart.getChart(canvas)).length === 3"""
+    )
+
+
+def test_the_charts_are_rebuilt_in_the_new_language(browser):
+    """**The second translation path, driven and measured rather than mocked.**
+
+    A Chart.js title and a canvas `aria-label` are arguments to a constructor.
+    Nothing `applyToDocument()` does can reach them - the title is painted onto
+    a bitmap - so changing language has to destroy each chart and build it
+    again, and "a function was called" is not evidence that it did. What is
+    asserted here:
+
+    * the title read back off the live chart's **laid-out title block**, whose
+      measured height is what makes it a drawn title rather than a stored
+      string, equals the Chinese catalogue's own entry;
+    * every `Chart` instance id changed, so these are new charts;
+    * the canvases the first charts were drawn on are **destroyed** - the
+      registry no longer knows them - rather than left behind the new ones;
+    * and the same titles again in Arabic, so this cannot pass against one
+      hard-coded language.
+    """
+    zh = i18n_keys.catalogue("zh")["strings"]
+    ar = i18n_keys.catalogue("ar")["strings"]
+    context, page = open_page(browser, ["en-NZ"], path="/stats.html")
+    try:
+        _wait_for_charts(page)
+        english = page.evaluate(_CHART_STATE)
+        assert [chart["title"] for chart in english] == list(_CHART_TITLES), english
+        assert all(chart["titleHeight"] > 0 for chart in english), english
+
+        # A handle on the canvases the first charts were drawn on, so their
+        # destruction can be asserted after they have left the document.
+        first_canvases = page.evaluate_handle(
+            "() => [...document.querySelectorAll('.stats-chart-region canvas')]"
+        )
+
+        _choose(page, "zh")
+        _wait_for_charts(page)
+        chinese = page.evaluate(_CHART_STATE)
+        assert [chart["title"] for chart in chinese] == [
+            zh[title] for title in _CHART_TITLES
+        ], chinese
+        assert all(chart["titleHeight"] > 0 for chart in chinese), chinese
+        assert [chart["aria"] for chart in chinese] == [
+            zh[_CANVAS_LABEL].replace("%(title)s", zh[title])
+            for title in _BREAKDOWN_TITLES
+        ], chinese
+
+        assert all(
+            new["id"] != old["id"] for new, old in zip(chinese, english)
+        ), "the charts were not rebuilt: %s -> %s" % (english, chinese)
+        assert page.evaluate(
+            "(canvases) => canvases.every("
+            "(canvas) => window.Chart.getChart(canvas) === undefined)",
+            first_canvases,
+        ), "the first charts were never destroyed"
+
+        _choose(page, "ar")
+        _wait_for_charts(page)
+        arabic = page.evaluate(_CHART_STATE)
+        assert [chart["title"] for chart in arabic] == [
+            ar[title] for title in _CHART_TITLES
+        ], arabic
+    finally:
+        context.close()
+
+
+def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
+    """Section 7.7.7, on the surface where breaking it would be easiest.
+
+    Every label in a legend and in the text list is `label` from the statistics
+    response - a destination, sector or food-category name a staff member typed
+    into the panel, published exactly as written. They must be **identical** in
+    English and in Chinese: a legend that changed with the language would mean
+    the front end had started translating the client's taxonomy.
+    """
+    context, page = open_page(browser, ["en-NZ"], path="/stats.html")
+    try:
+        _wait_for_charts(page)
+        english = page.evaluate(_CHART_STATE)
+        listed = page.eval_on_selector_all(
+            ".stats-breakdown-list li strong", "nodes => nodes.map(n => n.textContent)"
+        )
+        assert any(chart["legend"] for chart in english), (
+            "no chart drew a legend, so this measures nothing"
+        )
+        assert listed, "the text list is empty, so this measures nothing"
+
+        _choose(page, "zh")
+        _wait_for_charts(page)
+        chinese = page.evaluate(_CHART_STATE)
+        assert [chart["legend"] for chart in chinese] == [
+            chart["legend"] for chart in english
+        ], "a chart legend changed with the language; the taxonomy is not ours to translate"
+        assert (
+            page.eval_on_selector_all(
+                ".stats-breakdown-list li strong",
+                "nodes => nodes.map(n => n.textContent)",
+            )
+            == listed
+        )
+
+        # And the prose around them did change, or the assertion above would
+        # pass just as well against a page that ignored the language entirely.
+        assert page.inner_text("h1#stats-title") == (
+            i18n_keys.catalogue("zh")["strings"]["Statistics from this tool"]
+        )
+    finally:
+        context.close()
+
+
+def test_the_figures_take_no_locale_aware_separator(browser):
+    """Section 7.7.7: figures are not localised, on either surface.
+
+    Read in Arabic specifically. `toLocaleString` with an Arabic locale renders
+    Eastern Arabic numerals - `37.9%` becomes `٣٧٫٩٪` - so if any formatter here
+    had started following the active language instead of staying pinned to
+    `en-NZ`, this is the page where it would show, on the axis and in the list
+    together.
+    """
+    context, page = open_page(browser, ["ar"], path="/stats.html")
+    try:
+        _wait_for_charts(page)
+        ticks = page.evaluate(
+            """() => [...document.querySelectorAll('.stats-chart-region canvas')]
+                 .map((canvas) => window.Chart.getChart(canvas))
+                 .filter((chart) => chart && chart.scales && chart.scales.y)
+                 .flatMap((chart) => chart.scales.y.ticks.map((tick) => tick.label))"""
+        )
+        assert ticks, "no bar chart drew a y axis, so this measures nothing"
+        eastern = "٠١٢٣٤٥٦٧٨٩٫٪"
+        for label in ticks:
+            assert not any(character in label for character in eastern), (
+                "the axis is being formatted for the active locale: %r" % label
+            )
+        listed = page.inner_text(".stats-breakdown-list")
+        assert "%" in listed and " kg" in listed
+        assert not any(character in listed for character in eastern)
+    finally:
+        context.close()

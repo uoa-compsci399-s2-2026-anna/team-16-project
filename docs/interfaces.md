@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-14 (v1.29 draft)"
+date: "2026-08-15 (v1.30 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,19 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.30 — 2026-08-15 (the three content pages are translated, and charts get a translation path of their own; affects C and D)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **v1.29 item 9 is closed and O-11 with it.** The statistics, home and documentation pages are translated into all twenty languages. **99 new keys, 299 per catalogue**, against the 201 v1.29 left standing — fewer than the 120–130 that row estimated, and the difference is not work skipped: the estimate counted strings per page, and the four navigation links, the footer sentence, the logo alt text and fifteen table column headers are each **one** key shared across pages and sections. One key was retired (see item 4). Every catalogue is again exactly complete: zero missing, zero orphaned | §7.7, O-11 |
+| 2 | **A chart is not reachable by `applyToDocument()`, and that is a second translation path rather than a gap in the first.** A Chart.js title (`plugins.title.text`) and a canvas `aria-label` are arguments to a constructor: once the chart exists the title is painted onto a bitmap and no DOM walk can find it or repaint it. **Changing language therefore destroys every chart on the statistics page and builds it again**, through the ordinary render path, from the response already held — `stats.js` does not re-fetch, because the figures do not depend on the language and a page that calls the service on every language change rate-limits itself. `BREAKDOWNS` holds **functions, not strings**, for the same reason: a constant is read once at module evaluation and stays in the language the page opened in. Asserted by reading the title off the live chart's laid-out title block in two languages, with the first canvases proved destroyed rather than left behind the new ones | §7.4, §7.7 |
+| 3 | **The key extractor lost every marked element nested inside another marked element, and the public navigation is exactly that shape.** `html_keys()` matched `<(\w+)([^>]*\bdata-i18n\b[^>]*)>(.*?)</\1>`, which matches a `<nav data-i18n-attr="aria-label">` — `\b` is satisfied by `data-i18n-attr` — and consumes everything through `</nav>`, swallowing the four `<a data-i18n>` links inside it on all three pages. **Nothing would have failed:** a key nobody extracts is a key no coverage test can ask for, and translating it fails the stale-key test instead, so the defect defends itself. It is an `html.parser` walk now, and a **new rule** comes with it: **a `data-i18n` element may not contain element children**, because `applyToDocument` assigns `textContent` and would delete them on the first language change. The footer's transparency line is written to that rule — the sentence in its own `<span>` beside the link, never a marker on the paragraph holding both | §7.7.1 |
+| 4 | **The documentation page's `<title>` is "Documentation \| …", settling the name v1.29 left open.** The navigation calls the page Documentation on all four pages, and the other two titles are the navigation label followed by the site name. `Methodology \| …` is retired from twenty catalogues; the `<h1>` still reads "Methodology and published factors", which is what the page *is* rather than what it is called | §7.6 |
+| 5 | **The two footers that differed by one word are now one string**, and `stats.html` and `home.html` gain the `<noscript>` note the calculator and the documentation page already carry. A near-duplicate is worse than a duplicate: a translator meets it twice and a reworded copy orphans only one of them | §7.6, §7.7.1 |
+| 6 | **A translation may be character-identical to its English source, and it must be declared.** `test_no_entry_is_blank_or_still_english` exists because a key carrying its own English value looks translated to every other test. But `Code` in French, `Name` in German and `Sector` in Dutch **are** the natural words, and forcing a synonym to satisfy a test would make the interface worse to read in exchange for a greener suite. So a small per-language allowlist carries them, and a second test fails on any entry in it that is **not** actually identical, so it can only be added deliberately and cannot outlive its reason | §7.7.1 |
+| 7 | **What these pages do not translate, stated so it is not read as an omission.** Statistics bucket labels are the API's `label` — destination, sector and food-category names staff typed into the panel, published exactly as written (§7.7.7), so a chart legend is identical in every language and a test asserts that it is. News post titles, excerpts and dates are the client's published words on their own site. Every figure — axis ticks, counts, shares, masses — stays pinned to `en-NZ`; read in Arabic, where `toLocaleString` would otherwise produce Eastern Arabic numerals, and asserted there. Date and number **formats** remain O-4, which promises nothing | §7.7.7, O-4 |
+| 8 | **Chinese is still the one unflagged catalogue, and it is still unread.** Nineteen languages carry the machine-translation notice and Chinese does not, because it has speakers on this project using the panel daily — that is the reason for the flag's value, not a claim that these 99 entries have been reviewed line by line. They have not been. §7.7 records it as outstanding rather than delivered | §7.7, O-8 |
 
 ### v1.29 — 2026-08-14 (D's statistics, home and documentation pages land; affects C, D and E)
 
@@ -2523,6 +2536,12 @@ Two locations because `[tool.setuptools.package-data]` cannot reach outside its 
 
 `endonym`, `machine_translated`, `dir` and `tags` live in the file so that **adding a language is adding a file**. `web/locales/index.json` repeats `language`, `endonym`, `machine_translated` and `tags` for every catalogue, so the chooser can label twenty-one options from the one fetch the front end already makes; a test holds the manifest to the catalogues it summarises.
 
+**Two rules about the markers themselves, both learned the hard way at v1.30:**
+
+**A `data-i18n` element may not contain element children.** `applyToDocument` assigns `element.textContent`, so a child element inside a marked one is deleted the first time the language changes — silently, and in every language except English. Write the sentence in its own `<span data-i18n>` beside the link, never a marker on the paragraph holding both. The keys are extracted with `html.parser`, not a regex: the regex that preceded it matched the *outermost* element whose attributes began `data-i18n` — which `data-i18n-attr` satisfies — and consumed everything to its closing tag, so the four `<a data-i18n>` links inside a marked `<nav>` were invisible to the whole suite.
+
+**An entry may be character-identical to its English source only when it is declared.** `Code` in French, `Name` in German, `Sector` in Dutch and `No` in Spanish are the natural words; forcing a synonym to satisfy the test that forbids an untranslated entry would make the interface worse to read. A per-language allowlist carries them, and a second test fails on any allowlisted entry that is **not** in fact identical, so the list can only grow deliberately and cannot outlive its reason.
+
 ### 7.7.2 How the language is chosen
 
 **One order, both surfaces.** `admin/i18n.py::resolve` and `web/js/i18n.js::resolve` implement it, and two surfaces that answered one visitor differently would be the defect a shared rule exists to prevent.
@@ -2600,6 +2619,12 @@ Decimals (they cross the wire as strings and take no locale-aware separator on e
 
 The consequence, stated rather than discovered: a Thai visitor gets a Thai interface listing English destination names.
 
+**On the statistics page this reaches into the charts**, and it is the rule most likely to be "fixed" by somebody who reads an English legend on a Thai page as a bug. Every bucket label — in a legend, in a tooltip and in the text list beneath the chart — is the API's `label`, so it is **identical in every language**, and a test asserts the legends are unchanged across a language switch rather than merely present. Every figure is likewise pinned to `en-NZ`: axis ticks, counts, shares and masses. Read in Arabic, where following the active locale would render Eastern Arabic numerals, and asserted there.
+
+**News content is the same rule pointed outward.** The home page's post titles, excerpts and dates come from the client's WordPress site and are published as written; only the page's own furniture around them is translated — the fallback wording for a post with no title, the link text and its accessible name.
+
+**Date and number *formats* are O-4, not O-8**, and O-4 promises nothing. `Intl.DateTimeFormat('en-NZ', …)` stays pinned on both the statistics page and the news feed; the sentence around a timestamp is translated, the timestamp is not reformatted.
+
 ### 7.7.8 The document element
 
 **Every page on both surfaces carries `lang` and `dir` on `<html>`, and both state what was actually rendered.**
@@ -2614,6 +2639,18 @@ The consequence, stated rather than discovered: a Thai visitor gets a Thai inter
 **`dir` is emitted on the panel although no panel catalogue is right-to-left.** It is derived from the catalogue rather than fixed, so the first RTL catalogue added to `admin/locales/` announces itself; an absent `dir` is not neutral, it keeps asserting left-to-right by omission. **This is not a claim that the panel's layout mirrors** — no RTL panel catalogue exists to try it on. The calculator's RTL layout is separately exercised, in Arabic and Urdu.
 
 > **This was a recorded defect from v1.27 and is closed at v1.28.** The panel proper rendered `<html lang="en">` in every language. `sqladmin`'s own `base.html` hardcodes it and the `<html>` element sits outside every block that template defines, so the seam that already replaces `topbar` cannot reach it. It is closed **without a second vendored template**: `admin/i18n.py::_HtmlElement` is a Jinja extension that rewrites that one line in sqladmin's own source as the template compiles. Nothing is copied, so an upgrade that adds to `base.html` is picked up in full — the opposite of the vendored `_macros.html`, whose stale copy suppressed 0.31.0's menu markup for a release cycle. The rewrite carries that copy's drift guard: a literal it cannot find raises rather than silently not applying, and the message names version skew as the first thing to check.
+
+### 7.7.9 Strings that are not in the DOM
+
+**`applyToDocument()` is not the whole mechanism, and a surface that assumes it is will translate everything except its most visible label.**
+
+`applyToDocument()` walks `data-i18n` markers and re-renders text nodes and attributes. That covers static HTML and every element a module builds. It cannot reach a string that was handed to something else at construction time — on this front end, a **Chart.js chart**: `plugins.title.text` is copied into the instance and painted onto a canvas bitmap, and the canvas's own `aria-label` is set once when the element is created.
+
+**So a chart is destroyed and rebuilt when the language changes.** `stats.js` holds its last statistics response and re-renders from it; `renderStats` calls `destroyCharts()` and then constructs each chart again, reading `t()` at construction. Three consequences are binding:
+
+1. **Nothing re-fetches.** The figures do not depend on the language, and a page that calls `GET /api/v1/stats` on every language change rate-limits itself. The same rule already applies to `methodology.js` and `GET /api/v1/factors`.
+2. **A translatable string reached by reference must be a function, not a constant.** `stats.js::BREAKDOWNS` holds `() => t('Destinations entered')`, the shape `methodology.js::METADATA_FIELDS` already used. A module-level constant is evaluated once, at import, and stays in the language the page opened in — which looks correct until somebody switches.
+3. **The test must read the rendered title, not the call.** `tests/web/test_i18n_browser.py::test_the_charts_are_rebuilt_in_the_new_language` reads the title off the live chart's laid-out title block, whose measured height is what distinguishes a drawn title from a stored string, compares it with the catalogue file in two languages, and asserts the previous canvases are no longer known to Chart.js — a chart left alive behind its replacement is the failure this path invites.
 
 ---
 

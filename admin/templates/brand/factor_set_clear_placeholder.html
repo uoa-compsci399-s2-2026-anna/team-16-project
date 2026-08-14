@@ -1,0 +1,174 @@
+{% extends "brand/base.html" %}
+{% import "brand/_account_hint.html" as account %}
+{% block title %}Clear the placeholder flag{% endblock %}
+
+{# The same generic module brand/delete_staff.html, brand/security.html and
+   brand/new_staff.html load. It opens any [data-dialog] target, closes any
+   [data-close-dialog], and re-opens modally whatever the server rendered
+   `open`. #}
+{% block head %}
+  <script type="module" src="/admin/static/security.js" defer></script>
+{% endblock %}
+
+{% block shell %}
+<main class="page">
+
+  <header class="page__head">
+    <div class="page__mark" aria-hidden="true"></div>
+    <h1>Clear the placeholder flag on {{ factor_set.version_label }}</h1>
+    <p class="page__who">
+      {% if is_published %}
+        This set is published, so this takes the warning off what the public
+        is reading now.
+      {% else %}
+        This set is {{ factor_set.status }}, so nothing changes for the public
+        until it is published.
+      {% endif %}
+    </p>
+  </header>
+
+  {# A refused submission comes back inside the dialog it was made in - a modal
+     covers the page, so a message printed behind it is a message nobody
+     reads. Only an error belonging to no dialog is shown here. #}
+  {% if error and not open_dialog %}
+    <div class="notice notice--error" role="alert">{{ error }}</div>
+  {% endif %}
+
+  {% if not factor_set.is_mock %}
+    <section class="panel">
+      <p>
+        <strong>{{ factor_set.version_label }}</strong> is not flagged as
+        placeholder data, so there is nothing here to clear.
+      </p>
+      <div class="actions">
+        <a class="button" href="{{ list_url }}">Back to factor sets</a>
+      </div>
+    </section>
+  {% else %}
+
+  <section class="panel" aria-labelledby="what-heading">
+    <h2 id="what-heading">What this does</h2>
+    <ul>
+      <li>
+        <strong>The placeholder-data warning disappears from every public
+        result and every export</strong> calculated from this set — the
+        results screens, the methodology page and every file a visitor
+        downloads. It is the only thing telling them the numbers are not real,
+        and a visitor cannot dismiss it while it is there.
+      </li>
+      <li>
+        {% if is_published %}
+          This set is published, so it happens <strong>immediately</strong>,
+          on the next calculation anybody runs.
+        {% else %}
+          This set is not published, so nothing the public sees changes today.
+          It changes the moment somebody publishes this set — and Publish does
+          not ask again.
+        {% endif %}
+      </li>
+      <li>
+        Nothing else about this set changes. Not one factor value, not the
+        version label, not the results anybody has already been shown.
+      </li>
+      <li>
+        The change is recorded in the audit log against your name, with the
+        value it went from and the value it went to.
+      </li>
+      <li>
+        It is reversible: <strong>Flag as placeholder data</strong> on the
+        factor-set list puts the warning straight back, in any status, without
+        asking for anything.
+      </li>
+    </ul>
+  </section>
+
+  <section class="panel" aria-labelledby="when-heading">
+    <h2 id="when-heading">Clear it when every number in this set is real</h2>
+    <p>
+      It is all or nothing — the warning cannot say that forty rows are
+      measured and twelve are still borrowed. The <strong>Data quality</strong>
+      note on each factor row is where that belongs.
+    </p>
+    <p>
+      The ordinary sequence is to publish the real numbers with this flag still
+      set, leave them running for a day or two and check them in front of real
+      use, and clear it only then. There is no need to clone this set to do it:
+      cloning would make a new version label for a change in which not one
+      factor value differs.
+    </p>
+    {% if factor_set.notes %}
+      <p class="muted">This set's notes: {{ factor_set.notes }}</p>
+    {% endif %}
+  </section>
+
+  <form method="post" autocomplete="off">
+    <input type="hidden" name="csrf_token" value="{{ csrf_token }}">
+    {# Round-tripped so the POST acts on the set the page above described. The
+       handler reads the row back from the database anyway - this is what was
+       shown, not what is permitted. #}
+    <input type="hidden" name="pks" value="{{ pks }}">
+    {# Same reason as brand/delete_staff.html: the proof field below is
+       autocomplete="current-password", so the browser looks for an account
+       name in this form and must be told which one it is. #}
+    {{ account.account_hint(signed_in_as, "acting-account-hint") }}
+
+    <div class="actions">
+      <button type="button" id="clear-placeholder" class="button button--danger"
+              data-dialog="dialog-confirm" aria-haspopup="dialog"
+              aria-controls="dialog-confirm">Clear the placeholder flag</button>
+      <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
+    </div>
+
+    {# Inside the form on purpose, so the hidden fields above submit with the
+       proof below as one request - and so the action bar is a direct child of
+       the dialog, which is what keeps it pinned (admin/static/brand.css's
+       note on `dialog.dialog > form`). Without JavaScript this dialog never
+       opens and the form cannot be submitted at all, the same property
+       brand/delete_staff.html has, and the reason the button that opens it is
+       type="button". #}
+    <dialog id="dialog-confirm" class="dialog"
+            aria-labelledby="dialog-confirm-title"
+            data-return-focus="clear-placeholder"
+            {% if open_dialog == 'confirm' %}open{% endif %}>
+      <h2 id="dialog-confirm-title">Confirm it is you</h2>
+      {% if open_dialog == 'confirm' and error %}
+        <div class="notice notice--error" role="alert">{{ error }}</div>
+      {% endif %}
+      <p>
+        This removes the placeholder-data warning from every public result and
+        every export{% if is_published %}, immediately{% endif %}. Only do it
+        when every number in
+        <strong>{{ factor_set.version_label }}</strong> is real.
+      </p>
+      <p class="muted">
+        It asks for proof beyond being signed in — being signed in is the one
+        thing somebody who had taken your session would also have.
+      </p>
+
+      {# The code first, the password beneath it, matching the proof blocks on
+         brand/delete_staff.html, brand/security.html and brand/new_staff.html.
+         Either is accepted and both must stay accepted: see
+         admin/auth.py::reauthenticate. #}
+      <fieldset class="proof">
+        <legend>Prove it is you</legend>
+        <label for="confirm-code">Code from your authenticator</label>
+        <input type="text" id="confirm-code" name="current_code"
+               autocomplete="one-time-code" inputmode="numeric"
+               data-initial-focus>
+        <label for="confirm-pw">…or your current password</label>
+        <input type="password" id="confirm-pw" name="current_password"
+               autocomplete="current-password">
+      </fieldset>
+
+      <div class="dialog__actions">
+        <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
+        <button type="submit" class="button button--danger">Clear the flag</button>
+      </div>
+    </dialog>
+  </form>
+  {% endif %}
+
+  <p><a href="{{ list_url }}">Back to factor sets</a></p>
+
+</main>
+{% endblock %}

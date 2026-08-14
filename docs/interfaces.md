@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-13 (v1.26 draft)"
+date: "2026-08-14 (v1.27 draft)"
 ---
 
 # 0. How to Use This Document
@@ -26,6 +26,25 @@ This document defines **what every person's code receives and what it returns.**
 ## 0.1 Change Log
 
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
+
+### v1.27 — 2026-08-14 (a language chooser on both surfaces, defaulting to the browser; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **v1.25 item 1 and v1.26 item 7 are amended: there is a language chooser on both surfaces, and one cookie is stored.** Negotiation was the only way to get a language, and a browser's setting is not always what a person wants an interface in — a Chinese-speaking visitor may deliberately prefer the English original and had no way to say so. **Negotiation becomes the default rather than the only behaviour.** The chooser sits at the **top inline-start** of every page; its first option is "Follow the system", which negotiates exactly as v1.26 specifies, and the rest select a language outright. **The v1.26 negotiation rule itself is untouched** — highest-priority tag only, English if it has no catalogue | §7.7, O-8 |
+| 2 | **`## 7.7 Interface Translation` is new, and it is where the dangling references land.** v1.24–v1.26 cite `§7`, `§7.6` and `§2.1` for translation behaviour, and until now none of those sections said anything about it: the only normative i18n text in this document was the change log. §7.7 carries the catalogue shape, the resolution order, the storage rule, the chooser, the surface asymmetry, `Vary`, what is never translated, and one known defect | §7.7 |
+| 3 | **The stored value is `kaicalc_lang`: path `/`, `SameSite=Lax`, one year, not `HttpOnly`, not `Secure`, value `auto` or a language code.** A cookie rather than `localStorage` — and the usual reason is wrong, because both surfaces are the same origin and `localStorage` would be shared too. The decisive reason is that **the panel renders server-side and must know the language before it emits HTML.** Not `HttpOnly`, because the calculator's JavaScript reads and writes the same cookie; that one cookie is what keeps this a single choice instead of two that drift | §7.7.3, O-8 |
+| 4 | **Why §2.3 permits it, written as the reason rather than as reassurance, because it has already been misread once in the other direction.** Two properties, and **both are needed**: it records something the visitor **deliberately declared** rather than something inferred from their browser; and its **value space is closed, tiny and free of entropy** — twenty-one values shared identically by everyone who picks the same language. The second is load-bearing. "The person declared it" alone would equally justify storing a name typed into a form, which would be a fingerprint by any measure — **it is the absence of entropy, not the presence of consent, that makes this incapable of identifying anyone.** Written down so the next reader neither deletes the cookie as a violation nor adds a genuinely identifying field believing consent licenses it | §2.3, §7.7.3 |
+| 5 | **"Follow the system" is a stored value — the literal `auto` — not an absent cookie.** Otherwise "chose to follow" and "never chose" are indistinguishable and the chooser cannot show what is in effect. The mechanical reason is stronger: reverting becomes an ordinary write instead of a deletion, and deleting a cookie reliably needs `Max-Age=0` with an exactly matching path and domain — get it wrong and the old value survives, so the chooser appears to revert and snaps back on the next page | §7.7.3 |
+| 6 | **Not entangled with `submission.token`.** Different name, lifetime and purpose; it neither extends nor refreshes the token and never reaches `submission`, `audit_log` or the access log. Because path `/` cannot be scoped away when both surfaces need it, the browser also attaches it to `POST /api/v1/calculate` — **the API receives it and ignores it, and a test asserts that** rather than leaving it obvious, the access log having been found writing four §2.3-forbidden fields on 2026-08-12 | §2.3, §7.7.3 |
+| 7 | **`?lang=` is unchanged and must not be confused with the chooser.** Still a one-request override that persists nothing, still emitted by no control, still ignored when unrecognised. A support link must not silently re-language its recipient for good. The two share no mechanism: the chooser is a form post on the panel and a `<select>` writing a cookie on the calculator, and neither touches the URL. Precedence is `?lang=` → cookie → negotiation → English | §7.7.2 |
+| 8 | **"It must work without JavaScript" means different things on the two surfaces, and the calculator's version of the rule is not the obvious one.** The panel renders through FastAPI and genuinely works with scripting off, so its chooser is a real `<form method="post">` with a submit button and no `onchange`. **The calculator is ES modules end to end and renders nothing without scripting** — no steps, no taxonomy, no results — so a chooser needing JavaScript adds no degradation it did not already have, and building it in `web/js/i18n.js` means it can never exist as a control that is present and does nothing. A `<noscript>` note names the page, not the language control | §7.7.4 |
+| 9 | **"Top left" is written as top inline-start**, so it is top-left in English and top-right in Arabic and Urdu. A control pinned physically left in a mirrored page lands at the reading-*end* of the header. It is a bar **above** the header rather than inside it: the brand guidelines forbid altering the logo, and crowding a control into the lockup is an alteration by another name. It sits **below** the machine-translation notice, which stays `document.body.firstElementChild`. Measured in a browser at 390px and 1280px in both directions, not inferred from `dir` | §7.7.4 |
+| 10 | **The machine-translation warning now also marks its own option**, so it can be read before somebody picks rather than only after. The non-dismissible notice is unchanged, and is now **removed when the language changes away** and **re-worded when it changes between two machine-translated languages** — a notice that outlived the language it warned about would be a false statement about a reviewed page. English and Chinese carry neither. `web/locales/index.json` gains `endonym` and `machine_translated` per entry so the chooser can label twenty-one options from the fetch it already makes | §7.7.1, §7.7.4 |
+| 11 | **The two surfaces do not ship the same languages, and the panel says so instead of pretending.** The calculator has twenty-one, the panel has two. The panel's chooser **lists only what the panel has** — no dead entries — and when the stored choice names a language it lacks it renders **English** (not the browser's language, which the visitor had already overridden) and **names the missing language in that language's own script.** **The cookie is left untouched**, which is the assertion worth the most: the tempting implementation rewrites it to `auto` and destroys the calculator's language from an unrelated screen | §7.7.5 |
+| 12 | **`Vary: Accept-Language, Cookie` on the panel**, still appended rather than assigned. `Cookie` is added because the response now depends on the stored choice, which **overrides** the header and is therefore the more dangerous half to omit. Cost is nil — the panel is authenticated and uncacheable. **The static origin still sets no `Vary`, and that is the payoff of the client-side chooser**: every visitor gets a byte-identical `index.html` and the cookie is read after the response arrives. Server-side negotiation there would have meant a cached copy of the HTML, the stylesheet and both font faces per visitor | §7.7.6 |
+| 13 | **Three tests were rewritten rather than deleted**, having been written to make this reversal deliberate: `test_nothing_about_the_negotiation_is_persisted`, `test_no_language_picker_is_rendered_anywhere` and `test_nothing_is_stored_about_the_language`. Each now asserts the **bounded** behaviour — one cookie, one closed value space, a control that is a form rather than a bare `<select>`, and nothing stored until somebody chooses — because "nothing is stored" and "only this is stored" are different claims and the second is the one now being made | §7.7.3 |
+| 14 | **A defect recorded rather than fixed: the panel proper renders `<html lang="en">` whatever language it is in.** sqladmin's own layout hardcodes it and the element sits outside every block that layout defines, so closing it means forking a template this panel deliberately does not fork. It pre-dates the chooser and is not caused by it; a Chinese page announced as English is read aloud by a screen reader in English phonetics. `brand/base.html` and the calculator both get it right. A test asserts the defect so it fails the day it becomes fixable | §7.7.8 |
 
 ### v1.26 — 2026-08-13 (only the first language is consulted; affects C, D and E)
 
@@ -2450,6 +2469,109 @@ Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embe
 5. **Iterate over metrics and equivalences; never hard-code their codes.** A view that lists `['co2e','water','cost']` silently omits the metric a staff member added, and adding a metric is meant to cost one `INSERT` and one formula (§2.1).
 6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show. The sign classes and the arrow convention are in §7.3a under `improvement.js`; use those four classes rather than a second set.
 7. **No page may request an asset from a third-party host at runtime.** Fonts, scripts, stylesheets, icons and images are served from this origin. `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to a third party before the first paint — on a calculator whose stated privacy position is §2.3's, and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The brand fonts are in `web/assets/fonts/`. **This binds §7.4:** Chart.js is self-hosted, never loaded from a CDN.
+
+---
+
+## 7.7 Interface Translation
+
+> **This section is the normative one.** Until v1.27 the only i18n text in this document was the change log, and the `§7` / `§7.6` / `§2.1` references in the v1.24–v1.26 rows pointed at sections that said nothing about translation. Those references resolve here.
+
+Owners: C and D on the calculator, E on the panel. Open item O-8.
+
+### 7.7.1 The shape of a catalogue
+
+**The English source string is the key.** `t('Save')` looks up `"Save"`. There is no separate key namespace, a missing key renders its own English source, and one file is one language.
+
+```
+admin/locales/<lang>.json    read by Python, shipped as wheel package data
+web/locales/<lang>.json      fetched by the browser
+web/locales/index.json       the manifest a browser reads before any catalogue
+```
+
+Two locations because `[tool.setuptools.package-data]` cannot reach outside its own package and the two Dockerfiles copy disjoint trees — a top-level `i18n/` would be in neither image. What the two share is the contract: one key rule, one fallback rule, one file shape, one notice rule, **one stored choice**.
+
+```json
+{ "language": "zh", "endonym": "中文（简体）", "machine_translated": false,
+  "dir": "ltr", "tags": ["zh", "zh-Hans", "zh-CN"],
+  "strings": { "Save": "保存" } }
+```
+
+`endonym`, `machine_translated`, `dir` and `tags` live in the file so that **adding a language is adding a file**. `web/locales/index.json` repeats `language`, `endonym`, `machine_translated` and `tags` for every catalogue, so the chooser can label twenty-one options from the one fetch the front end already makes; a test holds the manifest to the catalogues it summarises.
+
+### 7.7.2 How the language is chosen
+
+**One order, both surfaces.** `admin/i18n.py::resolve` and `web/js/i18n.js::resolve` implement it, and two surfaces that answered one visitor differently would be the defect a shared rule exists to prevent.
+
+| Rank | Source | Persists? |
+| --- | --- | --- |
+| 1 | `?lang=` — matched on its own, ignored if unrecognised | **No.** One request. |
+| 2 | The `kaicalc_lang` cookie, when it names a catalogue | Already stored |
+| 3 | `auto`, absent, or unrecognised ⇒ negotiate: the browser's **highest-priority tag only** (v1.26) | No |
+| 4 | English | — |
+
+Matching inside one tag is unchanged: RFC 4647 truncation, with a catalogue's own `tags` claim tried first, so `en-NZ` reaches English, `zh-CN` reaches Simplified and `zh-TW` reaches Traditional.
+
+**`?lang=` and the chooser must not be confused for one another.** `?lang=` exists for testing, screenshots and support; it writes nothing, and **no control emits it** — a link pasted into a support thread must not silently re-language the recipient's browser for good. They share no mechanism: the chooser is a `<form method="post">` on the panel and a `<select>` writing a cookie on the calculator, and neither touches the URL.
+
+### 7.7.3 What is stored, and why §2.3 permits it
+
+**One cookie: `kaicalc_lang`, path `/`, `SameSite=Lax`, `Max-Age` one year, not `HttpOnly`, not `Secure`.** Its value is `auto` or a language code with a catalogue; anything else is treated as `auto`.
+
+**A cookie rather than `localStorage`, and the usual reason is wrong.** Both surfaces are the same origin, so `localStorage` would in fact be shared. The decisive reason is that **the panel renders server-side and must know the language before it emits HTML**, which `localStorage` cannot answer. Not `HttpOnly`, because the calculator's JavaScript reads and writes the same cookie. Not `Secure`, because it carries no secret and `Secure` would stop it working on the plain-http localhost the stack is developed and demonstrated on.
+
+> **§2.3 forbids storing an IP address, a user agent or a browser fingerprint. This cookie is none of them, and the reason has two halves that are both required.**
+>
+> 1. **It records something the visitor deliberately declared**, not something inferred from their browser. Reading `Accept-Language` and forgetting it, and storing "this visitor chose English", are different acts with different justifications. The first observes; the second obeys.
+> 2. **Its value space is closed, tiny and free of entropy** — twenty-one values, shared identically by everyone who picks the same language. A field that cannot distinguish two visitors cannot correlate them, whatever else it records.
+>
+> **The second half is the load-bearing one.** Property 1 alone would equally justify storing a name somebody typed into a form, which would be a fingerprint by any measure. It is the absence of entropy, not the presence of consent, that makes this incapable of identifying anyone. **Both halves are written here so that the next reader neither deletes this cookie as a §2.3 violation nor adds a genuinely identifying field believing that consent licenses it** — this distinction has already been mishandled once in the other direction, when an implementer declined to read `Accept-Language` at all.
+
+**"Follow the system" is a stored value — the literal `auto` — not the absence of one.** Otherwise "chose to follow" and "never chose" are indistinguishable and the chooser cannot show what is in effect. The mechanical reason matters more: reverting becomes an ordinary write rather than a cookie deletion, and deleting a cookie reliably requires re-sending it with `Max-Age=0` and an exactly matching path and domain — get that wrong and the old value survives, so the chooser appears to revert and snaps back on the next page.
+
+**It is not entangled with the de-duplication token.** `submission.token` (§2.3) is a different name, a different lifetime and a different purpose. The language cookie neither extends nor refreshes it, and **never appears in `submission`, in `audit_log`, or in the access log.** Because path `/` cannot be scoped away when both surfaces need the cookie, the browser also attaches it to `POST /api/v1/calculate`; **the API receives it and ignores it**, and that is asserted by a test rather than left as obvious — the access log was found writing four §2.3-forbidden fields on 2026-08-12.
+
+### 7.7.4 The chooser
+
+**Top inline-start of every page, above the header.** "Top left" is physical and two catalogues render right-to-left, so it is implemented as the inline-start of a bar and lands top-right in Arabic and Urdu. Not inside the header: the brand guidelines forbid altering the logo, and crowding a control into the lockup is an alteration by another name. Not above the machine-translation notice, which is a statement about the whole page and stays `document.body.firstElementChild`.
+
+**Each language in its own name** — `Deutsch`, never `German`. An endonym is never passed through `t()`.
+
+**Machine-translated languages are marked on their own option**, so the warning can be read *before* somebody picks and not only after. The non-dismissible notice is unchanged. English and Chinese carry neither.
+
+**It must work without JavaScript, and the two surfaces satisfy that differently:**
+
+- **The panel** renders through FastAPI and genuinely works with scripting off, so its chooser is a real `<form method="post">` posting to `/admin/language`, with a visible submit button and no `onchange`. It is registered outside sqladmin's `login_required` wrapper, because the login page is the page a person who does not read English needs most.
+- **The calculator** is ES modules end to end and renders nothing without scripting. Its chooser is therefore **built by `web/js/i18n.js`**, so it can never exist as a control that is present and does nothing, and `index.html` carries a `<noscript>` note about the page as a whole. A chooser requiring JavaScript adds no degradation this page did not already have.
+
+**Changing language re-renders in place; it must not reload.** The wizard's state lives in memory, so a reload would discard every entry a visitor had typed.
+
+**The panel's endpoint carries no CSRF token, deliberately.** `admin/csrf.py::issue_token` writes into the session and would mint a signed session cookie for every anonymous visitor to the login page, which today mints none — a real per-visitor identifier created to protect a cosmetic preference. A stateless same-origin check on `Origin` stands in its place. The `next` field is validated as a path within `/admin` and never used as a URL.
+
+### 7.7.5 The two surfaces do not ship the same languages
+
+The calculator ships twenty-one; the panel ships English and Chinese. **The panel's chooser lists only what the panel has** — no dead entries.
+
+When the stored choice names a language the panel has no catalogue for, the panel renders **English** (not the browser's language, which the visitor had already overridden), and **states beside the chooser which language it could not give them, in that language's own name.**
+
+**The cookie is left exactly as it was.** Silently rendering English would pretend no choice was made; showing "Follow the system" as selected would be a lie about what is stored; and rewriting the cookie to `auto` would destroy the calculator's language from a screen the visitor opened for an unrelated reason. That last is the tempting implementation and is asserted against.
+
+This branch is narrower than it looks: it requires a stored language that no panel catalogue claims *even after truncation*, so `zh-Hant` never reaches it.
+
+### 7.7.6 `Vary` and caching
+
+**The panel appends `Vary: Accept-Language, Cookie`** to every response, including the ones its inner middlewares refuse — a 403 cached without it is served to everyone. Appended, never assigned: FastAPI sets `Vary: Cookie` on session responses and overwriting it would let a cache serve one staff member's page to another. `Cookie` joined the header at v1.27 because the response now depends on the stored choice, which **overrides** the header and is therefore the more dangerous half to omit. The cost is nil: the panel is authenticated and no shared cache stores it.
+
+**The static origin sets no `Vary`, and still does not.** This is the payoff of building the calculator's chooser client-side: every visitor is served a byte-identical `index.html` and the cookie is read by JavaScript after the response arrives. Had the calculator negotiated server-side, `Vary: Cookie` there would mean a separate cached copy of the HTML, the stylesheet and both font faces per visitor — a cache that stores everything and hits on nothing.
+
+### 7.7.7 What is never translated
+
+Decimals (they cross the wire as strings and take no locale-aware separator on either surface); `code` identifiers; factor set version labels; metric units and `metric.name`; the equivalence sentences, which §3 defines as `label_template` interpolated by the engine; the operator messages in `admin/cli.py` and `docker/init.sh`; and **everything a staff member typed** — destination names, food categories, sector names, factor notes, audit log contents. Ruled 2026-08-14: anything a staff member can edit is published exactly as written.
+
+The consequence, stated rather than discovered: a Thai visitor gets a Thai interface listing English destination names.
+
+### 7.7.8 Known defect
+
+**The panel proper renders `<html lang="en">` whatever language it is in.** sqladmin's own layout hardcodes it and the `<html>` element sits outside every block that layout defines, so it cannot be overridden the way `topbar` is; closing it means forking a template this panel deliberately does not fork. It matters — a Chinese page announced as English is read aloud by a screen reader in English phonetics. `brand/base.html` gets it right on the five gate pages and `web/js/i18n.js` gets it right on the calculator; this is the one surface that does not. Pre-dates the chooser and is not closed by it. `tests/admin/test_i18n_pages.py` asserts the defect so that it fails the day it becomes fixable.
 
 ---
 

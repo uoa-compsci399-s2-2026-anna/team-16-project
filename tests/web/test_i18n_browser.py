@@ -250,15 +250,347 @@ def test_an_unrecognised_lang_is_ignored_and_the_browser_still_decides(browser):
         context.close()
 
 
-def test_nothing_is_stored_about_the_language(browser):
-    """No cookie, no localStorage, no sessionStorage key. A language is a
-    property of a request, and the only thing this calculator keeps in the
-    browser is the section 2.3 session token."""
+def test_nothing_is_stored_until_a_choice_is_made(browser):
+    """**This test replaced its own opposite**, and the bound is what changed.
+
+    It used to assert `context.cookies() == []` outright, so that storing
+    anything had to be a deliberate act rather than a quiet one. It was. What
+    it asserts now is narrower and more useful: **merely visiting stores
+    nothing.** Negotiation still keeps nothing, and the cookie appears only
+    when somebody uses the control.
+
+    `localStorage` stays empty in both cases - the choice is a cookie because
+    the panel has to read it server-side, and a second copy in `localStorage`
+    would be a second thing to keep in step.
+    """
     context, page = open_page(browser, ["zh-CN", "en"])
     try:
-        assert context.cookies() == []
+        assert context.cookies() == [], "visiting the page stored something"
         assert page.evaluate("Object.keys(localStorage)") == []
         assert "lang" not in " ".join(page.evaluate("Object.keys(sessionStorage)"))
+    finally:
+        context.close()
+
+
+def _choose(page, value):
+    """Operate the control the way a person does, and wait for the result.
+
+    `select_option` fires `change`, which is what the chooser listens for. The
+    wait is on the rendered text rather than on a timeout: the handler fetches
+    a catalogue, so asserting immediately would race it.
+    """
+    page.select_option("#language-chooser", value)
+    page.wait_for_function(
+        "(want) => document.getElementById('language-chooser')?.value === want",
+        arg=value,
+    )
+    # The handler repaints the chooser after the catalogue arrives, so wait for
+    # the document to be announced in the language that was asked for rather
+    # than for the select alone - the select's value updates synchronously on
+    # `change` and would let every assertion below race the fetch.
+    page.wait_for_function(
+        "(want) => want === 'auto' || document.documentElement.lang.startsWith("
+        "want === 'zh-Hant' ? 'zh' : want)",
+        arg=value,
+    )
+
+
+def test_the_chooser_is_present_usable_and_at_the_top_inline_start(browser):
+    """Present is not usable, and this project has shipped that six times.
+
+    So: in the viewport without scrolling, big enough to touch, actually
+    reachable by keyboard, and carrying a real accessible name rather than a
+    bare `<select>` a screen reader announces as nothing.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        box = page.locator("#language-chooser").bounding_box()
+        assert box is not None, "the chooser is not rendered at all"
+        assert box["height"] >= 44, f"below the 44px touch target: {box}"
+        assert box["y"] < page.evaluate("window.innerHeight"), "below the fold"
+
+        # A real accessible name, from a real <label for>.
+        assert page.evaluate(
+            """() => document.querySelector('label[for="language-chooser"]')
+                 ?.textContent.trim()"""
+        ) == "Language"
+
+        # Keyboard reachable: focus it and confirm it took focus.
+        page.locator("#language-chooser").focus()
+        assert page.evaluate("document.activeElement.id") == "language-chooser"
+
+        # And it is above the header rather than inside it, which is what keeps
+        # the brand lockup untouched.
+        assert page.evaluate(
+            "() => document.querySelector('.language-bar')"
+            ".compareDocumentPosition(document.getElementById('site-header'))"
+            " & Node.DOCUMENT_POSITION_FOLLOWING"
+        )
+    finally:
+        context.close()
+
+
+def test_choosing_a_language_survives_a_reload_and_another_page(browser):
+    """The whole point of the feature, driven the way a person drives it.
+
+    Select, reload, navigate to a second page - and only then assert. A test
+    that asserted straight after the click would prove the DOM updated, not
+    that anything was remembered.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        _choose(page, "zh")
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
+
+        stored = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
+        assert len(stored) == 1 and stored[0]["value"] == "zh"
+        assert stored[0]["path"] == "/", "the panel could not read it at any other path"
+        assert stored[0]["httpOnly"] is False, "web/js/i18n.js has to read it"
+
+        page.reload(wait_until="networkidle")
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
+        assert page.eval_on_selector("#language-chooser", "el => el.value") == "zh"
+
+        page.goto(f"{BASE}/methodology.html", wait_until="networkidle")
+        assert page.eval_on_selector("#language-chooser", "el => el.value") == "zh"
+        assert "透明" in page.inner_text("body") or "方法" in page.inner_text("body")
+    finally:
+        context.close()
+
+
+def test_follow_the_system_reverts_and_is_stored_rather_than_deleted(browser):
+    """Going back is a write, not a deletion, and the page follows the browser again.
+
+    The `value == "auto"` assertion is the one that kills the tempting
+    implementation: clearing the cookie would also make the page revert, and
+    would then be indistinguishable from never having chosen - and a cookie
+    deletion that misses on path or domain silently leaves the old value.
+    """
+    context, page = open_page(browser, ["zh-CN", "en"])
+    try:
+        _choose(page, "en")
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
+
+        _choose(page, "auto")
+        # Back to the browser's own language, which is Chinese here.
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
+
+        stored = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
+        assert len(stored) == 1, "follow-the-system deleted the cookie"
+        assert stored[0]["value"] == "auto"
+    finally:
+        context.close()
+
+
+def test_lang_does_not_write_the_choice(browser):
+    """A shared support link must not re-language the recipient for good.
+
+    This is what keeps `?lang=` and the chooser from being confused for one
+    another: one renders a page, the other remembers.
+    """
+    context, page = open_page(browser, ["en-NZ"], query="?lang=th")
+    try:
+        assert page.get_attribute("html", "lang") == "th"
+        assert [c for c in context.cookies() if c["name"] == "kaicalc_lang"] == []
+    finally:
+        context.close()
+
+
+def test_a_stored_choice_beats_the_browser_and_the_notice_follows(browser):
+    """Chinese browser, English chosen - the case the chooser was asked for.
+
+    The notice assertions are the second half: switching into a machine
+    translated language must raise it, and switching out must remove it. A
+    notice that outlived the language it warned about would be a false
+    statement about a reviewed page.
+    """
+    context, page = open_page(browser, ["zh-CN", "en"])
+    try:
+        assert page.locator("#machine-translation-notice").count() == 0
+
+        _choose(page, "th")
+        assert page.locator("#machine-translation-notice").count() == 1
+        assert page.evaluate(
+            "document.body.firstElementChild.id"
+        ) == "machine-translation-notice", "the chooser displaced the notice"
+
+        _choose(page, "en")
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
+        assert page.locator("#machine-translation-notice").count() == 0, (
+            "the notice outlived the language it was warning about"
+        )
+    finally:
+        context.close()
+
+
+def test_switching_twice_does_not_strand_the_page_in_the_first_language(browser):
+    """The defect `applyToDocument`'s key-pinning exists to prevent.
+
+    `data-i18n` with no value means "my own text is the key". After one switch
+    that text is Chinese, so a second switch looks the Chinese up as a key,
+    finds nothing, and leaves the page stuck. Two switches and a return to
+    English is the shortest sequence that catches it; the footer is asserted
+    because it is static HTML translated by `applyToDocument` rather than
+    re-rendered by the wizard.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        english = page.inner_text("footer")
+        _choose(page, "zh")
+        chinese = page.inner_text("footer")
+        assert chinese != english
+
+        _choose(page, "ja")
+        japanese = page.inner_text("footer")
+        assert japanese not in (english, chinese), "stranded in the first language"
+
+        _choose(page, "en")
+        assert page.inner_text("footer") == english, "cannot get back to English"
+    finally:
+        context.close()
+
+
+def test_the_machine_translated_options_are_marked_before_anyone_picks(browser):
+    """The warning belongs on the option too, not only after the choice.
+
+    Chinese and English carry no mark - English is hand-written and Chinese is
+    reviewed by its users - and asserting that is what stops the marker being
+    applied to everything.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        labels = page.evaluate(
+            "() => Object.fromEntries(Array.from("
+            "document.querySelectorAll('#language-chooser option')"
+            ").map(o => [o.value, o.textContent]))"
+        )
+        assert "machine translated" in labels["th"]
+        assert "machine translated" in labels["ar"]
+        assert "machine translated" not in labels["zh"]
+        assert "machine translated" not in labels["en"]
+        # The endonym itself is never translated away.
+        assert "中文" in labels["zh"] and labels["en"] == "English"
+        assert labels["auto"] == "Follow the system"
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_the_chooser_is_usable_at_every_width(browser, width):
+    """390px is a phone. A control that overflows there is not a control.
+
+    The horizontal-overflow assertion is the one that matters: the language bar
+    is a new row at the top of every page and is the most likely thing to widen
+    the document.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 800},
+        extra_http_headers={"Accept-Language": "en-NZ"},
+    )
+    try:
+        page = context.new_page()
+        page.goto(f"{BASE}/", wait_until="networkidle")
+        box = page.locator("#language-chooser").bounding_box()
+        assert box is not None and box["height"] >= 44, f"{width}px: {box}"
+        assert box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (
+            f"{width}px: the chooser is off screen: {box}"
+        )
+        assert not page.evaluate(
+            "document.documentElement.scrollWidth > "
+            "document.documentElement.clientWidth + 1"
+        ), f"{width}px: the page scrolls sideways"
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
+    """"Top left" is physical, and Arabic renders right-to-left.
+
+    **Measured, not trusted.** `dir="rtl"` on its own proves nothing - the
+    whole point of the logical-property conversion is that the bar moves. So
+    the chooser's distance from each edge is measured in both directions and
+    the two must swap: inline-start in English is the left edge, and in Arabic
+    it is the right one.
+    """
+    def measure(languages):
+        context = browser.new_context(
+            viewport={"width": width, "height": 800},
+            extra_http_headers={"Accept-Language": ",".join(languages)},
+        )
+        try:
+            page = context.new_page()
+            page.add_init_script(
+                _LANGUAGES_SHIM.format(
+                    languages=json.dumps(languages), first=json.dumps(languages[0])
+                )
+            )
+            page.goto(f"{BASE}/", wait_until="networkidle")
+            # Measured against the BAR's own edges rather than the viewport's.
+            # The bar is full width, so a viewport measurement says the same
+            # thing, but only by coincidence - the claim being tested is that
+            # the content sits at the bar's reading-start edge.
+            return page.evaluate(
+                """() => {
+                  const bar = document.querySelector('.language-bar');
+                  const el = document.getElementById('language-chooser');
+                  const label = bar.querySelector('.language-bar__label');
+                  const b = bar.getBoundingClientRect();
+                  const s = el.getBoundingClientRect();
+                  const l = label.getBoundingClientRect();
+                  return {
+                    dir: document.documentElement.dir,
+                    // Gap between the bar's edge and the first thing in it.
+                    gapLeft: Math.round(Math.min(s.left, l.left) - b.left),
+                    gapRight: Math.round(b.right - Math.max(s.right, l.right)),
+                    labelLeftOfSelect: l.left < s.left,
+                    overflows:
+                      document.documentElement.scrollWidth >
+                      document.documentElement.clientWidth + 1,
+                  };
+                }"""
+            )
+        finally:
+            context.close()
+
+    rtl = measure(["ar"])
+    ltr = measure(["en-NZ"])
+
+    assert ltr["dir"] == "ltr" and rtl["dir"] == "rtl"
+    # The content hugs the reading-start edge, which is the left in English and
+    # the right in Arabic. Asserted as a swap rather than against a constant, so
+    # that changing the bar's padding does not require editing this test.
+    assert ltr["gapLeft"] < ltr["gapRight"], f"{width}px: not at the start in ltr"
+    assert rtl["gapRight"] < rtl["gapLeft"], f"{width}px: not mirrored in rtl"
+    assert ltr["gapLeft"] == rtl["gapRight"], (
+        f"{width}px: the two directions are not mirror images: {ltr} vs {rtl}"
+    )
+    # The label leads the control in reading order in both directions, which is
+    # the half that `dir` alone would not give us.
+    assert ltr["labelLeftOfSelect"] and not rtl["labelLeftOfSelect"]
+    assert not rtl["overflows"], f"{width}px: the right-to-left page scrolls sideways"
+
+
+def test_the_calculator_says_it_needs_scripting_rather_than_offering_a_dead_control(
+    browser,
+):
+    """With JavaScript off there is no chooser at all, and a note saying why.
+
+    The note is about the calculator, not about the language control: this page
+    is ES modules end to end and renders nothing without scripting, so a
+    chooser that needed JavaScript added no degradation. What would have been
+    wrong is a `<select>` sitting in the static HTML doing nothing.
+    """
+    context = browser.new_context(java_script_enabled=False)
+    try:
+        page = context.new_page()
+        page.goto(f"{BASE}/", wait_until="domcontentloaded")
+        assert page.locator("#language-chooser").count() == 0, (
+            "a language control is present with scripting off and cannot work"
+        )
+        notice = page.locator(".noscript-notice")
+        assert notice.count() == 1 and notice.is_visible()
+        assert "JavaScript" in notice.inner_text()
     finally:
         context.close()
 

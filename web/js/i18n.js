@@ -344,8 +344,19 @@ async function load() {
   const forced = new URLSearchParams(window.location?.search || '').get('lang')
   const manifest = await readJson(new URL('index.json', LOCALES_BASE))
   if (!manifest) return
-  const index = tagIndex(manifest.catalogues)
   active.catalogues = manifest.catalogues || []
+  // **English is put into the index, and the manifest does not list it.**
+  // English has no catalogue file - its strings are the keys - so `index.json`
+  // has nothing to say about it. Building the lookup from the manifest alone
+  // therefore made `'en'` an unknown tag, and both `readStoredChoice` and
+  // `storeChoice` rejected it: choosing English stored `auto`, which on a
+  // Chinese browser rendered Chinese. That is the single case this whole
+  // feature was asked for, and it silently did nothing.
+  //
+  // Negotiation is unaffected. `match('en-NZ')` used to return null and let
+  // `negotiate` fall through to `DEFAULT_LANGUAGE`; it now truncates to `'en'`
+  // and returns it. Same answer, one step earlier.
+  const index = tagIndex([{ language: DEFAULT_LANGUAGE, tags: ['en'] }, ...active.catalogues])
   active.index = index
 
   const stored = readStoredChoice(document.cookie, index)

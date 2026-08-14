@@ -884,9 +884,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    this control is a real `<select>` rather than a styled listbox: the platform's own
    picker is reachable by keyboard, announced by every screen reader, and legible at
    390px without a single line of script beyond the change handler. */
+/* `max-width` is load-bearing, not cosmetic. A `<select>` sizes itself to its
+   widest option, and the widest here is an endonym followed by "machine
+   translated" - left alone it stretched to over 1100px on a desktop viewport
+   and pushed the control away from the edge it is supposed to sit against. The
+   closed control truncates; the open list does not. */
 .language-bar__select {
   min-height: 44px;
-  max-width: 100%;
+  max-width: min(100%, 30ch);
   padding: 6px 8px;
   color: var(--kai-kale);
   border: 1px solid var(--border);

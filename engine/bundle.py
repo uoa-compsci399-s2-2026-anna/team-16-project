@@ -144,11 +144,14 @@ class FactorBundle:
         §6.2 for a caller who declined to give one -- so step 2 is keyed on
         what was said and step 3 may be keyed on what was assumed.
 
-        `sector=None` asks for the every-sector rows directly, which is why
-        steps 3 and 4 are plain `.get` calls and not presence tests on
-        something assumed absent: when `sector` is `None`, step 1 *is* step 3
-        and step 2 *is* step 4. The same holds for `food_cat`, which is the
-        shape `upstream()` above already has.
+        `sector=None` asks for the every-sector rows directly, and `food_cat`
+        may be `None` on the same terms, so the four candidates are not always
+        four distinct keys: when `sector` is `None`, step 1 *is* step 3 and
+        step 2 *is* step 4. That is why every step is *looked up* rather than
+        reached by assuming an earlier one missed — the loop below repeats a
+        key harmlessly, whereas an `if exact not in ...: return fallback` shape
+        would answer with the wrong row, or with none. `upstream()` above
+        carries the same caveat for its own two-step order.
         """
         candidates = (
             (destination, sector, food_cat, metric),

@@ -174,10 +174,18 @@ export function destroyCharts() {
  * the number does not sit where English puts it. It is split on the placeholder
  * *after* the lookup and *before* substitution, so the emphasis survives without
  * any markup crossing the catalogue.
+ *
+ * **It takes the translated sentence, not the key, and that is not a style
+ * choice.** Written the other way — `sentenceAround('Across %(count)s …')`, with
+ * the `t()` call inside — the literal is an argument to *this* function rather
+ * than to `t()`, so `tests/web/i18n_keys.py` never extracts it, no catalogue is
+ * required to carry it, and every test passes while the headline of the
+ * statistics page renders in English on an Arabic screen. It did, and it was
+ * caught by looking at a screenshot rather than by anything in the suite.
  */
-function sentenceAround(template, value, className) {
+function sentenceAround(translated, value, className) {
   const paragraph = element('p', { className })
-  const [before, after = ''] = t(template).split('%(count)s')
+  const [before, after = ''] = translated.split('%(count)s')
   paragraph.append(before, element('strong', { text: value }), after)
   return paragraph
 }
@@ -185,7 +193,7 @@ function sentenceAround(template, value, className) {
 function renderSummary(stats, target) {
   const fragment = document.createDocumentFragment()
   fragment.append(sentenceAround(
-    'Across %(count)s calculations run in this tool.',
+    t('Across %(count)s calculations run in this tool.'),
     integer(stats.total_calculations),
     'stats-calculation-total',
   ))

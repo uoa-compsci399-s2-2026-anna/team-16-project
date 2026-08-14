@@ -305,6 +305,7 @@
     "Value per kg": "فی کلوگرام قدر",
     "Value per unit": "فی یونٹ قدر",
     "What we record": "ہم کیا ریکارڈ کرتے ہیں",
-    "Yes": "جی ہاں"
+    "Yes": "جی ہاں",
+    "Across %(count)s calculations run in this tool.": "اس ٹول میں کیے گئے %(count)s حسابات میں۔"
   }
 }

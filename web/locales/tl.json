@@ -305,6 +305,7 @@
     "Value per kg": "Halaga bawat kg",
     "Value per unit": "Halaga bawat yunit",
     "What we record": "Ano ang itinatala namin",
-    "Yes": "Oo"
+    "Yes": "Oo",
+    "Across %(count)s calculations run in this tool.": "Sa kabuuan ng %(count)s na pagtuos na isinagawa sa kasangkapang ito."
   }
 }

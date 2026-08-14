@@ -305,6 +305,7 @@
     "Value per kg": "القيمة لكل كغم",
     "Value per unit": "القيمة لكل وحدة",
     "What we record": "ما الذي نسجّله",
-    "Yes": "نعم"
+    "Yes": "نعم",
+    "Across %(count)s calculations run in this tool.": "عبر %(count)s من العمليات الحسابية التي أُجريت في هذه الأداة."
   }
 }

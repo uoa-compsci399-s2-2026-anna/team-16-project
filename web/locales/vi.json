@@ -304,6 +304,7 @@
     "Value per kg": "Giá trị mỗi kg",
     "Value per unit": "Giá trị mỗi đơn vị",
     "What we record": "Chúng tôi ghi lại những gì",
-    "Yes": "Có"
+    "Yes": "Có",
+    "Across %(count)s calculations run in this tool.": "Trên tổng số %(count)s phép tính đã chạy trong công cụ này."
   }
 }

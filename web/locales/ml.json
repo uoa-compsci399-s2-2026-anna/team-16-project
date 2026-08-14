@@ -304,6 +304,7 @@
     "Value per kg": "കിലോയ്ക്ക് മൂല്യം",
     "Value per unit": "യൂണിറ്റിന് മൂല്യം",
     "What we record": "ഞങ്ങൾ എന്ത് രേഖപ്പെടുത്തുന്നു",
-    "Yes": "അതെ"
+    "Yes": "അതെ",
+    "Across %(count)s calculations run in this tool.": "ഈ ഉപകരണത്തിൽ നടത്തിയ %(count)s കണക്കുകൂട്ടലുകളിൽ ഉടനീളം."
   }
 }

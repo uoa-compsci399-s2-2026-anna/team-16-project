@@ -304,6 +304,7 @@
     "Value per kg": "કિલોગ્રામ દીઠ મૂલ્ય",
     "Value per unit": "એકમ દીઠ મૂલ્ય",
     "What we record": "અમે શું નોંધીએ છીએ",
-    "Yes": "હા"
+    "Yes": "હા",
+    "Across %(count)s calculations run in this tool.": "આ ટૂલમાં કરેલી %(count)s ગણતરીઓમાં."
   }
 }

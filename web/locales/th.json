@@ -304,6 +304,7 @@
     "Value per kg": "ค่าต่อกิโลกรัม",
     "Value per unit": "ค่าต่อหน่วย",
     "What we record": "ข้อมูลที่เราบันทึก",
-    "Yes": "ใช่"
+    "Yes": "ใช่",
+    "Across %(count)s calculations run in this tool.": "จากการคำนวณ %(count)s ครั้งที่ทำในเครื่องมือนี้"
   }
 }

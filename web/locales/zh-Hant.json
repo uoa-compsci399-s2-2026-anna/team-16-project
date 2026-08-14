@@ -307,6 +307,7 @@
     "Value per kg": "每公斤數值",
     "Value per unit": "每單位數值",
     "What we record": "我們記錄哪些資訊",
-    "Yes": "是"
+    "Yes": "是",
+    "Across %(count)s calculations run in this tool.": "本工具中已執行的 %(count)s 次計算。"
   }
 }

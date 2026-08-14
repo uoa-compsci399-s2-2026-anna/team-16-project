@@ -304,6 +304,7 @@
     "Value per kg": "Wert je kg",
     "Value per unit": "Wert je Einheit",
     "What we record": "Was wir speichern",
-    "Yes": "Ja"
+    "Yes": "Ja",
+    "Across %(count)s calculations run in this tool.": "Aus %(count)s in diesem Rechner durchgeführten Berechnungen."
   }
 }

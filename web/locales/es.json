@@ -304,6 +304,7 @@
     "Value per kg": "Valor por kg",
     "Value per unit": "Valor por unidad",
     "What we record": "Qué registramos",
-    "Yes": "Sí"
+    "Yes": "Sí",
+    "Across %(count)s calculations run in this tool.": "En el conjunto de %(count)s cálculos realizados en esta herramienta."
   }
 }

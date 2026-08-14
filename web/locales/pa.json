@@ -306,6 +306,7 @@
     "Value per kg": "ਪ੍ਰਤੀ ਕਿਲੋ ਮੁੱਲ",
     "Value per unit": "ਪ੍ਰਤੀ ਇਕਾਈ ਮੁੱਲ",
     "What we record": "ਅਸੀਂ ਕੀ ਦਰਜ ਕਰਦੇ ਹਾਂ",
-    "Yes": "ਹਾਂ"
+    "Yes": "ਹਾਂ",
+    "Across %(count)s calculations run in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ %(count)s ਗਣਨਾਵਾਂ ਵਿੱਚ।"
   }
 }

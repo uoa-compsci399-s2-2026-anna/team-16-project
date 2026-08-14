@@ -304,6 +304,7 @@
     "Value per kg": "kg あたりの値",
     "Value per unit": "単位あたりの値",
     "What we record": "記録する内容",
-    "Yes": "はい"
+    "Yes": "はい",
+    "Across %(count)s calculations run in this tool.": "このツールで行われた計算 %(count)s 件全体の集計です。"
   }
 }

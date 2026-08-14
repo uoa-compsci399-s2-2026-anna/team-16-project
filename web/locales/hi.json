@@ -304,6 +304,7 @@
     "Value per kg": "प्रति किलोग्राम मान",
     "Value per unit": "प्रति इकाई मान",
     "What we record": "हम क्या दर्ज करते हैं",
-    "Yes": "हाँ"
+    "Yes": "हाँ",
+    "Across %(count)s calculations run in this tool.": "इस टूल में की गई %(count)s गणनाओं में।"
   }
 }

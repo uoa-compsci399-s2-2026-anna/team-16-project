@@ -1313,6 +1313,46 @@ def test_the_content_pages_translate_their_own_prose(browser, path, heading, lan
         context.close()
 
 
+@pytest.mark.parametrize("language", ["zh", "ar"])
+def test_the_statistics_summary_is_translated_around_its_figure(browser, language):
+    """The one string on these pages that shipped English after the first pass.
+
+    It reads "Across 1,247 calculations run in this tool.", and the figure sits
+    in a `<strong>` inside the sentence. That is built by splitting the
+    translation on its placeholder, and the first version passed the **key** to
+    the helper that splits - so the literal was an argument to that helper
+    rather than to `t()`, `tests/web/i18n_keys.py` never extracted it, no
+    catalogue was required to carry it, and the headline of the statistics page
+    rendered in English on an Arabic screen with the whole suite green. It was
+    found by looking at a screenshot.
+
+    So it is asserted here, in two languages, against the catalogue's own entry
+    with the placeholder filled the way the page fills it - and the figure is
+    checked to be still inside its `<strong>`, because a fix that translated the
+    sentence by dropping the emphasis would be a different regression.
+    """
+    strings = i18n_keys.catalogue(language)["strings"]
+    expected = strings["Across %(count)s calculations run in this tool."].replace(
+        "%(count)s", "1,247"
+    )
+    context, page = open_page(
+        browser, [language, "en"], path="/stats.html", stats_fixture=True
+    )
+    try:
+        page.wait_for_selector(".stats-calculation-total")
+        assert page.inner_text(".stats-calculation-total") == expected
+        assert page.inner_text(".stats-calculation-total strong") == "1,247", (
+            "the figure is no longer emphasised inside the sentence"
+        )
+        # The two sentences under it, which are ordinary `t()` calls and would
+        # not have caught the defect above on their own.
+        assert page.inner_text(".stats-breakdown-note >> nth=0") == strings[
+            "Share of destination entries across calculations run in this tool."
+        ]
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("path", sorted(CONTENT_PAGES))
 def test_the_notice_and_the_chooser_reach_every_content_page(browser, path):
     """The gap this batch was written to close.

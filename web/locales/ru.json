@@ -304,6 +304,7 @@
     "Value per kg": "Значение на кг",
     "Value per unit": "Значение на единицу",
     "What we record": "Что мы сохраняем",
-    "Yes": "Да"
+    "Yes": "Да",
+    "Across %(count)s calculations run in this tool.": "Всего расчётов, выполненных в этом инструменте: %(count)s."
   }
 }

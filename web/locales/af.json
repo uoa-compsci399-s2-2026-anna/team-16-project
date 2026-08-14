@@ -304,6 +304,7 @@
     "Value per kg": "Waarde per kg",
     "Value per unit": "Waarde per eenheid",
     "What we record": "Wat ons aanteken",
-    "Yes": "Ja"
+    "Yes": "Ja",
+    "Across %(count)s calculations run in this tool.": "Oor %(count)s berekenings wat in hierdie hulpmiddel uitgevoer is."
   }
 }

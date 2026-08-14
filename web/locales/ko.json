@@ -304,6 +304,7 @@
     "Value per kg": "kg당 값",
     "Value per unit": "단위당 값",
     "What we record": "기록하는 정보",
-    "Yes": "예"
+    "Yes": "예",
+    "Across %(count)s calculations run in this tool.": "이 도구에서 실행된 계산 %(count)s건 전체입니다."
   }
 }

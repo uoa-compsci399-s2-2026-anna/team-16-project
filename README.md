@@ -117,16 +117,27 @@ fails; the other one starts and reports **healthy**; `web` never starts at all, 
 waits on `api: service_healthy` **and** `admin: service_healthy`. So the symptom is:
 
 ```
-Error response from daemon: failed to bind host port for 0.0.0.0:18001 ... address already in use
-$ docker ps
+Error response from daemon: driver failed programming external connectivity on endpoint
+kaicalc-admin: failed to bind port 0.0.0.0:18001/tcp: ... address already in use
+
+$ docker ps                          # what you look at afterwards
 kaicalc-api          Up 30 seconds (healthy)
 kaicalc-stack-db     Up 35 seconds (healthy)
+
+$ docker compose -f docker/compose.yaml ps -a      # what actually happened
+SERVICE   STATUS
+admin     Created
+api       Up 30 seconds (healthy)
+db        Up 35 seconds (healthy)
+migrate   Exited (0)
+web       Created
 ```
 
 — one application container, healthy, and nothing on <http://localhost:18080/>. The bind
-error is printed once, by the `up` that failed, and `docker ps` afterwards shows a
-plausible-looking subset with no error in it. `docker compose -f docker/compose.yaml ps -a`
-is the command that shows what is missing rather than what is there.
+error is printed once, by the `up` that failed. `docker ps` afterwards shows a
+plausible-looking subset with no error in it, because a container that was **created and
+never started** is not a container `docker ps` lists. `ps -a` is the command that shows
+what is missing rather than what is there.
 
 Move the ports rather than hunting the process:
 

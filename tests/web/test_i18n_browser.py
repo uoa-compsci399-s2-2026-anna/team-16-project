@@ -347,6 +347,22 @@ def test_choosing_a_language_survives_a_reload_and_another_page(browser):
         assert stored[0]["path"] == "/", "the panel could not read it at any other path"
         assert stored[0]["httpOnly"] is False, "web/js/i18n.js has to read it"
 
+        # **The chooser translates itself, not only the page around it.**
+        # `i18n_keys.py` finds these three strings by reading the constants they
+        # are declared as, so a chooser that stopped passing them through `t()`
+        # would keep every catalogue complete and every file-level test green -
+        # a mutation that did exactly that survived the whole suite until this
+        # assertion existed. Only a rendered page catches it.
+        assert page.eval_on_selector(
+            'label[for="language-chooser"]', "el => el.textContent.trim()"
+        ) == "语言"
+        assert page.eval_on_selector(
+            '#language-chooser option[value="auto"]', "el => el.textContent.trim()"
+        ) == "跟随系统"
+        assert "机器翻译" in page.eval_on_selector(
+            '#language-chooser option[value="th"]', "el => el.textContent"
+        )
+
         page.reload(wait_until="networkidle")
         assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
         assert page.eval_on_selector("#language-chooser", "el => el.value") == "zh"

@@ -576,7 +576,7 @@ The claim is now enforced by data, and data can stop enforcing it. A `(sector, f
 
 That last one closes the gap this paragraph originally described as an open follow-up. It also means the rule is now something a staff member meets as a refusal rather than a convention they are trusted to remember — which is why the field-level help on the upstream screen states it as a consequence and not as advice. If that guard is ever relaxed, this section and that help text both become untrue.
 
-## O-8 — interface translation — **DELIVERED 2026-08-13: the panel in Chinese, the calculator in twenty languages**
+## O-8 — interface translation — **DELIVERED 2026-08-13: the panel in Chinese, the calculator in twenty languages; a language chooser on both surfaces 2026-08-14**
 
 Recorded as unpromised until the first client demonstration. Two of the
 positions this entry used to hold were overturned there and one was confirmed,
@@ -598,11 +598,11 @@ and confirmed.
 | Surface | Languages | State | Reviewed? |
 | --- | --- | --- | --- |
 | Admin panel | English | ~900 strings, the source language | Written by hand |
-| Admin panel | Chinese (`zh`) | **Built.** 177 catalogue entries | **Yes** — by the people who use the panel daily |
+| Admin panel | Chinese (`zh`) | **Built.** 181 catalogue entries | **Yes** — by the people who use the panel daily |
 | Admin panel | any other | Mechanism ready; no catalogue written | — |
-| Public calculator | English | 198 translatable strings, the source language | Written by hand |
-| Public calculator | Chinese (`zh`) | **Built.** 198 entries | Reviewable by the team; **not yet re-read for these 198** |
-| Public calculator | 19 others | **Built.** 198 entries each | **No. Machine translated and unread — and the page says so** |
+| Public calculator | English | 201 translatable strings, the source language | Written by hand |
+| Public calculator | Chinese (`zh`) | **Built.** 201 entries | Reviewable by the team; **not yet re-read for these 201** |
+| Public calculator | 19 others | **Built.** 201 entries each | **No. Machine translated and unread — and the page says so** |
 
 **The calculator's other nineteen**, in the client's own ordering: Traditional
 Chinese, Hindi, Tagalog, Panjabi, Korean, Afrikaans, French, German, Spanish,
@@ -622,7 +622,7 @@ under a different name.
 
 **The Chinese calculator catalogue carries no notice**, on the panel's basis:
 it is the one language with speakers on this project. It is new, it has not yet
-been read line by line for these 198 strings, and that read is the first
+been read line by line for these 201 strings, and that read is the first
 follow-up below rather than a claim made here.
 
 **The admin panel came into scope, and went first.** This entry previously
@@ -765,7 +765,8 @@ been mishandled in each direction:
 The middle row needs two properties and **both are required**. It records
 something the visitor **deliberately declared**, not something inferred from
 their browser. And its **value space is closed, tiny and free of entropy** —
-twenty-one values, shared identically by everyone who picks the same language.
+twenty-two values in total — twenty-one languages and `auto` — shared
+identically by everyone who picks the same one.
 
 **The second is the load-bearing one.** "The person declared it" would equally
 justify storing a name somebody typed into a form, which would be a fingerprint
@@ -1178,10 +1179,10 @@ stronger.
 
 ### What is not translated yet, and why the number is written down
 
-**The calculator is complete: 198 of 198 strings, in twenty languages.** The
+**The calculator is complete: 201 of 201 strings, in twenty languages.** The
 count is read out of the front end by `tests/web/i18n_keys.py` rather than
 maintained by hand — `t('...')` calls, the `data-i18n` markers in the two HTML
-files, and four module-level constants whose contents reach `t()` by reference
+files, and seven module-level constants whose contents reach `t()` by reference
 — so a label added without a translation fails the suite rather than shipping
 in English. A key nobody asks for any more fails it too, because a stale entry
 makes a reworded string look translated.

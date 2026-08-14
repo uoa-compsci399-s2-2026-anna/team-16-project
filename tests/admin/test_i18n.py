@@ -452,7 +452,7 @@ def test_the_stored_choice_is_the_only_thing_that_is_persisted():
     "nothing is stored" but "only this is stored, and only these values".
 
     The value space is the assertion that matters. It is what makes the cookie
-    incapable of identifying anybody - twenty-one possible values shared
+    incapable of identifying anybody - twenty-two possible values shared
     identically by everyone who picks the same language, with no entropy for a
     correlator to key on. A field that could carry a free-form string would be a
     fingerprint however it got there, so the closed set is checked rather than

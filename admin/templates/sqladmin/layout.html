@@ -31,6 +31,21 @@
    screen in the panel as it ships. It is here so that the first
    machine-translated catalogue dropped into admin/locales/ cannot ship
    silently. #}
+{# KNOWN DEFECT, PRE-DATING THE CHOOSER AND NOT CLOSED BY IT: the panel proper
+   renders `<html lang="en">` whatever language it is in. sqladmin's own layout
+   hardcodes it and the `<html>` element sits OUTSIDE every block that layout
+   defines, so it cannot be overridden the way `topbar` is below - closing it
+   means forking a template this panel deliberately does not fork (see
+   admin/i18n.py's docstring for why forking is the thing being avoided).
+
+   It matters: a Chinese page announced as English is read aloud by a screen
+   reader in English phonetics, which is unreadable rather than merely wrong.
+   `brand/base.html` gets this right on the five gate pages, and web/js/i18n.js
+   gets it right on the calculator; this is the one surface that does not.
+
+   tests/admin/test_i18n_pages.py asserts the defect rather than the fix, so
+   that the day sqladmin adds a block - or somebody decides the fork is worth
+   it - the test fails and this note goes with it. #}
 {% extends "sqladmin_original/layout.html" %}
 
 {% block topbar %}

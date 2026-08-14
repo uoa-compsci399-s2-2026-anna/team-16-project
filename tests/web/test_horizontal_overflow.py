@@ -180,6 +180,51 @@ def test_the_factor_notes_still_carry_the_token_that_caused_the_overflow(browser
     )
 
 
+@pytest.mark.parametrize("language", ("ar", "ur", "en"))
+def test_the_row_labels_are_not_broken_mid_word_to_make_room(browser, language):
+    """**The regression the first attempt at the fix caused, caught by looking.**
+
+    Letting the `<dd>` break anywhere is right - it holds a URL from the
+    database. Letting the `<dt>` do it is not: it holds a translated label, and
+    the `<dd>` beside it will take every pixel it is allowed to. The first fix
+    applied both properties to both elements and every overflow assertion above
+    passed; the Arabic label `ملاحظات` had collapsed to a 1px column 760px
+    tall, one letter per line.
+
+    So this counts line boxes rather than measuring a width, which is
+    language-neutral and needs no threshold: a label that fits on one line has
+    exactly one client rect. Run in both RTL languages and in English, because
+    the failure was invisible in English - no label here is a single unbroken
+    word long enough to be squeezed.
+    """
+    context, page = _open(browser, "/methodology.html", language, 390)
+    try:
+        lines = page.evaluate(
+            """
+            () => {
+              const out = [];
+              for (const dt of document.querySelectorAll('.review-destinations dt')) {
+                const node = [...dt.childNodes].find(n => n.nodeType === 3 && n.textContent.trim());
+                if (!node) continue;
+                const range = document.createRange();
+                range.selectNodeContents(node);
+                out.push({text: node.textContent.trim(), lines: range.getClientRects().length});
+              }
+              return out;
+            }
+            """
+        )
+    finally:
+        context.close()
+
+    assert lines, "no row labels were found to check"
+    broken = [row for row in lines if row["lines"] > 1]
+    assert not broken, (
+        f"row labels are being broken across lines to make room for the value "
+        f"beside them, in {language}: {broken}"
+    )
+
+
 def test_the_long_token_wraps_instead_of_widening_its_row(browser):
     """The mechanism, not just the outcome, anchored on the element itself.
 

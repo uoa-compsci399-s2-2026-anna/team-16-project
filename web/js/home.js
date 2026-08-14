@@ -1,6 +1,21 @@
+/**
+ * The home page: the hero, and the Kai Commitment news feed. Contract §7.5, §7.7.
+ *
+ * **The posts themselves are never translated.** Title, excerpt and date come
+ * from the client's WordPress site; they are published content in the language
+ * the client wrote them in, which is the same rule §7.7.7 states for anything
+ * staff can edit. What is translated is the furniture around them — the fallback
+ * wording when a post carries no title, the date-unavailable line, the link text
+ * and its accessible name — so a Thai reader gets a Thai page listing English
+ * headlines rather than an English page.
+ */
+
 import { fetchNews } from './news.js'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 
 let latestRequestGeneration = 0
+// Held so a language change re-renders the cards without asking WordPress again.
+let latestPosts = null
 
 function element(tag, options = {}) {
   const node = document.createElement(tag)
@@ -17,6 +32,9 @@ function displayDate(value) {
   if (typeof value !== 'string' || !value || Number.isNaN(date.getTime())) return null
 
   const time = element('time', { attributes: { datetime: value } })
+  // `en-NZ`, not the active language. A date *format* is O-4 — localisation
+  // beyond language — which is open and promises nothing; §7.7.7 keeps figures
+  // off locale-aware formatting on both surfaces.
   time.textContent = new Intl.DateTimeFormat('en-NZ', {
     year: 'numeric',
     month: 'long',
@@ -69,17 +87,19 @@ function safeNewsLink(value) {
  */
 export function createNewsCard(post = {}) {
   const article = element('article', { className: 'home-news-card' })
+  // The post's own title and excerpt are the client's published words and pass
+  // through untouched; only the fallbacks, which this page wrote, are translated.
   const title = typeof post.title === 'string' && post.title.trim()
     ? post.title.trim()
-    : 'Kai Commitment update'
+    : t('Kai Commitment update')
   const excerpt = typeof post.excerpt === 'string' && post.excerpt.trim()
     ? post.excerpt.trim()
-    : 'Read the latest update from Kai Commitment.'
+    : t('Read the latest update from Kai Commitment.')
   const date = displayDate(post.date)
   const link = safeNewsLink(post.link)
 
   if (date) article.append(date)
-  else article.append(element('p', { className: 'home-news-date', text: 'Date unavailable' }))
+  else article.append(element('p', { className: 'home-news-date', text: t('Date unavailable') }))
 
   article.append(element('h3', { text: title }))
   article.append(element('p', { text: excerpt }))
@@ -87,12 +107,12 @@ export function createNewsCard(post = {}) {
   if (link) {
     article.append(element('a', {
       className: 'home-news-link',
-      text: 'Read this update',
+      text: t('Read this update'),
       attributes: {
         href: link,
         target: '_blank',
         rel: 'noopener noreferrer',
-        'aria-label': `Read “${title}” on the Kai Commitment website (opens in a new tab)`,
+        'aria-label': t('Read “%(title)s” on the Kai Commitment website (opens in a new tab)', { title }),
       },
     }))
   }
@@ -110,7 +130,7 @@ export function renderNews(posts, target = document.querySelector('#news-feed'))
   if (usablePosts.length === 0) {
     target.replaceChildren(element('p', {
       className: 'empty-state',
-      text: 'Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.',
+      text: t('Latest news is temporarily unavailable. You can still use the calculator and explore the documentation.'),
       attributes: { role: 'status' },
     }))
     target.setAttribute('aria-busy', 'false')
@@ -131,16 +151,26 @@ export async function loadNews(options = {}) {
   try {
     const posts = await (options.fetchNews || fetchNews)(6)
     if (generation !== latestRequestGeneration) return null
+    latestPosts = posts
     renderNews(posts, target)
     return posts
   } catch (error) {
-    if (generation === latestRequestGeneration) renderNews([], target)
+    if (generation === latestRequestGeneration) {
+      latestPosts = []
+      renderNews([], target)
+    }
     throw error
   } finally {
     if (generation === latestRequestGeneration && target) {
       target.setAttribute('aria-busy', 'false')
     }
   }
+}
+
+/** Redraw the cards in whatever language is now active, from what was already
+ *  fetched. The static chrome is `applyToDocument()`'s; this is the feed's. */
+export function rerenderInActiveLanguage() {
+  if (latestPosts !== null) renderNews(latestPosts)
 }
 
 if (typeof window !== 'undefined' && typeof document !== 'undefined') {
@@ -150,6 +180,9 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   window.addEventListener('pagehide', leavePage)
   window.addEventListener('beforeunload', leavePage)
   if (document.querySelector('#news-feed')) {
+    applyDocumentLanguage()
+    applyToDocument()
+    installLanguageChooser(rerenderInActiveLanguage)
     loadNews().catch(error => {
       // API failures have already become an empty feed in fetchNews. Re-surface an
       // unexpected program defect without leaving it as a silent rejected promise.

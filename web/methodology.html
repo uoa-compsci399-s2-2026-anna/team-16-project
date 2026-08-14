@@ -3,31 +3,19 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Read the published formulas, constants, impact factors and provenance used by the Kai Commitment food waste impact calculator.">
-    <!-- **The page's structure is D's and the `data-i18n` markers are HEAD's, and the
-         two are not in conflict.** D rewrote this page against contract v1.17 and the
-         rewrite wins on substance: §6.3 exists so `source_note` and `data_quality`
-         reach a public surface, and the page HEAD shipped published neither. But D
-         branched before interface translation existed, so the rewrite also deleted
-         every catalogue key this page owns — and
-         `test_no_catalogue_carries_a_key_the_front_end_never_asks_for` runs once per
-         language, twenty-one times.
+    <meta name="description" data-i18n-attr="content" content="Read the published formulas, constants, impact factors and provenance used by the Kai Commitment food waste impact calculator.">
+    <!-- **"Documentation" won the name, and the `<title>` follows the navigation.**
+         Batch one left this reading "Methodology | …" while all four pages'
+         navigation called the page "Documentation", and recorded the choice as batch
+         two's to make: the old wording was a key in twenty catalogues and the new one
+         was in none, so settling it meant retranslating either way.
 
-         So wherever D kept a string, HEAD's exact wording and its marker are kept with
-         it; D's genuinely new strings (the description, the navigation, "What we
-         record", "Background reading") carry no marker at all, because marking them
-         would make them source strings and fail
-         `test_every_source_string_is_translated` against catalogues that do not have
-         them yet. Translating them is batch two, and batch two is deliberately after
-         this one so it translates the strings as they end up rather than as they
-         arrived.
-
-         The title still reads "Methodology" while the navigation calls the page
-         "Documentation". That is the same decision: "Methodology | …" is a key in
-         twenty-one catalogues and "Documentation | …" is in none. The `<h1>` says
-         "Methodology and published factors", so the page is coherent either way, and
-         batch two settles which name wins. -->
-    <title data-i18n>Methodology | Kai Commitment Food Waste Impact Calculator</title>
+         The navigation wins because it is the name the page is reached by, on every
+         page, and because the other two titles are "Home | …" and "Statistics | …" —
+         the nav label, then the site. The `<h1>` still says "Methodology and published
+         factors", which is what the page *is* rather than what it is called; the two
+         were never in conflict, only unsettled. -->
+    <title data-i18n>Documentation | Kai Commitment Food Waste Impact Calculator</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="methodology-page">
@@ -43,11 +31,11 @@
           <img src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </a>
-        <nav class="public-nav" aria-label="Primary navigation">
-          <a href="./home.html">Home</a>
-          <a href="./index.html">Calculator</a>
-          <a href="./stats.html">Statistics</a>
-          <a href="./methodology.html" aria-current="page">Documentation</a>
+        <nav class="public-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
+          <a href="./home.html" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" aria-current="page" data-i18n>Documentation</a>
         </nav>
       </div>
     </header>
@@ -65,13 +53,13 @@
       <div id="factor-content" aria-live="polite" aria-busy="true"></div>
 
       <section class="review-block methodology-explanation" aria-labelledby="what-we-record">
-        <h2 id="what-we-record">What we record</h2>
-        <p>The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.</p>
+        <h2 id="what-we-record" data-i18n>What we record</h2>
+        <p data-i18n>The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.</p>
       </section>
 
       <section class="review-block methodology-explanation" aria-labelledby="background-reading-heading">
-        <h2 id="background-reading-heading">Background reading</h2>
-        <p>No approved background-reading sources have been provided. Approved background reading has not yet been provided because this page only lists client-approved sources.</p>
+        <h2 id="background-reading-heading" data-i18n>Background reading</h2>
+        <p data-i18n>No approved background-reading sources have been provided. Approved background reading has not yet been provided because this page only lists client-approved sources.</p>
       </section>
 
       <p><a class="button button-secondary methodology-back-link" href="./index.html" data-i18n>Back to calculator</a></p>
@@ -79,7 +67,7 @@
 
     <footer>
       <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record">What we record</a></p>
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record" data-i18n>What we record</a></p>
     </footer>
     <script type="module" src="./js/methodology.js"></script>
   </body>

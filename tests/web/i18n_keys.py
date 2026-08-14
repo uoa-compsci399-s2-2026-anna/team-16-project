@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import re
+from html.parser import HTMLParser
 from pathlib import Path
 
 WEB = Path(__file__).resolve().parents[2] / "web"
@@ -66,8 +67,80 @@ _LITERAL = re.compile(r"'((?:[^'\\]|\\.)*)'")
 _BLOCK_COMMENT = re.compile(r"/\*.*?\*/", re.S)
 _LINE_COMMENT = re.compile(r"^\s*//.*$", re.M)
 
-_ELEMENT = re.compile(r"<(\w+)([^>]*\bdata-i18n\b[^>]*)>(.*?)</\1>", re.S)
-_ATTRIBUTE_HOST = re.compile(r"<\w+[^>]*\bdata-i18n-attr=\"([^\"]+)\"[^>]*>")
+#: HTML elements that never carry a closing tag, so nothing may be nested in
+#: them and nothing waits for `</meta>`.
+_VOID = {
+    "area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta",
+    "param", "source", "track", "wbr",
+}
+
+
+class _MarkedElements(HTMLParser):
+    """The `data-i18n` keys in one HTML file, parsed rather than matched.
+
+    **This was a regex and the regex lost keys.** ``<(\\w+)([^>]*\\bdata-i18n\\b
+    [^>]*)>(.*?)</\\1>`` matched the *outermost* marked element and consumed
+    everything up to its closing tag, so a marked element inside another marked
+    element was never scanned. That is not hypothetical: the public navigation is
+    a ``<nav data-i18n-attr="aria-label">`` — which the pattern matched, because
+    ``\\bdata-i18n\\b`` is happily satisfied by ``data-i18n-attr`` — wrapping four
+    ``<a data-i18n>`` links. The nav swallowed all four, and `Home`,
+    `Calculator`, `Statistics` and `Documentation` were absent from every
+    catalogue on all three pages while every test stayed green: the coverage test
+    cannot ask for a key nobody extracted, and the stale-key test would have
+    *failed* had anyone translated them.
+
+    `html.parser` reads the tree the browser reads, so a marked element nested in
+    another is found wherever it is, and `nested` records the one structure the
+    runtime cannot survive - see `has_element_children`.
+    """
+
+    def __init__(self) -> None:
+        super().__init__(convert_charrefs=True)
+        self.keys: set[str] = set()
+        #: (outer tag, inner tag) for every ELEMENT child of a `data-i18n`
+        #: element. `applyToDocument` assigns `element.textContent`, which
+        #: deletes those children, so this is a defect wherever it appears.
+        self.has_element_children: list[tuple[str, str]] = []
+        self._open: list[str] = []
+        #: depth -> [tag, explicit key or '', collected text]
+        self._marked: dict[int, list] = {}
+
+    def handle_starttag(self, tag, attrs):
+        attributes = dict(attrs)
+        for name in (attributes.get("data-i18n-attr") or "").split(","):
+            value = attributes.get(name.strip())
+            if value:
+                self.keys.add(value)
+        for record in self._marked.values():
+            self.has_element_children.append((record[0], tag))
+        if tag not in _VOID:
+            self._open.append(tag)
+            if "data-i18n" in attributes:
+                self._marked[len(self._open)] = [tag, attributes["data-i18n"] or "", []]
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+        if tag not in _VOID and self._open and self._open[-1] == tag:
+            self.handle_endtag(tag)
+
+    def handle_endtag(self, tag):
+        if tag in _VOID or tag not in self._open:
+            return
+        while self._open:
+            depth = len(self._open)
+            open_tag = self._open.pop()
+            record = self._marked.pop(depth, None)
+            if record is not None:
+                key = record[1] or "".join(record[2]).strip()
+                if key:
+                    self.keys.add(key)
+            if open_tag == tag:
+                return
+
+    def handle_data(self, data):
+        for record in self._marked.values():
+            record[2].append(data)
 
 
 def _strip_comments(text: str) -> str:
@@ -98,25 +171,26 @@ def javascript_keys() -> set[str]:
     return {key for key in keys if key.strip()}
 
 
+def _parse(path: Path) -> _MarkedElements:
+    parser = _MarkedElements()
+    parser.feed(path.read_text(encoding="utf-8"))
+    parser.close()
+    return parser
+
+
+def html_pages() -> list[Path]:
+    return sorted(WEB.glob("*.html"))
+
+
+def marked_elements(path: Path) -> _MarkedElements:
+    """One page's parse, exposed so a test can assert on its structure."""
+    return _parse(path)
+
+
 def html_keys() -> set[str]:
     keys: set[str] = set()
-    for path in sorted(WEB.glob("*.html")):
-        text = path.read_text(encoding="utf-8")
-        for _tag, attributes, body in _ELEMENT.findall(text):
-            explicit = re.search(r'data-i18n="([^"]*)"', attributes)
-            key = explicit.group(1) if explicit and explicit.group(1) else body.strip()
-            if key and "<" not in key:
-                keys.add(key)
-        for names in _ATTRIBUTE_HOST.findall(text):
-            for name in names.split(","):
-                attribute = name.strip()
-                for host in re.findall(
-                    rf'<\w+[^>]*\bdata-i18n-attr="[^"]*{re.escape(attribute)}[^"]*"[^>]*>',
-                    text,
-                ):
-                    value = re.search(rf'\b{re.escape(attribute)}="([^"]*)"', host)
-                    if value:
-                        keys.add(value.group(1))
+    for path in html_pages():
+        keys |= _parse(path).keys
     return keys
 
 

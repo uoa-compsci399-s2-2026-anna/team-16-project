@@ -20,12 +20,18 @@
  * catalogue key this page owns across twenty-one languages.
  *
  * So: wherever D kept a string, HEAD's exact English and its `t()` call are kept
- * with it. D's genuinely new strings are plain literals with no `t()`, because a
- * `t()` call makes a string a *source string* and
- * `test_every_source_string_is_translated` runs against catalogues that do not
- * have them yet. Translating them, and the ~120 others the three new pages
- * introduce, is batch two — deliberately after this pass, so it translates the
- * strings as they end up rather than as they arrived.
+ * with it. **Batch two, which is this state of the file, translated the rest** —
+ * every section title, intro, column header and empty state D introduced, plus
+ * the mock-data warning — deliberately after batch one, so it translated the
+ * strings as they ended up rather than as they arrived.
+ *
+ * **What is still deliberately English is not an omission.** Every *value* in
+ * these tables is either a staff-typed field (§7.7.7: published exactly as
+ * written — `source_note`, `data_quality`, notes, and every `code`), a decimal
+ * that crosses the wire as a string and is printed as it arrived, or a metric
+ * unit. The page translates its own furniture and republishes the service's
+ * content untouched, which is what makes a translated documentation page still
+ * a record of what was published.
  */
 
 import { ApiError, getFactors } from './api.js'
@@ -100,7 +106,11 @@ function makeTable({ caption, columns, rows }) {
   table.append(body)
   return element('div', {
     className: 'table-scroll',
-    attributes: { tabindex: '0', role: 'region', 'aria-label': `${caption}, horizontally scrollable` },
+    attributes: {
+      tabindex: '0',
+      role: 'region',
+      'aria-label': t('%(caption)s, horizontally scrollable', { caption }),
+    },
   }, [table])
 }
 
@@ -147,25 +157,25 @@ const METADATA_FIELDS = [
   ['version_label', () => t('Version'), factor_set => factor_set.version_label],
   ['published_at', () => t('Published'), factor_set => factor_set.published_at],
   ['notes', () => t('Notes'), factor_set => factor_set.notes],
-  ['is_mock', () => 'Mock data', factor_set => factor_set.is_mock],
+  ['is_mock', () => t('Mock data'), factor_set => factor_set.is_mock],
 ]
 
 function makeMetadata(factor_set) {
   const section = element('section', {
     className: 'review-block methodology-factor-section',
     attributes: { 'aria-labelledby': 'factor-set-heading' },
-  }, makeHeading('factor-set-heading', t('Factor set'), 'Metadata identifying the factor set returned by the calculator service.'))
+  }, makeHeading('factor-set-heading', t('Factor set'), t('Metadata identifying the factor set returned by the calculator service.')))
   const descriptionList = element('dl', { className: 'review-destinations methodology-metadata' })
   const fields = METADATA_FIELDS.filter(([key]) => Object.hasOwn(factor_set, key))
 
   if (fields.length === 0) {
-    section.append(element('p', { className: 'empty-state', text: 'No factor-set metadata was returned.' }))
+    section.append(element('p', { className: 'empty-state', text: t('No factor-set metadata was returned.') }))
     return section
   }
   for (const [key, label, read] of fields) {
     const fieldValue = read(factor_set)
     const value = key === 'is_mock'
-      ? (fieldValue === true ? 'Yes' : fieldValue === false ? 'No' : t('Not supplied'))
+      ? (fieldValue === true ? t('Yes') : fieldValue === false ? t('No') : t('Not supplied'))
       : recorded(fieldValue)
     descriptionList.append(element('div', {}, [element('dt', { text: label() }), element('dd', { text: value })]))
   }
@@ -181,17 +191,17 @@ function renderFactors(payload) {
 
   fragment.append(makeCollectionSection(
     'constants-heading',
-    'Published constants',
-    'Constants are named values referenced by published formulas.',
+    t('Published constants'),
+    t('Constants are named values referenced by published formulas.'),
     payload?.constants,
-    'No published constants were returned.',
+    t('No published constants were returned.'),
     {
-      caption: 'Published constants',
+      caption: t('Published constants'),
       columns: [
-        { label: 'Code', value: row => recorded(row?.code), code: true },
-        { label: 'Value', value: row => recorded(row?.value) },
-        { label: 'Unit', value: row => recorded(row?.unit) },
-        { label: 'Note', value: row => recorded(row?.note) },
+        { label: t('Code'), value: row => recorded(row?.code), code: true },
+        { label: t('Value'), value: row => recorded(row?.value) },
+        { label: t('Unit'), value: row => recorded(row?.unit) },
+        { label: t('Note'), value: row => recorded(row?.note) },
       ],
     },
   ))
@@ -199,7 +209,7 @@ function renderFactors(payload) {
   fragment.append(makeCollectionSection(
     'formulas-heading',
     t('Published formulas'),
-    'Expressions are shown exactly as supplied by the service.',
+    t('Expressions are shown exactly as supplied by the service.'),
     payload?.formulas,
     t('No published formulas were returned.'),
     {
@@ -214,59 +224,61 @@ function renderFactors(payload) {
 
   fragment.append(makeCollectionSection(
     'upstream-heading',
-    'Upstream factors',
-    'A destination of All destinations means that the row applies unless a destination-specific upstream factor is available.',
+    t('Upstream factors'),
+    t('A destination of All destinations means that the row applies unless a destination-specific upstream factor is available.'),
     payload?.upstream,
-    'No upstream factors were returned.',
+    t('No upstream factors were returned.'),
     {
-      caption: 'Published upstream impact factors',
+      caption: t('Published upstream impact factors'),
       columns: [
-        { label: 'Sector', value: row => recorded(row?.sector), code: true },
-        { label: 'Food category', value: row => recorded(row?.food_category, 'All food categories'), code: true },
-        { label: 'Destination', value: row => recorded(row?.destination, 'All destinations'), code: true },
+        { label: t('Sector'), value: row => recorded(row?.sector), code: true },
+        { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
+        { label: t('Destination'), value: row => recorded(row?.destination, t('All destinations')), code: true },
         { label: t('Metric'), value: row => recorded(row?.metric), code: true },
-        { label: 'Value per kg', value: row => recorded(row?.value_per_kg) },
-        { label: 'Source note', value: row => recorded(row?.source_note) },
-        { label: 'Data quality', value: row => recorded(row?.data_quality) },
+        { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },
+        { label: t('Source note'), value: row => recorded(row?.source_note) },
+        { label: t('Data quality'), value: row => recorded(row?.data_quality) },
       ],
     },
   ))
 
   fragment.append(makeCollectionSection(
     'downstream-heading',
-    'Downstream factors',
-    'A food category of All food categories is the generic row used where no category-specific factor is available. Negative values are retained because they represent published offsets.',
+    t('Downstream factors'),
+    t('A food category of All food categories is the generic row used where no category-specific factor is available. Negative values are retained because they represent published offsets.'),
     payload?.downstream,
-    'No downstream factors were returned.',
+    t('No downstream factors were returned.'),
     {
-      caption: 'Published downstream impact factors',
+      caption: t('Published downstream impact factors'),
       columns: [
-        { label: 'Destination', value: row => recorded(row?.destination), code: true },
-        { label: 'Food category', value: row => recorded(row?.food_category, 'All food categories'), code: true },
+        { label: t('Destination'), value: row => recorded(row?.destination), code: true },
+        { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
         { label: t('Metric'), value: row => recorded(row?.metric), code: true },
-        { label: 'Value per kg', value: row => recorded(row?.value_per_kg) },
-        { label: 'Source note', value: row => recorded(row?.source_note) },
-        { label: 'Data quality', value: row => recorded(row?.data_quality) },
+        { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },
+        { label: t('Source note'), value: row => recorded(row?.source_note) },
+        { label: t('Data quality'), value: row => recorded(row?.data_quality) },
       ],
     },
   ))
 
   fragment.append(makeCollectionSection(
     'equivalences-heading',
-    'Published equivalences',
-    'Equivalences translate a source metric into a more familiar comparison.',
+    t('Published equivalences'),
+    t('Equivalences translate a source metric into a more familiar comparison.'),
     payload?.equivalences,
-    'No published equivalences were returned.',
+    t('No published equivalences were returned.'),
     {
-      caption: 'Published metric equivalences',
+      caption: t('Published metric equivalences'),
       columns: [
-        { label: 'Code', value: row => recorded(row?.code), code: true },
-        { label: 'Name', value: row => recorded(row?.name) },
-        { label: 'Source metric', value: row => recorded(row?.source_metric), code: true },
-        { label: 'Value per unit', value: row => recorded(row?.value_per_unit) },
-        { label: 'Label template', value: row => recorded(row?.label_template) },
-        { label: 'Source note', value: row => recorded(row?.source_note) },
-        { label: 'Sort order', value: row => recorded(row?.sort_order) },
+        { label: t('Code'), value: row => recorded(row?.code), code: true },
+        { label: t('Name'), value: row => recorded(row?.name) },
+        { label: t('Source metric'), value: row => recorded(row?.source_metric), code: true },
+        { label: t('Value per unit'), value: row => recorded(row?.value_per_unit) },
+        // The template itself is staff-authored and §3 interpolates it in the
+        // engine, so the *value* stays as published; only this header moves.
+        { label: t('Label template'), value: row => recorded(row?.label_template) },
+        { label: t('Source note'), value: row => recorded(row?.source_note) },
+        { label: t('Sort order'), value: row => recorded(row?.sort_order) },
       ],
     },
   ))

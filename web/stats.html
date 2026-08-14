@@ -3,51 +3,56 @@
   <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <meta name="description" content="Explore anonymised, aggregate statistics from calculations run in the Kai Commitment food waste impact calculator.">
-    <title>Statistics | Kai Commitment Food Waste Impact Calculator</title>
+    <meta name="description" data-i18n-attr="content" content="Explore anonymised, aggregate statistics from calculations run in the Kai Commitment food waste impact calculator.">
+    <title data-i18n>Statistics | Kai Commitment Food Waste Impact Calculator</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="stats-page">
-    <a class="skip-link" href="#main-content">Skip to statistics</a>
+    <!-- See index.html: the page is rendered by ES modules, so the chooser is built by
+         js/i18n.js rather than shipped here, and this note is about the page as a whole. -->
+    <noscript>
+      <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the aggregate statistics, draw their charts, or be shown in a language other than English.</p>
+    </noscript>
+    <a class="skip-link" href="#main-content" data-i18n>Skip to statistics</a>
     <header class="site-header">
       <div class="header-inner public-header-inner stats-header-inner">
         <a class="brand" href="./home.html">
-          <img src="./assets/kai-commitment-logo.png" alt="Kai Commitment - Leading action on food waste">
-          <span class="prototype-label">Impact calculator</span>
+          <img src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label" data-i18n>Impact calculator</span>
         </a>
-        <nav class="public-nav stats-nav" aria-label="Primary navigation">
-          <a href="./home.html">Home</a>
-          <a href="./index.html">Calculator</a>
-          <a href="./stats.html" aria-current="page">Statistics</a>
-          <a href="./methodology.html">Documentation</a>
+        <nav class="public-nav stats-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
+          <a href="./home.html" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" aria-current="page" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
         </nav>
       </div>
     </header>
 
     <main class="main-content stats-main" id="main-content" tabindex="-1">
       <section class="stats-introduction" aria-labelledby="stats-title">
-        <p class="eyebrow">Calculator activity</p>
-        <h1 id="stats-title">Statistics from this tool</h1>
-        <p class="section-intro">These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.</p>
+        <p class="eyebrow" data-i18n>Calculator activity</p>
+        <h1 id="stats-title" data-i18n>Statistics from this tool</h1>
+        <p class="section-intro" data-i18n>These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.</p>
       </section>
 
       <section class="stats-status-panel" aria-labelledby="sample-heading">
-        <h2 id="sample-heading">About this sample</h2>
+        <h2 id="sample-heading" data-i18n>About this sample</h2>
         <div id="stats-summary">
-          <p class="loading-state" role="status">Loading aggregate statistics…</p>
+          <p class="loading-state" role="status" data-i18n>Loading aggregate statistics…</p>
         </div>
       </section>
 
       <section class="stats-breakdowns" aria-labelledby="breakdowns-heading">
-        <h2 id="breakdowns-heading">Breakdowns of entries made in this tool</h2>
-        <p>Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.</p>
+        <h2 id="breakdowns-heading" data-i18n>Breakdowns of entries made in this tool</h2>
+        <p data-i18n>Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.</p>
         <div id="stats-breakdown-content" aria-live="polite" aria-busy="true"></div>
       </section>
     </main>
 
     <footer>
-      <p>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice">This tool stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business. <a href="./methodology.html#what-we-record">What we record</a></p>
+      <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record" data-i18n>What we record</a></p>
     </footer>
     <script type="module" src="./js/stats.js"></script>
   </body>

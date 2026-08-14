@@ -106,6 +106,46 @@ def test_the_source_list_is_read_from_the_front_end_and_is_not_empty():
     assert "By waste destination" in SOURCE
 
 
+def test_a_marked_element_inside_another_marked_element_is_still_extracted():
+    """The four public navigation links, which the previous extractor lost.
+
+    Each is an `<a data-i18n>` inside a `<nav data-i18n-attr="aria-label">`. The
+    regex this replaced matched the outermost element carrying anything starting
+    `data-i18n` - `\\b` treats `data-i18n-attr` as a match - and consumed
+    everything through `</nav>`, so all four links were invisible to it on all
+    three content pages. Nothing failed: a key nobody extracts is a key no
+    coverage test can ask for, and translating it would have failed the
+    stale-key test instead.
+
+    Named individually rather than counted, because a count passes against four
+    of something else.
+    """
+    for label in ("Home", "Calculator", "Statistics", "Documentation"):
+        assert label in SOURCE, (
+            f"the navigation label {label!r} is not in the source list, so no "
+            "catalogue is required to translate it"
+        )
+    # And the wrapper's own attribute, which is the reason it was marked at all.
+    assert "Primary navigation" in SOURCE
+
+
+def test_no_marked_element_has_element_children():
+    """`applyToDocument` assigns `element.textContent`, which deletes children.
+
+    So `<p data-i18n>text <a href=...>link</a></p>` renders as a paragraph with
+    the link gone - silently, in every language except English. The footer's
+    transparency line is written the way that constraint requires: the sentence
+    in its own `<span data-i18n>` beside the link, not a marker on the paragraph
+    holding both.
+    """
+    for path in i18n_keys.html_pages():
+        nested = i18n_keys.marked_elements(path).has_element_children
+        assert not nested, (
+            f"{path.name}: a data-i18n element contains element children "
+            f"{nested}; applyToDocument would delete them"
+        )
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_every_source_string_is_translated(language):
     strings = i18n_keys.catalogue(language)["strings"]

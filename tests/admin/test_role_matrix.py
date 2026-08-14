@@ -134,6 +134,18 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     ("GET", "/admin/factor-set/action/rollback", "rollback is both roles, §8.3 decision 4"),
     ("GET", "/admin/factor-set/action/archive", "archiving is both roles, §8.3 decision 4"),
     ("GET", "/admin/factor-set/action/compare", "the pre-publish gate, §8.2"),
+    # The placeholder-data flag, §2.2. Both roles for §8.3 decision 4's own
+    # reason: publishing an entire set of numbers is the larger act and is
+    # open to both, so gating the flag behind an administrator would be the
+    # wrong way round. The clearing direction's gate is a proof, not a role -
+    # see admin/factor_views.py's `clear_placeholder_page`, and
+    # tests/admin/test_factor_set_actions.py, which drives both directions.
+    ("GET", "/admin/factor-set/action/flag-placeholder",
+     "adding the placeholder warning is both roles and unproved, §2.2"),
+    ("GET", "/admin/factor-set/action/clear-placeholder",
+     "clearing it is both roles, behind a proof rather than a role, §2.2"),
+    ("GET", "/admin/factor-set/clear-placeholder",
+     "the proof page the action above redirects to, §2.2"),
     # The two comparison-scenario screens.
     ("GET", "/admin/comparison-scenario/list", "the standard scenarios are staff-editable"),
     ("GET", "/admin/comparison-scenario-line/list", "the standard scenarios are staff-editable"),

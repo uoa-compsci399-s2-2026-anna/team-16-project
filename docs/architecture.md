@@ -1181,7 +1181,7 @@ stronger.
 
 ### What is not translated yet, and why the number is written down
 
-**The calculator is complete: 299 of 299 strings, in twenty languages.** The
+**The calculator is complete: 300 of 300 strings, in twenty languages.** The
 count is read out of the front end by `tests/web/i18n_keys.py` rather than
 maintained by hand — `t('...')` calls, the `data-i18n` markers in the five HTML
 files, and seven module-level constants whose contents reach `t()` by reference
@@ -1189,7 +1189,7 @@ files, and seven module-level constants whose contents reach `t()` by reference
 in English. A key nobody asks for any more fails it too, because a stale entry
 makes a reworded string look translated.
 
-**201 of those were the calculator alone; 99 arrived on 2026-08-15 with the
+**201 of those were the calculator alone; 100 arrived on 2026-08-15 with the
 statistics, home and documentation pages** (contract v1.30, closing O-11), and
 one was retired when the documentation page's title took the navigation's name.
 Three things came out of that pass and belong here rather than only in the
@@ -1214,6 +1214,18 @@ change log:
   languages and proves the first canvases were destroyed rather than left
   behind the new ones — because "a rebuild function was called" is not evidence
   that a title changed.
+* **One string got through the whole pass in English, and a test did not find
+  it.** The statistics headline puts its figure in a `<strong>`, so it is built
+  by splitting the translation on its placeholder — and the literal was passed
+  to the helper that splits rather than to `t()`. An argument to a local helper
+  is not an argument to `t()`: the extractor never saw the key, no catalogue was
+  required to carry it, and "Across 1,247 calculations run in this tool."
+  rendered in English on an Arabic page with 301 tests passing. It was found by
+  opening a screenshot. The sweep that confirmed nothing else was hiding is
+  worth reusing: render each page in English and again in Chinese, compare every
+  block of text, and look at what is identical. The survivors should be exactly
+  the news headlines, the factor values and staff-written notes, and the word
+  `English` in the language chooser.
 * **A translation may legitimately equal its English source.** `Code` in French,
   `Name` in German, `Sector` in Dutch, `No` in Spanish. The test that forbids an
   entry equal to its key exists for a real failure — a placeholder that looks

@@ -1,7 +1,7 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, render, renderChrome } from './calculator.js'
-import { applyDocumentLanguage, applyToDocument, t } from './i18n.js'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 
 const main = document.getElementById('main-content')
 const homeButton = document.getElementById('home-button')
@@ -46,6 +46,16 @@ clearButton.addEventListener('click', () => {
 // below re-translates a string it already translated.
 applyDocumentLanguage()
 applyToDocument()
+
+// The chooser is built here rather than shipped in `index.html` so that it
+// cannot exist as a control that is present and does nothing: with scripting
+// off none of this runs, and the calculator does not render at all. Changing
+// language re-renders in place — `state` is held in memory, so a reload would
+// throw away every entry somebody had typed.
+installLanguageChooser(() => {
+  renderChrome()
+  render(main)
+})
 
 renderChrome()
 render(main)

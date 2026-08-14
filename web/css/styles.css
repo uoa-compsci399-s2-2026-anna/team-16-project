@@ -848,3 +848,66 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   opacity: 0.82;
   direction: ltr;
 }
+
+/* ------------------------------------------------------------------------------------
+   THE LANGUAGE BAR.
+
+   "Top left" is what was asked for, and it is written here as **top inline-start**,
+   which is top-left in English and top-right in Arabic and Urdu. A control pinned
+   physically left in a mirrored page lands at the reading-END of the header, opposite
+   the logo it is meant to sit beside - and the whole stylesheet was converted to logical
+   properties so that the mirroring happens from `dir` alone.
+
+   The bar sits BETWEEN the machine-translation notice and the header. Not above the
+   notice, which is a statement about the whole page and whose own test pins it as
+   `body.firstElementChild`; and not inside `.header-inner`, because the brand guidelines
+   say the logo may not be altered in any way and crowding a control into the lockup is
+   an alteration by another name. ---------------------------------------------------- */
+.language-bar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 6px clamp(20px, 2.7vw, 56px);
+  border-bottom: 1px solid rgba(0, 50, 35, 0.1);
+  background: var(--kai-white);
+  font-size: 0.82rem;
+}
+
+.language-bar__label {
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+/* 44px min-height is the touch target the rest of the calculator uses, and the reason
+   this control is a real `<select>` rather than a styled listbox: the platform's own
+   picker is reachable by keyboard, announced by every screen reader, and legible at
+   390px without a single line of script beyond the change handler. */
+.language-bar__select {
+  min-height: 44px;
+  max-width: 100%;
+  padding: 6px 8px;
+  color: var(--kai-kale);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--kai-white);
+  font: inherit;
+  font-size: 0.9rem;
+}
+
+.language-bar__select:focus-visible {
+  outline: 2px solid var(--blueberry, #005AE6);
+  outline-offset: 2px;
+}
+
+/* The one page element that must NOT be translated or mirrored: it is the fallback for
+   a browser that never ran the code that would have done either. */
+.noscript-notice {
+  margin: 0;
+  padding: 12px 20px;
+  color: var(--kai-kale);
+  background: var(--kai-banana, #FFD76E);
+  font-size: 0.9rem;
+  text-align: center;
+}

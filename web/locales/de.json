@@ -203,6 +203,9 @@
     "no change": "keine Veränderung",
     "no impact figures were returned": "es wurden keine Wirkungszahlen zurückgegeben",
     "saved": "eingespart",
-    "tonnes": "Tonnen"
+    "tonnes": "Tonnen",
+    "Language": "Sprache",
+    "Follow the system": "Systemeinstellung folgen",
+    "%(language)s — machine translated": "%(language)s — maschinell übersetzt"
   }
 }

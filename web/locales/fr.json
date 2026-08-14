@@ -203,6 +203,9 @@
     "no change": "aucun changement",
     "no impact figures were returned": "aucun chiffre d'impact n'a été renvoyé",
     "saved": "économisé",
-    "tonnes": "tonnes (t)"
+    "tonnes": "tonnes (t)",
+    "Language": "Langue",
+    "Follow the system": "Suivre le système",
+    "%(language)s — machine translated": "%(language)s — traduction automatique"
   }
 }

@@ -11,6 +11,15 @@
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body>
+    <!-- The statement is about the calculator, not about the language chooser. This page
+         is ES modules end to end: with scripting off there are no steps, no taxonomy and
+         no results, and `<main>` below never gets past "Loading calculator…". The chooser
+         is built by js/i18n.js and so is simply absent here, which is why it can never be
+         a control that is present and does nothing. `<noscript>` is not translated: the
+         catalogues are fetched by the same scripting that is switched off. -->
+    <noscript>
+      <p class="noscript-notice">This calculator needs JavaScript to run. With scripting turned off it cannot load the food categories, calculate an impact, or be shown in a language other than English.</p>
+    </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to calculator</a>
     <header class="site-header intro-header" id="site-header">
       <div class="header-inner">

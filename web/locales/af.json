@@ -2,7 +2,9 @@
   "language": "af",
   "endonym": "Afrikaans",
   "machine_translated": true,
-  "tags": ["af"],
+  "tags": [
+    "af"
+  ],
   "strings": {
     "%(destination)s amount in %(unit)s": "%(destination)s-hoeveelheid in %(unit)s",
     "%(tab)s data": "%(tab)s-gegewens",
@@ -201,6 +203,9 @@
     "no change": "geen verandering",
     "no impact figures were returned": "geen impaksyfers is teruggegee nie",
     "saved": "gestoor",
-    "tonnes": "ton"
+    "tonnes": "ton",
+    "Language": "Taal",
+    "Follow the system": "Volg die stelsel",
+    "%(language)s — machine translated": "%(language)s — masjienvertaal"
   }
 }

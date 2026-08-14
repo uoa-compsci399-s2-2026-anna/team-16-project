@@ -203,6 +203,9 @@
     "no change": "変化なし",
     "no impact figures were returned": "影響の数値が返されませんでした",
     "saved": "削減",
-    "tonnes": "トン"
+    "tonnes": "トン",
+    "Language": "言語",
+    "Follow the system": "システムに従う",
+    "%(language)s — machine translated": "%(language)s — 機械翻訳"
   }
 }

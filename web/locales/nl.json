@@ -203,6 +203,9 @@
     "no change": "geen verandering",
     "no impact figures were returned": "er zijn geen effectcijfers teruggegeven",
     "saved": "bespaard",
-    "tonnes": "ton"
+    "tonnes": "ton",
+    "Language": "Taal",
+    "Follow the system": "Systeem volgen",
+    "%(language)s — machine translated": "%(language)s — machinaal vertaald"
   }
 }

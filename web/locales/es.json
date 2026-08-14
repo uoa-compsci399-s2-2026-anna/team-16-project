@@ -203,6 +203,9 @@
     "no change": "sin cambios",
     "no impact figures were returned": "no se devolvieron cifras de impacto",
     "saved": "ahorrado",
-    "tonnes": "toneladas"
+    "tonnes": "toneladas",
+    "Language": "Idioma",
+    "Follow the system": "Seguir el sistema",
+    "%(language)s — machine translated": "%(language)s — traducción automática"
   }
 }

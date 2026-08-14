@@ -2,7 +2,10 @@
   "language": "tl",
   "endonym": "Tagalog",
   "machine_translated": true,
-  "tags": ["tl", "fil"],
+  "tags": [
+    "tl",
+    "fil"
+  ],
   "strings": {
     "%(destination)s amount in %(unit)s": "Dami ng %(destination)s sa %(unit)s",
     "%(tab)s data": "Datos ng %(tab)s",
@@ -201,6 +204,9 @@
     "no change": "walang pagbabago",
     "no impact figures were returned": "walang naibalik na bilang ng epekto",
     "saved": "naitabi",
-    "tonnes": "tonelada"
+    "tonnes": "tonelada",
+    "Language": "Wika",
+    "Follow the system": "Sundin ang sistema",
+    "%(language)s — machine translated": "%(language)s — salin ng makina"
   }
 }

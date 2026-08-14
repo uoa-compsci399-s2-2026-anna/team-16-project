@@ -2,7 +2,9 @@
   "language": "vi",
   "endonym": "Tiếng Việt",
   "machine_translated": true,
-  "tags": ["vi"],
+  "tags": [
+    "vi"
+  ],
   "strings": {
     "%(destination)s amount in %(unit)s": "Lượng %(destination)s tính theo %(unit)s",
     "%(tab)s data": "Dữ liệu %(tab)s",
@@ -201,6 +203,9 @@
     "no change": "không thay đổi",
     "no impact figures were returned": "không có số liệu tác động nào được trả về",
     "saved": "đã lưu",
-    "tonnes": "tấn"
+    "tonnes": "tấn",
+    "Language": "Ngôn ngữ",
+    "Follow the system": "Theo hệ thống",
+    "%(language)s — machine translated": "%(language)s — dịch máy"
   }
 }

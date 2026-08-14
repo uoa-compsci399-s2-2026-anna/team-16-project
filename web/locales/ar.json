@@ -204,6 +204,9 @@
     "no change": "لا تغيير",
     "no impact figures were returned": "لم تُرجَع أي أرقام أثر",
     "saved": "تم الحفظ",
-    "tonnes": "أطنان"
+    "tonnes": "أطنان",
+    "Language": "اللغة",
+    "Follow the system": "اتباع النظام",
+    "%(language)s — machine translated": "%(language)s — ترجمة آلية"
   }
 }

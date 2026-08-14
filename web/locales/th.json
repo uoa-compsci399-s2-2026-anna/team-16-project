@@ -2,7 +2,9 @@
   "language": "th",
   "endonym": "ไทย",
   "machine_translated": true,
-  "tags": ["th"],
+  "tags": [
+    "th"
+  ],
   "strings": {
     "%(destination)s amount in %(unit)s": "ปริมาณ %(destination)s ในหน่วย %(unit)s",
     "%(tab)s data": "ข้อมูล %(tab)s",
@@ -201,6 +203,9 @@
     "no change": "ไม่เปลี่ยนแปลง",
     "no impact figures were returned": "ไม่มีตัวเลขผลกระทบส่งกลับมา",
     "saved": "บันทึกแล้ว",
-    "tonnes": "ตัน"
+    "tonnes": "ตัน",
+    "Language": "ภาษา",
+    "Follow the system": "ตามระบบ",
+    "%(language)s — machine translated": "%(language)s — แปลด้วยเครื่อง"
   }
 }

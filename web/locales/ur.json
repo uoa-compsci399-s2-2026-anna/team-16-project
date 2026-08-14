@@ -204,6 +204,9 @@
     "no change": "کوئی تبدیلی نہیں",
     "no impact figures were returned": "اثر کے کوئی اعداد واپس نہیں آئے",
     "saved": "محفوظ ہو گیا",
-    "tonnes": "ٹن"
+    "tonnes": "ٹن",
+    "Language": "زبان",
+    "Follow the system": "نظام کی پیروی کریں",
+    "%(language)s — machine translated": "%(language)s — مشینی ترجمہ"
   }
 }

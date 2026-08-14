@@ -206,6 +206,9 @@
     "no change": "無變化",
     "no impact figures were returned": "未回傳任何影響數據",
     "saved": "減少",
-    "tonnes": "公噸"
+    "tonnes": "公噸",
+    "Language": "語言",
+    "Follow the system": "跟隨系統",
+    "%(language)s — machine translated": "%(language)s — 機器翻譯"
   }
 }

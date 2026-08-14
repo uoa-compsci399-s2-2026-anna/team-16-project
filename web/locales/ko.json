@@ -203,6 +203,9 @@
     "no change": "변화 없음",
     "no impact figures were returned": "영향 수치가 오지 않았습니다",
     "saved": "절감",
-    "tonnes": "톤"
+    "tonnes": "톤",
+    "Language": "언어",
+    "Follow the system": "시스템 설정 따르기",
+    "%(language)s — machine translated": "%(language)s — 기계 번역"
   }
 }

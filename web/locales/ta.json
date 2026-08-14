@@ -203,6 +203,9 @@
     "no change": "மாற்றம் இல்லை",
     "no impact figures were returned": "தாக்க எண்கள் எதுவும் வரவில்லை",
     "saved": "சேமிக்கப்பட்டது",
-    "tonnes": "டன்"
+    "tonnes": "டன்",
+    "Language": "மொழி",
+    "Follow the system": "கணினியைப் பின்பற்று",
+    "%(language)s — machine translated": "%(language)s — இயந்திர மொழிபெயர்ப்பு"
   }
 }

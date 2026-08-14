@@ -203,6 +203,9 @@
     "no change": "कोई बदलाव नहीं",
     "no impact figures were returned": "कोई प्रभाव आँकड़े नहीं मिले",
     "saved": "सहेजा गया",
-    "tonnes": "टन"
+    "tonnes": "टन",
+    "Language": "भाषा",
+    "Follow the system": "सिस्टम का अनुसरण करें",
+    "%(language)s — machine translated": "%(language)s — मशीनी अनुवाद"
   }
 }

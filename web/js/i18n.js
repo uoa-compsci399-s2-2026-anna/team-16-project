@@ -11,9 +11,11 @@
  *
  * ## How the language is chosen
  *
- * **From `navigator.languages`, per session, and nothing is stored.** No
- * picker, no cookie, no `localStorage`. The owner's ruling is that the browser
- * already says what it reads and the interface should simply honour it.
+ * **A stored choice first, then `navigator.languages`.** The chooser at the top
+ * of every page writes one cookie; absent a choice — or with the choice set to
+ * "follow the system" — the browser's own list decides, exactly as it did
+ * before the chooser existed. See `readStoredChoice` for what is stored and why
+ * it is not the fingerprint §2.3 forbids.
  *
  * **Only the highest-priority tag is consulted.** If it has no catalogue the
  * page renders in English; the rest of the list is not walked. The reasoning
@@ -33,13 +35,34 @@
  * admin panel does the opposite, for the opposite reason — it renders through
  * FastAPI, so it reads the header and sets `Vary: Accept-Language`.
  *
- * `?lang=` forces a language for one page load. Nothing emits it: it exists
- * for testing, screenshots and support. **An unrecognised value is ignored**,
- * and the page then negotiates as though it had not been there — the browser's
- * highest-priority tag, then English. It is deliberately outside the
- * single-tag rule: `?lang=` is somebody typing a language on purpose rather
- * than a browser setting, so a typo in it falls back to the negotiation rather
- * than consuming it. `?lang=qq` on a Chinese browser is still Chinese.
+ * `?lang=` forces a language for one page load. **Nothing emits it — including
+ * the chooser** — and it writes nothing: it exists for testing, screenshots and
+ * support, and a link somebody shares must not silently re-language the
+ * recipient's browser for good. **An unrecognised value is ignored**, and the
+ * page then negotiates as though it had not been there — the stored choice,
+ * then the browser's highest-priority tag, then English. It is deliberately
+ * outside the single-tag rule: `?lang=` is somebody typing a language on
+ * purpose rather than a browser setting, so a typo in it falls back to the
+ * negotiation rather than consuming it. `?lang=qq` on a Chinese browser is
+ * still Chinese.
+ *
+ * The parameter and the chooser cannot be mistaken for one another because they
+ * share no mechanism: the chooser is a `<select>` that writes a cookie and
+ * re-renders in place, and it never touches the URL.
+ *
+ * ## Why the chooser is built here rather than sitting in `index.html`
+ *
+ * **The calculator is ES modules end to end.** With scripting off there is no
+ * calculator at all — no steps, no taxonomy, no results, and `<main>` still
+ * says "Loading calculator…". A chooser that needs JavaScript therefore adds no
+ * degradation the page did not already have, and building it here means it can
+ * never exist as a control that is present and does nothing. `index.html`
+ * carries a `<noscript>` note about the calculator as a whole, which is the
+ * honest statement; the language control is not what broke.
+ *
+ * The panel is the opposite case and is deliberately built the opposite way: it
+ * renders through FastAPI, works without JavaScript, and so its chooser is a
+ * real `<form method="post">`. See `admin/i18n.py`.
  *
  * ## The flash of English
  *
@@ -66,6 +89,99 @@ const DOCUMENT_LANGUAGE = { en: 'en-NZ' }
 /** `%(name)s`, the placeholder syntax `admin/i18n.py` uses, so a translator
  *  meets one convention across both surfaces and one test covers both. */
 const PLACEHOLDER = /%\((\w+)\)s/g
+
+/**
+ * The one thing this system stores about a visitor's language.
+ *
+ * **A cookie rather than `localStorage`, and the usual reason is wrong.** Both
+ * surfaces are the same origin — nginx serves `/` and `/admin` on one port — so
+ * `localStorage` would in fact be shared between them. The decisive reason is
+ * that **the panel renders server-side and has to know the language before it
+ * emits HTML**, and `localStorage` is unreadable at that moment. One cookie at
+ * path `/` is the only mechanism both a Python process and a browser can read,
+ * which is what keeps this a single choice rather than two that drift apart.
+ *
+ * ## Why this is not the fingerprint §2.3 forbids
+ *
+ * §2.3 forbids storing an IP address, a user agent or a browser fingerprint.
+ * Two independent properties keep this cookie outside that, and **both are
+ * needed** — this is the reason, not a reassurance:
+ *
+ * 1. **It records something the visitor deliberately declared**, not something
+ *    inferred from their browser. Reading `Accept-Language` and forgetting it,
+ *    and storing "this visitor chose English", are different acts with
+ *    different justifications. The first observes; the second obeys.
+ * 2. **Its value space is closed, tiny and free of entropy** — twenty-one
+ *    possible values, shared identically by everyone who picks the same
+ *    language. A field that cannot distinguish two visitors cannot correlate
+ *    them, whatever else it records.
+ *
+ * The second is the load-bearing half. Property 1 on its own would equally
+ * justify storing a name somebody typed into a form, which would be a
+ * fingerprint by any measure. **It is the absence of entropy, not the presence
+ * of consent, that makes this incapable of identifying anyone.**
+ *
+ * ## What it is not entangled with
+ *
+ * `submission.token` — the anonymous de-duplication token, which expires after
+ * an hour — is a different name, a different lifetime and a different purpose.
+ * This cookie does not appear in `submission`, in `audit_log` or in the access
+ * log, and it neither extends nor refreshes that token. Because it sits at path
+ * `/`, which cannot be scoped away when the panel and the calculator both need
+ * it, the browser also attaches it to `/api/v1/calculate`; **the API receives it
+ * and ignores it**, which is tested rather than assumed.
+ */
+export const COOKIE_NAME = 'kaicalc_lang'
+
+/**
+ * "Follow the system" is **a stored value, not the absence of one.**
+ *
+ * The obvious reason is that "chose to follow" and "never chose" would
+ * otherwise be indistinguishable and the chooser could not show what is in
+ * effect. The stronger reason is mechanical: reverting to follow-the-system
+ * becomes an ordinary write rather than a cookie deletion. Deleting a cookie
+ * reliably means re-sending it with `Max-Age=0` and an exactly matching path
+ * and domain, and getting that wrong leaves the old value in place — the
+ * chooser appears to revert and then snaps back on the next page. Writing
+ * `auto` has no such failure mode.
+ */
+export const FOLLOW_SYSTEM = 'auto'
+
+/** A year. Long enough that a returning visitor keeps their choice; finite so
+ *  that an abandoned browser does not carry it forever. */
+const COOKIE_MAX_AGE = 31536000
+
+/**
+ * The stored choice, or `null` when there is none to honour.
+ *
+ * `auto` and an unrecognised value both answer `null`, which is what makes an
+ * unknown value harmless: a cookie naming a language that has since been
+ * removed negotiates from the browser instead of rendering a blank page.
+ */
+export function readStoredChoice(jar, index) {
+  const raw = String(jar || '')
+    .split(';')
+    .map((part) => part.trim())
+    .filter((part) => part.startsWith(`${COOKIE_NAME}=`))
+    .map((part) => decodeURIComponent(part.slice(COOKIE_NAME.length + 1)))
+    .pop()
+  if (!raw || raw === FOLLOW_SYSTEM) return null
+  // Matched through the same lookup as everything else, so a stored `zh-TW`
+  // reaches Traditional Chinese rather than being compared as a literal.
+  return (index && match(raw, index)) || null
+}
+
+/**
+ * Resolve one page load's language. **The order is the contract**, and it is
+ * the same order `admin/i18n.py::resolve` implements.
+ *
+ * `?lang=` is matched first and separately — never prepended to the browser's
+ * list — so an unrecognised value falls through to the stored choice rather
+ * than consuming the single slot the negotiation consults.
+ */
+export function resolve(forced, stored, preferred, index) {
+  return match(forced, index) || stored || negotiate(preferred, index)
+}
 
 /**
  * nginx answers a missing file with a 302 to `/` (see docker/nginx.conf's
@@ -165,6 +281,53 @@ const active = {
   machineTranslated: false,
   dir: 'ltr',
   strings: {},
+  //: What is *stored*, which is not what is rendered. With `auto` stored and a
+  //: Chinese browser the page is Chinese and the chooser reads "Follow the
+  //: system" — the chooser has to show the choice, not its consequence.
+  choice: FOLLOW_SYSTEM,
+  //: Every catalogue the manifest declares, kept so the chooser can label its
+  //: own options from the one fetch this module already makes.
+  catalogues: [],
+  index: {},
+}
+
+/** English is not a catalogue file — its strings are the keys — so it is
+ *  synthesised here exactly as `admin/i18n.py::_load` synthesises it, and for
+ *  the same reason: a file mapping every string to itself would be a second
+ *  place for the English wording to drift. */
+const ENGLISH_OPTION = {
+  language: DEFAULT_LANGUAGE,
+  endonym: 'English',
+  machine_translated: false,
+}
+
+/** Every language the chooser can offer, English first, then the manifest's own
+ *  order — which is the client's census ordering, not alphabetical. */
+export function offeredLanguages() {
+  return [ENGLISH_OPTION, ...active.catalogues]
+}
+
+export const activeChoice = () => active.choice
+
+async function applyCatalogue(language) {
+  if (language === DEFAULT_LANGUAGE) {
+    active.language = DEFAULT_LANGUAGE
+    active.endonym = 'English'
+    active.machineTranslated = false
+    active.dir = 'ltr'
+    active.strings = {}
+    return
+  }
+  const catalogue = await readJson(new URL(`${language}.json`, LOCALES_BASE))
+  // A catalogue that is missing or malformed leaves the page in English. A
+  // calculator that fails to render because a translation file did not load
+  // would be a worse outcome than one that renders in the wrong language.
+  if (!catalogue || !catalogue.strings) return
+  active.language = catalogue.language
+  active.endonym = catalogue.endonym || catalogue.language
+  active.machineTranslated = Boolean(catalogue.machine_translated)
+  active.dir = catalogue.dir === 'rtl' ? 'rtl' : 'ltr'
+  active.strings = catalogue.strings
 }
 
 async function load() {
@@ -182,24 +345,21 @@ async function load() {
   const manifest = await readJson(new URL('index.json', LOCALES_BASE))
   if (!manifest) return
   const index = tagIndex(manifest.catalogues)
+  active.catalogues = manifest.catalogues || []
+  active.index = index
+
+  const stored = readStoredChoice(document.cookie, index)
+  active.choice = stored || FOLLOW_SYSTEM
+
   // The forced value is matched on its own rather than pushed onto the front
   // of the list. Since only the head of the list is consulted, prepending it
   // would make an unrecognised `?lang=` eat the browser's own first
-  // preference and land every typo on English.
-  const language =
-    match(forced, index) ||
-    negotiate(navigator.languages || [navigator.language], index)
-  if (language === DEFAULT_LANGUAGE) return
-  const catalogue = await readJson(new URL(`${language}.json`, LOCALES_BASE))
-  // A catalogue that is missing or malformed leaves the page in English. A
-  // calculator that fails to render because a translation file did not load
-  // would be a worse outcome than one that renders in the wrong language.
-  if (!catalogue || !catalogue.strings) return
-  active.language = catalogue.language
-  active.endonym = catalogue.endonym || catalogue.language
-  active.machineTranslated = Boolean(catalogue.machine_translated)
-  active.dir = catalogue.dir === 'rtl' ? 'rtl' : 'ltr'
-  active.strings = catalogue.strings
+  // preference and land every typo on English. It is also matched ahead of the
+  // stored choice — and writes nothing, so a shared link re-languages exactly
+  // one page load and leaves the recipient's own choice standing.
+  await applyCatalogue(
+    resolve(forced, stored, navigator.languages || [navigator.language], index)
+  )
 }
 
 // Top-level await: every module that imports this one is guaranteed a loaded
@@ -233,16 +393,34 @@ export function t(message, variables) {
  * keeps the English in exactly one place; a value means "use this key
  * instead", for the cases where the rendered text carries markup.
  * `data-i18n-attr` lists attributes whose current values are keys.
+ *
+ * **Both halves pin their English key before the first overwrite**, because the
+ * chooser makes this function run more than once per page. `data-i18n` with no
+ * value means "my own text is the key", and after one pass that text is Thai —
+ * a second pass would look up the Thai as a key, find nothing, and leave the
+ * page stuck in the first language it was switched to. The key is therefore
+ * written back into the empty `data-i18n` attribute, and the original attribute
+ * values are held in a `WeakMap`, so every later pass translates from the
+ * English source rather than from the previous translation.
  */
+const ATTRIBUTE_SOURCES = new WeakMap()
+
 export function applyToDocument(root = document) {
   for (const element of root.querySelectorAll('[data-i18n]')) {
     const key = element.getAttribute('data-i18n') || element.textContent.trim()
+    element.setAttribute('data-i18n', key)
     element.textContent = t(key)
   }
   for (const element of root.querySelectorAll('[data-i18n-attr]')) {
+    let sources = ATTRIBUTE_SOURCES.get(element)
+    if (!sources) {
+      sources = {}
+      ATTRIBUTE_SOURCES.set(element, sources)
+    }
     for (const name of element.getAttribute('data-i18n-attr').split(',')) {
       const attribute = name.trim()
-      const value = element.getAttribute(attribute)
+      if (!(attribute in sources)) sources[attribute] = element.getAttribute(attribute)
+      const value = sources[attribute]
       if (value) element.setAttribute(attribute, t(value))
     }
   }
@@ -274,8 +452,15 @@ export function applyDocumentLanguage() {
   const root = document.documentElement
   root.lang = DOCUMENT_LANGUAGE[active.language] || active.language
   root.dir = active.dir
+  // **Rebuilt on every call, not only created once.** The chooser makes this
+  // run again after a language change, and the notice has to follow: leaving a
+  // machine-translated language must remove it, because a notice that outlived
+  // the language it warned about is a false statement about a reviewed page,
+  // and moving between two machine-translated languages must re-word it, or
+  // Thai would be warned about in Arabic.
+  const existing = document.getElementById('machine-translation-notice')
+  if (existing) existing.remove()
   if (!active.machineTranslated) return
-  if (document.getElementById('machine-translation-notice')) return
   const notice = document.createElement('p')
   notice.id = 'machine-translation-notice'
   notice.className = 'machine-translation-notice'
@@ -293,3 +478,125 @@ export function applyDocumentLanguage() {
 /** Exported so the results export can carry the same sentence as the screen. */
 export const MACHINE_TRANSLATION_NOTICE =
   'This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.'
+
+/** The chooser's own three strings. Module-level constants rather than inline
+ *  literals so `tests/web/i18n_keys.py` can find them by reference the way it
+ *  finds `MACHINE_TRANSLATION_NOTICE`. */
+export const LANGUAGE_LABEL = 'Language'
+export const FOLLOW_SYSTEM_LABEL = 'Follow the system'
+export const MACHINE_TRANSLATED_OPTION = '%(language)s — machine translated'
+
+/**
+ * Write the choice down and re-render the page in it.
+ *
+ * **A write, never a delete** — including for "follow the system", which stores
+ * the literal `auto`. See `FOLLOW_SYSTEM` for why a delete is the wrong shape.
+ *
+ * `SameSite=Lax` because nothing here is submitted cross-site; no `Secure`,
+ * because the cookie carries no secret and `Secure` would stop it working on
+ * the `http://localhost:18080` this stack is developed and demonstrated on; no
+ * `HttpOnly`, because this line is the thing that writes it.
+ */
+export function storeChoice(value) {
+  const safe = value === FOLLOW_SYSTEM || active.index[String(value).toLowerCase()]
+    ? value
+    : FOLLOW_SYSTEM
+  document.cookie =
+    `${COOKIE_NAME}=${encodeURIComponent(safe)}; path=/; max-age=${COOKIE_MAX_AGE}; SameSite=Lax`
+  active.choice = safe
+  return safe
+}
+
+/**
+ * Switch language in place, without reloading.
+ *
+ * **A reload would be simpler and is wrong.** The wizard's state lives in
+ * memory (`web/js/state.js`), so reloading would throw away every entry
+ * somebody had typed — changing language four steps into a calculation would
+ * silently empty the form. So the catalogue is swapped, the static chrome is
+ * re-translated, and the caller re-renders whatever it owns.
+ */
+export async function chooseLanguage(value, afterChange) {
+  const stored = storeChoice(value)
+  await applyCatalogue(
+    stored === FOLLOW_SYSTEM
+      ? negotiate(navigator.languages || [navigator.language], active.index)
+      : stored
+  )
+  applyDocumentLanguage()
+  applyToDocument()
+  if (typeof afterChange === 'function') afterChange()
+}
+
+/** One option's visible text. **The endonym is never passed through `t()`** —
+ *  a translated endonym is a contradiction, and the suite forbids a catalogue
+ *  entry equal to its own English source. Only the marker around it is
+ *  translated, and it renders in the language currently on screen, which is the
+ *  language the person reading the list is reading. */
+function optionLabel(entry) {
+  if (!entry.machine_translated) return entry.endonym
+  return t(MACHINE_TRANSLATED_OPTION, { language: entry.endonym })
+}
+
+/**
+ * Build the chooser and put it at the top inline-start of the page.
+ *
+ * **"Top left" is a physical direction and two of these languages render
+ * right-to-left.** It is implemented as the *inline-start* of a bar above the
+ * header, so it is top-left in English and top-right in Arabic and Urdu. The
+ * whole layout was converted to logical properties for this reason and a test
+ * refuses a physical direction property in the stylesheet; a control pinned
+ * physically left in a mirrored page would land at the reading-end of the
+ * header, opposite the logo it is meant to sit beside.
+ *
+ * The bar goes **between the machine-translation notice and the header**, not
+ * above the notice: the notice is a statement about the whole page and its own
+ * test pins it as `document.body.firstElementChild`.
+ */
+export function installLanguageChooser(afterChange) {
+  if (document.getElementById('language-chooser')) return null
+  const header = document.getElementById('site-header') || document.querySelector('.site-header')
+  if (!header) return null
+
+  const bar = document.createElement('div')
+  bar.className = 'language-bar'
+  const label = document.createElement('label')
+  label.className = 'language-bar__label'
+  label.setAttribute('for', 'language-chooser')
+  const select = document.createElement('select')
+  select.className = 'language-bar__select'
+  select.id = 'language-chooser'
+  select.name = 'lang'
+
+  const paint = () => {
+    label.textContent = t(LANGUAGE_LABEL)
+    select.replaceChildren()
+    const follow = document.createElement('option')
+    follow.value = FOLLOW_SYSTEM
+    follow.textContent = t(FOLLOW_SYSTEM_LABEL)
+    select.append(follow)
+    for (const entry of offeredLanguages()) {
+      const option = document.createElement('option')
+      option.value = entry.language
+      option.lang = entry.language
+      option.textContent = optionLabel(entry)
+      select.append(option)
+    }
+    // The *choice*, not the rendered language: with `auto` stored on a Chinese
+    // browser the page is Chinese and this still reads "Follow the system",
+    // because that is what is in effect and what the person picked.
+    select.value = active.choice
+  }
+
+  select.addEventListener('change', () => {
+    chooseLanguage(select.value, () => {
+      paint()
+      if (typeof afterChange === 'function') afterChange()
+    })
+  })
+
+  paint()
+  bar.append(label, select)
+  header.parentNode.insertBefore(bar, header)
+  return select
+}

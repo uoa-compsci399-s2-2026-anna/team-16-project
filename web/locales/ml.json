@@ -203,6 +203,9 @@
     "no change": "മാറ്റമില്ല",
     "no impact figures were returned": "ആഘാത കണക്കുകളൊന്നും ലഭിച്ചില്ല",
     "saved": "സംരക്ഷിച്ചു",
-    "tonnes": "ടൺ"
+    "tonnes": "ടൺ",
+    "Language": "ഭാഷ",
+    "Follow the system": "സിസ്റ്റം പിന്തുടരുക",
+    "%(language)s — machine translated": "%(language)s — യന്ത്ര വിവർത്തനം"
   }
 }

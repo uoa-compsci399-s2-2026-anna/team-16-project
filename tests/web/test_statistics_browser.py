@@ -31,6 +31,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import sys
 import urllib.error
 import urllib.request
@@ -250,6 +251,76 @@ def test_the_rendered_page_never_makes_new_zealand_the_subject(stats_page):
     assert "self-selected" in rendered, "the page did not render its own copy"
     offenders = red_line.violations(rendered)
     assert not offenders, f"the rendered statistics page makes New Zealand its subject: {offenders}"
+
+
+def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page):
+    """Defect 4. The bar chart's y axis read `0`, `0.05` … `0.40` immediately
+    above a text list reading `37.9% share`: one number, two units, one card.
+
+    Both the ticks and the tooltip are asserted, because formatting one and not
+    the other only moves the contradiction into the hover. And the tick labels
+    are read off the rendered scale rather than off the formatter, so a
+    callback that is configured but never reached fails here.
+    """
+    page = stats_page(1278, 983, 1.25)
+    axes = page.evaluate(
+        """() => Object.values(Chart.instances)
+             .filter((chart) => chart.config.type === 'bar')
+             .map((chart) => ({
+               ticks: chart.scales.y.ticks.map((tick) => tick.label),
+               tooltip: chart.options.plugins.tooltip.callbacks.label({
+                 label: 'Example', parsed: {y: 0.379},
+               }),
+             }))"""
+    )
+    assert axes, "no bar chart was rendered, so the axis cannot be checked"
+    for axis in axes:
+        assert axis["ticks"], "the y axis drew no ticks"
+        assert all("%" in str(label) for label in axis["ticks"]), (
+            f"the y axis reads a raw fraction for a share: {axis['ticks']}"
+        )
+        assert "%" in axis["tooltip"], (
+            f"the axis is a percentage and the tooltip is not: {axis['tooltip']!r}"
+        )
+
+    listed = page.inner_text("#stats-breakdown-content")
+    assert "% share" in listed, "the text list no longer states a share, so nothing is being compared"
+
+
+def test_a_mass_is_printed_as_the_service_sent_it(stats_page):
+    """Defect 6. §7.7.7 rules that decimals take no locale-aware separator on
+    either surface, and this was the only place on the public front end still
+    applying one.
+
+    Two failures in one call. `toLocaleString('en-NZ', {maximumFractionDigits:
+    3})` grouped — `521952.691` rendered as `521,952.691 kg` — and it round
+    tripped through `Number`, dropping the significant trailing zero the service
+    published, so `139132.500` came out as `139,132.5`. Both are asserted,
+    because fixing the separator alone leaves the precision wrong and the page
+    still looks right.
+    """
+    page = stats_page(1278, 983, 1.25)
+    rendered = page.inner_text("#stats-breakdown-content")
+
+    masses = re.findall(r"(\S+) kg", rendered)
+    assert masses, "no mass was rendered, so nothing is being checked"
+    grouped = [mass for mass in masses if "," in mass]
+    assert not grouped, (
+        f"a decimal was given a locale-aware separator: {grouped}. §7.7.7 forbids it."
+    )
+
+    # Every `total_kg` in the fixture carries exactly three decimal places, and
+    # two of them end in a zero that `Number` would have dropped.
+    sent = {row["total_kg"] for rows in
+            (STATS["by_destination"], STATS["by_sector"], STATS["by_food_category"])
+            for row in rows}
+    trailing_zero = sorted(value for value in sent if value.endswith("0"))
+    assert trailing_zero, "the fixture no longer exercises a trailing zero"
+    for value in trailing_zero:
+        assert f"{value} kg" in rendered, (
+            f"{value} was not printed as sent; a round trip through Number would render it "
+            f"as {float(value)!r}"
+        )
 
 
 def test_the_page_carries_no_placeholder_data_banner(stats_page):

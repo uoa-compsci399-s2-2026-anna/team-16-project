@@ -916,6 +916,50 @@ def test_methodology_source_consumes_collections_metadata_and_nullable_fields():
     assert re.search(r"\bcatch\b", source)
 
 
+def test_the_documentation_page_publishes_only_the_contract_s_factor_set_fields():
+    """§1.1 makes `code` the cross-layer identifier and §7 forbids the front end
+    learning a database primary key.
+
+    `METADATA_FIELDS` in `methodology.js` was written to print one. It listed
+    ``['id', 'ID', factor_set => factor_set.id]``, and §6.3's `factor_set`
+    carries `version_label`, `is_mock`, `published_at` and `notes` — so
+    `Object.hasOwn` filtered it, nothing rendered, and the page looked correct.
+    It would have begun printing a primary key on a public page the day B added
+    `id` to the projection, with nothing failing.
+
+    A projection is not a permission, so the list is asserted to be exactly
+    §6.3's four fields rather than merely free of `id`. `name`, `version` and
+    `effective_from` were equally dead, and a page that renders whatever the
+    response happens to carry is a page that publishes whatever the response
+    happens to carry.
+    """
+    source = _read(WEB / "js" / "methodology.js")
+    match = re.search(r"const\s+METADATA_FIELDS\s*=\s*\[", source)
+    assert match, "methodology.js no longer declares METADATA_FIELDS"
+    body = _bracket_span(source, source.index("[", match.end() - 1))
+
+    keys = re.findall(r"\[\s*'([a-z_]+)'", body)
+    assert keys, "METADATA_FIELDS no longer names its fields as string keys"
+    assert set(keys) == {"version_label", "published_at", "notes", "is_mock"}, (
+        f"the documentation page publishes {sorted(keys)}; §6.3's factor_set carries "
+        "version_label, is_mock, published_at and notes, and nothing else may be rendered "
+        "from it without a contract change"
+    )
+
+    # Belt and braces across the whole module, because the field list is not the
+    # only way to reach a primary key.
+    code = _js_code_without_comments_or_strings(source)
+    assert not re.search(r"factor_set\s*(?:\?)?\.\s*id\b", code), (
+        "methodology.js reads factor_set.id; the front end never learns a primary key"
+    )
+    for module in sorted((WEB / "js").glob("*.js")):
+        module_code = _js_code_without_comments_or_strings(_read(module))
+        offenders = re.findall(r"\b(?:factor_set|row|entry|bucket)\s*(?:\?)?\.\s*id\b", module_code)
+        assert not offenders, (
+            f"{module.relative_to(ROOT)} reads a database primary key: {offenders}"
+        )
+
+
 def test_factors_fixture_carries_negative_generic_and_nullable_rows():
     factors = _json(FIXTURES / "factors.json")
     assert set(factors) == {

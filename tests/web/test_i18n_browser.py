@@ -1116,3 +1116,75 @@ def test_the_panel_names_a_language_it_cannot_render(browser):
         )
     finally:
         context.close()
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_choosing_a_right_to_left_language_survives_and_reverts(browser, width):
+    """The owner's acceptance run, on the calculator, in Arabic, at both widths.
+
+    Every other test here either chooses a language OR checks the mirroring.
+    This does both in one session, because the interesting failures live in the
+    join: a chooser that mirrors on a page the browser negotiated into Arabic
+    but not on one the visitor chose into Arabic, or a stored right-to-left
+    choice that survives a reload and loses `dir` on the second page.
+
+    Ends by returning to "Follow the system" and confirming the page comes back
+    to English on an English browser - a revert that leaves `dir="rtl"` behind
+    is the failure this last third exists for.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 800},
+        extra_http_headers={"Accept-Language": "en-NZ"},
+    )
+    try:
+        page = context.new_page()
+        page.goto(f"{BASE}/", wait_until="networkidle")
+        assert page.get_attribute("html", "dir") == "ltr"
+
+        _choose(page, "ar")
+        assert page.get_attribute("html", "dir") == "rtl"
+        assert page.get_attribute("html", "lang") == "ar"
+
+        # Survives a reload.
+        page.reload(wait_until="networkidle")
+        assert page.get_attribute("html", "dir") == "rtl"
+        assert page.eval_on_selector("#language-chooser", "el => el.value") == "ar"
+
+        # Survives navigation to another page.
+        page.goto(f"{BASE}/methodology.html", wait_until="networkidle")
+        assert page.get_attribute("html", "dir") == "rtl"
+        assert page.eval_on_selector("#language-chooser", "el => el.value") == "ar"
+
+        # The control is still reachable and still at the reading-start edge,
+        # which is the RIGHT here - a mirrored page that puts its own language
+        # control off screen is the trap this whole parametrisation is for.
+        geometry = page.evaluate(
+            """(w) => {
+              const el = document.getElementById('language-chooser');
+              const b = el.getBoundingClientRect();
+              return {onScreen: b.left >= 0 && b.right <= w + 1,
+                      height: Math.round(b.height),
+                      fromRight: Math.round(w - b.right),
+                      fromLeft: Math.round(b.left),
+                      overflows: document.documentElement.scrollWidth >
+                                 document.documentElement.clientWidth + 1};
+            }""",
+            width,
+        )
+        assert geometry["onScreen"], f"{width}px: off screen in rtl: {geometry}"
+        assert geometry["height"] >= 44, geometry
+        assert geometry["fromRight"] < geometry["fromLeft"], (
+            f"{width}px: not at the reading-start edge in rtl: {geometry}"
+        )
+        assert not geometry["overflows"], f"{width}px: rtl page scrolls sideways"
+
+        # And back again.
+        _choose(page, "auto")
+        assert page.get_attribute("html", "dir") == "ltr", (
+            "reverting left the document in right-to-left"
+        )
+        assert page.get_attribute("html", "lang") == "en-NZ"
+        stored = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
+        assert len(stored) == 1 and stored[0]["value"] == "auto"
+    finally:
+        context.close()

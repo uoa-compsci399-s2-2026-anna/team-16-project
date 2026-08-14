@@ -38,6 +38,8 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import re
+
 import pytest
 import yaml
 
@@ -305,3 +307,66 @@ def test_db_healthcheck_uses_the_application_credentials(path: Path) -> None:
     assert environment["MYSQL_USER"] in argv
     assert environment["MYSQL_DATABASE"] in argv
     assert f"-p{environment['MYSQL_PASSWORD']}" in argv
+
+
+# ---------------------------------------------------------------------------
+# The access log, and the four fields it is not allowed to hold
+# ---------------------------------------------------------------------------
+
+
+def test_the_access_log_format_names_no_identifying_field() -> None:
+    """`docker/nginx.conf`'s `kaicalc` format, held to §2.3.
+
+    The base image's `main` format logged `$remote_addr`, `$http_user_agent`,
+    `$http_referer` and `$http_x_forwarded_for` on every request to a
+    calculator whose stated position is that it stores nothing identifying
+    about a visitor. That was live until 2026-08-12. The format was rewritten;
+    this is what stops it being rewritten back, one variable at a time.
+
+    **`$http_cookie` is in the list for a newer reason.** The language chooser
+    (§7.7) stores `kaicalc_lang` at `path=/`, which cannot be scoped narrower
+    when the calculator at `/` and the panel at `/admin` both read it - so the
+    cookie rides along on every request logged here, including every
+    `POST /api/v1/calculate`. Its value space is closed and carries no entropy,
+    so logging it would not identify anyone on its own; it would sit on the same
+    line as a path and a timestamp, and "this is read and forgotten" would stop
+    being true of the deployment while staying true of the database.
+
+    Asserted against the directive rather than the whole file, because the
+    file's own comments name all five variables in order to forbid them - a
+    substring search over the raw text passes or fails on the prose instead of
+    on the format, which is the defect `tests/web/i18n_keys.py` was already
+    bitten by once.
+    """
+    conf = (REPO / "docker" / "nginx.conf").read_text(encoding="utf-8")
+
+    body = re.sub(r"^\s*#.*$", "", conf, flags=re.M)
+    formats = re.findall(r"log_format\s+\w+\s+(.*?);", body, flags=re.S)
+    assert formats, "no log_format directive found in docker/nginx.conf"
+
+    forbidden = (
+        "$remote_addr",
+        "$http_user_agent",
+        "$http_referer",
+        "$http_x_forwarded_for",
+        "$http_cookie",
+        "$http_accept_language",
+        "$binary_remote_addr",
+    )
+    for declared in formats:
+        for variable in forbidden:
+            assert variable not in declared, (
+                f"{variable} is back in the access log format: {declared.strip()}"
+            )
+
+    # Anchored: a format that had lost its contents would satisfy every
+    # assertion above. The log still has to be worth keeping.
+    joined = " ".join(formats)
+    for needed in ("$status", "$request"):
+        assert needed in joined, f"the access log no longer records {needed}"
+
+    # And the server actually uses the constrained format rather than declaring
+    # it and falling back to the base image's `main`.
+    assert re.search(r"access_log\s+\S+\s+kaicalc\s*;", body), (
+        "the server block does not use the kaicalc log format"
+    )

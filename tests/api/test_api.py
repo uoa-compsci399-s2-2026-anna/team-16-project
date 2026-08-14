@@ -234,6 +234,35 @@ async def test_the_language_cookie_reaches_the_api_and_is_ignored(app):
                 "the chooser's preference has reached the database"
             )
 
+    # And a sweep of the whole schema rather than of the one table this test
+    # thought to name. `zh-Hant` is used as the sentinel because it is a real
+    # language the chooser can emit and appears nowhere else in a calculation -
+    # unlike `ta`, whose two letters occur inside ordinary words.
+    async with await _client(app) as client:
+        marked = await client.post(
+            "/api/v1/calculate",
+            json=payload,
+            headers={"Cookie": "kaicalc_lang=zh-Hant"},
+        )
+    assert marked.status_code == 200, marked.text
+
+    from sqlalchemy import text as _text
+
+    with app.state.session_factory() as db:
+        tables = [
+            name
+            for (name,) in db.execute(
+                _text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        ]
+        assert tables, "no tables to sweep; this test would pass vacuously"
+        for table in tables:
+            for row in db.execute(_text(f'SELECT * FROM "{table}"')):
+                for value in row:
+                    assert "zh-Hant" not in str(value), (
+                        f"the language cookie reached {table}: {row!r}"
+                    )
+
 
 async def test_dry_run_requires_staff_and_does_not_persist(app):
     async with await _client(app) as client:

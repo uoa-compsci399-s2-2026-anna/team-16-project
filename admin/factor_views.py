@@ -1345,7 +1345,7 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             status_code=302,
         )
 
-    async def _clear_placeholder_pageresponse(self, request, context, status_code=200):
+    async def _render_clear_page(self, request, context, status_code=200):
         return await self.templates.TemplateResponse(
             request, "brand/factor_set_clear_placeholder.html", context,
             status_code=status_code,
@@ -1429,10 +1429,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             }
 
             if request.method == "GET":
-                return await self._clear_placeholder_pageresponse(request, context)
+                return await self._render_clear_page(request, context)
 
             async def refuse(message, status_code=400):
-                return await self._clear_placeholder_pageresponse(
+                return await self._render_clear_page(
                     request, {**context, "error": message, "open_dialog": "confirm"},
                     status_code=status_code,
                 )

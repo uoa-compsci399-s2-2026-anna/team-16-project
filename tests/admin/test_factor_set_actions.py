@@ -601,3 +601,32 @@ async def test_selecting_more_than_one_set_to_clear_is_refused(
     _resync(session)
     assert session.get(FactorSet, populated_set.id).is_mock is True
     assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_the_proof_page_says_so_when_there_is_nothing_to_clear(
+    session, admin_client, one_draft
+):
+    """Reachable from the bulk Actions dropdown against any row, including one
+    that is already unflagged. A proof dialog for a change that would be
+    refused after the password was typed is worse than a sentence."""
+    one_draft.is_mock = False
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+
+    assert page.status_code == 200
+    assert "nothing here to clear" in page.text.lower()
+    assert 'name="current_password"' not in page.text
+
+
+@pytest.mark.asyncio
+async def test_the_proof_page_refuses_a_set_that_does_not_exist(admin_client):
+    """Only reachable by a hand-typed URL, and it must not 500 - the same
+    shape the LifecycleError catch around every action exists to prevent."""
+    response = await admin_client.get("/admin/factor-set/clear-placeholder?pks=999999")
+
+    assert response.status_code == 400
+    assert "999999" in response.text

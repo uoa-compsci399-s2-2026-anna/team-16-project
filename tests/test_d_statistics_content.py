@@ -12,12 +12,17 @@ layout remain browser-acceptance work rather than being faked here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import subprocess
 from html.parser import HTMLParser
 from pathlib import Path
 from urllib.parse import unquote, urlsplit
+
+import pytest
+
+from tests.support import red_line
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -169,6 +174,26 @@ def _js_code_without_comments_or_strings(source: str) -> str:
             continue
         index += 1
     return "".join(output)
+
+
+def _bracket_span(source: str, opening: int) -> str:
+    """The text from ``source[opening]`` to its matching bracket, inclusive.
+
+    Counts every bracket kind, so an arrow-function body inside a call is
+    included rather than being cut off at the first ``)`` — which is exactly
+    what the regex this replaces did.
+    """
+    pairs = {"(": ")", "[": "]", "{": "}"}
+    stack: list[str] = []
+    for index in range(opening, len(source)):
+        character = source[index]
+        if character in pairs:
+            stack.append(pairs[character])
+        elif stack and character == stack[-1]:
+            stack.pop()
+            if not stack:
+                return source[opening:index + 1]
+    return source[opening:]
 
 
 def _brace_block(source: str, opening: int) -> tuple[str, int]:
@@ -504,6 +529,246 @@ def test_charts_module_has_exact_public_exports_and_vendored_chartjs():
     assert "https://cdn" not in source.lower()
 
 
+#: The provenance note beside the runtime, and the two files it vouches for.
+VENDOR = WEB / "vendor"
+SOURCE_NOTE = VENDOR / "chart.js.SOURCE.md"
+
+
+def test_the_recorded_chartjs_hashes_are_the_hashes_of_the_files_on_disk():
+    """The provenance note is checked, not merely written.
+
+    ``chart.js.SOURCE.md`` records a runtime SHA-256, a licence SHA-256 and the
+    npm integrity string the tarball was verified against, and all three were
+    correct byte for byte against ``registry.npmjs.org/chart.js/4.5.1``. Nothing
+    kept them correct: the strongest claim any test made about the vendored
+    runtime was that some file contained the literal ``Chart.js v4.5.1``, which
+    a one-line file would satisfy.
+
+    That matters more here than a version pin usually would. There is no build
+    step, no lockfile and no package manager anywhere near ``web/`` — this
+    206KB blob is committed as source, and the note beside it is the only record
+    of where it came from. A hash nobody recomputes is a claim about a file
+    rather than a fact about it.
+
+    The hashes are read **out of the note** rather than repeated here, so the
+    note stays the single record and editing it to match a swapped file is the
+    same edit either way — one that has to be made deliberately, in the file
+    whose whole job is to say what was downloaded.
+    """
+    assert SOURCE_NOTE.is_file(), "the vendored runtime has no provenance note"
+    note = _read(SOURCE_NOTE)
+
+    recorded = {
+        label: match
+        for label, match in re.findall(
+            r"^-\s+(Runtime|Licence|License)\s+SHA-256:\s*`([0-9a-f]{64})`\s*$",
+            note,
+            flags=re.M,
+        )
+    }
+    assert set(recorded) & {"Runtime"}, "SOURCE.md records no runtime SHA-256"
+    assert set(recorded) & {"Licence", "License"}, "SOURCE.md records no licence SHA-256"
+
+    licence_key = "Licence" if "Licence" in recorded else "License"
+    for filename, key in (
+        ("chart.umd.min.js", "Runtime"),
+        ("chart.js.LICENSE.md", licence_key),
+    ):
+        path = VENDOR / filename
+        assert path.is_file(), f"{filename} is recorded in SOURCE.md but is not on disk"
+        actual = hashlib.sha256(path.read_bytes()).hexdigest()
+        assert actual == recorded[key], (
+            f"web/vendor/{filename} does not match the SHA-256 recorded in "
+            f"chart.js.SOURCE.md: recorded {recorded[key]}, on disk {actual}. "
+            "Either the file was replaced without updating its provenance, or the "
+            "provenance was updated without replacing the file."
+        )
+
+    # The npm integrity string is the third recorded fact and the one that ties
+    # the pair to a published release. It is not recomputable from these two
+    # files - it covers the whole tarball - so what is asserted is that it is
+    # still recorded, in the registry's own format, for the version claimed.
+    assert re.search(r"`sha512-[A-Za-z0-9+/]{86}==`", note), (
+        "SOURCE.md no longer records the npm integrity string the tarball was verified against"
+    )
+    assert "4.5.1" in note and "registry.npmjs.org/chart.js" in note
+
+
+#: The brand palette, from `Kai Commitment_Brand Guidelines_v1-Oct25.pdf`.
+#: White is excluded: it is the page ground and the segment border, so it is not
+#: available as a fill. The guidelines misprint Blueberry's RGB as 0/90/130; the
+#: hex is authoritative.
+KALE = "#003223"
+WHITE = "#FFFFFF"
+
+#: The guidelines' own dark-ground/light-ground classification. Beetroot is not
+#: classified there; at 9.64:1 against White and 1.47:1 against Kale it is a
+#: dark ground by any reading, so it is listed with the ones that are.
+BRAND_COLOURS = {
+    "#003223": ("Kale", WHITE),
+    "#FF5032": ("Orange", WHITE),
+    "#005AE6": ("Blueberry", WHITE),
+    "#87005A": ("Beetroot", WHITE),
+    "#28C882": ("Pea", KALE),
+    "#FFD76E": ("Banana", KALE),
+    "#E6BEFF": ("Lavender", KALE),
+}
+
+#: Orange on White is 3.26:1, below the 4.5:1 body-text minimum. It is the
+#: brand's own pairing, named here as the single stated exception rather than
+#: lowering the bar for every entry.
+BRAND_CONTRAST_EXCEPTIONS = {"#FF5032"}
+
+
+def _palette() -> list[tuple[str, str]]:
+    """`PALETTE`'s `{fill, ink}` pairs, read out of charts.js in order."""
+    source = _read(WEB / "js" / "charts.js")
+    match = re.search(r"export\s+const\s+PALETTE\s*=\s*\[", source)
+    assert match, "charts.js no longer exports PALETTE"
+    body = _bracket_span(source, source.index("[", match.end() - 1))
+    entries = re.findall(
+        r"\{\s*fill:\s*'(#[0-9A-Fa-f]{6})'\s*,\s*ink:\s*(WHITE|KALE|'#[0-9A-Fa-f]{6}')\s*\}",
+        body,
+    )
+    assert entries, "PALETTE's entries are no longer {fill, ink} pairs"
+    resolved = {"WHITE": WHITE, "KALE": KALE}
+    return [(fill.upper(), resolved.get(ink, ink.strip("'")).upper()) for fill, ink in entries]
+
+
+def _relative_luminance(hex_colour: str) -> float:
+    """WCAG 2.x relative luminance, computed here rather than imported from the
+    module under test, so the pairing is checked independently of the table."""
+    channels = []
+    for offset in (1, 3, 5):
+        value = int(hex_colour[offset:offset + 2], 16) / 255
+        channels.append(value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4)
+    red, green, blue = channels
+    return 0.2126 * red + 0.7152 * green + 0.0722 * blue
+
+
+def _contrast(a: str, b: str) -> float:
+    high, low = sorted((_relative_luminance(a), _relative_luminance(b)), reverse=True)
+    return (high + 0.05) / (low + 0.05)
+
+
+def test_the_palette_covers_the_taxonomy_without_repeating_a_colour():
+    """The palette was nine long and indexed modulo its own length, so a tenth
+    bucket drew the first one's colour — measured, `Landfill` and
+    `Other (sample too small)` were both `#005f73` in the same doughnut.
+
+    The ceiling is not hypothetical and not a guess: it is every destination the
+    taxonomy defines, plus the `other` bucket §5.4 merges the suppressed ones
+    into, which is an ordinary bucket alongside them rather than instead of one.
+    Pinning the length against the fixture is what keeps the modulo in
+    `paletteEntry` unreachable — if B adds destinations, this fails before a
+    doughnut repeats a colour on a public page.
+    """
+    palette = _palette()
+    fills = [fill for fill, _ in palette]
+    assert len(fills) == len(set(fills)), (
+        f"the palette repeats a colour: {sorted({f for f in fills if fills.count(f) > 1})}"
+    )
+
+    taxonomy = _json(FIXTURES / "taxonomy.json")
+    ceiling = len(taxonomy["destinations"]) + 1
+    assert len(palette) >= ceiling, (
+        f"the palette has {len(palette)} colours for a ceiling of {ceiling} buckets "
+        f"({len(taxonomy['destinations'])} destinations plus `other`), so the modulo in "
+        "paletteEntry() would repeat one"
+    )
+
+
+def test_the_palette_is_built_only_from_brand_colours():
+    """Not one of Kale, Orange, Pea, Blueberry, Beetroot, Banana or Lavender
+    appeared in the palette this replaces; `renderBar` drew `#0a9396` on
+    `#005f73`, neither of which is anywhere in the guidelines, on a page whose
+    every other colour comes from a `--kai-*` token.
+
+    Sixteen colours cannot all be brand colours — there are seven — so the rest
+    are mixes toward White and toward Kale. What is asserted is that every entry
+    is *on a line between two brand colours*: either one of the seven exactly,
+    or a mix of one of them with White or with Kale. That refuses an invented
+    hue while allowing the tints and shades the count needs.
+    """
+    palette = _palette()
+    for fill, _ in palette:
+        if fill in BRAND_COLOURS:
+            continue
+        target = tuple(int(fill[i:i + 2], 16) for i in (1, 3, 5))
+        derived = False
+        for base_hex in BRAND_COLOURS:
+            base = tuple(int(base_hex[i:i + 2], 16) for i in (1, 3, 5))
+            for other in ((255, 255, 255), (0, 50, 35)):
+                for step in range(1, 100):
+                    mixed = tuple(round(b + (o - b) * step / 100) for b, o in zip(base, other))
+                    if max(abs(m - t) for m, t in zip(mixed, target)) <= 1:
+                        derived = True
+                        break
+                if derived:
+                    break
+            if derived:
+                break
+        assert derived, (
+            f"{fill} is not a brand colour and is not a mix of one with White or Kale; "
+            "the brand palette is White, Kale, Orange, Pea, Blueberry, Beetroot, Banana "
+            "and Lavender"
+        )
+
+    assert set(BRAND_COLOURS) <= {fill for fill, _ in palette}, (
+        "every brand colour usable as a fill should appear in the palette before any mix does"
+    )
+
+
+def test_every_palette_ink_follows_the_brand_rule():
+    """Dark grounds take white text, light grounds take Kale.
+
+    `ink` is load-bearing rather than recorded: `renderDonut` paints the tooltip
+    on the hovered segment's own fill and takes that segment's ink, so an `ink`
+    edited out of step with its `fill` draws white text on Banana. The contrast
+    ratio is recomputed here from the hex, independently of the table, so this
+    fails on the entry that drifted rather than on the rule being restated.
+    """
+    for fill, ink in _palette():
+        assert ink in {WHITE, KALE}, f"{fill} takes {ink}, which is neither White nor Kale"
+        against_white = _contrast(fill, WHITE)
+        against_kale = _contrast(fill, KALE)
+
+        if fill in BRAND_COLOURS:
+            # The guidelines classify these seven, and the guidelines win. Orange
+            # is the case that proves the two rules differ: it is a *dark* ground
+            # taking white text, while raw contrast would pair it with Kale.
+            name, expected = BRAND_COLOURS[fill]
+            assert ink == expected, (
+                f"{name} ({fill}) is a "
+                f"{'dark' if expected == WHITE else 'light'} ground in the brand "
+                f"guidelines and takes {expected}, not {ink}"
+            )
+        else:
+            expected = WHITE if against_white >= against_kale else KALE
+            assert ink == expected, (
+                f"{fill} takes {ink}: contrast is {against_white:.2f} against White and "
+                f"{against_kale:.2f} against Kale, so it is a "
+                f"{'dark' if expected == WHITE else 'light'} ground and takes {expected}"
+            )
+
+        if fill not in BRAND_CONTRAST_EXCEPTIONS:
+            assert _contrast(fill, ink) >= 4.5, (
+                f"{fill} reaches only {_contrast(fill, ink):.2f}:1 against its own ink, "
+                "below the 4.5:1 body-text minimum the tooltip needs"
+            )
+
+    # The exception has to stay an exception: an entry listed here that now
+    # clears 4.5 is a stale exemption, and one that is not in the palette at all
+    # is a note about a colour nobody uses.
+    palette_fills = {fill for fill, _ in _palette()}
+    for fill in BRAND_CONTRAST_EXCEPTIONS:
+        assert fill in palette_fills, f"{fill} is exempted but is not in the palette"
+        ink = dict(_palette())[fill]
+        assert _contrast(fill, ink) < 4.5, (
+            f"{fill} now reaches {_contrast(fill, ink):.2f}:1 and no longer needs its exemption"
+        )
+
+
 def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation():
     """Independent empty states, negative axes and destroy timing stay in browser QA."""
 
@@ -513,20 +778,91 @@ def test_statistics_source_consumes_the_stats_contract_without_nz_generalisation
 
     assert "getstats" in source.lower() and "./api.js" in source
     assert "self-selected" in combined
-    assert not re.search(r"(?:distribution|statistics|picture)\s+of\s+(?:food waste\s+)?(?:in\s+)?new zealand", combined)
     assert "total_calculations" in source
     assert "generated_at" in source and "suppression_threshold" in source
-    assert "share" in source, "API-provided shares are the preferred public chart values"
     assert "tonnes recorded" not in combined
+
+    # **The API's own `share`, read as a field, not the substring "share".**
+    # `assert "share" in source` was satisfied by the function name
+    # `sharePercent` and by nothing else needing to be true: every reference to
+    # the field could have been deleted and the assertion would still have
+    # passed. Anchored on a property read instead.
+    assert re.search(r"\brow\s*\??\.\s*share\b|\[\s*['\"]share['\"]\s*\]|valueKey:\s*['\"]share['\"]", source), (
+        "the statistics page must read the API-provided `share`, not derive one"
+    )
 
     for breakdown in ("by_destination", "by_sector", "by_food_category"):
         assert breakdown in source
     assert re.search(r"\bcatch\b", source)
 
-    # `other` and `unspecified` are ordinary API buckets, not client-side filters.
-    assert not re.search(r"\.filter\s*\([^)]*(?:other|unspecified)", source)
+    # **Suppression is the service's, and the browser may not repeat it.**
+    # The guard here was `\.filter\s*\([^)]*(?:other|unspecified)`, which stops
+    # at the first `)` and so never sees the body of an arrow function. It does
+    # not catch `rows.filter(r => r.count < stats.suppression_threshold)` — the
+    # exact client-side re-suppression it exists to forbid, and the one that
+    # would silently drop the `other` bucket §6.4 says can be the largest row
+    # in the breakdown. Every `.filter(` call is now read to its matching
+    # bracket and refused if it mentions a bucket field, a threshold or a
+    # bucket code.
+    code = _js_code_without_comments_or_strings(source)
+    forbidden = ("count", "share", "total_kg", "suppression_threshold", "code", "label")
+    for match in re.finditer(r"\.filter\s*\(", code):
+        opening = code.index("(", match.start())
+        body = _bracket_span(code, opening)
+        named = sorted(word for word in forbidden if re.search(rf"\b{word}\b", body))
+        assert not named, (
+            f"stats.js filters buckets in the browser on {named}: suppression and bucket "
+            f"membership are the service's ({source[opening - 40:opening + len(body)]!r})"
+        )
 
     assert "renderDonut" in source and "renderBar" in source and "./charts.js" in source
+
+
+def test_the_statistics_page_never_makes_new_zealand_the_subject():
+    """§6.4's copy constraint, at word level over the page's own text.
+
+    The predicate, why the phrase-order regex it replaces was decorative, and
+    the four sentences that passed it are all in ``tests/support/red_line.py``.
+    This asserts the page against it; ``test_the_red_line_guard_can_fail``
+    below asserts the predicate against those four.
+
+    The text scanned is the statistics page's static copy plus every string
+    literal ``stats.js`` can put on the screen — the module builds its DOM with
+    ``textContent``, so its literals are its rendered text. The same predicate
+    is run over the genuinely rendered ``innerText`` in
+    ``tests/web/test_statistics_browser.py``, which is the form that also sees
+    what the API sends.
+    """
+    html = _read(PAGES["statistics"])
+    literals = " ".join(
+        "".join(group) for group in re.findall(
+            r"`([^`]*)`|'((?:[^'\\]|\\.)*)'|\"((?:[^\"\\]|\\.)*)\"",
+            _read(WEB / "js" / "stats.js"),
+        )
+    )
+    offenders = red_line.violations(f"{html}\n{literals}")
+    assert not offenders, f"the statistics page makes New Zealand its subject: {offenders}"
+
+
+@pytest.mark.parametrize("sentence", red_line.COUNTEREXAMPLES)
+def test_the_red_line_guard_can_fail(sentence):
+    """Each of the four sentences the previous guard let through is caught.
+
+    Without this the rewrite would be an untested rewrite, which is the same
+    defect one layer up.
+    """
+    assert red_line.violations(sentence), f"the red-line guard does not catch {sentence!r}"
+
+
+@pytest.mark.parametrize("sentence", red_line.PERMITTED)
+def test_the_red_line_guard_is_not_merely_a_word_ban(sentence):
+    """And each sentence that may name the country is left alone.
+
+    A guard that refused the words "New Zealand" outright would pass every
+    counterexample above and be useless: the page's own copy names the country,
+    in a negation, and that sentence is the reason it passes at all.
+    """
+    assert not red_line.violations(sentence), f"the red-line guard over-reaches on {sentence!r}"
 
 
 def test_statistics_fixture_exercises_the_public_semantics():

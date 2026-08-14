@@ -40,30 +40,42 @@ const WHITE = '#FFFFFF'
  * entries are closer than 42, against a just-noticeable threshold near 10.
  *
  * **`ink` is the brand's text-colour rule, carried with the colour rather than
- * remembered.** Dark grounds take White, light grounds take Kale, decided by
- * whichever gives the higher WCAG contrast ratio against the fill.
- * `test_every_palette_ink_follows_the_brand_rule` recomputes that independently
- * from the hex, so an `ink` edited out of step with its `fill` fails rather than
- * quietly drawing white text on Banana. It is load-bearing: the tooltip is
- * painted on the hovered segment's own fill and takes that segment's ink.
+ * remembered.** For the seven brand colours it is the guidelines' own
+ * classification: Kale, Blueberry and Orange are dark grounds and take White;
+ * Pea, Banana and Lavender are light grounds and take Kale. (Beetroot the
+ * guidelines do not classify; at 9.64:1 against White and 1.47:1 against Kale
+ * it is a dark ground by any reading.) For the mixes, which the guidelines do
+ * not cover, it is whichever gives the higher WCAG contrast, and each mix was
+ * chosen at a ratio that clears 4.5:1 against its own ink.
+ *
+ * **Orange is the one entry below that floor** — 3.26:1 with White — and it is
+ * the brand's own pairing rather than a choice made here, so the test names it
+ * as the single stated exception instead of quietly lowering the bar for
+ * everything.
+ *
+ * `ink` is load-bearing, not recorded: `renderDonut` paints the tooltip on the
+ * hovered segment's own fill and takes that segment's ink, and
+ * `test_every_palette_ink_follows_the_brand_rule` recomputes the contrast from
+ * the hex, so an `ink` edited out of step with its `fill` fails rather than
+ * drawing white text on Banana.
  */
 export const PALETTE = [
   { fill: '#003223', ink: WHITE },  // Kale
-  { fill: '#FF5032', ink: KALE },   // Orange
+  { fill: '#FF5032', ink: WHITE },  // Orange
   { fill: '#005AE6', ink: WHITE },  // Blueberry
   { fill: '#FFD76E', ink: KALE },   // Banana
-  { fill: '#00488E', ink: WHITE },  // Blueberry, shaded toward Kale
+  { fill: '#5994EF', ink: KALE },   // Blueberry, 35% toward White
   { fill: '#28C882', ink: KALE },   // Pea
   { fill: '#87005A', ink: WHITE },  // Beetroot
-  { fill: '#168457', ink: WHITE },  // Pea, shaded toward Kale
+  { fill: '#C9F1E0', ink: KALE },   // Pea, 75% toward White
+  { fill: '#44193E', ink: WHITE },  // Beetroot, 50% toward Kale
+  { fill: '#FFEBB6', ink: KALE },   // Banana, 50% toward White
+  { fill: '#00447B', ink: WHITE },  // Blueberry, 55% toward Kale
+  { fill: '#FFB0A3', ink: KALE },   // Orange, 55% toward White
+  { fill: '#506370', ink: WHITE },  // Lavender, 65% toward Kale
   { fill: '#E6BEFF', ink: KALE },   // Lavender
-  { fill: '#8C8D4C', ink: KALE },   // Banana, shaded toward Kale
-  { fill: '#73A4F1', ink: KALE },   // Blueberry, tinted toward White
-  { fill: '#8C422B', ink: WHITE },  // Orange, shaded toward Kale
-  { fill: '#738E86', ink: KALE },   // Kale, tinted toward White
-  { fill: '#4A1641', ink: WHITE },  // Beetroot, shaded toward Kale
-  { fill: '#FF9F8E', ink: KALE },   // Orange, tinted toward White
-  { fill: '#BD73A4', ink: KALE },   // Beetroot, tinted toward White
+  { fill: '#667441', ink: WHITE },  // Banana, 60% toward Kale
+  { fill: '#80412A', ink: WHITE },  // Orange, 50% toward Kale
 ]
 
 /** The single-series bar colour. One series across categories carries no

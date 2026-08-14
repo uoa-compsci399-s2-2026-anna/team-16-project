@@ -205,6 +205,13 @@ def test_factor_rows_reference_the_taxonomy(taxonomy, factors):
         assert "source_note" in row and "data_quality" in row  # §6.3
     for row in factors["downstream"]:
         assert row["destination"] in destinations
+        #: §2.2 (v1.31): null means "every sector", a legal key value rather
+        #: than a missing field. `in row` is asserted separately for the reason
+        #: given on `upstream[].destination` above — `row.get("sector")` would
+        #: pass on a row that omits it, and an omitted sector loads as the
+        #: every-sector row and prices every supply-chain stage the same.
+        assert "sector" in row
+        assert row["sector"] is None or row["sector"] in sectors
         assert row["food_category"] is None or row["food_category"] in foods
         assert row["metric"] in metrics
         assert "source_note" in row and "data_quality" in row  # §6.3
@@ -503,8 +510,7 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
 
     def upstream(sector, food, destination, metric):
         #: §2.2 (v1.8): exact destination first, then the generic row
-        #: (destination null), then zero — the same three-step
-        #: `downstream` below has always used for food_category.
+        #: (destination null), then zero.
         for candidate in (destination, None):
             for row in factors["upstream"]:
                 if (row["sector"], row["food_category"], row["destination"],
@@ -512,11 +518,21 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
                     return Decimal(row["value_per_kg"])
         return Decimal("0")
 
-    def downstream(destination, food, metric):
-        for candidate in (food, None):  # §2.2: exact match, then the null row
+    def downstream(destination, sector, food, metric):
+        #: §4.1 (v1.31): both `sector` and `food_category` are nullable, so the
+        #: fallback is two-dimensional and the order between the two
+        #: one-dimension rows is a decision rather than a derivation — the
+        #: sector wins. Written out in full here rather than delegating to
+        #: `FactorBundle.downstream`, because the whole value of this module is
+        #: that it re-derives the contract independently of the code under
+        #: test: sharing the lookup would make the two agree by construction.
+        for candidate_sector, candidate_food in (
+            (sector, food), (sector, None), (None, food), (None, None),
+        ):
             for row in factors["downstream"]:
-                if (row["destination"], row["food_category"], row["metric"]) == (
-                    destination, candidate, metric
+                if (row["destination"], row["sector"], row["food_category"],
+                        row["metric"]) == (
+                    destination, candidate_sector, candidate_food, metric
                 ):
                     return Decimal(row["value_per_kg"])
         return Decimal("0")
@@ -531,7 +547,8 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
                 assert code in formulas, f"{code} has no published formula"
                 for row in metric["by_destination"]:
                     up = upstream(entry["sector"], food, row["destination"], code)
-                    down = downstream(row["destination"], food, code)
+                    down = downstream(row["destination"], entry["sector"], food,
+                                      code)
                     assert Decimal(row["upstream"]) == up, (
                         f"{name}: {code}/{row['destination']} reports upstream "
                         f"{row['upstream']}, factors.json publishes {up}"

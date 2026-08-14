@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-15 (v1.30 draft)"
+date: "2026-08-15 (v1.31 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,21 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.31 — 2026-08-15 (`factor_downstream` gains a sector, and the ReFED fixture is rebuilt into ReFED's own shape; affects A, B, C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`factor_downstream.sector_id` — INT, FK, NULL, where NULL means "applies to every sector for this destination".** Structurally identical to `food_category_id` beside it. The table could not see which stage of the supply chain the waste arose at, and §10.3's ReFED fixture absorbed that by folding the stage into the *food category's code*: one sector row and 39 categories named `refed_farm_dry_goods`, `refed_foodservice_frozen`. v1.19 recorded that as lossless and said this note was "the first thing to check if a downstream factor ever does need to vary by sector". It did — and the cost was never in the arithmetic, it was in the product: the calculator's first step offered **one** radio button that selected itself, its second listed 39 compound entries the client read as stages rather than foods, and §5.4's `by_sector` chart was a single 100% bucket carrying no information at all | §2.2, §4.1, §10.2, §10.3 |
+| 2 | **The lookup is now two-dimensional, and the precedence is a decision rather than a derivation. Exact `(sector, food_category)` → `(sector, NULL)` → `(NULL, food_category)` → `(NULL, NULL)` → zero.** Steps 2 and 3 both name exactly one dimension, so specificity cannot separate them and one had to be chosen. **The sector wins**; §2.2 carries the three reasons in full. A wrong choice here returns a plausible number, not an error, which is why all sixteen subsets of the four candidate rows are asserted **by value** in `tests/test_bundle.py` rather than sampled | §2.2, §4.1 |
+| 3 | **`FactorBundle.downstream()` takes the sector: `downstream(destination, sector, food_cat, metric)`.** The new argument is positional and in the middle, deliberately — a call site left at three arguments is a `TypeError` at import-test time rather than a silent miss. `bundle.downstream_factors` is keyed `(destination, sector \| None, food_category \| None, metric)` | §4.1 |
+| 4 | **`downstream[].sector` is a required key whose value may be `null`**, on exactly the terms `downstream[].food_category` and `upstream[].destination` already have. A missing key is a malformed row, because a row that had silently lost it would load as the every-sector row and price every stage of the supply chain the same — a plausible answer rather than an exception | §10.2 |
+| 5 | **§6.3's factor export carries `sector` on every downstream row**, present-and-null rather than omitted, for the same reason it carries `source_note` that way: so a consumer can tell "this row applies to every sector" from "this endpoint does not report the sector" | §6.3 |
+| 6 | **§5.1's coverage filter: a sector is covered if it appears in `factor_upstream.sector_id` *or* as a non-NULL `factor_downstream.sector_id`.** Not redundant with the upstream read — a set may legitimately price a stage downstream only, a per-tonne disposal charge that differs by collection contract with no upstream footprint of its own, and reading one table would drop that sector from the form while the rows pricing it sat in the database. Mirrors what v1.21 already does for destinations across the two tables | §5.1 |
+| 7 | **The ReFED comparison fixture is rebuilt: 5 sectors × 9 food categories, not 1 × 39.** `refed_farm`, `refed_retail`, …; `refed_produce`, `refed_dry_goods`, …. **The numbers did not move.** `python -m pytest tests/benchmark/refed/ -q` agrees with ReFED's separately published totals to ~1e-9 before and after, and two scenarios run by hand on ReFED's live calculator are now tests: Farm / Standard Mix over six destinations, and Retail / Standard Mix over two | §10.3 |
+| 8 | **Every downstream row in that fixture states both dimensions; none is left NULL**, even for the 20 of 102 groups whose value does not vary by sector. ReFED publishes only **39 of the 45** (sector, food type) pairs — Farm has Dry Goods, Produce and Standard Mix and nothing else — and a 5 × 9 taxonomy offers all 45, so a NULL-sector row would answer a Farm / Frozen lookup with Retail's number. With every row explicit those six pairs price at **zero on every metric**, which is visibly nothing rather than plausibly wrong. Asserted for all six | §10.3 |
+| 9 | **The New Zealand set is unchanged and that is evidence, not an assumption.** Its downstream factors do not vary by sector, so all fifteen rows take NULL. In the golden suite the rebuild touched **only `bundle.json`** — not one `expected.json` and not one `request.json` — and all nine cases pass | §10.1, §2.2 |
+| 10 | **Migration `0014`.** Nullable column, no backfill: an existing row's NULL says "every sector", which is what that row already said by having no opinion. `uq_factor_downstream` becomes five columns and `uq_factor_downstream_generic` COALESCEs **both** nullable columns — collapsing only the new one would make duplicate `food_category IS NULL` rows legal again and quietly undo what 0005 created that index for | §2.2 |
 
 ### v1.30 — 2026-08-15 (the three content pages are translated, and charts get a translation path of their own; affects C and D)
 
@@ -749,23 +764,46 @@ UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `destination_id`, `metr
 | `id` | BIGINT | PK, AI | |
 | `factor_set_id` | INT | FK, NOT NULL | |
 | `destination_id` | INT | FK, NOT NULL | |
+| `sector_id` | INT | FK, **NULL** | **NULL means the row applies to every sector for that destination.** NULL is the normal value; the New Zealand set takes it on every row |
 | `food_category_id` | INT | FK, **NULL** | **NULL means the row applies to every food category for that destination** |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | **May be negative** (an offset) |
 | `source_note` | TEXT | NULL | Where this number came from |
 | `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
-UNIQUE(`factor_set_id`, `destination_id`, `food_category_id`, `metric_id`)
+UNIQUE(`factor_set_id`, `destination_id`, `sector_id`, `food_category_id`, `metric_id`)
 
 > **Why every factor row carries its own provenance.** The client has not yet supplied real factors, and when they arrive they will not arrive uniformly: the Otago 2025 baseline states plainly that data quality varies by an order of magnitude across the supply chain, and that primary-production loss rates are largely borrowed from Australian figures. A calculator that cannot say which of its numbers are measured and which are proxies cannot be defended in public — and `is_mock` on the factor set is all-or-nothing, unable to express "these forty rows are solid and those twelve are borrowed".
 >
 > These columns exist now, empty, so that the arrival of real data is an **import** rather than a **migration**. `data_quality` is free text rather than an enum for the same reason the destination groupings are a table and not a hard-coded set: nobody yet knows which categories the client will use, and a column that must be altered to accept a new value puts us back where we started.
 
-> **This UNIQUE does not do what it appears to, and a functional index is required.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — the very rows where `food_category_id IS NULL`. The lookup below would then pick one of them nondeterministically, and the calculator would return different numbers for the same input with nothing in the logs to explain it. Add a unique index over `COALESCE(food_category_id, 0)` alongside the declared constraint, and test it by inserting the second generic row and asserting `IntegrityError`. The same caveat applies to `submission_entry` (§2.3) and to any other UNIQUE containing a nullable column.
+> **This UNIQUE does not do what it appears to, and a functional index is required.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — the very rows where `food_category_id IS NULL`, and since v1.31 the rows where `sector_id IS NULL` as well. The lookup below would then pick one of them nondeterministically, and the calculator would return different numbers for the same input with nothing in the logs to explain it. Add a unique index over `COALESCE(sector_id, 0)` **and** `COALESCE(food_category_id, 0)` alongside the declared constraint, and test it by inserting the second generic row and asserting `IntegrityError`. **Both columns, not just the newer one:** collapsing only `sector_id` leaves two `food_category_id IS NULL` rows legal again and quietly undoes what this index was created for. The same caveat applies to `submission_entry` (§2.3) and to any other UNIQUE containing a nullable column.
 >
 > Raised by B during implementation, before it could produce a wrong answer in the field.
 
-> The nullable `food_category_id` exists for cost items such as the waste levy, which are charged per tonne regardless of food type, so no special case is needed. Lookup order: exact match on `food_category_id` first, then fall back to the NULL row, then treat as zero.
+> The nullable `food_category_id` exists for cost items such as the waste levy, which are charged per tonne regardless of food type, so no special case is needed. The nullable `sector_id` (v1.31) exists so that a factor set can price the same disposal route differently by stage of the supply chain — a kerbside collection contract and a commercial one at the same landfill — without every set that does not need to being forced to say so.
+
+#### The downstream lookup order (v1.31)
+
+Two nullable dimensions means four rows may legally exist for one `(destination, metric)`, and exactly one of them must win:
+
+| # | Row | Meaning |
+| --- | --- | --- |
+| 1 | (`sector`, `food_category`) | this sector, this food category |
+| 2 | (`sector`, NULL) | this sector, every food category |
+| 3 | (NULL, `food_category`) | every sector, this food category |
+| 4 | (NULL, NULL) | every sector, every food category — the waste levy shape |
+| 5 | — | `Decimal('0')` |
+
+Steps 1, 4 and 5 are not in question: more specific beats less, and absence is zero. **Steps 2 and 3 are the decision.** Both name exactly one dimension, so no count of stated dimensions separates them, and there is no obviously right answer. The sector wins, for three reasons:
+
+1. **The sector is always something the caller stated; the food category may not be.** `submission_entry.sector_id` is NOT NULL and §6.2 requires a sector on every entry, while `food_category` is nullable and §6.2 *resolves* a null one to `standard_mix`. At the moment steps 2 and 3 are compared, the sector in hand is what the user chose and the category may be a substitution the server made on their behalf. Honouring the dimension that was actually stated is the safer of the two.
+2. **A row naming a sector is a stronger claim than a row naming none.** This column exists because a downstream factor was found to vary by supply-chain stage. A row that names a sector is therefore a positive assertion made *after* that dimension was known to matter; `sector IS NULL` says only that no sector-specific figure was supplied. Letting the weaker claim beat the stronger one would reproduce, inside the fallback, the very defect the column removes.
+3. **It is what a staff member entering the row will expect.** Someone who adds "landfill costs more for the farm sector" must see that number applied to every farm line. Under the other order it would silently not apply to the food categories that happen to carry an all-sector row of their own — a plausible wrong number on the client's headline figure, with nothing anywhere to explain it.
+
+The waste levy is untouched by any of this: it is the (NULL, NULL) row, it is still the last resort, and it still applies wherever nothing more specific exists.
+
+**Test every cell.** A wrong precedence returns a number rather than an error, so a test asserting "a row came back" passes against all twenty-four orderings of the four candidates. `tests/test_bundle.py` asserts all sixteen subsets of the four rows **by value**, with four distinct constants, plus the two directional cases a value-blind test would miss: a *different* sector must fall past the sector row to the food-category row, and a *different* food category must fall past the food row to the row naming neither.
 
 ### `constant`
 
@@ -1194,9 +1232,23 @@ class FactorBundle:
         downstream() below, and (destination, None, metric)-style misses must
         be *looked up*, not assumed absent."""
 
-    def downstream(self, destination: str, food_cat: str, metric: str) -> Decimal:
-        """Exact match on food_cat first; then fall back to the generic row
-        (food_category NULL); then Decimal('0'). May return a negative value."""
+    def downstream(self, destination: str, sector: str | None,
+                   food_cat: str | None, metric: str) -> Decimal:
+        """Four steps, in order (v1.31), then Decimal('0'):
+
+            1. (sector, food_cat)   2. (sector, None)
+            3. (None, food_cat)     4. (None, None)
+
+        Both middle dimensions are nullable on `factor_downstream` (§2.2), so
+        all four may exist at once and exactly one must win. Steps 2 and 3 name
+        one dimension each: **the sector wins**, and §2.2 carries the three
+        reasons. `sector` is a positional argument in the middle rather than an
+        optional one at the end, so a caller left at the pre-v1.31 signature
+        raises TypeError instead of silently reading the wrong row.
+
+        When `sector` or `food_cat` is itself None, step 1 *is* step 3 or step
+        2, so the later steps must be **looked up**, not assumed absent — the
+        same caveat `upstream()` carries. May return a negative value."""
 
     def constant(self, code: str) -> Decimal:
         """Raises UnknownConstantError when not found."""
@@ -1227,9 +1279,10 @@ class FactorBundle:
         Checks: every upstream row's sector / food_category / metric exists
         in this bundle and its destination is null or exists; every
         downstream row's destination / metric exists
-        and its food_category is null or exists; every destination.group
-        exists; exactly one food_category has is_standard_mix; every
-        formula.metric and every equivalence.source_metric exists."""
+        and its sector and food_category are each null or exist; every
+        destination.group exists; exactly one food_category has
+        is_standard_mix; every formula.metric and every
+        equivalence.source_metric exists."""
 ```
 
 > `from_json()` is required by the golden test suite regardless (§10.1 loads a `bundle.json` per case). Dry-run requests are simply a second caller of it. `validate()` exists because a bundle arriving over HTTP may be internally inconsistent in ways a database-loaded one cannot be; the rules are engine domain knowledge and are therefore implemented once, here, rather than duplicated in the API layer.
@@ -1734,13 +1787,15 @@ Called once on page load to build every dropdown and input row.
 | Row | Covered when |
 | --- | --- |
 | `destination` | it has at least one `factor_downstream` row in the published set — **including the `food_category_id IS NULL` row**, which §2.2 defines as "every food category" and which is how a per-tonne charge like the waste levy is held — **or** it appears as a non-NULL `factor_upstream.destination_id` (the O-7 column, v1.8) |
-| `sector` | it appears as `factor_upstream.sector_id` |
+| `sector` | it appears as `factor_upstream.sector_id`, **or** as a non-NULL `factor_downstream.sector_id` (v1.31) |
 | `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
 | `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
 | `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category |
 | `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
 
 > **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
+>
+> **Both halves of the sector rule are needed for the mirror-image reason (v1.31).** `factor_downstream.sector_id` is nullable and NULL means "every sector", so a NULL row is no evidence about any particular sector and is skipped — exactly as a NULL `food_category_id` already is on the row below. The non-NULL half is not redundant with the upstream read: a set may legitimately price a stage of the supply chain **downstream only** — a per-tonne disposal charge that differs by collection contract, with no upstream footprint of its own — and reading `factor_upstream` alone would drop that sector from the form while the rows pricing it sat in the database, which is precisely the silent zero this whole rule exists to remove. The New Zealand set is unaffected: all of its downstream rows are NULL here and its sectors come from `factor_upstream` as before.
 
 > **Every `is_prevention` destination and the `is_standard_mix` food category are never filtered out.** A prevention destination's factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. Flagged rows are held out **by the flag** (§2.1) and their groups are kept with them; this read `db.types.PREVENTION_CODE` until v1.22, which subjected every *other* vocabulary's prevention row to an inference that cannot be true of it. `prevention` happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching zero override — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding.
 >
@@ -2038,7 +2093,7 @@ Factors and formulas are published openly (Decision 7).
       "data_quality": "definitional" }
   ],
   "downstream": [
-    { "destination": "landfill", "food_category": "dairy",
+    { "destination": "landfill", "sector": null, "food_category": "dairy",
       "metric": "co2e", "value_per_kg": "0.9900000000",
       "source_note": null, "data_quality": "proxy-AU" }
   ],
@@ -2057,7 +2112,9 @@ Factors and formulas are published openly (Decision 7).
 
 **`name` and `sort_order` are part of the equivalence rows, and v1.4 added them here rather than removing them from the export.** They were emitted from the beginning and appeared in no version of this section. Three reasons the contract moved rather than the code. §10.2's `bundle.json` **requires** both on every equivalence row, and this response is produced by the same projection — dropping them here means writing a second projection whose only purpose is to hide two harmless fields, and a second projection is a second thing to keep in step. `name` is the short human label (`Kilometres driven`); `label_template` is a whole sentence, so a consumer building a heading, a legend or a CSV column has nothing else to use — D needs it and the alternative is hard-coding it, which §7.3a already rules out for the labels themselves. And `sort_order` is the display order §4.1's `equivalences()` promises; a consumer reading this endpoint directly would otherwise have to invent one.
 
-With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other.
+**`downstream[].sector` is present on every row and may be `null` (v1.31),** meaning the row applies to every sector for that destination. Present-and-null rather than omitted, for the same reason the provenance columns are: a consumer must be able to tell "this row applies to every sector" from "this endpoint does not report the sector". §4.1's four-step lookup order is what a consumer re-deriving a figure from this export has to implement, and it cannot be inferred from the rows alone.
+
+With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other, as is `sector`.
 
 ## 6.4 `GET /api/v1/stats`
 
@@ -3293,10 +3350,13 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
       "metric": "co2e", "value_per_kg": "0.0000000000" }
   ],
   "downstream": [
-    { "destination": "landfill", "food_category": "dairy",
+    { "destination": "landfill", "sector": null, "food_category": "dairy",
       "metric": "co2e", "value_per_kg": "0.9900000000" },
-    { "destination": "landfill", "food_category": null,
-      "metric": "cost", "value_per_kg": "0.0650000000" }
+    { "destination": "landfill", "sector": null, "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0650000000" },
+    { "destination": "landfill", "sector": "primary_production",
+      "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0400000000" }
   ],
   "equivalences": [
     { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
@@ -3322,6 +3382,8 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
 
+`downstream[].sector` (v1.31) may be `null` on identical terms, meaning the row applies to every sector for that destination, and `null` is the *usual* value — the New Zealand set carries it on every row. A **missing** `sector` key is a malformed row, not a `null` one: a bundle whose rows had silently lost it would load as every-sector rows and price every stage of the supply chain the same, computing a plausible, wrong answer instead of raising. The example above shows all three states in one section — a category-specific row, the row naming neither dimension, and a sector-specific row — because §4.1's four-step order is only exercised when more than one of them is present.
+
 `upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
 
 ## 10.3 The ReFED Comparison Fixture (owner: A)
@@ -3332,14 +3394,16 @@ It runs one scenario through two implementations — ours, and ReFED's Impact Ca
 
 | Rule | Why |
 | --- | --- |
-| **`refed_` is a reserved taxonomy code prefix.** No `sector`, `food_category` or `destination` row that is part of the New Zealand product may take it | Taxonomy rows are global — §2.1's tables carry no `factor_set_id`, and there is no way to give a factor set a private vocabulary. The fixture's 1 sector, 39 food categories and 12 destinations are therefore rows in the same tables the product uses. The prefix is the whole of what keeps the two vocabularies distinguishable, in the database and in a dropdown |
+| **`refed_` is a reserved taxonomy code prefix.** No `sector`, `food_category` or `destination` row that is part of the New Zealand product may take it | Taxonomy rows are global — §2.1's tables carry no `factor_set_id`, and there is no way to give a factor set a private vocabulary. The fixture's 5 sectors, 9 food categories and 12 destinations are therefore rows in the same tables the product uses. The prefix is the whole of what keeps the two vocabularies distinguishable, in the database and in a dropdown |
 | **The fixture is loaded as a `draft` and must never be published** | It is United States data. `is_mock` is `true` on it and the placeholder banner is correct while it is selected (§6.2). Publishing it would archive the live New Zealand set — that is what `publish_factor_set` is for and it is not what this fixture is for. It is reached through §6.2.1's `dry_run.factor_set_version`, which persists nothing |
 | **No metric rows are added for it** | `metric` is global and the engine iterates every active row (§4.1). An added metric would appear, at zero, in every New Zealand result. This is why ReFED's meals-recovered figure is not represented and cannot be compared |
 
-> **Our two factor tables cannot hold ReFED's shape one-for-one.** `factor_upstream` is keyed `(sector, food_category, destination)` and matches ReFED's key exactly. `factor_downstream` is keyed `(destination, food_category)` and has no sector column — and ReFED's downstream factors genuinely differ by sector in **82 of their 102** (food type, destination) groups.
+> **Our two factor tables hold ReFED's shape one-for-one, since v1.31.** `factor_upstream` is keyed `(sector, food_category, destination)` and always matched ReFED's key exactly. `factor_downstream` had no sector column, and ReFED's downstream factors genuinely differ by sector in **82 of their 102** (food type, destination) groups — so the fixture absorbed the difference by making its `food_category` codes carry the stage: one sector row, and 39 categories named `refed_retail_produce`, `refed_farm_dry_goods`.
 >
-> That is not a defect in §2.2. No New Zealand requirement asks for a downstream factor that varies by supply chain stage, and adding a sector column to `factor_downstream` to serve a test fixture would be the tail wagging the dog. The fixture absorbs the difference instead, by making its `food_category` codes carry the stage — `refed_retail_produce`, `refed_farm_dry_goods` — which is lossless: no two ReFED cells are merged and no number changes.
+> **That was numerically lossless and structurally wrong, and the cost landed in the product rather than in the fixture.** No two ReFED cells were merged and no number changed — the comparison agreed with ReFED's live calculator to the integer before the rebuild and agrees to ~1e-9 after it. But taxonomy rows are global, so those 39 rows were rows in the product's own tables: the calculator's first step, "which stage of the food supply chain", offered exactly **one** option, a radio button that selected itself; its second listed 39 compound entries like `ReFED Farm / Dry Goods`, which the client read as a stage rather than a food; and §5.4's `by_sector` breakdown was a single bucket at 100%, so that chart carried no information at all. The previous revision of this note said adding a sector column "to serve a test fixture would be the tail wagging the dog" and asked to be re-read the first time a downstream factor really did need to vary by sector. It was right to ask; the answer is that the fixture was never the reason — the reason is that the shape was wrong and three visible defects were downstream of it.
 >
-> **Record it here because it is the first thing to check if a downstream factor ever does need to vary by sector.** If the client's data arrives with, say, a different landfill emission factor for kerbside collection than for a commercial contract, this is the schema change that implies, and this note is where the shape of the problem is already written down.
+> **The fixture is now 5 sectors × 9 food categories.** `refed_farm`, `refed_manufacturing`, `refed_retail`, `refed_foodservice`, `refed_residential`; `refed_breads_bakery` … `refed_standard_mix`.
+>
+> **Every downstream row states both its sector and its food category; none is left NULL.** ReFED publishes only **39 of the 45** pairs — Farm has Dry Goods, Produce and Standard Mix and nothing else — but a 5 × 9 taxonomy offers all 45, so a NULL-sector row would be found by a Farm / Frozen lookup and would answer it with another sector's number. With every row explicit those six pairs price at zero on every metric: visibly nothing rather than plausibly wrong. This is the one place the fixture deliberately does *not* exercise §4.1's fallback, and `tests/benchmark/refed/` asserts both halves — that no row is NULL, and that all six unpublished pairs return zero.
 
 The tolerance the comparison asserts is **derived, not chosen**: `value_per_kg` is `DECIMAL(20,10)` (§2.2), so each factor is rounded at the tenth decimal place and a line of `qty` kilograms carries at most `1e-10 × qty` of error in the metric total. That is invisible for water and dominates for methane. **If that tolerance ever has to be widened, the storage precision has changed and this document is what should have changed first.**

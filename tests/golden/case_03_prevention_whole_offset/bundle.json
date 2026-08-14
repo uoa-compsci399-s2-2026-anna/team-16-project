@@ -39,9 +39,9 @@
       "source_note": "Open item O-7, contract v1.8. Prevented food was never produced, so no upstream burden is attributable to it. Deleting this row is what this case exists to catch: it takes net_benefit.co2e from 456.000 to 96.000." }
   ],
   "downstream": [
-    { "destination": "not_harvested", "food_category": null,
+    { "destination": "not_harvested", "sector": null, "food_category": null,
       "metric": "co2e", "value_per_kg": "0.1200000000" },
-    { "destination": "prevention", "food_category": null,
+    { "destination": "prevention", "sector": null, "food_category": null,
       "metric": "co2e", "value_per_kg": "0.0000000000",
       "source_note": "Zero by construction. Waste that did not happen has no destination impact." }
   ],

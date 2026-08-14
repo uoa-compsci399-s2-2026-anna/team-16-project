@@ -162,6 +162,7 @@
   "downstream": [
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": "dairy",
       "metric": "co2e",
       "value_per_kg": "0.9900000000",
@@ -170,6 +171,7 @@
     },
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.7000000000",
@@ -178,6 +180,7 @@
     },
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0270000000",
@@ -186,6 +189,7 @@
     },
     {
       "destination": "landfill",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0600000000",
@@ -194,6 +198,7 @@
     },
     {
       "destination": "compost",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.2100000000",
@@ -202,6 +207,7 @@
     },
     {
       "destination": "compost",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0002000000",
@@ -210,6 +216,7 @@
     },
     {
       "destination": "compost",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0350000000",
@@ -218,6 +225,7 @@
     },
     {
       "destination": "anaerobic_digestion",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0700000000",
@@ -226,6 +234,7 @@
     },
     {
       "destination": "anaerobic_digestion",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0010000000",
@@ -234,6 +243,7 @@
     },
     {
       "destination": "anaerobic_digestion",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0450000000",
@@ -242,6 +252,7 @@
     },
     {
       "destination": "animal_feed",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "-0.1500000000",
@@ -250,6 +261,7 @@
     },
     {
       "destination": "not_harvested",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.1200000000",
@@ -258,6 +270,7 @@
     },
     {
       "destination": "prevention",
+      "sector": null,
       "food_category": null,
       "metric": "co2e",
       "value_per_kg": "0.0000000000",
@@ -266,6 +279,7 @@
     },
     {
       "destination": "prevention",
+      "sector": null,
       "food_category": null,
       "metric": "ch4",
       "value_per_kg": "0.0000000000",
@@ -274,6 +288,7 @@
     },
     {
       "destination": "prevention",
+      "sector": null,
       "food_category": null,
       "metric": "cost",
       "value_per_kg": "0.0000000000",

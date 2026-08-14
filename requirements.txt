@@ -9,11 +9,12 @@
 # developer's checkout resolves each floor to whatever PyPI published most
 # recently and is a different set of software from the one that ships.
 #
-# That is not hypothetical. It put sqladmin 0.30.0 on the desk while the image
-# ran 0.31.0, and admin/templates/sqladmin/_macros.html - a copy of a template
-# out of that package - was taken from the wrong one and shipped 0.30.0's menu
-# markup on 0.31.0 for a release cycle. It is the reason
-# tests/admin/test_i18n.py now asserts the installed version against the pin.
+# That is not hypothetical. The pin moved to sqladmin 0.31.0 on 10 August and
+# the desk stayed on 0.30.0, so admin/templates/sqladmin/_macros.html - a copy
+# of a template out of that package, added on 13 August - was taken from a
+# version the panel has never run and shipped 0.30.0's menu markup on 0.31.0.
+# It is the reason tests/admin/test_i18n.py now asserts the installed version
+# against the pin.
 #
 # pip resolves this path relative to THIS FILE, not the working directory, so
 # `pip install -r requirements.txt` works from anywhere.

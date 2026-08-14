@@ -254,10 +254,11 @@ cp .env.example .env            # then fill in SECRET_KEY
 install — it is a different one.** `pyproject.toml` states every dependency as a `>=`
 floor, so without the constraint file pip resolves each floor to whatever PyPI published
 most recently, and your checkout is running different software from the two images, which
-build with that same file. The gap is silent while it is small. It cost this project a
-release cycle once: sqladmin 0.30.0 on the desk against 0.31.0 in the image, which left
-`admin/templates/sqladmin/_macros.html` — a vendored copy of a template out of that
-package — copied from a version the panel never ran. `tests/admin/test_i18n.py` now fails
+build with that same file. The gap is silent while it is small. It has already cost this
+project once: the pin moved to sqladmin 0.31.0 on 10 August, the desk stayed on 0.30.0,
+and `admin/templates/sqladmin/_macros.html` — a vendored copy of a template out of that
+package, added on 13 August — was therefore copied from a version the panel has never
+run, and was wrong the moment it was written. `tests/admin/test_i18n.py` now fails
 if the installed version is not the pinned one, so a skewed environment reports itself
 rather than surfacing later as an unrelated-looking test failure.
 

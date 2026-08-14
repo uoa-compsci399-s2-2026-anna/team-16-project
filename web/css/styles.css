@@ -573,6 +573,19 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .review-destinations dt { display: grid; gap: 3px; }
 .review-destinations dt small { color: var(--muted); font-weight: 400; }
 .review-destinations dd { margin: 0; font-weight: 700; }
+/* These two carry text this repository does not write: a factor set's version
+   label and its notes come from the database, and the published ReFED set's
+   notes cite a 124-character source URL. A URL has no space in it, so its
+   min-content width IS its full width - and a flex item defaults to
+   `min-width: auto`, which means "never shrink below min-content". One such
+   token therefore widened the row to 768px inside a 310px list and pushed the
+   document to 875px at a 390px viewport, scrolling every page on the
+   methodology screen sideways.
+   `anywhere` rather than `break-word` because only `anywhere` also shrinks
+   the min-content contribution, which is the half that lets the flex item
+   narrow; `break-word` alone would wrap the text and leave the box wide.
+   Direction-neutral, so RTL is unaffected either way. */
+.review-destinations dt, .review-destinations dd { min-width: 0; overflow-wrap: anywhere; }
 
 .section-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
 .section-heading-row h2 { margin-bottom: 10px; }

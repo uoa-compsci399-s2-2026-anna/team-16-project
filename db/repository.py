@@ -178,7 +178,8 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
       the ``food_category_id IS NULL`` row, which §2.2 defines as "every food
       category" and which is how a per-tonne charge like the waste levy is
       held -- **or** appears as a non-NULL ``factor_upstream.destination_id``;
-    * a **sector** appears as ``factor_upstream.sector_id``;
+    * a **sector** appears as ``factor_upstream.sector_id`` **or** as a
+      non-NULL ``factor_downstream.sector_id``;
     * a **food category** appears as ``factor_upstream.food_category_id`` or as
       a non-NULL ``factor_downstream.food_category_id``.
 
@@ -191,6 +192,18 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
     row per destination, so the column is where nearly all of its information
     lives. Reading only one of the two tables loses one of the two shapes, and
     both are in the deployed database today.
+
+    ``factor_downstream.sector_id`` joins the sector half for the mirror-image
+    reason, since v1.31. It is nullable and NULL means "every sector", so a
+    NULL row is no evidence about any particular sector and is skipped exactly
+    as a NULL ``food_category_id`` already was. It is not redundant with the
+    upstream read: a factor set may legitimately price a stage of the supply
+    chain downstream only -- a per-tonne disposal charge that differs by
+    collection contract, with no upstream footprint of its own -- and reading
+    only ``factor_upstream`` would drop that sector from the form while the
+    rows that price it sat in the database. The New Zealand set is unaffected,
+    because all of its downstream rows are NULL here and its sectors come from
+    ``factor_upstream`` as before.
     """
     upstream = session.execute(
         select(
@@ -202,15 +215,21 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
         .distinct()
     ).all()
     downstream = session.execute(
-        select(FactorDownstream.destination_id, FactorDownstream.food_category_id)
+        select(
+            FactorDownstream.destination_id,
+            FactorDownstream.sector_id,
+            FactorDownstream.food_category_id,
+        )
         .where(FactorDownstream.factor_set_id == factor_set_id)
         .distinct()
     ).all()
     sectors = {sector_id for sector_id, _, _ in upstream}
     foods = {food_id for _, food_id, _ in upstream}
     destinations = {dest_id for _, _, dest_id in upstream if dest_id is not None}
-    for dest_id, food_id in downstream:
+    for dest_id, sector_id, food_id in downstream:
         destinations.add(dest_id)
+        if sector_id is not None:
+            sectors.add(sector_id)
         if food_id is not None:
             foods.add(food_id)
     return {"sectors": sectors, "food_categories": foods, "destinations": destinations}
@@ -419,9 +438,15 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
         .join(Metric, FactorUpstream.metric_id == Metric.id)
         .where(FactorUpstream.factor_set_id == factor_set_id)
     ).all()
+    #: `factor_downstream` outer-joins **both** Sector and FoodCategory, for
+    #: the reason the note above gives about Destination: each is nullable and
+    #: NULL means "every value of that dimension", so an inner join would
+    #: publish only the rows that name one and silently drop every general row.
     downstream = session.execute(
-        select(FactorDownstream, Destination.code, FoodCategory.code, Metric.code)
+        select(FactorDownstream, Destination.code, Sector.code, FoodCategory.code,
+               Metric.code)
         .join(Destination, FactorDownstream.destination_id == Destination.id)
+        .outerjoin(Sector, FactorDownstream.sector_id == Sector.id)
         .outerjoin(FoodCategory, FactorDownstream.food_category_id == FoodCategory.id)
         .join(Metric, FactorDownstream.metric_id == Metric.id)
         .where(FactorDownstream.factor_set_id == factor_set_id)
@@ -474,13 +499,19 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
         "downstream": [
             {
                 "destination": destination,
+                #: §2.2/§10.2 (v1.31): `null` is a legal value meaning "every
+                #: sector", not a missing field, and must survive both
+                #: directions of the round trip — §4.1's lookup order runs
+                #: (sector, food_category), then (sector, NULL), then
+                #: (NULL, food_category), then (NULL, NULL), then zero.
+                "sector": sector,
                 "food_category": food,
                 "metric": metric,
                 "value_per_kg": str(x.value_per_kg),
                 "source_note": x.source_note,
                 "data_quality": x.data_quality,
             }
-            for x, destination, food, metric in downstream
+            for x, destination, sector, food, metric in downstream
         ],
         "equivalences": [
             {

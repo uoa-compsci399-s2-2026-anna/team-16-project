@@ -38,6 +38,7 @@ from admin.factor_models import (
     FactorUpstream, Formula,
 )
 from admin.modelviews import AuditedModelView
+from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
 
 _CATEGORY = "Factors"
@@ -69,6 +70,18 @@ _DATA_QUALITY_HELP = (
     "words the client will use. The mock flag on the factor set is "
     "all-or-nothing and cannot say that forty rows are solid and twelve are "
     "borrowed; this can."
+)
+#: Shared by the two optional dimensions of a downstream factor, because the
+#: order between them is the one thing neither field can state on its own.
+#: Contract §4.1 (v1.31). The failure this text exists to prevent is silent:
+#: enter a sector-only row and a category-only row that both match a visitor's
+#: choice, and the calculator will pick one of them and show a number that
+#: looks entirely reasonable.
+_WHICH_ROW_WINS = (
+    "Where more than one row could apply, the most specific wins, and a row "
+    "naming a sector beats a row naming only a food category: sector and "
+    "category, then sector alone, then category alone, then the row naming "
+    "neither. Where none exists the factor is zero."
 )
 
 
@@ -315,11 +328,19 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
 
 
 class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
-    """The largest table, and the one with the two traps.
+    """The largest table, and the one with the three traps.
 
     `food_category` may be empty, meaning "every category for this
     destination" — that is how a per-tonne charge like the waste levy is
     expressed, and the form must allow it rather than requiring a selection.
+
+    `sector` may be empty on exactly the same terms (v1.31), meaning "every
+    sector for this destination", and empty is the normal answer. Both being
+    optional is why the two fields carry a shared note about which one wins:
+    §4.1's order is (sector, category), then (sector, blank), then (blank,
+    category), then (blank, blank), then zero — and a staff member who does not
+    know that can enter two perfectly reasonable rows and get the one they did
+    not intend, with no error anywhere.
 
     `value_per_kg` may be negative: animal feed displaces feed that would
     otherwise have been produced, so the factor is a genuine credit. Nothing
@@ -332,15 +353,18 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     icon = "fa-solid fa-truck-arrow-right"
 
     column_list = [FactorDownstream.factor_set, FactorDownstream.destination,
-                   FactorDownstream.food_category, FactorDownstream.metric,
+                   FactorDownstream.sector, FactorDownstream.food_category,
+                   FactorDownstream.metric,
                    FactorDownstream.value_per_kg, FactorDownstream.data_quality]
     column_details_list = [FactorDownstream.factor_set, FactorDownstream.destination,
-                           FactorDownstream.food_category, FactorDownstream.metric,
+                           FactorDownstream.sector, FactorDownstream.food_category,
+                           FactorDownstream.metric,
                            FactorDownstream.value_per_kg,
                            FactorDownstream.data_quality,
                            FactorDownstream.source_note]
     form_columns = [FactorDownstream.factor_set, FactorDownstream.destination,
-                    FactorDownstream.food_category, FactorDownstream.metric,
+                    FactorDownstream.sector, FactorDownstream.food_category,
+                    FactorDownstream.metric,
                     FactorDownstream.value_per_kg, FactorDownstream.data_quality,
                     FactorDownstream.source_note]
     form_args = {
@@ -349,12 +373,19 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
             "Where the food actually went. A downstream factor is the cost, "
             "or the credit, of that route."
         )},
+        "sector": {"description": (
+            "Leave blank unless this number genuinely varies by stage of the "
+            "supply chain — blank means the row applies to every sector "
+            "sending waste to this destination, and blank is the usual "
+            "answer. Fill it in when a route really is priced differently "
+            "upstream and down: a kerbside collection contract and a "
+            "commercial one at the same landfill, say. " + _WHICH_ROW_WINS
+        )},
         "food_category": {"description": (
             "Leave blank unless this number genuinely varies by food type — "
             "blank means the row applies to every category sent to this "
             "destination. That is how a per-tonne charge like the waste levy "
-            "is entered: one row, no category. A row naming a category wins "
-            "over the blank one; where neither exists the factor is zero."
+            "is entered: one row, no category, no sector. " + _WHICH_ROW_WINS
         )},
         "metric": {"description": (
             "Which metric this number feeds. One row per metric: the same "
@@ -373,6 +404,10 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     column_filters = [
         ForeignKeyFilter(FactorDownstream.factor_set_id, FactorSet.version_label,
                          title="Factor set"),
+        #: A set that prices five supply-chain stages puts five times as many
+        #: rows on this screen as one that prices none, and "show me what the
+        #: farm rows say" is the first thing anyone asks of it.
+        ForeignKeyFilter(FactorDownstream.sector_id, Sector.code, title="Sector"),
         OperationColumnFilter(FactorDownstream.data_quality),
     ]
     column_sortable_list = [FactorDownstream.value_per_kg]

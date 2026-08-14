@@ -636,6 +636,13 @@ def test_a_faithful_copy_is_accepted():
     ).replace(
         '"This is a required field"', '_("This is a required field")'
     )
+    # Anchor: the `_()` edits must actually have been applied, or this test
+    # would be comparing the original against itself and would pass even if
+    # _undo_the_translation_edits did nothing at all.
+    assert ours != "{# a header #}\n" + original, "anchor: the edits did not apply"
+    assert "_(menu.display_name)" in ours
+    assert '_("This is a required field")' in ours
+
     assert _macros_complaint(ours, original, "9.9.9", "9.9.9") is None
 
 

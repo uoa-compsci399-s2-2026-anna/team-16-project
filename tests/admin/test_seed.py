@@ -1,5 +1,7 @@
 """The NZ taxonomy as shipped. Contract §2.1."""
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import func, select
 
@@ -152,3 +154,42 @@ def test_unit_presets_are_marked_as_placeholder_data(session):
 
     for preset in session.scalars(select(UnitPreset)).all():
         assert "placeholder" in (preset.source_note or "").lower()
+
+
+def test_every_unit_preset_shows_the_arithmetic_and_names_its_density_source(session):
+    """A sourced conversion, not a bare number — and still not a measurement.
+
+    The set this replaced carried one sentence saying the numbers were made up,
+    which was honest and useless: a staff member replacing them had no way to
+    tell what they were replacing. Every row now states its own capacity, the
+    density, the product, and where the density came from.
+
+    **The last assertion is the one that matters.** 0.29 kg/L is a published
+    figure from the FLW Protocol's Table 3.2, not a New Zealand measurement, and
+    a note that cited a source without saying so would read as authoritative
+    data — which is worse than the bare placeholder it replaced, and is exactly
+    what O-6 was raised about. O-6 stays open until a measured figure arrives,
+    so the disclaimer has to survive any later edit to the citation.
+    """
+    seed_taxonomy(session)
+    session.flush()
+
+    presets = session.scalars(select(UnitPreset)).all()
+    assert len(presets) == 10
+    for preset in presets:
+        note = preset.source_note or ""
+        litres, _, rest = note.partition(" L × 0.29 kg/L = ")
+        assert litres.isdigit(), f"{preset.code}: note does not open with a capacity"
+        product, _, _ = rest.partition(" kg.")
+        assert Decimal(product) == preset.kg_per_unit, (
+            f"{preset.code}: the note quotes {product} kg and the row holds "
+            f"{preset.kg_per_unit}"
+        )
+        assert Decimal(litres) * Decimal("0.29") == preset.kg_per_unit, (
+            f"{preset.code}: {litres} L at 0.29 kg/L is not {preset.kg_per_unit}"
+        )
+        assert "Food Loss & Waste Protocol" in note, f"{preset.code}: no source"
+        assert "not a New Zealand measurement" in note, (
+            f"{preset.code}: the note cites a source without saying the density "
+            "is not measured here, which reads as data the client has supplied"
+        )

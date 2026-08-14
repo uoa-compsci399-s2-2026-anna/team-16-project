@@ -105,18 +105,94 @@ METRICS = [
     ("mass", "Mass", "kg", "kg", 1, 50),
 ]
 
-_PLACEHOLDER = (
-    "Placeholder conversion — the client has not yet supplied measured data. "
-    "Replace before the calculator is published."
+#: The one bulk density every row below is built from, in kg per litre.
+#:
+#: **Not a New Zealand measurement, and the rows say so.** The Food Loss and
+#: Waste Protocol — the standard MfE's own *Aotearoa New Zealand Baseline Food
+#: Loss and Waste Project* applies — publishes Table 3.2, "Selected Bulk Density
+#: Factors Used in Previous FLW Studies (kg per liter)", in its *Guidance on FLW
+#: Quantification Methods*, Chapter 3 "Assessing Volume". Two of its rows carry
+#: 0.29 kg/L independently: household food waste in a small container (e.g. a
+#: caddy or household bin), from WRAP 2010, *Material Bulk Density: Summary
+#: Report*; and animal and vegetable wastes from commerce and industry, from
+#: Jacobs Engineering UK Ltd 2010, *Survey of Commercial and Industrial Waste
+#: Arisings 2010*. One number covering both halves of this calculator's audience
+#: is why it was chosen over the same table's 0.50 (household food waste in a
+#: skip) or 0.20 ("waste food — animal or mixed", commerce and industry).
+#:
+#: **No New Zealand figure was found to replace it with.** MfE's *Solid Waste
+#: Analysis Protocol* publishes none and declines to: §5.4 records that visual
+#: classification by volume "is not recommended due to the need to introduce
+#: 'standard' densities to generate a weight figure. This creates a need for
+#: extra data manipulation, and thereby creates an opportunity for error." That
+#: caution is about this exact conversion and it is the reason O-6 stays open
+#: rather than closing here. The same chapter of the FLW guidance says the same
+#: thing more gently — an entity that does not measure its own factor "may use a
+#: bulk density factor from another source", but should "refer to the original
+#: source to understand how these factors were derived".
+_BULK_DENSITY_KG_PER_LITRE = Decimal("0.29")
+
+#: What the density is **not** evidence of, written into every row because the
+#: panel shows `source_note` on the edit form and this is the sentence a staff
+#: member replacing these numbers needs to read first.
+_DENSITY_BASIS = (
+    "Bulk density 0.29 kg/L from the Food Loss & Waste Protocol, Guidance on "
+    "FLW Quantification Methods, Table 3.2 (household food waste, small "
+    "container — WRAP 2010; the same figure appears for commerce-and-industry "
+    "animal and vegetable wastes — Jacobs Engineering UK 2010). The capacity is "
+    "a real New Zealand container size; the density is not a New Zealand "
+    "measurement and no published one was found, so this conversion is a "
+    "sourced PLACEHOLDER and not measured data. It also assumes the container "
+    "holds food waste alone and is filled level. Replace with measured data "
+    "before the calculator is published — architecture.md O-6."
 )
 
+
+def _from_capacity(litres: int) -> Decimal:
+    """Capacity in litres to kilograms, at the one density above.
+
+    Quantised to the four decimal places `unit_preset.kg_per_unit` actually
+    stores (§2.1), so the constant in this file is the same number the database
+    holds and the same number §6.1 puts on the wire — no silent widening
+    between the three.
+    """
+    return (litres * _BULK_DENSITY_KG_PER_LITRE).quantize(Decimal("0.0001"))
+
+
+#: Container capacities in litres, and what each one is.
+#:
+#: **Every capacity here is a container a New Zealander actually has.** The set
+#: this replaced offered a 10 L bucket, a 20 L bucket, a 30 L crate and 120 L
+#: and 240 L wheelie bins, which missed both ends of the client's stated case:
+#: the 23 L kerbside food scraps bin that most of urban Auckland was issued from
+#: March 2023, and the 660 L and 1100 L front-loader bins that are the standard
+#: commercial sizes here — the ones a café or a school actually fills. Kerbside
+#: rubbish and organics bins are 80 L, 120 L, 140 L and 240 L depending on the
+#: council; all four are kept because a visitor should find their own bin rather
+#: than round to someone else's.
+_CONTAINERS = [
+    # (code, litres, label)
+    ("bucket_10l_full", 10, "10 L bucket (full)"),
+    ("bucket_20l_full", 20, "20 L bucket (full)"),
+    ("food_scraps_bin_23l", 23, "23 L kerbside food scraps bin (full)"),
+    ("crate_30l_full", 30, "30 L crate (full)"),
+    ("wheelie_bin_80l", 80, "80 L wheelie bin (full)"),
+    ("wheelie_bin_120l", 120, "120 L wheelie bin (full)"),
+    ("wheelie_bin_140l", 140, "140 L wheelie bin (full)"),
+    ("wheelie_bin_240l", 240, "240 L wheelie bin (full)"),
+    ("front_loader_660l", 660, "660 L front-loader bin (full)"),
+    ("front_loader_1100l", 1100, "1100 L front-loader bin (full)"),
+]
+
 UNIT_PRESETS = [
-    # (code, label, kg_per_unit)
-    ("bucket_10l_full", "10 L bucket (full)", Decimal("3.0000")),
-    ("bucket_20l_full", "20 L bucket (full)", Decimal("6.0000")),
-    ("crate_30l_full", "30 L crate (full)", Decimal("9.0000")),
-    ("wheelie_bin_120l", "120 L wheelie bin (full)", Decimal("36.0000")),
-    ("wheelie_bin_240l", "240 L wheelie bin (full)", Decimal("72.0000")),
+    # (code, label, kg_per_unit, source_note)
+    (
+        code,
+        label,
+        _from_capacity(litres),
+        f"{litres} L × 0.29 kg/L = {_from_capacity(litres)} kg. {_DENSITY_BASIS}",
+    )
+    for code, litres, label in _CONTAINERS
 ]
 
 
@@ -188,10 +264,16 @@ def seed_taxonomy(session: Session) -> dict[str, int]:
             sort_order=sort_order,
         )
 
-    for code, label, kg_per_unit in UNIT_PRESETS:
+    #: `food_category_id` stays NULL on every row: a wheelie bin is a wheelie
+    #: bin, and this seed has no per-food density to put on one. The column is
+    #: for a preset whose conversion is only true of one category — see the
+    #: docstring on `UnitPreset` — and the front end narrows the list it offers
+    #: by the category chosen at step 2, so a row added there appears only for
+    #: that category. Nothing here may claim one without a measurement behind it.
+    for code, label, kg_per_unit, source_note in UNIT_PRESETS:
         created["unit_preset"] += _ensure(
             session, UnitPreset, code, label=label, kg_per_unit=kg_per_unit,
-            food_category_id=None, source_note=_PLACEHOLDER,
+            food_category_id=None, source_note=source_note,
         )
 
     # Flush so the checks below see every row this call just staged, then

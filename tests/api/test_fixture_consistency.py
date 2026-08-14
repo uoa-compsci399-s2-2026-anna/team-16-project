@@ -697,7 +697,21 @@ def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
     assert {
         row["code"]: (row["label"], Decimal(row["kg_per_unit"]))
         for row in taxonomy["unit_presets"]
-    } == {code: (label, kg_per_unit) for code, label, kg_per_unit in UNIT_PRESETS}
+    } == {
+        code: (label, kg_per_unit)
+        for code, label, kg_per_unit, _source_note in UNIT_PRESETS
+    }
+    #: §6.1 orders the presets smallest first (`get_taxonomy`), and the step-3
+    #: container `<select>` renders them in the order the response gives —
+    #: `web/js/calculator.js` sorts nothing, because `unit_preset` is the one
+    #: taxonomy table with no `sort_order` to sort by. A fixture in some other
+    #: order would teach C's form a sequence no deployment serves.
+    masses = [Decimal(row["kg_per_unit"]) for row in taxonomy["unit_presets"]]
+    assert masses == sorted(masses), (
+        "tests/fixtures/taxonomy.json lists the unit presets out of order; "
+        "get_taxonomy() orders them by kg_per_unit, and the container select "
+        "renders the response order as given"
+    )
 
 
 def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():

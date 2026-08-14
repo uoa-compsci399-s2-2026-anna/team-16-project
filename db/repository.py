@@ -342,11 +342,20 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         .where(Destination.active.is_(True), DestinationGroup.active.is_(True))
         .order_by(Destination.sort_order, Destination.code)
     ).all()
+    #: **Smallest container first, and that is why the order is `kg_per_unit`
+    #: rather than `code`.** This is the one taxonomy table with no
+    #: `sort_order`, and the list is a `<select>` a visitor scans for their own
+    #: bin. Alphabetical on the code put the 1100 L front-loader above the 660 L
+    #: one and the 140 L kerbside bin above the 80 L one, which is a list nobody
+    #: can scan. Size is the only meaningful order and the column already
+    #: carries it, so no schema change buys it. `code` breaks the tie so the
+    #: order is total and a fixture can assert it; two rows may legitimately
+    #: share a mass once one of them is category-specific.
     presets = session.execute(
         select(UnitPreset, FoodCategory.code)
         .outerjoin(FoodCategory, UnitPreset.food_category_id == FoodCategory.id)
         .where(UnitPreset.active.is_(True))
-        .order_by(UnitPreset.code)
+        .order_by(UnitPreset.kg_per_unit, UnitPreset.code)
     ).all()
 
     # ---- the narrowing, applied once the active rows are in hand ----------

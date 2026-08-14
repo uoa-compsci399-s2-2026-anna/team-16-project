@@ -39,6 +39,18 @@ _INDIRECT = (
     ("js/results.js", re.compile(r"const TAB_LABELS = \{(.*?)\}", re.S)),
     ("js/results.js", re.compile(r"const DEMONSTRATION_NOTICE = (.*?)\n", re.S)),
     ("js/i18n.js", re.compile(r"export const MACHINE_TRANSLATION_NOTICE =\s*(.*?)\n", re.S)),
+    # The language chooser's three strings. Constants rather than inline
+    # literals because the chooser builds its own markup, so `t('Language')`
+    # never appears as a literal call for `_CALL` to find.
+    #
+    # **Anchored on `export const NAME =` and terminated at the newline**, the
+    # same shape as the notice above. A looser pattern - say `LANGUAGE_LABEL`
+    # anywhere - would match this module's own prose about the constant and
+    # keep the key alive after the code that renders it was deleted, which is
+    # exactly the JSDoc defect `_strip_comments` exists to close.
+    ("js/i18n.js", re.compile(r"export const LANGUAGE_LABEL =\s*(.*?)\n", re.S)),
+    ("js/i18n.js", re.compile(r"export const FOLLOW_SYSTEM_LABEL =\s*(.*?)\n", re.S)),
+    ("js/i18n.js", re.compile(r"export const MACHINE_TRANSLATED_OPTION =\s*(.*?)\n", re.S)),
 )
 
 _LITERAL = re.compile(r"'((?:[^'\\]|\\.)*)'")

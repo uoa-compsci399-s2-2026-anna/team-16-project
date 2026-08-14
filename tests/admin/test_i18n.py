@@ -15,6 +15,7 @@ translated string inside the specific element that carries it.
 """
 
 import json
+from pathlib import Path
 import re
 
 import pytest
@@ -441,17 +442,227 @@ def test_no_catalogue_claims_a_tag_another_one_claims():
             seen[key] = catalogue.language
 
 
-def test_nothing_about_the_negotiation_is_persisted():
-    """The cookie is gone, and so is every constant that described it.
+def test_the_stored_choice_is_the_only_thing_that_is_persisted():
+    """One cookie, one closed value space, and nothing else.
 
-    Asserted on the module rather than on a response because a reinstated
-    cookie would arrive as a constant here first.
+    **This test replaced its own opposite.** It used to assert that
+    ``COOKIE_NAME`` did not exist, so that reinstating a cookie had to be a
+    deliberate act rather than a quiet one. It was, and this is what the same
+    guard looks like on the other side of that decision: the bound is no longer
+    "nothing is stored" but "only this is stored, and only these values".
+
+    The value space is the assertion that matters. It is what makes the cookie
+    incapable of identifying anybody - twenty-one possible values shared
+    identically by everyone who picks the same language, with no entropy for a
+    correlator to key on. A field that could carry a free-form string would be a
+    fingerprint however it got there, so the closed set is checked rather than
+    assumed.
     """
-    for gone in ("COOKIE_NAME", "COOKIE_MAX_AGE", "resolve"):
-        assert not hasattr(i18n, gone), (
-            f"i18n.{gone} is back - the language is negotiated per request "
-            "and nothing about it is stored"
-        )
+    assert i18n.COOKIE_NAME == "kaicalc_lang"
+    assert i18n.FOLLOW_SYSTEM == "auto"
+
+    permitted = {i18n.FOLLOW_SYSTEM, *(c.language for c in i18n.languages())}
+    for value in permitted:
+        assert i18n.stored_choice(value) is not None or value == i18n.FOLLOW_SYSTEM
+
+    # Anything outside the set resolves to "no stored choice", never to itself.
+    for rejected in ("", "  ", "en; DROP", "../../etc/passwd", "x" * 400):
+        assert i18n.stored_choice(rejected) is None
+
+
+async def _post_language(body: bytes, origin: bytes | None = b"http://testserver"):
+    """Drive `set_language` directly, with no database and no login.
+
+    A bare Request rather than the ASGI client because this endpoint
+    deliberately sits outside sqladmin's `login_required` wrapper and outside
+    the session entirely - building a logged-in client to exercise it would
+    test something other than what ships.
+    """
+    from starlette.requests import Request
+
+    from admin import language_view
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    headers = [
+        (b"content-type", b"application/x-www-form-urlencoded"),
+        (b"host", b"testserver"),
+    ]
+    if origin is not None:
+        headers.append((b"origin", origin))
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/admin/language",
+        "headers": headers,
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "root_path": "",
+    }
+    return await language_view.set_language(Request(scope, receive))
+
+
+def _set_cookies(response):
+    return [value for header, value in response.raw_headers if header == b"set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_no_identifier_is_written_alongside_the_language():
+    """The language cookie must not become a way to correlate anyone.
+
+    Named because the tempting implementation stamps a visitor id beside the
+    preference "to remember it better". The response is inspected rather than
+    the module, because that is where such a thing would actually appear.
+    """
+    response = await _post_language(b"lang=zh")
+    cookies = _set_cookies(response)
+    assert len(cookies) == 1, f"more than the language cookie was set: {cookies}"
+    written = cookies[0].decode()
+    assert written.startswith(f"{i18n.COOKIE_NAME}=zh;")
+    assert "Path=/" in written
+    assert "SameSite=lax" in written.replace("SameSite=Lax", "SameSite=lax")
+    # Readable by web/js/i18n.js on the calculator, which is the whole of why
+    # one cookie can serve both surfaces.
+    assert "HttpOnly" not in written
+
+
+@pytest.mark.asyncio
+async def test_follow_the_system_is_written_down_rather_than_deleted():
+    """"Follow the system" is a stored value, not a cleared cookie.
+
+    A deletion would have to re-send the cookie with `Max-Age=0` and an exactly
+    matching path and domain; get that wrong and the old value survives, so the
+    chooser appears to revert and snaps back on the next page. A write cannot
+    fail that way, which is the mechanical half of why `auto` exists.
+
+    The `max-age` assertion is the one that kills the tempting fix: a deletion
+    would set it to 0.
+    """
+    written = _set_cookies(await _post_language(b"lang=auto"))[0].decode()
+    assert written.startswith(f"{i18n.COOKIE_NAME}=auto;")
+    assert "Max-Age=0" not in written
+    assert f"Max-Age={i18n.COOKIE_MAX_AGE}" in written
+
+
+@pytest.mark.asyncio
+async def test_a_value_the_panel_does_not_know_stores_follow_the_system():
+    """No error page, in a language the visitor may not read.
+
+    Every value the chooser can emit is valid, so an invalid one arrived from
+    somewhere else and the readable answer is the default.
+    """
+    for body in (b"lang=qq", b"lang=", b"", b"lang=%2Fetc%2Fpasswd"):
+        written = _set_cookies(await _post_language(body))[0].decode()
+        assert written.startswith(f"{i18n.COOKIE_NAME}=auto;"), body
+
+
+@pytest.mark.asyncio
+async def test_a_cross_origin_post_changes_nothing():
+    """The stateless stand-in for the CSRF token this endpoint cannot carry.
+
+    admin/language_view.py says why there is no token: issuing one would mint a
+    session cookie for every anonymous visitor to the login page, which is a
+    real identifier created to protect a cosmetic preference.
+    """
+    response = await _post_language(b"lang=zh", origin=b"http://evil.example")
+    assert _set_cookies(response) == []
+    # Still a redirect rather than an error: nothing was attempted, so there is
+    # nothing to report to the visitor whose browser was used.
+    assert response.status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_the_return_path_cannot_leave_the_panel():
+    """`next` is a path inside /admin or it is the panel root.
+
+    The middle case is the one that looks safe: `//evil.example/admin` passes a
+    naive `startswith('/')` check and navigates off-site.
+    """
+    from admin.language_view import safe_next
+
+    assert safe_next("/admin/constant/list") == "/admin/constant/list"
+    assert safe_next("/admin") == "/admin"
+    for hostile in (
+        "//evil.example/admin",
+        "http://evil.example/admin",
+        "https://evil.example",
+        "/etc/passwd",
+        "/admins-elsewhere",
+        "admin/constant/list",
+        None,
+        "",
+    ):
+        assert safe_next(hostile) == "/admin", hostile
+
+
+def test_a_choice_the_panel_cannot_honour_renders_english_and_is_named():
+    """Tamil chosen on the calculator: English here, said so, cookie untouched.
+
+    The three wrong answers this pins down, in order of temptation:
+
+    * render English silently, which pretends no choice was made;
+    * show "Follow the system" as selected, which is a lie about what is stored;
+    * rewrite the cookie to `auto`, which destroys the calculator's language
+      from an unrelated screen.
+
+    The third is the dangerous one and it cannot be caught here - a resolution
+    function has no response to write to - so `set_language` above owns the
+    write and this test owns the reading. The pair is the assertion.
+    """
+    assert i18n.resolve("ta", "zh-CN") == "en"
+    assert i18n.unavailable_choice("ta") == "தமிழ்"
+
+    # The control that separates "the message works" from "everything is
+    # unavailable": a language the panel does have is honoured and says nothing.
+    assert i18n.resolve("zh", "en") == "zh"
+    assert i18n.unavailable_choice("zh") is None
+
+    # And a Chinese variant reaches Chinese by truncation rather than falling
+    # into this branch, which is what keeps it narrow.
+    assert i18n.resolve("zh-Hant", "en") == "zh"
+    assert i18n.unavailable_choice("zh-Hant") is None
+
+
+def test_the_vendored_calculator_language_list_matches_the_calculator_s_own():
+    """A copy that can drift, held to its original.
+
+    admin/i18n.py has to vendor `web/locales/index.json` because
+    docker/admin.Dockerfile copies no `web/` and package-data cannot reach
+    outside its own package. Reading the calculator's file directly would work
+    in this checkout and return nothing in the built image, making the
+    "not available in the panel" message a feature that passes every test and
+    renders on no deployed screen.
+
+    Compared as parsed JSON and then as bytes: the first says the data agrees,
+    the second says nobody reformatted one of them and left the two to drift on
+    the next edit.
+    """
+    vendored = i18n.LOCALES_DIR / i18n.CALCULATOR_LANGUAGES_FILE
+    original = (
+        Path(__file__).resolve().parents[2] / "web" / "locales" / "index.json"
+    )
+    assert vendored.is_file(), "the vendored calculator language list is missing"
+    assert json.loads(vendored.read_text(encoding="utf-8")) == json.loads(
+        original.read_text(encoding="utf-8")
+    )
+    assert vendored.read_bytes() == original.read_bytes()
+
+    # Anchored: a vendored file that had lost its content would satisfy an
+    # equality test against an equally empty original.
+    assert len(json.loads(vendored.read_text(encoding="utf-8"))["catalogues"]) == 20
+
+
+def test_the_vendored_list_is_not_loaded_as_a_catalogue():
+    """A leading underscore means "data", not "a language".
+
+    Without the skip in `_load`, `_calculator_languages.json` is read as a
+    catalogue and raises KeyError on `raw["language"]` at import - which takes
+    the whole panel down at start-up, not just this feature.
+    """
+    assert "_calculator_languages" not in {c.language for c in i18n.languages()}
+    assert {c.language for c in i18n.languages()} == {"en", "zh"}
 
 
 def test_the_catalogue_file_declares_its_own_metadata():

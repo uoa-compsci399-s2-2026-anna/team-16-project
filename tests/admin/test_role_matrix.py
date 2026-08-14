@@ -289,6 +289,22 @@ _NOT_ROLE_GATED = {
     # anybody has a session at all.
     "/admin/static",
     "/admin/statics",
+    # The language chooser's endpoint (contract §7.7, admin/language_view.py).
+    # **Deliberately outside every role**, and outside sqladmin's mount, for
+    # the same reason as the five pages above: it has to work before anybody
+    # has a session. The login page carries the chooser, and the person most in
+    # need of it is the one who cannot read the page they are being asked to
+    # sign in on.
+    #
+    # What it can do is bounded to that. It writes one closed-value cookie
+    # deciding which words a page is rendered in; it reads no account, touches
+    # no row and moves no privilege, so there is no role for it to be gated by.
+    # Its guards instead are a same-origin check on `Origin` - a CSRF token
+    # would have to mint a session cookie for every anonymous visitor to the
+    # login page, which is a real identifier created to protect a cosmetic
+    # preference - and `safe_next`, which refuses any redirect target outside
+    # `/admin`. Both are driven by tests/admin/test_i18n.py.
+    "/admin/language",
 }
 
 

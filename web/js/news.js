@@ -56,6 +56,9 @@ function normalisePost(post) {
     excerpt: renderedText(post.excerpt?.rendered),
     link: httpUrl(post.link),
     date: isoDate(post.date),
+    // Normalised because §7.5 lists it, and rendered nowhere. The public CSP
+    // sets `img-src 'self' data:`, which refuses every value this can hold —
+    // see the note on `createNewsCard` in home.js before wiring it up.
     imageUrl: httpUrl(Array.isArray(featuredMedia) ? featuredMedia[0]?.source_url : ''),
   }
 }

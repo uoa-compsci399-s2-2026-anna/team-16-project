@@ -140,6 +140,81 @@ def test_a_food_category_covered_only_by_a_downstream_row_is_present(seeded_sess
     assert "bakery_grains" in codes(get_taxonomy(seeded_session).food_categories)
 
 
+def test_a_sector_covered_only_by_a_downstream_row_is_present(seeded_session):
+    """v1.31. The two factor tables are read for sectors as well now.
+
+    `factor_downstream.sector_id` is nullable and a non-NULL value scopes the
+    row to one stage of the supply chain. A set may price a stage **downstream
+    only** — a per-tonne disposal charge that differs by collection contract,
+    with no upstream footprint of its own — and reading `factor_upstream`
+    alone would drop that sector from the form while the rows pricing it sat
+    in the database. That is the silent zero this whole filter exists to
+    remove, arriving through the one table it did not read.
+
+    `primary_production` is the seed's own sector and
+    `test_a_sector_and_a_food_category_with_no_upstream_row_are_absent` above
+    asserts it is *absent* before this row is added, so the two together show
+    that the row is what changed the answer rather than the seed.
+    """
+    assert "primary_production" not in codes(get_taxonomy(seeded_session).sectors), (
+        "seed changed: this sector must start uncovered for the test to mean anything"
+    )
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published_id(seeded_session),
+            destination_id=row_id(seeded_session, Destination, "landfill"),
+            sector_id=row_id(seeded_session, Sector, "primary_production"),
+            food_category_id=None,
+            metric_id=row_id(seeded_session, Metric, "co2e"),
+            value_per_kg=Decimal("0.31"),
+        )
+    )
+    seeded_session.flush()
+
+    assert "primary_production" in codes(get_taxonomy(seeded_session).sectors)
+
+
+def test_a_null_sector_downstream_row_covers_no_sector_at_all(seeded_session):
+    """The other half, and the one a permissive implementation gets wrong.
+
+    NULL means "every sector", so such a row is evidence about no particular
+    sector and must not pull one onto the form. A `COALESCE`-style read, or a
+    set-union that forgot to skip NULL, would put a `None` in the covered set
+    and — depending on how it was compared — either crash or quietly cover
+    everything. The seed's own generic downstream rows are already NULL here,
+    so this asserts the state the deployed database is in.
+    """
+    seeded_session.add(
+        Destination(
+            group_id=row_id(seeded_session, DestinationGroup, "disposal"),
+            code="every_sector_only", name="Every sector only", sort_order=901,
+        )
+    )
+    seeded_session.flush()
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published_id(seeded_session),
+            destination_id=row_id(seeded_session, Destination, "every_sector_only"),
+            sector_id=None,
+            food_category_id=None,
+            metric_id=row_id(seeded_session, Metric, "co2e"),
+            value_per_kg=Decimal("0.02"),
+        )
+    )
+    seeded_session.flush()
+
+    #: The row is real and does its own job — it covers its destination — so
+    #: this is not a test that passes because nothing was written.
+    assert "every_sector_only" in codes(get_taxonomy(seeded_session).destinations)
+
+    sectors = codes(get_taxonomy(seeded_session).sectors)
+    assert "primary_production" not in sectors
+    assert "consumer_hospitality" not in sectors
+    #: The sector that *is* covered, from `factor_upstream`, still is — the
+    #: assertion above is satisfied by a filter that returns nothing at all.
+    assert "processing" in sectors
+
+
 def test_a_destination_covered_only_by_an_upstream_row_is_present(seeded_session):
     """`factor_upstream.destination_id` became nullable in O-7 (v1.8) and a
     non-NULL value is a per-destination override. §2.2 states the column is not

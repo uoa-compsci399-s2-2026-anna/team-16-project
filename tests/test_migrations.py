@@ -111,6 +111,7 @@ def _include_object(object_, name, type_, reflected, compare_to):
     return not (type_ == "index" and name in _FUNCTIONAL_INDEXES)
 
 
+@pytest.mark.db
 def test_the_migration_chain_matches_the_models(migrated_engine):
     with migrated_engine.connect() as conn:
         ctx = MigrationContext.configure(
@@ -125,6 +126,7 @@ def test_the_migration_chain_matches_the_models(migrated_engine):
     )
 
 
+@pytest.mark.db
 @pytest.mark.parametrize(
     "table, index, consequence",
     [
@@ -220,6 +222,7 @@ def test_the_chain_has_exactly_one_head_and_exactly_one_root():
     assert len(roots) == 1, f"more than one initial revision: {roots}"
 
 
+@pytest.mark.db
 def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
     migrated_engine,
 ):
@@ -280,6 +283,7 @@ def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
     assert "qty_kg" in clauses["ck_submission_line_qty"]
 
 
+@pytest.mark.db
 def test_the_chain_gives_the_factor_tables_bigint_primary_keys(migrated_engine):
     """Contract §2.2 specifies BIGINT for `factor_upstream.id` and
     `factor_downstream.id`, not INT.

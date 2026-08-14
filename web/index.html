@@ -10,7 +10,7 @@
     <title data-i18n>Food Waste Impact Calculator | Kai Commitment</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
-  <body>
+  <body class="calculator-page">
     <!-- The statement is about the calculator, not about the language chooser. This page
          is ES modules end to end: with scripting off there are no steps, no taxonomy and
          no results, and `<main>` below never gets past "Loading calculator…". The chooser
@@ -22,12 +22,24 @@
     </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to calculator</a>
     <header class="site-header intro-header" id="site-header">
-      <div class="header-inner">
+      <div class="header-inner public-header-inner calculator-header-inner">
         <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and return to the introduction">
           <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </button>
-        <button class="text-button" id="clear-button" type="button" hidden data-i18n>Clear all data</button>
+        <!-- D's four-link public navigation. The labels carry no `data-i18n`
+             deliberately: marking them would make them source strings, and
+             `test_every_source_string_is_translated` runs against twenty-one
+             catalogues that do not have them yet. They are batch two's. -->
+        <div class="calculator-header-actions">
+          <nav class="public-nav" aria-label="Primary navigation">
+            <a href="./home.html">Home</a>
+            <a href="./index.html" aria-current="page">Calculator</a>
+            <a href="./stats.html">Statistics</a>
+            <a href="./methodology.html">Documentation</a>
+          </nav>
+          <button class="text-button" id="clear-button" type="button" hidden data-i18n>Clear all data</button>
+        </div>
       </div>
     </header>
 
@@ -41,7 +53,12 @@
 
     <footer>
       <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice" data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</p>
+      <!-- D adds the "What we record" link; the sentence beside it keeps HEAD's
+           exact wording and its `data-i18n` marker, because that string is a key
+           in twenty-one catalogues and D's rewording ("This tool stores…") would
+           have orphaned every one of them. The marker moved to a `<span>` so the
+           element holding the key still holds nothing but the key. -->
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record">What we record</a></p>
     </footer>
     <script type="module" src="./js/main.js"></script>
   </body>

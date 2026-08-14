@@ -46,6 +46,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from jinja2.ext import Extension
+
 #: The language every catalogue falls back to, and the language the source
 #: strings are written in. It has no catalogue file: for English the key *is*
 #: the answer.
@@ -206,6 +208,29 @@ class Catalogue:
     #: adding a file.
     tags: tuple[str, ...] = ()
 
+    #: ``"ltr"`` or ``"rtl"``: which way this language's lines run.
+    #:
+    #: The key in the file is ``dir``, spelled the same as the calculator's
+    #: catalogues spell it (``web/locales/*.json``), because the two sets are
+    #: meant to be the same shape - the panel already vendors the
+    #: calculator's list as ``_calculator_languages.json`` to name a language
+    #: it does not itself have, and a second spelling would make that copy
+    #: lossy.
+    #:
+    #: **Defaulted rather than required.** Every catalogue this panel ships
+    #: is left-to-right, so requiring the key would be a migration for no
+    #: reader's benefit; a catalogue that omits it is left-to-right, which is
+    #: true of every language nobody bothered to mark.
+    #:
+    #: This is honestly untested against a real right-to-left panel: there is
+    #: no RTL catalogue in ``admin/locales/`` and so no screen on which
+    #: ``dir="rtl"`` can be looked at. What is tested is that the attribute
+    #: follows the catalogue rather than a constant - see
+    #: ``tests/admin/test_i18n_pages.py``. The panel's *layout* under RTL is
+    #: not claimed to work, and the first RTL catalogue dropped into
+    #: ``admin/locales/`` should expect to find layout work waiting.
+    direction: str = "ltr"
+
 
 def _load() -> dict[str, Catalogue]:
     """Read every catalogue once, at import.
@@ -215,7 +240,9 @@ def _load() -> dict[str, Catalogue]:
     a second place for the English wording to drift.
     """
     catalogues = {
-        DEFAULT_LANGUAGE: Catalogue(DEFAULT_LANGUAGE, "English", False, {}, ("en",)),
+        DEFAULT_LANGUAGE: Catalogue(
+            DEFAULT_LANGUAGE, "English", False, {}, ("en",), "ltr"
+        ),
     }
     if LOCALES_DIR.is_dir():
         for path in sorted(LOCALES_DIR.glob("*.json")):
@@ -233,6 +260,10 @@ def _load() -> dict[str, Catalogue]:
                 machine_translated=bool(raw["machine_translated"]),
                 strings=raw["strings"],
                 tags=tuple(raw.get("tags") or [raw["language"]]),
+                # Anything that is not exactly "rtl" is left-to-right. A
+                # typo must not produce a third writing direction that no
+                # renderer understands and that `dir` would emit verbatim.
+                direction="rtl" if raw.get("dir") == "rtl" else "ltr",
             )
     return catalogues
 
@@ -331,6 +362,51 @@ def catalogue(code: str | None = None) -> Catalogue:
 def endonym(code: str) -> str:
     """A language's own name for itself, for a notice written in it."""
     return catalogue(code).endonym if is_supported(code) else code
+
+
+def html_lang() -> str:
+    """The value for ``<html lang>``: the language actually being rendered.
+
+    **The rendered language, never the stored choice.** When somebody has
+    chosen a language this panel has no catalogue for - Arabic, say, chosen
+    on the calculator, which has twenty-one to the panel's two - the panel
+    renders English, and this returns English. Announcing the choice instead
+    would tell a screen reader to read English words with Arabic phonetics,
+    which is the same class of defect as announcing Chinese as English and no
+    better for having been well meant. ``active_language()`` is already the
+    resolved language for exactly this reason; nothing here re-derives it.
+
+    ``en-NZ`` for English specifically: the copy is New Zealand English and
+    the region is part of it. Every other language is its bare code, because
+    no other catalogue here is regional.
+
+    One function so that the panel proper and the five gate pages cannot
+    disagree. ``brand/base.html`` used to spell this expression out in Jinja
+    and was the only place it existed; the panel proper now needs the same
+    answer (see ``_HtmlElement`` below), and two copies of a conditional is
+    how the two surfaces would come to differ.
+    """
+    active = active_language()
+    return "en-NZ" if active == DEFAULT_LANGUAGE else active
+
+
+def html_dir() -> str:
+    """The value for ``<html dir>``: ``"ltr"`` or ``"rtl"``.
+
+    Read off the catalogue of the language being rendered, by the same rule
+    and for the same reason as ``html_lang()`` - the direction has to be the
+    direction of the words on the screen, so a choice the panel cannot honour
+    gets English's direction and not its own.
+
+    **Emitted even though no catalogue here is right-to-left**, and that is a
+    deliberate call rather than an oversight. It costs one attribute; it means
+    the first RTL catalogue added to ``admin/locales/`` announces itself
+    instead of rendering Arabic letters in a document declared left-to-right;
+    and an absent ``dir`` is not neutral - it inherits, and the panel would
+    keep asserting left-to-right by omission. What it does **not** do is make
+    the panel's layout mirror. See ``Catalogue.direction``.
+    """
+    return catalogue().direction
 
 
 def is_machine_translated(code: str) -> bool:
@@ -684,6 +760,96 @@ def translate_view_names(views) -> None:
                 setattr(cls, attribute, _TranslatedAttribute(current))
 
 
+#: The template whose ``<html>`` element the panel proper renders from, and
+#: the exact opening tag sqladmin writes into it.
+#:
+#: Both are matched literally. A tolerant regular expression here would keep
+#: "working" across an upstream edit by matching something that is no longer
+#: the same element, which is the failure mode this whole arrangement exists
+#: to avoid - see ``_HtmlElement``.
+SQLADMIN_BASE_TEMPLATE = "sqladmin/base.html"
+SQLADMIN_HTML_ELEMENT = '<html lang="en">'
+
+#: What the panel emits in its place. ``lang`` and ``dir`` are function calls
+#: rather than values because this substitution happens **once**, when Jinja
+#: compiles the template; the calls are what run per request.
+_KAICALC_HTML_ELEMENT = '<html lang="{{ kaicalc_html_lang() }}" dir="{{ kaicalc_html_dir() }}">'
+
+_HTML_ELEMENT_SKEW = (
+    "admin/i18n.py cannot find {expected!r} in sqladmin's own {template!r}, so "
+    "the panel proper would go on announcing every page as English whatever "
+    "language it is in.\n\n"
+    "THE LIKELY CAUSE IS A VERSION SKEW, NOT A BUG IN THIS REPOSITORY. This "
+    "rewrite is written against the sqladmin pinned in docker/constraints.txt, "
+    "and it is that pin - not whatever is installed on this machine - that the "
+    "images build and CI installs. Check the installed version against the pin "
+    "first: tests/admin/test_i18n.py::"
+    "test_the_installed_sqladmin_is_the_version_pinned_for_the_images asserts "
+    "exactly that, and a failure there means this message is a symptom and the "
+    "pin is the thing to fix.\n\n"
+    "If the versions DO match, sqladmin has changed its base template and the "
+    "literal above needs to be updated by hand to whatever it now writes."
+)
+
+
+class _HtmlElement(Extension):
+    """Puts the rendered language on the panel proper's ``<html>`` element.
+
+    **The problem this solves, and why the obvious two answers are both
+    wrong.** sqladmin's ``templates/sqladmin/base.html`` opens with a
+    hard-coded ``<html lang="en">``, and that element sits OUTSIDE every
+    ``{% block %}`` the file defines. So the seam that works for ``topbar``
+    (see ``templates/sqladmin/layout.html``) does not reach it: a child
+    template can replace any block in that file and still cannot touch its
+    first line. Nor can a shadowing template that only ``{% extends %}`` the
+    original, for the same reason.
+
+    **Why this is not a second vendored file.** The panel already copies one
+    sqladmin template (``templates/sqladmin/_macros.html``) and that copy has
+    already cost this project once: on the 0.30.0 -> 0.31.0 move it went on
+    serving 0.30.0's markup, the menu stayed pinned open, and 0.31.0's new
+    menu-persistence JavaScript matched no element and did nothing, silently.
+    Copying ``base.html`` would take on the same debt for a worse ratio - the
+    file is forty-odd lines of stylesheet links, script tags and a ``<title>``,
+    every one of which would then be frozen at today's sqladmin, to change one
+    attribute on one line.
+
+    **What this does instead.** It rewrites that one line in sqladmin's own
+    source as Jinja compiles it. Nothing is copied, so nothing can go stale:
+    an upgrade that adds a stylesheet or a meta tag to ``base.html`` is picked
+    up in full, and only the ``<html>`` element is ours.
+
+    Compilation happens once per environment, so the cost is one string
+    replacement at start-up, not per request. The two attributes are Jinja
+    calls, so it is the *call* that is baked in and the *language* that is
+    negotiated per request.
+
+    **The drift guard, which this needs as much as the vendored macro does.**
+    A rewrite that silently matches nothing is worse than no rewrite, because
+    it looks installed. So a source this cannot find its literal in raises
+    here rather than rendering, and ``_HTML_ELEMENT_SKEW`` names version skew
+    as the first thing to check - the lesson from the macro copy, whose
+    failure was reported as "the copy has drifted" and sent the reader to edit
+    the wrong file. ``tests/admin/test_i18n.py`` asserts the literal is
+    present in the installed package, so an upgrade fails the suite before it
+    can ever raise in front of a staff member.
+    """
+
+    def preprocess(self, source, name, filename=None):
+        # Only sqladmin's own base template. Ours (`brand/base.html`) writes
+        # the same two attributes in Jinja directly and must not be touched
+        # twice, and no other template in this panel has an `<html>` element.
+        if name != SQLADMIN_BASE_TEMPLATE:
+            return source
+        if SQLADMIN_HTML_ELEMENT not in source:
+            raise RuntimeError(
+                _HTML_ELEMENT_SKEW.format(
+                    expected=SQLADMIN_HTML_ELEMENT, template=SQLADMIN_BASE_TEMPLATE
+                )
+            )
+        return source.replace(SQLADMIN_HTML_ELEMENT, _KAICALC_HTML_ELEMENT, 1)
+
+
 def install(env) -> None:
     """Give a Jinja environment ``_()`` and the language globals.
 
@@ -707,8 +873,18 @@ def install(env) -> None:
     and ``install_gettext_callables`` is a method the extension installs.
     """
     env.add_extension("jinja2.ext.i18n")
+    # Added to all four environments, though only sqladmin's ever loads the
+    # template it acts on: the extension keys off the template NAME, so the
+    # three that render `brand/` templates never trigger it, and installing it
+    # in one place is what keeps "which environment got it" from becoming a
+    # question again. It must go in before anything is rendered - Jinja
+    # preprocesses at compile time and caches the result - and `install()` is
+    # called at application build time, before any request.
+    env.add_extension(_HtmlElement)
     env.install_gettext_callables(gettext, ngettext, newstyle=True)
     env.globals["kaicalc_language"] = active_language
+    env.globals["kaicalc_html_lang"] = html_lang
+    env.globals["kaicalc_html_dir"] = html_dir
     env.globals["kaicalc_machine_translated"] = lambda: is_machine_translated(
         active_language()
     )

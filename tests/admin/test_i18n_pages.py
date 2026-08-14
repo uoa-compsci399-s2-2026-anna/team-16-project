@@ -43,7 +43,7 @@ async def test_the_login_page_renders_in_chinese_when_asked(client):
     body = response.text
     # The document language, not just the words. A screen reader reads a
     # Chinese page announced as en-NZ in English phonetics.
-    assert '<html lang="zh">' in body
+    assert '<html lang="zh" dir="ltr">' in body
     assert "登录" in body
 
 
@@ -60,7 +60,7 @@ async def test_the_browser_s_own_language_is_honoured_without_any_query_string(
     )
 
     assert response.status_code == 200
-    assert '<html lang="zh">' in response.text
+    assert '<html lang="zh" dir="ltr">' in response.text
     assert "登录" in response.text
 
 
@@ -73,7 +73,7 @@ async def test_quality_values_decide_which_language_wins(client):
     response = await client.get(
         "/admin/login", headers={"Accept-Language": "zh;q=0.8, en;q=0.9"}
     )
-    assert '<html lang="en-NZ">' in response.text
+    assert '<html lang="en-NZ" dir="ltr">' in response.text
 
 
 async def test_an_unsupported_first_tag_renders_english_on_the_page(client):
@@ -91,13 +91,13 @@ async def test_an_unsupported_first_tag_renders_english_on_the_page(client):
     english = await client.get(
         "/admin/login", headers={"Accept-Language": "fr-CA,fr;q=0.9,zh;q=0.8"}
     )
-    assert '<html lang="en-NZ">' in english.text
+    assert '<html lang="en-NZ" dir="ltr">' in english.text
     assert "登录" not in english.text
 
     chinese = await client.get(
         "/admin/login", headers={"Accept-Language": "zh-CN,fr;q=0.9,en;q=0.8"}
     )
-    assert '<html lang="zh">' in chinese.text
+    assert '<html lang="zh" dir="ltr">' in chinese.text
     assert "登录" in chinese.text
 
 
@@ -110,11 +110,11 @@ async def test_nothing_is_persisted_and_the_next_request_negotiates_again(client
     forced Chinese.
     """
     forced = await client.get("/admin/login", params={"lang": "zh"})
-    assert '<html lang="zh">' in forced.text
+    assert '<html lang="zh" dir="ltr">' in forced.text
     assert "kaicalc_lang" not in forced.headers.get("set-cookie", "")
 
     again = await client.get("/admin/login")
-    assert '<html lang="en-NZ">' in again.text
+    assert '<html lang="en-NZ" dir="ltr">' in again.text
 
 
 async def test_every_response_says_it_varies_by_accept_language(client):
@@ -135,7 +135,7 @@ async def test_every_response_says_it_varies_by_accept_language(client):
 
 async def test_a_request_with_no_choice_and_no_header_is_english(client):
     response = await client.get("/admin/login")
-    assert '<html lang="en-NZ">' in response.text
+    assert '<html lang="en-NZ" dir="ltr">' in response.text
     assert "Sign in" in response.text or "Continue" in response.text
 
 
@@ -152,7 +152,7 @@ async def test_an_unrecognised_lang_is_ignored_and_the_header_still_decides(clie
         headers={"Accept-Language": "zh-CN,zh;q=0.9"},
     )
 
-    assert '<html lang="zh">' in response.text
+    assert '<html lang="zh" dir="ltr">' in response.text
     assert "kaicalc_lang" not in response.headers.get("set-cookie", "")
 
 
@@ -467,31 +467,96 @@ async def test_the_notice_reaches_the_pages_that_render_before_a_session(
     assert 'id="machine-translation-notice"' in response.text
 
 
-async def test_the_panel_proper_still_mislabels_its_document_language(admin_client):
-    """**A pre-existing defect, pinned here so it is not mistaken for new.**
+async def test_the_panel_proper_announces_the_language_it_actually_rendered(
+    admin_client,
+):
+    """**Two languages, because one cannot tell a value from a constant.**
 
-    `brand/base.html` sets `<html lang>` from the active language, and
-    `web/js/i18n.js` does the same on the calculator - a Chinese page announced
-    as English is read aloud by a screen reader in English phonetics, which is
-    unreadable rather than merely wrong. sqladmin's OWN layout hardcodes
-    `lang="en"`, and the `<html>` element sits outside every block it defines,
-    so it cannot be overridden the way `topbar` is; closing it means forking a
-    template this panel deliberately does not fork (admin/i18n.py's docstring).
+    This replaced a test that asserted the defect: the panel proper used to
+    render `<html lang="en">` whatever language it was in, because sqladmin's
+    own base template hardcodes it outside every overridable block. It is
+    closed by `admin/i18n.py::_HtmlElement`.
 
-    This test asserts the defect rather than the fix, so that the day somebody
-    forks the layout or sqladmin adds a block, it fails and this note gets
-    deleted along with the workaround. It is NOT a claim that the behaviour is
-    correct.
-
-    Scope: the language chooser did not introduce this and does not depend on
-    it. The panel's words are translated; only the attribute announcing them is
-    wrong.
+    Asserting `lang="zh"` on a Chinese page alone would be worth very little -
+    so would asserting the attribute is merely *present*, which is what passed
+    against `lang="en"` on a Chinese page for as long as this defect lived. So
+    both languages are checked here, and each is paired with a heading in that
+    same language. A hardcoded `lang` of any value fails one of the two, and a
+    `lang` that tracked something other than the rendered language fails the
+    pairing.
     """
-    response = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
-    assert '<h3 class="card-title">常量</h3>' in response.text, (
-        "the page is Chinese"
+    chinese = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
+    assert '<h3 class="card-title">常量</h3>' in chinese.text, "the page is Chinese"
+    assert '<html lang="zh" dir="ltr">' in chinese.text
+
+    english = await admin_client.get("/admin/constant/list", params={"lang": "en"})
+    assert '<h3 class="card-title">Constants</h3>' in english.text
+    assert '<html lang="en-NZ" dir="ltr">' in english.text
+
+    # The old value, in neither response. `lang="en"` was the defect's
+    # signature and `en-NZ` is deliberately not it, so this cannot pass by
+    # substring against the English page.
+    assert '<html lang="en">' not in chinese.text
+    assert '<html lang="en">' not in english.text
+
+
+async def test_a_language_the_panel_cannot_render_is_announced_as_english(
+    admin_client,
+):
+    """A stored choice with no panel catalogue: English rendered, English said.
+
+    Arabic is one of the calculator's twenty-one and none of the panel's two.
+    The chooser deliberately leaves such a cookie alone and says so on the
+    page - but the page it says it on is in English, and English is therefore
+    what `lang` has to claim. Announcing `ar` would hand a screen reader
+    English words to read with Arabic phonetics, which is the same defect this
+    change closed, merely pointed the other way.
+
+    Anchored on all three at once: the notice proving the choice really is
+    stored and really is unhonoured, the English heading proving what was
+    rendered, and `lang`. Without the notice this would pass against a panel
+    that had silently discarded the cookie.
+    """
+    with _with_choice(admin_client, "ar") as client:
+        response = await client.get("/admin/constant/list")
+
+    body = response.text
+    assert '<h3 class="card-title">Constants</h3>' in body, "English was rendered"
+    assert 'class="language-bar__unavailable"' in body, "the choice is stored, unhonoured"
+    assert '<html lang="en-NZ" dir="ltr">' in body
+    assert '<html lang="ar"' not in body
+
+
+async def test_the_writing_direction_follows_the_catalogue_not_a_constant(
+    admin_client, monkeypatch
+):
+    """`dir` is wired to the catalogue. **The panel's RTL layout is NOT claimed.**
+
+    No catalogue in `admin/locales/` is right-to-left, so `dir="rtl"` cannot be
+    looked at on any screen this panel ships and nothing here says it renders
+    correctly - only that the attribute is derived rather than hardcoded, which
+    is the half that can be tested. A synthetic catalogue is what makes even
+    that testable; the same monkeypatch shape as the machine-translation tests
+    above.
+
+    Without this, `dir="ltr"` everywhere is indistinguishable from a constant,
+    which is precisely the trap the `lang` defect sat in.
+    """
+    hebrew = i18n.Catalogue(
+        language="he",
+        endonym="עברית",
+        machine_translated=False,
+        strings={"Constants": "קבועים"},
+        tags=("he",),
+        direction="rtl",
     )
-    assert '<html lang="en">' in response.text, (
-        "sqladmin's layout has started honouring the active language - delete "
-        "this test and the note in admin/templates/sqladmin/layout.html"
-    )
+    monkeypatch.setitem(i18n._CATALOGUES, "he", hebrew)
+    monkeypatch.setitem(i18n._TAG_INDEX, "he", "he")
+
+    response = await admin_client.get("/admin/constant/list", params={"lang": "he"})
+    assert '<html lang="he" dir="rtl">' in response.text
+
+    # The control: a left-to-right language through the same code path, so
+    # this cannot pass against a `dir` hardcoded to "rtl" either.
+    control = await admin_client.get("/admin/constant/list", params={"lang": "zh"})
+    assert '<html lang="zh" dir="ltr">' in control.text

@@ -815,6 +815,91 @@ def test_the_installed_sqladmin_is_the_version_pinned_for_the_images():
     )
 
 
+def _installed_sqladmin_base() -> str:
+    from pathlib import Path
+
+    import sqladmin
+
+    return (
+        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "base.html"
+    ).read_text(encoding="utf-8")
+
+
+def test_the_html_element_rewrite_still_finds_the_line_it_rewrites():
+    """The drift guard for the one sqladmin line the panel rewrites in place.
+
+    `admin/i18n.py::_HtmlElement` replaces `<html lang="en">` in sqladmin's own
+    `base.html` as Jinja compiles it, which is how the panel proper announces
+    the language it is actually in without a second vendored template. A
+    rewrite that matches nothing is worse than no rewrite, because it looks
+    installed and fails silently - the exact shape of the _macros drift, where
+    a stale copy suppressed the original and 0.31.0's menu JavaScript matched
+    no element with nothing in any log.
+
+    So this fails at the moment of the upgrade rather than in front of a staff
+    member. It is deliberately a **separate** failure from the version-pin test
+    above, for the reason written there: reporting a version skew as "the
+    rewrite is wrong" sends the reader to edit the wrong file.
+    """
+    assert i18n.SQLADMIN_HTML_ELEMENT in _installed_sqladmin_base(), (
+        f"sqladmin {_installed_version('sqladmin')} no longer writes "
+        f"{i18n.SQLADMIN_HTML_ELEMENT!r} in its own base.html, so the panel "
+        f"proper would go back to announcing every page as English. If the "
+        f"installed version does not match the pin "
+        f"({_pinned_version('sqladmin')}), fix that first - this failure is a "
+        f"symptom of it. If it does, update admin/i18n.py's literal by hand."
+    )
+
+
+def test_the_rewrite_is_applied_to_sqladmin_s_template_and_to_nothing_else():
+    """The extension does something, and does it only where it is meant to.
+
+    The assertion above proves the literal is still findable; it does not
+    prove the extension is wired in, and an extension that was never added to
+    the environment would pass it. This renders the substitution through a
+    real Jinja environment instead.
+
+    The second half is what stops it over-reaching: `brand/base.html` writes
+    the same two attributes itself, and a rewrite keyed on anything looser
+    than the template name would hit it twice.
+    """
+    from jinja2 import Environment, DictLoader
+
+    env = Environment(loader=DictLoader({}))
+    i18n.install(env)
+
+    source = _installed_sqladmin_base()
+    rewritten = env.preprocess(source, i18n.SQLADMIN_BASE_TEMPLATE)
+    assert '<html lang="{{ kaicalc_html_lang() }}" dir="{{ kaicalc_html_dir() }}">' in rewritten
+    assert i18n.SQLADMIN_HTML_ELEMENT not in rewritten
+
+    # Any other template name is returned untouched.
+    assert env.preprocess(source, "brand/base.html") == source
+
+
+def test_a_base_template_without_the_line_is_refused_rather_than_ignored():
+    """The mutation this guard exists to catch, exercised directly.
+
+    A `preprocess` that returned the source unchanged when it could not find
+    its literal would pass every other test in this file: the rewrite would
+    simply stop happening, and the panel would quietly go back to `lang="en"`
+    on every page. So the not-found path is asserted to raise, and the message
+    is asserted to name the version-skew cause - which is the half that sends
+    the next reader to the right file.
+    """
+    from jinja2 import Environment, DictLoader
+
+    env = Environment(loader=DictLoader({}))
+    i18n.install(env)
+
+    with pytest.raises(RuntimeError) as raised:
+        env.preprocess("<html lang='en'>", i18n.SQLADMIN_BASE_TEMPLATE)
+
+    message = str(raised.value)
+    assert "docker/constraints.txt" in message
+    assert "VERSION SKEW" in message.upper()
+
+
 def test_the_vendored_macros_copy_still_matches_its_original():
     """admin/templates/sqladmin/_macros.html is a copy; copies drift silently.
 

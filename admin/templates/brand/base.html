@@ -4,8 +4,15 @@
    a page of Chinese labelled en-NZ is announced by a screen reader in
    English phonetics - unreadable rather than merely wrong. en-NZ is kept for
    English specifically: the copy is New Zealand English and the region is
-   part of that. #}
-<html lang="{{ 'en-NZ' if kaicalc_language() == 'en' else kaicalc_language() }}">
+   part of that.
+
+   THE CONDITIONAL USED TO BE SPELLED OUT HERE AND NOW IS NOT. The panel
+   proper needs the same two attributes and cannot use this template to get
+   them - sqladmin's own base template owns its `<html>` element, and
+   admin/i18n.py::_HtmlElement says how that one is reached instead. Both
+   surfaces now call the same two functions, so the gate pages and the panel
+   cannot come to disagree about what language a page is in. #}
+<html lang="{{ kaicalc_html_lang() }}" dir="{{ kaicalc_html_dir() }}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">

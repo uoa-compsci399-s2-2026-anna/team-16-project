@@ -24,7 +24,7 @@ from sqlalchemy import func, select
 
 from admin.factor_lifecycle import (
     LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
-    rollback_to,
+    rollback_to, set_placeholder_flag,
 )
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
@@ -649,3 +649,134 @@ def test_archive_is_audited(_committed_session, one_draft):
     )
     assert entry is not None
     assert entry.actor == "kim"
+
+
+# --- The placeholder flag ------------------------------------------------
+#
+# Contract §2.2. `set_placeholder_flag` is the only sanctioned write path for
+# `factor_set.is_mock`; the proof the panel asks for before the clearing
+# direction lives in admin/factor_views.py, which is where a request's form
+# and the login throttle exist. What is testable here is the half a service
+# function owns: which transitions are legal, in which statuses, and what the
+# audit trail is left saying.
+
+
+@pytest.mark.parametrize(
+    "status",
+    [FactorSetStatus.draft, FactorSetStatus.published, FactorSetStatus.archived],
+)
+def test_flagging_a_set_as_placeholder_is_allowed_in_every_status(
+    _committed_session, one_draft, status
+):
+    """The safe direction, and it must never be gated. Somebody who doubts
+    the numbers under a *published* set has to be able to put the warning in
+    front of the public without cloning, publishing or asking anyone.
+
+    `one_draft` is moved into each status directly rather than through
+    publish/archive: this is a test about the flag, and routing it through a
+    lifecycle transition would make a publish refusal look like a flag
+    refusal.
+    """
+    session = _committed_session
+    one_draft.status = status
+    one_draft.is_mock = False
+    session.flush()
+
+    set_placeholder_flag(session, one_draft.id, is_mock=True, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.parametrize(
+    "status",
+    [FactorSetStatus.draft, FactorSetStatus.published, FactorSetStatus.archived],
+)
+def test_clearing_the_flag_is_allowed_in_every_status(
+    _committed_session, one_draft, status
+):
+    """The rule that changed. The panel used to refuse this on a published
+    set and tell staff to clone first, which is a new `factor_set` row and a
+    new version label for a change in which not one factor value differs —
+    while every submission recorded meanwhile stamps the old id.
+
+    The gate on this direction is the proof the panel asks for, not the
+    set's status.
+    """
+    session = _committed_session
+    one_draft.status = status
+    session.flush()
+
+    set_placeholder_flag(session, one_draft.id, is_mock=False, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, one_draft.id).is_mock is False
+
+
+@pytest.mark.parametrize("is_mock, action", [
+    (True, "flag_placeholder"),
+    (False, "clear_placeholder"),
+])
+def test_each_direction_is_audited_with_both_values(
+    _committed_session, one_draft, is_mock, action
+):
+    """Who, when, which set, and which value to which — §5.5, and the point
+    of the change: this used to land as an ordinary `update`, which in a list
+    of audit entries is indistinguishable from somebody fixing a typo in the
+    same set's notes.
+
+    Both `before` and `after` are asserted. An entry that recorded only the
+    new value cannot answer the question the trail is read for, which is
+    whether the public warning came off and when.
+    """
+    from admin.models import AuditLog
+
+    session = _committed_session
+    one_draft.is_mock = not is_mock
+    session.flush()
+
+    set_placeholder_flag(session, one_draft.id, is_mock=is_mock, actor="kim")
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == one_draft.id,
+                               AuditLog.action == action)
+    )
+    assert entry is not None
+    assert entry.actor == "kim"
+    assert entry.before_json["is_mock"] is (not is_mock)
+    assert entry.after_json["is_mock"] is is_mock
+
+
+@pytest.mark.parametrize("is_mock", [True, False])
+def test_setting_the_flag_to_what_it_already_says_is_refused(
+    _committed_session, one_draft, is_mock
+):
+    """Same reason `publish_factor_set` refuses an already-published target:
+    an audit entry claiming a change that did not happen is worse than no
+    entry, on the one trail that answers "when did the warning come off"."""
+    session = _committed_session
+    one_draft.is_mock = is_mock
+    session.flush()
+
+    with pytest.raises(LifecycleError):
+        set_placeholder_flag(session, one_draft.id, is_mock=is_mock, actor="kim")
+
+
+def test_setting_the_flag_on_a_set_that_does_not_exist_is_refused(_committed_session):
+    with pytest.raises(LifecycleError):
+        set_placeholder_flag(_committed_session, 9999, is_mock=False, actor="kim")
+
+
+def test_setting_the_flag_never_commits(_committed_session, one_draft):
+    """Module docstring, admin/factor_lifecycle.py: the caller owns the
+    transaction. See test_archive_never_commits for why the fixture is
+    committed first."""
+    session = _committed_session
+    session.commit()
+
+    set_placeholder_flag(session, one_draft.id, is_mock=False, actor="kim")
+    session.rollback()
+
+    assert session.get(FactorSet, one_draft.id).is_mock is True

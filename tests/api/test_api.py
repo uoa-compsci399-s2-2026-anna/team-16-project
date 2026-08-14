@@ -181,6 +181,89 @@ async def test_public_calculation_persists_and_returns_token(app):
         assert db.scalar(select(func.count()).select_from(Submission)) == 1
 
 
+async def test_the_language_cookie_reaches_the_api_and_is_ignored(app):
+    """The chooser's cookie rides along here, and must land nowhere.
+
+    `kaicalc_lang` is set at `path=/` because the calculator at `/` and the
+    panel at `/admin` both have to read it, and that path cannot be scoped any
+    narrower - so the browser attaches it to every `POST /api/v1/calculate`.
+    Contract §7.7.3 says the API receives it and ignores it.
+
+    **Asserted rather than assumed.** `docker/nginx.conf`'s access log was
+    found writing four §2.3-forbidden fields on 2026-08-12, which is what
+    "obviously we do not store that" is worth here.
+
+    The comparison against a request with no cookie is what makes this
+    evidence: an endpoint that had stopped persisting anything at all would
+    satisfy a bare "the column is empty" check.
+    """
+    payload = json.loads((FIXTURES / "calculate_request.json").read_text())
+    async with await _client(app) as client:
+        with_cookie = await client.post(
+            "/api/v1/calculate",
+            json=payload,
+            headers={"Cookie": "kaicalc_lang=ta"},
+        )
+        without = await client.post("/api/v1/calculate", json=payload)
+
+    assert with_cookie.status_code == 200, with_cookie.text
+    assert without.status_code == 200, without.text
+
+    # Nothing about the language comes back out, and no cookie is echoed.
+    assert "set-cookie" not in {k.lower() for k in with_cookie.headers}
+    assert "kaicalc_lang" not in with_cookie.text
+    assert "ta" not in {
+        str(v) for v in with_cookie.json().items() if not isinstance(v, (dict, list))
+    }
+
+    # And nothing about it reached the row. Every persisted column is compared
+    # against the cookie-less request's row, so a language leaking into ANY
+    # field fails here rather than only into a field this test thought to name.
+    with app.state.session_factory() as db:
+        rows = db.scalars(select(Submission).order_by(Submission.id)).all()
+        assert len(rows) == 2
+        # Clocks and identity, not content. Listed explicitly rather than
+        # skipped by type so that a future column carrying something real
+        # cannot slip past by happening to be a datetime.
+        volatile = {"id", "token", "created_at", "updated_at", "token_expires_at"}
+        for column in Submission.__table__.columns.keys():
+            if column in volatile:
+                continue
+            assert getattr(rows[0], column) == getattr(rows[1], column), (
+                f"submission.{column} differs when a language cookie is sent; "
+                "the chooser's preference has reached the database"
+            )
+
+    # And a sweep of the whole schema rather than of the one table this test
+    # thought to name. `zh-Hant` is used as the sentinel because it is a real
+    # language the chooser can emit and appears nowhere else in a calculation -
+    # unlike `ta`, whose two letters occur inside ordinary words.
+    async with await _client(app) as client:
+        marked = await client.post(
+            "/api/v1/calculate",
+            json=payload,
+            headers={"Cookie": "kaicalc_lang=zh-Hant"},
+        )
+    assert marked.status_code == 200, marked.text
+
+    from sqlalchemy import text as _text
+
+    with app.state.session_factory() as db:
+        tables = [
+            name
+            for (name,) in db.execute(
+                _text("SELECT name FROM sqlite_master WHERE type='table'")
+            )
+        ]
+        assert tables, "no tables to sweep; this test would pass vacuously"
+        for table in tables:
+            for row in db.execute(_text(f'SELECT * FROM "{table}"')):
+                for value in row:
+                    assert "zh-Hant" not in str(value), (
+                        f"the language cookie reached {table}: {row!r}"
+                    )
+
+
 async def test_dry_run_requires_staff_and_does_not_persist(app):
     async with await _client(app) as client:
         denied = await client.post(

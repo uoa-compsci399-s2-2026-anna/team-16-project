@@ -15,6 +15,7 @@ translated string inside the specific element that carries it.
 """
 
 import json
+from pathlib import Path
 import re
 
 import pytest
@@ -441,17 +442,227 @@ def test_no_catalogue_claims_a_tag_another_one_claims():
             seen[key] = catalogue.language
 
 
-def test_nothing_about_the_negotiation_is_persisted():
-    """The cookie is gone, and so is every constant that described it.
+def test_the_stored_choice_is_the_only_thing_that_is_persisted():
+    """One cookie, one closed value space, and nothing else.
 
-    Asserted on the module rather than on a response because a reinstated
-    cookie would arrive as a constant here first.
+    **This test replaced its own opposite.** It used to assert that
+    ``COOKIE_NAME`` did not exist, so that reinstating a cookie had to be a
+    deliberate act rather than a quiet one. It was, and this is what the same
+    guard looks like on the other side of that decision: the bound is no longer
+    "nothing is stored" but "only this is stored, and only these values".
+
+    The value space is the assertion that matters. It is what makes the cookie
+    incapable of identifying anybody - twenty-two possible values shared
+    identically by everyone who picks the same language, with no entropy for a
+    correlator to key on. A field that could carry a free-form string would be a
+    fingerprint however it got there, so the closed set is checked rather than
+    assumed.
     """
-    for gone in ("COOKIE_NAME", "COOKIE_MAX_AGE", "resolve"):
-        assert not hasattr(i18n, gone), (
-            f"i18n.{gone} is back - the language is negotiated per request "
-            "and nothing about it is stored"
-        )
+    assert i18n.COOKIE_NAME == "kaicalc_lang"
+    assert i18n.FOLLOW_SYSTEM == "auto"
+
+    permitted = {i18n.FOLLOW_SYSTEM, *(c.language for c in i18n.languages())}
+    for value in permitted:
+        assert i18n.stored_choice(value) is not None or value == i18n.FOLLOW_SYSTEM
+
+    # Anything outside the set resolves to "no stored choice", never to itself.
+    for rejected in ("", "  ", "en; DROP", "../../etc/passwd", "x" * 400):
+        assert i18n.stored_choice(rejected) is None
+
+
+async def _post_language(body: bytes, origin: bytes | None = b"http://testserver"):
+    """Drive `set_language` directly, with no database and no login.
+
+    A bare Request rather than the ASGI client because this endpoint
+    deliberately sits outside sqladmin's `login_required` wrapper and outside
+    the session entirely - building a logged-in client to exercise it would
+    test something other than what ships.
+    """
+    from starlette.requests import Request
+
+    from admin import language_view
+
+    async def receive():
+        return {"type": "http.request", "body": body, "more_body": False}
+
+    headers = [
+        (b"content-type", b"application/x-www-form-urlencoded"),
+        (b"host", b"testserver"),
+    ]
+    if origin is not None:
+        headers.append((b"origin", origin))
+    scope = {
+        "type": "http",
+        "method": "POST",
+        "path": "/admin/language",
+        "headers": headers,
+        "query_string": b"",
+        "scheme": "http",
+        "server": ("testserver", 80),
+        "root_path": "",
+    }
+    return await language_view.set_language(Request(scope, receive))
+
+
+def _set_cookies(response):
+    return [value for header, value in response.raw_headers if header == b"set-cookie"]
+
+
+@pytest.mark.asyncio
+async def test_no_identifier_is_written_alongside_the_language():
+    """The language cookie must not become a way to correlate anyone.
+
+    Named because the tempting implementation stamps a visitor id beside the
+    preference "to remember it better". The response is inspected rather than
+    the module, because that is where such a thing would actually appear.
+    """
+    response = await _post_language(b"lang=zh")
+    cookies = _set_cookies(response)
+    assert len(cookies) == 1, f"more than the language cookie was set: {cookies}"
+    written = cookies[0].decode()
+    assert written.startswith(f"{i18n.COOKIE_NAME}=zh;")
+    assert "Path=/" in written
+    assert "SameSite=lax" in written.replace("SameSite=Lax", "SameSite=lax")
+    # Readable by web/js/i18n.js on the calculator, which is the whole of why
+    # one cookie can serve both surfaces.
+    assert "HttpOnly" not in written
+
+
+@pytest.mark.asyncio
+async def test_follow_the_system_is_written_down_rather_than_deleted():
+    """"Follow the system" is a stored value, not a cleared cookie.
+
+    A deletion would have to re-send the cookie with `Max-Age=0` and an exactly
+    matching path and domain; get that wrong and the old value survives, so the
+    chooser appears to revert and snaps back on the next page. A write cannot
+    fail that way, which is the mechanical half of why `auto` exists.
+
+    The `max-age` assertion is the one that kills the tempting fix: a deletion
+    would set it to 0.
+    """
+    written = _set_cookies(await _post_language(b"lang=auto"))[0].decode()
+    assert written.startswith(f"{i18n.COOKIE_NAME}=auto;")
+    assert "Max-Age=0" not in written
+    assert f"Max-Age={i18n.COOKIE_MAX_AGE}" in written
+
+
+@pytest.mark.asyncio
+async def test_a_value_the_panel_does_not_know_stores_follow_the_system():
+    """No error page, in a language the visitor may not read.
+
+    Every value the chooser can emit is valid, so an invalid one arrived from
+    somewhere else and the readable answer is the default.
+    """
+    for body in (b"lang=qq", b"lang=", b"", b"lang=%2Fetc%2Fpasswd"):
+        written = _set_cookies(await _post_language(body))[0].decode()
+        assert written.startswith(f"{i18n.COOKIE_NAME}=auto;"), body
+
+
+@pytest.mark.asyncio
+async def test_a_cross_origin_post_changes_nothing():
+    """The stateless stand-in for the CSRF token this endpoint cannot carry.
+
+    admin/language_view.py says why there is no token: issuing one would mint a
+    session cookie for every anonymous visitor to the login page, which is a
+    real identifier created to protect a cosmetic preference.
+    """
+    response = await _post_language(b"lang=zh", origin=b"http://evil.example")
+    assert _set_cookies(response) == []
+    # Still a redirect rather than an error: nothing was attempted, so there is
+    # nothing to report to the visitor whose browser was used.
+    assert response.status_code == 303
+
+
+@pytest.mark.asyncio
+async def test_the_return_path_cannot_leave_the_panel():
+    """`next` is a path inside /admin or it is the panel root.
+
+    The middle case is the one that looks safe: `//evil.example/admin` passes a
+    naive `startswith('/')` check and navigates off-site.
+    """
+    from admin.language_view import safe_next
+
+    assert safe_next("/admin/constant/list") == "/admin/constant/list"
+    assert safe_next("/admin") == "/admin"
+    for hostile in (
+        "//evil.example/admin",
+        "http://evil.example/admin",
+        "https://evil.example",
+        "/etc/passwd",
+        "/admins-elsewhere",
+        "admin/constant/list",
+        None,
+        "",
+    ):
+        assert safe_next(hostile) == "/admin", hostile
+
+
+def test_a_choice_the_panel_cannot_honour_renders_english_and_is_named():
+    """Tamil chosen on the calculator: English here, said so, cookie untouched.
+
+    The three wrong answers this pins down, in order of temptation:
+
+    * render English silently, which pretends no choice was made;
+    * show "Follow the system" as selected, which is a lie about what is stored;
+    * rewrite the cookie to `auto`, which destroys the calculator's language
+      from an unrelated screen.
+
+    The third is the dangerous one and it cannot be caught here - a resolution
+    function has no response to write to - so `set_language` above owns the
+    write and this test owns the reading. The pair is the assertion.
+    """
+    assert i18n.resolve("ta", "zh-CN") == "en"
+    assert i18n.unavailable_choice("ta") == "தமிழ்"
+
+    # The control that separates "the message works" from "everything is
+    # unavailable": a language the panel does have is honoured and says nothing.
+    assert i18n.resolve("zh", "en") == "zh"
+    assert i18n.unavailable_choice("zh") is None
+
+    # And a Chinese variant reaches Chinese by truncation rather than falling
+    # into this branch, which is what keeps it narrow.
+    assert i18n.resolve("zh-Hant", "en") == "zh"
+    assert i18n.unavailable_choice("zh-Hant") is None
+
+
+def test_the_vendored_calculator_language_list_matches_the_calculator_s_own():
+    """A copy that can drift, held to its original.
+
+    admin/i18n.py has to vendor `web/locales/index.json` because
+    docker/admin.Dockerfile copies no `web/` and package-data cannot reach
+    outside its own package. Reading the calculator's file directly would work
+    in this checkout and return nothing in the built image, making the
+    "not available in the panel" message a feature that passes every test and
+    renders on no deployed screen.
+
+    Compared as parsed JSON and then as bytes: the first says the data agrees,
+    the second says nobody reformatted one of them and left the two to drift on
+    the next edit.
+    """
+    vendored = i18n.LOCALES_DIR / i18n.CALCULATOR_LANGUAGES_FILE
+    original = (
+        Path(__file__).resolve().parents[2] / "web" / "locales" / "index.json"
+    )
+    assert vendored.is_file(), "the vendored calculator language list is missing"
+    assert json.loads(vendored.read_text(encoding="utf-8")) == json.loads(
+        original.read_text(encoding="utf-8")
+    )
+    assert vendored.read_bytes() == original.read_bytes()
+
+    # Anchored: a vendored file that had lost its content would satisfy an
+    # equality test against an equally empty original.
+    assert len(json.loads(vendored.read_text(encoding="utf-8"))["catalogues"]) == 20
+
+
+def test_the_vendored_list_is_not_loaded_as_a_catalogue():
+    """A leading underscore means "data", not "a language".
+
+    Without the skip in `_load`, `_calculator_languages.json` is read as a
+    catalogue and raises KeyError on `raw["language"]` at import - which takes
+    the whole panel down at start-up, not just this feature.
+    """
+    assert "_calculator_languages" not in {c.language for c in i18n.languages()}
+    assert {c.language for c in i18n.languages()} == {"en", "zh"}
 
 
 def test_the_catalogue_file_declares_its_own_metadata():
@@ -475,6 +686,220 @@ def test_the_catalogue_file_declares_its_own_metadata():
         assert language in [t.lower() for t in raw.get("tags", [language])]
 
 
+def _repository_root():
+    from pathlib import Path
+
+    import admin
+
+    return Path(admin.__file__).parent.parent
+
+
+def _normalised(name: str) -> str:
+    """PEP 503 package-name normalisation, so `SQLAlchemy` matches `sqlalchemy`."""
+    return re.sub(r"[-_.]+", "-", name).lower()
+
+
+def _pinned_version(package: str) -> str | None:
+    """The version docker/constraints.txt freezes, or None if it names none.
+
+    That file is the authority on which version this repository is written
+    against: both images build with it and CI installs with it. Whatever
+    happens to be in a developer's site-packages is not.
+    """
+    pin = re.compile(r"^([A-Za-z0-9._-]+)==([^\s;#]+)")
+    text = (_repository_root() / "docker" / "constraints.txt").read_text(
+        encoding="utf-8"
+    )
+    for line in text.splitlines():
+        match = pin.match(line.strip())
+        if match and _normalised(match.group(1)) == _normalised(package):
+            return match.group(2)
+    return None
+
+
+def _installed_version(package: str) -> str:
+    from importlib.metadata import version
+
+    return version(package)
+
+
+def _undo_the_translation_edits(ours: str) -> str:
+    """Our copy, reduced to what it was copied from.
+
+    Drops the leading explanatory Jinja comment, then reverses the five `_()`
+    edits listed in that comment - so the only difference this can leave
+    behind is a difference sqladmin made.
+    """
+    ours = ours[ours.index("{% macro menu_category") :]
+    for translated, plain in (
+        ("_(menu.display_name)", "menu.display_name"),
+        ("_(sub_menu.display_name)", "sub_menu.display_name"),
+        ("_(field.description)", "field.description"),
+        ('_("This is a required field")', '"This is a required field"'),
+    ):
+        ours = ours.replace(translated, plain)
+    return ours
+
+
+def _macros_complaint(
+    ours: str, original: str, installed: str | None, pinned: str | None
+) -> str | None:
+    """What is wrong with the vendored copy, or None if nothing is.
+
+    Split out from the test so the two failures it can report are themselves
+    testable, and because they are two different failures. THE MESSAGE IS THE
+    DELIVERABLE HERE: the previous version of this check said only "the copy
+    has drifted, re-copy it", which sent the first reader of a red CI run to
+    inspect a file that was a faithful copy of the sqladmin on their own
+    machine. The cause was that CI had a different sqladmin, and no part of
+    the message pointed there.
+    """
+    if _undo_the_translation_edits(ours).strip() == original.strip():
+        return None
+
+    if installed != pinned:
+        return (
+            f"admin/templates/sqladmin/_macros.html does not match the installed "
+            f"sqladmin, and the installed sqladmin is not the pinned one: "
+            f"{installed} is installed, docker/constraints.txt pins {pinned}. "
+            f"THE COPY IS PROBABLY FINE - fix the environment first. Install "
+            f"with the constraints file (`pip install -e \".[dev]\" "
+            f"-c docker/constraints.txt`) and run this again. Only if it still "
+            f"fails on {pinned} is the copy itself out of date."
+        )
+
+    return (
+        f"admin/templates/sqladmin/_macros.html no longer matches sqladmin "
+        f"{installed}'s own _macros.html, and {installed} is the version "
+        f"docker/constraints.txt pins - so this is real drift, not a version "
+        f"skew. Re-copy the original and re-apply the five `_()` edits listed "
+        f"in that file's header comment, and check whether sqladmin added "
+        f"markup that its own CSS or JS depends on."
+    )
+
+
+def _installed_macros() -> str:
+    from pathlib import Path
+
+    import sqladmin
+
+    return (
+        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "_macros.html"
+    ).read_text(encoding="utf-8")
+
+
+def _our_macros() -> str:
+    return (
+        _repository_root() / "admin" / "templates" / "sqladmin" / "_macros.html"
+    ).read_text(encoding="utf-8")
+
+
+def test_the_installed_sqladmin_is_the_version_pinned_for_the_images():
+    """Asserted on its own, because it is its own cause with its own fix.
+
+    docker/constraints.txt is what the two images build with and what CI
+    installs with; pyproject.toml states only a `>=0.20` floor. A developer
+    who installs from that floor gets whatever PyPI published most recently,
+    which is how this repository spent a release cycle with 0.30.0 on the
+    desk and 0.31.0 in the image - the vendored macros copy was taken from
+    the wrong one, and the panel shipped 0.30.0's menu markup on 0.31.0.
+    """
+    pinned = _pinned_version("sqladmin")
+    assert pinned is not None, "docker/constraints.txt no longer pins sqladmin"
+    installed = _installed_version("sqladmin")
+    assert installed == pinned, (
+        f"sqladmin {installed} is installed but docker/constraints.txt pins "
+        f"{pinned}, so this suite is not testing the software that ships. "
+        f"Install with the constraints file: "
+        f'pip install -e ".[dev]" -c docker/constraints.txt'
+    )
+
+
+def _installed_sqladmin_base() -> str:
+    from pathlib import Path
+
+    import sqladmin
+
+    return (
+        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "base.html"
+    ).read_text(encoding="utf-8")
+
+
+def test_the_html_element_rewrite_still_finds_the_line_it_rewrites():
+    """The drift guard for the one sqladmin line the panel rewrites in place.
+
+    `admin/i18n.py::_HtmlElement` replaces `<html lang="en">` in sqladmin's own
+    `base.html` as Jinja compiles it, which is how the panel proper announces
+    the language it is actually in without a second vendored template. A
+    rewrite that matches nothing is worse than no rewrite, because it looks
+    installed and fails silently - the exact shape of the _macros drift, where
+    a stale copy suppressed the original and 0.31.0's menu JavaScript matched
+    no element with nothing in any log.
+
+    So this fails at the moment of the upgrade rather than in front of a staff
+    member. It is deliberately a **separate** failure from the version-pin test
+    above, for the reason written there: reporting a version skew as "the
+    rewrite is wrong" sends the reader to edit the wrong file.
+    """
+    assert i18n.SQLADMIN_HTML_ELEMENT in _installed_sqladmin_base(), (
+        f"sqladmin {_installed_version('sqladmin')} no longer writes "
+        f"{i18n.SQLADMIN_HTML_ELEMENT!r} in its own base.html, so the panel "
+        f"proper would go back to announcing every page as English. If the "
+        f"installed version does not match the pin "
+        f"({_pinned_version('sqladmin')}), fix that first - this failure is a "
+        f"symptom of it. If it does, update admin/i18n.py's literal by hand."
+    )
+
+
+def test_the_rewrite_is_applied_to_sqladmin_s_template_and_to_nothing_else():
+    """The extension does something, and does it only where it is meant to.
+
+    The assertion above proves the literal is still findable; it does not
+    prove the extension is wired in, and an extension that was never added to
+    the environment would pass it. This renders the substitution through a
+    real Jinja environment instead.
+
+    The second half is what stops it over-reaching: `brand/base.html` writes
+    the same two attributes itself, and a rewrite keyed on anything looser
+    than the template name would hit it twice.
+    """
+    from jinja2 import Environment, DictLoader
+
+    env = Environment(loader=DictLoader({}))
+    i18n.install(env)
+
+    source = _installed_sqladmin_base()
+    rewritten = env.preprocess(source, i18n.SQLADMIN_BASE_TEMPLATE)
+    assert '<html lang="{{ kaicalc_html_lang() }}" dir="{{ kaicalc_html_dir() }}">' in rewritten
+    assert i18n.SQLADMIN_HTML_ELEMENT not in rewritten
+
+    # Any other template name is returned untouched.
+    assert env.preprocess(source, "brand/base.html") == source
+
+
+def test_a_base_template_without_the_line_is_refused_rather_than_ignored():
+    """The mutation this guard exists to catch, exercised directly.
+
+    A `preprocess` that returned the source unchanged when it could not find
+    its literal would pass every other test in this file: the rewrite would
+    simply stop happening, and the panel would quietly go back to `lang="en"`
+    on every page. So the not-found path is asserted to raise, and the message
+    is asserted to name the version-skew cause - which is the half that sends
+    the next reader to the right file.
+    """
+    from jinja2 import Environment, DictLoader
+
+    env = Environment(loader=DictLoader({}))
+    i18n.install(env)
+
+    with pytest.raises(RuntimeError) as raised:
+        env.preprocess("<html lang='en'>", i18n.SQLADMIN_BASE_TEMPLATE)
+
+    message = str(raised.value)
+    assert "docker/constraints.txt" in message
+    assert "VERSION SKEW" in message.upper()
+
+
 def test_the_vendored_macros_copy_still_matches_its_original():
     """admin/templates/sqladmin/_macros.html is a copy; copies drift silently.
 
@@ -484,32 +909,89 @@ def test_the_vendored_macros_copy_still_matches_its_original():
     of quietly reverting a translated menu or leaving the panel rendering an
     older version of sqladmin's own form markup.
     """
-    from pathlib import Path
+    complaint = _macros_complaint(
+        _our_macros(),
+        _installed_macros(),
+        _installed_version("sqladmin"),
+        _pinned_version("sqladmin"),
+    )
+    assert complaint is None, complaint
 
-    import sqladmin
 
-    original = (
-        Path(sqladmin.__file__).parent / "templates" / "sqladmin" / "_macros.html"
-    ).read_text(encoding="utf-8")
+def test_a_faithful_copy_is_accepted():
+    """The other half of the test above, which otherwise proves only refusal.
 
-    ours = (
-        Path(admin.__file__).parent / "templates" / "sqladmin" / "_macros.html"
-    ).read_text(encoding="utf-8")
-    # Drop our leading explanatory Jinja comment, then undo the five edits.
-    ours = ours[ours.index("{% macro menu_category") :]
-    undone = ours.replace("_(menu.display_name)", "menu.display_name")
-    undone = undone.replace("_(sub_menu.display_name)", "sub_menu.display_name")
-    undone = undone.replace("_(field.description)", "field.description")
-    undone = undone.replace('_("This is a required field")', '"This is a required field"')
+    A comparison that rejected everything would pass every "this must fail"
+    assertion below. This is the one that says the check can also say yes.
+    """
+    original = _installed_macros()
+    ours = "{# a header #}\n" + original.replace(
+        "{{ menu.display_name }}", "{{ _(menu.display_name) }}"
+    ).replace("{{ sub_menu.display_name }}", "{{ _(sub_menu.display_name) }}").replace(
+        "{{ field.description }}", "{{ _(field.description) }}"
+    ).replace(
+        '"This is a required field"', '_("This is a required field")'
+    )
+    # Anchor: the `_()` edits must actually have been applied, or this test
+    # would be comparing the original against itself and would pass even if
+    # _undo_the_translation_edits did nothing at all.
+    assert ours != "{# a header #}\n" + original, "anchor: the edits did not apply"
+    assert "_(menu.display_name)" in ours
+    assert '_("This is a required field")' in ours
 
-    assert undone.strip() == original.strip(), (
-        "the installed sqladmin's _macros.html no longer matches the copy in "
-        "admin/templates/sqladmin/. Re-copy it and re-apply the five `_()` "
-        "edits listed in that file's header comment."
+    assert _macros_complaint(ours, original, "9.9.9", "9.9.9") is None
+
+
+def test_a_drifted_copy_on_the_pinned_version_is_reported_as_drift():
+    original = _installed_macros()
+    drifted = "{# a header #}\n" + original.replace(
+        'class="nav-item dropdown"', 'class="nav-item dropdown" data-something="1"'
+    )
+    assert 'data-something="1"' in drifted, "anchor: the mutation did not apply"
+
+    complaint = _macros_complaint(drifted, original, "9.9.9", "9.9.9")
+    assert complaint is not None
+    assert "real drift" in complaint
+    assert "Re-copy" in complaint
+
+
+def test_a_version_skew_is_reported_as_a_version_skew_and_not_as_drift():
+    """The whole point of the split.
+
+    Same drifted copy as the test above; only the two versions differ. The
+    message must change, because the thing the reader has to go and fix has
+    changed.
+    """
+    original = _installed_macros()
+    drifted = "{# a header #}\n" + original.replace(
+        'class="nav-item dropdown"', 'class="nav-item dropdown" data-something="1"'
     )
 
+    complaint = _macros_complaint(drifted, original, "0.30.0", "0.31.0")
+    assert complaint is not None
+    assert "0.30.0 is installed" in complaint
+    assert "pins 0.31.0" in complaint
+    assert "THE COPY IS PROBABLY FINE" in complaint
+    # And it must NOT send the reader to re-copy the file, which is what the
+    # message said before this split existed.
+    assert "real drift" not in complaint
 
-import admin  # noqa: E402  - imported for __file__ in the test above
+
+def test_the_pin_is_read_out_of_the_constraints_file_rather_than_guessed():
+    """Anchors _pinned_version against the real file.
+
+    A `_pinned_version` that returned None for everything would make the skew
+    branch above unreachable in the real test, and every assertion about it
+    would still pass.
+    """
+    assert _pinned_version("sqladmin") is not None
+    # Normalisation is load-bearing: the file writes `SQLAlchemy`, not
+    # `sqlalchemy`, and a case-sensitive match would silently find no pin.
+    assert _pinned_version("sqlalchemy") == _pinned_version("SQLAlchemy") is not None
+    assert _pinned_version("a-package-nobody-pins") is None
+
+
+import admin  # noqa: E402  - imported for __file__ in the tests above
 
 
 def _our_own_template_msgids() -> set[str]:

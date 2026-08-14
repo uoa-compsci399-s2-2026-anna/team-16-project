@@ -82,7 +82,50 @@ services:
     volumes:
       - db-data:/var/lib/mysql
     healthcheck:
-      test: ["CMD", "mysqladmin", "ping", "-h", "localhost", "-p${MYSQL_ROOT_PASSWORD:-devroot}"]
+      # THIS CHECK SPEAKS TCP, AND THAT IS THE ENTIRE POINT OF IT.
+      #
+      # It used to be `mysqladmin ping -h localhost`, and that check reported
+      # healthy roughly two seconds BEFORE the database existed. Measured, on a
+      # clean machine:
+      #
+      #   04:54:04.29  healthcheck exits 0   (temporary server, "port: 0")
+      #   04:54:04.83  migrate starts
+      #   04:54:06.30  migrate dies: (2003, "Can't connect to MySQL server on
+      #                'db' ([Errno 111] Connection refused)")
+      #   04:54:06.89  the real server binds 3306 - 0.6 s too late
+      #
+      # migrate exits non-zero, so api, admin and web never start at all
+      # (`service_completed_successfully` is never met) and the site answers
+      # nothing. The second `up -d` works, because migrate is idempotent, which
+      # is why this was reported as "it needs starting twice" rather than as a
+      # bug. Three things combine:
+      #
+      #   1. mysql:8.0's entrypoint runs a TEMPORARY server for the duration of
+      #      initialisation, with --skip-networking. Its own log says
+      #      "ready for connections ... port: 0". No TCP socket exists yet.
+      #   2. `-h localhost` makes a mysql client use the UNIX SOCKET, not TCP -
+      #      so it reaches that temporary server.
+      #   3. `mysqladmin ping` EXITS 0 while printing "Access denied": to the
+      #      ping command a server that refuses your credentials is still a
+      #      server that answered.
+      #
+      # start_period cannot fix this. start_period suppresses FAILURES during
+      # the window; it does not suppress a premature SUCCESS, and a success is
+      # what this was producing.
+      #
+      # So: `--protocol=TCP` with an address rather than `localhost` (both,
+      # deliberately - the flag survives someone "tidying" the address back),
+      # against the port the application will use, AND a real query as the
+      # application's own user against the application's own database. The
+      # temporary server has no TCP listener to accept any of it, and a
+      # connection refused is a non-zero exit, which is a failure, which is
+      # what retries and start_period are for. Nothing but the real server,
+      # with the real grants applied, can answer this.
+      test: ["CMD", "mysql",
+             "--protocol=TCP", "-h", "127.0.0.1", "-P", "3306",
+             "-u", "${MYSQL_USER:-kaicalc}", "-p${MYSQL_PASSWORD:-devpass}",
+             "-D", "${MYSQL_DATABASE:-kaicalc}",
+             "-e", "SELECT 1"]
       interval: 5s
       timeout: 3s
       retries: 30

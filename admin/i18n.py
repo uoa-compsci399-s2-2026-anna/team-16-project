@@ -46,26 +46,82 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Mapping
 
+from jinja2.ext import Extension
+
 #: The language every catalogue falls back to, and the language the source
 #: strings are written in. It has no catalogue file: for English the key *is*
 #: the answer.
 DEFAULT_LANGUAGE = "en"
 
-#: The header the panel negotiates from, and the only thing it reads about a
-#: visitor's language.
+#: The header the panel negotiates from when there is no stored choice to
+#: honour, and the only thing it *infers* about a visitor's language.
 #:
 #: **§2.3 forbids STORING an address, a user agent or a fingerprint. It does
 #: not forbid reading a header, deciding what to render, and keeping
 #: nothing** - its own wording is that "user agents, headers and paths are
 #: read within a request and forgotten". This module used to decline the
-#: header on the opposite reading, and shipped a ``?lang=`` switcher and a
-#: ``kaicalc_lang`` cookie instead. Both are gone: the cookie was the only
-#: thing here that outlived a request, and the switcher was a control the
-#: repository owner asked not to have.
+#: header on the opposite reading.
 #:
-#: What is read is discarded when the response is sent. Nothing derived from
-#: it reaches ``submission``, ``audit_log`` or any log line.
+#: What is read here is discarded when the response is sent. Nothing derived
+#: from it reaches ``submission``, ``audit_log`` or any log line. The one thing
+#: that does outlive a request is the cookie below, which is not this - see
+#: ``COOKIE_NAME`` for why the two are different acts.
 ACCEPT_LANGUAGE_HEADER = "accept-language"
+
+#: The one thing this system stores about a visitor's language, shared with the
+#: calculator (``web/js/i18n.js``) because both surfaces are the same origin -
+#: nginx serves ``/`` and ``/admin`` on one port - and a cookie at path ``/`` is
+#: the only mechanism a Python process and a browser can both read.
+#:
+#: **A cookie rather than ``localStorage``, and the usual reason is wrong.**
+#: ``localStorage`` is same-origin too and would in fact be shared between the
+#: two surfaces. The decisive reason is *this* half: the panel renders
+#: server-side and has to know the language before it emits any HTML, and
+#: ``localStorage`` is unreadable at that moment.
+#:
+#: **WHY THIS IS NOT THE FINGERPRINT §2.3 FORBIDS.** Two independent properties
+#: keep it outside that, and **both are needed**. This is the reason, not a
+#: reassurance:
+#:
+#: 1. **It records something the visitor deliberately declared**, not something
+#:    inferred from their browser. Reading ``Accept-Language`` and forgetting
+#:    it, and storing "this visitor chose English", are different acts with
+#:    different justifications. The first observes; the second obeys.
+#: 2. **Its value space is closed, tiny and free of entropy** - twenty-one
+#:    possible values, shared identically by everyone who picks the same
+#:    language. A field that cannot distinguish two visitors cannot correlate
+#:    them, whatever else it records.
+#:
+#: The second is the load-bearing half, and it is why the first is not the
+#: argument on its own: "the person declared it" would equally justify storing a
+#: name somebody typed into a form, which would be a fingerprint by any measure.
+#: **It is the absence of entropy, not the presence of consent, that makes this
+#: incapable of identifying anyone.**
+#:
+#: **Not entangled with the de-duplication token.** ``submission.token`` is a
+#: different name, a different lifetime and a different purpose. This cookie
+#: never reaches ``submission``, ``audit_log`` or the access log, and it neither
+#: extends nor refreshes that token. Because it sits at path ``/`` - which
+#: cannot be scoped away when both surfaces need it - the browser also sends it
+#: to ``/api/v1/calculate``; the API receives it and ignores it, and a test says
+#: so rather than leaving it to be obvious.
+COOKIE_NAME = "kaicalc_lang"
+
+#: **"Follow the system" is a stored value, not the absence of one.**
+#:
+#: The obvious reason is that "chose to follow" and "never chose" would
+#: otherwise be indistinguishable and the chooser could not show what is in
+#: effect. The stronger reason is mechanical: reverting to follow-the-system
+#: becomes an ordinary write rather than a cookie deletion, and deleting a
+#: cookie reliably means re-sending it with ``Max-Age=0`` and an exactly
+#: matching path and domain. Get that wrong and the old value stays - the
+#: chooser appears to revert and snaps back on the next page. A write has no
+#: such failure mode.
+FOLLOW_SYSTEM = "auto"
+
+#: A year. Long enough that a returning staff member keeps their choice; finite
+#: so an abandoned browser does not carry it forever.
+COOKIE_MAX_AGE = 31536000
 
 #: The response header that stops a shared cache serving one visitor's
 #: Chinese page to the next visitor. **Mandatory on every response**, not
@@ -74,10 +130,14 @@ ACCEPT_LANGUAGE_HEADER = "accept-language"
 #: later gets returned to a Chinese-speaking browser.
 VARY_HEADER = "vary"
 
-#: ``?lang=zh`` on any URL forces a language for that one request. It is not
-#: persisted anywhere and there is no control that emits it - it exists for
-#: testing, screenshots and support, which is the whole of why an interface
-#: with no picker still needs one.
+#: ``?lang=zh`` on any URL forces a language for that one request. **It is not
+#: persisted and the chooser does not emit it** - it exists for testing,
+#: screenshots and support, and a link somebody pastes into a support thread
+#: must not silently re-language the recipient's browser for good.
+#:
+#: The parameter and the chooser cannot be mistaken for one another because they
+#: share no mechanism: the chooser is a ``<form method="post">`` that writes the
+#: cookie and redirects, and it never puts anything in a URL.
 #:
 #: **An unrecognised value is ignored**, and the request then negotiates
 #: exactly as if the parameter had been absent: the browser's highest-priority
@@ -148,6 +208,29 @@ class Catalogue:
     #: adding a file.
     tags: tuple[str, ...] = ()
 
+    #: ``"ltr"`` or ``"rtl"``: which way this language's lines run.
+    #:
+    #: The key in the file is ``dir``, spelled the same as the calculator's
+    #: catalogues spell it (``web/locales/*.json``), because the two sets are
+    #: meant to be the same shape - the panel already vendors the
+    #: calculator's list as ``_calculator_languages.json`` to name a language
+    #: it does not itself have, and a second spelling would make that copy
+    #: lossy.
+    #:
+    #: **Defaulted rather than required.** Every catalogue this panel ships
+    #: is left-to-right, so requiring the key would be a migration for no
+    #: reader's benefit; a catalogue that omits it is left-to-right, which is
+    #: true of every language nobody bothered to mark.
+    #:
+    #: This is honestly untested against a real right-to-left panel: there is
+    #: no RTL catalogue in ``admin/locales/`` and so no screen on which
+    #: ``dir="rtl"`` can be looked at. What is tested is that the attribute
+    #: follows the catalogue rather than a constant - see
+    #: ``tests/admin/test_i18n_pages.py``. The panel's *layout* under RTL is
+    #: not claimed to work, and the first RTL catalogue dropped into
+    #: ``admin/locales/`` should expect to find layout work waiting.
+    direction: str = "ltr"
+
 
 def _load() -> dict[str, Catalogue]:
     """Read every catalogue once, at import.
@@ -157,10 +240,19 @@ def _load() -> dict[str, Catalogue]:
     a second place for the English wording to drift.
     """
     catalogues = {
-        DEFAULT_LANGUAGE: Catalogue(DEFAULT_LANGUAGE, "English", False, {}, ("en",)),
+        DEFAULT_LANGUAGE: Catalogue(
+            DEFAULT_LANGUAGE, "English", False, {}, ("en",), "ltr"
+        ),
     }
     if LOCALES_DIR.is_dir():
         for path in sorted(LOCALES_DIR.glob("*.json")):
+            # A leading underscore means "data this module reads, not a
+            # catalogue" - today just the vendored calculator language list.
+            # Without this, `_calculator_languages.json` would be loaded as a
+            # language and raise KeyError on `raw["language"]` at import,
+            # taking the whole panel down at start-up.
+            if path.name.startswith("_"):
+                continue
             raw = json.loads(path.read_text(encoding="utf-8"))
             catalogues[raw["language"]] = Catalogue(
                 language=raw["language"],
@@ -168,6 +260,10 @@ def _load() -> dict[str, Catalogue]:
                 machine_translated=bool(raw["machine_translated"]),
                 strings=raw["strings"],
                 tags=tuple(raw.get("tags") or [raw["language"]]),
+                # Anything that is not exactly "rtl" is left-to-right. A
+                # typo must not produce a third writing direction that no
+                # renderer understands and that `dir` would emit verbatim.
+                direction="rtl" if raw.get("dir") == "rtl" else "ltr",
             )
     return catalogues
 
@@ -205,9 +301,11 @@ _active: ContextVar[str] = ContextVar("kaicalc_admin_language", default=DEFAULT_
 def languages() -> list[Catalogue]:
     """Every language with a catalogue, English first.
 
-    No screen renders this any more - there is no picker. It is what the
-    test suite parametrises over, and what a future surface with a picker
-    would read.
+    **This is what the chooser lists, and it lists only what the panel has.**
+    The panel ships English and Chinese; the calculator ships twenty-one. A
+    visitor who chose Tamil on the calculator does not get a dead Tamil entry
+    here - they get the message ``unavailable_choice`` produces, beside a list
+    of the two languages that actually exist.
     """
     rest = sorted(
         (c for c in _CATALOGUES.values() if c.language != DEFAULT_LANGUAGE),
@@ -236,6 +334,27 @@ def active_language() -> str:
     return _active.get()
 
 
+#: What the visitor *chose*, which is not what is rendered. With ``auto`` stored
+#: and a Chinese browser the panel is Chinese and the chooser still reads
+#: "Follow the system" - the chooser has to show the choice, not its
+#: consequence, or picking the language it already displays would be a no-op
+#: that looks like a bug.
+_choice: ContextVar[str] = ContextVar("kaicalc_admin_choice", default=FOLLOW_SYSTEM)
+
+#: The endonym of a chosen language this panel has no catalogue for, or ``None``.
+_unavailable: ContextVar[str | None] = ContextVar(
+    "kaicalc_admin_unavailable", default=None
+)
+
+
+def active_choice() -> str:
+    return _choice.get()
+
+
+def active_unavailable_choice() -> str | None:
+    return _unavailable.get()
+
+
 def catalogue(code: str | None = None) -> Catalogue:
     return _CATALOGUES.get(code or active_language(), _CATALOGUES[DEFAULT_LANGUAGE])
 
@@ -243,6 +362,51 @@ def catalogue(code: str | None = None) -> Catalogue:
 def endonym(code: str) -> str:
     """A language's own name for itself, for a notice written in it."""
     return catalogue(code).endonym if is_supported(code) else code
+
+
+def html_lang() -> str:
+    """The value for ``<html lang>``: the language actually being rendered.
+
+    **The rendered language, never the stored choice.** When somebody has
+    chosen a language this panel has no catalogue for - Arabic, say, chosen
+    on the calculator, which has twenty-one to the panel's two - the panel
+    renders English, and this returns English. Announcing the choice instead
+    would tell a screen reader to read English words with Arabic phonetics,
+    which is the same class of defect as announcing Chinese as English and no
+    better for having been well meant. ``active_language()`` is already the
+    resolved language for exactly this reason; nothing here re-derives it.
+
+    ``en-NZ`` for English specifically: the copy is New Zealand English and
+    the region is part of it. Every other language is its bare code, because
+    no other catalogue here is regional.
+
+    One function so that the panel proper and the five gate pages cannot
+    disagree. ``brand/base.html`` used to spell this expression out in Jinja
+    and was the only place it existed; the panel proper now needs the same
+    answer (see ``_HtmlElement`` below), and two copies of a conditional is
+    how the two surfaces would come to differ.
+    """
+    active = active_language()
+    return "en-NZ" if active == DEFAULT_LANGUAGE else active
+
+
+def html_dir() -> str:
+    """The value for ``<html dir>``: ``"ltr"`` or ``"rtl"``.
+
+    Read off the catalogue of the language being rendered, by the same rule
+    and for the same reason as ``html_lang()`` - the direction has to be the
+    direction of the words on the screen, so a choice the panel cannot honour
+    gets English's direction and not its own.
+
+    **Emitted even though no catalogue here is right-to-left**, and that is a
+    deliberate call rather than an oversight. It costs one attribute; it means
+    the first RTL catalogue added to ``admin/locales/`` announces itself
+    instead of rendering Arabic letters in a document declared left-to-right;
+    and an absent ``dir`` is not neutral - it inherits, and the panel would
+    keep asserting left-to-right by omission. What it does **not** do is make
+    the panel's layout mirror. See ``Catalogue.direction``.
+    """
+    return catalogue().direction
 
 
 def is_machine_translated(code: str) -> bool:
@@ -422,6 +586,131 @@ def negotiate(accept_language: str | None, requested: str | None = None) -> str:
     return match(preferred[0]) or DEFAULT_LANGUAGE
 
 
+def stored_choice(cookie: str | None) -> str | None:
+    """What the visitor chose, or ``None`` when there is nothing to honour.
+
+    ``auto`` and an unrecognised value both answer ``None``, which is what makes
+    a stale cookie harmless: one naming a language that has since been removed
+    negotiates from the browser instead of rendering a blank panel.
+
+    **A tag, not a literal.** The value is matched through the same lookup as
+    everything else, so a cookie written by the calculator saying ``zh-Hant``
+    resolves here rather than being compared as a string - the two surfaces
+    write one cookie and do not share a catalogue set.
+    """
+    if not cookie or cookie == FOLLOW_SYSTEM:
+        return None
+    return match(cookie)
+
+
+def resolve(
+    cookie: str | None,
+    accept_language: str | None,
+    requested: str | None = None,
+) -> str:
+    """The language to render this one request in. **The order is the contract.**
+
+    ``?lang=`` first, as a one-request override that writes nothing; then the
+    stored choice; then the browser's highest-priority tag; then English. The
+    same order ``web/js/i18n.js::resolve`` implements, because two surfaces that
+    answered one visitor differently would be the exact defect a shared rule
+    exists to prevent.
+
+    ``?lang=`` is matched separately rather than treated as a stored choice, so
+    an unrecognised value falls through to the cookie instead of consuming it.
+    """
+    forced = match(requested)
+    if forced is not None:
+        return forced
+    chosen = stored_choice(cookie)
+    if chosen is not None:
+        return chosen
+    # **A choice this panel cannot honour lands on English, not on the browser.**
+    # The visitor deliberately overrode their browser's setting; falling back to
+    # the very setting they replaced would be honouring a preference they had
+    # already rejected. English is the stated safe floor, and it is what the
+    # message beside the chooser promises - a message that said "shown in
+    # English" beside a Chinese page would be worse than no message.
+    #
+    # This branch is narrower than it looks. It needs a stored language that no
+    # panel catalogue claims *even after truncation*, so `zh-Hant` does not
+    # reach it - `match` truncates it to `zh` and the panel renders Chinese.
+    # Tamil, Thai and Arabic reach it; a Chinese variant never does.
+    if unavailable_choice(cookie) is not None:
+        return DEFAULT_LANGUAGE
+    return negotiate(accept_language)
+
+
+def unavailable_choice(cookie: str | None) -> str | None:
+    """The endonym of a chosen language the **calculator** has but the panel does not.
+
+    ``None`` when there is nothing to say: no choice, "follow the system", a
+    choice the panel can honour, or a value nobody claims on either surface.
+
+    This exists because the two surfaces do not ship the same language set, and
+    the three obvious ways to handle that are all worse. Silently rendering
+    English pretends no choice was made. Showing "Follow the system" selected is
+    a lie about what is stored. A dead entry in a two-item list is noise. So the
+    panel renders English, lists what it has, and **says which language it could
+    not give them, in that language's own name.**
+
+    **The cookie is not touched.** The tempting implementation quietly rewrites
+    it to ``auto`` on the way past, which would destroy the calculator's
+    language from an unrelated screen - a staff member who set the calculator to
+    Tamil and then opened the panel would find the calculator in English
+    afterwards, with nothing on either screen explaining why.
+    """
+    if not cookie or cookie == FOLLOW_SYSTEM:
+        return None
+    if match(cookie) is not None:
+        return None
+    return _CALCULATOR_ENDONYMS.get(cookie.strip().lower())
+
+
+#: A **vendored copy** of ``web/locales/index.json``, and it has to be a copy.
+#:
+#: ``docker/admin.Dockerfile`` copies ``admin/ api/ db/ engine/`` and no
+#: ``web/``, and ``[tool.setuptools.package-data]`` cannot reach outside its own
+#: package - the same pair of constraints that put the catalogues inside
+#: ``admin/`` rather than in a top-level ``i18n/``. Reading the calculator's own
+#: manifest works in a checkout and returns nothing in the built image, which
+#: would make the "not available in the panel" message a feature that passes
+#: every test and renders on no deployed screen.
+#:
+#: A copy can drift, so ``tests/admin/test_i18n.py`` compares it byte-for-byte
+#: against ``web/locales/index.json`` and fails when they diverge. That is the
+#: same arrangement this repository already uses for the vendored sqladmin
+#: macros: vendor, then anchor the copy with a test that cannot pass on a no-op.
+CALCULATOR_LANGUAGES_FILE = "_calculator_languages.json"
+
+
+def _calculator_endonyms() -> dict[str, str]:
+    """Every language the calculator offers, by tag, to its own name.
+
+    Used only to name a language the panel cannot render. A missing or
+    unreadable file leaves the map empty, which makes ``unavailable_choice``
+    return ``None`` and renders the panel in English - the same outcome as
+    before this existed, never an error page.
+    """
+    manifest = LOCALES_DIR / CALCULATOR_LANGUAGES_FILE
+    try:
+        raw = json.loads(manifest.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    index: dict[str, str] = {}
+    for entry in raw.get("catalogues", []):
+        endonym_ = entry.get("endonym")
+        if not endonym_:
+            continue
+        for tag in (entry.get("language"), *(entry.get("tags") or [])):
+            if tag:
+                index.setdefault(str(tag).strip().lower(), endonym_)
+    return index
+
+
+_CALCULATOR_ENDONYMS: dict[str, str] = _calculator_endonyms()
+
+
 class _TranslatedAttribute:
     """A class attribute that answers in the language of the current request.
 
@@ -471,6 +760,96 @@ def translate_view_names(views) -> None:
                 setattr(cls, attribute, _TranslatedAttribute(current))
 
 
+#: The template whose ``<html>`` element the panel proper renders from, and
+#: the exact opening tag sqladmin writes into it.
+#:
+#: Both are matched literally. A tolerant regular expression here would keep
+#: "working" across an upstream edit by matching something that is no longer
+#: the same element, which is the failure mode this whole arrangement exists
+#: to avoid - see ``_HtmlElement``.
+SQLADMIN_BASE_TEMPLATE = "sqladmin/base.html"
+SQLADMIN_HTML_ELEMENT = '<html lang="en">'
+
+#: What the panel emits in its place. ``lang`` and ``dir`` are function calls
+#: rather than values because this substitution happens **once**, when Jinja
+#: compiles the template; the calls are what run per request.
+_KAICALC_HTML_ELEMENT = '<html lang="{{ kaicalc_html_lang() }}" dir="{{ kaicalc_html_dir() }}">'
+
+_HTML_ELEMENT_SKEW = (
+    "admin/i18n.py cannot find {expected!r} in sqladmin's own {template!r}, so "
+    "the panel proper would go on announcing every page as English whatever "
+    "language it is in.\n\n"
+    "THE LIKELY CAUSE IS A VERSION SKEW, NOT A BUG IN THIS REPOSITORY. This "
+    "rewrite is written against the sqladmin pinned in docker/constraints.txt, "
+    "and it is that pin - not whatever is installed on this machine - that the "
+    "images build and CI installs. Check the installed version against the pin "
+    "first: tests/admin/test_i18n.py::"
+    "test_the_installed_sqladmin_is_the_version_pinned_for_the_images asserts "
+    "exactly that, and a failure there means this message is a symptom and the "
+    "pin is the thing to fix.\n\n"
+    "If the versions DO match, sqladmin has changed its base template and the "
+    "literal above needs to be updated by hand to whatever it now writes."
+)
+
+
+class _HtmlElement(Extension):
+    """Puts the rendered language on the panel proper's ``<html>`` element.
+
+    **The problem this solves, and why the obvious two answers are both
+    wrong.** sqladmin's ``templates/sqladmin/base.html`` opens with a
+    hard-coded ``<html lang="en">``, and that element sits OUTSIDE every
+    ``{% block %}`` the file defines. So the seam that works for ``topbar``
+    (see ``templates/sqladmin/layout.html``) does not reach it: a child
+    template can replace any block in that file and still cannot touch its
+    first line. Nor can a shadowing template that only ``{% extends %}`` the
+    original, for the same reason.
+
+    **Why this is not a second vendored file.** The panel already copies one
+    sqladmin template (``templates/sqladmin/_macros.html``) and that copy has
+    already cost this project once: on the 0.30.0 -> 0.31.0 move it went on
+    serving 0.30.0's markup, the menu stayed pinned open, and 0.31.0's new
+    menu-persistence JavaScript matched no element and did nothing, silently.
+    Copying ``base.html`` would take on the same debt for a worse ratio - the
+    file is forty-odd lines of stylesheet links, script tags and a ``<title>``,
+    every one of which would then be frozen at today's sqladmin, to change one
+    attribute on one line.
+
+    **What this does instead.** It rewrites that one line in sqladmin's own
+    source as Jinja compiles it. Nothing is copied, so nothing can go stale:
+    an upgrade that adds a stylesheet or a meta tag to ``base.html`` is picked
+    up in full, and only the ``<html>`` element is ours.
+
+    Compilation happens once per environment, so the cost is one string
+    replacement at start-up, not per request. The two attributes are Jinja
+    calls, so it is the *call* that is baked in and the *language* that is
+    negotiated per request.
+
+    **The drift guard, which this needs as much as the vendored macro does.**
+    A rewrite that silently matches nothing is worse than no rewrite, because
+    it looks installed. So a source this cannot find its literal in raises
+    here rather than rendering, and ``_HTML_ELEMENT_SKEW`` names version skew
+    as the first thing to check - the lesson from the macro copy, whose
+    failure was reported as "the copy has drifted" and sent the reader to edit
+    the wrong file. ``tests/admin/test_i18n.py`` asserts the literal is
+    present in the installed package, so an upgrade fails the suite before it
+    can ever raise in front of a staff member.
+    """
+
+    def preprocess(self, source, name, filename=None):
+        # Only sqladmin's own base template. Ours (`brand/base.html`) writes
+        # the same two attributes in Jinja directly and must not be touched
+        # twice, and no other template in this panel has an `<html>` element.
+        if name != SQLADMIN_BASE_TEMPLATE:
+            return source
+        if SQLADMIN_HTML_ELEMENT not in source:
+            raise RuntimeError(
+                _HTML_ELEMENT_SKEW.format(
+                    expected=SQLADMIN_HTML_ELEMENT, template=SQLADMIN_BASE_TEMPLATE
+                )
+            )
+        return source.replace(SQLADMIN_HTML_ELEMENT, _KAICALC_HTML_ELEMENT, 1)
+
+
 def install(env) -> None:
     """Give a Jinja environment ``_()`` and the language globals.
 
@@ -494,11 +873,25 @@ def install(env) -> None:
     and ``install_gettext_callables`` is a method the extension installs.
     """
     env.add_extension("jinja2.ext.i18n")
+    # Added to all four environments, though only sqladmin's ever loads the
+    # template it acts on: the extension keys off the template NAME, so the
+    # three that render `brand/` templates never trigger it, and installing it
+    # in one place is what keeps "which environment got it" from becoming a
+    # question again. It must go in before anything is rendered - Jinja
+    # preprocesses at compile time and caches the result - and `install()` is
+    # called at application build time, before any request.
+    env.add_extension(_HtmlElement)
     env.install_gettext_callables(gettext, ngettext, newstyle=True)
     env.globals["kaicalc_language"] = active_language
+    env.globals["kaicalc_html_lang"] = html_lang
+    env.globals["kaicalc_html_dir"] = html_dir
     env.globals["kaicalc_machine_translated"] = lambda: is_machine_translated(
         active_language()
     )
+    env.globals["kaicalc_languages"] = languages
+    env.globals["kaicalc_choice"] = active_choice
+    env.globals["kaicalc_unavailable_choice"] = active_unavailable_choice
+    env.globals["kaicalc_follow_system"] = FOLLOW_SYSTEM
 
 
 class LanguageMiddleware:
@@ -533,12 +926,20 @@ class LanguageMiddleware:
         from starlette.requests import HTTPConnection
 
         conn = HTTPConnection(scope)
+        cookie = conn.cookies.get(COOKIE_NAME)
         set_language(
-            negotiate(
+            resolve(
+                cookie,
                 conn.headers.get(ACCEPT_LANGUAGE_HEADER),
                 conn.query_params.get(QUERY_PARAM),
             )
         )
+        # The **resolved** code, not the raw cookie. A calculator-written
+        # `zh-CN` has to come back as `zh` or it would match no option in the
+        # chooser and the browser would silently select the first one - the
+        # panel would render Chinese while its own control claimed otherwise.
+        _choice.set(stored_choice(cookie) or FOLLOW_SYSTEM)
+        _unavailable.set(unavailable_choice(cookie))
 
         async def send_with_vary(message):
             if message["type"] == "http.response.start":
@@ -547,9 +948,29 @@ class LanguageMiddleware:
                 headers = MutableHeaders(scope=message)
                 existing = headers.get(VARY_HEADER, "")
                 present = {part.strip().lower() for part in existing.split(",")}
-                if "accept-language" not in present:
-                    headers[VARY_HEADER] = (
-                        f"{existing}, Accept-Language" if existing else "Accept-Language"
+                # **``Cookie`` as well as ``Accept-Language``, now that a stored
+                # choice can decide the response.** Declaring only the header
+                # would let a shared cache serve one staff member's chosen
+                # Chinese page to the next visitor whose browser asked for
+                # English - the precise failure `Vary` exists to prevent, and
+                # the more dangerous half because the cookie *overrides* the
+                # header. The cost is nil: the panel is authenticated, already
+                # carries `Vary: Cookie` on session responses, and no shared
+                # cache stores it.
+                #
+                # The static origin is deliberately untouched. The calculator's
+                # chooser is read by JavaScript after the response arrives, so
+                # every visitor is still served a byte-identical index.html and
+                # `Vary` there would mean a cached copy of the HTML, the
+                # stylesheet and both font faces per visitor.
+                missing = [
+                    token
+                    for token in ("Accept-Language", "Cookie")
+                    if token.lower() not in present
+                ]
+                if missing:
+                    headers[VARY_HEADER] = ", ".join(
+                        ([existing] if existing else []) + missing
                     )
             await send(message)
 

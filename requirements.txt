@@ -1,6 +1,25 @@
 # Kai Commitment Impact Calculator - Python dependencies
 # Python 3.11+
 
+# EVERY VERSION BELOW IS A FLOOR, AND A FLOOR IS NOT AN ENVIRONMENT. This file
+# says WHAT is required; docker/constraints.txt says WHICH VERSIONS were
+# tested, and the line below makes an install from this file use them. Both
+# images already build with `pip install --constraint docker/constraints.txt`
+# (docker/api.Dockerfile, docker/admin.Dockerfile), so without this line a
+# developer's checkout resolves each floor to whatever PyPI published most
+# recently and is a different set of software from the one that ships.
+#
+# That is not hypothetical. The pin moved to sqladmin 0.31.0 on 10 August and
+# the desk stayed on 0.30.0, so admin/templates/sqladmin/_macros.html - a copy
+# of a template out of that package, added on 13 August - was taken from a
+# version the panel has never run and shipped 0.30.0's menu markup on 0.31.0.
+# It is the reason tests/admin/test_i18n.py now asserts the installed version
+# against the pin.
+#
+# pip resolves this path relative to THIS FILE, not the working directory, so
+# `pip install -r requirements.txt` works from anywhere.
+-c docker/constraints.txt
+
 # --- Web ---
 fastapi>=0.115
 uvicorn[standard]>=0.32

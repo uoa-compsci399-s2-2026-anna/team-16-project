@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en-NZ">
+  <head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" data-i18n-attr="content" content="Use the Kai Commitment food waste impact calculator and read the latest Kai Commitment news.">
+    <title data-i18n>Home | Kai Commitment Food Waste Impact Calculator</title>
+    <link rel="stylesheet" href="./css/styles.css">
+  </head>
+  <body class="home-page">
+    <!-- See index.html: the page is rendered by ES modules, so the chooser is built by
+         js/i18n.js rather than shipped here, and this note is about the page as a whole. -->
+    <noscript>
+      <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the latest news, or be shown in a language other than English.</p>
+    </noscript>
+    <a class="skip-link" href="#main-content" data-i18n>Skip to main content</a>
+    <header class="site-header">
+      <div class="header-inner public-header-inner home-header-inner">
+        <a class="brand" href="./home.html" data-i18n-attr="aria-label" aria-label="Kai Commitment home">
+          <img src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+          <span class="prototype-label" data-i18n>Impact calculator</span>
+        </a>
+        <nav class="public-nav home-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
+          <a href="./home.html" aria-current="page" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
+      </div>
+    </header>
+
+    <main class="main-content home-main" id="main-content" tabindex="-1">
+      <section class="home-hero" aria-labelledby="home-title">
+        <div>
+          <p class="eyebrow" data-i18n>Food waste impact calculator</p>
+          <h1 id="home-title" data-i18n>Turn food waste information into action</h1>
+          <p class="lead" data-i18n>Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.</p>
+          <a class="button button-primary button-large" href="./index.html" data-i18n>Use the calculator</a>
+        </div>
+      </section>
+
+      <section class="home-news" aria-labelledby="news-heading">
+        <p class="eyebrow" data-i18n>From Kai Commitment</p>
+        <h2 id="news-heading" data-i18n>Latest news</h2>
+        <p data-i18n>Updates and practical insights from the Kai Commitment website.</p>
+        <div id="news-feed" class="home-news-grid" aria-live="polite" aria-busy="true">
+          <p class="loading-state" role="status" data-i18n>Loading latest news…</p>
+        </div>
+      </section>
+    </main>
+
+    <footer>
+      <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record" data-i18n>What we record</a></p>
+    </footer>
+    <script type="module" src="./js/home.js"></script>
+  </body>
+</html>

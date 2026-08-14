@@ -516,8 +516,10 @@ facts about the deployment that this code cannot establish for itself.
 | O-5 | The seeded `food_category` table carries nine substantive Otago categories (plus `standard_mix`), but contract §2.1's prose says "the eight Otago baseline categories". The client's own source list has nine entries; `admin/seed.py` seeds all nine on the ruling that a category too many is a row a staff member can deactivate through the panel, while a category too few is data nobody can enter. Needs the client's word on whether the ninth category belongs, and the contract prose corrected either way. | E |
 | O-6 | The seeded `unit_preset` rows (bucket and wheelie-bin sizes to kilograms) are placeholder conversions — the client has not supplied measured data. Every row's `source_note` says so; replace before the calculator is published. Neighbour of O-1. | E |
 | ~~O-7~~ | ~~**`prevention` is not the 100% offset §4.1 claims.**~~ **Closed 2026-08-09.** `factor_upstream` gained a nullable `destination_id`, `prevention` was seeded at zero against every general row, and §4.1's claim is true for the first time. See below. | — |
-| O-8 | **Interface translation is delivered** (v1.25; negotiation rule amended at v1.26): the panel in Chinese, the calculator in twenty languages, the language negotiated per request from **the browser's highest-priority tag only — an unmatched one is English rather than a walk down the list** — and stored nowhere. **The taxonomy inside a translated page stays in the language staff typed it — ruled 2026-08-14, and not a gap: anything a staff member can edit is published exactly as written.** What remains open is only that nineteen of the twenty are machine translated and unread. See below. | Client, C, D, E |
+| O-8 | **Interface translation is delivered** (v1.25; negotiation rule amended at v1.26; **chooser added at v1.27**): the panel in Chinese, the calculator in twenty languages, and **a language chooser at the top inline-start of both surfaces whose default option follows the browser** (on the calculator, inside the header's own row: a separate strip cost 57px above the fold, which is the budget the step-indicator band was deleted to protect) — negotiating, when nobody has chosen, from **the browser's highest-priority tag only, an unmatched one being English rather than a walk down the list.** A choice is stored in one `kaicalc_lang` cookie whose value space is closed and entropy-free, which is what keeps it outside §2.3 rather than the fact that it was chosen. **The taxonomy inside a translated page stays in the language staff typed it — ruled 2026-08-14, and not a gap: anything a staff member can edit is published exactly as written.** What remains open is only that nineteen of the twenty are machine translated and unread, and that is now the only thing open: the recorded defect is closed at v1.28. The panel proper announced every page as `<html lang="en">` because sqladmin's layout hardcodes it outside any overridable block; it is fixed by rewriting that one line in sqladmin's own template as Jinja compiles it, rather than by vendoring a second copy of a file this project has already watched go stale. **`lang` is the language rendered, not the language chosen** — a choice with no catalogue on that surface renders English and says English. `dir` is emitted too, off the catalogue, though no panel catalogue is right-to-left and the panel's RTL *layout* is therefore not claimed to work. See below. | Client, C, D, E |
 | ~~O-9~~ | ~~**`/admin/try` cannot succeed in a deployed system.**~~ **Closed 2026-08-12.** The panel now mints a short-lived signed proof (`db/staff_proof.py`) and the API verifies it by default. See below. | — |
+| O-10 | **There is no link from the calculator to Home or Statistics.** The three content pages carry a four-link public navigation and the calculator does not: measured at contract v1.29, the chooser (364px), the brand lockup (330px) and the navigation (355px) do not share the calculator's header row at 938px, and the footer has 32px of slack against a 44px touch target. Recorded rather than closed by shaving a target. Raised at v1.29 and still open. | C, D |
+| ~~O-11~~ | ~~**The statistics, home and documentation pages ship in English.**~~ **Closed 2026-08-15 (contract v1.30).** 99 new keys across the three pages, 299 per catalogue, twenty languages; the chooser and the machine-translation notice now reach all three; and the statistics charts are destroyed and rebuilt on a language change, because a Chart.js title is a constructor argument that no DOM walk can reach. See O-8 below. | — |
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
@@ -576,7 +578,7 @@ The claim is now enforced by data, and data can stop enforcing it. A `(sector, f
 
 That last one closes the gap this paragraph originally described as an open follow-up. It also means the rule is now something a staff member meets as a refusal rather than a convention they are trusted to remember — which is why the field-level help on the upstream screen states it as a consequence and not as advice. If that guard is ever relaxed, this section and that help text both become untrue.
 
-## O-8 — interface translation — **DELIVERED 2026-08-13: the panel in Chinese, the calculator in twenty languages**
+## O-8 — interface translation — **DELIVERED 2026-08-13: the panel in Chinese, the calculator in twenty languages; a language chooser on both surfaces 2026-08-14**
 
 Recorded as unpromised until the first client demonstration. Two of the
 positions this entry used to hold were overturned there and one was confirmed,
@@ -598,11 +600,11 @@ and confirmed.
 | Surface | Languages | State | Reviewed? |
 | --- | --- | --- | --- |
 | Admin panel | English | ~900 strings, the source language | Written by hand |
-| Admin panel | Chinese (`zh`) | **Built.** 177 catalogue entries | **Yes** — by the people who use the panel daily |
+| Admin panel | Chinese (`zh`) | **Built.** 181 catalogue entries | **Yes** — by the people who use the panel daily |
 | Admin panel | any other | Mechanism ready; no catalogue written | — |
-| Public calculator | English | 198 translatable strings, the source language | Written by hand |
-| Public calculator | Chinese (`zh`) | **Built.** 198 entries | Reviewable by the team; **not yet re-read for these 198** |
-| Public calculator | 19 others | **Built.** 198 entries each | **No. Machine translated and unread — and the page says so** |
+| Public calculator | English | 201 translatable strings, the source language | Written by hand |
+| Public calculator | Chinese (`zh`) | **Built.** 201 entries | Reviewable by the team; **not yet re-read for these 201** |
+| Public calculator | 19 others | **Built.** 201 entries each | **No. Machine translated and unread — and the page says so** |
 
 **The calculator's other nineteen**, in the client's own ordering: Traditional
 Chinese, Hindi, Tagalog, Panjabi, Korean, Afrikaans, French, German, Spanish,
@@ -622,7 +624,7 @@ under a different name.
 
 **The Chinese calculator catalogue carries no notice**, on the panel's basis:
 it is the one language with speakers on this project. It is new, it has not yet
-been read line by line for these 198 strings, and that read is the first
+been read line by line for these 201 strings, and that read is the first
 follow-up below rather than a claim made here.
 
 **The admin panel came into scope, and went first.** This entry previously
@@ -668,8 +670,17 @@ copies only `admin/ api/ db/ engine/`, and `docker/web.Dockerfile` copies only
 `web/`. A top-level `i18n/` directory would be in neither image — which is how
 the guidance blocks went missing from a built image once already. What the two
 share is everything that matters: one JSON shape, one key rule, one fallback
-rule, one cookie, one notice rule. A Python process and a browser cannot share
-a reader; they can share a contract.
+rule, **one stored choice**, one notice rule. A Python process and a browser
+cannot share a reader; they can share a contract.
+
+> **On that phrase.** It read "one cookie" from v1.24 until 2026-08-14, which
+> was a leftover from the deleted `kaicalc_lang` design and was wrong for the
+> whole of v1.25 and v1.26, when nothing was stored at all. The chooser has
+> since made a cookie real again — so the sentence would now be **true by
+> coincidence**, which is worse than being wrong, because nobody re-checks a
+> sentence that happens to read correctly. It says "one stored choice" instead:
+> that is the property the two surfaces actually share, and it stays true
+> whatever the mechanism becomes.
 
 ```json
 { "language": "zh", "endonym": "中文", "machine_translated": false,
@@ -678,6 +689,13 @@ a reader; they can share a contract.
 
 `endonym` and `machine_translated` live in the file so that **adding a language
 is adding a file.** No list in code has to be extended nineteen times.
+
+`web/locales/index.json` repeats `language`, `endonym`, `machine_translated`
+and `tags` for every catalogue, so the chooser can label twenty-one options
+without fetching twenty files. It is a summary, not a second source: a test
+holds it to the catalogues it summarises, and `admin/locales/` carries a
+vendored copy of it — held to the original by another test — because the admin
+image copies no `web/`.
 
 **No new dependency, and no build step.** `sqladmin` ships an `I18nConfig` of
 its own and it is unusable here for two independent reasons: it requires
@@ -712,19 +730,82 @@ closes a gap the other cannot:
   the list heading as `{{ model_view.name_plural }}` with no `_()` at all.
   Without this, a complete catalogue still renders `新建Constant`.
 
-### How a language is chosen — negotiated per request, stored nowhere
+### How a language is chosen — a chooser, defaulting to the browser
 
-**There is no picker, and nothing is persisted.** This section previously
-specified a `kaicalc_lang` cookie set by a `?lang=` switcher, and declined
-`Accept-Language` on the grounds that §2.3 forbids reading a visitor that way.
-That reading was too strict, and §2.3 is its own correction: it forbids
-**storing** an address, a user agent or a fingerprint, and it says in terms
-that "user agents, headers and paths are read within a request and forgotten".
-Reading a header to decide what to render, and keeping nothing, is the
-behaviour that sentence describes.
+**There is a chooser at the top inline-start of every page on both surfaces,
+and its default option follows the browser.** Negotiation is the default rather
+than the only behaviour.
 
-The repository owner ruled directly: negotiate per session from what the
-browser already sends, store nothing, and add no language-selection control.
+This paragraph has now been rewritten twice and it is worth saying why, because
+the two rewrites moved in opposite directions and both were right.
+
+The section originally specified a `kaicalc_lang` cookie set by a `?lang=`
+switcher, and declined `Accept-Language` on the grounds that §2.3 forbids
+reading a visitor that way. **That reading was too strict**, and §2.3 is its
+own correction: it forbids **storing** an address, a user agent or a
+fingerprint, and it says in terms that "user agents, headers and paths are read
+within a request and forgotten". Reading a header to decide what to render, and
+keeping nothing, is the behaviour that sentence describes. So at v1.25 the
+cookie and the switcher were both deleted and the header was read instead.
+
+**What that left missing was the person.** Negotiation answers "what does this
+browser claim"; it has no way to answer "what do I want". A Chinese-speaking
+visitor who would rather read the English original had no way to say so, and no
+control to say it with. So at v1.27 the chooser came back — **not** the old
+`?lang=` switcher, and **not** a reversal of the header ruling above, which
+still stands and still describes what happens when nobody has chosen.
+
+**The distinction that has to survive both rewrites**, because it has already
+been mishandled in each direction:
+
+| Act | Stores | Permitted by §2.3? |
+| --- | --- | --- |
+| Read `Accept-Language`, render, forget | nothing | Yes — "read within a request and forgotten" |
+| Store "this visitor chose English" | `kaicalc_lang=en` | Yes, and for reasons that are **not** the same as the row above |
+| Store an address, a user agent, a fingerprint | an identifier | **No** |
+
+The middle row needs two properties and **both are required**. It records
+something the visitor **deliberately declared**, not something inferred from
+their browser. And its **value space is closed, tiny and free of entropy** —
+twenty-two values in total — twenty-one languages and `auto` — shared
+identically by everyone who picks the same one.
+
+**The second is the load-bearing one.** "The person declared it" would equally
+justify storing a name somebody typed into a form, which would be a fingerprint
+by any measure. **It is the absence of entropy, not the presence of consent,
+that makes this incapable of identifying anyone.** A field that cannot
+distinguish two visitors cannot correlate them.
+
+It is also kept away from the one identifier this system does keep: the
+`submission.token` de-duplication token (§5.1) has a different name, a
+different lifetime and a different purpose, and the language cookie neither
+extends nor refreshes it and never appears beside it in `submission`,
+`audit_log` or the access log.
+
+**"Follow the system" is stored as the literal `auto`, not as an absent
+cookie.** Otherwise "chose to follow" and "never chose" cannot be told apart
+and the chooser cannot show what is in effect — and, more practically,
+reverting becomes an ordinary write instead of a cookie deletion, which is the
+operation that silently fails when its path or domain does not match exactly.
+
+**One cookie, both surfaces, because the panel forces it.** `localStorage`
+would be shared too — the two surfaces are one origin — but the panel renders
+server-side and has to know the language before it emits any HTML, which
+`localStorage` cannot answer. `path=/`, and not `HttpOnly`, because the
+calculator's JavaScript reads and writes the same value.
+
+**The chooser is built differently on each surface, and "works without
+JavaScript" is why.** The panel renders through FastAPI and genuinely works
+with scripting off, so its chooser is a plain `<form method="post">` with a
+submit button. The calculator is ES modules end to end and renders **nothing**
+without scripting, so a chooser needing JavaScript adds no degradation it did
+not already have — and building it in `web/js/i18n.js` means it cannot exist as
+a control that is present and does nothing. Shipping a `<select>` in the static
+HTML would have been the failure, not the fix.
+
+`?lang=` is unchanged: a one-request override that persists nothing, emitted by
+no control, ignored when unrecognised. It and the chooser share no mechanism,
+so a support link cannot re-language its recipient for good.
 
 **Two surfaces, two mechanisms, and the split is forced by the deployment
 rather than chosen.**
@@ -838,19 +919,32 @@ consuming its slot. `?lang=qq` on a `zh-CN` browser is still Chinese. On the
 calculator that meant matching the forced value *before* the list rather than
 prepending it to a list whose head is now all that is read.
 
-**`Vary: Accept-Language` wherever the server negotiates.** The panel appends
-it — appends, not assigns, because FastAPI sets `Vary: Cookie` on session
-responses and overwriting it would let a cache serve one staff member's page to
-another. It is applied by the **outermost** middleware, so it reaches the
-responses the inner ones refuse: a 403 cached without it is served to everyone.
+**`Vary: Accept-Language, Cookie` wherever the server negotiates.** The panel
+appends it — appends, not assigns, because FastAPI sets `Vary: Cookie` on
+session responses and overwriting it would let a cache serve one staff member's
+page to another. It is applied by the **outermost** middleware, so it reaches
+the responses the inner ones refuse: a 403 cached without it is served to
+everyone.
 
-It is deliberately **not** set on the static origin. The calculator does not
-negotiate, so nothing there varies by the header, and `Vary` on a header that
-is near-unique per browser would tell every shared cache to keep a separate
-copy of `index.html`, `styles.css` and both font faces per value — a cache that
-stores everything and hits on nothing.
+`Cookie` joined the header at v1.27, when the stored choice began deciding the
+response. It is the **more** dangerous of the two to omit, because the cookie
+*overrides* the header: a cache told only about `Accept-Language` would hand
+one staff member's chosen Chinese page to the next visitor whose browser asked
+for English, and the header it keyed on would have matched. The cost is nil —
+the panel is authenticated and no shared cache stores it.
 
-**Nothing about the negotiation is written down anywhere.** Not in
+It is deliberately **not** set on the static origin, and the chooser did not
+change that. **This is the payoff of building the calculator's chooser
+client-side**: every visitor is still served a byte-identical `index.html`, and
+the cookie is read by JavaScript after the response arrives, so nothing there
+varies by anything. `Vary` on a near-unique header — or on a cookie — would
+tell every shared cache to keep a separate copy of `index.html`, `styles.css`
+and both font faces per value: a cache that stores everything and hits on
+nothing. Had the calculator negotiated server-side to honour the same choice,
+that is exactly what it would have cost.
+
+**Nothing about the negotiation is written down anywhere, and the stored choice
+is not written down beyond its own cookie.** Not in
 `submission`, not in `audit_log`, not in a statistic. `docker/nginx.conf` now
 declares its own access log format rather than inheriting the base image's
 `main`, which logged `$remote_addr`, `$http_user_agent`, `$http_referer` and
@@ -858,7 +952,15 @@ declares its own access log format rather than inheriting the base image's
 is that it stores nothing identifying about a visitor. `Accept-Language` was
 absent from that format and is absent from ours; it is named in the file so
 that adding it later has to be a decision somebody writes down rather than a
-variable somebody appends.
+variable somebody appends. **`$http_cookie` is named alongside it for the same
+reason and on the same terms**: the chooser's cookie rides on every request to
+the static origin and to `/api/v1/`, because `path=/` cannot be scoped away
+when the panel and the calculator both need it, and the one place it would
+most easily end up written down is the log line that already sees it.
+
+The API receives that cookie on every `POST /api/v1/calculate` and **ignores
+it** — asserted by a test rather than left as obvious, since this is the same
+file that was found logging four forbidden fields on 2026-08-12.
 
 ### A missing key falls back to English, and a test says so
 
@@ -1079,13 +1181,58 @@ stronger.
 
 ### What is not translated yet, and why the number is written down
 
-**The calculator is complete: 198 of 198 strings, in twenty languages.** The
+**The calculator is complete: 300 of 300 strings, in twenty languages.** The
 count is read out of the front end by `tests/web/i18n_keys.py` rather than
-maintained by hand — `t('...')` calls, the `data-i18n` markers in the two HTML
-files, and four module-level constants whose contents reach `t()` by reference
+maintained by hand — `t('...')` calls, the `data-i18n` markers in the five HTML
+files, and seven module-level constants whose contents reach `t()` by reference
 — so a label added without a translation fails the suite rather than shipping
 in English. A key nobody asks for any more fails it too, because a stale entry
 makes a reworded string look translated.
+
+**201 of those were the calculator alone; 100 arrived on 2026-08-15 with the
+statistics, home and documentation pages** (contract v1.30, closing O-11), and
+one was retired when the documentation page's title took the navigation's name.
+Three things came out of that pass and belong here rather than only in the
+change log:
+
+* **The extractor was losing keys, silently and in a self-defending way.** It
+  matched marked elements with a regex that consumed everything up to the
+  outermost closing tag, and the public navigation is a `<nav
+  data-i18n-attr="aria-label">` — which the pattern matched, because `\b` is
+  satisfied by `data-i18n-attr` — wrapping four `<a data-i18n>` links. All four
+  were invisible to it on all three pages, and **no test could have caught it**:
+  a key nobody extracts is a key the coverage test cannot ask for, and
+  translating it would have failed the *stale-key* test instead, which reads as
+  a reason to delete the translation. It is an `html.parser` walk now, with a
+  rule alongside it: a `data-i18n` element may not contain element children,
+  because `applyToDocument` assigns `textContent` and would delete them.
+* **A chart needed a second path.** `applyToDocument()` walks the DOM; a
+  Chart.js title and a canvas `aria-label` are constructor arguments, and the
+  title is painted onto a bitmap. So the statistics page destroys and rebuilds
+  its three charts on a language change, from the response it already holds. The
+  test reads the title back off the live chart's laid-out title block in two
+  languages and proves the first canvases were destroyed rather than left
+  behind the new ones — because "a rebuild function was called" is not evidence
+  that a title changed.
+* **One string got through the whole pass in English, and a test did not find
+  it.** The statistics headline puts its figure in a `<strong>`, so it is built
+  by splitting the translation on its placeholder — and the literal was passed
+  to the helper that splits rather than to `t()`. An argument to a local helper
+  is not an argument to `t()`: the extractor never saw the key, no catalogue was
+  required to carry it, and "Across 1,247 calculations run in this tool."
+  rendered in English on an Arabic page with 301 tests passing. It was found by
+  opening a screenshot. The sweep that confirmed nothing else was hiding is
+  worth reusing: render each page in English and again in Chinese, compare every
+  block of text, and look at what is identical. The survivors should be exactly
+  the news headlines, the factor values and staff-written notes, and the word
+  `English` in the language chooser.
+* **A translation may legitimately equal its English source.** `Code` in French,
+  `Name` in German, `Sector` in Dutch, `No` in Spanish. The test that forbids an
+  entry equal to its key exists for a real failure — a placeholder that looks
+  translated — but forcing a synonym would make the interface worse to read in
+  exchange for a greener suite. A small per-language allowlist carries them, and
+  a second test fails on any entry in it that is not actually identical, so it
+  cannot outlive its reason.
 
 **The panel is not.** Roughly 900 user-visible English strings exist there and
 177 are translated: every field description, every view and menu name,
@@ -1113,12 +1260,17 @@ panel. **Deliberately left, with reasons:**
 
 ### The calculator's language list is still the client's to choose
 
-Roughly 150 translatable strings exist in `web/js` today, concentrated in
-`calculator.js` (67), `results.js` (35) and `improvement.js` (27); this front
-end builds its pages in JavaScript, so the work is in the modules rather than
-in the two HTML files. D's statistics and content pages will add the next
-batch, and its wording is the most constrained on the project — §6.4's rule
-that the subject is the calculator and never New Zealand.
+This front end builds its pages in JavaScript, so most of the work is in the
+modules rather than in the HTML: `calculator.js`, `results.js` and
+`improvement.js` carry the bulk, and `methodology.js` and `stats.js` joined them
+on 2026-08-15. The statistics page's wording is the most constrained on the
+project — §6.4's rule that the subject is the calculator and never New Zealand —
+and both guards on it — the source scan and the rendered-page scan — read
+**English**. A translated page inherits its compliance from the source sentence
+it was made from, and the one legitimate mention of New Zealand is a negation
+that every catalogue was asked to keep as one. That is an inheritance, not an
+enforcement, and it is the honest limit of what is checked: nothing in the suite
+would notice a translation that turned the caveat into a claim.
 
 A proposed list drawn from New Zealand's census language distribution rather
 than from a generic global top twenty is with the repository owner; it is not

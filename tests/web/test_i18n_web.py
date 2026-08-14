@@ -30,6 +30,27 @@ PLACEHOLDER = re.compile(r"%\((\w+)\)s")
 #: `Kai Commitment` is the client's name; the rest are units and notation.
 NEVER_TRANSLATED = ("Kai Commitment", "CO2e", "NZD")
 
+#: Entries whose correct translation is **character-identical** to the English.
+#:
+#: `test_no_entry_is_blank_or_still_english` exists for a real failure: a key
+#: carrying its own English value looks translated to every other test in this
+#: file. But `Code` is the French word, `Name` is the German one, `Sector` is
+#: the Dutch one and `No` is the Spanish one - all four arrived on the v1.30
+#: table headers - and reaching for a synonym to satisfy a test would make the
+#: interface worse to read in exchange for a greener suite.
+#:
+#: So the coincidences are declared, one language at a time, and
+#: `test_every_declared_coincidence_is_a_real_one` fails on anything in here
+#: that is not in fact identical. The list can only grow deliberately, and it
+#: cannot outlive the entry it was written for: reword the French `Code` and
+#: this fails on the next run rather than quietly permitting an English value.
+IDENTICAL_BY_DESIGN = {
+    "de": {"Code", "Name"},
+    "es": {"No", "Sector"},
+    "fr": {"Code", "Destination", "Documentation"},
+    "nl": {"Code", "Sector"},
+}
+
 LANGUAGES = i18n_keys.catalogue_languages()
 SOURCE = i18n_keys.source_strings()
 
@@ -106,6 +127,46 @@ def test_the_source_list_is_read_from_the_front_end_and_is_not_empty():
     assert "By waste destination" in SOURCE
 
 
+def test_a_marked_element_inside_another_marked_element_is_still_extracted():
+    """The four public navigation links, which the previous extractor lost.
+
+    Each is an `<a data-i18n>` inside a `<nav data-i18n-attr="aria-label">`. The
+    regex this replaced matched the outermost element carrying anything starting
+    `data-i18n` - `\\b` treats `data-i18n-attr` as a match - and consumed
+    everything through `</nav>`, so all four links were invisible to it on all
+    three content pages. Nothing failed: a key nobody extracts is a key no
+    coverage test can ask for, and translating it would have failed the
+    stale-key test instead.
+
+    Named individually rather than counted, because a count passes against four
+    of something else.
+    """
+    for label in ("Home", "Calculator", "Statistics", "Documentation"):
+        assert label in SOURCE, (
+            f"the navigation label {label!r} is not in the source list, so no "
+            "catalogue is required to translate it"
+        )
+    # And the wrapper's own attribute, which is the reason it was marked at all.
+    assert "Primary navigation" in SOURCE
+
+
+def test_no_marked_element_has_element_children():
+    """`applyToDocument` assigns `element.textContent`, which deletes children.
+
+    So `<p data-i18n>text <a href=...>link</a></p>` renders as a paragraph with
+    the link gone - silently, in every language except English. The footer's
+    transparency line is written the way that constraint requires: the sentence
+    in its own `<span data-i18n>` beside the link, not a marker on the paragraph
+    holding both.
+    """
+    for path in i18n_keys.html_pages():
+        nested = i18n_keys.marked_elements(path).has_element_children
+        assert not nested, (
+            f"{path.name}: a data-i18n element contains element children "
+            f"{nested}; applyToDocument would delete them"
+        )
+
+
 @pytest.mark.parametrize("language", LANGUAGES)
 def test_every_source_string_is_translated(language):
     strings = i18n_keys.catalogue(language)["strings"]
@@ -165,12 +226,31 @@ def test_no_entry_is_blank_or_still_english(language):
     here and is not - it lets a language be signed off complete while its
     entries are placeholders.
     """
+    allowed = IDENTICAL_BY_DESIGN.get(language, set())
     offenders = [
         source
         for source, translated in i18n_keys.catalogue(language)["strings"].items()
-        if not translated.strip() or translated == source
+        if not translated.strip() or (translated == source and source not in allowed)
     ]
     assert not offenders, f"{language} entries are blank or still English: {offenders}"
+
+
+@pytest.mark.parametrize("language", sorted(IDENTICAL_BY_DESIGN))
+def test_every_declared_coincidence_is_a_real_one(language):
+    """The allowlist above is an exception, so it has to keep earning itself.
+
+    A key listed here whose translation is *not* identical is a hole: the
+    exception stops being about a coincidence and starts being a place where an
+    English value could sit unnoticed. Reword the French `Code` and this fails
+    on the next run, which is the whole point of declaring them.
+    """
+    strings = i18n_keys.catalogue(language)["strings"]
+    for source in sorted(IDENTICAL_BY_DESIGN[language]):
+        assert source in strings, f"{language}: {source!r} is no longer a key at all"
+        assert strings[source] == source, (
+            f"{language}: {source!r} is translated as {strings[source]!r}, so it is "
+            "not a coincidence any more and must leave IDENTICAL_BY_DESIGN"
+        )
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

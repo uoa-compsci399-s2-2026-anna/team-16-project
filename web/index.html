@@ -10,14 +10,60 @@
     <title data-i18n>Food Waste Impact Calculator | Kai Commitment</title>
     <link rel="stylesheet" href="./css/styles.css">
   </head>
-  <body>
+  <body class="calculator-page">
+    <!-- The statement is about the calculator, not about the language chooser. This page
+         is ES modules end to end: with scripting off there are no steps, no taxonomy and
+         no results, and `<main>` below never gets past "Loading calculator…". The chooser
+         is built by js/i18n.js and so is simply absent here, which is why it can never be
+         a control that is present and does nothing. `<noscript>` is not translated: the
+         catalogues are fetched by the same scripting that is switched off. -->
+    <noscript>
+      <p class="noscript-notice">This calculator needs JavaScript to run. With scripting turned off it cannot load the food categories, calculate an impact, or be shown in a language other than English.</p>
+    </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to calculator</a>
     <header class="site-header intro-header" id="site-header">
-      <div class="header-inner">
+      <div class="header-inner public-header-inner">
         <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and return to the introduction">
           <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </button>
+        <!-- **This page carries no four-link public navigation, and that is a
+             measurement rather than a preference.** home.html, stats.html and
+             methodology.html carry it in their header, where D put it.
+
+             In the header row it does not fit. §7.7.4 admitted the language
+             chooser to this row as a measured decision — the row was already
+             93px tall and carried a 67px logo, so a 44px control fitted in
+             space that was there. A third block does not: measured on this
+             build the chooser is 364px, the brand 330px and D's nav 355px,
+             against a content box of 1209px at 1278x983 and **887px at
+             938x898**, one of the two viewports this calculator is actually
+             demonstrated on. The nav wraps to a line of its own and the header
+             grows from 100px to 144px on every screen of the wizard, and from
+             142px to 186px at 390px.
+
+             In the footer it does not fit either, and that is the measurement
+             that settled it. On the shortest step at 1278x983 the document is
+             983px in a 983px viewport — exactly the viewport, with `main`
+             flexed from a 725px content floor to 757px. The page's whole slack
+             is therefore **32px**, and a navigation block whose links meet the
+             44px touch target this calculator uses everywhere needs 44. Adding
+             it in the footer measured 1009px and failed
+             `test_a_short_step_is_not_floored_by_a_stale_min_height` by 26px.
+
+             The two ways to make it fit are to shave the footer's padding or
+             the links' touch targets, and each trades a measured guarantee for
+             a convenience link. The stylesheet already carries a "do not put
+             the constant back" warning over the arithmetic this budget came
+             from.
+
+             So the calculator is reachable *from* all three content pages, and
+             reaches the documentation page from its own footer and from the
+             results view's "View methodology". There is no link from here to
+             Home or Statistics, which is a real gap and is recorded rather
+             than hidden: it wants either 44px of height somewhere on this page
+             or an in-page control, and both are a decision rather than a merge
+             resolution. -->
         <button class="text-button" id="clear-button" type="button" hidden data-i18n>Clear all data</button>
       </div>
     </header>
@@ -32,7 +78,12 @@
 
     <footer>
       <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
-      <p class="transparency-notice" data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</p>
+      <!-- D adds the "What we record" link; the sentence beside it keeps HEAD's
+           exact wording and its `data-i18n` marker, because that string is a key
+           in twenty-one catalogues and D's rewording ("This tool stores…") would
+           have orphaned every one of them. The marker moved to a `<span>` so the
+           element holding the key still holds nothing but the key. -->
+      <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record">What we record</a></p>
     </footer>
     <script type="module" src="./js/main.js"></script>
   </body>

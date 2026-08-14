@@ -18,6 +18,7 @@ from admin.calc_client import HttpCalculateClient
 from admin.cli import report_bootstrap_result
 from admin.config import Settings, load_settings
 from admin import i18n as admin_i18n
+from admin.language_view import register as register_language_route
 from admin.protection import ProtectionMiddleware
 from admin.runtime import Runtime
 from admin.throttle import build_throttle
@@ -165,6 +166,14 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         StaticFiles(directory=str(_PACKAGE_DIR / "static")),
         name="brand-static",
     )
+
+    # The language chooser's endpoint, registered here for the same
+    # mount-ordering reason as the static files above - sqladmin's mount matches
+    # every /admin/... prefix and Starlette stops at the first match - and for a
+    # second reason of its own: @expose wraps every sqladmin route in
+    # login_required, and this one has to work before anybody has logged in.
+    # admin/language_view.py says why it carries no CSRF token.
+    register_language_route(app)
 
     admin = Admin(
         app,

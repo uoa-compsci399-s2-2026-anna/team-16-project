@@ -116,10 +116,28 @@ def page_at(browser):
         # twenty catalogues landed. This file measures LAYOUT against the
         # English copy it was calibrated on; the language itself is
         # tests/web/test_i18n_browser.py's subject.
+        # **`bypass_csp` is what lets this file measure at all, and it is a
+        # statement about the harness rather than about the page.** D's
+        # `location /` Content-Security-Policy sets `style-src 'self'`, which
+        # is correct — the front end loads exactly one stylesheet from this
+        # origin — and a `<style>` element created by `add_style_tag` is
+        # precisely what that directive refuses. Both injections below are
+        # instrumentation: `FORCE_AUTO` stops `scroll-behavior: smooth`
+        # returning mid-animation geometry, and `KAICALC_MUTATION_CSS` is the
+        # hook that lets each rule this file depends on be knocked out and the
+        # test watched to fail. Without the bypass every test in this module
+        # errors on the injection and measures nothing.
+        #
+        # **The CSP is not thereby untested.** It is asserted as a header by
+        # `tests/test_d_statistics_content.py`, and enforced in a real browser
+        # — with no bypass — by
+        # `tests/web/test_csp.py::test_no_public_page_violates_its_own_policy`,
+        # which is the test that would catch a directive that breaks the page.
         ctx = browser.new_context(
             viewport={"width": width, "height": height},
             device_scale_factor=dpr,
             locale="en-NZ",
+            bypass_csp=True,
         )
         contexts.append(ctx)
         page = ctx.new_page()

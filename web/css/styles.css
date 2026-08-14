@@ -932,11 +932,15 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    the logo it is meant to sit beside - and the whole stylesheet was converted to logical
    properties so that the mirroring happens from `dir` alone.
 
-   The bar sits BETWEEN the machine-translation notice and the header. Not above the
-   notice, which is a statement about the whole page and whose own test pins it as
-   `body.firstElementChild`; and not inside `.header-inner`, because the brand guidelines
-   say the logo may not be altered in any way and crowding a control into the lockup is
-   an alteration by another name. ---------------------------------------------------- */
+   The bar sits below the machine-translation notice, never above it: the notice is a
+   statement about the whole page and its own test pins it as `body.firstElementChild`.
+
+   **It IS inside `.header-inner`, and this comment used to say the opposite.** The
+   separate strip it describes was built, measured at 57px on every page, and removed -
+   see the note over `.header-inner` and contract 7.7.4. The brand concern that argued
+   for the strip is met a different way rather than abandoned: the bar is placed BESIDE
+   the lockup, which keeps its own element, its own size and its own spacing, and
+   nothing is drawn over or through it. --------------------------------------------- */
 .language-bar {
   display: flex;
   align-items: center;

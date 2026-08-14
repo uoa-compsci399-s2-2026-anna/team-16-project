@@ -30,6 +30,27 @@ PLACEHOLDER = re.compile(r"%\((\w+)\)s")
 #: `Kai Commitment` is the client's name; the rest are units and notation.
 NEVER_TRANSLATED = ("Kai Commitment", "CO2e", "NZD")
 
+#: Entries whose correct translation is **character-identical** to the English.
+#:
+#: `test_no_entry_is_blank_or_still_english` exists for a real failure: a key
+#: carrying its own English value looks translated to every other test in this
+#: file. But `Code` is the French word, `Name` is the German one, `Sector` is
+#: the Dutch one and `No` is the Spanish one - all four arrived on the v1.30
+#: table headers - and reaching for a synonym to satisfy a test would make the
+#: interface worse to read in exchange for a greener suite.
+#:
+#: So the coincidences are declared, one language at a time, and
+#: `test_every_declared_coincidence_is_a_real_one` fails on anything in here
+#: that is not in fact identical. The list can only grow deliberately, and it
+#: cannot outlive the entry it was written for: reword the French `Code` and
+#: this fails on the next run rather than quietly permitting an English value.
+IDENTICAL_BY_DESIGN = {
+    "de": {"Code", "Name"},
+    "es": {"No", "Sector"},
+    "fr": {"Code", "Destination", "Documentation"},
+    "nl": {"Code", "Sector"},
+}
+
 LANGUAGES = i18n_keys.catalogue_languages()
 SOURCE = i18n_keys.source_strings()
 
@@ -205,12 +226,31 @@ def test_no_entry_is_blank_or_still_english(language):
     here and is not - it lets a language be signed off complete while its
     entries are placeholders.
     """
+    allowed = IDENTICAL_BY_DESIGN.get(language, set())
     offenders = [
         source
         for source, translated in i18n_keys.catalogue(language)["strings"].items()
-        if not translated.strip() or translated == source
+        if not translated.strip() or (translated == source and source not in allowed)
     ]
     assert not offenders, f"{language} entries are blank or still English: {offenders}"
+
+
+@pytest.mark.parametrize("language", sorted(IDENTICAL_BY_DESIGN))
+def test_every_declared_coincidence_is_a_real_one(language):
+    """The allowlist above is an exception, so it has to keep earning itself.
+
+    A key listed here whose translation is *not* identical is a hole: the
+    exception stops being about a coincidence and starts being a place where an
+    English value could sit unnoticed. Reword the French `Code` and this fails
+    on the next run, which is the whole point of declaring them.
+    """
+    strings = i18n_keys.catalogue(language)["strings"]
+    for source in sorted(IDENTICAL_BY_DESIGN[language]):
+        assert source in strings, f"{language}: {source!r} is no longer a key at all"
+        assert strings[source] == source, (
+            f"{language}: {source!r} is translated as {strings[source]!r}, so it is "
+            "not a coincidence any more and must leave IDENTICAL_BY_DESIGN"
+        )
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

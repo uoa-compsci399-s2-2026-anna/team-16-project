@@ -24,6 +24,7 @@ from __future__ import annotations
 import json
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 import pytest
 
@@ -71,8 +72,16 @@ def browser():
         instance.close()
 
 
-def open_page(browser, languages, path="/", query=""):
-    """A page whose browser claims `languages`, in preference order."""
+def open_page(browser, languages, path="/", query="", stats_fixture=False):
+    """A page whose browser claims `languages`, in preference order.
+
+    `stats_fixture` serves `tests/fixtures/stats.json` in place of the live
+    statistics response, the same way `test_statistics_browser.py` does. The
+    deployed factor set is the owner's to change - it has been a US comparison
+    set since 14 August - and a translation test that depends on how many
+    buckets survive suppression today is a test that fails for the wrong reason
+    tomorrow.
+    """
     context = browser.new_context(
         extra_http_headers={"Accept-Language": ",".join(languages)}
     )
@@ -82,8 +91,26 @@ def open_page(browser, languages, path="/", query=""):
             languages=json.dumps(languages), first=json.dumps(languages[0])
         )
     )
+    if stats_fixture:
+        page.route(
+            "**/api/v1/stats",
+            lambda route: route.fulfill(
+                status=200,
+                content_type="application/json",
+                body=json.dumps(_STATS_FIXTURE),
+            ),
+        )
     page.goto(f"{BASE}{path}{query}", wait_until="networkidle")
     return context, page
+
+
+#: The canonical ten-bucket response, which is also what
+#: `test_statistics_browser.py` measures against.
+_STATS_FIXTURE = json.loads(
+    (Path(__file__).resolve().parents[2] / "tests" / "fixtures" / "stats.json").read_text(
+        encoding="utf-8"
+    )
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1411,7 +1438,9 @@ def test_the_charts_are_rebuilt_in_the_new_language(browser):
     """
     zh = i18n_keys.catalogue("zh")["strings"]
     ar = i18n_keys.catalogue("ar")["strings"]
-    context, page = open_page(browser, ["en-NZ"], path="/stats.html")
+    context, page = open_page(
+        browser, ["en-NZ"], path="/stats.html", stats_fixture=True
+    )
     try:
         _wait_for_charts(page)
         english = page.evaluate(_CHART_STATE)
@@ -1464,7 +1493,9 @@ def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
     English and in Chinese: a legend that changed with the language would mean
     the front end had started translating the client's taxonomy.
     """
-    context, page = open_page(browser, ["en-NZ"], path="/stats.html")
+    context, page = open_page(
+        browser, ["en-NZ"], path="/stats.html", stats_fixture=True
+    )
     try:
         _wait_for_charts(page)
         english = page.evaluate(_CHART_STATE)
@@ -1508,7 +1539,7 @@ def test_the_figures_take_no_locale_aware_separator(browser):
     `en-NZ`, this is the page where it would show, on the axis and in the list
     together.
     """
-    context, page = open_page(browser, ["ar"], path="/stats.html")
+    context, page = open_page(browser, ["ar"], path="/stats.html", stats_fixture=True)
     try:
         _wait_for_charts(page)
         ticks = page.evaluate(

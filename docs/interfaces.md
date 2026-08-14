@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-15 (v1.31 draft)"
+date: "2026-08-15 (v1.32 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,20 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.32 — 2026-08-15 (the placeholder-data flag stops being a tick and starts being two actions; affects B and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`is_mock` comes off `FactorSetAdmin`'s edit form and moves to two actions, and the two directions are not symmetric.** Adding the warning is allowed in every status, from either role, with no proof — the safe direction has to be instant, so that anybody who doubts a published set can put the disclaimer in front of the public at once. Removing it takes a **press-then-prove** confirmation, the same one creating an account, deleting one and revealing an unclaimed password already take. A checkbox on a generic edit form could carry neither: the form has nowhere to ask, and a tick is something a staff member changing a version label can take off by accident | §2.2, §8.2 |
+| 2 | **Status no longer gates the flag, and that is a reversal.** The panel refused it on a published or archived set and told staff to clone first. The workflow it refused is the real one — publish the real factors, let them run publicly for a day or two to verify them, clear the flag then — and the clone it forced creates a `factor_set` row and a new version label for a change in which **not one factor value differs**, while every `submission` recorded meanwhile stamps the old id. That is a version discontinuity manufactured by the workflow rather than by the data. A published set's **other** fields are still refused in place; only this one field moved, and it moved off the form rather than into it | §2.2 |
+| 3 | **A draft takes the same proof as a published set.** Proportionality argues the other way — a draft has no public consequence — but `publish` takes no proof (§8.3 keeps it open to both roles deliberately), so a gate applied only to published sets has a one-button way round it: clear it on the draft, then publish. The cost of closing that is one password on an operation each factor set sees once in its life | §2.2, §8.3 |
+| 4 | **A new `audit_log.action`: `clear_placeholder`, with `flag_placeholder` for the other direction**, each carrying `before` and `after`. The change used to land as an ordinary `update`, which in the trail is indistinguishable from somebody fixing a typo in the same set's notes — on the one entry that answers "when did the public warning come off, and who took it off" | §2.2, §5.5 |
+| 5 | **`is_mock` is off the *create* form too**, so a set cannot be created unflagged. "Nothing is published as real data by omission" was resting on the creator leaving a ticked box alone; it is now structural | §2.2, §8.1 |
+| 6 | **§5.2's bundle cache re-reads `is_mock` on every hit, and nothing else.** Found while writing item 1: the flag rides on the cached published bundle, `invalidate_factor_bundle` is a dict in one process, and `docker/compose.yaml` runs the panel and the API as **two services** — so the flag could be changed and the API would serve the old value until it was restarted. `/factors` reads the row live and `/calculate` did not, which is the worst version: the placeholder disclaimer present on one public surface and absent on the other. The cost is one boolean `SELECT` per calculation, against a bundle of some 900 rows | §5.2, §2.2 |
+| 7 | **A test that was passing on the wrong mechanism.** `test_editing_a_published_sets_is_mock_is_refused` submitted **no field change at all** — `version_label` unchanged and `notes=""` against a NULL — and passed because the *omitted* `is_mock` checkbox was itself what made the row dirty. Taking the field off the form made that POST a no-op, the audit listener returns before calling `validate_before_commit` when nothing is dirty, and the assertion silently became "nothing happened". It now edits `notes`, which is what it always meant to test | §2.2 |
+
+> **Still open after this revision.** **O-1** remains the hard blocker: no real emissions factors have been supplied, so the published set stays flagged and the banner stays mandatory. Nothing here makes a placeholder set look real — it changes who has to prove they meant it, and what the trail says afterwards.
 
 ### v1.31 — 2026-08-15 (`factor_downstream` gains a sector, and the ReFED fixture is rebuilt into ReFED's own shape; affects A, B, C, D and E)
 
@@ -715,7 +729,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `id` | INT | PK, AI | |
 | `version_label` | VARCHAR(128) | UNIQUE, NOT NULL | `MOCK-v0 — PLACEHOLDER` / `2026-Q3` |
 | `status` | ENUM | NOT NULL | `draft` / `published` / `archived` |
-| `is_mock` | BOOLEAN | NOT NULL, DEFAULT TRUE | Triggers the site-wide warning banner |
+| `is_mock` | BOOLEAN | NOT NULL, DEFAULT TRUE | Triggers the site-wide warning banner. **Not on any edit form** — see below |
 | `effective_from` | DATETIME | NULL | |
 | `published_at` | DATETIME | NULL | |
 | `published_by` | VARCHAR(128) | NULL | Staff username |
@@ -731,6 +745,52 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 > publish and rollback actions of §8.2 will additionally take `SELECT ... FOR
 > UPDATE` over the table, because two staff members publishing different
 > drafts at the same moment is a race this hook alone cannot settle.
+
+> **`is_mock` moves through two actions, never through a form, and the two
+> directions are not symmetric.** `false → true` — *adding* the mandatory,
+> non-dismissible placeholder warning of §7.6.2 — is allowed in **every**
+> status, from either role, with no proof: the safe direction has to be
+> instant, so that anybody who doubts a published set can put the disclaimer
+> in front of the public at once. `true → false` — *removing* it — is allowed
+> in every status too, and takes a **press-then-prove** confirmation (the
+> current password or a live TOTP code, §8.3's `reauthenticate`) plus its own
+> `audit_log` action, `clear_placeholder`, carrying both values. It is the
+> only switch in the system that makes a public disclaimer disappear.
+>
+> **Status does not gate it, and that is a reversal.** The panel used to
+> refuse the flag on a published or archived set and tell staff to clone
+> first. The workflow that refuses is the real one: publish the real factors,
+> let them run publicly for a day or two to verify them, then clear the flag.
+> Forcing a clone there creates a `factor_set` row and a version label for a
+> change in which **not one factor value differs**, while every `submission`
+> recorded meanwhile stamps the old id — a version discontinuity manufactured
+> by the workflow rather than by the data. A published set's **other** fields
+> are still immutable in place and `validate_before_commit` still refuses
+> them.
+>
+> **A draft takes the same proof as a published set**, deliberately. A draft
+> has no public consequence of its own, but `publish` takes no proof (§8.3
+> keeps it open to both roles on purpose), so a gate applied only to published
+> sets has a one-button way round it: clear it on the draft, then publish.
+>
+> The write path is `admin/factor_lifecycle.py`'s `set_placeholder_flag`,
+> beside `publish` / `rollback` / `archive` and under the same
+> `SELECT ... FOR UPDATE`; it refuses a no-op for the reason publishing an
+> already-published set is refused. The proof is the view's, because a service
+> function has neither the request's form nor the login throttle.
+>
+> **`is_mock` is off the *create* form as well**, so a new set always takes
+> the column default and cannot be created unflagged. "Nothing is published as
+> real data by omission" is structural rather than a habit.
+>
+> **The published set's `is_mock` is never served from a warm bundle cache.**
+> §5.2's `load_factor_bundle` re-reads this one column on every hit. It is the
+> only field of a published set that legitimately moves while it stays
+> published, and `invalidate_factor_bundle` cannot carry the change across:
+> the panel and the API are separate processes and that cache is a dict per
+> process, with no expiry. Without the re-read, clearing the flag takes the
+> banner off `/factors` (read live) and leaves it on every `/calculate`
+> result, and *setting* it does not reach the public at all.
 
 ### `factor_upstream`
 
@@ -2741,6 +2801,8 @@ Requirements: list views must offer search and filtering.
 | View | Path | Function |
 | --- | --- | --- |
 | Factor sets | `/admin/factor-sets` | Clone, publish, archive, roll back; shows draft/published/archived state. **`status` is not on the edit form** — these four actions are the only way it changes, so each one takes `SELECT ... FOR UPDATE`, revalidates the set's formulas where relevant, stamps `published_at` / `published_by`, and writes its own audit entry. Archiving the currently published set is permitted and takes the calculator offline: `NO_PUBLISHED_FACTOR_SET` (503) is the designed response to having none |
+| Flag as placeholder data | `/admin/factor-set/action/flag-placeholder` | Sets `is_mock`. Any status, either role, one confirmation and no proof — §2.2's safe direction |
+| Clear placeholder flag | `/admin/factor-set/clear-placeholder` | Clears `is_mock`, after the current password or a live TOTP code. Any status, either role. Names the consequence on the page and in the dialog: this removes the placeholder warning from every public result and export, immediately. Writes `audit_log.action = 'clear_placeholder'` with both values |
 | Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |

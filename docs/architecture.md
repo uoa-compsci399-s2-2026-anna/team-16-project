@@ -34,6 +34,8 @@ The client has not yet supplied real emissions factors. **The first version runs
 
 Accordingly, `factor_set` carries an `is_mock` flag. Whenever the active factor set is a mock set, every results page and every export **must display a placeholder-data warning banner**. This behaviour is hard-coded and cannot be switched off.
 
+The flag itself is turned on and off through two admin actions rather than a form field (contract v1.32, §2.2). Setting it is available in any status, to either role, with no proof — a warning added by mistake costs nothing. Clearing it takes the current password or a live TOTP code and writes its own `audit_log` entry, because it is the only control in the system that makes a public disclaimer disappear. Neither direction requires cloning the set: the sequence the flag is designed for is publish the real factors, verify them in front of real use for a day or two, then clear.
+
 Recommended mock source: ReFED's published department-level factors. The magnitudes are plausible and the structure matches ours exactly. The `notes` field must record that the values are US-derived.
 
 ---
@@ -1127,7 +1129,7 @@ staff member:
 | `formula.expression` | Computes **one line**, never a total. Read as "write the total" it double-counts every calculation |
 | `constant.name` | The `const_` prefix, and that `GWP_CH4_20`/`GWP_CH4_100` bind to `const_GWP_CH4` |
 | `equivalence.metric`, `.label_template` | The metric must match the factor's basis, and `{value}` is template syntax rather than prose — a localised placeholder renders a sentence with no number in it |
-| `factor_set.is_mock` | Unticking would remove the placeholder warning while the numbers underneath stayed placeholders |
+| `factor_set.is_mock` | Clearing it removes the placeholder warning from every public result and export at once. It is no longer a tick on a form (contract v1.32): adding the warning is one press in any status, clearing it takes the current password or a live code and its own audit entry |
 
 `tests/admin/test_i18n.py` asserts that `{value}` and every `%(name)s`
 placeholder survive translation, because those two fail as rendering errors

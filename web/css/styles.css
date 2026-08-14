@@ -155,15 +155,6 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 }
 .intro-header .public-nav a { color: var(--kai-white); }
 .intro-header .public-nav a[aria-current="page"] { color: var(--kai-pea); }
-.calculator-header-actions {
-  min-width: 0;
-  flex: 1 1 540px;
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-end;
-  gap: 4px 22px;
-}
 .intro-header .header-inner {
   max-width: none;
   padding-inline: clamp(20px, 2.7vw, 56px);
@@ -844,7 +835,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .prototype-label { display: none; }
   .header-inner { min-height: 74px; }
   .public-nav { width: 100%; gap: 2px 14px; }
-  .calculator-header-actions { flex-basis: 100%; justify-content: flex-start; }
   .main-content { padding-top: 34px; }
   .main-content:has(.hero) { padding-top: 0; }
   .hero-copy { min-height: 420px; padding: 64px 20px 50px; }

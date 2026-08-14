@@ -240,6 +240,25 @@ def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = Fals
     return resolved
 
 
+#: The three pages that carry the four-link public navigation in their header.
+#:
+#: **The calculator is not one of them, and that is a measurement.** Its header
+#: row already carries the language chooser §7.7.4 admitted to it, and its whole
+#: vertical slack on the shortest step at 1278x983 is 32px against the 44px a
+#: touch-target navigation block needs. Both arrangements were measured on a
+#: real build and both broke
+#: `tests/web/test_step_navigation.py::test_a_short_step_is_not_floored_by_a_stale_min_height`
+#: — in the header by 37px, in the footer by 26px. The full reasoning, with the
+#: numbers, is in the comment in `web/index.html`.
+#:
+#: The exemption is bounded rather than granted: the calculator still has to be
+#: linked from every one of these three, and still has to reach the
+#: documentation page itself. That is what `test_the_calculator_is_reachable…`
+#: below asserts, so "the calculator carries no nav" can never quietly become
+#: "the calculator links nowhere".
+NAVIGATED_PAGES = ("home", "statistics", "documentation")
+
+
 def test_public_page_relationships_and_accessible_shells():
     """The user ruling keeps index as Calculator and adds Home beside it."""
 
@@ -267,16 +286,26 @@ def test_public_page_relationships_and_accessible_shells():
         ), f"{path.name}: skip link must target its main content"
 
         navs = page.matching("nav")
-        assert navs and all(
+        assert all(
             nav["attrs"].get("aria-label") or nav["attrs"].get("aria-labelledby")
             for nav in navs
-        )
-        assert len(page.matching("a", **{"aria-current": "page"})) == 1
-        linked = _linked_page_names(page)
-        if any(urlsplit(href).path == "/" for href in page.values("a", "href")):
-            linked.add("index.html")
-        missing = expected_links - linked
-        assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
+        ), f"{path.name}: every nav needs an accessible name"
+
+        if role in NAVIGATED_PAGES:
+            assert navs, f"{path.name}: needs the public navigation"
+            assert len(page.matching("a", **{"aria-current": "page"})) == 1
+            linked = _linked_page_names(page)
+            if any(urlsplit(href).path == "/" for href in page.values("a", "href")):
+                linked.add("index.html")
+            missing = expected_links - linked
+            assert not missing, f"{path.name}: public navigation is missing {sorted(missing)}"
+        else:
+            # The calculator marks no current page because it carries no nav to
+            # mark it in; a stray `aria-current` here would mean one came back.
+            assert not page.matching("a", **{"aria-current": "page"}), (
+                f"{path.name}: carries no public navigation, so nothing may claim to be "
+                "the current page — see NAVIGATED_PAGES for the measurement"
+            )
 
         scripts = page.matching("script")
         assert scripts and any(script["attrs"].get("type") == "module" for script in scripts)
@@ -284,6 +313,32 @@ def test_public_page_relationships_and_accessible_shells():
     assert "news" in home_text
     assert "calculator" in home_text and "index.html" in home_text
     assert "calculator" in _read(PAGES["calculator"]).lower()
+
+
+def test_the_calculator_is_reachable_from_every_page_and_reaches_the_documentation():
+    """What the calculator's navigation exemption is bounded by.
+
+    The calculator carries no four-link navigation — see ``NAVIGATED_PAGES`` for
+    the measurement — so the two things that exemption must not cost are
+    asserted here directly: a visitor can always get *to* the calculator, and a
+    visitor *on* the calculator can always reach the page that publishes the
+    factors behind the number they are being shown.
+
+    §7.6.2 and §6.3 are why the second half matters more than it looks. The
+    factor set is mock, every results view says so, and the page that explains
+    what that means is the documentation page.
+    """
+    for role in NAVIGATED_PAGES:
+        linked = _linked_page_names(PAGES[role] and _page(PAGES[role])[1])
+        if any(urlsplit(href).path == "/" for href in _page(PAGES[role])[1].values("a", "href")):
+            linked.add("index.html")
+        assert "index.html" in linked, f"{PAGES[role].name}: does not link to the calculator"
+
+    calculator = _page(PAGES["calculator"])[1]
+    assert "methodology.html" in _linked_page_names(calculator), (
+        "index.html must reach the documentation page; it is the only public surface "
+        "that publishes the provenance of the factors its results are computed from"
+    )
 
 
 def test_every_declared_runtime_asset_is_local_and_present():

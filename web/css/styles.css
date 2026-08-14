@@ -582,21 +582,31 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    token therefore widened the row to 768px inside a 310px list and pushed the
    document to 875px at a 390px viewport, scrolling the methodology page
    sideways in every language.
-   `anywhere` rather than `break-word` because only `anywhere` also shrinks
-   the min-content contribution, which is the half that lets the flex item
-   narrow; `break-word` alone would wrap the text and leave the box wide.
+
+   ONE PROPERTY, AND IT IS `anywhere` SPECIFICALLY. `anywhere` is the only
+   value that also shrinks the min-content CONTRIBUTION, so the flex item's
+   own `min-width: auto` floor drops with it and no `min-width: 0` is needed.
+   That was measured rather than assumed: an earlier version of this rule also
+   set `min-width: 0`, and rebuilding with each half on its own showed
+   `anywhere` alone fixes it while `min-width: 0` alone does not - the text
+   simply painted outside a narrow box and the document still scrolled. The
+   redundant property is left out, so that deleting the one that matters
+   cannot be masked by the one that does not.
+   (`min-width: 0` WITH `break-word` also works. It is two properties for what
+   one does, and neither is the value that carries the meaning "this string may
+   be broken mid-word".)
 
    THE `dt` KEEPS ITS DEFAULT `min-width: auto`, AND THAT IS LOAD-BEARING.
-   Applying the same pair to the label was tried and reverted after looking at
-   it: the `dt` is a translated label, not database text, and `anywhere` lets
-   it break between any two characters. In Arabic `ملاحظات` collapsed to a
-   1px-wide column 760px tall - one letter per line - because the `dd` beside
-   it wants every pixel and nothing was left holding the label open. Its
-   `min-width: auto` floor is its longest word, which is what a label should
-   never be narrower than, and it costs the `dd` nothing.
-   Both properties are direction-neutral; the failure above was visible only
-   in RTL because no LTR label here is a single unbroken word. */
-.review-destinations dd { min-width: 0; overflow-wrap: anywhere; }
+   Applying the same property to the label was tried and reverted after looking
+   at the rendered page: the `dt` is a translated label, not database text, and
+   `anywhere` lets it break between any two characters. In Arabic `ملاحظات`
+   collapsed to a 1px-wide column 760px tall - one letter per line - because
+   the `dd` beside it wants every pixel and nothing was left holding the label
+   open. Its `min-width: auto` floor is its longest word, which is what a label
+   should never be narrower than, and it costs the `dd` nothing.
+   Direction-neutral; the collapse was merely worst in RTL, because no label
+   here is a long enough unbroken word in English to lose as many lines. */
+.review-destinations dd { overflow-wrap: anywhere; }
 
 .section-heading-row { display: flex; align-items: baseline; justify-content: space-between; gap: 18px; }
 .section-heading-row h2 { margin-bottom: 10px; }

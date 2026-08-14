@@ -512,9 +512,12 @@ def set_placeholder_flag(
             f"No factor set with id {factor_set_id} exists to change."
         )
     if target.is_mock == is_mock:
-        state = "already flagged as placeholder data" if is_mock else \
-            "already not flagged as placeholder data"
-        raise LifecycleError(f"'{target.version_label}' is {state}.")
+        raise LifecycleError(
+            f"'{target.version_label}' is already flagged as placeholder data."
+            if is_mock else
+            f"'{target.version_label}' is not flagged as placeholder data, "
+            "so there is nothing to clear."
+        )
 
     before = row_to_dict(target)
     target.is_mock = is_mock

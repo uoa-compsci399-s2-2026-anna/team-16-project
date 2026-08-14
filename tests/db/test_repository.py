@@ -214,6 +214,74 @@ def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     assert all("destination_id" not in row for row in data["upstream"])
 
 
+def test_the_bundle_carries_each_downstream_rows_sector(seeded_session):
+    """Contract §10.2 (v1.31): every `downstream[]` row publishes a `sector`,
+    `null` for the row that applies to every sector.
+
+    **The seeded set cannot prove this on its own**, and that is the point.
+    All fifteen of its downstream rows leave `sector_id` NULL, so a projection
+    that hard-coded `"sector": None` — or dropped the join and let every row
+    default — would emit a byte-identical document and every other test in this
+    repository would stay green while the calculator priced every supply-chain
+    stage the same. So the test writes a sector-specific row first, and asserts
+    both states come back distinguishable.
+
+    A `key in row` check is asserted separately from the value, for the reason
+    §10.2 gives about `upstream[].destination`: `row.get("sector")` is `None`
+    both when the row applies to every sector and when the projection forgot
+    the field, and those are not the same thing.
+    """
+    from db.models import Destination, FactorDownstream, Metric, Sector
+
+    published = get_published_factor_set_id(seeded_session)
+    landfill_id = seeded_session.scalar(
+        select(Destination.id).where(Destination.code == "landfill")
+    )
+    metric_id = seeded_session.scalar(select(Metric.id).where(Metric.code == "co2e"))
+    sector_id = seeded_session.scalar(
+        select(Sector.id).where(Sector.code == "primary_production")
+    )
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published,
+            destination_id=landfill_id,
+            sector_id=sector_id,
+            food_category_id=None,
+            metric_id=metric_id,
+            value_per_kg=Decimal("0.3100000000"),
+        )
+    )
+    seeded_session.flush()
+
+    data = build_bundle_data(seeded_session, published)
+    landfill_co2e = [
+        row for row in data["downstream"]
+        if row["destination"] == "landfill" and row["metric"] == "co2e"
+    ]
+
+    assert all("sector" in row for row in data["downstream"]), (
+        "a downstream row published no `sector` key at all"
+    )
+    by_sector = {row["sector"]: row["value_per_kg"] for row in landfill_co2e}
+    #: The sector-specific row and the two every-sector rows, told apart.
+    assert by_sector["primary_production"] == "0.3100000000"
+    assert None in by_sector, "the every-sector rows lost their null"
+    #: §1.1 — `code` crosses the layer boundary, never a primary key.
+    assert all("sector_id" not in row for row in data["downstream"])
+
+    #: And it reaches the engine through the real path, priced only for the
+    #: sector it names. 1000 kg of primary_production/vegetables to landfill
+    #: draws 0.31 where processing/vegetables still draws the generic 0.70.
+    bundle = load_factor_bundle(seeded_session)
+    assert bundle.validate() == []
+    assert bundle.downstream(
+        "landfill", "primary_production", "vegetables", "co2e"
+    ) == Decimal("0.3100000000")
+    assert bundle.downstream(
+        "landfill", "processing", "vegetables", "co2e"
+    ) == Decimal("0.7000000000")
+
+
 def _seam_request(sector, food_category, current, alternative=None):
     from engine.types import CalculationRequest, EntryInput, ScenarioLine
 

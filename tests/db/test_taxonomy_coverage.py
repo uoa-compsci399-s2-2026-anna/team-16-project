@@ -175,14 +175,21 @@ def test_a_sector_covered_only_by_a_downstream_row_is_present(seeded_session):
 
 
 def test_a_null_sector_downstream_row_covers_no_sector_at_all(seeded_session):
-    """The other half, and the one a permissive implementation gets wrong.
+    """The other half, and the one a plausible misreading gets wrong.
 
-    NULL means "every sector", so such a row is evidence about no particular
-    sector and must not pull one onto the form. A `COALESCE`-style read, or a
-    set-union that forgot to skip NULL, would put a `None` in the covered set
-    and — depending on how it was compared — either crash or quietly cover
-    everything. The seed's own generic downstream rows are already NULL here,
-    so this asserts the state the deployed database is in.
+    NULL means "every sector" — and the wrong inference from that sentence is
+    that such a row *covers* every sector, which would put the whole sector
+    table back on the form and undo v1.21 for the one dimension v1.31 touched.
+    It is evidence about no particular sector, so it covers none.
+
+    **What this test does not claim.** Dropping the `is not None` guard so that
+    a bare `None` joins the id set is harmless here and was confirmed harmless
+    by mutation: nothing compares equal to it, because no `sector.id` is NULL.
+    The guard stays because the set is a set of ids and `None` is not one; the
+    defect this test kills is the union above, not the missing guard.
+
+    The seed's own generic downstream rows are already NULL here, so this also
+    asserts the state the deployed database is in.
     """
     seeded_session.add(
         Destination(

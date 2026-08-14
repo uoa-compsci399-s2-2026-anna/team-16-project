@@ -319,13 +319,25 @@ def test_the_chooser_is_present_usable_and_at_the_top_inline_start(browser):
         page.locator("#language-chooser").focus()
         assert page.evaluate("document.activeElement.id") == "language-chooser"
 
-        # And it is above the header rather than inside it, which is what keeps
-        # the brand lockup untouched.
+        # **First item in the header's own row, and it must cost no height.**
+        # A strip of its own above the header cost 57px on every page, which
+        # this calculator cannot afford - it deleted an 87px step-indicator band
+        # to stop short steps scrolling. So the chooser joins the row that is
+        # already there, ahead of the brand, and the row must not have grown.
         assert page.evaluate(
-            "() => document.querySelector('.language-bar')"
-            ".compareDocumentPosition(document.getElementById('site-header'))"
-            " & Node.DOCUMENT_POSITION_FOLLOWING"
-        )
+            """() => {
+              const bar = document.querySelector('.language-bar');
+              const row = document.querySelector('.header-inner');
+              const brand = document.querySelector('.brand');
+              return bar.parentElement === row &&
+                (bar.compareDocumentPosition(brand) &
+                 Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
+            }"""
+        ), "the chooser is not the first thing in the header row"
+        assert page.evaluate(
+            "() => Math.round("
+            "document.querySelector('.header-inner').getBoundingClientRect().height)"
+        ) <= 96, "the header grew to make room for the chooser"
     finally:
         context.close()
 
@@ -548,9 +560,12 @@ def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
             # the content sits at the bar's reading-start edge.
             return page.evaluate(
                 """() => {
-                  const bar = document.querySelector('.language-bar');
+                  // The ROW, not the bar. The bar now hugs its own contents
+                  // inside the header row, so measuring the gap against the bar
+                  // would read zero in both directions and prove nothing.
+                  const bar = document.querySelector('.header-inner');
                   const el = document.getElementById('language-chooser');
-                  const label = bar.querySelector('.language-bar__label');
+                  const label = document.querySelector('.language-bar__label');
                   const b = bar.getBoundingClientRect();
                   const s = el.getBoundingClientRect();
                   const l = label.getBoundingClientRect();
@@ -559,7 +574,9 @@ def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
                     // Gap between the bar's edge and the first thing in it.
                     gapLeft: Math.round(Math.min(s.left, l.left) - b.left),
                     gapRight: Math.round(b.right - Math.max(s.right, l.right)),
-                    labelLeftOfSelect: l.left < s.left,
+                    // The label is visually hidden below 720px, so its box is
+                    // 1px and off-flow; compare it only where it is drawn.
+                    labelLeftOfSelect: l.width > 2 ? l.left < s.left : null,
                     overflows:
                       document.documentElement.scrollWidth >
                       document.documentElement.clientWidth + 1,
@@ -582,8 +599,10 @@ def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
         f"{width}px: the two directions are not mirror images: {ltr} vs {rtl}"
     )
     # The label leads the control in reading order in both directions, which is
-    # the half that `dir` alone would not give us.
-    assert ltr["labelLeftOfSelect"] and not rtl["labelLeftOfSelect"]
+    # the half that `dir` alone would not give us. Skipped where the label is
+    # visually hidden, which is a real state and not a failure.
+    if ltr["labelLeftOfSelect"] is not None:
+        assert ltr["labelLeftOfSelect"] and not rtl["labelLeftOfSelect"]
     assert not rtl["overflows"], f"{width}px: the right-to-left page scrolls sideways"
 
 
@@ -971,5 +990,129 @@ def test_every_catalogue_reaches_the_page_it_was_written_for(browser, language):
         # And the notice says what the catalogue says about itself.
         expected = 1 if catalogue["machine_translated"] else 0
         assert page.locator("#machine-translation-notice").count() == expected
+    finally:
+        context.close()
+
+
+# ---------------------------------------------------------------------------
+# The panel's chooser, driven with scripting switched OFF
+# ---------------------------------------------------------------------------
+
+
+def _gate(browser, scripting, width=1280, accept_language="en-NZ"):
+    """The panel's login page, which is where the chooser can be driven
+    without credentials.
+
+    Deliberately the gate rather than a signed-in screen. It is the page a
+    person who does not read English needs most, it is the one page a
+    locked-out account can still reach, and reaching it costs no password -
+    a wrong one charges the shared login throttle and locks an account for
+    fifteen minutes, so no test here may guess at one.
+
+    `urllib` cannot be used against this path at all: admin/protection.py
+    refuses headless clients, which is why this goes through a real browser.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 800},
+        java_script_enabled=scripting,
+        extra_http_headers={"Accept-Language": accept_language},
+    )
+    page = context.new_page()
+    page.goto(f"{BASE}/admin/login", wait_until="domcontentloaded")
+    return context, page
+
+
+@pytest.mark.parametrize("width", [390, 1280])
+def test_the_panels_chooser_works_with_scripting_off(browser, width):
+    """**The whole reason the panel's chooser is a form.**
+
+    Driven with `java_script_enabled=False`, so nothing here can be carried by
+    a change handler: the visitor picks an option, presses a real button, and
+    the server answers. Then a reload and a second page, because a control that
+    only appears to work until you navigate is the defect this is guarding.
+
+    Run at 390px as well as desktop - a control that overflows a phone is not a
+    control - and finished by returning to "Follow the system" and confirming it
+    reverts rather than sticking.
+    """
+    context, page = _gate(browser, scripting=False, width=width)
+    try:
+        chooser = page.locator("#language-chooser")
+        assert chooser.count() == 1, "no chooser on the gate page"
+        box = chooser.bounding_box()
+        assert box["height"] >= 44, f"{width}px: below the touch target: {box}"
+        assert box["x"] >= 0 and box["x"] + box["width"] <= width + 1, (
+            f"{width}px: the chooser is off screen: {box}"
+        )
+        assert page.locator("form.language-bar button[type=submit]").count() == 1
+
+        # English to begin with, because that is what the browser asked for.
+        assert "Sign in" in page.content() or "Continue" in page.content()
+
+        # Pick Chinese and submit. No script is involved in either step.
+        page.select_option("#language-chooser", "zh")
+        page.click("form.language-bar button[type=submit]")
+        page.wait_for_load_state("domcontentloaded")
+        assert "登录" in page.content(), (
+            f"{width}px: the panel did not change language without scripting"
+        )
+
+        stored = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
+        assert len(stored) == 1 and stored[0]["value"] == "zh"
+        assert stored[0]["path"] == "/", "the calculator could not read it"
+
+        # It survives a reload...
+        page.reload(wait_until="domcontentloaded")
+        assert "登录" in page.content()
+        # The chooser shows the choice it is honouring, not the first option.
+        assert 'value="zh" lang="zh" selected' in page.content()
+
+        # ...and a different page of the panel. /admin/security is behind the
+        # session, so its refusal is what a signed-out visitor gets - and the
+        # refusal has to be readable too.
+        page.goto(f"{BASE}/admin/security", wait_until="domcontentloaded")
+        assert "登录" in page.content(), (
+            f"{width}px: a second page of the panel lost the language"
+        )
+
+        # Back to following the system, which is a write and not a deletion.
+        page.goto(f"{BASE}/admin/login", wait_until="domcontentloaded")
+        page.select_option("#language-chooser", "auto")
+        page.click("form.language-bar button[type=submit]")
+        page.wait_for_load_state("domcontentloaded")
+        assert "登录" not in page.content(), "follow-the-system did not revert"
+        reverted = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
+        assert len(reverted) == 1 and reverted[0]["value"] == "auto", (
+            "follow-the-system deleted the cookie instead of writing it"
+        )
+    finally:
+        context.close()
+
+
+def test_the_panel_names_a_language_it_cannot_render(browser):
+    """Tamil chosen on the calculator, then the panel opened.
+
+    The cookie is set through the calculator's own origin - the same cookie,
+    which is the point - and the panel is then asked for. It must render
+    English, name தமிழ், offer no Tamil option, and **leave the cookie alone**.
+    """
+    context = browser.new_context(extra_http_headers={"Accept-Language": "en-NZ"})
+    try:
+        page = context.new_page()
+        page.goto(f"{BASE}/", wait_until="networkidle")
+        _choose(page, "ta")
+        assert [c["value"] for c in context.cookies() if c["name"] == "kaicalc_lang"] == ["ta"]
+
+        page.goto(f"{BASE}/admin/login", wait_until="domcontentloaded")
+        body = page.content()
+        assert "தமிழ்" in body, "the panel did not name the language it lacks"
+        assert 'value="ta"' not in body, "a dead Tamil entry is in the list"
+        assert "登录" not in body, "the panel should be English here"
+
+        after = [c["value"] for c in context.cookies() if c["name"] == "kaicalc_lang"]
+        assert after == ["ta"], (
+            f"the panel rewrote the shared cookie to {after}; the calculator's "
+            "language has been destroyed from an unrelated screen"
+        )
     finally:
         context.close()

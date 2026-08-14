@@ -608,6 +608,24 @@ export function installLanguageChooser(afterChange) {
 
   paint()
   bar.append(label, select)
-  header.parentNode.insertBefore(bar, header)
+  // **Inside the header's own row, not in a strip above it, and the reason is
+  // measured rather than aesthetic.** A strip of its own costs 57px on every
+  // page: a 44px control plus padding and a rule. This calculator deleted an
+  // 87px step-indicator band to stop short steps scrolling - `styles.css` says
+  // "do not put the constant back" over the arithmetic that band left behind -
+  // and `test_a_short_step_is_not_floored_by_a_stale_min_height` fails the
+  // moment anything persistent is added above the fold. Verified both ways
+  // with that test and `KAICALC_MUTATION_CSS`.
+  //
+  // The header is already 93px tall and holds a 67px logo, so a 44px control
+  // fits in the space that is there. The bar therefore joins the existing row
+  // and costs nothing, and "top inline-start" still describes where it is: it
+  // is the first thing in the first row of the page.
+  //
+  // It is placed *beside* the brand lockup, never inside it - the logo keeps
+  // its own element, its own size and its own spacing, and nothing is drawn
+  // over or through it.
+  const row = header.querySelector('.header-inner') || header
+  row.prepend(bar)
   return select
 }

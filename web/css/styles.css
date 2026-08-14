@@ -117,12 +117,19 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   border-bottom: 0;
 }
 
+/* `flex-wrap` is for the language chooser, which shares this row. At 390px the
+   control and the 220px wordmark cannot both fit, and without wrapping the
+   wordmark was simply clipped by the viewport edge. Wrapping puts the chooser
+   on its own line above the brand on a phone — which is the layout that was
+   drawn in the first place — and costs nothing on a desktop, where both fit on
+   one line and the row never wraps. */
 .header-inner {
   min-height: 92px;
   max-width: 1180px;
   margin: 0 auto;
   padding: 12px 20px;
   display: flex;
+  flex-wrap: wrap;
   align-items: center;
   justify-content: space-between;
   gap: 16px;
@@ -132,7 +139,14 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   padding-inline: clamp(20px, 2.7vw, 56px);
 }
 
-.brand { display: flex; align-items: center; gap: 18px; font-weight: 700; }
+/* `margin-inline-end: auto` rather than relying on `space-between`. Once the
+   language chooser joined this row there were three items in it, and
+   `space-between` puts the middle one in the middle — which stranded the
+   wordmark in the centre of the header with white space either side. The auto
+   margin keeps the brand hard against the chooser at the reading-start edge and
+   leaves the single flexible gap before "Clear all data" at the far end, which
+   is the two-item arrangement this header was drawn as. */
+.brand { display: flex; align-items: center; gap: 18px; margin-inline-end: auto; font-weight: 700; }
 .brand-home-button {
   border: 0;
   padding: 0;
@@ -866,19 +880,41 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .language-bar {
   display: flex;
   align-items: center;
-  gap: 10px;
-  padding: 6px clamp(20px, 2.7vw, 56px);
-  border-bottom: 1px solid rgba(0, 50, 35, 0.1);
-  background: var(--kai-white);
+  gap: 8px;
+  flex: 0 0 auto;
   font-size: 0.82rem;
 }
 
+/* The label is read by a screen reader in every case; it is only *drawn* where
+   there is room for it. At 390px the header already carries a 220px wordmark,
+   and the word "Language" beside it is what pushes the row into a second line.
+   `.sr-only` is the same treatment the rest of the calculator uses, so the
+   `<label for>` association - and therefore the control's accessible name -
+   survives being invisible. */
 .language-bar__label {
   color: var(--muted);
   font-weight: 700;
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
+
+@media (max-width: 720px) {
+  .language-bar__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
+/* On the Kale intro header the control sits on a dark ground, so it takes the
+   white-on-dark pairing rather than the light-ground one. */
+.intro-header .language-bar__label { color: rgba(255, 255, 255, 0.82); }
 
 /* 44px min-height is the touch target the rest of the calculator uses, and the reason
    this control is a real `<select>` rather than a styled listbox: the platform's own
@@ -891,7 +927,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    closed control truncates; the open list does not. */
 .language-bar__select {
   min-height: 44px;
-  max-width: min(100%, 30ch);
+  max-width: min(100%, 22ch);
   padding: 6px 8px;
   color: var(--kai-kale);
   border: 1px solid var(--border);

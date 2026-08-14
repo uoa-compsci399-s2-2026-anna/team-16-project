@@ -1,0 +1,56 @@
+{# The panel's language chooser. Contract §7.7, open item O-8.
+
+   A PLAIN FORM, AND THAT IS THE DECISION THIS FILE RECORDS. The panel renders
+   through FastAPI and works with scripting switched off, so its chooser must
+   too: a `<select>` and a submit button, posting to admin/language_view.py.
+   There is no `onchange` handler - a control that only works with JavaScript
+   would be a control that silently does nothing for a reader who has it off,
+   and the submit button is the small price of it working for everyone.
+
+   The calculator does the opposite, for the opposite reason: it is ES modules
+   end to end and does not render at all without scripting, so its chooser is
+   built in web/js/i18n.js where it cannot exist as a dead control.
+
+   "TOP LEFT" IS WRITTEN AS TOP INLINE-START. Two of the calculator's languages
+   render right-to-left, and although the panel ships only English and Chinese
+   today the rule has to be the same one on both surfaces. See admin/static
+   brand.css `.language-bar`.
+
+   ONLY WHAT THE PANEL HAS IS LISTED. `kaicalc_languages()` is the panel's own
+   catalogue set - English and Chinese - not the calculator's twenty-one. When
+   the stored choice names a language the panel has no catalogue for, the
+   message below names it rather than the list carrying a dead entry, and the
+   cookie is left exactly as it was: rewriting it here would destroy the
+   calculator's language from an unrelated screen. #}
+<form class="language-bar" method="post" action="/admin/language">
+  <label class="language-bar__label" for="language-chooser">{{ _("Language") }}</label>
+  <select class="language-bar__select" id="language-chooser" name="lang">
+    {# The CHOICE, not the rendered language. With `auto` stored and a Chinese
+       browser the panel is Chinese and this still reads "Follow the system",
+       because that is what was picked and what is in effect. #}
+    <option value="{{ kaicalc_follow_system }}" {% if kaicalc_choice() == kaicalc_follow_system %}selected{% endif %}>{{ _("Follow the system") }}</option>
+    {% for catalogue in kaicalc_languages() %}
+    {# The endonym is never passed through `_()`. A translated endonym is a
+       contradiction, and the suite forbids a catalogue entry equal to its own
+       English source. Only a marker around it would ever be translated, and the
+       panel's two languages carry no marker: English is hand-written and
+       Chinese is reviewed by the people who use it daily. #}
+    <option value="{{ catalogue.language }}" lang="{{ catalogue.language }}" {% if kaicalc_choice() == catalogue.language %}selected{% endif %}>{{ catalogue.endonym }}{% if catalogue.machine_translated %} — {{ _("machine translated") }}{% endif %}</option>
+    {% endfor %}
+  </select>
+  {# Where to come back to. Validated server-side as a path inside /admin
+     (admin/language_view.py::safe_next), never used as a URL - a value that
+     leaves this panel would be an open redirect. #}
+  <input type="hidden" name="next" value="{{ request.url.path }}">
+  <button class="language-bar__submit" type="submit">{{ _("Set language") }}</button>
+</form>
+{% if kaicalc_unavailable_choice() %}
+{# The stored choice names a language the calculator has and this panel does
+   not. Saying so is the whole point: rendering English silently would pretend
+   no choice was made, and showing "Follow the system" as selected would be a
+   lie about what is stored. The language is named in its own script, because
+   the person who chose it reads that script and may not read this sentence. #}
+<p class="language-bar__unavailable" role="status">
+  {{ _("%(language)s is not available in the admin panel, so it is shown in English. Your choice is unchanged and the calculator still uses it.", language=kaicalc_unavailable_choice()) }}
+</p>
+{% endif %}

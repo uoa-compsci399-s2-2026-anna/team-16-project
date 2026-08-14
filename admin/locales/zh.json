@@ -186,6 +186,10 @@
     "Compare with published": "与已发布版本对比",
     "This page was machine translated and has not been reviewed by a speaker of this language. Check anything that decides a number against the English.": "本页面由机器翻译，未经该语言使用者审校。任何会影响数字的内容，请对照英文原文核对。",
     "Add a staff member": "添加员工账户",
-    "Block an address": "封禁一个地址"
+    "Block an address": "封禁一个地址",
+    "Follow the system": "跟随系统",
+    "Set language": "设置语言",
+    "machine translated": "机器翻译",
+    "%(language)s is not available in the admin panel, so it is shown in English. Your choice is unchanged and the calculator still uses it.": "管理面板暂无 %(language)s 版本，因此以英文显示。您的选择未被更改，计算器仍会使用它。"
   }
 }

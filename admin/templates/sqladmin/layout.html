@@ -5,24 +5,26 @@
    (`Admin.init_templating_engine`), so nothing of its own layout is copied
    here. Only the `topbar` block is replaced.
 
-   THERE IS NO LANGUAGE SWITCHER, AND THAT IS THE DECISION THIS FILE
-   RECORDS. A dropdown writing a `kaicalc_lang` cookie stood here until the
-   repository owner ruled it out: the language is negotiated per request from
-   `Accept-Language`, nothing is persisted, and there is no control to
-   operate. `?lang=` still forces a language for one request - for testing,
-   screenshots and support - but nothing on the page emits it.
+   THE LANGUAGE CHOOSER IS OURS, NOT SQLADMIN'S. sqladmin ships a switcher of
+   its own in this block and it is not used: it renders only when an
+   `I18nConfig` is passed to `Admin()`, and that path requires `babel` and
+   offers only the five locales sqladmin compiled into its own package. See
+   admin/i18n.py's docstring. Ours is brand/_language_chooser.html, a plain
+   form that works with scripting off, and it is the same partial the five gate
+   pages get through brand/base.html - one control, one stored choice, one
+   place to change either.
 
-   sqladmin ships a switcher of its own in this block, and it is not used
-   either: it renders only when an `I18nConfig` is passed to `Admin()`, and
-   that path requires `babel` and offers only the five locales sqladmin
-   compiled into its own package. See admin/i18n.py's docstring.
+   The chooser negotiates NOTHING on its own. `?lang=` still forces a language
+   for one request - for testing, screenshots and support - writes nothing, and
+   is emitted by no control here; a support link must not silently re-language
+   the recipient's browser for good.
 
-   THE MACHINE-TRANSLATION NOTICE HAD TO MOVE WHEN THE SWITCHER WENT. It sat
-   on the option a person was about to choose; with nothing to choose, the
-   only place it can be read is the page itself. It is a strip at the top of
-   every screen, it is not dismissible, and it is driven by
+   THE MACHINE-TRANSLATION NOTICE STAYS ABOVE THE CHOOSER. It is a strip at the
+   top of every screen, it is not dismissible, and it is driven by
    `machine_translated` in the active catalogue - so a language that arrives
    from a machine pass labels itself and no list in code has to be extended.
+   The chooser marks such a language on its own option as well, so the warning
+   can be read before somebody picks and not only afterwards.
 
    The panel's only catalogue today is Chinese, which is reviewed by the
    people who use it daily and is NOT flagged, so this strip renders on no
@@ -37,5 +39,6 @@
   {{ _("This page was machine translated and has not been reviewed by a speaker of this language. Check anything that decides a number against the English.") }}
 </div>
 {% endif %}
+{% include "brand/_language_chooser.html" %}
 {{ super() }}
 {% endblock %}

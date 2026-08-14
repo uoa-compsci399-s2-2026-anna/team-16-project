@@ -112,11 +112,15 @@ def test_the_high_volume_views_page_at_a_workable_size(view):
     [
         (FactorUpstreamAdmin, "destination"),
         (FactorDownstreamAdmin, "food_category"),
+        #: v1.31's dimension. Without it on the form a staff member can see
+        #: that a row is scoped to one sector and cannot say so, and every row
+        #: they author applies to every stage of the supply chain.
+        (FactorDownstreamAdmin, "sector"),
     ],
 )
 def test_the_nullable_scope_columns_are_editable(view, field):
-    """Both factor tables carry one nullable "applies to everything" foreign
-    key (§2.2), and staff cannot set what the form does not show.
+    """Both factor tables carry nullable "applies to everything" foreign keys
+    (§2.2), and staff cannot set what the form does not show.
 
     `factor_upstream.destination` is the O-7 one: it is the only way to give
     `prevention` an upstream row of its own at zero, and without that row the
@@ -124,6 +128,7 @@ def test_the_nullable_scope_columns_are_editable(view, field):
     """
     assert field in {getattr(c, "key", c) for c in view.form_columns}
     assert field in {getattr(c, "key", c) for c in view.column_list}
+    assert field in {getattr(c, "key", c) for c in view.column_details_list}
 
 
 def test_the_upstream_destination_field_explains_that_blank_means_every():
@@ -132,6 +137,38 @@ def test_the_upstream_destination_field_explains_that_blank_means_every():
     description = FactorUpstreamAdmin.form_args["destination"]["description"]
     assert "blank" in description.lower()
     assert "every destination" in description.lower()
+
+
+def test_the_downstream_sector_field_explains_that_blank_means_every():
+    description = FactorDownstreamAdmin.form_args["sector"]["description"]
+    assert "blank" in description.lower()
+    assert "every sector" in description.lower()
+
+
+@pytest.mark.parametrize("field", ["sector", "food_category"])
+def test_both_optional_downstream_fields_say_which_row_wins(field):
+    """§4.1's order, on the screen where the rows are authored.
+
+    Neither field can state it alone — the order is *between* them — so both
+    carry the same sentence, and it has to say that the sector wins rather
+    than only that "the most specific wins", which is true of three of the
+    four candidates and silent on the one pair that needed a decision.
+
+    The failure this defends against is silent: a staff member enters a
+    sector-scoped row and a category-scoped row, both perfectly reasonable,
+    and the calculator picks one and shows a number that looks fine.
+    """
+    description = FactorDownstreamAdmin.form_args[field]["description"].lower()
+
+    assert "sector" in description and "food category" in description
+    #: The order, not merely the words. "beats" is the operative verb; a
+    #: description that listed both dimensions without ranking them would pass
+    #: a membership check and teach nothing.
+    assert "beats" in description
+    assert description.index("naming a sector") < description.index(
+        "naming only a food category"
+    )
+    assert "zero" in description
 
 
 # --- Fixtures ---------------------------------------------------------

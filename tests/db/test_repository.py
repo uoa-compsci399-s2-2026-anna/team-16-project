@@ -194,6 +194,50 @@ def test_factor_bundle_cache_is_partitioned_and_explicitly_invalidated(seeded_se
     assert built == ["MOCK-v0", "DRAFT-v1", "DRAFT-v1", "MOCK-v0"]
 
 
+@pytest.mark.parametrize("started_mock, becomes", [(True, False), (False, True)])
+def test_a_change_to_is_mock_is_not_served_from_a_warm_cache(
+    seeded_session, started_mock, becomes
+):
+    """Contract §2.2. The placeholder flag is the one field of a *published*
+    set that legitimately moves while it stays published, and the panel that
+    moves it is a different process from the API that holds this cache — so
+    an invalidation call cannot carry the change across and this cache has no
+    expiry to age it out. Without the re-check in `load_factor_bundle` the
+    warm slot serves the old flag until the API is restarted.
+
+    Both directions are asserted, and the second is the one that matters
+    most: *setting* the flag is the direction §2.2 requires to be instant, so
+    that anyone who doubts a published set can put the placeholder warning in
+    front of the public immediately. A cache that defeats that makes the safe
+    direction the broken one.
+
+    Asserted on the flag the bundle was built with, not merely on object
+    identity: a version that rebuilt on every hit would pass an identity
+    check while quietly throwing the cache away, and a version that returned
+    a stale object would fail both.
+    """
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+    seeded_session.get(FactorSet, published_id).is_mock = started_mock
+    seeded_session.flush()
+
+    def factory(data):
+        return {"is_mock": data["is_mock"]}
+
+    first = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert first["is_mock"] is started_mock
+    # Warm: nothing changed, so the same object comes back.
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    ) is first
+
+    seeded_session.get(FactorSet, published_id).is_mock = becomes
+    seeded_session.flush()
+
+    after = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert after["is_mock"] is becomes
+
+
 def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     """Contract §10.2 (v1.8): every `upstream[]` row publishes a `destination`,
     `null` for the generic row that applies to every destination.

@@ -112,7 +112,12 @@ REDACTED_FIELDS = {
     "initial_password_enc",
 }
 
-_bundle_cache: dict[int, Any] = {}
+#: `factor_set_id -> (is_mock as it was when the bundle was built, bundle)`.
+#: The flag rides alongside the bundle rather than being read off it because
+#: `load_factor_bundle`'s `bundle_factory` is injectable and what it returns
+#: is not this module's to introspect. See `load_factor_bundle` for why this
+#: one field is re-checked on every hit when nothing else in the bundle is.
+_bundle_cache: dict[int, tuple[bool, Any]] = {}
 _cache_lock = threading.RLock()
 
 
@@ -587,6 +592,18 @@ def get_taxonomy_for_bundle(session: Session) -> dict[str, list[dict[str, Any]]]
     }
 
 
+def _live_is_mock(session: Session, factor_set_id: int) -> bool | None:
+    """This set's placeholder flag as the database has it right now.
+
+    A `SELECT` rather than `session.get`, which would answer out of the
+    identity map when the caller's session has already loaded the row —
+    the one case this check exists to catch.
+    """
+    return session.scalar(
+        select(FactorSet.is_mock).where(FactorSet.id == factor_set_id)
+    )
+
+
 def load_factor_bundle(
     session: Session,
     factor_set_id: int | None = None,
@@ -608,12 +625,41 @@ def load_factor_bundle(
     the cheaper of the two fixes and the only one that does not put a
     repository hook into all eleven admin views; a draft is dry-run by one
     person at a time, so there is no load argument on the other side.
+
+    **`is_mock` is re-read on every cache hit, and nothing else is.** The
+    flag is the only field of a published bundle that legitimately moves
+    while that set stays published (§2.2: staff publish the real factors,
+    verify them live for a day or two, then clear the flag through
+    FactorSetAdmin's confirmed action). Every other field is immutable in
+    place, which is what makes caching the rest of the bundle safe at all.
+
+    Nothing else can carry that change across: `invalidate_factor_bundle` is
+    a module-level dict in one process, and docker/compose.yaml runs the
+    panel and the API as **two services**, so the panel clearing its own slot
+    leaves the API's warm one untouched — for the lifetime of that process,
+    since this cache has no expiry. Without this check, clearing the flag
+    would take the placeholder banner off `/factors` (read live by
+    `get_factor_export`) and leave it on every `/calculate` result, and
+    *setting* the flag — the direction §2.2 requires to be instant and
+    frictionless, so that anyone can mark a set as placeholder data the
+    moment they doubt it — would not reach the public at all.
+
+    The cost is one primary-key `SELECT` of one boolean per calculation,
+    against a bundle of some 900 factor rows. What the cache is for is not
+    loading those.
     """
     factor_set_id = factor_set_id or get_published_factor_set_id(session)
     factory = bundle_factory or _default_bundle_factory
     with _cache_lock:
-        if factor_set_id in _bundle_cache:
-            return _bundle_cache[factor_set_id]
+        cached = _bundle_cache.get(factor_set_id)
+    if cached is not None:
+        cached_is_mock, bundle = cached
+        if _live_is_mock(session, factor_set_id) == cached_is_mock:
+            return bundle
+        # The flag moved under a warm slot. Drop it and rebuild below rather
+        # than patch the cached bundle: `bundle_factory` is injectable and
+        # what it returns is not this module's to reach into.
+        invalidate_factor_bundle(factor_set_id)
     bundle = factory(build_bundle_data(session, factor_set_id))
     # `build_bundle_data` has already loaded this row into the identity map,
     # so the status check costs no second round trip.
@@ -621,7 +667,9 @@ def load_factor_bundle(
     if factor_set is None or factor_set.status is not FactorSetStatus.published:
         return bundle
     with _cache_lock:
-        return _bundle_cache.setdefault(factor_set_id, bundle)
+        return _bundle_cache.setdefault(
+            factor_set_id, (factor_set.is_mock, bundle)
+        )[1]
 
 
 def _row_dict(row: Any) -> dict[str, Any]:

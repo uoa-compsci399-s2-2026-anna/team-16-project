@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-14 (v1.27 draft)"
+date: "2026-08-14 (v1.28 draft)"
 ---
 
 # 0. How to Use This Document
@@ -25,6 +25,16 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
+### v1.28 — 2026-08-14 (two pre-existing defects closed: the panel's document language, and a page that scrolled sideways; affects D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **v1.27 item 14 is closed. The panel proper now announces the language it rendered**, and §7.7.8 states the rule instead of recording the defect. The mechanism is a Jinja extension that rewrites sqladmin's own `<html lang="en">` as its template compiles — **not a second vendored template**, which was the option this project could see and had already been burned by: the one file it does vendor went stale across 0.30.0 → 0.31.0 and suppressed the upstream markup silently. Nothing is copied, so an upgrade is picked up in full, and the rewrite carries the same drift guard with the same version-skew wording | §7.7.8 |
+| 2 | **`lang` is the language RENDERED, not the language chosen — written down because the two differ and the wrong one is the tempting one.** A choice the surface has no catalogue for renders English, so `lang` says English. This is the same requirement the surface asymmetry in §7.7.5 already implies; it had never been stated as a rule about the attribute | §7.7.8 |
+| 3 | **`dir` is emitted on the panel too, and it is stated in terms that it is unverified there.** It follows the catalogue rather than a constant, so it cannot be wrong for the first RTL catalogue that arrives; an absent `dir` asserts left-to-right by omission. **No claim is made that the panel's layout mirrors** — there is no RTL panel catalogue to look at one on. The calculator's RTL layout is exercised separately, in Arabic and Urdu | §7.7.8 |
+| 4 | **The methodology page's sideways scroll is fixed, and the report of it is corrected.** It was recorded as "in Arabic at 390px". Measured, it overflowed by **485px in Arabic and 480px in English** — never an RTL defect. Nor were the formulas table and the definition list both at fault: the table is inside an `overflow-x: auto` container and was always clipped. The cause was one `<dd>` in the factor-set summary rendering the published set's **notes**, which cite a 124-character URL; a URL has no space, so its min-content width is its full width, and a flex item's default `min-width: auto` forbids shrinking below that. **This is data-driven, so it is not specific to the ReFED set** — any notes field with a long token reaches it. Fixed on the shared `.review-destinations` rule with `min-width: 0` and `overflow-wrap: anywhere`, both direction-neutral | §7.6 |
+| 5 | **Where a layout claim has to come from.** The overflow was recorded for a day against a reading of the stylesheet and got both the language and the culprit wrong. `scrollWidth` against `clientWidth` in a real browser at a real width is the only thing that settles one, and the regression test additionally asserts the page still carries a token long enough to reproduce the defect — otherwise publishing a factor set with short notes turns it green on a page that could never have overflowed | §7.6 |
+
 > **On version numbers.** Two lines of this document ran in parallel from 2026-08-07 to 2026-08-09: v0.10–v0.13 on `admin_panel`, and v1.0–v1.1 on `docs/contract-v1.0`. They were merged as v1.2. Entries below appear in the order they were merged, not in numeric order, and both sequences are real — a reference to "v0.13 §8.3" and one to "v1.1 §2.2" both resolve here.
 
 ### v1.27 — 2026-08-14 (a language chooser on both surfaces, defaulting to the browser; affects C, D and E)
@@ -44,7 +54,7 @@ This document defines **what every person's code receives and what it returns.**
 | 11 | **The two surfaces do not ship the same languages, and the panel says so instead of pretending.** The calculator has twenty-one, the panel has two. The panel's chooser **lists only what the panel has** — no dead entries — and when the stored choice names a language it lacks it renders **English** (not the browser's language, which the visitor had already overridden) and **names the missing language in that language's own script.** **The cookie is left untouched**, which is the assertion worth the most: the tempting implementation rewrites it to `auto` and destroys the calculator's language from an unrelated screen | §7.7.5 |
 | 12 | **`Vary: Accept-Language, Cookie` on the panel**, still appended rather than assigned. `Cookie` is added because the response now depends on the stored choice, which **overrides** the header and is therefore the more dangerous half to omit. Cost is nil — the panel is authenticated and uncacheable. **The static origin still sets no `Vary`, and that is the payoff of the client-side chooser**: every visitor gets a byte-identical `index.html` and the cookie is read after the response arrives. Server-side negotiation there would have meant a cached copy of the HTML, the stylesheet and both font faces per visitor | §7.7.6 |
 | 13 | **Three tests were rewritten rather than deleted**, having been written to make this reversal deliberate: `test_nothing_about_the_negotiation_is_persisted`, `test_no_language_picker_is_rendered_anywhere` and `test_nothing_is_stored_about_the_language`. Each now asserts the **bounded** behaviour — one cookie, one closed value space, a control that is a form rather than a bare `<select>`, and nothing stored until somebody chooses — because "nothing is stored" and "only this is stored" are different claims and the second is the one now being made | §7.7.3 |
-| 14 | **A defect recorded rather than fixed: the panel proper renders `<html lang="en">` whatever language it is in.** sqladmin's own layout hardcodes it and the element sits outside every block that layout defines, so closing it means forking a template this panel deliberately does not fork. It pre-dates the chooser and is not caused by it; a Chinese page announced as English is read aloud by a screen reader in English phonetics. `brand/base.html` and the calculator both get it right. A test asserts the defect so it fails the day it becomes fixable | §7.7.8 |
+| 14 | **(Closed at v1.28 — see above.)** A defect recorded rather than fixed: the panel proper renders `<html lang="en">` whatever language it is in. sqladmin's own layout hardcodes it and the element sits outside every block that layout defines, so closing it means forking a template this panel deliberately does not fork. It pre-dates the chooser and is not caused by it; a Chinese page announced as English is read aloud by a screen reader in English phonetics. `brand/base.html` and the calculator both get it right. A test asserted the defect so it would fail the day it became fixable; it did, and it was replaced by one asserting the fix in two languages | §7.7.8 |
 
 ### v1.26 — 2026-08-13 (only the first language is consulted; affects C, D and E)
 
@@ -2468,7 +2478,8 @@ Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embe
 4. After every successful calculation, write the returned `token` back to `sessionStorage`.
 5. **Iterate over metrics and equivalences; never hard-code their codes.** A view that lists `['co2e','water','cost']` silently omits the metric a staff member added, and adding a metric is meant to cost one `INSERT` and one formula (§2.1).
 6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show. The sign classes and the arrow convention are in §7.3a under `improvement.js`; use those four classes rather than a second set.
-7. **No page may request an asset from a third-party host at runtime.** Fonts, scripts, stylesheets, icons and images are served from this origin. `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to a third party before the first paint — on a calculator whose stated privacy position is §2.3's, and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The brand fonts are in `web/assets/fonts/`. **This binds §7.4:** Chart.js is self-hosted, never loaded from a CDN.
+8. **Text that comes from the database may contain a token that cannot be broken, and a flex or grid item will not shrink below it.** A `min-width: auto` item — the default — is never narrower than its min-content width, and for a URL that is its full width. The published ReFED set's `notes` cite a 124-character URL; rendered in the factor-set summary it held a row at 768px inside a 310px list and pushed the methodology page to **875px in a 390px viewport, in English as well as in Arabic**. Any container rendering a free-text field from the API needs `min-width: 0` and `overflow-wrap: anywhere` — `break-word` is not enough, because only `anywhere` also shrinks the min-content contribution. **Assert this by measuring `scrollWidth` against `clientWidth` in a browser**, and assert alongside it that the rendered data still contains a token long enough to reproduce it: publish a factor set with short notes and an overflow test goes green on a page that could never have overflowed.
+9. **No page may request an asset from a third-party host at runtime.** Fonts, scripts, stylesheets, icons and images are served from this origin. `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to a third party before the first paint — on a calculator whose stated privacy position is §2.3's, and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The brand fonts are in `web/assets/fonts/`. **This binds §7.4:** Chart.js is self-hosted, never loaded from a CDN.
 
 ---
 
@@ -2575,9 +2586,20 @@ Decimals (they cross the wire as strings and take no locale-aware separator on e
 
 The consequence, stated rather than discovered: a Thai visitor gets a Thai interface listing English destination names.
 
-### 7.7.8 Known defect
+### 7.7.8 The document element
 
-**The panel proper renders `<html lang="en">` whatever language it is in.** sqladmin's own layout hardcodes it and the `<html>` element sits outside every block that layout defines, so it cannot be overridden the way `topbar` is; closing it means forking a template this panel deliberately does not fork. It matters — a Chinese page announced as English is read aloud by a screen reader in English phonetics. `brand/base.html` gets it right on the five gate pages and `web/js/i18n.js` gets it right on the calculator; this is the one surface that does not. Pre-dates the chooser and is not closed by it. `tests/admin/test_i18n_pages.py` asserts the defect so that it fails the day it becomes fixable.
+**Every page on both surfaces carries `lang` and `dir` on `<html>`, and both state what was actually rendered.**
+
+| Rendered | `lang` | `dir` |
+| --- | --- | --- |
+| English | `en-NZ` | `ltr` |
+| Any other language | its own code (`zh`, `ar`, …) | from that catalogue |
+
+**`lang` is the rendered language, never the stored choice.** The two differ whenever somebody has chosen a language the surface has no catalogue for — the calculator has twenty-one and the panel two, so Arabic chosen on the calculator renders the panel in English. English is then what `lang` says. Announcing `ar` on an English page would hand a screen reader English words to read with Arabic phonetics, which is the same defect as the one below pointed the other way, and no better for being well meant.
+
+**`dir` is emitted on the panel although no panel catalogue is right-to-left.** It is derived from the catalogue rather than fixed, so the first RTL catalogue added to `admin/locales/` announces itself; an absent `dir` is not neutral, it keeps asserting left-to-right by omission. **This is not a claim that the panel's layout mirrors** — no RTL panel catalogue exists to try it on. The calculator's RTL layout is separately exercised, in Arabic and Urdu.
+
+> **This was a recorded defect from v1.27 and is closed at v1.28.** The panel proper rendered `<html lang="en">` in every language. `sqladmin`'s own `base.html` hardcodes it and the `<html>` element sits outside every block that template defines, so the seam that already replaces `topbar` cannot reach it. It is closed **without a second vendored template**: `admin/i18n.py::_HtmlElement` is a Jinja extension that rewrites that one line in sqladmin's own source as the template compiles. Nothing is copied, so an upgrade that adds to `base.html` is picked up in full — the opposite of the vendored `_macros.html`, whose stale copy suppressed 0.31.0's menu markup for a release cycle. The rewrite carries that copy's drift guard: a literal it cannot find raises rather than silently not applying, and the message names version skew as the first thing to check.
 
 ---
 

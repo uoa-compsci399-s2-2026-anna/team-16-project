@@ -22,6 +22,7 @@ Requires the stack rebuilt: `docker compose -f docker/compose.yaml up -d
 from __future__ import annotations
 
 import json
+import re
 import urllib.error
 import urllib.request
 from pathlib import Path
@@ -1387,7 +1388,9 @@ _CHART_STATE = """
     id: chart?.id,
     title: chart?.titleBlock?.options?.text,
     titleHeight: chart?.titleBlock?.height,
+    legendShown: chart?.options?.plugins?.legend?.display !== false,
     legend: (chart?.legend?.legendItems || []).map((item) => item.text),
+    xTicks: (chart?.scales?.x?.ticks || []).map((tick) => tick.label),
     aria: canvas.getAttribute('aria-label'),
   };
 })
@@ -1484,6 +1487,22 @@ def test_the_charts_are_rebuilt_in_the_new_language(browser):
         context.close()
 
 
+def _taxonomy(charts):
+    """Every place a chart puts an API `label` on screen.
+
+    **The drawn legend only, plus the category axis.** A bar chart here sets
+    `legend.display: false`, and Chart.js still computes `legendItems` for it -
+    holding the *dataset* label, which is this page's own translated chart
+    title and is supposed to change. Comparing those would fail on correct
+    behaviour and teach the next reader to delete the assertion. What carries a
+    staff-typed name is the doughnut's visible legend and the bar's x-axis
+    ticks.
+    """
+    return [
+        (chart["legend"] if chart["legendShown"] else [], chart["xTicks"])
+        for chart in charts
+    ]
+
 def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
     """Section 7.7.7, on the surface where breaking it would be easiest.
 
@@ -1502,17 +1521,21 @@ def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
         listed = page.eval_on_selector_all(
             ".stats-breakdown-list li strong", "nodes => nodes.map(n => n.textContent)"
         )
-        assert any(chart["legend"] for chart in english), (
+        assert any(chart["legendShown"] and chart["legend"] for chart in english), (
             "no chart drew a legend, so this measures nothing"
+        )
+        assert any(chart["xTicks"] for chart in english), (
+            "no chart drew a category axis, so this measures nothing"
         )
         assert listed, "the text list is empty, so this measures nothing"
 
         _choose(page, "zh")
         _wait_for_charts(page)
         chinese = page.evaluate(_CHART_STATE)
-        assert [chart["legend"] for chart in chinese] == [
-            chart["legend"] for chart in english
-        ], "a chart legend changed with the language; the taxonomy is not ours to translate"
+        assert _taxonomy(chinese) == _taxonomy(english), (
+            "a taxonomy label changed with the language; the taxonomy is not ours "
+            "to translate"
+        )
         assert (
             page.eval_on_selector_all(
                 ".stats-breakdown-list li strong",
@@ -1533,15 +1556,26 @@ def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
 def test_the_figures_take_no_locale_aware_separator(browser):
     """Section 7.7.7: figures are not localised, on either surface.
 
-    Read in Arabic specifically. `toLocaleString` with an Arabic locale renders
-    Eastern Arabic numerals - `37.9%` becomes `٣٧٫٩٪` - so if any formatter here
-    had started following the active language instead of staying pinned to
-    `en-NZ`, this is the page where it would show, on the axis and in the list
-    together.
+    **Read in Arabic, and asserted positively rather than as an absence.** The
+    obvious form of this test - "no Eastern Arabic numeral appears" - was
+    written first and passed against a deliberately locale-aware build, because
+    Chromium's default numbering system for a bare `ar` is `latn`: a mutated
+    `toLocaleString(document.documentElement.lang, ...)` produced
+    `'0.0‎%‎'`, Western digits wrapped in left-to-right marks. An
+    absence check cannot see that, so this one states what the label must be:
+    exactly the `en-NZ` rendering, with nothing around it.
+
+    The masses are checked the other way round again - against the strings the
+    service actually sent, trailing zero included - because those cross the wire
+    as decimals and are printed rather than formatted (section 1.2).
     """
+    en_nz_percent = re.compile(r"[0-9]+(\.[0-9]+)?%")
     context, page = open_page(browser, ["ar"], path="/stats.html", stats_fixture=True)
     try:
         _wait_for_charts(page)
+        assert page.get_attribute("html", "dir") == "rtl", (
+            "this is not the right-to-left rendering, so it measures nothing"
+        )
         ticks = page.evaluate(
             """() => [...document.querySelectorAll('.stats-chart-region canvas')]
                  .map((canvas) => window.Chart.getChart(canvas))
@@ -1549,13 +1583,18 @@ def test_the_figures_take_no_locale_aware_separator(browser):
                  .flatMap((chart) => chart.scales.y.ticks.map((tick) => tick.label))"""
         )
         assert ticks, "no bar chart drew a y axis, so this measures nothing"
-        eastern = "٠١٢٣٤٥٦٧٨٩٫٪"
         for label in ticks:
-            assert not any(character in label for character in eastern), (
+            assert en_nz_percent.fullmatch(label), (
                 "the axis is being formatted for the active locale: %r" % label
             )
+
         listed = page.inner_text(".stats-breakdown-list")
-        assert "%" in listed and " kg" in listed
-        assert not any(character in listed for character in eastern)
+        shares = en_nz_percent.findall(listed)
+        assert shares, "the text list states no share, so nothing is being compared"
+        for bucket in _STATS_FIXTURE["by_destination"]:
+            assert "%s kg" % bucket["total_kg"] in listed, (
+                "the mass %r was reformatted rather than printed as sent"
+                % bucket["total_kg"]
+            )
     finally:
         context.close()

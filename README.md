@@ -87,6 +87,65 @@ docker compose -f docker/compose.yaml up -d
 
 Then open **<http://localhost:18080/>**.
 
+That command builds the images from this checkout. If you were handed the **published
+images** instead of the source, the file to use is `docker/compose.deploy.yaml` — same
+topology, no build, see [Released images and the wheel](#released-images-and-the-wheel).
+
+### Three things that stop the command above
+
+**1. Your user has to be able to talk to the Docker daemon.** On Linux, being in `sudo`
+is not the same as being in `docker`, and the command fails with:
+
+```
+permission denied while trying to connect to the Docker daemon socket at
+unix:///var/run/docker.sock
+```
+
+Either prefix every command with `sudo`, or add yourself to the group once:
+
+```bash
+sudo usermod -aG docker "$USER"
+newgrp docker          # or log out and back in — the group is read at login
+```
+
+Membership is a root-equivalent grant on that host. On a shared machine, `sudo` per
+command is the smaller decision.
+
+**2. If `18000` or `18001` is already taken, you get a stack that looks half-alive.**
+Compose starts `api` and `admin` together. Whichever one cannot bind its published port
+fails; the other one starts and reports **healthy**; `web` never starts at all, because it
+waits on `api: service_healthy` **and** `admin: service_healthy`. So the symptom is:
+
+```
+Error response from daemon: failed to bind host port for 0.0.0.0:18001 ... address already in use
+$ docker ps
+kaicalc-api          Up 30 seconds (healthy)
+kaicalc-stack-db     Up 35 seconds (healthy)
+```
+
+— one application container, healthy, and nothing on <http://localhost:18080/>. The bind
+error is printed once, by the `up` that failed, and `docker ps` afterwards shows a
+plausible-looking subset with no error in it. `docker compose -f docker/compose.yaml ps -a`
+is the command that shows what is missing rather than what is there.
+
+Move the ports rather than hunting the process:
+
+```bash
+KAICALC_WEB_PORT=18090 KAICALC_API_PORT=18010 KAICALC_ADMIN_PORT=18011 \
+  docker compose -f docker/compose.yaml up -d
+```
+
+Only `KAICALC_WEB_PORT` has to be reachable. The other two are development convenience —
+nginx reaches both services over the compose network and does not need either published.
+
+**3. One instance per host.** `docker/compose.yaml` pins `name: kaicalc` and a fixed
+`container_name:` for every service, so a second copy of this repository in another
+directory does **not** start a second stack: the same command from there adopts or
+recreates the containers the first one is running. This is deliberate — it is what makes
+`docker exec kaicalc-admin kaicalc …` a command anyone can paste — but it means a stack
+you did not start can be the one you just restarted. `docker compose ls -a` names the
+directory each project was started from.
+
 Nothing binds port 80, 8000, 8080, 3000 or 5000 — a clean machine very often has
 something on all of them already. Every published port is an environment variable with a
 high default:
@@ -114,6 +173,27 @@ limit. **Whoever deploys this is still expected to put a WAF, an IP allowlist or
 network boundary in front of `/admin`.** To remove the route, delete the single
 `location /admin` block in `docker/nginx.conf`; the cost of removing it is spelled out
 there.
+
+**`/admin` answers `403 Refused.` to `curl`, and that is the panel working.** It is a
+browser-only surface — two-factor enrolment is a QR code — so `admin/protection.py`
+refuses any caller that is plainly a script: no `User-Agent` at all, a `User-Agent` naming
+one (`curl/`, `python-requests`, `python-httpx`, `wget`, `go-http-client`), or an HTML
+navigation with no `Sec-Fetch-Mode` header, which every browser has sent since 2020.
+Nothing about the check is stored — the header is read, judged and forgotten inside the
+one request, which is what keeps it inside the no-fingerprinting rule.
+
+```bash
+$ curl -s -o /dev/null -w '%{http_code}\n' http://localhost:18080/admin/login
+403                       # correct. curl says it is curl.
+$ curl -s -o /dev/null -w '%{http_code}\n' -A 'Mozilla/5.0' http://localhost:18080/admin/login
+200                       # the check is a floor, not a fingerprint
+```
+
+So: **open `/admin/login` in a browser** to see whether the panel is up, and do not build
+a monitor or an uptime check on a `GET /admin` — it will report a healthy panel as down.
+`/api/v1/` applies no such check and is scriptable on purpose. This is also why the
+`admin` service's health check in `docker/compose.yaml` is a TCP connect rather than an
+HTTP request.
 
 ### The first administrator
 
@@ -220,6 +300,39 @@ docker compose -f docker/compose.yaml down -v    # destroys both — new secret,
   be mistaken for one.
 - Images are `ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project/kaicalc-{api,admin,web}`.
   Deployers should pin the version tag rather than `latest`.
+
+**Running them: `docker/compose.deploy.yaml`.** Same five services, same health checks,
+same dependency order, same environment, same ports — no `build:` block and no source
+tree. It is the file to hand someone along with the images.
+
+```bash
+# 1. A token with read:packages. `gh auth login` does NOT grant that scope.
+gh auth refresh -h github.com -s read:packages        # then:
+gh auth token | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+
+# 2. Choose a tag. There is no default — `up` fails and tells you to set one.
+export KAICALC_IMAGE_TAG=alpha        # or a release X.Y.Z, or a short commit SHA
+
+docker compose -f docker/compose.deploy.yaml pull
+docker compose -f docker/compose.deploy.yaml up -d
+```
+
+| Tag | Published by | Pin a deployment to it? |
+| --- | --- | --- |
+| `X.Y.Z` | the release workflow | **yes** |
+| `latest` | the release workflow, moves every release | no |
+| `<short-sha>` | CI, on every push to `main`, immutable | yes, for a specific build |
+| `alpha` | CI, moves to the head of `main` | no |
+
+`pull` before `up` is not decoration: Compose's default pull policy is `missing`, so a
+moving tag already in your local image store is reused and the registry is never asked.
+
+The two compose files are **the same stack** — same project name, same container names —
+so run one or the other, not both. `tests/test_compose.py` asserts that every key except
+the four application `image:` values is identical between them, which is what stops the
+deployment path quietly drifting from the one that gets tested. Scopes, private-registry
+behaviour, architectures and the error messages each failure produces are in
+**`docs/docker-images.md`**.
 
 ---
 
@@ -410,6 +523,7 @@ project.
 | **`docs/architecture.md`** | System layering, the calculation model, factor-set versioning, the team split, implementation order (§9), deployment notes (§9.1), and the **open items (§10)** — including O-1, the missing real factors. |
 | `.env.example` | Every setting, with the failure each one prevents. |
 | `docker/compose.yaml`, `docker/nginx.conf` | The deployment topology and the routing, both heavily commented. |
+| `docker/compose.deploy.yaml`, `docs/docker-images.md` | The same topology run from the published images, and everything about pulling them: token scopes, which tags exist, and what each error message means. |
 | `web/README.md` | The front-end module layout and the no-backend development mode. |
 | `db/README.md` | The schema and public API module. |
 

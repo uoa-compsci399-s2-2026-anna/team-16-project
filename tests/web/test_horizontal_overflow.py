@@ -55,6 +55,20 @@ PATHS = {
     "/methodology.html": ".review-destinations dd",
     # The calculator opens on its hero, before any step is entered.
     "/": "#main-content .hero h1",
+    # The two content pages joined this measurement at v1.30, when the language
+    # chooser was added to their header rows. That row already carried a brand
+    # lockup and a four-link navigation, so it is the third block in a row that
+    # was measured as not fitting three at 938px - it wraps, and a wrap is
+    # exactly the thing that stops being a wrap and starts being an overflow at
+    # 320px in a language whose words are longer.
+    #
+    # `aria-busy="false"` rather than a content element: both pages set it when
+    # their fetch has resolved, in the success case and the failure case alike,
+    # so this waits for a page that has finished rendering without depending on
+    # the WordPress feed being reachable or on how many buckets survive
+    # suppression today.
+    "/stats.html": "#stats-breakdown-content[aria-busy='false']",
+    "/home.html": "#news-feed[aria-busy='false']",
 }
 
 #: Long enough that it cannot fit a 390px column at any sane font size, so a

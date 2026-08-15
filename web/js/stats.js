@@ -41,6 +41,9 @@
 import { ApiError, getStats } from './api.js'
 import { renderBar, renderDonut } from './charts.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
+// The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 const chartInstances = new Map()
 let latestRequestGeneration = 0

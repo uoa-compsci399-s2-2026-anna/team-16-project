@@ -310,6 +310,7 @@
     "Choose a weight, or the container you fill.": "重量の単位、または実際に満たしている容器を選んでください。",
     "The total waste amount — a weight, or how many containers you fill": "廃棄物の総量。重量、または満たしている容器の数",
     "Clear calculator data and start again": "計算ツールのデータを消去して最初からやり直す",
-    "Clear all calculator data and start again?": "計算ツールのデータをすべて消去して、最初からやり直しますか？"
+    "Clear all calculator data and start again?": "計算ツールのデータをすべて消去して、最初からやり直しますか？",
+    "Site navigation": "サイトナビゲーション"
   }
 }

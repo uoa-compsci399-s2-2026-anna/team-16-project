@@ -2,6 +2,9 @@ import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, render, renderChrome } from './calculator.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
+// The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 const main = document.getElementById('main-content')
 const homeButton = document.getElementById('home-button')

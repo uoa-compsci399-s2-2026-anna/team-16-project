@@ -310,6 +310,7 @@
     "Choose a weight, or the container you fill.": "무게 단위, 또는 실제로 채우는 용기를 선택하세요.",
     "The total waste amount — a weight, or how many containers you fill": "총 폐기물 양 — 무게, 또는 채우는 용기의 개수",
     "Clear calculator data and start again": "계산 데이터를 지우고 처음부터 다시 시작하기",
-    "Clear all calculator data and start again?": "모든 계산 데이터를 지우고 처음부터 다시 시작할까요?"
+    "Clear all calculator data and start again?": "모든 계산 데이터를 지우고 처음부터 다시 시작할까요?",
+    "Site navigation": "사이트 탐색"
   }
 }

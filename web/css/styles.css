@@ -893,6 +893,168 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 }
 
 /* ------------------------------------------------------------------------------------
+   THE NAVIGATION DRAWER.
+
+   A drawer with a physical pull-tab: closed, a triangular handle is the only thing at
+   the page's reading-start edge; pulled, a Kale panel slides out from behind it and the
+   handle rides to the panel's outer face, turned round to point the way back.
+
+   **IT OVERLAYS AND NEVER COMPRESSES, AND THAT IS THE MEASUREMENT THIS DESIGN IS BUILT
+   ON.** Horizontal space is the binding constraint on this interface: the owner's laptop
+   is a 938px CSS viewport, already under the 960 breakpoint, and one destination row on
+   step four has a 544px floor. A 240px sidebar taking width out of the document would
+   leave 698px and break the step this team measured and fixed. So the whole component is
+   `position: fixed` and the document never learns it is there.
+
+   **WHERE IT IS, AND THE TWO PLACES IT IS NOT.** Not in the header row, which is a
+   measured budget - 93px holding a 67px logo and the 44px language chooser, defended by
+   `test_a_short_step_is_not_floored_by_a_stale_min_height`, and a strip of its own was
+   built once and cost 57px on every page. Not along the bottom either, because
+   `.step-nav` is `position: sticky; bottom: 0` and is the single thing that put every
+   step's primary action above the fold; a bottom tab bar would fight it at 390px. So it
+   is pinned to the inline-start edge and vertically centred, which is also the one band
+   of the page that no step's controls occupy.
+
+   **`inset-inline-start`, `border-inline-*`, and `scaleX(-1)` for the state.** The
+   handle is a border triangle whose solid side is its inline-start border, so its apex
+   points at the reading-end in English and at the reading-start in Arabic with no second
+   rule. Open, the whole handle is flipped on the inline axis, which is the same
+   operation in both directions - the trick `.comparison-arrow` already uses. The only
+   physical value in here is the drop shadow's x offset, which cannot be logical and is
+   mirrored explicitly under `[dir="rtl"]`.
+
+   **THE HANDLE'S HIT AREA IS ITS BORDER BOX, ON PURPOSE.** A triangle drawn with
+   `clip-path` is pressable only where it is painted, and at 390px the difference between
+   the shape and its box is the difference between hitting the control and not. Drawn
+   with borders, the element's box is 46x88 and every pixel of it takes the press, so the
+   target clears 44px in both axes while what is on screen is a triangle.
+
+   **The motion is an `animation`, not a `transition`, and that is a portability
+   decision.** A closed `<details>` does not render its content, so there is nothing for
+   a transition to run on when it opens; the recipes that manage it need
+   `::details-content`, `@starting-style` and `allow-discrete`, which is one engine
+   today. A keyframe animation runs the moment the panel becomes rendered, in every
+   engine, and the close is instant - which is what `<details>` does everywhere anyway.
+   `prefers-reduced-motion` removes it at the foot of this file.
+   ---------------------------------------------------------------------------------- */
+.site-drawer {
+  --drawer-width: min(268px, 74vw);
+  --drawer-handle-inline: 46px;
+  /* Above the sticky step bar (z-index 3) and the header: the drawer is the only thing
+     on these pages that deliberately covers content. */
+  position: fixed;
+  z-index: 40;
+  inset-inline-start: 0;
+  top: 50%;
+  translate: 0 -50%;
+  display: flex;
+  /* Reversed, so the panel is at the edge and the handle is on its outer face - the
+     front of a drawer, not a label stuck to the side of one. `row-reverse` is the
+     inline axis reversed, so it mirrors from `dir` like everything else here. */
+  flex-direction: row-reverse;
+  align-items: center;
+}
+
+.site-drawer__handle {
+  /* `block`, not the UA's `list-item`: it removes the disclosure marker, which would
+     otherwise sit beside the triangle this control already is. */
+  display: block;
+  flex: 0 0 auto;
+  width: 0;
+  height: 0;
+  border-block-start: 44px solid transparent;
+  border-block-end: 44px solid transparent;
+  border-inline-start: var(--drawer-handle-inline) solid var(--kai-orange);
+  /* Follows the painted shape, which `box-shadow` would not - a rectangular shadow
+     round a triangle reads as a bug rather than as depth. */
+  filter: drop-shadow(3px 3px 0 rgba(0, 50, 35, 0.22));
+  cursor: pointer;
+  transition: translate 0.16s ease;
+}
+.site-drawer__handle::-webkit-details-marker { display: none; }
+.site-drawer__handle:hover { translate: 2px 0; }
+.site-drawer[open] .site-drawer__handle {
+  /* The apex turns to face the way it will move. Flipping the element is one rule for
+     both writing directions; re-colouring the opposite border would be two. */
+  transform: scaleX(-1);
+}
+[dir="rtl"] .site-drawer__handle { filter: drop-shadow(-3px 3px 0 rgba(0, 50, 35, 0.22)); }
+[dir="rtl"] .site-drawer__handle:hover { translate: -2px 0; }
+
+.site-drawer__panel {
+  inline-size: var(--drawer-width);
+  padding: 14px;
+  color: var(--kai-white);
+  background: var(--kai-kale);
+  /* **The panel has to be visible against a Kale ground as well as a white one.** The
+     home page's hero is Kale, and a Kale panel over it was a shadow and nothing else -
+     the links floated with no drawer around them. The hairline states the block edges;
+     the 4px Orange edge is the drawer's front face, in the handle's own colour, so the
+     tab reads as attached to the thing it pulls. The inline-start border is removed
+     because that side is flush against the edge of the screen. */
+  border: 1px solid rgba(255, 255, 255, 0.22);
+  border-inline-start: 0;
+  border-inline-end: 4px solid var(--kai-orange);
+  border-start-end-radius: 18px;
+  border-end-end-radius: 18px;
+  box-shadow: 0 14px 40px rgba(0, 50, 35, 0.32);
+}
+.site-drawer[open] .site-drawer__panel { animation: drawer-open 0.26s ease-out both; }
+
+.site-drawer__nav { display: grid; }
+.site-drawer__nav a {
+  min-height: 48px;
+  padding-inline: 14px;
+  display: flex;
+  align-items: center;
+  border-radius: 10px;
+  color: var(--kai-white);
+  font-family: var(--font-heading);
+  font-weight: 700;
+  font-size: 0.98rem;
+  text-decoration: none;
+}
+.site-drawer__nav a:hover { color: var(--kai-kale); background: var(--kai-pea); }
+.site-drawer__nav a:focus-visible { outline-offset: -2px; }
+
+@keyframes drawer-open {
+  from { opacity: 0; translate: -100% 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+/* The panel comes out of the reading-start edge, so in a mirrored page it comes out of
+   the other one. Two keyframe sets rather than one, because `translate` takes physical
+   axes and there is no logical form of it. */
+[dir="rtl"] .site-drawer[open] .site-drawer__panel { animation-name: drawer-open-rtl; }
+@keyframes drawer-open-rtl {
+  from { opacity: 0; translate: 100% 0; }
+  to { opacity: 1; translate: 0 0; }
+}
+
+@media (max-width: 480px) {
+  /* The panel gives up its own padding and keeps its 48px rows, so the touch target is
+     the same on a phone as on a laptop. */
+  .site-drawer__panel { padding: 10px; }
+}
+
+/* **Here, not in the general `prefers-reduced-motion` block above, and that is not a
+   filing preference.** These selectors have the same specificity as the ones they
+   override, so source order decides - and the general block sits earlier in this file
+   than the drawer does. Written there, `animation: none` lost to `animation:
+   drawer-open` and the panel still sprang in from the edge of the screen for exactly
+   the readers the rule exists for, with every stylesheet assertion green.
+   `test_the_drawer_does_not_animate_under_reduced_motion` measures the computed
+   `animation-name` in a browser told to prefer reduced motion, which is what caught it.
+
+   The drawer still opens and closes; it arrives rather than sliding. */
+@media (prefers-reduced-motion: reduce) {
+  .site-drawer[open] .site-drawer__panel,
+  [dir="rtl"] .site-drawer[open] .site-drawer__panel { animation: none; }
+  .site-drawer__handle { transition: none; }
+  .site-drawer__handle:hover,
+  [dir="rtl"] .site-drawer__handle:hover { translate: 0 0; }
+}
+
+/* ------------------------------------------------------------------------------------
    THE LANGUAGE BAR.
 
    "Top left" is what was asked for, and it is written here as **top inline-start**,

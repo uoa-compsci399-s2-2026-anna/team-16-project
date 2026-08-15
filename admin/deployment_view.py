@@ -110,6 +110,7 @@ from sqladmin import BaseView, expose
 from starlette.requests import Request
 from starlette.responses import Response
 
+from admin import i18n as admin_i18n
 from admin.config import Settings
 from admin.modelviews import AdministratorOnly
 from admin.runtime import get_runtime
@@ -123,6 +124,15 @@ from db.detection import client_ip
 FROM_FORWARDED = "the left-most X-Forwarded-For entry"
 FROM_CONNECTION = "the connection this panel accepted"
 FROM_NOWHERE = "nothing usable — the checks that key on an address are skipped"
+
+#: The view's name, held as a constant because it is needed twice and the
+#: second use must not read the first back. ``translate_view_names`` replaces
+#: ``DeploymentView.name`` with a descriptor that returns the *translated*
+#: string, so ``gettext(self.name)`` would be a lookup of an already-Chinese
+#: string - which happens to work (a missing key returns its own source) and
+#: is exactly the kind of accident that stops working quietly. The catalogue
+#: key is named here instead.
+VIEW_NAME = "Deployment"
 
 
 @dataclass(frozen=True)
@@ -418,7 +428,7 @@ class DeploymentView(AdministratorOnly, BaseView):
     ``is_visible``/``is_accessible`` win over ``BaseView``'s permissive
     defaults."""
 
-    name = "Deployment"
+    name = VIEW_NAME
     icon = "fa-solid fa-network-wired"
 
     def _session_maker_for(self, request: Request):
@@ -452,7 +462,15 @@ class DeploymentView(AdministratorOnly, BaseView):
             request,
             "brand/deployment.html",
             {
-                "title": "Deployment",
+                # Through the catalogue, on the same key the menu entry
+                # uses. sqladmin's layout renders `title` as the page heading
+                # verbatim — it applies no `_()` of its own — so a literal
+                # here puts an English heading directly above a Chinese menu
+                # entry naming the same page. The panel has one instance of
+                # that already (`/admin/getting-started`, whose heading stays
+                # English in Chinese); it is a pre-existing defect on that
+                # page and not one worth adding a second of here.
+                "title": admin_i18n.gettext(VIEW_NAME),
                 "observation": observation,
                 "settings": settings,
                 "findings": assess(observation, settings),

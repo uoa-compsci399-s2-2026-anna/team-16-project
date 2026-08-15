@@ -54,6 +54,44 @@
   .kc-level-ok   { background: #28C882; color: #003223; }
   .kc-absent { color: #6b7280; font-style: italic; }
   .kc-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+  /* The variable names are 24-31 characters of unbroken uppercase. At the
+     body size they do not fit a third of the card at 938px - the owner's
+     laptop - and `overflow-wrap: anywhere` then breaks them mid-word, which
+     is how KAICALC_TRUST_FORWARDED_HEADERS rendered as two halves that read
+     as two different variables. Smaller and monospace, which is what they
+     are. */
+  .kc-setting-name {
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: .75rem;
+    font-weight: 700;
+    color: #003223;
+  }
+  /* Three columns do not survive a phone. Below the panel's own narrow
+     breakpoint the settings table stacks: each cell on its own line, with
+     the column heading carried by `data-label` so the value and the
+     explanation are still told apart. The two-column evidence table above is
+     left alone - a label and a value read fine side by side at any width. */
+  @media (max-width: 760px) {
+    .kc-settings thead { display: none; }
+    .kc-settings table,
+    .kc-settings tbody,
+    .kc-settings tr,
+    .kc-settings th,
+    .kc-settings td { display: block; width: auto; }
+    .kc-settings tr {
+      border-block-end: 1px solid #dfe3e7;
+      padding-block: .6rem;
+    }
+    .kc-settings td { border: 0; padding-block: .15rem; }
+    .kc-settings td::before {
+      content: attr(data-label);
+      display: block;
+      font-size: .7rem;
+      text-transform: uppercase;
+      letter-spacing: .06em;
+      color: #6b7280;
+    }
+  }
 </style>
 
 <div class="col-12">
@@ -61,7 +99,9 @@
     <div class="card-status-start" style="background: #003223;"></div>
     <div class="card-body">
       <div class="kc-deploy">
-        <h2 class="card-title">Deployment</h2>
+        {# No <h2>Deployment</h2> here: sqladmin's layout renders `title` as
+           the page heading directly above this card, and a card headed with
+           the same word under it read as the page saying its own name twice. #}
         <p>
           What the proxy in front of this panel is doing, and whether the three
           settings that govern it agree with each other. Open this page
@@ -189,6 +229,7 @@
           one that says what it saw.
         </p>
 
+        <div class="kc-settings">
         <table class="table table-sm">
           <thead>
             <tr>
@@ -199,10 +240,11 @@
           </thead>
           <tbody>
             <tr>
-              <th>KAICALC_TRUST_FORWARDED_HEADERS<br>
+              <th data-label="Setting">
+                <code class="kc-setting-name">KAICALC_TRUST_FORWARDED_HEADERS</code><br>
                 <small>may our nginx believe what it receives</small></th>
-              <td><span class="kc-absent">not readable here</span></td>
-              <td>
+              <td data-label="Value"><span class="kc-absent">not readable here</span></td>
+              <td data-label="How this page knows">
                 A different container, and the variable is deliberately not
                 copied into this one — a second copy of a setting is a second
                 thing that can silently disagree with it. What can be observed
@@ -221,17 +263,19 @@
               </td>
             </tr>
             <tr>
-              <th>SESSION_HTTPS_ONLY<br>
+              <th data-label="Setting">
+                <code class="kc-setting-name">SESSION_HTTPS_ONLY</code><br>
                 <small>is the staff session cookie marked Secure</small></th>
-              <td><span class="kc-value">{{ settings.session_https_only | lower }}</span></td>
-              <td>Read from this process's own environment. In force for the
-                page you are reading.</td>
+              <td data-label="Value"><span class="kc-value">{{ settings.session_https_only | lower }}</span></td>
+              <td data-label="How this page knows">Read from this process's own
+                environment. In force for the page you are reading.</td>
             </tr>
             <tr>
-              <th>PROTECTION_TRUSTED_PROXY<br>
+              <th data-label="Setting">
+                <code class="kc-setting-name">PROTECTION_TRUSTED_PROXY</code><br>
                 <small>may this application believe what our nginx sends</small></th>
-              <td><span class="kc-value">{{ settings.protection_trusted_proxy | lower }}</span></td>
-              <td>
+              <td data-label="Value"><span class="kc-value">{{ settings.protection_trusted_proxy | lower }}</span></td>
+              <td data-label="How this page knows">
                 Read from this process's own environment. The public API is a
                 separate process with its own copy of this variable, and this
                 page cannot see that one — <code>docker/compose.yaml</code>
@@ -240,10 +284,11 @@
               </td>
             </tr>
             <tr>
-              <th>PROTECTION_ENABLED<br>
+              <th data-label="Setting">
+                <code class="kc-setting-name">PROTECTION_ENABLED</code><br>
                 <small>context: does this panel apply any of it</small></th>
-              <td><span class="kc-value">{{ settings.protection_enabled | lower }}</span></td>
-              <td>
+              <td data-label="Value"><span class="kc-value">{{ settings.protection_enabled | lower }}</span></td>
+              <td data-label="How this page knows">
                 Read from this process's own environment. Not one of the three
                 above, but it decides whether the address in force is used for
                 anything here at all. The API does not read this variable.
@@ -251,6 +296,7 @@
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </div>
   </div>

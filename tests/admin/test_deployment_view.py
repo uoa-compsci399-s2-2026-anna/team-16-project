@@ -264,6 +264,13 @@ async def test_loading_the_page_writes_no_audit_entry(admin_client, _committed_s
     quietly did the same would put a visitor's address in a table staff can
     export as CSV.
     """
+    # SCOPED TO ROWS THIS REQUEST COULD HAVE WRITTEN, and it has to be. The
+    # first version scanned the whole table for the address, which fails
+    # against any row some *other* test left behind carrying the same string -
+    # and one did, within an hour of the file being written. A test that goes
+    # red for something that happened before it started is a test people learn
+    # to re-run rather than read.
+    high_water = _committed_session.scalar(select(func.max(AuditLog.id))) or 0
     before = _committed_session.scalar(select(func.count()).select_from(AuditLog))
 
     response = await admin_client.get(
@@ -278,17 +285,14 @@ async def test_loading_the_page_writes_no_audit_entry(admin_client, _committed_s
     _committed_session.expire_all()
     after = _committed_session.scalar(select(func.count()).select_from(AuditLog))
 
-    assert after == before, (
-        f"{after - before} audit_log row(s) appeared while reading a page that "
-        "only reads headers"
-    )
+    new_rows = _committed_session.scalars(
+        select(AuditLog).where(AuditLog.id > high_water)
+    ).all()
 
-    rows = _committed_session.scalars(select(AuditLog)).all()
-    assert not any(EDGE_CLIENT in str(row.after_json or "") for row in rows), (
-        "the address this request carried reached audit_log.after_json"
-    )
-    assert not any(EDGE_CLIENT in str(row.before_json or "") for row in rows), (
-        "the address this request carried reached audit_log.before_json"
+    assert after == before and not new_rows, (
+        f"{len(new_rows)} audit_log row(s) appeared while reading a page that "
+        "only reads headers: "
+        + " || ".join(f"{r.action} {r.table_name} {r.after_json!r}" for r in new_rows)
     )
 
 
@@ -331,6 +335,41 @@ async def test_the_page_is_still_served_when_protection_is_disabled(
     assert EDGE_CLIENT in body
 
 
+@http_test
+async def test_the_page_heading_is_translated_inside_its_own_element(admin_client):
+    """The menu entry and the heading name the same page, so they must not be
+    in two different languages.
+
+    sqladmin's layout renders the `title` a view passes as the page heading
+    **verbatim** - it applies no `_()` of its own - so a literal there puts an
+    English heading directly above a Chinese menu entry. Asserted inside
+    `.page-title` rather than "the page contains Chinese", which would pass
+    against a page with one translated word on it (tests/admin/
+    test_i18n_pages.py's rule).
+    """
+    from admin import i18n
+
+    expected = i18n.catalogue("zh").strings["Deployment"]
+    response = await admin_client.get("/admin/deployment", params={"lang": "zh"})
+
+    assert response.status_code == 200
+    heading = re.search(
+        r'class="[^"]*page-title[^"]*"[^>]*>\s*([^<]+)', response.text
+    )
+    assert heading, "no .page-title element on the page"
+    assert heading.group(1).strip() == expected, (
+        f"the heading rendered {heading.group(1).strip()!r}, not {expected!r}"
+    )
+
+    # The English half, without which the above would pass against a page
+    # that always renders Chinese.
+    english = await admin_client.get("/admin/deployment")
+    heading_en = re.search(
+        r'class="[^"]*page-title[^"]*"[^>]*>\s*([^<]+)', english.text
+    )
+    assert heading_en and heading_en.group(1).strip() == "Deployment"
+
+
 # --- the role floor ---------------------------------------------------------
 
 
@@ -345,8 +384,18 @@ async def test_a_staff_member_is_refused(staff_client):
 
 @http_test
 async def test_the_sidebar_does_not_offer_it_to_a_staff_member(staff_client):
-    """`_require_admin` refuses the URL; `is_visible` is what stops the panel
-    telling somebody they have a capability they do not have.
+    """`_require_admin` refuses the URL; the sidebar entry is what stops the
+    panel telling somebody they have a capability they do not have.
+
+    **Which of the two predicates hides it, measured rather than assumed.**
+    sqladmin's `_macros.html` renders a menu item only
+    `{% if menu.is_visible(request) and menu.is_accessible(request) %}`, so
+    either one returning False hides the entry and neither is individually
+    load-bearing here: mutating `is_visible` alone to True survives this
+    test, because `is_accessible` still refuses. Dropping `AdministratorOnly`
+    from the view's bases - the realistic mistake, and the one where both go
+    at once - fails this test and the 403 above together. That mutation was
+    applied and both failed.
 
     Anchored on the full href attribute including its closing quote:
     `menu.url(request)` renders an absolute URL, so a bare path substring
@@ -451,6 +500,14 @@ def test_a_single_entry_does_not_claim_to_know_the_trust_flag():
     joined = _details(findings)
     assert "identical from here" in joined
     assert "will not guess" in joined
+
+    # The headings as well as the prose. A finding whose detail says "these
+    # are indistinguishable" under a heading that says the flag is off is a
+    # page that lies to anybody who skims it, and asserting on `detail` alone
+    # let exactly that mutant live.
+    titles = _titles(findings)
+    assert "KAICALC_TRUST_FORWARDED_HEADERS is on" not in titles, titles
+    assert "KAICALC_TRUST_FORWARDED_HEADERS is off" not in titles, titles
 
 
 def test_two_entries_do_not_claim_the_edge_belongs_to_the_operator():

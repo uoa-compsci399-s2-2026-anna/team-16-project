@@ -219,7 +219,13 @@ class Stack:
             f"echo {_b64(EDGE_CONF)} | base64 -d > /etc/nginx/conf.d/edge.conf && "
             "exec nginx -g 'daemon off;'",
         )
+        # Three separate readiness conditions, and each has failed on its own in
+        # development: the edge's own listener, kaicalc-web's static root, and the
+        # application stand-in behind it — nginx resolves an upstream at start-up but
+        # never connects to it, so a proxied path can still 502 after `/` answers.
+        _wait_for_http(self.edge, "http://127.0.0.1:18080/", "the edge")
         _wait_for_http(self.edge, "http://mid:18080/", "kaicalc-web")
+        _wait_for_http(self.edge, "http://mid:18080/api/v1/ready", "the application")
 
     def through_the_edge(self, path: str) -> dict:
         """A request that really crossed two proxies. This is the whole point."""

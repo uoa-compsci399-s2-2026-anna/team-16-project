@@ -29,8 +29,9 @@ FROM nginx@sha256:65645c7bb6a0661892a8b03b89d0743208a18dd2f3f17a54ef4b76fb8e2f2a
 # which server block is in force.
 RUN rm -f /etc/nginx/conf.d/default.conf
 
-# NOT into conf.d. docker/nginx.conf carries two `${KAICALC_CSP_*}` placeholders
-# and is rendered into /etc/nginx/conf.d/kaicalc.conf at container start by the
+# NOT into conf.d. docker/nginx.conf carries three placeholders - the two
+# `${KAICALC_CSP_*}` source lists and `${KAICALC_TRUST_FORWARDED}` - and is
+# rendered into /etc/nginx/conf.d/kaicalc.conf at container start by the
 # entrypoint script below. Copied straight into conf.d it would be loaded with
 # the placeholders still in it, and nginx would refuse to start.
 COPY docker/nginx.conf /etc/nginx/kaicalc.conf.template
@@ -105,6 +106,7 @@ HEALTHCHECK --interval=15s --timeout=5s --start-period=10s --retries=5 \
 #
 # The stock 20-envsubst-on-templates.sh looks in /etc/nginx/templates/, which is
 # empty here - our template is at /etc/nginx/kaicalc.conf.template and is
-# rendered by our own script with an explicit two-variable list, so that nginx's
-# own `$time_local`, `$uri`, `$scheme` and `$http_host` cannot be substituted
-# away. See docker/web-config.sh.
+# rendered by our own script with an explicit three-variable list, so that
+# nginx's own `$time_local`, `$uri`, `$scheme`, `$http_host`, `$remote_addr`
+# and `$proxy_add_x_forwarded_for` cannot be substituted away. See
+# docker/web-config.sh.

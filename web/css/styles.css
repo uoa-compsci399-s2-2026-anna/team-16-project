@@ -1034,6 +1034,30 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   /* The panel gives up its own padding and keeps its 48px rows, so the touch target is
      the same on a phone as on a laptop. */
   .site-drawer__panel { padding: 10px; }
+
+  /* **The closed handle is the one thing on these pages that sits on top of content,
+     and this is the width where that costs something.** At 1278px it is in the gutter
+     and covers nothing; at 938px it reaches 6px into a step-4 row, inside that row's
+     own padding, so no text is under it. At 390px `.main-content` has 20px of padding
+     and the document is 390px wide, so there is no gutter left: the triangle covers
+     from x=20 to its own edge at its widest point, tapering to nothing at top and
+     bottom - a few characters on one or two lines of a paragraph.
+
+     It cannot be moved out of the way. Taking width out of the document is the one
+     thing this component may not do, the header row is a measured budget and the
+     bottom edge belongs to the sticky step bar. So it is made as small as it is
+     allowed to be instead: exactly 44px in both axes, which is the touch target this
+     calculator holds everywhere and the floor `test_the_handle_is_a_forty_four_pixel_
+     target_at_the_narrowest_width` asserts. **Do not shave either number to buy back
+     more of the paragraph** - a control below 44px on a phone is a control people miss,
+     which costs more than four characters of a standfirst. */
+  .site-drawer {
+    --drawer-handle-inline: 44px;
+  }
+  .site-drawer__handle {
+    border-block-start-width: 22px;
+    border-block-end-width: 22px;
+  }
 }
 
 /* **Here, not in the general `prefers-reduced-motion` block above, and that is not a

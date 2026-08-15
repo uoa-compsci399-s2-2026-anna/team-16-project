@@ -278,8 +278,11 @@ stored secret in one transaction, and it clears the IP blocklist, telling you ho
 rows it removed (an address is stored as an HMAC, and an HMAC cannot be re-keyed — the
 rows would otherwise survive matching nobody). Re-apply any blocks that are still needed.
 
-The other settings, each documented at length in **`.env.example`** with the failure it
-prevents:
+The other settings. The application ones are documented at length in **`.env.example`**,
+each with the failure it prevents; the `KAICALC_*` ones are **compose** variables, which
+`docker compose -f docker/compose.yaml` reads from the environment or from `docker/.env`
+and never from the root `.env` that `.env.example` describes — those carry their reasoning
+in `docker/compose.yaml` at the point of use, and below:
 
 | Setting | Note |
 | --- | --- |

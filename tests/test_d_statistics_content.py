@@ -46,8 +46,15 @@ REQUIRED_CSP = {
     "style-src": {"'self'"},
     "style-src-attr": {"'unsafe-inline'"},
     "font-src": {"'self'"},
-    "img-src": {"'self'", "data:"},
-    "connect-src": {"'self'", "https://kaicommitment.org.nz"},
+    # `img-src` and `connect-src` are PLACEHOLDERS in the template, and asserting the
+    # placeholder is deliberately not the whole test. docker/web-config.sh fills both in
+    # at container start from KAICALC_NEWS_ORIGIN, KAICALC_API_ORIGIN and
+    # KAICALC_NEWS_IMAGE_ORIGINS, and builds web/js/config.js from the same values in the
+    # same run so the policy and the page cannot name different hosts. What each renders
+    # to - configured and unconfigured - is asserted against the real image in
+    # tests/test_web_runtime_config.py, which is the only place that can see it.
+    "img-src": {"${KAICALC_CSP_IMG_SRC}"},
+    "connect-src": {"${KAICALC_CSP_CONNECT_SRC}"},
 }
 
 VOID_ELEMENTS = {
@@ -482,9 +489,37 @@ def test_api_js_owns_all_direct_fetch_calls_and_the_wordpress_url():
     api = _read(WEB / "js" / "api.js")
     news_request = _exported_function(api, "getNewsPosts")
     assert "limit" in news_request
-    assert "https://kaicommitment.org.nz/wp-json/wp/v2/posts" in api
     assert re.search(r"per_page\s*=", api)
     assert "_embed" in api
+
+    # THE ORIGIN COMES FROM CONFIGURATION, AND THE WORDPRESS ROUTE DOES NOT.
+    # WordPress fixes `/wp-json/wp/v2/posts`; only the host is a deployment fact, and it
+    # arrives through config.js so that the same value builds the `connect-src` this
+    # fetch has to satisfy. A literal host here is half of a pair that has to agree with
+    # docker/nginx.conf, which is the defect this arrangement removed.
+    assert "/wp-json/wp/v2/posts" in api
+    assert re.search(r"import\s*\{[^}]*\bNEWS_ORIGIN\b[^}]*\}\s*from\s*'\./config\.js'", api), (
+        "api.js must take the news origin from config.js"
+    )
+    assert re.search(r"import\s*\{[^}]*\bAPI_ORIGIN\b[^}]*\}\s*from\s*'\./config\.js'", api), (
+        "api.js must take the API origin from config.js"
+    )
+    assert re.search(r"API_BASE\s*=\s*`\$\{API_ORIGIN\}/api/v1`", api), (
+        "API_BASE must stay relative when API_ORIGIN is empty - same origin is the default"
+    )
+    # `?mock=1` reads `../../tests/fixtures/`, which is a path and not an origin.
+    api_literals = _without_js_comments(api)
+    for scheme in ("http://", "https://", "//cdn"):
+        assert scheme not in api_literals, (
+            f"api.js names an absolute origin ({scheme}); origins come from config.js"
+        )
+
+    # An unset origin must not become a request to a guessed host. Most deployments of
+    # this calculator have no WordPress, and `null` is what the home page reads to drop
+    # the section rather than report an outage nobody caused.
+    assert re.search(r"if\s*\(\s*!\s*NEWS_ORIGIN\s*\)\s*return\s+null", news_request), (
+        "getNewsPosts must return null, and fetch nothing, when no news origin is set"
+    )
 
     # Existing mock mode continues to consume B's canonical fixtures.
     assert "../../tests/fixtures/" in api
@@ -1057,6 +1092,21 @@ def test_nginx_public_static_location_has_the_required_csp_semantics():
             f"CSP {directive} must be exactly {sorted(required_values)}; "
             f"found {sorted(actual.get(directive, set()))}"
         )
+
+    # NO DEPLOYMENT DOMAIN GOES BACK INTO THIS FILE. The client's production domain was
+    # written here and again in web/js/api.js, and the two had to agree; they fail
+    # asymmetrically, so nothing would have caught the drift. Both now derive from one
+    # environment variable, and re-adding a literal host to any directive - the natural
+    # fix when a resource is refused - silently re-creates the pair.
+    for directive, values in actual.items():
+        for value in values:
+            assert not re.match(r"(?i)^(https?:)?//", value), (
+                f"CSP {directive} names the literal origin {value}. Origins reach this "
+                "policy from KAICALC_NEWS_ORIGIN / KAICALC_API_ORIGIN / "
+                "KAICALC_NEWS_IMAGE_ORIGINS through docker/web-config.sh, which builds "
+                "web/js/config.js from the same values - a host written here is a second "
+                "copy the front end does not follow."
+            )
 
 
 def test_stats_and_factors_have_one_canonical_fixture_each():

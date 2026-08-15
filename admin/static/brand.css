@@ -52,6 +52,40 @@ h1, h2, h3 {
   margin: 0 0 0.5rem;
 }
 
+/* ---------------------------------------------------------------------------
+   THE GATE GROUND IS THE PAGE'S GROUND, NOT THE SHELL'S.
+
+   `.gate` painted Kale and `body` painted white, and the language chooser is a
+   SIBLING of `.gate` rather than a child of it - it has to be, because it is
+   `brand/base.html`'s own markup and every page's `{% block shell %}` replaces
+   what is under it. So the chooser sat on 72px of full-bleed white with a hard
+   edge under it and the Kale field starting below: a patch stuck onto the page.
+
+   `body:has(> .gate)` rather than a class on `<body>`, and that is the decision
+   this rule records. A class would mean naming the ground TWICE - once by
+   choosing the gate shell, once by remembering to set the class - and the six
+   templates here that override `shell` with `<main class="page">` are six
+   chances to forget. `:has()` derives it from what the page actually rendered,
+   so it cannot drift, and it needs no test to police a rule that no longer
+   exists. Where `:has()` is not supported the body stays white and the chooser
+   keeps its light skin, which is exactly what shipped before this rule - the
+   fallback is the old appearance rather than an unreadable one.
+
+   The flex column is not decoration either: `.gate` asks for `100vh` and the
+   chooser is 72px of content above it, so the login page scrolled by 72px for
+   no reason anyone could see. The column makes `.gate` claim what is LEFT.
+   --------------------------------------------------------------------------- */
+body:has(> .gate) {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--kale);
+}
+body:has(> .gate) > .gate {
+  flex: 1 0 auto;
+  min-height: 0;
+}
+
 /* Centred single-column layout for every gate in the login gauntlet. */
 .gate {
   min-height: 100vh;

@@ -39,6 +39,34 @@
    brand's, and they are written out for the same reason
    brand/_list_table_css.html writes `rgba(0, 50, 35, 0.22)` out.
 
+   ---------------------------------------------------------------------------
+   TWO GROUNDS, ONE COMPONENT. The panel proper is Tabler's light grey and the
+   five gate pages are a Kale field, and the capsule as first built assumed the
+   first: white surface, Kale shadow, Kale-filled button. On Kale a Kale shadow
+   is a shadow nobody can see, and a white capsule is a hole punched in the
+   field rather than an object floating on it.
+
+   **The component asks the page which ground it is on; the page declares
+   nothing.** Every colour here is a `--lang-*` token declared on
+   `.language-bar` itself - which keeps this file's independence from brand.css
+   intact - and one block below restates those tokens for the Kale ground,
+   selected as `body:has(> .gate) .language-bar`. That is the same derivation
+   brand.css uses for the ground itself: `.gate` is the element that PAINTS
+   Kale, so asking whether it is there is asking what the reader is looking at.
+
+   The alternatives were weighed and refused. A `--modifier` class on the form
+   would fork the partial - `brand/_language_chooser.html` is `{% include %}`d
+   identically by both skins and its opening tag is asserted verbatim by
+   tests/admin/test_i18n_pages.py. `color-scheme` and `prefers-color-scheme`
+   describe what the READER asked their operating system for, and this is not
+   that: the gate is Kale for a person whose machine is in light mode. A second
+   stylesheet is the drift this file exists to prevent.
+
+   Only colour changes across the two. Every measurement - 44px, 12px radius,
+   the margins, `width: 20ch`, the 720px label rule - is shared, so the two
+   skins cannot come to disagree about the SHAPE of the control.
+
+   ---------------------------------------------------------------------------
    LOGICAL PROPERTIES THROUGHOUT. The panel ships English and Chinese today, but
    the calculator ships Arabic and Urdu and its stylesheet has a test refusing a
    physical direction property. Two surfaces disagreeing about which way "top
@@ -54,11 +82,27 @@
    chrome the panel had grown, which is exactly what it was not - it is one
    small control, and it should be the size of one. */
 .language-bar {
-  --lang-ink: #003223;          /* Kale */
-  --lang-white: #FFFFFF;
-  --lang-mint: #DFF8ED;         /* the Pea tint, for the globe's sphere */
-  --lang-focus: #005AE6;        /* Blueberry */
+  /* THE LIGHT SKIN, and the default for every ground that does not say
+     otherwise - Tabler's grey, and any brand page wearing `.page` rather than
+     `.gate`. The Kale ground restates all eight below. */
+  --lang-ink: #003223;              /* Kale */
+  --lang-surface: #FFFFFF;
+  --lang-sphere: #DFF8ED;           /* the Pea tint, for the globe's disc */
+  --lang-focus: #005AE6;            /* Blueberry, as brand.css rings an input */
   --lang-hairline: rgba(0, 50, 35, 0.18);
+  --lang-hairline-hover: rgba(0, 50, 35, 0.34);
+  --lang-hairline-focus: #003223;
+  --lang-button-ink: #FFFFFF;
+  --lang-button-ground: #003223;
+  --lang-button-hover: #01452F;
+  /* The whole stack is one token because the two skins light an object
+     differently, not merely in different colours - see the Kale block. The
+     hairline stays a token INSIDE it, so `:hover` and `:focus-within` restate
+     one value and the browser re-resolves the rest. */
+  --lang-elevation:
+    inset 0 0 0 1px var(--lang-hairline),
+    0 1px 1px rgba(0, 50, 35, 0.05),
+    0 6px 16px -8px rgba(0, 50, 35, 0.35);
 
   display: inline-flex;
   align-items: center;
@@ -86,7 +130,7 @@
   padding-inline: 12px 0;
   border: 0;
   border-radius: 12px;
-  background: var(--lang-white);
+  background: var(--lang-surface);
   color: var(--lang-ink);
   font-family: 'Kumbh Sans', Helvetica, Arial, sans-serif;
   font-size: 0.85rem;
@@ -102,13 +146,10 @@
      one that lifts it. Kale rather than black, so the shade belongs to the
      palette. The hairline's colour is a custom property so hover and focus can
      restate one value instead of all three layers. */
-  box-shadow:
-    inset 0 0 0 1px var(--lang-hairline),
-    0 1px 1px rgba(0, 50, 35, 0.05),
-    0 6px 16px -8px rgba(0, 50, 35, 0.35);
+  box-shadow: var(--lang-elevation);
 }
 
-.language-bar:hover { --lang-hairline: rgba(0, 50, 35, 0.34); }
+.language-bar:hover { --lang-hairline: var(--lang-hairline-hover); }
 
 /* **The ring is drawn around the capsule, not around whichever part has focus**,
    because the capsule is the object a reader sees. `:focus-within` rather than
@@ -116,9 +157,21 @@
    indicator is the last rule that should depend on recent syntax. The select's
    and the button's own outlines are suppressed below ONLY because this rule
    replaces them - remove it and the control has no focus indicator at all. */
+/* **THE RING IS TWO LINES, NOT ONE, AND THAT IS WHAT MAKES IT GROUND-PROOF.**
+   The outer `outline` is the loud one and the inset hairline goes to full
+   contrast underneath it, so the indicator survives either half being lost:
+   on white it is Blueberry outside and Kale inside; on Kale it is Banana
+   outside and white inside. Both pairs are the brand's own dark/light pairing
+   for that ground, and neither is a colour a browser draws by itself.
+
+   Blueberry stays on the light ground because brand.css rings the login card's
+   own inputs with it - one page, one focus colour. It is dropped on Kale
+   because it cannot be seen there: #005AE6 on #003223 is 2.2:1, under the 3:1
+   a non-text indicator needs. Banana on Kale is 10.9:1. Choosing per ground is
+   the whole reason the tokens exist. */
 .language-bar:focus-within {
-  --lang-hairline: var(--lang-ink);
-  outline: 2px solid var(--lang-focus);
+  --lang-hairline: var(--lang-hairline-focus);
+  outline: 3px solid var(--lang-focus);
   outline-offset: 2px;
 }
 
@@ -140,7 +193,7 @@
   stroke: currentColor;
   stroke-width: 1.4;
 }
-.language-bar__globe-sphere { fill: var(--lang-mint); }
+.language-bar__globe-sphere { fill: var(--lang-sphere); }
 
 .language-bar__label {
   color: var(--lang-ink);
@@ -235,8 +288,8 @@
   min-height: 44px;
   padding-block: 0;
   padding-inline: 14px;
-  color: var(--lang-white);
-  background: var(--lang-ink);
+  color: var(--lang-button-ink);
+  background: var(--lang-button-ground);
   border: 0;
   border-inline-start: 1px solid var(--lang-hairline);
   border-radius: 0;
@@ -250,7 +303,7 @@
   outline: none;
 }
 
-.language-bar__submit:hover { background: #01452f; }
+.language-bar__submit:hover { background: var(--lang-button-hover); }
 
 /* The stored choice names a language this panel has no catalogue for. Beetroot
    on Lavender is the brand's light-ground pairing for a statement that is not an
@@ -272,3 +325,67 @@
   font-size: 0.85rem;
   line-height: 1.45;
 }
+
+/* ===========================================================================
+   THE KALE GROUND. The gate pages only - login, the code, the forced password
+   change, enrolment and the recovery codes - where brand.css runs the Kale
+   field to the top of the document and this control floats on it.
+
+   `body:has(> .gate)` is the derivation, not a class: `.gate` is the element
+   that paints Kale, so asking whether the page has one is asking what the
+   reader is actually looking at, and there is no second declaration to forget.
+   Specificity 0-2-1 against the component's own 0-1-0, so these win on the
+   same element - which is why the defaults could stay on `.language-bar` and
+   this file keep its independence from brand.css.
+
+   **NOTHING BUT COLOUR IS RESTATED.** Every measurement is shared, so the
+   panel proper and the gate cannot drift into two shapes.
+
+   THE DESIGN, in one sentence: on Kale the capsule is not a white chip laid on
+   the field, it is a piece of the same field lifted a few millimetres - lit
+   along its top edge, casting into the green beneath - with exactly one bright
+   element, the button, which is the only part of it anybody presses.
+
+   White would have been the easy answer and is refused: it is the sign-in
+   card's material, and a second white object at the top of the page reads as a
+   second card competing with the one the reader came for. The card stays the
+   only white thing in the composition.
+
+   ELEVATION IS INVERTED, not merely recoloured, which is why the whole stack
+   is one token. On a light ground an object is raised by the shade it casts;
+   on a dark one there is no shade to see - #003223 cannot be darkened
+   perceptibly at a 16px blur - so the raise is carried by a LIT top edge and a
+   hairline, and the cast shadow is a deep one that mostly seats the object.
+   Black at low alpha over Kale composites to a darker Kale, which is what a
+   shadow on this field physically is; it is not a second palette. */
+body:has(> .gate) .language-bar {
+  /* Kale at 12% white. A tint of the primary rather than a new colour: the
+     island has to be made of the field, or it is a sticker on it. 9.9:1 under
+     white text, 1.4:1 against the field - deliberately quiet, because the
+     hairline and the shadow are what say "raised" and a high-contrast slab
+     would say "alert". */
+  --lang-surface: #1F4B3D;
+  --lang-ink: #FFFFFF;
+  /* Pea, the same green as the half-circle on the card below it - the globe
+     is where the two objects on this page rhyme. */
+  --lang-sphere: #28C882;
+  --lang-focus: #FFD76E;            /* Banana: 10.9:1 on Kale */
+  --lang-hairline: rgba(255, 255, 255, 0.28);
+  --lang-hairline-hover: rgba(255, 255, 255, 0.5);
+  --lang-hairline-focus: #FFFFFF;
+  --lang-button-ink: #003223;
+  --lang-button-ground: #FFFFFF;
+  --lang-button-hover: #DFF8ED;
+  --lang-elevation:
+    inset 0 0 0 1px var(--lang-hairline),
+    inset 0 1px 0 rgba(255, 255, 255, 0.14),
+    0 2px 3px rgba(0, 0, 0, 0.24),
+    0 18px 30px -14px rgba(0, 0, 0, 0.6);
+}
+
+/* The note keeps its Lavender ground: it is a light ground carrying Kale-family
+   text, which is the brand's pairing and legible on either field. It is not
+   restated here because nothing about it stopped working when the ground did -
+   restating a colour that reads correctly would be two values to keep in step
+   for no gain. */
+

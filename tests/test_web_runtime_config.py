@@ -272,7 +272,14 @@ def test_envsubst_does_not_eat_nginx_own_variables():
 
     conf, _ = _render(KAICALC_NEWS_ORIGIN=NEWS)
     for variable in ("$time_local", "$request", "$status", "$body_bytes_sent",
-                     "$request_time", "$uri", "$scheme", "$http_host"):
+                     "$request_time", "$uri", "$scheme", "$http_host",
+                     # The forwarded-header maps. `$remote_addr` and
+                     # `$proxy_add_x_forwarded_for` eaten would forward an EMPTY client
+                     # address to both applications, which `db.detection.client_ip`
+                     # normalises to None - skipping the blocklist and the rate limit
+                     # outright, for every caller, with nothing raised anywhere.
+                     "$remote_addr", "$http_x_forwarded_proto",
+                     "$proxy_add_x_forwarded_for"):
         assert variable in conf, f"envsubst ate nginx's own {variable}"
     # The header's own prose names `${KAICALC_CSP_*}`, which is not a variable name and is
     # left alone; the directives are what must have been substituted.

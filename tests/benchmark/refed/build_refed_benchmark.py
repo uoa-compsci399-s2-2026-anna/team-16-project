@@ -436,7 +436,17 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
             })
 
     factors = {
-        "version_label": "REFED-COMPARISON-2026-04-03 - NOT NZ DATA",
+        # The date is ReFED's, not ours - it is the CSV's own "last updated".
+        # `(sector dimension)` distinguishes this set from the one built before
+        # contract v1.31, which folded the supply-chain stage into the food
+        # category's code because `factor_downstream` had no sector column. The
+        # two can sit in one database - a deployment that loaded the older set
+        # keeps it, because `submission` rows stamp a factor set id and the
+        # foreign key is NO ACTION, so the old set cannot be deleted while any
+        # calculation still refers to it. Two sets with one label could not be
+        # told apart in the panel's list, which is why the loader refuses a
+        # duplicate rather than versioning silently.
+        "version_label": "REFED-COMPARISON-2026-04-03 (sector dimension) - NOT NZ DATA",
         "is_mock": True,
         "notes": (
             "ReFED comparison fixture. United States factors published by "

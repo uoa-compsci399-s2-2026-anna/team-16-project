@@ -180,8 +180,16 @@ python -m pytest tests/benchmark/refed/ -q
 
 To see it in the calculator interface instead, load it into a database (§7)
 and use the admin dry-run page at `/admin/try`, selecting the factor set
-`REFED-COMPARISON-2026-04-03 - NOT NZ DATA`, sector `refed_retail`, food
-category `refed_produce`. The dry-run path persists nothing, which is the point:
+`REFED-COMPARISON-2026-04-03 (sector dimension) - NOT NZ DATA`, sector
+`refed_retail`, food category `refed_produce`.
+
+A database that loaded this set before contract v1.31 still holds the older
+`REFED-COMPARISON-2026-04-03 - NOT NZ DATA`, which folded the supply-chain stage
+into the food category's code and so offered one sector and thirty-nine food
+categories. Both can sit in one database and the labels tell them apart. The
+older one is not deleted on the way past: `submission` rows stamp a factor set
+id and that foreign key is `NO ACTION`, so any set a calculation still refers to
+stays, which is what makes a historical result reproducible. The dry-run path persists nothing, which is the point:
 tuning against a benchmark would otherwise pollute the public statistics.
 
 ## 6. What agreement to expect

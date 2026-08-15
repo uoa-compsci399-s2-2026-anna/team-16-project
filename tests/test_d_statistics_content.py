@@ -461,8 +461,18 @@ def test_api_js_owns_all_direct_fetch_calls_and_the_wordpress_url():
     # token positions only — the same conservative source the scan above uses.
     i18n_literals = _without_js_comments(_read(WEB / "js" / "i18n.js"))
     assert "/api/" not in i18n_literals, "i18n.js must not reach the API; api.js owns it"
+    # **ONE EXEMPTION, AND IT IS NOT AN ORIGIN.** `http://www.w3.org/2000/svg` is
+    # the XML namespace a `<svg>` element has to be *created* in — pass anything
+    # else to `createElementNS` and the browser builds an HTML element named
+    # "svg" that renders nothing at all. It is an identifier compared by string;
+    # nothing is ever fetched from it, and the chooser's globe is drawn in the
+    # page precisely because `img-src 'self' data:` forbids fetching an icon.
+    #
+    # Removed exactly once and by exact text, so the scan below still fails on a
+    # second occurrence, on a different w3.org path, or on any other host.
+    scanned = i18n_literals.replace("http://www.w3.org/2000/svg", "", 1)
     for scheme in ("http://", "https://", "//cdn"):
-        assert scheme not in i18n_literals, (
+        assert scheme not in scanned, (
             f"i18n.js names an absolute origin ({scheme}); catalogues are same-origin"
         )
     assert re.search(r"(?<![.\w$])fetch\s*\(\s*url\b", i18n), (

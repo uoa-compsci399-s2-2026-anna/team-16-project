@@ -157,9 +157,28 @@ class FactorUpstream(Base):
 class FactorDownstream(Base):
     """Per-kilogram impact of the disposal route. Contract §2.2.
 
-    `food_category_id` is nullable and means "applies to every food category
-    for this destination" — that is how a per-tonne charge like the waste levy
-    is expressed. Lookup order: exact match, then the NULL row, then zero.
+    **Two nullable dimensions, and the order between them is the dangerous
+    part.** `food_category_id` is nullable and means "applies to every food
+    category for this destination" — that is how a per-tonne charge like the
+    waste levy is expressed. `sector_id` is nullable on the same terms (v1.31)
+    and means "applies to every sector for this destination": NULL is the
+    normal value, and a New Zealand set whose disposal routes cost the same
+    wherever the waste arose takes NULL on every row.
+
+    Four rows may therefore legally exist for one `(destination, metric)`, and
+    §4.1 fixes which one wins:
+
+        1. (sector, food_category)   -- both stated
+        2. (sector, NULL)            -- this sector, every food category
+        3. (NULL, food_category)     -- every sector, this food category
+        4. (NULL, NULL)              -- every sector, every food category
+        5. zero
+
+    **Steps 2 and 3 both name one dimension, and the sector wins.** §2.2
+    carries the reasoning; the operative half is that the sector is always
+    something the caller stated — `submission_entry.sector_id` is NOT NULL —
+    while the food category may be `standard_mix` substituted by §6.2 for a
+    caller who declined to give one.
 
     `value_per_kg` **may be negative**: animal feed displaces feed that would
     otherwise have been produced, so diverting to it is a genuine credit.
@@ -167,12 +186,15 @@ class FactorDownstream(Base):
 
     Roughly 600 rows per factor set.
 
-    The declared UNIQUE(factor_set_id, destination_id, food_category_id,
-    metric_id) below does not stop two `food_category_id IS NULL` rows from
-    coexisting — MySQL treats NULLs as distinct, so the constraint is silent
-    on exactly the "applies to every category" rows it most needs to guard.
-    A functional index over COALESCE(food_category_id, 0) is what actually
-    closes that gap, and it **is** declared here as a SQLAlchemy `Index`
+    The declared UNIQUE(factor_set_id, destination_id, sector_id,
+    food_category_id, metric_id) below does not stop two rows that are NULL in
+    either nullable column from coexisting — MySQL treats NULLs as distinct, so
+    the constraint is silent on exactly the "applies to every category" and
+    "applies to every sector" rows it most needs to guard. A functional index
+    over COALESCE(sector_id, 0) **and** COALESCE(food_category_id, 0) is what
+    actually closes that gap — both, because collapsing only one of the two
+    leaves the other's duplicates legal — and it **is** declared here as a
+    SQLAlchemy `Index`
     (`uq_factor_downstream_generic`, using a `text()` expression as its key
     part), so `Base.metadata.create_all()` — the path every test outside
     tests/admin/test_factor_models.py builds its schema with — produces it
@@ -190,11 +212,13 @@ class FactorDownstream(Base):
 
     __tablename__ = "factor_downstream"
     __table_args__ = (
-        UniqueConstraint("factor_set_id", "destination_id", "food_category_id",
-                         "metric_id", name="uq_factor_downstream"),
+        UniqueConstraint("factor_set_id", "destination_id", "sector_id",
+                         "food_category_id", "metric_id",
+                         name="uq_factor_downstream"),
         Index(
             "uq_factor_downstream_generic",
             "factor_set_id", "destination_id",
+            text("(COALESCE(sector_id, 0))"),
             text("(COALESCE(food_category_id, 0))"),
             "metric_id",
             unique=True,
@@ -211,6 +235,13 @@ class FactorDownstream(Base):
     destination_id: Mapped[int] = mapped_column(
         ForeignKey("destination.id"), nullable=False
     )
+    #: NULL means "every sector for this destination" (v1.31). See the class
+    #: docstring: this column is what lets a factor set price the same disposal
+    #: route differently by supply-chain stage, and NULL is what every row of a
+    #: set that does not need to takes.
+    sector_id: Mapped[int | None] = mapped_column(
+        ForeignKey("sector.id"), nullable=True
+    )
     food_category_id: Mapped[int | None] = mapped_column(
         ForeignKey("food_category.id"), nullable=True
     )
@@ -221,15 +252,18 @@ class FactorDownstream(Base):
 
     factor_set: Mapped[FactorSet] = relationship()
     destination: Mapped[Destination] = relationship()
+    sector: Mapped[Sector | None] = relationship()
     food_category: Mapped[FoodCategory | None] = relationship()
     metric: Mapped[Metric] = relationship()
 
     def __str__(self) -> str:
-        #: food_category is nullable ("applies to every category for this
-        #: destination", e.g. the NZ waste levy) - say so rather than
-        #: rendering a blank.
+        #: Both middle dimensions are nullable, and a row that names one has to
+        #: be distinguishable in a select box from the row that does not —
+        #: which is the whole reason §4.1 needs an order between them. Say
+        #: "all sectors" / "all categories" rather than rendering a blank.
+        sector = self.sector.code if self.sector else "all sectors"
         category = self.food_category.code if self.food_category else "all categories"
-        return f"{self.destination.code}/{category} — {self.metric.code}"
+        return f"{self.destination.code}/{sector}/{category} — {self.metric.code}"
 
 
 class Constant(Base):

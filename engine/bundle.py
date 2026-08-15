@@ -63,10 +63,14 @@ class FactorBundle:
     #: usual value and means "every destination for this tuple"; the non-null
     #: rows are what make `prevention` a real 100% offset (open item O-7).
     upstream_factors: dict[tuple[str, str, str | None, str], Decimal]
-    #: Keyed on `(destination, food_category | None, metric)`. `None` means
-    #: "every food category for this destination" -- how a per-tonne charge
-    #: such as the waste levy is expressed. Values may be negative.
-    downstream_factors: dict[tuple[str, str | None, str], Decimal]
+    #: Keyed on `(destination, sector | None, food_category | None, metric)`,
+    #: and §2.2 since v1.31. **Both** middle slots are nullable and `None`
+    #: means "every value of that dimension for this destination" -- a null
+    #: food category is how a per-tonne charge such as the waste levy is
+    #: expressed, and a null sector is the normal case for a set whose
+    #: disposal routes cost the same wherever in the supply chain the waste
+    #: arose. Values may be negative.
+    downstream_factors: dict[tuple[str, str | None, str | None, str], Decimal]
     constants: dict[str, Decimal]
     formulas: dict[str, str]
     destinations: set[str]
@@ -116,16 +120,50 @@ class FactorBundle:
 
         return self.upstream_factors.get(generic_key, Decimal("0"))
 
-    def downstream(self, destination: str, food_cat: str | None, metric: str) -> Decimal:
-        """Exact match on food category first, then the generic row, then
-        zero. May return a negative value (an offset)."""
-        exact_key = (destination, food_cat, metric)
-        fallback_key = (destination, None, metric)
+    def downstream(
+        self, destination: str, sector: str | None, food_cat: str | None, metric: str
+    ) -> Decimal:
+        """§4.1's two-dimensional fallback, in order. May return a negative
+        value (an offset).
 
-        if exact_key in self.downstream_factors:
-            return self.downstream_factors[exact_key]
+        Both `sector` and `food_cat` are nullable dimensions on
+        `factor_downstream` (§2.2), so four rows may legally exist for one
+        `(destination, metric)` and exactly one of them must win:
 
-        return self.downstream_factors.get(fallback_key, Decimal("0"))
+            1. (sector, food_category)   -- both stated
+            2. (sector, NULL)            -- this sector, every food category
+            3. (NULL, food_category)     -- every sector, this food category
+            4. (NULL, NULL)              -- every sector, every food category
+            5. Decimal('0')
+
+        **Steps 2 and 3 are the decision, and the sector wins.** Both name one
+        dimension, so specificity alone cannot separate them; §2.2 records the
+        three reasons the tie is broken this way. The short form: the sector is
+        always something the caller stated (`submission_entry.sector_id` is NOT
+        NULL), whereas the food category may be `standard_mix` substituted by
+        §6.2 for a caller who declined to give one -- so step 2 is keyed on
+        what was said and step 3 may be keyed on what was assumed.
+
+        `sector=None` asks for the every-sector rows directly, and `food_cat`
+        may be `None` on the same terms, so the four candidates are not always
+        four distinct keys: when `sector` is `None`, step 1 *is* step 3 and
+        step 2 *is* step 4. That is why every step is *looked up* rather than
+        reached by assuming an earlier one missed — the loop below repeats a
+        key harmlessly, whereas an `if exact not in ...: return fallback` shape
+        would answer with the wrong row, or with none. `upstream()` above
+        carries the same caveat for its own two-step order.
+        """
+        candidates = (
+            (destination, sector, food_cat, metric),
+            (destination, sector, None, metric),
+            (destination, None, food_cat, metric),
+            (destination, None, None, metric),
+        )
+        for key in candidates:
+            if key in self.downstream_factors:
+                return self.downstream_factors[key]
+
+        return Decimal("0")
 
     def constant(self, code) -> Decimal:
         if code in self.constants:
@@ -266,10 +304,16 @@ class FactorBundle:
             _note_duplicate(duplicates, upstream_factors, key, f"upstream row {key}")
             upstream_factors[key] = _decimal(row, "value_per_kg", where)
 
-        downstream_factors: dict[tuple[str, str | None, str], Decimal] = {}
+        downstream_factors: dict[tuple[str, str | None, str | None, str], Decimal] = {}
         for row, where in _rows(data, "downstream"):
             key = (
                 _code(row, "destination", where),
+                # v1.31's dimension, on exactly the same terms as
+                # `food_category` beside it: `null` is a legal value meaning
+                # "every sector", and a *missing* key is a malformed row. A
+                # bundle whose every-sector rows had silently lost their key
+                # would compute a plausible, wrong answer instead of raising.
+                _nullable_code(row, "sector", where),
                 _nullable_code(row, "food_category", where),
                 _code(row, "metric", where),
             )
@@ -359,14 +403,23 @@ class FactorBundle:
             if metric not in metric_codes:
                 problems.append(f"{where} names metric {metric!r}, which is not in this bundle")
 
-        for destination, food_cat, metric in self.downstream_factors:
+        for destination, sector, food_cat, metric in self.downstream_factors:
             where = (
-                f"downstream row (destination={destination!r}, "
+                f"downstream row (destination={destination!r}, sector={sector!r}, "
                 f"food_category={food_cat!r}, metric={metric!r})"
             )
             if destination not in self.destinations:
                 problems.append(
                     f"{where} names destination {destination!r}, which is not in this bundle"
+                )
+            # v1.31's dimension, and the one with the same silent failure the
+            # upstream destination check above exists for: a misspelled sector
+            # here does not raise, it falls through to the every-sector row and
+            # the calculator returns a plausible number priced for the wrong
+            # stage of the supply chain.
+            if sector is not None and sector not in self.sectors:
+                problems.append(
+                    f"{where} names sector {sector!r}, which is not in this bundle"
                 )
             if food_cat is not None and food_cat not in self.food_categories:
                 problems.append(

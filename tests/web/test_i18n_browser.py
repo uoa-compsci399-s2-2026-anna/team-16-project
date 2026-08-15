@@ -22,6 +22,7 @@ Requires the stack rebuilt: `docker compose -f docker/compose.yaml up -d
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -33,7 +34,15 @@ from tests.web import i18n_keys
 
 pytestmark = pytest.mark.browser
 
-BASE = "http://localhost:18080"
+#: `KAICALC_WEB_URL` like every other browser module here, which this one alone
+#: did not read. It hard-coded :18080, so it measured the stack on that port
+#: whatever the rest of the run was pointed at — and
+#: `test_every_catalogue_is_actually_in_the_built_image`, whose whole subject is
+#: whether the *current* checkout's catalogues shipped, was reading an image
+#: built from some earlier one. A stale image is exactly what that test exists to
+#: report, so it did report it; but it reported it about the wrong stack, and it
+#: could not be pointed at the right one.
+BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
 
 #: Set through `Page.add_init_script` before any of the page's own scripts run,
 #: because `web/js/i18n.js` reads `navigator.languages` at module evaluation.
@@ -366,6 +375,580 @@ def test_the_chooser_is_present_usable_and_at_the_top_inline_start(browser):
             "() => Math.round("
             "document.querySelector('.header-inner').getBoundingClientRect().height)"
         ) <= 96, "the header grew to make room for the chooser"
+    finally:
+        context.close()
+
+
+# ---------------------------------------------------------------------------
+# The chooser as an object somebody can see: the capsule, the globe, the ring
+#
+# `test_the_chooser_is_present_usable_and_at_the_top_inline_start` above proves
+# the control is there, big enough and reachable. None of that says it is
+# LEGIBLE as a control, and the whole of this section is about a defect class
+# this repository keeps shipping: an element that every geometry assertion
+# agrees with and nobody can see. A `<select>` styled to nothing is present; a
+# label the same colour as the ground behind it is present; an SVG with no
+# stroke has a bounding box.
+# ---------------------------------------------------------------------------
+
+#: One read of everything the treatment is made of. Computed styles rather than
+#: the stylesheet's text, because what is in `styles.css` and what a browser
+#: resolved are different claims and only the second one is the page.
+_CAPSULE = """
+() => {
+  const bar = document.querySelector('.language-bar');
+  const select = document.getElementById('language-chooser');
+  const globe = document.querySelector('.language-bar__globe');
+  const label = document.querySelector('.language-bar__label');
+  const barStyle = getComputedStyle(bar);
+  const selectStyle = getComputedStyle(select);
+  const box = (el) => {
+    const b = el.getBoundingClientRect();
+    return {x: b.x, y: b.y, w: b.width, h: b.height, left: b.left, right: b.right,
+            top: b.top, bottom: b.bottom};
+  };
+  return {
+    shadow: barStyle.boxShadow,
+    radius: parseFloat(barStyle.borderRadius),
+    ground: barStyle.backgroundColor,
+    selectBorder: [selectStyle.borderTopWidth, selectStyle.borderInlineStartWidth],
+    selectGround: selectStyle.backgroundColor,
+    labelColour: label && getComputedStyle(label).color,
+    labelGround: label && getComputedStyle(label).backgroundColor,
+    labelDrawn: label ? box(label).w > 1 : false,
+    bar: box(bar),
+    select: box(select),
+    globe: globe && box(globe),
+    globeIsSvg: Boolean(globe) && globe.namespaceURI === 'http://www.w3.org/2000/svg',
+    globeHidden: globe && globe.getAttribute('aria-hidden'),
+    globeChildren: globe ? [...globe.children].map((c) => c.tagName) : null,
+    dir: document.documentElement.dir,
+  };
+}
+"""
+
+#: `box-shadow` layers, split without cutting `rgba(0, 50, 35, 0.18)` in half:
+#: only a comma followed by the start of a colour or a keyword begins a layer,
+#: and the commas inside `rgba(...)` are all followed by a digit.
+_LAYER = re.compile(r",(?=\s*(?:rgba|rgb|#|inset|[a-z]))")
+
+#: `rgb(r, g, b)` / `rgba(r, g, b, a)` as a browser reports it.
+_RGB = re.compile(r"rgba?\(([^)]*)\)")
+
+
+def _rgba(value):
+    """A computed colour as `(r, g, b, alpha)`, alpha 0..1."""
+    match = _RGB.search(value)
+    assert match, f"not a colour this helper understands: {value!r}"
+    parts = [float(p.strip()) for p in match.group(1).split(",")]
+    if len(parts) == 3:
+        parts.append(1.0)
+    return tuple(parts)
+
+
+def _contrast(foreground, background):
+    """WCAG contrast ratio between two computed colours, both opaque."""
+
+    def channel(value):
+        value /= 255
+        return value / 12.92 if value <= 0.04045 else ((value + 0.055) / 1.055) ** 2.4
+
+    def luminance(colour):
+        r, g, b, _ = _rgba(colour)
+        return 0.2126 * channel(r) + 0.7152 * channel(g) + 0.0722 * channel(b)
+
+    lighter, darker = sorted((luminance(foreground), luminance(background)), reverse=True)
+    return (lighter + 0.05) / (darker + 0.05)
+
+
+#: Whether the `<select>`'s currently selected text fits inside it, arrow and
+#: padding included. A `<select>` clips its closed value silently — no ellipsis,
+#: no overflow, no scrollWidth to read — so the only way to know is to measure
+#: the text and compare. The probe copies the control's own font rather than
+#: assuming one, and is removed before it can be seen.
+_VALUE_FITS = """
+() => {
+  const select = document.getElementById('language-chooser');
+  const style = getComputedStyle(select);
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;left:-9999px';
+  probe.style.font = style.font;
+  probe.style.letterSpacing = style.letterSpacing;
+  probe.textContent = select.options[select.selectedIndex].textContent.trim();
+  document.body.append(probe);
+  const text = probe.getBoundingClientRect().width;
+  probe.remove();
+  const room = select.clientWidth
+    - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+  // The browser draws its own arrow inside the control. Chromium's is about
+  // 16px wide with its spacing; 20 is that with a pixel of margin either side.
+  return {text: Math.round(text), room: Math.round(room), arrow: 20,
+          value: probe.textContent};
+}
+"""
+
+#: Breathing room the value has to have beyond "it happens to fit".
+#:
+#: **A bare fit is not a size, it is a coincidence, and this control has already
+#: been one.** The panel's first sizing settled the `<select>` at 146px around a
+#: value measuring 145px with its arrow: correct by a pixel, on this machine, in
+#: this Chromium, with this font loaded. Deleting the rule that sizes the control
+#: left it at 140px against 139px and every assertion stayed green — which is how
+#: that mutant survived twice. Twelve pixels is under a character at this size and
+#: is the difference between a control that was measured and one that was lucky.
+_VALUE_SLACK = 12
+
+
+def _paints_something(page, selector):
+    """Whether hiding this element changes the pixels where it says it is.
+
+    **The one assertion in this file that is not a number read off the DOM.**
+    An `<svg>` whose stroke resolved to `none`, or whose paths are outside its
+    own `viewBox`, has a bounding box, an `aria-hidden`, three children and
+    draws nothing — every structural assertion above passes and the control has
+    no icon on it. So the region is photographed with the element visible and
+    again with `visibility: hidden`, and the two PNGs have to differ. Chromium
+    encodes identical pixels to identical bytes, so no image decoder is needed
+    and Pillow — which this project deliberately does not depend on — stays out
+    of the suite.
+
+    `visibility` rather than `display`, so nothing around it moves and the two
+    photographs are of the same rectangle.
+    """
+    box = page.locator(selector).bounding_box()
+    assert box is not None, f"{selector} is not rendered at all"
+    clip = {
+        "x": box["x"],
+        "y": box["y"],
+        "width": max(box["width"], 1),
+        "height": max(box["height"], 1),
+    }
+    drawn = page.screenshot(clip=clip)
+    page.eval_on_selector(selector, "el => { el.style.visibility = 'hidden'; }")
+    blank = page.screenshot(clip=clip)
+    page.eval_on_selector(selector, "el => { el.style.visibility = ''; }")
+    return drawn != blank
+
+
+def test_the_chooser_is_one_raised_surface_and_the_select_has_no_box_of_its_own(browser):
+    """The treatment the owner asked for, measured rather than eyeballed.
+
+    A bordered, slightly raised component: a hairline, a lift off the page, a
+    radius, and an opaque ground of its own. And the half that is easy to leave
+    out — the `<select>` has to GIVE UP its frame when the capsule takes one, or
+    the result is a box 2px inside a box, which is the obvious implementation
+    and the one that reads as a mistake.
+
+    **The capsule is exactly as tall as the control it holds.** That is the
+    height budget of contract §7.7.4 restated as an assertion: this row is 92px
+    around a 67px logo and a separate strip for the chooser cost 57px and was
+    removed. A 1px `border` would put the capsule at 46px and the wrapped row at
+    390px 2px above what it was measured at, so the hairline is an inset shadow.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        seen = page.evaluate(_CAPSULE)
+
+        layers = _LAYER.split(seen["shadow"])
+        inset = [layer for layer in layers if "inset" in layer]
+        lift = [layer for layer in layers if "inset" not in layer]
+        assert inset, f"no hairline on the capsule: {seen['shadow']!r}"
+        assert lift, f"the capsule is flat — nothing lifts it off the page: {seen['shadow']!r}"
+        assert seen["radius"] >= 8, seen
+
+        ground = _rgba(seen["ground"])
+        assert ground[3] == 1, f"the capsule has no ground of its own: {seen['ground']!r}"
+
+        assert seen["selectBorder"] == ["0px", "0px"], (
+            f"the select still draws its own box inside the capsule: {seen}"
+        )
+        assert _rgba(seen["selectGround"])[3] == 0, (
+            f"the select paints its own ground inside the capsule: {seen}"
+        )
+
+        # Everything is inside the capsule, or it is not one component.
+        for part in ("select", "globe"):
+            piece = seen[part]
+            assert piece is not None, f"no {part}"
+            assert seen["bar"]["left"] - 1 <= piece["left"], (part, seen)
+            assert piece["right"] <= seen["bar"]["right"] + 1, (part, seen)
+            assert seen["bar"]["top"] - 1 <= piece["top"], (part, seen)
+            assert piece["bottom"] <= seen["bar"]["bottom"] + 1, (part, seen)
+
+        assert round(seen["bar"]["h"]) == 44, (
+            "the capsule is taller than the 44px control inside it, which spends "
+            f"header height §7.7.4 measured: {seen['bar']}"
+        )
+
+        # **No hole at the reading end.** A percentage inside `min()` is
+        # indefinite while a flex container is sized from its contents, so
+        # `max-width: min(100%, 22ch)` clamped the select's used width and not
+        # its max-content contribution: the capsule shrink-wrapped to 396px
+        # around a 183px control and 83px of it was empty. Invisible while the
+        # select had the only border; a visible hole the moment the box moved
+        # outwards. `.language-bar__select` carries an explicit `width` for
+        # this, and nothing but a measurement of the gap would notice it going.
+        assert seen["bar"]["right"] - seen["select"]["right"] <= 12, (
+            "the capsule is wider than what is in it — dead space between the "
+            f"value and its inline-end edge: {seen}"
+        )
+
+        # And the other end of the same rule: the control is not so narrow that
+        # the language it names is clipped. A `<select>` truncates its closed
+        # value in silence, so the text is measured against the room it has.
+        fit = page.evaluate(_VALUE_FITS)
+        assert fit["room"] >= fit["text"] + fit["arrow"] + _VALUE_SLACK, (
+            f"the selected language is clipped, or fits only by accident: {fit}"
+        )
+    finally:
+        context.close()
+
+
+def test_the_globe_is_drawn_in_the_page_and_actually_paints(browser):
+    """Inline SVG, because it cannot be anything else.
+
+    `img-src 'self' data:` forbids a third-party origin, there is no icon font
+    and there is no build step, so the icon is drawn in `web/js/i18n.js`. This
+    asserts it is really SVG, really painted, and really silent — the `<label>`
+    already names this control and a second name would have a screen reader say
+    "globe, Language".
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        seen = page.evaluate(_CAPSULE)
+        assert seen["globeIsSvg"], "the globe is not an SVG element in the SVG namespace"
+        assert seen["globeHidden"] == "true", (
+            f"the globe would be announced beside the label: {seen['globeHidden']!r}"
+        )
+        assert seen["globe"]["w"] >= 14 and seen["globe"]["h"] >= 14, seen["globe"]
+        assert seen["globeChildren"] == ["circle", "path", "ellipse"], seen["globeChildren"]
+
+        # Nothing is fetched to draw it: no `<image>`, no `<use>`, no `<img>`.
+        assert page.evaluate(
+            "() => document.querySelectorAll('.language-bar img, .language-bar image,"
+            " .language-bar use').length"
+        ) == 0
+
+        assert _paints_something(page, ".language-bar__globe"), (
+            "the globe occupies its box and draws nothing in it — a stroke that "
+            "resolved to `none` passes every assertion above"
+        )
+
+        # The accessible name is still the one word, not two.
+        assert page.evaluate(
+            """() => document.querySelector('label[for="language-chooser"]')
+                 ?.textContent.trim()"""
+        ) == "Language"
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize(
+    "language,direction", [("en", "ltr"), ("ar", "rtl"), ("ur", "rtl")]
+)
+def test_the_globe_leads_the_control_in_whichever_direction_the_page_reads(
+    browser, language, direction
+):
+    """The globe is at the capsule's inline-start, so it swaps sides on its own.
+
+    A physical `left` here would put the icon at the reading-END of the control
+    in Arabic — after the value it introduces. The whole of `styles.css` was
+    converted to logical properties for this and a test refuses a physical
+    direction property in it; this is the same rule measured on a rendered page,
+    which is the half that catches a `flex-direction` doing the damage instead.
+
+    The `<select>`'s arrow is the browser's own and is drawn at the select's
+    inline-end, so the two land on opposite sides of the capsule in both
+    directions. That is asserted here too — it is the reason the arrow is left
+    alone rather than replaced with a drawn one.
+    """
+    context, page = open_page(browser, ["en-NZ"], query=f"?lang={language}")
+    try:
+        seen = page.evaluate(_CAPSULE)
+        assert seen["dir"] == direction, seen["dir"]
+        if direction == "ltr":
+            assert seen["globe"]["right"] <= seen["select"]["left"] + 1, seen
+            assert seen["globe"]["left"] < seen["bar"]["left"] + 32, seen
+        else:
+            assert seen["select"]["right"] <= seen["globe"]["left"] + 1, seen
+            assert seen["globe"]["right"] > seen["bar"]["right"] - 32, seen
+    finally:
+        context.close()
+
+
+def test_the_capsule_shows_a_focus_ring_when_the_control_is_tabbed_to(browser):
+    """Keyboard-operable **and visibly so**.
+
+    The ring is on the capsule rather than on the `<select>`: a rectangle drawn
+    round a frameless control inside a frame is not an indicator anybody reads
+    as "this is focused". `:focus-within` carries it, which is also why the
+    select's own outline can be suppressed — the two are one decision and
+    removing either half alone leaves a control with no focus indicator.
+
+    Tabbed to rather than `.focus()`ed, because the claim is about a keyboard.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        resting = page.evaluate(
+            "() => getComputedStyle(document.querySelector('.language-bar')).outlineStyle"
+        )
+        assert resting == "none", f"the capsule is ringed before anything is focused: {resting}"
+
+        for _ in range(8):
+            page.keyboard.press("Tab")
+            if page.evaluate("() => document.activeElement?.id") == "language-chooser":
+                break
+        else:  # pragma: no cover - a chooser no Tab reaches is the defect
+            raise AssertionError("eight Tabs from the top of the page never reached the chooser")
+
+        ring = page.evaluate(
+            """() => {
+              const cs = getComputedStyle(document.querySelector('.language-bar'));
+              return {style: cs.outlineStyle, width: parseFloat(cs.outlineWidth),
+                      colour: cs.outlineColor};
+            }"""
+        )
+        assert ring["style"] not in ("none", "hidden"), ring
+        assert ring["width"] >= 2, ring
+        assert _rgba(ring["colour"])[3] > 0, ring
+        # A ring the same colour as the ground it is drawn on is not a ring.
+        assert _contrast(ring["colour"], "rgb(0, 50, 35)") >= 1.6, ring
+    finally:
+        context.close()
+
+
+def test_the_label_is_legible_against_the_ground_it_is_actually_on(browser):
+    """The intro header used to tint this label white for a Kale ground.
+
+    The label sits inside a **white** capsule now, on every header, so that rule
+    would paint white on white: present in the DOM, still the control's
+    accessible name, and invisible to everyone who can see. That is not a
+    hypothetical here — an Arabic label collapsed into a 1px column survived a
+    green suite on this branch, and it was a screenshot that caught it.
+
+    Asserted on `/`, whose header is the Kale one, because that is the page the
+    deleted rule applied to.
+    """
+    context, page = open_page(browser, ["en-NZ"])
+    try:
+        seen = page.evaluate(_CAPSULE)
+        assert seen["labelDrawn"], "the label is not drawn at this width at all"
+        assert _rgba(seen["labelGround"])[3] == 0, (
+            "the label paints its own ground, so this test is measuring the wrong "
+            f"pair of colours: {seen['labelGround']!r}"
+        )
+        ratio = _contrast(seen["labelColour"], seen["ground"])
+        assert ratio >= 4.5, (
+            f"the label is {ratio:.2f}:1 against the capsule it sits on "
+            f"({seen['labelColour']} on {seen['ground']})"
+        )
+    finally:
+        context.close()
+
+
+# ---------------------------------------------------------------------------
+# The panel's copy of the same capsule
+#
+# **Why it is in this file.** The browser harness lives in `tests/web`;
+# `tests/admin` drives an httpx client and has no browser at all, and standing
+# one up there for a single test would be a second harness to keep. The panel's
+# login gate is the one panel screen that needs no session, it carries the same
+# partial and the same stylesheet as every screen behind it, and it is the page
+# a person who cannot read English needs most. What it cannot cover — that the
+# Tabler skin *reaches* `language.css` — is asserted in
+# `tests/admin/test_i18n_pages.py`, which can read the panel proper's markup.
+# ---------------------------------------------------------------------------
+
+
+def test_the_panel_chooser_is_the_same_capsule_and_its_button_works(browser):
+    """One object holding a globe, a word, a control and its submit button.
+
+    The panel's chooser is a real `<form method="post">` and stays one: it is
+    the surface that genuinely works with scripting off. So the button cannot be
+    designed away, and it is joined to the field instead — pressing it is
+    asserted here, because a button drawn into a capsule at the wrong corner
+    radius is still a button and a button that no longer submits is not.
+    """
+    context = browser.new_context()
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+
+        seen = page.evaluate(
+            """() => {
+              const bar = document.querySelector('.language-bar');
+              const button = document.querySelector('.language-bar__submit');
+              const globe = document.querySelector('.language-bar__globe');
+              const select = document.getElementById('language-chooser');
+              const cs = getComputedStyle(bar);
+              const box = (el) => { const b = el.getBoundingClientRect();
+                return {w: b.width, h: b.height, left: b.left, right: b.right,
+                        top: b.top, bottom: b.bottom}; };
+              return {shadow: cs.boxShadow, radius: parseFloat(cs.borderRadius),
+                      ground: cs.backgroundColor, viewport: window.innerWidth,
+                      bar: box(bar), button: box(button), globe: globe && box(globe),
+                      select: box(select),
+                      buttonInk: getComputedStyle(button).color,
+                      buttonGround: getComputedStyle(button).backgroundColor};
+            }"""
+        )
+
+        layers = _LAYER.split(seen["shadow"])
+        assert [layer for layer in layers if "inset" in layer], seen["shadow"]
+        assert [layer for layer in layers if "inset" not in layer], seen["shadow"]
+        assert seen["radius"] >= 8, seen
+
+        # **It floats rather than spanning the screen**, which is the half of the
+        # report that read as scaffolding: a full-bleed white strip with a rule
+        # under it is chrome the panel grew to hold one small control.
+        #
+        # Half the viewport, not "narrower than the viewport". Two rules make
+        # this capsule the size of its contents — `align-self: flex-start`
+        # against Tabler's flex column and `width: 20ch` on the select — and
+        # against a 1,278px screen both of them fail into a pill of 1,200-odd
+        # pixels holding 320 of control, which is comfortably "narrower than the
+        # viewport" and is exactly the shape being fixed. Measured at 395px.
+        assert seen["bar"]["w"] <= seen["viewport"] / 2, (
+            f"the capsule is a banner rather than a control: {seen}"
+        )
+        # The button is a segment of the capsule, not a control beside it.
+        assert seen["button"]["right"] <= seen["bar"]["right"] + 1, seen
+        assert seen["button"]["top"] >= seen["bar"]["top"] - 1, seen
+        assert seen["button"]["bottom"] <= seen["bar"]["bottom"] + 1, seen
+        assert _contrast(seen["buttonInk"], seen["buttonGround"]) >= 4.5, seen
+        # No hole between the value and the button - the same `min(100%, ...)`
+        # sizing trap the calculator's capsule was measured with.
+        assert seen["button"]["left"] - seen["select"]["right"] <= 12, (
+            f"dead space between the control and the button it is joined to: {seen}"
+        )
+        # **And the value inside it is readable.** `.language-bar__select` is
+        # sized in `ch` for exactly this, and a `<select>` clips its closed value
+        # in silence - no ellipsis, no overflow, nothing to read off the DOM. The
+        # first sizing this capsule was given settled the control at 146px
+        # against a 145px value: correct by one pixel, and by accident.
+        fit = page.evaluate(_VALUE_FITS)
+        assert fit["room"] >= fit["text"] + fit["arrow"] + _VALUE_SLACK, (
+            f"the selected language is clipped, or fits only by accident: {fit}"
+        )
+
+        assert seen["globe"] is not None and seen["globe"]["w"] >= 14, seen
+        assert _paints_something(page, ".language-bar__globe"), (
+            "the panel's globe draws nothing inside its own box"
+        )
+
+        # Focus ring, from a keyboard.
+        for _ in range(8):
+            page.keyboard.press("Tab")
+            if page.evaluate("() => document.activeElement?.id") == "language-chooser":
+                break
+        else:  # pragma: no cover
+            raise AssertionError("eight Tabs never reached the panel's chooser")
+        ring = page.evaluate(
+            """() => {
+              const cs = getComputedStyle(document.querySelector('.language-bar'));
+              return {style: cs.outlineStyle, width: parseFloat(cs.outlineWidth)};
+            }"""
+        )
+        assert ring["style"] not in ("none", "hidden") and ring["width"] >= 2, ring
+
+        # And it still posts. Chinese, then read back what the panel rendered.
+        page.select_option("#language-chooser", "zh")
+        page.click(".language-bar__submit")
+        page.wait_for_load_state("networkidle")
+        assert page.get_attribute("html", "lang") == "zh", (
+            "the button no longer submits the form it is drawn into"
+        )
+        assert page.eval_on_selector("#language-chooser", "el => el.value") == "zh"
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width", [390, 320])
+def test_the_panel_chooser_fits_a_phone_and_still_names_its_language(browser, width):
+    """The capsule is four things wide and a phone is not.
+
+    **Both widths are asserted for staying on screen, and only 390 for staying
+    readable, and the difference is a decision rather than an oversight.** Three
+    rules hold this together and each one shows at a different width, which is
+    why one viewport could not kill them:
+
+    * the **label stops being drawn** below 720px. With the word still there the
+      control was squeezed to 101px at 390 and 31px at 320 — present, sized,
+      and not a control anybody reads a language out of.
+    * the capsule takes a **ceiling** of the page width less its own margins, and
+      the select takes `min-width: 0` so it is the part that gives way. At 390 the
+      hidden label already makes it fit; at **320** it does not, and without these
+      two the capsule hangs 44px off the screen.
+
+    At 320 the value truncates: it needs 139px and has 117px. That is the
+    deliberate half of the trade — a control on screen with a clipped word beats a
+    control a reader has to scroll sideways to find, on the one screen a
+    locked-out account can still open. Making it fit properly costs a stack of
+    narrow-width tweaks to the margin, the button's padding and the gap, at a
+    width nothing else on this surface supports: 320 is the *calculator's*
+    declared floor (`body { min-width: 320px }`), and `_list_table_css.html`
+    records four panel screens already scrolling sideways at 390 for reasons
+    that have nothing to do with this control.
+
+    `fit-content` is the sum of a globe, a word, a 20ch control and a button —
+    395px — and 390px of screen is 350px once the capsule's own margins are off
+    it. Measured hanging 45px off the gate page and 22px off a Tabler page before
+    the ceiling existed, which is a control a reader has to scroll sideways to
+    reach on the one screen a locked-out account can still open.
+
+    Two rules carry it and both are asserted here, because the first alone is not
+    enough: the capsule takes a ceiling, and the label stops being **drawn** below
+    720px so that the `<select>` is not what pays for it. With the word still
+    there the control was squeezed to 101px at 390 and 31px at 320, which is not
+    a control anybody reads a language out of — and its `<label for>` association
+    survives, so the accessible name does not change.
+    """
+    context = browser.new_context(viewport={"width": width, "height": 900})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+
+        seen = page.evaluate(
+            """(w) => {
+              const bar = document.querySelector('.language-bar');
+              const b = bar.getBoundingClientRect();
+              return {left: Math.round(b.left), right: Math.round(b.right),
+                      width: Math.round(b.width), height: Math.round(b.height),
+                      overflow: document.documentElement.scrollWidth
+                                - document.documentElement.clientWidth,
+                      labelDrawn: document.querySelector('.language-bar__label')
+                                    .getBoundingClientRect().width > 2,
+                      name: document.querySelector('label[for="language-chooser"]')
+                              .textContent.trim()};
+            }""",
+            width,
+        )
+        assert seen["overflow"] <= 0, f"{width}px: the page scrolls sideways: {seen}"
+        assert seen["left"] >= 0 and seen["right"] <= width, (
+            f"{width}px: the capsule hangs off the screen: {seen}"
+        )
+        assert seen["height"] == 44, seen
+        assert not seen["labelDrawn"], (
+            f"{width}px: the word is still drawn and the control is paying for it: {seen}"
+        )
+        assert seen["name"] == "Language", (
+            "hiding the word must not take the control's accessible name with it"
+        )
+
+        fit = page.evaluate(_VALUE_FITS)
+        if width >= 390:
+            assert fit["room"] >= fit["text"] + fit["arrow"] + _VALUE_SLACK, (
+                f"{width}px: the selected language is clipped, or fits only by"
+                f" accident: {fit}"
+            )
+        else:
+            # Asserted as the known state rather than left unmentioned, so that
+            # a future narrow-width pass that fixes it has to come here and say
+            # so instead of silently satisfying a test nobody wrote.
+            assert fit["room"] < fit["text"] + fit["arrow"], (
+                f"{width}px: the value now fits — good, and this test's docstring "
+                f"and the CSS comment that record it as the trade are stale: {fit}"
+            )
     finally:
         context.close()
 

@@ -24,6 +24,15 @@ the target, write an audit_log entry, invalidate the cache." The first
 three happen below; the fourth belongs to B's repository (whatever caches
 the published factor set for the calculator's hot path) and is not
 implemented in this admin-side copy — there is no cache here to invalidate.
+
+`db/repository.py`'s `_bundle_cache` is real, and calling
+`invalidate_factor_bundle` from this module would still not reach it: the
+panel and the API are **separate processes** (docker/compose.yaml runs
+`api` and `admin` as two services), and that cache is a module-level dict
+per process. An admin-side invalidation clears the panel's own copy, which
+is not the one serving the public. That is why `set_placeholder_flag` below
+does not rely on one — see `db/repository.load_factor_bundle`, which
+re-reads this one flag on every cache hit for exactly this reason.
 """
 
 from sqlalchemy import select
@@ -435,4 +444,88 @@ def archive_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     write_audit(
         session, actor=actor, action="archive", table_name="factor_set",
         row_id=target.id, before=before, after=row_to_dict(target),
+    )
+
+
+#: The `audit_log.action` each direction of the placeholder flag is recorded
+#: under. Not `update`: this is the one switch in the system that makes the
+#: public disclaimer appear or disappear, and an entry that says `update
+#: factor_set#3` is indistinguishable in a list from somebody fixing a typo
+#: in that set's notes. `audit_log.action` is free text (VARCHAR(32)), the
+#: same column `publish`, `rollback` and `archive` above already widen.
+FLAG_PLACEHOLDER_ACTION = "flag_placeholder"
+CLEAR_PLACEHOLDER_ACTION = "clear_placeholder"
+
+
+def set_placeholder_flag(
+    session: Session, factor_set_id: int, *, is_mock: bool, actor: str
+) -> None:
+    """Turn one factor set's placeholder-data flag on or off. Contract §2.2.
+
+    **The only sanctioned write path for `factor_set.is_mock`.** It used to
+    be a tick on FactorSetAdmin's generic edit form, which meant the flag
+    that holds up the mandatory, non-dismissible placeholder warning on every
+    public result and export (§7.6.2) could be carried off by somebody
+    editing a version label. It is an action now, and this is the function
+    behind it — here rather than in the view for the same reason
+    `archive_factor_set` is here: a rule that lives in a request handler is a
+    rule no other caller obeys, and this module is what a CLI command would
+    reach for if one is ever wanted.
+
+    **The two directions are not symmetric, and only one half of that
+    asymmetry is enforceable here.** Adding the warning (`is_mock=True`) is
+    always safe and always allowed. Removing it is the consequential half and
+    the panel asks for a password or a live TOTP code before calling this
+    with `is_mock=False` (admin/factor_views.py's `clear_placeholder_page`).
+    That proof cannot be checked from here — it needs the request's form and
+    the login throttle, neither of which a service function has — so what
+    this function guarantees is the other three things a caller cannot skip:
+    the change is recorded, it is recorded under an action name that says
+    which direction it went, and it is refused when it would change nothing.
+
+    **No status restriction, deliberately, and this is the rule that
+    changed.** The panel used to refuse the flag on a published set outright
+    and tell staff to clone first. The workflow it was refusing is the real
+    one: staff publish the real factors, let them run publicly for a day or
+    two to check them, and only then clear the flag. Forcing a clone at that
+    point manufactures a new `factor_set` row, and a new version label, for a
+    change in which not one factor value differs — while every `submission`
+    recorded during those verification days stamps the old id. That is a
+    version discontinuity created by the workflow rather than by the data.
+    A published set's *other* fields are still immutable in place, and
+    FactorSetAdmin.validate_before_commit still refuses them.
+
+    Refuses a no-op — a set already flagged the way the caller asked for —
+    for the reason `publish_factor_set` refuses an already-published target:
+    an audit entry claiming a change that did not happen is worse than no
+    entry, and this is the trail somebody reads to answer "when did the
+    warning come off, and who took it off".
+
+    Takes `_lock_factor_sets` like the four functions above, so "does this
+    set exist and what does its flag say" is asked against a snapshot nothing
+    else can move before this transaction commits. Never commits.
+    """
+    rows = _lock_factor_sets(session)
+    target = next((row for row in rows if row.id == factor_set_id), None)
+    if target is None:
+        raise LifecycleError(
+            f"No factor set with id {factor_set_id} exists to change."
+        )
+    if target.is_mock == is_mock:
+        raise LifecycleError(
+            f"'{target.version_label}' is already flagged as placeholder data."
+            if is_mock else
+            f"'{target.version_label}' is not flagged as placeholder data, "
+            "so there is nothing to clear."
+        )
+
+    before = row_to_dict(target)
+    target.is_mock = is_mock
+    session.flush()
+
+    write_audit(
+        session, actor=actor,
+        action=FLAG_PLACEHOLDER_ACTION if is_mock else CLEAR_PLACEHOLDER_ACTION,
+        table_name="factor_set", row_id=target.id,
+        before=before, after=row_to_dict(target),
     )

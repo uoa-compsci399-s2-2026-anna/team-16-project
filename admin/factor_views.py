@@ -20,24 +20,29 @@ version's number is the failure this prevents, and it is silent.
 """
 
 import contextvars
+import time
 
-from sqladmin import action
+from sqladmin import action, expose
 from sqladmin.filters import BooleanFilter, ForeignKeyFilter, OperationColumnFilter
 from sqlalchemy import select
 from starlette.exceptions import HTTPException
 from starlette.responses import RedirectResponse
 
-from admin.auth import SESSION_KEY
+from admin.accounts import UnknownStaffError, get_staff
+from admin.auth import SESSION_KEY, reauthenticate
+from admin.csrf import check_token, issue_token
 from admin.expressions import ExpressionError, validate_expression
 from admin.factor_lifecycle import (
     LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
-    revalidate_formulas, rollback_to,
+    revalidate_formulas, rollback_to, set_placeholder_flag,
 )
+from admin.runtime import get_runtime
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
 )
 from admin.modelviews import AuditedModelView
+from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
 
 _CATEGORY = "Factors"
@@ -69,6 +74,18 @@ _DATA_QUALITY_HELP = (
     "words the client will use. The mock flag on the factor set is "
     "all-or-nothing and cannot say that forty rows are solid and twelve are "
     "borrowed; this can."
+)
+#: Shared by the two optional dimensions of a downstream factor, because the
+#: order between them is the one thing neither field can state on its own.
+#: Contract §4.1 (v1.31). The failure this text exists to prevent is silent:
+#: enter a sector-only row and a category-only row that both match a visitor's
+#: choice, and the calculator will pick one of them and show a number that
+#: looks entirely reasonable.
+_WHICH_ROW_WINS = (
+    "Where more than one row could apply, the most specific wins, and a row "
+    "naming a sector beats a row naming only a food category: sector and "
+    "category, then sector alone, then category alone, then the row naming "
+    "neither. Where none exists the factor is zero."
 )
 
 
@@ -315,11 +332,19 @@ class FactorUpstreamAdmin(AuditedModelView, model=FactorUpstream):
 
 
 class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
-    """The largest table, and the one with the two traps.
+    """The largest table, and the one with the three traps.
 
     `food_category` may be empty, meaning "every category for this
     destination" — that is how a per-tonne charge like the waste levy is
     expressed, and the form must allow it rather than requiring a selection.
+
+    `sector` may be empty on exactly the same terms (v1.31), meaning "every
+    sector for this destination", and empty is the normal answer. Both being
+    optional is why the two fields carry a shared note about which one wins:
+    §4.1's order is (sector, category), then (sector, blank), then (blank,
+    category), then (blank, blank), then zero — and a staff member who does not
+    know that can enter two perfectly reasonable rows and get the one they did
+    not intend, with no error anywhere.
 
     `value_per_kg` may be negative: animal feed displaces feed that would
     otherwise have been produced, so the factor is a genuine credit. Nothing
@@ -332,15 +357,18 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     icon = "fa-solid fa-truck-arrow-right"
 
     column_list = [FactorDownstream.factor_set, FactorDownstream.destination,
-                   FactorDownstream.food_category, FactorDownstream.metric,
+                   FactorDownstream.sector, FactorDownstream.food_category,
+                   FactorDownstream.metric,
                    FactorDownstream.value_per_kg, FactorDownstream.data_quality]
     column_details_list = [FactorDownstream.factor_set, FactorDownstream.destination,
-                           FactorDownstream.food_category, FactorDownstream.metric,
+                           FactorDownstream.sector, FactorDownstream.food_category,
+                           FactorDownstream.metric,
                            FactorDownstream.value_per_kg,
                            FactorDownstream.data_quality,
                            FactorDownstream.source_note]
     form_columns = [FactorDownstream.factor_set, FactorDownstream.destination,
-                    FactorDownstream.food_category, FactorDownstream.metric,
+                    FactorDownstream.sector, FactorDownstream.food_category,
+                    FactorDownstream.metric,
                     FactorDownstream.value_per_kg, FactorDownstream.data_quality,
                     FactorDownstream.source_note]
     form_args = {
@@ -349,12 +377,19 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
             "Where the food actually went. A downstream factor is the cost, "
             "or the credit, of that route."
         )},
+        "sector": {"description": (
+            "Leave blank unless this number genuinely varies by stage of the "
+            "supply chain — blank means the row applies to every sector "
+            "sending waste to this destination, and blank is the usual "
+            "answer. Fill it in when a route really is priced differently "
+            "upstream and down: a kerbside collection contract and a "
+            "commercial one at the same landfill, say. " + _WHICH_ROW_WINS
+        )},
         "food_category": {"description": (
             "Leave blank unless this number genuinely varies by food type — "
             "blank means the row applies to every category sent to this "
             "destination. That is how a per-tonne charge like the waste levy "
-            "is entered: one row, no category. A row naming a category wins "
-            "over the blank one; where neither exists the factor is zero."
+            "is entered: one row, no category, no sector. " + _WHICH_ROW_WINS
         )},
         "metric": {"description": (
             "Which metric this number feeds. One row per metric: the same "
@@ -373,6 +408,10 @@ class FactorDownstreamAdmin(AuditedModelView, model=FactorDownstream):
     column_filters = [
         ForeignKeyFilter(FactorDownstream.factor_set_id, FactorSet.version_label,
                          title="Factor set"),
+        #: A set that prices five supply-chain stages puts five times as many
+        #: rows on this screen as one that prices none, and "show me what the
+        #: farm rows say" is the first thing anyone asks of it.
+        ForeignKeyFilter(FactorDownstream.sector_id, Sector.code, title="Sector"),
         OperationColumnFilter(FactorDownstream.data_quality),
     ]
     column_sortable_list = [FactorDownstream.value_per_kg]
@@ -858,12 +897,32 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     **A published or archived set's own fields must not change in place**
     either, for the same reason the five child factor views refuse it for
-    their rows (`_require_draft_factor_set`'s own docstring): a staff member
-    switching `is_mock` off a live set through the generic edit form would
-    remove the mandatory, non-dismissible placeholder-data banner while the
-    numbers underneath are still mock, with no service function anywhere
-    near that path to stop it. See `_pending_previous_factor_set_status`,
+    their rows (`_require_draft_factor_set`'s own docstring): every stored
+    result stamped with that version has to keep reproducing years later, and
+    the generic edit route is `setattr` then commit with no service function
+    anywhere near it. See `_pending_previous_factor_set_status`,
     `update_model` and `validate_before_commit` below.
+
+    **`is_mock` is the one exception, and it is not an exception to that
+    rule** — it is off the edit form entirely (`form_columns` below), so the
+    rule above still covers every field the form can reach. The flag moves
+    through two actions instead, `flag_placeholder_action` and
+    `clear_placeholder_page`, and the two directions are deliberately not
+    symmetric:
+
+    * **Adding** the warning is allowed in any status, from either role, with
+      no proof. It is the safe direction, and somebody who doubts the numbers
+      under the live set must be able to put the disclaimer in front of the
+      public at once rather than clone a set to do it.
+    * **Removing** it takes a password or a live TOTP code, in every status,
+      and lands its own `audit_log` action. It is the only switch in this
+      panel whose consequence is immediate, outward-facing and the client's
+      reputation, which is the same bar creating an account, deleting one and
+      revealing an unclaimed password already sit behind.
+
+    A tick on a form could carry neither: sqladmin's generic edit form has
+    nowhere to put a confirmation step, and a checkbox in a form is something
+    a staff member editing a version label can take off by accident.
     """
 
     name = "Factor set"
@@ -901,7 +960,20 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     # plain data column, it is the entire lifecycle contract's write path,
     # and sqladmin's generic edit route (setattr then commit, no service
     # function anywhere near it) has no way to know that.
-    form_columns = [FactorSet.version_label, FactorSet.is_mock,
+    # `is_mock` is absent for the reason `status` is, one paragraph up: it is
+    # not a plain data column. It is what holds up the mandatory,
+    # non-dismissible placeholder-data warning on every public result and
+    # export (§7.6.2), and taking it off a set is the one change in this
+    # panel that a member of the public sees the instant it is made. As a
+    # form field it could be carried off by somebody who opened this screen
+    # to fix a version label, and the generic edit route has nowhere to ask
+    # them whether they meant it. Both directions are actions below.
+    #
+    # Off the *create* form too, and that is the second thing this closes: a
+    # new set could be created unticked. It now always starts ticked, from
+    # the column default (admin/factor_models.py), so "nothing is published
+    # as real data by omission" is structural rather than a habit.
+    form_columns = [FactorSet.version_label,
                     FactorSet.effective_from, FactorSet.notes]
     form_args = {
         "version_label": {"description": (
@@ -910,16 +982,6 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             "the clone, publish, rollback and comparison screens show, and "
             "the name the audit trail records. Make it something you can "
             "still recognise in a year."
-        )},
-        "is_mock": {"description": (
-            "Tick while these numbers are placeholders rather than the "
-            "client's real data. While it is ticked, every result page and "
-            "every export carries a warning saying so that a visitor cannot "
-            "dismiss. It can only be changed on a draft: switching it off a "
-            "published set would take that warning away while the numbers "
-            "underneath were still placeholders, and the panel refuses it. "
-            "New sets start ticked, so nothing is ever published as real "
-            "data by omission."
         )},
         "effective_from": {"description": (
             "The date these numbers are meant to apply from, recorded for "
@@ -977,11 +1039,12 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         if previous_status is not None and previous_status is not FactorSetStatus.draft:
             raise TaxonomyInvariantError(
                 f"This factor set is {previous_status.value}, not draft. "
-                "Its own fields must not change in place: switching "
-                "is_mock off a published set, for instance, would remove "
-                "the mandatory placeholder-data warning while the numbers "
-                "underneath are still mock. Clone this set into a new "
-                "draft first."
+                "Its own fields must not change in place: every stored "
+                "result names this version, and editing it does not correct "
+                "those results, it quietly changes what they claimed. Clone "
+                "this set into a new draft first. The one thing you can "
+                "still change on a live set is its placeholder-data flag, "
+                "and that has its own button on the factor-set list."
             )
 
     def _require_accessible(self, request) -> None:
@@ -1013,7 +1076,17 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         this method - which would otherwise 500 in exactly the shape the
         LifecycleError catch around every action below exists to prevent.
         """
-        raw = [pk for pk in request.query_params.get("pks", "").split(",") if pk]
+        return self._one_pk_from(request.query_params.get("pks", ""))
+
+    def _one_pk_from(self, pks: str) -> int:
+        """`_one_pk`'s rule, applied to a `pks` string from anywhere.
+
+        Split out for `clear_placeholder_page` below, which reads its
+        selection from the query string on a GET and from the submitted form
+        on a POST. One copy so the two-selected and non-integer refusals
+        cannot come out differently on one path than the other.
+        """
+        raw = [pk for pk in pks.split(",") if pk]
         if not raw:
             raise LifecycleError("No factor set was selected.")
         if len(raw) > 1:
@@ -1204,3 +1277,190 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         return RedirectResponse(
             request.url_for("admin:view-compare", factor_set_id=pk), status_code=302
         )
+
+    # --- The placeholder-data flag ---------------------------------------
+    #
+    # Contract §2.2. Two actions rather than one, because the two directions
+    # are not the same operation wearing different signs - see the class
+    # docstring. Both call the same service function
+    # (admin/factor_lifecycle.py's `set_placeholder_flag`), which is where
+    # the transitions, the refusal of a no-op and the audit entry live; what
+    # these two add is the half a service function cannot see, which is how
+    # sure the panel is that a person meant it.
+
+    @action(
+        name="flag-placeholder",
+        label="Flag as placeholder data",
+        confirmation_message=(
+            "This adds the placeholder-data warning to every public result "
+            "and export calculated from this set, and a visitor cannot "
+            "dismiss it. It takes effect immediately. Nothing else about "
+            "this set changes, and you can be wrong about this safely."
+        ),
+    )
+    async def flag_placeholder_action(self, request):
+        """Add the warning. Any status, either role, no proof.
+
+        A `confirmation_message` and nothing more - the same browser
+        `confirm()` clone, publish, roll back and archive use. It is here to
+        catch a misclick in the bulk **Actions** dropdown, not to slow
+        anybody down: this direction only ever *adds* a disclaimer, so the
+        worst outcome of pressing it by accident is a warning on a page that
+        did not need one, which the other action takes back off.
+        """
+        self._require_accessible(request)
+        actor = request.session.get(SESSION_KEY, "unknown")
+        try:
+            pk = self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+        with self.session_maker() as session:
+            try:
+                set_placeholder_flag(session, pk, is_mock=True, actor=actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await self._refused(request, str(exc))
+            session.commit()
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    @action(name="clear-placeholder", label="Clear placeholder flag")
+    async def clear_placeholder_action(self, request):
+        """Hand the selection to the confirmation page below.
+
+        **This action performs nothing**, for the reason
+        admin/accounts_view.py's `delete_action` performs nothing: sqladmin
+        registers an `@action` with `methods=["GET"]` only, and this one has
+        to take a proof - the current password or a live code - which means a
+        form, which means a POST.
+        """
+        self._require_accessible(request)
+        try:
+            self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+        pks = request.query_params.get("pks", "")
+        return RedirectResponse(
+            str(request.url_for("admin:view-factor-set-clear_placeholder_page"))
+            + f"?pks={pks}",
+            status_code=302,
+        )
+
+    async def _render_clear_page(self, request, context, status_code=200):
+        return await self.templates.TemplateResponse(
+            request, "brand/factor_set_clear_placeholder.html", context,
+            status_code=status_code,
+        )
+
+    # The route name sqladmin gives this is
+    # `admin:view-factor-set-clear_placeholder_page` -
+    # `view-{identity}-{func.__name__}` (sqladmin/application.py's
+    # `_handle_expose_decorated_func`), so renaming this method changes a URL
+    # and `clear_placeholder_action` above resolves that name.
+    @expose("/clear-placeholder", methods=["GET", "POST"])
+    async def clear_placeholder_page(self, request):
+        """Take the placeholder-data warning off a factor set, after proving
+        who is asking. Contract §2.2, §8.2.
+
+        **What this is and is not a gate on.** It is not a gate on the
+        numbers being real - nothing in software can check that. It is a gate
+        on a stolen session, and on a slip: this is the only control in the
+        panel that removes a disclaimer from a page the public is reading,
+        the effect is immediate, and it lands on the client's reputation
+        rather than on ours. Every operation of comparable weight here -
+        creating an account, deleting one, revealing an unclaimed password,
+        removing an authenticator - already asks for the same proof, and for
+        the same reason: a session cookie is the one thing somebody who had
+        taken your session would also have.
+
+        **A draft is asked for the same proof as a published set**, and the
+        symmetry is deliberate rather than tidy-minded. A draft has no public
+        consequence of its own, so proportionality argues for letting it go
+        through as an ordinary edit - but Publish takes no proof (contract
+        §8.3 keeps it available to both roles, on purpose), so a gate that
+        applied only to published sets would have a documented way round it
+        one button wide: clear it on the draft, then publish. The cost of
+        closing that is one password on an operation each factor set sees
+        once in its life.
+
+        Available to both roles, like the four lifecycle actions above and
+        for §8.3's reason. Publishing an entire set of numbers is the larger
+        act, and gating this behind an administrator while leaving that to
+        any staff member would be the wrong way round.
+        """
+        self._require_accessible(request)
+
+        raw = request.query_params.get("pks", "")
+        form = None
+        if request.method == "POST":
+            form = await request.form()
+            raw = form.get("pks") or ""
+
+        try:
+            pk = self._one_pk_from(raw)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            target = session.get(FactorSet, pk)
+            if target is None:
+                return await self._refused(
+                    request, f"No factor set with id {pk} exists to change."
+                )
+            context = {
+                "factor_set": {
+                    "id": target.id,
+                    "version_label": target.version_label,
+                    "status": target.status.value,
+                    "is_mock": target.is_mock,
+                    "notes": target.notes or "",
+                },
+                "is_published": target.status is FactorSetStatus.published,
+                "pks": str(target.id),
+                "error": None,
+                "open_dialog": None,
+                # The signed-in staff member, never the factor set. The proof
+                # field is autocomplete="current-password", so the browser
+                # has to be told whose account this form is about - see
+                # brand/_account_hint.html.
+                "signed_in_as": request.session.get(SESSION_KEY, ""),
+                "list_url": self._list_url(request),
+                "csrf_token": issue_token(request.session),
+            }
+
+            if request.method == "GET":
+                return await self._render_clear_page(request, context)
+
+            async def refuse(message, status_code=400):
+                return await self._render_clear_page(
+                    request, {**context, "error": message, "open_dialog": "confirm"},
+                    status_code=status_code,
+                )
+
+            if not check_token(request.session, form.get("csrf_token")):
+                session.rollback()
+                return await refuse("That form expired. Please try again.")
+
+            try:
+                acting = get_staff(session, actor)
+            except UnknownStaffError:
+                raise HTTPException(status_code=403) from None
+
+            problem = reauthenticate(
+                session, acting, form, runtime=get_runtime(request), now=time.time()
+            )
+            if problem is not None:
+                # Nothing has been written yet - reauthenticate only reads -
+                # but the rollback ends this session's transaction rather
+                # than leaving it open behind a rendered page.
+                session.rollback()
+                return await refuse(problem)
+
+            try:
+                set_placeholder_flag(session, pk, is_mock=False, actor=actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await refuse(str(exc))
+            session.commit()
+
+        return RedirectResponse(self._list_url(request), status_code=302)

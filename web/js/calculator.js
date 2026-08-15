@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
-import { kgString, massToKg } from './units.js'
+import { containerKg, entryTotal, kgString, massToKg } from './units.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { downloadResults, renderResults } from './results.js'
@@ -44,6 +44,83 @@ const selected = (items, code) => items.find(item => item.code === code)
 // taxonomy it builds — the same seam `buildResultsReport` was pulled out for (§7.3a).
 export const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => !destination.is_prevention)
 const createLine = (destination, qtyInput = '') => ({ id: randomId(), destination, qtyInput })
+
+// ---------------------------------------------------------------- containers
+//
+// §7.3's container input. A café or a school does not know how many kilograms it throws
+// out; it knows it fills two 240 L wheelie bins a week, and making it guess a weight is
+// how a made-up number gets into a public statistic (§7.6.1's whole point is that the
+// numbers on this page are traceable).
+
+// `units.js` holds both, because the results export needs the same reconciliation and
+// cannot import this module. These three lines are the taxonomy binding: everything below
+// asks about `state`'s presets without repeating where they live.
+const presetList = () => state.taxonomy?.unit_presets || []
+const containerTotal = entry => containerKg(entry, presetList())
+const totalOf = entry => entryTotal(entry, presetList())
+
+/**
+ * The containers this visitor may choose from, in the order §6.1 served them.
+ *
+ * **Nothing is re-sorted here.** `unit_preset` is the one taxonomy table with no
+ * `sort_order`, so `get_taxonomy` orders it by `kg_per_unit` — smallest first — and
+ * sorting again in the browser could only disagree with the server. It would also mean
+ * `Number(kg_per_unit)` on an API decimal, which §7.6 permits for display and charting
+ * and not for ordering a form.
+ *
+ * **A preset naming a food category is a conversion that is only true of that food** —
+ * a bin of bread and a bin of potatoes do not weigh the same, which is what §2.1's
+ * nullable `food_category_id` is for. NULL means "every category" and those always show;
+ * a named one shows only once step 2 has chosen it. Step 2 is optional, so a visitor who
+ * skipped it sees the generic containers alone, which is the correct outcome: there is no
+ * category to be specific about.
+ *
+ * Exported for `tests/web/test_unit_presets.py`, which runs it under Node against a
+ * taxonomy it builds — the same seam `entryDestinations` is exported through, and for the
+ * same reason: a test that greps this file for `food_category` asserts that a property
+ * name was typed, not that a row leaves the list. **No shipped preset names a category**
+ * (O-6: no measured per-food density exists), so nothing in a browser can exercise this
+ * filter at all.
+ */
+export const containerPresets = () => presetList()
+  .filter(preset => !preset.food_category || preset.food_category === state.foodCategory)
+
+const totalNumber = entry => Number(totalOf(entry).amount) || 0
+
+// Half a wheelie bin is a reasonable thing to say; two hundred and forty thousand of them
+// is not. Ten thousand containers is about twenty-seven a day for a year — past any single
+// site — and still leaves the largest seeded preset (1,100 L at 0.29 kg/L) at 3,190 t,
+// inside §6.2's 10,000,000 kg per-line ceiling. So the count bound is the one a visitor
+// ever meets, and the refusal can be written about containers rather than about kilograms.
+const MAX_CONTAINER_COUNT = 10000
+
+/**
+ * Whether the chosen preset would still be on the list under `foodCategory`.
+ *
+ * A preset tied to a food category leaves the list when a different category is chosen,
+ * and a selection that is no longer on the list is a conversion the visitor can no longer
+ * see being applied to their total. It goes with the category. This is not tidying: a
+ * stale factor still in force behind a changed choice is the exact shape of the defects
+ * §10 keeps recording.
+ */
+function presetSurvives(foodCategory) {
+  const preset = selected(presetList(), state.unitPreset)
+  return !preset || !preset.food_category || preset.food_category === foodCategory
+}
+
+/**
+ * The state patch that goes with a food-category change.
+ *
+ * Empty when the chosen container is still on the list. When it is not, the form falls all
+ * the way back to a weight rather than keeping `measureMode: 'container'` with nothing
+ * selected — which would leave the `<select>` showing kilograms (no option matches the
+ * dead value, so the browser falls to the first) while `state` still said container: two
+ * halves of one control disagreeing, which is worse than asking again.
+ */
+const presetPatch = foodCategory => (presetSurvives(foodCategory)
+  ? {}
+  : { unitPreset: null, measureMode: 'mass', totalUnit: 'kilograms', current: [] })
+
 // §7.3: `kgString` is `massToKg(...).toFixed(3)`, and it exists so the rounding to the
 // API's three decimal places happens in `units.js` rather than at each call site. Both
 // sites here spelled it out instead, which is the same defect `kgToTonnes` was added for.
@@ -51,14 +128,16 @@ const createLine = (destination, qtyInput = '') => ({ id: randomId(), destinatio
 // filled is not a row holding zero.
 const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : kgString(line.qtyInput, state.totalUnit) }))
 const allocatedAmount = lines => lines.reduce((sum, line) => sum + (Number(line.qtyInput) || 0), 0)
-const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.current.some(line => line.qtyInput !== '') || state.result)
-const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, current: state.current.map(line => ({ ...line })) })
+// `unitPreset` and `unitCount` are here for the same reason `totalAmount` is: they are
+// something the visitor entered, so the Clear button has to appear once either exists.
+const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.current.some(line => line.qtyInput !== '') || state.result)
+const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, current: state.current.map(line => ({ ...line })) })
 
 function introduction() {
   return `<section class="hero" aria-labelledby="page-title">
     <div class="hero-copy"><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are submitted anonymously when you calculate results.'))}</p></div>
     <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" />${[150, 450, 750, 1050, 1350].flatMap(centre => [`<ellipse cx="${centre}" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/>`, `<ellipse cx="${centre}" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/>`]).join('')}${[300, 600, 900, 1200].map(x => `<path d="M ${x} 72 L ${x + 36} 126 L ${x} 181 L ${x - 36} 126 Z" fill="black"/>`).join('')}</mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
-    <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount in kilograms or tonnes'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
+    <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount — a weight, or how many containers you fill'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
   </section>`
 }
 
@@ -81,8 +160,85 @@ function foodStep() {
   }).join('')}</div></fieldset>${state.foodCategory ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear optional selection'))}</button>` : ''}${stepNav({ step: 1, back: 0 })}</section>`
 }
 
+/**
+ * The `<select>` value that names a container, distinguished from a mass unit by a prefix.
+ *
+ * The prefix is not decoration. `kilograms` and `tonnes` share this control's value space
+ * with every `unit_preset.code` in the taxonomy, and a preset coded `tonnes` — which
+ * nothing forbids, `code` being staff-editable (§8.1) — would otherwise silently become
+ * the tonnes option and convert nothing.
+ */
+const PRESET_OPTION = 'preset:'
+const unitSelectValue = () =>
+  (state.measureMode === 'container' ? PRESET_OPTION + (state.unitPreset || '') : state.totalUnit)
+
+/**
+ * The running kilogram total, as **plain text**.
+ *
+ * Not escaped here, because it has two consumers that need opposite things: the template
+ * below interpolates it into `innerHTML` and escapes it there, while `updateContainerCount`
+ * assigns it to `textContent`, which escapes nothing and unescapes nothing. Returning
+ * escaped text would put a literal `&#039;` on screen in every language whose wording
+ * carries an apostrophe — French and Italian among them.
+ *
+ * `kg` is outside `t()`. §7.7.7: metric units are international notation and are never
+ * translated, and `reviewLines` already writes it as a literal for the same reason.
+ */
+function containerTotalText() {
+  if (!decimalPattern.test(state.unitCount || '')) return ''
+  const kilograms = containerTotal(state)
+  if (kilograms === '') return ''
+  return t('That is about %(mass)s in total.', { mass: `${formatNumber(kilograms, 3)} kg` })
+}
+
+/**
+ * Step 3.
+ *
+ * **The containers are options on the unit `<select>`, not a second mode with its own
+ * fieldset, and the reason is measured.** The first build of this input put a "By weight /
+ * By container" radio pair above the form: two `.simple-choice` cards and a legend, 169px
+ * at 1278x983 on a step that had 50px of headroom. It pushed the document to 1102px in a
+ * 983px viewport and broke three of `tests/web/test_step_navigation.py`'s assertions at
+ * once — §7.6.3's rule that advancing must never require scrolling, which this project
+ * measures rather than assumes.
+ *
+ * Folding the containers into the control that was already asking the question costs
+ * **nothing**: "1,200 kilograms" and "2 × 240 L wheelie bin" are one question with one
+ * answer, an `<optgroup>` makes the second half discoverable without a second control, and
+ * the running total is the only element container mode adds — 24px, and only once a
+ * container is chosen.
+ *
+ * The amount field keeps its position and changes its identity with the mode: `#total-waste`
+ * for a mass, `#unit-count` for a count. Two ids rather than one because the two are
+ * different quantities and `state` holds them apart — switching from 1,200 kilograms to
+ * wheelie bins must not carry 1,200 over as a bin count.
+ *
+ * **The running total goes inside the count's own field, under the input.** It sat after
+ * the whole panel first, which reads fine on a desktop and put it *behind the sticky
+ * navigation bar at 390x700* — the one width where the confirmation matters most, hidden
+ * by the element that is always on screen. Under the input it is beside the number it
+ * describes at every width, and it is the field's own last child so nothing separates
+ * "2" from "about 139.200 kg".
+ */
 function amountStep() {
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="total-waste">${escapeHtml(t('Waste amount'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Use up to two decimal places.'))}</p><input id="total-waste" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalAmount)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose the measurement unit.'))}</p><select id="total-unit"><option value="kilograms" ${state.totalUnit === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${state.totalUnit === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></select></div></div>${stepNav({ step: 2, back: 1 })}</section>`
+  const container = state.measureMode === 'container'
+  const presets = containerPresets()
+  const amountId = container ? 'unit-count' : 'total-waste'
+  const amountLabel = container ? t('How many containers?') : t('Waste amount')
+  const amountHint = container
+    ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
+    : t('Use up to two decimal places.')
+  const amountValue = container ? state.unitCount : state.totalAmount
+  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit"><optgroup label="${escapeHtml(t('Weight'))}"><option value="kilograms" ${unitSelectValue() === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${unitSelectValue() === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></optgroup>${presets.length ? `<optgroup label="${escapeHtml(t('Containers'))}">${presets.map(preset => {
+    // `preset.label` is `unit_preset.label` — staff-typed, and §7.7.7's ruling of
+    // 14 August is that anything a staff member can edit is published exactly as
+    // written. It is escaped and it is never passed through `t()`. Everything
+    // around it is translated, the `<optgroup>` labels included; a Thai visitor gets
+    // a Thai form listing English container names, which is the stated and accepted
+    // consequence of that rule.
+    const value = PRESET_OPTION + preset.code
+    return `<option value="${escapeHtml(value)}" ${unitSelectValue() === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
+  }).join('')}</optgroup>` : ''}</select></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**
@@ -109,7 +265,7 @@ function draftFieldPaths() {
 }
 
 function destinationRows() {
-  const allocationExcess = exceedsTotal(allocatedAmount(state.current), Number(state.totalAmount || 0))
+  const allocationExcess = exceedsTotal(allocatedAmount(state.current), totalNumber(state))
   const paths = draftFieldPaths()
   return state.current.map((line, index) => {
     const destination = selected(state.taxonomy.destinations, line.destination)
@@ -120,7 +276,7 @@ function destinationRows() {
 }
 
 function destinationStep() {
-  const total = Number(state.totalAmount) || 0
+  const total = totalNumber(state)
   const allocated = allocatedAmount(state.current)
   const summaryInvalid = exceedsTotal(allocated, total) || state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
   const canContinue = allocated > 0 && !summaryInvalid && !state.current.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))
@@ -142,16 +298,34 @@ function normaliseEntryLines(entry) {
   return entry.current.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : kgString(line.qtyInput, entry.totalUnit) }))
 }
 
+/**
+ * What step 3 was told, in the words it was told in — **already escaped**, so no call
+ * site may escape it again.
+ *
+ * A container entry says how many of which container, because "139.200 kg" is not what
+ * the visitor entered and is not what they can check. The kilograms are printed beside
+ * it, never instead of it. `preset.label` is staff-typed and published as written
+ * (§7.7.7), so it is escaped and never translated.
+ */
+function measuredAs(entry) {
+  if (entry.measureMode !== 'container') {
+    return `${formatNumber(entry.totalAmount, 2)} ${escapeHtml(unitLabel(entry.totalUnit))}`
+  }
+  const preset = selected(presetList(), entry.unitPreset)
+  return `${formatNumber(entry.unitCount, 2)} × ${escapeHtml(preset?.label || entry.unitPreset || '')}`
+}
+
 function entryCard(entry, index) {
   const sector = selected(state.taxonomy.sectors, entry.sector)
   const food = selected(state.taxonomy.food_categories, entry.foodCategory)
-  return `<article class="saved-entry-card"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3><p>${formatNumber(entry.totalAmount, 2)} ${escapeHtml(unitLabel(entry.totalUnit))} · ${escapeHtml(food?.name || t('Food type not provided'))}</p></div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
+  return `<article class="saved-entry-card"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3><p>${measuredAs(entry)} · ${escapeHtml(food?.name || t('Food type not provided'))}</p></div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
 }
 
 function reviewStep() {
   const sector = selected(state.taxonomy.sectors, state.sector)
   const food = selected(state.taxonomy.food_categories, state.foodCategory)
-  const totalKg = massToKg(state.totalAmount, state.totalUnit)
+  const total = totalOf(state)
+  const totalKg = massToKg(total.amount, total.unit)
   // §7.6.2: the placeholder wording is conditional on `is_mock`, never unconditional. It was
   // hard-coded here, which is correct only while every factor set is mock and inverts the day
   // a real one is published — a screen that tells a user their verified factors have not been
@@ -165,7 +339,7 @@ function reviewStep() {
     <div class="section-heading-row current-entry-heading"><h2>${escapeHtml(t('Current entry %(number)s', { number: state.entries.length + 1 }))}</h2><span>${escapeHtml(t('Ready to calculate'))}</span></div>
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Supply-chain stage'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="0">${escapeHtml(t('Edit'))}</button></div><p>${escapeHtml(sector?.name || state.sector)}</p></article>
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Food category'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="1">${escapeHtml(t('Edit'))}</button></div><p>${escapeHtml(food?.name || t('Standard mix / not specified'))}</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="2">${escapeHtml(t('Edit'))}</button></div><p><strong>${formatNumber(state.totalAmount, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="2">${escapeHtml(t('Edit'))}</button></div><p><strong>${measuredAs(state)}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste destinations'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="3">${escapeHtml(t('Edit'))}</button></div>${reviewLines(draftEntry())}</article>
     <button class="button button-add add-entry-button" type="button" data-action="add-entry">+ ${escapeHtml(t('Add another supply-chain entry'))}</button>
     <aside class="disclaimer compact" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Estimate notice'))}</strong><p>${escapeHtml(estimateNotice)}</p></div></aside>
@@ -180,12 +354,27 @@ function reviewStep() {
 
 function validateCurrentStep() {
   if (state.step === 0 && !state.sector) return t('Select where in the food supply chain the waste occurred.')
-  if (state.step === 2) {
+  if (state.step === 2 && state.measureMode === 'container') {
+    // **The two-decimal rule applies to the count, which is what the visitor typed.** It
+    // is an input rule about typing, not a property of the total: `toKg` returns three
+    // decimals because that is what §6.2 accepts, and a total of "139.200" is not a
+    // number anybody entered. §7.2 recorded this collision as the decision building this
+    // input would require; this is the decision.
+    if (!state.unitCount || Number(state.unitCount) <= 0) return t('Number of containers must be greater than zero.')
+    if (!decimalPattern.test(state.unitCount)) return t('Enter no more than two decimal places.')
+    if (Number(state.unitCount) > MAX_CONTAINER_COUNT) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(MAX_CONTAINER_COUNT, 0) })
+    // A preset whose code the taxonomy no longer holds, or whose `kg_per_unit` will not
+    // parse, leaves `containerKg` at '' — and a step that continued on that would carry a
+    // zero total into step 4 and refuse every allocation with a message about the
+    // allocation. Say what is actually wrong instead.
+    if (!state.unitPreset || containerTotal(state) === '') return t('That container is no longer available. Choose another.')
+  }
+  if (state.step === 2 && state.measureMode !== 'container') {
     if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')
     if (!decimalPattern.test(state.totalAmount)) return t('Enter no more than two decimal places.')
   }
   if (state.step === 3) {
-    const total = Number(state.totalAmount)
+    const total = totalNumber(state)
     const lines = state.current
     if (!lines.some(line => Number(line.qtyInput) > 0)) return t('Enter an amount for at least one waste destination.')
     if (lines.some(line => line.qtyInput !== '' && (Number(line.qtyInput) < 0 || !Number.isFinite(Number(line.qtyInput))))) return t('Destination amounts must be zero or greater.')
@@ -304,6 +493,26 @@ async function submitCalculation() {
   }
 }
 
+/**
+ * The container count, on keystroke.
+ *
+ * Takes §7.2's documented exception rather than `setState`: `render()` replaces
+ * `main.innerHTML`, so a re-render per keystroke destroys the focused input — the same
+ * reason `updateLine` and `improvement.js` bypass it. Only the running total is patched,
+ * and `textContent` is the assignment because the string is plain text.
+ *
+ * Nothing here validates. The count is not wrong while it is half-typed; `1.` and `0.` are
+ * both on the way to a legal value, and `containerTotalText` simply shows nothing until
+ * `decimalPattern` matches. The refusal comes from `validateCurrentStep` on Continue,
+ * which is where the mass field's rule already lives.
+ */
+function updateContainerCount(control) {
+  state.unitCount = control.value
+  state.error = null
+  const total = document.getElementById('container-total')
+  if (total) total.textContent = containerTotalText()
+}
+
 function updateLine(control) {
   const lineId = control.dataset.lineId
   state.current = state.current.map(line => line.id === lineId ? { ...line, qtyInput: control.value } : line)
@@ -313,7 +522,7 @@ function updateLine(control) {
   // neighbouring row; the highlights they drew are cleared below with the rest.
   state.fieldErrors = {}
   state.lastChangedDestination = state.current.find(line => line.id === lineId)?.destination || null
-  const total = Number(state.totalAmount) || 0
+  const total = totalNumber(state)
   const sum = allocatedAmount(state.current)
   const summary = document.getElementById('current-summary')
   const hasNegative = state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
@@ -339,11 +548,11 @@ function updateLine(control) {
 }
 
 function loadEntry(entry) {
-  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
+  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
 }
 
 function clearDraft() {
-  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
 export function render(main) {
@@ -395,7 +604,10 @@ export function bindCalculator(main, retryTaxonomy) {
       const code = control.dataset.sector
       setState({ expandedSectors: state.expandedSectors.includes(code) ? state.expandedSectors.filter(item => item !== code) : [...state.expandedSectors, code] })
     }
-    if (action === 'clear-food') setState({ foodCategory: null })
+    // Clearing the category takes any category-specific container with it, for the same
+    // reason choosing a different one does: the preset is no longer on the list step 3
+    // would offer, and a conversion nobody can see is a conversion nobody can check.
+    if (action === 'clear-food') setState({ foodCategory: null, ...presetPatch(null) })
     if (action === 'continue') {
       const error = validateCurrentStep()
       if (error) setState({ error })
@@ -437,8 +649,26 @@ export function bindCalculator(main, retryTaxonomy) {
   main.addEventListener('change', event => {
     const target = event.target
     if (target.name === 'sector') setState({ sector: target.value, error: null })
-    if (target.name === 'food-category') setState({ foodCategory: target.value })
-    if (target.id === 'total-unit') setState({ totalUnit: target.value, error: null, current: [] })
+    if (target.name === 'food-category') setState({ foodCategory: target.value, ...presetPatch(target.value) })
+    // One control, both modes. `current: []` was already this handler's behaviour and the
+    // reason is unchanged and now broader: the destination amounts were entered against a
+    // total in a unit that is no longer the one in force.
+    //
+    // **A container pins `totalUnit` to kilograms**, because that is the unit step 4
+    // allocates in and §6.2 compares the two. Without it, a visitor who chose tonnes and
+    // then chose a wheelie bin would reach a step 4 whose rows say "tonnes" against a total
+    // in kilograms — a thousandfold error on a screen that looks entirely normal, refused
+    // by nothing, because both numbers are individually plausible.
+    if (target.id === 'total-unit') {
+      const preset = target.value.startsWith(PRESET_OPTION) ? target.value.slice(PRESET_OPTION.length) : null
+      setState({
+        measureMode: preset ? 'container' : 'mass',
+        unitPreset: preset,
+        totalUnit: preset ? 'kilograms' : target.value,
+        error: null,
+        current: [],
+      })
+    }
   })
 
   main.addEventListener('input', event => {
@@ -447,6 +677,7 @@ export function bindCalculator(main, retryTaxonomy) {
       state.totalAmount = target.value
       state.error = null
     }
+    if (target.id === 'unit-count') updateContainerCount(target)
     if (target.matches('[data-line-field="amount"]')) updateLine(target)
     if (target.matches('[data-improvement-code]')) updateImprovementInput(target, state)
   })

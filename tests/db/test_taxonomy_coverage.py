@@ -140,6 +140,88 @@ def test_a_food_category_covered_only_by_a_downstream_row_is_present(seeded_sess
     assert "bakery_grains" in codes(get_taxonomy(seeded_session).food_categories)
 
 
+def test_a_sector_covered_only_by_a_downstream_row_is_present(seeded_session):
+    """v1.31. The two factor tables are read for sectors as well now.
+
+    `factor_downstream.sector_id` is nullable and a non-NULL value scopes the
+    row to one stage of the supply chain. A set may price a stage **downstream
+    only** — a per-tonne disposal charge that differs by collection contract,
+    with no upstream footprint of its own — and reading `factor_upstream`
+    alone would drop that sector from the form while the rows pricing it sat
+    in the database. That is the silent zero this whole filter exists to
+    remove, arriving through the one table it did not read.
+
+    `primary_production` is the seed's own sector and
+    `test_a_sector_and_a_food_category_with_no_upstream_row_are_absent` above
+    asserts it is *absent* before this row is added, so the two together show
+    that the row is what changed the answer rather than the seed.
+    """
+    assert "primary_production" not in codes(get_taxonomy(seeded_session).sectors), (
+        "seed changed: this sector must start uncovered for the test to mean anything"
+    )
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published_id(seeded_session),
+            destination_id=row_id(seeded_session, Destination, "landfill"),
+            sector_id=row_id(seeded_session, Sector, "primary_production"),
+            food_category_id=None,
+            metric_id=row_id(seeded_session, Metric, "co2e"),
+            value_per_kg=Decimal("0.31"),
+        )
+    )
+    seeded_session.flush()
+
+    assert "primary_production" in codes(get_taxonomy(seeded_session).sectors)
+
+
+def test_a_null_sector_downstream_row_covers_no_sector_at_all(seeded_session):
+    """The other half, and the one a plausible misreading gets wrong.
+
+    NULL means "every sector" — and the wrong inference from that sentence is
+    that such a row *covers* every sector, which would put the whole sector
+    table back on the form and undo v1.21 for the one dimension v1.31 touched.
+    It is evidence about no particular sector, so it covers none.
+
+    **What this test does not claim.** Dropping the `is not None` guard so that
+    a bare `None` joins the id set is harmless here and was confirmed harmless
+    by mutation: nothing compares equal to it, because no `sector.id` is NULL.
+    The guard stays because the set is a set of ids and `None` is not one; the
+    defect this test kills is the union above, not the missing guard.
+
+    The seed's own generic downstream rows are already NULL here, so this also
+    asserts the state the deployed database is in.
+    """
+    seeded_session.add(
+        Destination(
+            group_id=row_id(seeded_session, DestinationGroup, "disposal"),
+            code="every_sector_only", name="Every sector only", sort_order=901,
+        )
+    )
+    seeded_session.flush()
+    seeded_session.add(
+        FactorDownstream(
+            factor_set_id=published_id(seeded_session),
+            destination_id=row_id(seeded_session, Destination, "every_sector_only"),
+            sector_id=None,
+            food_category_id=None,
+            metric_id=row_id(seeded_session, Metric, "co2e"),
+            value_per_kg=Decimal("0.02"),
+        )
+    )
+    seeded_session.flush()
+
+    #: The row is real and does its own job — it covers its destination — so
+    #: this is not a test that passes because nothing was written.
+    assert "every_sector_only" in codes(get_taxonomy(seeded_session).destinations)
+
+    sectors = codes(get_taxonomy(seeded_session).sectors)
+    assert "primary_production" not in sectors
+    assert "consumer_hospitality" not in sectors
+    #: The sector that *is* covered, from `factor_upstream`, still is — the
+    #: assertion above is satisfied by a filter that returns nothing at all.
+    assert "processing" in sectors
+
+
 def test_a_destination_covered_only_by_an_upstream_row_is_present(seeded_session):
     """`factor_upstream.destination_id` became nullable in O-7 (v1.8) and a
     non-NULL value is a per-destination override. §2.2 states the column is not
@@ -310,6 +392,52 @@ def test_no_destination_names_a_group_the_response_omits(seeded_session):
     snapshot = get_taxonomy(seeded_session)
     listed = codes(snapshot.destination_groups)
     assert {row.group for row in snapshot.destinations} <= listed
+
+
+def test_the_unit_presets_come_back_smallest_container_first(seeded_session):
+    """§6.1 (v1.33). `unit_preset` is the one taxonomy table with no `sort_order`,
+    and the step-3 `<select>` renders this response order **as given** — the
+    front end sorts nothing, deliberately, because re-sorting there could only
+    disagree with here and would mean `Number()` on an API decimal for something
+    that is not display.
+
+    So the order has to be right in this function, and this is the only test that
+    looks at it: `tests/api/test_fixture_consistency.py` asserts the *fixture* is
+    sorted, which is a statement about a file, and a mutation putting
+    `.order_by(UnitPreset.code)` back survived it untouched.
+
+    **The rows are added here rather than taken from whatever the fixture holds,
+    because the assertion is only meaningful against codes that sort the other
+    way from their masses.** A list can be alphabetical and ascending at the same
+    time, and a test written over an incidentally-agreeing set would be green
+    against the very ordering it exists to refuse. These three disagree in both
+    directions: `a_` is the smallest and sorts first either way, `m_` is the
+    largest and sorts second by code, `z_` is in the middle and sorts last.
+
+    The shipped set has the same shape for real — `front_loader_1100l` precedes
+    `front_loader_660l` alphabetically, and `wheelie_bin_140l` precedes
+    `wheelie_bin_80l` — which is what the ordering was changed for.
+    """
+    for code, kilograms in (
+        ("a_small_bucket", "2.9000"),
+        ("m_front_loader", "319.0000"),
+        ("z_wheelie_bin", "69.6000"),
+    ):
+        seeded_session.add(
+            UnitPreset(code=code, label=code, food_category_id=None,
+                       kg_per_unit=Decimal(kilograms))
+        )
+    seeded_session.flush()
+
+    presets = get_taxonomy(seeded_session).unit_presets
+    ordered = [(row.code, str(row.kg_per_unit)) for row in presets]
+    masses = [row.kg_per_unit for row in presets]
+    assert masses == sorted(masses), ordered
+
+    by_code = {row.code: index for index, row in enumerate(presets)}
+    assert by_code["z_wheelie_bin"] < by_code["m_front_loader"], (
+        "the presets came back in code order, not size order: " + repr(ordered)
+    )
 
 
 def test_a_preset_for_every_category_stays_and_one_naming_a_hidden_category_goes(

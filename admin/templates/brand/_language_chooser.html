@@ -13,8 +13,10 @@
 
    "TOP LEFT" IS WRITTEN AS TOP INLINE-START. Two of the calculator's languages
    render right-to-left, and although the panel ships only English and Chinese
-   today the rule has to be the same one on both surfaces. See admin/static
-   brand.css `.language-bar`.
+   today the rule has to be the same one on both surfaces. See
+   admin/static/language.css `.language-bar` - a file of its own rather than more
+   of brand.css, because brand.css reaches the five gate pages and this partial
+   is also on every screen of the Tabler panel, which does not load it.
 
    ONLY WHAT THE PANEL HAS IS LISTED. `kaicalc_languages()` is the panel's own
    catalogue set - English and Chinese - not the calculator's twenty-one. When
@@ -23,6 +25,26 @@
    cookie is left exactly as it was: rewriting it here would destroy the
    calculator's language from an unrelated screen. #}
 <form class="language-bar" method="post" action="/admin/language">
+  {# THE GLOBE. Drawn here, because it cannot be fetched: there is no icon font
+     in this panel, no build step to inline one with, and the public origin's
+     policy is `img-src 'self' data:` with no third-party host - the calculator
+     draws the identical shape in web/js/i18n.js for the same reason.
+
+     `aria-hidden`, and that is not a shortcut: the `<label>` beside it already
+     names this control, and a second name would make a screen reader say
+     "globe, Language". It is decoration for the eye - and at a narrow width,
+     where the word does not fit, it is the only thing on screen that says what
+     the control is for.
+
+     No `fill` or `stroke` attributes. Colour comes from language.css through
+     `currentColor`, so one drawing serves a light ground and a dark one. #}
+  <svg class="language-bar__globe" viewBox="0 0 20 20" aria-hidden="true" focusable="false">
+    <circle class="language-bar__globe-sphere" cx="10" cy="10" r="7.4"/>
+    <path d="M2.6 10h14.8"/>
+    {# An ellipse rather than two arcs: one element, symmetric about both axes,
+       so it mirrors under `dir="rtl"` by being unchanged. #}
+    <ellipse cx="10" cy="10" rx="3.5" ry="7.4"/>
+  </svg>
   <label class="language-bar__label" for="language-chooser">{{ _("Language") }}</label>
   <select class="language-bar__select" id="language-chooser" name="lang">
     {# The CHOICE, not the rendered language. With `auto` stored and a Chinese

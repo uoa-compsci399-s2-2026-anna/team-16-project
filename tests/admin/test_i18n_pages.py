@@ -302,6 +302,99 @@ async def test_the_language_chooser_is_a_form_that_needs_no_scripting(admin_clie
     assert "hreflang=" not in body
 
 
+async def test_the_panel_proper_reaches_the_chooser_s_stylesheet(admin_client, client):
+    """**The chooser had rules and the panel did not get them.**
+
+    `brand.css` is linked from `brand/base.html`, which is the five gate pages.
+    The panel proper is sqladmin's Tabler layout, whose `<head>` lives in a
+    template this project does not fork - so every screen a signed-in person
+    actually uses rendered `Language [English v] [Set language]` as raw platform
+    controls while the login page they had just left was styled.
+
+    Both halves are asserted, because either alone passes while the defect
+    stands: the panel's page has to ASK for `language.css`, and the file has to
+    be SERVED and actually carry the component. A `<link>` to a 404 is a link.
+
+    The gate page is checked against the same file, which is the property that
+    keeps the two skins from drifting - two copies of these rules is how the
+    login page and the panel come to disagree about what the control looks like.
+    """
+    link = '<link rel="stylesheet" href="/admin/static/language.css">'
+
+    panel = await admin_client.get("/admin/constant/list")
+    assert link in panel.text, "the Tabler skin never asks for the chooser's stylesheet"
+
+    gate = await client.get("/admin/login")
+    assert link in gate.text, "the gate pages no longer share the chooser's stylesheet"
+
+    stylesheet = await admin_client.get("/admin/static/language.css")
+    assert stylesheet.status_code == 200, stylesheet.status_code
+    css = stylesheet.text
+    for selector in (
+        ".language-bar",
+        ".language-bar__globe",
+        ".language-bar__select",
+        ".language-bar__submit",
+    ):
+        assert re.search(rf"^{re.escape(selector)}[\s,:{{]", css, re.M), (
+            f"language.css does not define {selector}"
+        )
+
+    # The rules must not ALSO be in brand.css, or the panel proper can be fixed
+    # from one file and quietly regressed from the other.
+    brand = await admin_client.get("/admin/static/brand.css")
+    body = re.sub(r"/\*.*?\*/", "", brand.text, flags=re.S)
+    assert ".language-bar" not in body, (
+        "brand.css styles the chooser again; it reaches the gate pages only, so "
+        "whatever it says there the panel proper does not get"
+    )
+
+    # **THE ONE RULE HERE THAT IS A PATTERN RATHER THAN A MEASUREMENT, AND WHY.**
+    # Tabler lays `.page-wrapper` out as a flex COLUMN, and a flex item is
+    # blockified - so `display: inline-flex` alone produced a capsule stretched
+    # across the whole content area, a 1,250px pill holding 320px of control.
+    # `align-self: flex-start` is what stops it. It cannot be measured where the
+    # rest of this treatment is measured: the browser module reaches the login
+    # gate, which is ordinary block flow, and there `inline-flex` shrink-wraps
+    # correctly with or without this declaration - the mutant survives. Reaching
+    # a page inside the panel means the whole login gauntlet in a browser.
+    # So it is anchored the way tests/admin/test_list_table.py anchors its four:
+    # to the selector, then to the declaration inside that same rule body, so
+    # moving it elsewhere fails.
+    assert re.search(r"\.language-bar\s*\{[^}]*align-self:\s*flex-start\s*;", css, re.S), (
+        "`.language-bar` no longer pins itself to the start of Tabler's flex "
+        "column, so the capsule stretches across the panel's content area"
+    )
+
+
+async def test_the_globe_is_inline_svg_and_is_not_announced(admin_client):
+    """Drawn in the markup, never fetched, and silent to a screen reader.
+
+    There is no icon font in this panel and no build step to inline one with,
+    and the public origin's policy is `img-src 'self' data:` with no third-party
+    host - so the icon can only be SVG written into the page. `aria-hidden`
+    because the `<label>` beside it already names the control; announcing
+    "globe, Language" would be one thing said twice.
+
+    Anchored on the element and its three shapes rather than on the class alone:
+    a `<svg class="language-bar__globe">` with nothing inside it satisfies a
+    class check and draws nothing. That it draws anything at all is measured in
+    a browser, in tests/web/test_i18n_browser.py.
+    """
+    body = (await admin_client.get("/admin/constant/list")).text
+
+    assert '<svg class="language-bar__globe" viewBox="0 0 20 20" aria-hidden="true"' in body
+    for shape in ('<circle class="language-bar__globe-sphere"', "<path d=", "<ellipse "):
+        assert shape in body, f"the globe is missing its {shape!r}"
+
+    chooser = body[body.index('<form class="language-bar"') :]
+    chooser = chooser[: chooser.index("</form>")]
+    assert "<img" not in chooser, "the globe is being fetched rather than drawn"
+    assert "aria-label" not in chooser, (
+        "the globe or the control has grown a second accessible name beside the label"
+    )
+
+
 async def test_the_chooser_shows_the_choice_rather_than_the_rendered_language(
     admin_client,
 ):

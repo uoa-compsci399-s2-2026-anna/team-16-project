@@ -86,8 +86,8 @@ COMPARABLE = {
 # slugs ReFED's own dataset uses.
 REFED_SECTOR = "retail"
 REFED_FOOD = "produce"
-OUR_FOOD_CATEGORY = "refed_retail_produce"
-OUR_SECTOR = "refed_us"
+OUR_FOOD_CATEGORY = "refed_produce"
+OUR_SECTOR = "refed_retail"
 
 # The recommended scenario.  Two destinations in `current`, four in
 # `alternative`, mass-balanced at 10,000 kg on both sides.  It exercises:
@@ -394,7 +394,7 @@ def test_prevention_is_a_complete_offset(bundle: FactorBundle) -> None:
             OUR_SECTOR, OUR_FOOD_CATEGORY, "refed_prevention", metric
         ) == Decimal("0")
         assert bundle.downstream(
-            "refed_prevention", OUR_FOOD_CATEGORY, metric
+            "refed_prevention", OUR_SECTOR, OUR_FOOD_CATEGORY, metric
         ) == Decimal("0")
 
 
@@ -402,5 +402,256 @@ def test_composting_carries_a_negative_downstream(bundle: FactorBundle) -> None:
     """Guards the scenario: if this stops being negative it no longer tests
     that a downstream credit survives the summation."""
     assert bundle.downstream(
-        "refed_composting", OUR_FOOD_CATEGORY, "co2e"
+        "refed_composting", OUR_SECTOR, OUR_FOOD_CATEGORY, "co2e"
     ) < Decimal("0")
+
+
+# ==========================================================================
+# The 5 x 9 shape, and the two scenarios run by hand against ReFED's site
+# ==========================================================================
+#
+# Until contract v1.31 this fixture had one sector row and 39 food categories
+# named `refed_farm_dry_goods`, `refed_retail_produce` and so on, because
+# `factor_downstream` had no sector column and ReFED's downstream factors
+# differ by sector in 82 of their 102 (food type, destination) groups. The
+# stage was folded into the food category's code. That was numerically
+# lossless -- these very tests agreed with ReFED before and after -- and
+# structurally wrong, which is what the tests below now hold in place.
+#
+# `test_engine_agrees_with_refed` above is the arithmetic check and its
+# expectations were **not** adjusted for the rebuild. These add the shape, and
+# two scenarios whose expected answers came off ReFED's own screen rather than
+# out of any file in this repository.
+
+REFED_SECTOR_CODES = {
+    "refed_farm", "refed_manufacturing", "refed_retail",
+    "refed_foodservice", "refed_residential",
+}
+REFED_FOOD_CODES = {
+    "refed_breads_bakery", "refed_dairy_eggs", "refed_dry_goods",
+    "refed_fresh_meat_seafood", "refed_frozen", "refed_prepared_foods",
+    "refed_produce", "refed_ready_to_drink_beverages", "refed_standard_mix",
+}
+#: The six (sector, food type) pairs ReFED does not publish and its own
+#: calculator does not offer. Farm has Dry Goods, Produce and Standard Mix.
+UNPUBLISHED_PAIRS = [
+    ("refed_farm", food) for food in sorted(
+        REFED_FOOD_CODES
+        - {"refed_dry_goods", "refed_produce", "refed_standard_mix"}
+    )
+]
+
+
+def test_the_fixture_has_refeds_own_shape(taxonomy: dict) -> None:
+    """Five sectors and nine food categories, not one and thirty-nine.
+
+    Asserted on the codes rather than on the counts: a fixture that had
+    regressed to the folded encoding would still have 39 categories and could
+    still count to five if a loop went wrong, but it cannot produce
+    `refed_produce` without a food category that is a food.
+    """
+    assert {s["code"] for s in taxonomy["sectors"]} == REFED_SECTOR_CODES
+    assert {f["code"] for f in taxonomy["food_categories"]} == REFED_FOOD_CODES
+    #: No code may carry a stage *and* a food. That is the defect itself, it
+    #: survives a correct count, so it is asserted directly.
+    for food in taxonomy["food_categories"]:
+        for stage in ("farm", "retail", "foodservice", "manufacturing",
+                      "residential"):
+            assert stage not in food["code"], food["code"]
+
+
+def test_every_downstream_row_states_both_of_its_nullable_dimensions(
+    factors: dict,
+) -> None:
+    """Section 2.2's two nullable dimensions are both filled in on every row.
+
+    Leaving the 20 sector-invariant groups NULL would save rows and would
+    answer a Farm / Frozen lookup -- a pair ReFED does not publish -- with
+    another sector's number. `test_an_unpublished_pair_prices_at_zero...`
+    below is what that would break; this is what makes it true.
+    """
+    assert factors["downstream"], "no downstream rows at all"
+    for row in factors["downstream"]:
+        assert row["sector"] in REFED_SECTOR_CODES, row
+        assert row["food_category"] in REFED_FOOD_CODES, row
+
+
+def test_the_sector_dimension_carries_real_information(factors: dict) -> None:
+    """The rebuild is only worth doing if the numbers do differ by sector. If
+    this ever stops holding, the column is unnecessary here and the fixture is
+    hiding a mapping error rather than expressing ReFED's data."""
+    by_group: dict = {}
+    for row in factors["downstream"]:
+        key = (row["destination"], row["food_category"], row["metric"])
+        by_group.setdefault(key, set()).add(row["value_per_kg"])
+    varying = sum(1 for values in by_group.values() if len(values) > 1)
+    #: ReFED's downstream differs by sector in 82 of its 102 (food type,
+    #: destination) groups, across the three metrics it splits.
+    assert varying >= 82, varying
+
+
+@pytest.mark.parametrize("sector,food", UNPUBLISHED_PAIRS)
+@pytest.mark.parametrize("metric", sorted(COMPARABLE))
+def test_an_unpublished_pair_prices_at_zero_rather_than_borrowing(
+    bundle: FactorBundle, sector: str, food: str, metric: str
+) -> None:
+    """A pair ReFED does not publish must return nothing, not something.
+
+    The 1 x 39 encoding made these six unreachable: there was no
+    `refed_farm_frozen` category to choose. A 5 x 9 taxonomy offers every
+    combination, so the guarantee has to be that the *factors* are silent --
+    an obvious zero on screen -- rather than a plausible figure lifted from
+    Retail. A NULL-sector row anywhere in this set would break this.
+    """
+    for destination in ("refed_landfill", "refed_composting", "refed_donations"):
+        assert bundle.downstream(destination, sector, food, metric) == Decimal("0")
+        assert bundle.upstream(sector, food, destination, metric) == Decimal("0")
+
+
+# --------------------------------------------------------------------------
+# Two scenarios entered by hand on https://insights-engine.refed.org/
+# impact-calculator and read off the screen. They are the only expectations in
+# this repository that were neither computed by our code nor derived from a
+# file we hold, so they are the check that survives a mistake made in the CSV
+# reader and the totals reader at once.
+#
+# The figures below are transcribed at the precision ReFED's interface shows,
+# which is why the tolerance is relative and generous compared with
+# `QUANTISATION_PER_KG` above: it bounds a transcription, not an arithmetic.
+# --------------------------------------------------------------------------
+
+SCREEN_RELATIVE = 1e-8
+
+HAND_RUN_FARM = {
+    "our_sector": "refed_farm",
+    "our_food": "refed_standard_mix",
+    "refed_sector": "farm",
+    "refed_food": "standard-mix",
+    "lines": {
+        "donations": 200.0,
+        "animal-feed": 100.0,
+        "anaerobic-digestion": 100.0,
+        "landfill": 200.0,
+        "refuse-discards": 100.0,
+        "sewer": 300.0,
+    },
+    #: Metric tonnes CO2e, metric tonnes CH4, US gallons, US dollars -- ReFED's
+    #: own reporting units, exactly as its screen renders them.
+    "screen": {
+        "co2e": 0.68008173626,
+        "ch4": 0.01802778698,
+        "water": 36629.3776,
+        "cost": 110.18175284,
+    },
+}
+HAND_RUN_RETAIL = {
+    "our_sector": "refed_retail",
+    "our_food": "refed_standard_mix",
+    "refed_sector": "retail",
+    "refed_food": "standard-mix",
+    "lines": {"donations": 80.0, "animal-feed": 100.0},
+    #: Read off the screen at the precision ReFED displays for this scenario:
+    #: two decimal places on tonnes, whole gallons, whole dollars. Asserted as
+    #: such below rather than pretending to more digits than were shown.
+    "screen": {"co2e": 0.52, "water": 47179.0, "cost": 150.0},
+    "screen_places": {"co2e": 2, "water": 0, "cost": 0},
+}
+#: The destination slug ReFED uses -> the code this fixture uses.
+OUR_DESTINATION = {
+    "donations": "refed_donations",
+    "animal-feed": "refed_animal_feed",
+    "anaerobic-digestion": "refed_anaerobic_digestion",
+    "landfill": "refed_landfill",
+    "refuse-discards": "refed_dumping",
+    "sewer": "refed_sewer",
+}
+
+
+def _hand_run_request(case: dict) -> CalculationRequest:
+    return CalculationRequest(
+        entries=(
+            EntryInput(
+                sector_code=case["our_sector"],
+                food_category_code=case["our_food"],
+                current=tuple(
+                    ScenarioLine(
+                        destination_code=OUR_DESTINATION[slug],
+                        qty_kg=Decimal(str(qty)),
+                    )
+                    for slug, qty in case["lines"].items()
+                ),
+                alternative=(),
+            ),
+        ),
+        gwp_horizon=100,
+    )
+
+
+def _hand_run_ours(bundle: FactorBundle, case: dict, metric: str) -> float:
+    _column, divisor = COMPARABLE[metric]
+    result = calculate(_hand_run_request(case), bundle)
+    return float(result.totals.current.metrics[metric].total) / divisor
+
+
+@pytest.mark.parametrize("metric", sorted(HAND_RUN_FARM["screen"]))
+def test_the_farm_scenario_matches_what_refeds_own_calculator_showed(
+    bundle: FactorBundle, metric: str
+) -> None:
+    """Farm / Standard Mix, 1000 kg over six destinations.
+
+    Six destinations rather than two, four metrics rather than one, and a
+    sector that is *not* Retail -- which is the point after the rebuild: under
+    the 1 x 39 encoding "Farm" was a food category, and this scenario could
+    only be expressed by choosing a category named after a stage.
+    """
+    ours = _hand_run_ours(bundle, HAND_RUN_FARM, metric)
+    theirs = HAND_RUN_FARM["screen"][metric]
+
+    assert relative_difference(ours, theirs) < SCREEN_RELATIVE, (
+        f"{metric}: engine {ours!r} vs ReFED's screen {theirs!r}")
+
+
+@pytest.mark.parametrize("metric", sorted(HAND_RUN_RETAIL["screen"]))
+def test_the_retail_scenario_matches_what_refeds_own_calculator_showed(
+    bundle: FactorBundle, metric: str
+) -> None:
+    """Retail / Standard Mix, 180 kg over two destinations, both of them
+    diversions rather than disposal routes."""
+    ours = _hand_run_ours(bundle, HAND_RUN_RETAIL, metric)
+    places = HAND_RUN_RETAIL["screen_places"][metric]
+    theirs = HAND_RUN_RETAIL["screen"][metric]
+
+    assert round(ours, places) == theirs, (
+        f"{metric}: engine {ours!r} rounds to {round(ours, places)!r}, "
+        f"ReFED's screen showed {theirs!r}")
+
+
+@pytest.mark.parametrize("case", [HAND_RUN_FARM, HAND_RUN_RETAIL],
+                         ids=["farm", "retail"])
+@pytest.mark.parametrize("metric", sorted(COMPARABLE))
+def test_the_hand_run_scenarios_also_match_refeds_published_dataset(
+    bundle: FactorBundle, refed_totals: list, case: dict, metric: str
+) -> None:
+    """The same two scenarios against the full-precision totals file.
+
+    The screen tests above bound a transcription at 1e-8; this bounds the
+    arithmetic at the storage precision, which is where a rebuild error would
+    actually show. Both are needed: the file could be misread the same way
+    twice, and the screen carries only eleven digits.
+    """
+    column, divisor = COMPARABLE[metric]
+    index = {
+        (r["sector"], r["refed_food_department"], r["destination"]): r
+        for r in refed_totals
+    }
+    theirs = sum(
+        qty / KG_PER_SHORT_TON
+        * index[(case["refed_sector"], case["refed_food"], slug)][column]
+        for slug, qty in case["lines"].items()
+    )
+    ours = _hand_run_ours(bundle, case, metric)
+
+    assert abs(ours - theirs) <= tolerance(
+        sum(case["lines"].values()), divisor, theirs
+    ), (f"{metric}: engine {ours!r} vs ReFED {theirs!r}, "
+        f"relative {relative_difference(ours, theirs)!r}")

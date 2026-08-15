@@ -17,6 +17,8 @@ reasons - see that file's own module docstring for the fuller account:
    sessionmaker, a different connection entirely.
 """
 
+import re
+
 import pytest
 from sqlalchemy import select
 
@@ -336,3 +338,295 @@ async def test_the_compare_action_redirects_to_the_compare_page(
     assert response.headers["location"].endswith(
         f"/admin/factor-sets/{one_draft.id}/compare"
     )
+
+
+# --- The placeholder-data flag ------------------------------------------
+#
+# Contract §2.2. The service function's own rules are in
+# tests/admin/test_factor_lifecycle.py; what these cover is the half only a
+# request has: which of the two directions asks for proof, and what happens
+# when it is not given.
+
+
+def _csrf_of(page):
+    match = re.search(r'name="csrf_token" value="([^"]+)"', page.text)
+    assert match is not None, "no CSRF token on the clear-placeholder page"
+    return match.group(1)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "status",
+    [FactorSetStatus.draft, FactorSetStatus.published, FactorSetStatus.archived],
+)
+async def test_flagging_as_placeholder_needs_no_proof_in_any_status(
+    session, admin_client, one_draft, status
+):
+    """The safe direction, and the one that must stay frictionless: a staff
+    member who doubts the live numbers has to be able to put the warning in
+    front of the public in one press, without cloning or publishing anything
+    and without finding their authenticator.
+
+    One GET, the way sqladmin's own action dropdown issues it. If this ever
+    needs a POST, a form or a proof, this test fails - which is the point.
+    """
+    one_draft.status = status
+    one_draft.is_mock = False
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/factor-set/action/flag-placeholder?pks={one_draft.id}"
+    )
+
+    assert response.status_code in (200, 302)
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_flag_with_proof_succeeds(session, admin_client, one_draft):
+    one_draft.status = FactorSetStatus.published
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    response = await admin_client.post("/admin/factor-set/clear-placeholder", data={
+        "pks": str(one_draft.id),
+        "csrf_token": _csrf_of(page),
+        "current_password": admin_client.password,
+    })
+
+    assert response.status_code == 302
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).is_mock is False
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_flag_without_proof_is_refused(
+    session, admin_client, one_draft
+):
+    """The whole gate. A stolen session carries everything this request
+    carries except the password, so an empty proof field has to be the one
+    thing that stops it - and the flag has to still be set afterwards, not
+    merely the response be a 400."""
+    one_draft.status = FactorSetStatus.published
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    response = await admin_client.post("/admin/factor-set/clear-placeholder", data={
+        "pks": str(one_draft.id),
+        "csrf_token": _csrf_of(page),
+    })
+
+    assert response.status_code == 400
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_flag_with_the_wrong_password_is_refused(
+    session, admin_client, one_draft
+):
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    response = await admin_client.post("/admin/factor-set/clear-placeholder", data={
+        "pks": str(one_draft.id),
+        "csrf_token": _csrf_of(page),
+        "current_password": "not-the-password",
+    })
+
+    assert response.status_code == 400
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_flag_without_a_csrf_token_is_refused(
+    session, admin_client, one_draft
+):
+    session.commit()
+
+    response = await admin_client.post("/admin/factor-set/clear-placeholder", data={
+        "pks": str(one_draft.id),
+        "current_password": admin_client.password,
+    })
+
+    assert response.status_code == 400
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_clearing_the_flag_writes_the_audit_entry_with_both_values(
+    session, admin_client, one_draft
+):
+    """Who, when, which set, which value to which - and under an action of
+    its own, so that the one change that removes a public disclaimer is not
+    filed in the trail as an `update` beside somebody fixing a typo."""
+    from admin.models import AuditLog
+
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    await admin_client.post("/admin/factor-set/clear-placeholder", data={
+        "pks": str(one_draft.id),
+        "csrf_token": _csrf_of(page),
+        "current_password": admin_client.password,
+    })
+
+    _resync(session)
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == one_draft.id,
+                               AuditLog.action == "clear_placeholder")
+    )
+    assert entry is not None
+    assert entry.actor == admin_client.staff.username
+    assert entry.before_json["is_mock"] is True
+    assert entry.after_json["is_mock"] is False
+
+
+@pytest.mark.asyncio
+async def test_a_refused_clearing_writes_no_audit_entry(
+    session, admin_client, one_draft
+):
+    """A trail that recorded attempts as changes would say the warning came
+    off when it did not."""
+    from admin.models import AuditLog
+
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    await admin_client.post("/admin/factor-set/clear-placeholder", data={
+        "pks": str(one_draft.id),
+        "csrf_token": _csrf_of(page),
+        "current_password": "not-the-password",
+    })
+
+    _resync(session)
+    assert session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == one_draft.id,
+                               AuditLog.action == "clear_placeholder")
+    ) is None
+
+
+@pytest.mark.asyncio
+async def test_the_clear_action_carries_the_selection_to_the_proof_page(
+    session, admin_client, one_draft
+):
+    """sqladmin registers an @action with methods=["GET"] only, so the
+    dropdown entry cannot itself take a proof. It redirects instead, and the
+    selection has to survive the redirect or the page has nothing to act
+    on."""
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/factor-set/action/clear-placeholder?pks={one_draft.id}"
+    )
+
+    assert response.status_code == 302
+    assert response.headers["location"].endswith(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    _resync(session)
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_the_proof_page_states_what_clearing_the_flag_costs(
+    session, admin_client, one_draft
+):
+    """The confirmation has to name the consequence, not just ask for a
+    password: this is the only control in the panel that removes a disclaimer
+    from a page the public is reading."""
+    one_draft.status = FactorSetStatus.published
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+    body = page.text.lower()
+
+    assert "warning" in body
+    assert "export" in body
+    assert "immediately" in body
+
+
+@pytest.mark.asyncio
+async def test_a_plain_staff_member_can_reach_the_placeholder_actions(
+    session, staff_client, one_draft
+):
+    """Contract §8.3 keeps publishing available to both roles. Publishing a
+    whole set of numbers is the larger act, so gating the flag behind an
+    administrator while leaving that to any staff member would be the wrong
+    way round. 403 or 404 here would mean the route is not actually
+    reachable; neither is an outcome this panel decided."""
+    session.commit()
+
+    for url in (
+        f"/admin/factor-set/action/flag-placeholder?pks={one_draft.id}",
+        f"/admin/factor-set/action/clear-placeholder?pks={one_draft.id}",
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}",
+    ):
+        response = await staff_client.get(url)
+        assert response.status_code in (200, 302, 400), url
+
+
+@pytest.mark.asyncio
+async def test_selecting_more_than_one_set_to_clear_is_refused(
+    session, admin_client, populated_set, one_draft
+):
+    """Same rule as the four lifecycle actions, and it has to hold on the
+    proof page too: a page that showed one set's name and cleared two would
+    be worse than one that refused."""
+    session.commit()
+
+    response = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={populated_set.id},{one_draft.id}"
+    )
+
+    assert response.status_code == 400
+    assert "one factor set at a time" in response.text.lower()
+    _resync(session)
+    assert session.get(FactorSet, populated_set.id).is_mock is True
+    assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+@pytest.mark.asyncio
+async def test_the_proof_page_says_so_when_there_is_nothing_to_clear(
+    session, admin_client, one_draft
+):
+    """Reachable from the bulk Actions dropdown against any row, including one
+    that is already unflagged. A proof dialog for a change that would be
+    refused after the password was typed is worse than a sentence."""
+    one_draft.is_mock = False
+    session.commit()
+
+    page = await admin_client.get(
+        f"/admin/factor-set/clear-placeholder?pks={one_draft.id}"
+    )
+
+    assert page.status_code == 200
+    assert "nothing here to clear" in page.text.lower()
+    assert 'name="current_password"' not in page.text
+
+
+@pytest.mark.asyncio
+async def test_the_proof_page_refuses_a_set_that_does_not_exist(admin_client):
+    """Only reachable by a hand-typed URL, and it must not 500 - the same
+    shape the LifecycleError catch around every action exists to prevent."""
+    response = await admin_client.get("/admin/factor-set/clear-placeholder?pks=999999")
+
+    assert response.status_code == 400
+    assert "999999" in response.text

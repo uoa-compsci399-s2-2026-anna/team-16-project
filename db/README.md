@@ -54,9 +54,12 @@ TEST_DATABASE_URL=mysql+pymysql://kaicalc:devpass@127.0.0.1:3307/kaicalc \
   pytest -m db
 ```
 
-`tests/test_mysql_integration.py` is deliberately separate: the
-`COALESCE(food_category_id, 0)` functional unique index on `factor_downstream`
-it proves has no meaning on SQLite.
+`tests/test_mysql_integration.py` is deliberately separate: the functional
+unique index on `factor_downstream` it proves has no meaning on SQLite. That
+index collapses **both** of the table's nullable columns —
+`COALESCE(sector_id, 0)` and `COALESCE(food_category_id, 0)` — because MySQL
+compares NULLs as distinct inside a UNIQUE key and collapsing one leaves the
+other's duplicates legal.
 
 ## Integration notes
 

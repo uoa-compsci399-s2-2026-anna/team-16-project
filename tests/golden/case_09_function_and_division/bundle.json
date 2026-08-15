@@ -46,9 +46,9 @@
       "source_note": "Ten significant places on purpose: without them the product has nothing below the second decimal and round(x, 2) would be indistinguishable from no rounding at all." }
   ],
   "downstream": [
-    { "destination": "landfill", "food_category": "dairy",
+    { "destination": "landfill", "sector": null, "food_category": "dairy",
       "metric": "co2e", "value_per_kg": "0.9900000000" },
-    { "destination": "landfill", "food_category": null,
+    { "destination": "landfill", "sector": null, "food_category": null,
       "metric": "cost", "value_per_kg": "0.0350000000" }
   ],
   "equivalences": [

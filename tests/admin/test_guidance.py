@@ -42,6 +42,12 @@ GUIDANCE_DIR = Path(__file__).resolve().parents[2] / "admin" / "templates" / "br
 #: rather than an incidental one.
 LIFECYCLE = "clone, edit, publish"
 MOCK = "the only thing holding them up"
+#: The half of the mock block that changed with the flag itself, and the half
+#: a reworded paragraph must not quietly drop: the two directions are not the
+#: same size, and clearing no longer means cloning. Two phrases rather than
+#: one because the block would still read plausibly with either missing.
+MOCK_DIRECTIONS = "are not the same size"
+MOCK_NO_CLONE = "do not need to clone a set to clear its flag"
 PREVENTION = "as a refusal rather than as a rule"
 FORMULA = "it found eight disagreements"
 DRY_RUN = "twenty calculations that never happened"
@@ -115,6 +121,25 @@ async def test_the_factor_set_screen_explains_the_mock_flag(admin_client):
     body = _flat(await admin_client.get("/admin/factor-set/list"))
 
     assert MOCK in body, "the factor-set screen no longer explains the mock flag"
+
+
+@pytest.mark.asyncio
+async def test_the_factor_set_screen_explains_how_the_flag_moves(admin_client):
+    """The half that changed when the flag came off the edit form.
+
+    The block used to end with "untick Is Mock on the draft, then publish",
+    and that sequence is now impossible in the panel and wrong as advice: it
+    forces a clone, and therefore a new version label, for a change in which
+    not one factor value differs. Both phrases are asserted because the block
+    would still read as a plausible explanation with either one missing - one
+    says the two directions carry different friction, the other says the clone
+    is no longer required, and a staff member who is told only the first still
+    clones.
+    """
+    body = _flat(await admin_client.get("/admin/factor-set/list"))
+
+    assert MOCK_DIRECTIONS in body, "the block no longer distinguishes the two directions"
+    assert MOCK_NO_CLONE in body, "the block no longer says a clone is unnecessary"
 
 
 @pytest.mark.asyncio

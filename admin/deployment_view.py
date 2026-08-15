@@ -89,9 +89,21 @@ is ``Secure``, whether the rate limit is measuring visitors or a proxy — and
 that is an administrator's concern, next to the blocklist and the audit log,
 not a ``staff`` one. Enforced in the three places ``AdministratorOnly``
 (``admin/modelviews.py``) names, because ``@expose`` inherits none of them:
-``is_visible`` keeps it out of the sidebar, ``is_accessible`` is what the
-menu consults, and the explicit ``_require_admin`` at the top of the handler
-is the only one that actually refuses the URL.
+``is_visible`` and ``is_accessible`` keep it out of the sidebar, and the
+explicit ``_require_admin`` at the top of the handler is the only one that
+actually refuses the URL.
+
+**Which of the first two hides the menu entry, measured.** sqladmin's
+``_macros.html`` renders an item only
+``{% if menu.is_visible(request) and menu.is_accessible(request) %}``, so
+either predicate returning False is enough and neither is individually
+load-bearing here — a mutant flipping ``is_visible`` alone to True survives
+every test in ``tests/admin/test_deployment_view.py``. Dropping
+``AdministratorOnly`` from the bases, which is the mistake somebody would
+actually make, fails the sidebar assertion and the 403 together. Both are
+still declared: the mixin is the one place the role rule is written down,
+and taking a predicate off it here to save a line would put this view on a
+different footing from every other administrator-only screen.
 
 **Reachable when ``PROTECTION_ENABLED`` is false**, deliberately. That switch
 turns off the panel's blocklist, its header check and its rate limit
@@ -424,9 +436,14 @@ def _assess_scheme(observation: Observation, settings: Settings) -> Finding:
 
 
 class DeploymentView(AdministratorOnly, BaseView):
-    """The page. ``AdministratorOnly`` first in the bases so that its
-    ``is_visible``/``is_accessible`` win over ``BaseView``'s permissive
-    defaults."""
+    """The page.
+
+    ``AdministratorOnly`` first in the bases so that its ``is_visible`` and
+    ``is_accessible`` win over ``BaseView``'s permissive defaults — sqladmin
+    consults both for the sidebar entry, and neither for this ``@expose``
+    route. See the module docstring for what each of the three guards
+    actually stops.
+    """
 
     name = VIEW_NAME
     icon = "fa-solid fa-network-wired"

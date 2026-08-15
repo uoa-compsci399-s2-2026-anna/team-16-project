@@ -134,14 +134,24 @@ async def test_the_page_reports_the_forwarded_scheme_this_request_carried(
     matters here is that the *header* reaches the page, so the assertion is on
     the value in the X-Forwarded-Proto row.
     """
-    response = await admin_client.get(
+    secure = await admin_client.get(
         "/admin/deployment", headers={"X-Forwarded-Proto": "https"}
     )
+    plain = await admin_client.get(
+        "/admin/deployment", headers={"X-Forwarded-Proto": "http"}
+    )
 
-    assert response.status_code == 200
-    assert re.search(
-        r"X-Forwarded-Proto.*?https", _flat(response.text), re.IGNORECASE
-    ), "the scheme the request carried is not rendered in its own row"
+    assert secure.status_code == plain.status_code == 200
+    assert "https" in _row(secure.text, "X-Forwarded-Proto")
+    # The other direction, and it is the half that matters. `https` also
+    # occurs in the prose further down the page, so an unbounded
+    # `X-Forwarded-Proto.*?https` matched a row hard-coded to `http` and let
+    # that mutant live - measured, not hypothesised. Both requests are read
+    # out of the row itself, and the plain one must not claim TLS.
+    assert "https" not in _row(plain.text, "X-Forwarded-Proto"), (
+        "the scheme row said https for a request that carried http"
+    )
+    assert "http" in _row(plain.text, "X-Forwarded-Proto")
 
 
 @http_test
@@ -238,6 +248,21 @@ def _admin_state(app):
     raise AssertionError("no Runtime is attached to any mounted application")
 
 
+def _row(html: str, label: str) -> str:
+    """One table row of the evidence table, sliced from its heading to the
+    next `</tr>`.
+
+    Bounded on purpose. Every value this page reports also appears somewhere
+    in the prose around it - `https` in the cookie finding, an address in the
+    chain above the row that decides on it - so an assertion that searches the
+    whole document passes for a page rendering a constant.
+    """
+    flat = _flat(html)
+    start = flat.index(label)
+    end = flat.index("</tr>", start)
+    return flat[start:end]
+
+
 def _decided_row(html: str) -> str:
     """The one table row that reports the address in force.
 
@@ -246,9 +271,7 @@ def _decided_row(html: str) -> str:
     both configurations - an assertion against the whole body would pass for
     the wrong reason in exactly the direction that matters.
     """
-    flat = _flat(html)
-    start = flat.index("The address the system decided on")
-    return flat[start : start + 900]
+    return _row(html, "The address the system decided on")
 
 
 # --- displaying is not storing ----------------------------------------------

@@ -37,7 +37,7 @@ subscribe(() => {
 bindCalculator(main, loadTaxonomy)
 homeButton.addEventListener('click', () => resetCalculator())
 clearButton.addEventListener('click', () => {
-  if (window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
+  if (window.confirm(t('Clear all calculator data and start again?'))) resetCalculator()
 })
 
 // The static HTML the browser parsed before any of this ran - the header, the skip

@@ -8,7 +8,26 @@
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="home-page">
-    <!-- See index.html: the page is rendered by ES modules, so the chooser is built by
+    <!-- **THIS IS THE PAGE `/` SERVES.** `docker/nginx.conf` says `index home.html`, so a
+         visitor who types the bare address arrives here and not on the calculator. The
+         calculator used to be the de-facto home page while this file was the designed one,
+         which meant nobody reaching the address ever learned this page existed.
+
+         **Every word below is already somewhere else in this front end, and that is a
+         constraint rather than a coincidence.** The hero is this page's own; the rest is
+         lifted verbatim from `index.html`'s deleted introduction screen, from
+         `methodology.html` and from `stats.html` - pages the team wrote and the client has
+         seen. Nothing here is newly client-voiced copy, and nothing here is a placeholder
+         waiting for copy that may never arrive. It also means every string on this page is
+         already a key in twenty catalogues: a home page written in new English would have
+         been a home page in English on nineteen locales until somebody translated it.
+
+         **The subject is the calculator, never New Zealand.** The statistics standfirst
+         below says so in as many words. These are self-selected calculations, and a
+         sentence from this page screenshotted as a claim about the country is a real
+         reputational risk for the client.
+
+         See index.html: the page is rendered by ES modules, so the chooser is built by
          js/i18n.js rather than shipped here, and this note is about the page as a whole. -->
     <noscript>
       <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the latest news, or be shown in a language other than English.</p>
@@ -35,9 +54,61 @@
           <p class="eyebrow" data-i18n>Food waste impact calculator</p>
           <h1 id="home-title" data-i18n>Turn food waste information into action</h1>
           <p class="lead" data-i18n>Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.</p>
+          <!-- **One click, and it lands on step one.** This used to open the calculator's
+               own introduction screen, which carried a second button and no information
+               the reader did not already have from this page. That screen is gone. -->
           <a class="button button-primary button-large" href="./index.html" data-i18n>Use the calculator</a>
+          <p class="privacy-note" data-i18n>Your entries are submitted anonymously when you calculate results.</p>
         </div>
       </section>
+
+      <!-- The half-circle derived from the logo, which the brand guidelines make the
+           primary supporting graphic: an odd-numbered overlapping group at small scale.
+           It was drawn by `introduction()` in `web/js/calculator.js` and came here with
+           the rest of that screen, as static markup because nothing about it varies.
+           Decorative, so `aria-hidden`; the arches are cut out of a solid Kale band with
+           a mask, and the photograph behind shows through the holes. -->
+      <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" /><ellipse cx="150" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="150" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="450" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="450" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="750" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="750" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="1050" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="1050" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="1350" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="1350" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><path d="M 300 72 L 336 126 L 300 181 L 264 126 Z" fill="black"/><path d="M 600 72 L 636 126 L 600 181 L 564 126 Z" fill="black"/><path d="M 900 72 L 936 126 L 900 181 L 864 126 Z" fill="black"/><path d="M 1200 72 L 1236 126 L 1200 181 L 1164 126 Z" fill="black"/></mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
+
+      <!-- Step zero: what to have to hand before starting. It is the one half of the
+           calculator's introduction screen that told the reader something, and it belongs
+           in front of the button rather than behind it. -->
+      <section class="home-needs" aria-labelledby="needs-heading">
+        <div class="needs-panel">
+          <h2 id="needs-heading" data-i18n>What you will need</h2>
+          <ul class="check-list">
+            <li data-i18n>Where the waste occurred in the food supply chain</li>
+            <li data-i18n>The food category, if known</li>
+            <li data-i18n>The total waste amount — a weight, or how many containers you fill</li>
+            <li data-i18n>How that total was distributed across waste destinations</li>
+          </ul>
+        </div>
+      </section>
+
+      <div class="home-explainers">
+        <section class="review-block home-explainer" aria-labelledby="home-method-heading">
+          <p class="eyebrow" data-i18n>Transparency</p>
+          <h2 id="home-method-heading" data-i18n>Methodology and published factors</h2>
+          <p data-i18n>Calculation factors and formulas are supplied by the calculator service so the published method remains transparent and versioned.</p>
+          <a class="home-explainer-link" href="./methodology.html" data-i18n>Documentation</a>
+        </section>
+
+        <section class="review-block home-explainer" aria-labelledby="home-stats-heading">
+          <p class="eyebrow" data-i18n>Calculator activity</p>
+          <h2 id="home-stats-heading" data-i18n>Statistics from this tool</h2>
+          <p data-i18n>These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.</p>
+          <a class="home-explainer-link" href="./stats.html" data-i18n>Statistics</a>
+        </section>
+
+        <!-- No link out of this one on purpose: the footer's transparency notice below
+             already carries "What we record" to the same anchor on every page, and two
+             links with one label to one target is a list of routes rather than a page. -->
+        <section class="review-block home-explainer" aria-labelledby="home-record-heading">
+          <p class="eyebrow" data-i18n>Important information</p>
+          <h2 id="home-record-heading" data-i18n>What we record</h2>
+          <p data-i18n>The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.</p>
+        </section>
+      </div>
 
       <section class="home-news" aria-labelledby="news-heading">
         <p class="eyebrow" data-i18n>From Kai Commitment</p>

@@ -33,7 +33,11 @@ export const state = {
   errorCode: null,
   fieldErrors: {},
   rateLimitedUntil: 0,
-  step: -1,
+  // **Step one, not an introduction screen.** `-1` was the landing screen `index.html`
+  // used to open on; `/` now serves `home.html` and this page is the calculator, so the
+  // first thing a visitor sees is the first question. See `sectorStep` in
+  // `web/js/calculator.js` for why the screen was removed rather than shortened.
+  step: 0,
   expandedSectors: [],
   resultBreakdownTab: 'stage',
   lastChangedDestination: null,
@@ -99,7 +103,7 @@ export function resetCalculator() {
     errorCode: null,
     fieldErrors: {},
     rateLimitedUntil: 0,
-    step: -1,
+    step: 0,
     expandedSectors: [],
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,

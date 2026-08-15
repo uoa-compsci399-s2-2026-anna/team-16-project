@@ -21,10 +21,17 @@
       <p class="noscript-notice">This calculator needs JavaScript to run. With scripting turned off it cannot load the food categories, calculate an impact, or be shown in a language other than English.</p>
     </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to calculator</a>
-    <header class="site-header intro-header" id="site-header">
+    <header class="site-header" id="site-header">
       <div class="header-inner public-header-inner">
-        <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and return to the introduction">
-          <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+        <!-- **No `intro-header` any more, because there is no introduction screen.** This
+             page opened on a landing screen - a hero, a lead paragraph and a "Start
+             calculator" button - which repeated what `home.html` says and stood between a
+             visitor and step one for no gain. `/` now serves `home.html`, so this page is
+             the calculator and nothing else, and it opens on step one. The one half of
+             that screen that told the reader something, "What you will need", moved to
+             `home.html`, where it is read *before* the click rather than after it. -->
+        <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and start again">
+          <img id="brand-logo" src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </button>
         <!-- **This page carries no four-link public navigation, and that is a

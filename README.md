@@ -288,6 +288,7 @@ prevents:
 | `KAICALC_NEWS_ORIGIN` | the client's WordPress site, as `scheme://host[:port]` with no trailing slash. **Set it empty and the home page removes its news section entirely** — a supported deployment, not a degraded one. Details below. |
 | `KAICALC_API_ORIGIN` | empty, and it should stay empty unless the API is on its own origin. Details below. |
 | `KAICALC_NEWS_IMAGE_ORIGINS` | space-separated, `img-src` only, for a WordPress media library on a CDN rather than on the site origin. |
+| `KAICALC_TRUST_FORWARDED_HEADERS` | defaults to `false`. **Set it true when another proxy — one you operate — terminates TLS in front of this stack.** Left false there, the panel is told the request is not on TLS and every visitor arrives as your edge's one address. Set true while this nginx is directly reachable, and any caller can claim any address. Details below. |
 | `PROTECTION_TRUSTED_PROXY` | defaults to `false`. Behind a real reverse proxy, leave it false and every caller arrives as the proxy — the API's per-visitor rate limits collapse into one site-wide bucket. Set it true, and remove the direct `ports:` for `api` and `admin`, together. |
 | `PROTECTION_ENABLED` | the escape hatch if the panel's protection layer locks everyone out. Every setting is read once at start-up, so edit *and restart*. |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | login throttling. Lockout counters live in process memory, so `docker compose -f docker/compose.yaml restart admin` clears every lockout immediately. |
@@ -346,6 +347,49 @@ container's environment, never from anything a visitor can put in a URL; a value
 not a bare `scheme://host[:port]` **stops the container from starting** rather than
 reaching the policy; and `connect-src` is generated from the same string, so the page can
 reach the one origin you named and no other.
+
+### Putting it behind a TLS terminator you already run
+
+A public IPv4 has one port 443, and it is often already taken. The ordinary answer is to
+front this stack with the nginx (or Caddy, or Traefik) that already holds it:
+
+```
+browser --https--> your edge :443 --http--> this stack :18080
+```
+
+DNS, certificates and hosting are out of scope for this project. Working correctly *behind*
+somebody else's terminator is not, and it needs one variable:
+
+```bash
+KAICALC_TRUST_FORWARDED_HEADERS=true \
+PROTECTION_TRUSTED_PROXY=true \
+  docker compose -f docker/compose.yaml up -d
+```
+
+**What each half does.** nginx sends `X-Forwarded-Proto` and `X-Forwarded-For` to the API
+and the panel. By default it builds both from what *it* saw — which is right while it is
+the outermost proxy, and wrong behind an edge: the panel is then told the request is not
+on TLS, and every visitor on earth arrives as the edge's single address, so the API's
+per-visitor rate limits become one site-wide counter and one blocklist entry denies
+everyone. `KAICALC_TRUST_FORWARDED_HEADERS=true` makes nginx pass the edge's values
+through instead: the scheme if it is exactly `http` or `https`, and the forwarded chain
+with the visitor left-most.
+
+**Turn it on only when the edge is the only way in.** While `:18080` is reachable
+directly, any caller can send both headers — claiming an address the rate limit and the
+blocklist then measure, and stripping `Secure` off a live staff session cookie by claiming
+the request is plain http. That is why it is off by default and why it is a *separate*
+variable from `PROTECTION_TRUSTED_PROXY`: that one says the applications may believe the
+header **our** nginx sends, this one says our nginx may believe the header **it receives**.
+Setting this without that leaves nginx forwarding an address the applications ignore —
+the container warns about it at start-up. Also remove the `ports:` blocks for `api` and
+`admin`, as `docker/nginx-proxy-headers.conf` describes, and set
+`KAICALC_SESSION_HTTPS_ONLY=true`.
+
+```bash
+# What is actually in force:
+docker logs kaicalc-web 2>&1 | grep 'forwarded headers'
+```
 
 ### Stopping it
 

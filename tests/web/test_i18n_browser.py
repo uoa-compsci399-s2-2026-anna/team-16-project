@@ -787,10 +787,18 @@ def test_the_panel_chooser_is_the_same_capsule_and_its_button_works(browser):
         assert [layer for layer in layers if "inset" not in layer], seen["shadow"]
         assert seen["radius"] >= 8, seen
 
-        # It floats rather than spanning the screen: the full-bleed white strip
-        # it replaced was the half of the report that read as scaffolding.
-        assert seen["bar"]["w"] < seen["viewport"] - 20, (
-            f"the capsule is still a strip across the page: {seen}"
+        # **It floats rather than spanning the screen**, which is the half of the
+        # report that read as scaffolding: a full-bleed white strip with a rule
+        # under it is chrome the panel grew to hold one small control.
+        #
+        # Half the viewport, not "narrower than the viewport". Two rules make
+        # this capsule the size of its contents — `align-self: flex-start`
+        # against Tabler's flex column and `width: 20ch` on the select — and
+        # against a 1,278px screen both of them fail into a pill of 1,200-odd
+        # pixels holding 320 of control, which is comfortably "narrower than the
+        # viewport" and is exactly the shape being fixed. Measured at 395px.
+        assert seen["bar"]["w"] <= seen["viewport"] / 2, (
+            f"the capsule is a banner rather than a control: {seen}"
         )
         # The button is a segment of the capsule, not a control beside it.
         assert seen["button"]["right"] <= seen["bar"]["right"] + 1, seen
@@ -844,18 +852,32 @@ def test_the_panel_chooser_is_the_same_capsule_and_its_button_works(browser):
         context.close()
 
 
-@pytest.mark.parametrize("width", [390])
+@pytest.mark.parametrize("width", [390, 320])
 def test_the_panel_chooser_fits_a_phone_and_still_names_its_language(browser, width):
     """The capsule is four things wide and a phone is not.
 
-    **390 and not 320, stated rather than left as a gap.** 320 is the
-    *calculator's* declared floor (`body { min-width: 320px }`); the panel makes
-    no such promise and does not keep one — `brand/_list_table_css.html` records
-    four of its own screens scrolling sideways at 390 for reasons that have
-    nothing to do with this control. Measured at 320 the value needs 139px and
-    has 117px, so "Follow the system" is clipped; making it fit costs a stack of
-    narrow-width tweaks to the margin, the button's padding and the gap, on a
-    width nothing else on this surface supports. It is written down instead.
+    **Both widths are asserted for staying on screen, and only 390 for staying
+    readable, and the difference is a decision rather than an oversight.** Three
+    rules hold this together and each one shows at a different width, which is
+    why one viewport could not kill them:
+
+    * the **label stops being drawn** below 720px. With the word still there the
+      control was squeezed to 101px at 390 and 31px at 320 — present, sized,
+      and not a control anybody reads a language out of.
+    * the capsule takes a **ceiling** of the page width less its own margins, and
+      the select takes `min-width: 0` so it is the part that gives way. At 390 the
+      hidden label already makes it fit; at **320** it does not, and without these
+      two the capsule hangs 44px off the screen.
+
+    At 320 the value truncates: it needs 139px and has 117px. That is the
+    deliberate half of the trade — a control on screen with a clipped word beats a
+    control a reader has to scroll sideways to find, on the one screen a
+    locked-out account can still open. Making it fit properly costs a stack of
+    narrow-width tweaks to the margin, the button's padding and the gap, at a
+    width nothing else on this surface supports: 320 is the *calculator's*
+    declared floor (`body { min-width: 320px }`), and `_list_table_css.html`
+    records four panel screens already scrolling sideways at 390 for reasons
+    that have nothing to do with this control.
 
     `fit-content` is the sum of a globe, a word, a 20ch control and a button —
     395px — and 390px of screen is 350px once the capsule's own margins are off
@@ -903,9 +925,19 @@ def test_the_panel_chooser_fits_a_phone_and_still_names_its_language(browser, wi
         )
 
         fit = page.evaluate(_VALUE_FITS)
-        assert fit["room"] >= fit["text"] + fit["arrow"], (
-            f"{width}px: the selected language is clipped inside its own control: {fit}"
-        )
+        if width >= 390:
+            assert fit["room"] >= fit["text"] + fit["arrow"], (
+                f"{width}px: the selected language is clipped inside its own "
+                f"control: {fit}"
+            )
+        else:
+            # Asserted as the known state rather than left unmentioned, so that
+            # a future narrow-width pass that fixes it has to come here and say
+            # so instead of silently satisfying a test nobody wrote.
+            assert fit["room"] < fit["text"] + fit["arrow"], (
+                f"{width}px: the value now fits — good, and this test's docstring "
+                f"and the CSS comment that record it as the trade are stale: {fit}"
+            )
     finally:
         context.close()
 

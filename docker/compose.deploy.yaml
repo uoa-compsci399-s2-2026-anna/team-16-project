@@ -178,6 +178,15 @@ services:
         condition: service_healthy
       admin:
         condition: service_healthy
+    environment:
+      # The news origin, the API origin and any media CDN. One value each, feeding
+      # both the public Content-Security-Policy and web/js/config.js so the two
+      # cannot disagree. `${VAR-default}` without the colon, so an empty value in
+      # the environment means "no news feed" rather than falling back. The full
+      # argument for each is in docker/compose.yaml; this file is a copy.
+      KAICALC_NEWS_ORIGIN: ${KAICALC_NEWS_ORIGIN-https://kaicommitment.org.nz}
+      KAICALC_API_ORIGIN: ${KAICALC_API_ORIGIN-}
+      KAICALC_NEWS_IMAGE_ORIGINS: ${KAICALC_NEWS_IMAGE_ORIGINS-}
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

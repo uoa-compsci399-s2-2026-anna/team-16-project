@@ -21,18 +21,24 @@ a product is right. Node is the runner only and does not enter the stack
 `package.json`.
 
 **Mutation record.** Each of these was applied to `web/js/units.js` and the
-named test watched to fail:
+named test watched to fail. All seven were killed:
 
-===============================================  =============================
+===============================================  =====================================
 Mutation                                         Killed by
-===============================================  =============================
+===============================================  =====================================
 `formatParts` rounds with `>` not `>=`           `test_a_quarter_bin_rounds_up`
 `toKg` back to `Number(a) * Number(b)`           `test_a_quarter_bin_rounds_up`
 `formatParts` truncates instead of rounding      `test_three_quarters_of_a_bin`
-`containerKg` lets `toKg`'s throw escape         `test_an_unknown_preset_is_empty`
+`containerKg` lets `toKg`'s throw escape         `..._an_unknown_preset_is_empty_...`
 `entryTotal` ignores `measureMode`               `test_a_container_entry_is_in_kilograms`
 `entryTotal` returns tonnes for a container      `test_a_container_entry_is_in_kilograms`
-===============================================  =============================
+`DECIMAL_LITERAL` admits a sign again            `..._not_a_decimal_has_no_total[-2]`
+===============================================  =====================================
+
+The last row is not hypothetical tightening. `DECIMAL_LITERAL` was written
+`/^[+-]?\\d+(\\.\\d+)?$/` and this file's `-2` case is what found it: a
+`<input type="number">` hands over `"-2"` quite happily, and `containerKg`
+answered `-139.200` kg.
 """
 
 from __future__ import annotations

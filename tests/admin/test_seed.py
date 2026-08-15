@@ -5,7 +5,7 @@ from decimal import Decimal
 import pytest
 from sqlalchemy import func, select
 
-from admin.seed import seed_taxonomy
+from admin.seed import UNIT_PRESETS, seed_taxonomy
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
@@ -154,6 +154,46 @@ def test_unit_presets_are_marked_as_placeholder_data(session):
 
     for preset in session.scalars(select(UnitPreset)).all():
         assert "placeholder" in (preset.source_note or "").lower()
+
+
+def test_migration_0015_and_the_seed_hold_the_same_ten_containers():
+    """A transcription, and therefore a drift risk with nothing else watching it.
+
+    Revision 0015 writes the container numbers out longhand rather than
+    importing `admin.seed`, deliberately — a migration states the numbers of
+    its own moment, and a later seed edit must not retroactively change what an
+    applied revision did. The cost of that decision is that the two can silently
+    disagree, and the disagreement is invisible in normal use: `docker/init.sh`
+    runs `alembic upgrade head` **before** `seed-taxonomy`, so on a fresh
+    database the migration's INSERT lands first and `_ensure` then creates
+    nothing. A wrong number in the seed would never reach a deployment and would
+    never reach this suite either, because every test builds its schema with
+    `create_all()` and never runs migration DDL.
+
+    So they are compared here. If a future revision deliberately moves the
+    numbers on, this test is what makes that a decision: update the seed and add
+    the newer revision to the comparison, do not edit 0015.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic" / "versions" / "0015_unit_preset_nz_containers.py"
+    )
+    spec = importlib.util.spec_from_file_location("_revision_0015", path)
+    revision = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(revision)
+
+    migrated = {
+        code: (label, Decimal(kilograms), revision._note(litres, kilograms))
+        for code, litres, label, kilograms in revision._CONTAINERS
+    }
+    seeded = {
+        code: (label, kg_per_unit, source_note)
+        for code, label, kg_per_unit, source_note in UNIT_PRESETS
+    }
+    assert migrated == seeded
 
 
 def test_every_unit_preset_shows_the_arithmetic_and_names_its_density_source(session):

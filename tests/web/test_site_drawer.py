@@ -213,16 +213,34 @@ def test_the_handle_is_a_forty_four_pixel_target_at_the_narrowest_width(browser)
             f"the handle is off the screen edge: {box}"
         )
 
-        corner = page.evaluate(
+        # **All four corners of the box, and the far two are the discriminating pair.**
+        # The apex is at the box's inline-end edge, half way down, so the two corners on
+        # that edge are the ones a painted-shape implementation misses by the widest
+        # margin - a probe near the base would be inside a `clip-path` triangle too and
+        # would pass against the very thing this is written to refuse. Verified by
+        # mutation: `clip-path: polygon(0 0, 100% 50%, 0 100%)` fails here and passes a
+        # base-corner check.
+        corners = page.evaluate(
             """(box) => {
-                 const hit = document.elementFromPoint(box.x + 3, box.y + 3);
-                 return Boolean(hit && hit.closest('.site-drawer__handle'));
+                 const inset = 3;
+                 const points = [
+                   ['near-top', box.x + inset, box.y + inset],
+                   ['near-bottom', box.x + inset, box.y + box.height - inset],
+                   ['far-top', box.x + box.width - inset, box.y + inset],
+                   ['far-bottom', box.x + box.width - inset, box.y + box.height - inset],
+                 ];
+                 const missed = [];
+                 for (const [name, x, y] of points) {
+                   const hit = document.elementFromPoint(x, y);
+                   if (!(hit && hit.closest('.site-drawer__handle'))) missed.push(name);
+                 }
+                 return missed;
                }""",
             box,
         )
-        assert corner, (
-            "the handle's own corner does not take a press, so its hit area is the "
-            "painted triangle rather than its box - which is the 390px failure"
+        assert corners == [], (
+            "the handle does not take a press at %s, so its hit area is the painted "
+            "triangle rather than its box - which is the 390px failure" % corners
         )
     finally:
         context.close()

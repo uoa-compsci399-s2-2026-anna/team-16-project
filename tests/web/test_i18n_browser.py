@@ -953,6 +953,331 @@ def test_the_panel_chooser_fits_a_phone_and_still_names_its_language(browser, wi
         context.close()
 
 
+#: Everything the gate skin has to be measured on, read in one round trip.
+#:
+#: `--lang-*` are deliberately NOT read here. A custom property's computed value
+#: is the token, not what was painted with it, so reading them would assert that
+#: the stylesheet says what the stylesheet says. Every value below is a used
+#: value off a laid-out element.
+_GATE = """
+() => {
+  const bar = document.querySelector('.language-bar');
+  const gate = document.querySelector('.gate');
+  const label = document.querySelector('.language-bar__label');
+  const select = document.getElementById('language-chooser');
+  const button = document.querySelector('.language-bar__submit');
+  const cs = getComputedStyle(bar);
+  const box = (el) => { const b = el.getBoundingClientRect();
+    return {w: b.width, h: b.height, left: b.left, right: b.right,
+            top: b.top, bottom: b.bottom}; };
+  return {
+    pageGround: getComputedStyle(document.body).backgroundColor,
+    surface: cs.backgroundColor,
+    shadow: cs.boxShadow,
+    ink: cs.color,
+    labelInk: getComputedStyle(label).color,
+    labelGround: getComputedStyle(label).backgroundColor,
+    selectInk: getComputedStyle(select).color,
+    buttonInk: getComputedStyle(button).color,
+    buttonGround: getComputedStyle(button).backgroundColor,
+    bar: box(bar),
+    gate: box(gate),
+    viewportH: document.documentElement.clientHeight,
+    viewportW: document.documentElement.clientWidth,
+    docHeight: document.documentElement.scrollHeight,
+    dir: document.documentElement.dir,
+  };
+}
+"""
+
+
+def _tab_to_the_chooser(page):
+    for _ in range(8):
+        page.keyboard.press("Tab")
+        if page.evaluate("() => document.activeElement?.id") == "language-chooser":
+            return
+    raise AssertionError("eight Tabs from the top of the page never reached the chooser")
+
+
+def test_the_gate_s_kale_runs_under_the_chooser_rather_than_stopping_below_it(browser):
+    """The report, in two measurements.
+
+    `brand.css` painted `.gate` and left `body` white, and the chooser is a
+    SIBLING of `.gate` — it has to be, because `brand/base.html` owns it and
+    every page's `{% block shell %}` replaces what is under it. So the page's
+    own ground above the shell was white: a 72px full-bleed strip, a hard edge,
+    then the deep green with the card floating in it. A patch stuck onto a page.
+
+    **The first assertion is photographic and that is the point.** A computed
+    `backgroundColor` on `<body>` is a property read; it would pass against a
+    Kale body with a white element still spanning the top of it, which is the
+    defect one refactor away. So a square of the page BESIDE the capsule and a
+    square from the middle of the field are photographed and their bytes
+    compared — Chromium encodes identical pixels identically, which is the same
+    property `_paints_something` is built on. One ground or two.
+
+    The second is the 72px the strip also cost in height. `.gate` asks for
+    `100vh` and the chooser sits above it, so the login page scrolled by exactly
+    the height of the chooser for as long as the two were stacked. Asserted as
+    "the shell ends at the fold", not as "the document does not scroll" — a page
+    whose card is taller than the viewport is allowed to scroll, and every gate
+    page but login has a taller card.
+    """
+    context = browser.new_context(viewport={"width": 1278, "height": 983})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+        seen = page.evaluate(_GATE)
+
+        # Beside the capsule, at its own vertical middle, at the far inline-end
+        # of the row it is on — the strip the white band occupied.
+        beside = {"x": seen["viewportW"] - 140, "y": seen["bar"]["top"],
+                  "width": 60, "height": 40}
+        # Well inside the shell, clear of the card.
+        inside = {"x": seen["viewportW"] - 140, "y": seen["viewportH"] / 2,
+                  "width": 60, "height": 40}
+        assert page.screenshot(clip=beside) == page.screenshot(clip=inside), (
+            "the ground the chooser floats on is not the ground the card sits "
+            "on — the page is two colours stacked, which is the band being fixed"
+        )
+
+        # And the shell no longer asks for a second viewport under the chooser.
+        assert seen["gate"]["bottom"] <= seen["viewportH"] + 1, (
+            "the shell still claims a full 100vh below the chooser, so the page "
+            f"scrolls by the height of the chooser and nothing else: {seen}"
+        )
+        assert seen["gate"]["top"] >= seen["bar"]["bottom"], (
+            f"the shell is drawn over the chooser rather than below it: {seen}"
+        )
+    finally:
+        context.close()
+
+
+def test_the_capsule_is_legible_on_the_kale_ground_and_is_not_a_hole_in_it(browser):
+    """Every colour in this control was correct on Tabler's grey and wrong here.
+
+    A white capsule on Kale is a hole punched in the field; a Kale shadow on
+    Kale is a shadow nobody can see; a Kale-filled button on a Kale-family
+    capsule is a button nobody can find. All three shipped, because the capsule
+    was built against the one ground the browser module could reach and the gate
+    pages were the other one.
+
+    So the four pairs that decide whether it can be read are measured **on the
+    page that actually renders them**, not against the tokens the stylesheet
+    declares. And the pair nobody thinks to assert is the last one: a surface
+    identical to the field it floats on satisfies every contrast rule above it
+    and is not an object at all.
+    """
+    context = browser.new_context(viewport={"width": 1278, "height": 983})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+        seen = page.evaluate(_GATE)
+
+        assert _rgba(seen["surface"])[3] == 1, (
+            f"the capsule has no ground of its own on Kale: {seen['surface']!r}"
+        )
+        assert _rgba(seen["labelGround"])[3] == 0, (
+            "the label paints its own ground, so this is measuring the wrong "
+            f"pair of colours: {seen['labelGround']!r}"
+        )
+        for part, ink in (("label", seen["labelInk"]),
+                          ("value", seen["selectInk"])):
+            ratio = _contrast(ink, seen["surface"])
+            assert ratio >= 4.5, (
+                f"the {part} is {ratio:.2f}:1 against the capsule it sits on "
+                f"({ink} on {seen['surface']})"
+            )
+        ratio = _contrast(seen["buttonInk"], seen["buttonGround"])
+        assert ratio >= 4.5, f"the button reads {ratio:.2f}:1 on the Kale ground: {seen}"
+
+        # **The object has to be an object.** Nothing above notices a capsule
+        # painted the exact colour of the field: the text would still be
+        # legible, the shadow would still have its layers, and the control would
+        # have vanished into the ground.
+        assert seen["surface"] != seen["pageGround"], (
+            "the capsule is painted the same colour as the field it floats on: "
+            f"{seen['surface']!r}"
+        )
+        assert _paints_something(page, ".language-bar"), (
+            "hiding the whole capsule changes no pixels — it is the field"
+        )
+
+        # It is lit as well as seated. On a dark ground the cast shadow is the
+        # half that cannot be seen, so an inset layer is what raises it.
+        layers = _LAYER.split(seen["shadow"])
+        assert [layer for layer in layers if "inset" in layer], seen["shadow"]
+        assert [layer for layer in layers if "inset" not in layer], seen["shadow"]
+    finally:
+        context.close()
+
+
+def test_the_focus_ring_is_visible_against_the_ground_it_is_drawn_on(browser):
+    """A focus ring that disappears is worse than an ugly one.
+
+    The ring carries `outline-offset`, so it is drawn on the PAGE's ground and
+    not on the capsule's — which is why it is measured against `<body>` here and
+    why the offset is asserted rather than assumed. Blueberry was the colour on
+    both grounds and measures **2.2:1 on Kale**, under the 3:1 a non-text
+    indicator needs; it is Banana on this ground and stays Blueberry on the
+    light one, which is the whole reason the skin is a set of tokens.
+
+    The inner half is asserted too. The ring is two lines — an outline outside
+    and the capsule's own hairline taken to full contrast inside it — so that
+    losing either still leaves an indicator. A hairline left at its resting
+    translucency is exactly the half that would go unnoticed, so its **alpha**
+    is what is read: 0.28 at rest, 1 when focused.
+
+    Tabbed to rather than `.focus()`ed, because the claim is about a keyboard.
+    """
+    context = browser.new_context(viewport={"width": 1278, "height": 983})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+        resting = page.evaluate(
+            """() => {
+              const cs = getComputedStyle(document.querySelector('.language-bar'));
+              return {style: cs.outlineStyle, shadow: cs.boxShadow};
+            }"""
+        )
+        assert resting["style"] == "none", resting
+        resting_inset = [
+            layer for layer in _LAYER.split(resting["shadow"]) if "inset" in layer
+        ][0]
+        assert _rgba(resting_inset)[3] < 1, (
+            f"the hairline is already opaque at rest, so focus cannot say anything "
+            f"by making it so: {resting_inset!r}"
+        )
+
+        _tab_to_the_chooser(page)
+        ring = page.evaluate(
+            """() => {
+              const cs = getComputedStyle(document.querySelector('.language-bar'));
+              return {style: cs.outlineStyle, width: parseFloat(cs.outlineWidth),
+                      offset: parseFloat(cs.outlineOffset), colour: cs.outlineColor,
+                      shadow: cs.boxShadow,
+                      ground: getComputedStyle(document.body).backgroundColor};
+            }"""
+        )
+        assert ring["style"] not in ("none", "hidden"), ring
+        assert ring["width"] >= 2, ring
+        assert ring["offset"] > 0, (
+            "the ring has no offset, so it is drawn on the capsule and the "
+            f"contrast asserted below is against the wrong ground: {ring}"
+        )
+        ratio = _contrast(ring["colour"], ring["ground"])
+        assert ratio >= 3, (
+            f"the focus ring is {ratio:.2f}:1 against the Kale field it is drawn "
+            f"on ({ring['colour']} on {ring['ground']})"
+        )
+        focused_inset = [
+            layer for layer in _LAYER.split(ring["shadow"]) if "inset" in layer
+        ][0]
+        assert _rgba(focused_inset)[3] == 1, (
+            f"the ring's inner line stayed at its resting translucency: {focused_inset!r}"
+        )
+    finally:
+        context.close()
+
+
+def test_the_same_capsule_off_the_kale_ground_falls_back_to_the_light_skin(browser):
+    """**The panel proper must not have been broken to fix the gate.**
+
+    Every colour in this component became a token in order to give the Kale
+    ground a second skin, and a typo in one default would restyle every screen a
+    signed-in person uses — which is the exact defect `language.css` was created
+    to close, pointed the other way.
+
+    Reaching a Tabler page means driving the whole login gauntlet, which this
+    module deliberately does not do (see the section header above). What it can
+    do is take away the one thing the skin is derived from. The ground is
+    selected as `body:has(> .gate)`, so removing that class from the shell —
+    the real page, the real stylesheet, the real element, one class less —
+    is precisely the condition every panel screen is in, and the component has
+    to change back.
+
+    The Tabler ground is grey rather than white, so what is asserted is the
+    component's own colours and not a contrast against a ground this page does
+    not have.
+    """
+    context = browser.new_context(viewport={"width": 1278, "height": 983})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+        kale = page.evaluate(_GATE)
+
+        page.eval_on_selector(".gate", "el => el.classList.remove('gate')")
+        light = page.evaluate(
+            """() => {
+              const bar = document.querySelector('.language-bar');
+              const label = document.querySelector('.language-bar__label');
+              const button = document.querySelector('.language-bar__submit');
+              const cs = getComputedStyle(bar);
+              return {surface: cs.backgroundColor, labelInk: getComputedStyle(label).color,
+                      buttonInk: getComputedStyle(button).color,
+                      buttonGround: getComputedStyle(button).backgroundColor};
+            }"""
+        )
+
+        assert light["surface"] != kale["surface"], (
+            "the capsule wears the Kale skin on a page with no Kale on it, so "
+            f"every panel screen wears it too: {light}"
+        )
+        assert _rgba(light["surface"]) == (255.0, 255.0, 255.0, 1.0), (
+            f"the light skin's capsule is no longer white: {light['surface']!r}"
+        )
+        for part, ink in (("label", light["labelInk"]),
+                          ("button", light["buttonInk"])):
+            ground = light["surface"] if part == "label" else light["buttonGround"]
+            ratio = _contrast(ink, ground)
+            assert ratio >= 4.5, (
+                f"the light skin's {part} reads {ratio:.2f}:1 ({ink} on {ground})"
+            )
+        assert light["buttonGround"] != light["surface"], (
+            f"the light skin's button has lost its own ground: {light}"
+        )
+    finally:
+        context.close()
+
+
+def test_the_island_moves_to_the_other_side_when_the_page_reads_right_to_left(browser):
+    """The capsule's position on the page, not the order of things inside it.
+
+    `test_the_globe_leads_the_control_in_whichever_direction_the_page_reads`
+    covers the inside on the calculator, which ships Arabic and Urdu. **The
+    panel ships English and Chinese**, so no catalogue here can produce an RTL
+    page — and `dir` is emitted from the catalogue anyway (§7.7.8), so the first
+    RTL catalogue added to `admin/locales/` is what would set it. Setting it
+    directly is therefore what that catalogue would do and nothing more.
+
+    Asserted because the fix moved the ground under this control: an island
+    pinned physically to the left of a mirrored page lands at the reading-END of
+    it, which is the same defect the whole stylesheet was written in logical
+    properties to avoid.
+    """
+    context = browser.new_context(viewport={"width": 1278, "height": 983})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+        ltr = page.evaluate(_GATE)
+        assert ltr["bar"]["left"] < ltr["viewportW"] / 2, ltr["bar"]
+
+        page.evaluate("() => { document.documentElement.dir = 'rtl'; }")
+        rtl = page.evaluate(_GATE)
+        assert rtl["dir"] == "rtl"
+        assert rtl["bar"]["right"] > rtl["viewportW"] / 2, (
+            f"the island stayed at the physical left of a mirrored page: {rtl['bar']}"
+        )
+        # Mirrored, not merely moved: the same gap from the reading edge.
+        assert abs(
+            (rtl["viewportW"] - rtl["bar"]["right"]) - ltr["bar"]["left"]
+        ) <= 1, (rtl["bar"], ltr["bar"])
+        # And the ground goes with it — the field is one colour in both.
+        assert rtl["pageGround"] == ltr["pageGround"], (rtl, ltr)
+    finally:
+        context.close()
+
+
 def test_choosing_a_language_survives_a_reload_and_another_page(browser):
     """The whole point of the feature, driven the way a person drives it.
 

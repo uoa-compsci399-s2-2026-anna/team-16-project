@@ -89,9 +89,21 @@
   --lang-surface: #FFFFFF;
   --lang-sphere: #DFF8ED;           /* the Pea tint, for the globe's disc */
   --lang-focus: #005AE6;            /* Blueberry, as brand.css rings an input */
-  --lang-hairline: rgba(0, 50, 35, 0.18);
+  /* **THE THREE STATES ARE NAMED AND `--lang-hairline` IS RESOLVED FROM THEM,
+     and that is a specificity fix rather than a tidy-up.** The Kale block below
+     is `body:has(> .gate) .language-bar` at 0-2-1; `.language-bar:focus-within`
+     is 0-2-0. So a ground that set `--lang-hairline` itself would BEAT the
+     focus rule, and the ring's inner line would stay at its resting
+     translucency on the one ground where the ring matters most. It did, and
+     `test_the_focus_ring_is_visible_against_the_ground_it_is_drawn_on` is what
+     found it - the hairline is drawn inside a `box-shadow` layer, so nothing
+     shorter than reading that layer's alpha back off the focused element could
+     have seen it. A ground names the three variants; only the state rules
+     assign the one the capsule paints with. */
+  --lang-hairline-rest: rgba(0, 50, 35, 0.18);
   --lang-hairline-hover: rgba(0, 50, 35, 0.34);
   --lang-hairline-focus: #003223;
+  --lang-hairline: var(--lang-hairline-rest);
   --lang-button-ink: #FFFFFF;
   --lang-button-ground: #003223;
   --lang-button-hover: #01452F;
@@ -370,7 +382,11 @@ body:has(> .gate) .language-bar {
      is where the two objects on this page rhyme. */
   --lang-sphere: #28C882;
   --lang-focus: #FFD76E;            /* Banana: 10.9:1 on Kale */
-  --lang-hairline: rgba(255, 255, 255, 0.28);
+  /* The three variants, never `--lang-hairline` itself - see the note on the
+     component's own declarations. This block out-specifies `:hover` and
+     `:focus-within`, so assigning the painted value here would silently
+     disable both. */
+  --lang-hairline-rest: rgba(255, 255, 255, 0.28);
   --lang-hairline-hover: rgba(255, 255, 255, 0.5);
   --lang-hairline-focus: #FFFFFF;
   --lang-button-ink: #003223;

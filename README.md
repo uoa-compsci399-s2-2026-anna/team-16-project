@@ -285,9 +285,57 @@ prevents:
 | --- | --- |
 | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD` | change these for anything that is not a laptop |
 | `KAICALC_SESSION_HTTPS_ONLY` | defaults to `false` so the shipped plain-http stack is usable. **Set it to `true` the moment TLS is in front.** |
+| `KAICALC_NEWS_ORIGIN` | the client's WordPress site, as `scheme://host[:port]` with no trailing slash. **Set it empty and the home page removes its news section entirely** — a supported deployment, not a degraded one. Details below. |
+| `KAICALC_API_ORIGIN` | empty, and it should stay empty unless the API is on its own origin. Details below. |
+| `KAICALC_NEWS_IMAGE_ORIGINS` | space-separated, `img-src` only, for a WordPress media library on a CDN rather than on the site origin. |
 | `PROTECTION_TRUSTED_PROXY` | defaults to `false`. Behind a real reverse proxy, leave it false and every caller arrives as the proxy — the API's per-visitor rate limits collapse into one site-wide bucket. Set it true, and remove the direct `ports:` for `api` and `admin`, together. |
 | `PROTECTION_ENABLED` | the escape hatch if the panel's protection layer locks everyone out. Every setting is read once at start-up, so edit *and restart*. |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | login throttling. Lockout counters live in process memory, so `docker compose -f docker/compose.yaml restart admin` clears every lockout immediately. |
+
+### Where the front end gets its origins
+
+**No domain is baked into any image.** `KAICALC_NEWS_ORIGIN`, `KAICALC_API_ORIGIN` and
+`KAICALC_NEWS_IMAGE_ORIGINS` are read once at container start by `docker/web-config.sh`,
+which writes **both** consumers from them: the `connect-src` and `img-src` of the public
+Content-Security-Policy in `docker/nginx.conf`, and `web/js/config.js`, the ES module the
+front end imports. One value each, two outputs, so the policy and the page cannot name
+different hosts. `docker/compose.yaml` is the only file in this repository that mentions
+the client's site, and it is deployment configuration rather than an artefact — DNS,
+certificates and hosting are out of scope for this project.
+
+That is a fix, not a refinement. The domain used to be written out twice — in
+`web/js/api.js` as the WordPress base and in `docker/nginx.conf` as a `connect-src` entry
+— and the two had to agree while failing in opposite directions when they did not: a
+wrong policy means the news quietly does not load, and a wrong URL means the browser goes
+and asks a domain nobody chose.
+
+```bash
+# The client's site (the default), no news at all, and the API on its own origin:
+KAICALC_NEWS_ORIGIN=https://kaicommitment.org.nz  docker compose -f docker/compose.yaml up -d web
+KAICALC_NEWS_ORIGIN=                              docker compose -f docker/compose.yaml up -d web
+KAICALC_API_ORIGIN=https://api.example.org        docker compose -f docker/compose.yaml up -d web
+
+# What is actually in force:
+curl -sI http://localhost:18080/ | grep -i content-security-policy
+curl -s  http://localhost:18080/js/config.js
+```
+
+**An unset news origin removes the home page's news section rather than reporting an
+outage.** Most deployments of this calculator have no WordPress behind them, so unset is a
+supported arrangement; leaving the heading standing over "temporarily unavailable" would
+describe a fault nobody caused, and guessing a domain would be worse.
+
+**`KAICALC_API_ORIGIN` should stay empty unless you mean it.** The front end builds
+`/api/v1`, a relative path, and nginx routes it on — same-origin is the designed topology
+and needs no configuration. It is settable because splitting the API onto its own
+subdomain otherwise means editing `web/js/api.js` *and* `connect-src` in
+`docker/nginx.conf`, or every call is refused by our own policy with nothing in the
+failure pointing at nginx. Weigh it as you would the nginx configuration itself: this is
+the front end of a tool whose numbers are the product. It is readable only from the
+container's environment, never from anything a visitor can put in a URL; a value that is
+not a bare `scheme://host[:port]` **stops the container from starting** rather than
+reaching the policy; and `connect-src` is generated from the same string, so the page can
+reach the one origin you named and no other.
 
 ### Stopping it
 

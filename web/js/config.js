@@ -1,5 +1,5 @@
 /**
- * Deployment configuration for the front end. Contract §7.9.
+ * Deployment configuration for the front end. Contract §7.8.
  *
  * **This file is the checked-in default, and a container overwrites it at start-up.**
  * `docker/web-config.sh` runs from nginx's `/docker-entrypoint.d/` before the server

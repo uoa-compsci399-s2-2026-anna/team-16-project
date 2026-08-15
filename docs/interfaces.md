@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-15 (v1.35 draft)"
+date: "2026-08-15 (v1.36 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,18 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.36 — 2026-08-15 (one runtime configuration for the news origin and the API origin; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The client's production domain is gone from `web/js/api.js` and from `docker/nginx.conf`, and appears in neither built image.** It was written out twice - as the WordPress base and as a `connect-src` entry - and the two had to agree. **They fail asymmetrically, which is why nothing would have caught the drift:** a wrong policy means the news quietly does not load, a wrong `NEWS_API` means the browser goes and asks a domain nobody chose. The API was not affected today, because `API_BASE` was relative, but the pair was a live trap for the moment that stopped being true. This project's deliverable is source and documentation with DNS, certificates and hosting out of scope, so the domain belongs to `docker/compose.yaml` - the deployment recipe - and to nothing else | §7.5, §7.6.10, §7.8 |
+| 2 | **New §7.8 `config.js`: a generated same-origin ES module, written by `docker/web-config.sh` at container start.** The same run builds the `connect-src` and `img-src` of the public CSP from the same variables, so the policy and the page cannot name different hosts. No build step is involved and no request is added before first paint; the checked-in copy carries empty defaults so a plain checkout still works. A `<meta>`, a `sub_filter` and a `GET /config.json` were each weighed and each costs more - §7.8 says why | §7.8 |
+| 3 | **An unset news origin renders no news section at all, and requests nothing.** `getNewsPosts` returns `null`, distinct from the `[]` that means "asked and got nothing usable", and `home.js` removes `.home-news` entirely. Leaving the heading standing over "temporarily unavailable" reports an outage for a service nobody configured, and a reader cannot tell that from a real one. Most deployments of this calculator have no WordPress: unset is supported, not degraded | §7.5, §7.8 |
+| 4 | **`KAICALC_API_ORIGIN` exists, defaults to empty, and the guards on it are the contract.** Same-origin stays the designed topology and `/api/v1` stays relative. It is configurable because the alternative was the same two-copies defect one layer up - split the API onto a subdomain and both `api.js` and `connect-src` have to change, or every call is refused by our own policy. It is readable only from the operator's environment, never from a URL; the entrypoint refuses to start the container on anything that is not a bare `scheme://host[:port]`; and `connect-src` is generated from the same string. That validation is also what makes it safe to interpolate into a CSP header and a JavaScript literal | §7.8 |
+| 5 | **`img-src` now follows the news origin, reversing the decision recorded on `createNewsCard`.** That note kept the directive narrow because widening it meant *guessing* the media origin, and told the next person to add the `<img>`, read the host off a test failure and edit two files in order. The origin is configuration now, so the guess is gone and the order no longer applies; the note has been rewritten to say so. `post.imageUrl` is still rendered nowhere. A WordPress library on a CDN is a different host and goes in `KAICALC_NEWS_IMAGE_ORIGINS` | §7.6.10, §7.8 |
+| 6 | **`envsubst` is called with an explicit two-name list, and that is load-bearing.** With no argument it eats `$time_local`, `$uri`, `$scheme`, `$http_host` and the rest, leaving valid nginx syntax that logs blank lines and redirects to nothing. The mutation that drops the list fails on `$time_local` | §7.8 |
+| 7 | **Proved in a running container with a value that is not the default, both configured and unconfigured.** `tests/test_web_runtime_config.py` reads the origin back out of the rendered header *and* the served module; `tests/web/test_csp.py` starts a second, unconfigured container and asserts in a real browser that the home page drops its news section and makes no off-origin request. A test that asserts a value exists does not assert anything reads it | §7.8 |
 
 ### v1.35 — 2026-08-15 (the gate's ground runs under the chooser, and the capsule gains a second skin; affects E)
 
@@ -2713,16 +2725,20 @@ export function renderBar(el, rows, opts);
  * Fetches news from the client's WordPress site. No second news system
  * is built.
  * @param {number} [limit=6]
- * @returns {Promise<Array<{title, excerpt, link, date, imageUrl}>>}
+ * @returns {Promise<Array<{title, excerpt, link, date, imageUrl}>|null>}
  *          Returns [] on failure so the home page never blanks out
- *          because the news feed is down.
+ *          because the news feed is down, and null when no news origin
+ *          is configured at all (§7.8) — the home page removes its news
+ *          section for the second and reports an outage only for the first.
  */
 export async function fetchNews(limit);
 ```
 
-Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embed`
+Source: `${NEWS_ORIGIN}/wp-json/wp/v2/posts?per_page={limit}&_embed`
 
-> **§7.4 and §7.5 are specifications, not descriptions.** Neither module exists yet, and Chart.js appears nowhere in the tree — C's bars are CSS-width `<span>` elements. They remain D's deliverables.
+**The route is fixed by WordPress; the origin is `NEWS_ORIGIN` from §7.8 and appears in no file in this repository.** It used to be written out here as a literal *and* in `docker/nginx.conf`'s `connect-src`, two copies that had to agree and failed asymmetrically when they did not. Do not restore the literal: `tests/test_d_statistics_content.py` fails on an absolute origin in `api.js`, and on one in the nginx configuration.
+
+> **§7.4 and §7.5 were specifications rather than descriptions, and both have since been built (v1.36).** `web/js/charts.js`, `web/js/news.js` and `web/js/home.js` are in the tree, Chart.js is vendored under `web/vendor/`, and `home.html` links the feed from every public page's navigation. Read this section as the contract they are held to, not as work outstanding.
 
 ## 7.6 Front-End Hard Constraints
 
@@ -2734,6 +2750,7 @@ Source: `https://kaicommitment.org.nz/wp-json/wp/v2/posts?per_page={limit}&_embe
 6. **Charts must render negative values.** `downstream` may be negative (§2.2), so a metric total may be too. Discarding the sign hides the reuse-and-offset result the calculator exists to show. The sign classes and the arrow convention are in §7.3a under `improvement.js`; use those four classes rather than a second set.
 8. **Text that comes from the database may contain a token that cannot be broken, and a flex or grid item will not shrink below it.** A `min-width: auto` item — the default — is never narrower than its min-content width, and for a URL that is its full width. The published ReFED set's `notes` cite a 124-character URL; rendered in the factor-set summary it held a row at 768px inside a 310px list and pushed the methodology page to **875px in a 390px viewport, in English as well as in Arabic**. Give the element holding that field `overflow-wrap: anywhere` — the one value that also shrinks the min-content contribution, so the flex floor drops with it and no `min-width: 0` is needed. **Do not give it to the label beside it:** a label is a catalogue string, the value will take every pixel it is allowed, and `anywhere` on both collapsed the Arabic label `ملاحظات` to a 1px column 760px tall while every overflow assertion still passed. **Assert this by measuring `scrollWidth` against `clientWidth` in a browser**, and assert alongside it that the rendered data still contains a token long enough to reproduce it: publish a factor set with short notes and an overflow test goes green on a page that could never have overflowed.
 9. **No page may request an asset from a third-party host at runtime.** Fonts, scripts, stylesheets, icons and images are served from this origin. `styles.css` opened with an `@import` from `fonts.googleapis.com`, so every visitor's browser announced itself to a third party before the first paint — on a calculator whose stated privacy position is §2.3's, and whose statistics page says so in its own copy — and the first paint waited on a network the project does not control. The brand fonts are in `web/assets/fonts/`. **This binds §7.4:** Chart.js is self-hosted, never loaded from a CDN.
+10. **No deployment domain is written into the front end, the nginx configuration or an image (v1.36).** DNS, certificates and hosting are out of scope for this project, and a domain that appears in two files which must agree is the defect §7.8 exists to remove — the two fail asymmetrically, so nothing catches the drift. Every origin arrives at container start from one environment variable and reaches both the Content-Security-Policy and `web/js/config.js` from it. **When a resource is refused, the fix is a variable, never a host added to `docker/nginx.conf`** — that is how the pair comes back, and `tests/test_d_statistics_content.py` fails on an absolute origin in either file.
 
 ---
 
@@ -2911,6 +2928,39 @@ The consequence, stated rather than discovered: a Thai visitor gets a Thai inter
 1. **Nothing re-fetches.** The figures do not depend on the language, and a page that calls `GET /api/v1/stats` on every language change rate-limits itself. The same rule already applies to `methodology.js` and `GET /api/v1/factors`.
 2. **A translatable string reached by reference must be a function, not a constant.** `stats.js::BREAKDOWNS` holds `() => t('Destinations entered')`, the shape `methodology.js::METADATA_FIELDS` already used. A module-level constant is evaluated once, at import, and stays in the language the page opened in — which looks correct until somebody switches.
 3. **The test must read the rendered title, not the call.** `tests/web/test_i18n_browser.py::test_the_charts_are_rebuilt_in_the_new_language` reads the title off the live chart's laid-out title block, whose measured height is what distinguishes a drawn title from a stored string, compares it with the catalogue file in two languages, and asserts the previous canvases are no longer known to Chart.js — a chart left alive behind its replacement is the failure this path invites.
+
+---
+
+## 7.8 `config.js` — deployment configuration (owners: C and D; produced by E's container)
+
+```js
+/** Origin of the client's WordPress site, `scheme://host[:port]`. '' = no news feed. */
+export const NEWS_ORIGIN;   // string
+/** Origin of the public API. '' = the relative `/api/v1`, which is the default topology. */
+export const API_ORIGIN;    // string
+```
+
+**No deployment domain appears in `web/`, in `docker/nginx.conf`, or in any built image.** Both values arrive from the environment at container start. `docker/web-config.sh` runs from nginx's `/docker-entrypoint.d/` before the server binds and writes **two** things from the same variables: the `connect-src` and `img-src` of the public Content-Security-Policy, and this module. The checked-in `web/js/config.js` carries the same exports with empty values, so a plain checkout serves a working front end with no build step involved.
+
+| Variable | Feeds | Unset |
+| --- | --- | --- |
+| `KAICALC_NEWS_ORIGIN` | `NEWS_ORIGIN`, `connect-src`, `img-src` | no news feed; the home page removes its news section |
+| `KAICALC_API_ORIGIN` | `API_ORIGIN`, `connect-src` | `/api/v1`, relative — the designed same-origin topology |
+| `KAICALC_NEWS_IMAGE_ORIGINS` | `img-src` only (space-separated) | nothing added |
+
+> **Why this section exists at all: two copies of one domain that had to agree.** `web/js/api.js` held `https://kaicommitment.org.nz/wp-json/wp/v2/posts` and `docker/nginx.conf` held the same host in `connect-src`. The API was not affected — `API_BASE` was relative — but the pair was a live trap for the moment it stopped being: put the front end on a CDN or the API on its own subdomain and every call is refused by our own policy, with nothing in the failure pointing at nginx. **The two copies also fail asymmetrically, which is why nothing would have caught the drift:** a wrong policy means the news quietly does not load, and a wrong URL means the browser goes and asks a domain nobody chose. This project's deliverable is source code and documentation, with DNS, certificates and hosting explicitly out of scope, so the domain belongs to the deployment recipe (`docker/compose.yaml`) and not to an artefact.
+
+> **Why a generated ES module and not a `<meta>`, a `sub_filter` or a config endpoint.** The front end has no build step and no framework (§7.6.10), so the value has to arrive at runtime, and it has to survive the policy it is helping to write. A same-origin module is fetched under `script-src 'self'` like every other module and joins a module graph a deferred `<script type="module">` already loads, so it costs no request before first paint. A `<meta>` needs every HTML page rewritten and hands the value to anything that can inject an element; `sub_filter` rewrites every response body and interacts badly with the `gzip on` two directives away; `GET /config.json` adds a request the feed has to wait on for nothing.
+
+> **An unset news origin is a supported deployment, not an error.** Most installations of this calculator have no WordPress behind them. `getNewsPosts` returns `null` — distinct from the `[]` that means "asked and got nothing usable" — `fetchNews` passes it through, and `home.js` removes the whole `.home-news` section. It does **not** leave the heading standing over "temporarily unavailable", which reports an outage for a service nobody configured, and it does not request a guessed host.
+
+> **`API_ORIGIN` is configurable, and the guards on it are the point.** Same-origin remains the default and the designed topology. Setting it makes this the front end of a tool whose numbers are the product, pointed at an API somebody chose: so the value is read only from the operator's environment at container start — never from a URL, a query parameter, `sessionStorage` or an element in the page — `docker/web-config.sh` **refuses to start the container** unless it is a bare `scheme://host[:port]`, and `connect-src` is generated from the same string, so the page can reach the one origin named and no other. Refusing to start is deliberate: a typo must be a container that does not come up, not a calculator quietly showing the wrong figures. That validation is also the injection guard — nothing reaching the header or the JavaScript literal can hold a quote, a semicolon, a space or a newline.
+
+> **`envsubst` is called with an explicit two-name shell-format list.** With no argument it substitutes every `$name` in the file, and this configuration is full of nginx's own: `$time_local`, `$request`, `$status`, `$body_bytes_sent`, `$request_time`, `$uri`, `$scheme`, `$http_host`. Each would become the empty string, producing valid nginx syntax that logs blank lines for every request and redirects to nothing. `tests/test_web_runtime_config.py::test_envsubst_does_not_eat_nginx_own_variables` is what holds it; the mutation that drops the list fails on `$time_local`.
+
+> **`img-src` follows `KAICALC_NEWS_ORIGIN`, which reverses an earlier decision.** The directive was kept at `'self' data:` because widening it meant *guessing* the media origin. The origin is configuration now, so there is no guess left to make, and it grants nothing new in practice because `connect-src` already reaches that host. `post.imageUrl` is still rendered nowhere; the note on `createNewsCard` in `web/js/home.js` records what changed and what is left to check — a WordPress library that serves from a CDN is a different host, and `KAICALC_NEWS_IMAGE_ORIGINS` is where it goes.
+
+**Tests.** `tests/test_web_runtime_config.py` sets a value that is not the default and reads it back out of the built image, from both the rendered header and the served module, for the configured and the unconfigured case; `tests/web/test_csp.py` starts a second, unconfigured container and asserts, with the policy enforced in a real browser, that the home page removes its news section **and** makes no off-origin request.
 
 ---
 

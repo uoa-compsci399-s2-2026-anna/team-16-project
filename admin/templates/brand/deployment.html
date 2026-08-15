@@ -1,0 +1,283 @@
+{# /admin/deployment - the read-back for an operator configuring an edge proxy.
+   admin/deployment_view.py carries the whole argument: what this page can
+   observe, what it can only be told, why it configures nothing, and why the
+   three checks on logging were made rather than assumed.
+
+   Extends sqladmin's own layout rather than brand/base.html for the reason
+   brand/getting_started.html does: this is a page somebody reads and then
+   navigates away from, and brand/base.html paints a card on an empty ground
+   with no menu at all.
+
+   ORDER IS EVIDENCE, THEN CONFIGURATION, THEN CONCLUSION. The operator's
+   actual question is "did the edge I just configured land", and the answer to
+   that is the header table - so it comes first, above the settings it is used
+   to interpret. Reversing them would make the reader scroll past two rows
+   they already know to reach the one row they came for.
+
+   The three colours are the brand palette (Kai Commitment Brand Guidelines
+   v1, Oct 25): Orange #FF5032 and Banana #FFD76E take Kale #003223 text, Pea
+   #28C882 likewise. No level is signalled by colour alone - each finding
+   carries the word as well, because a colour is not a sentence and a reader
+   who cannot distinguish two of them still has to be able to read the page. #}
+{% extends "sqladmin/layout.html" %}
+
+{% block content %}
+<style>
+  /* Scoped to this page. Physical `left` is not used anywhere here - the
+     panel's stylesheet test refuses it - so the accent bars are logical
+     border-inline-start and mirror in RTL on their own. */
+  .kc-deploy { max-width: 82ch; }
+  .kc-deploy table { table-layout: fixed; width: 100%; }
+  .kc-deploy td, .kc-deploy th { overflow-wrap: anywhere; vertical-align: top; }
+  .kc-finding {
+    border-inline-start: 6px solid #003223;
+    background: #FFFFFF;
+    padding: .75rem 1rem;
+    margin-block-end: .75rem;
+  }
+  .kc-finding-warn { border-inline-start-color: #FF5032; }
+  .kc-finding-note { border-inline-start-color: #FFD76E; }
+  .kc-finding-ok   { border-inline-start-color: #28C882; }
+  .kc-level {
+    display: inline-block;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+    font-size: .75rem;
+    padding: .1rem .5rem;
+    border-radius: .25rem;
+    color: #003223;
+    background: #FFD76E;
+    margin-inline-end: .5rem;
+  }
+  .kc-level-warn { background: #FF5032; color: #FFFFFF; }
+  .kc-level-ok   { background: #28C882; color: #003223; }
+  .kc-absent { color: #6b7280; font-style: italic; }
+  .kc-value { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+</style>
+
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div class="kc-deploy">
+        <h2 class="card-title">Deployment</h2>
+        <p>
+          What the proxy in front of this panel is doing, and whether the three
+          settings that govern it agree with each other. Open this page
+          <em>through</em> the proxy you are configuring and read the table
+          below: it is this request, as it arrived.
+        </p>
+        <p>
+          <strong>This page changes nothing.</strong> nginx renders its
+          configuration once, when its container starts, so changing a value
+          means re-rendering and reloading it — which is not something a web
+          page may be able to do to its own container. <code>README.md</code>
+          has the <code>docker exec</code> sequence for trying a setting
+          without a rebuild, including the part where the change does not
+          survive the next start.
+        </p>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ---------------------------------------------------------------- evidence #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #005AE6;"></div>
+    <div class="card-body">
+      <div class="kc-deploy">
+        <h3 class="card-title">What this request carried</h3>
+        <p>
+          Read, shown and forgotten. Nothing in this table is written to the
+          database, to the audit log or to either access log — see
+          <code>admin/deployment_view.py</code> for the three checks that were
+          made rather than assumed, and contract §2.3 for the rule they serve.
+        </p>
+
+        <table class="table table-sm">
+          <tbody>
+            <tr>
+              <th style="width: 34%;">X-Forwarded-For</th>
+              <td>
+                {% if observation.chain %}
+                  <ol style="margin: 0; padding-inline-start: 1.25rem;">
+                    {% for entry in observation.chain %}
+                      <li>
+                        <span class="kc-value">{{ entry }}</span>
+                        {% if loop.first and observation.chain|length > 1 %}
+                          — what the front-most proxy reported
+                        {% elif loop.last and observation.chain|length > 1 %}
+                          — the peer this stack's nginx saw
+                        {% endif %}
+                      </li>
+                    {% endfor %}
+                  </ol>
+                {% else %}
+                  <span class="kc-absent">not present</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th>X-Forwarded-Proto</th>
+              <td>
+                {% if observation.forwarded_proto %}
+                  <span class="kc-value">{{ observation.forwarded_proto }}</span>
+                {% else %}
+                  <span class="kc-absent">not present</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th>X-Real-IP</th>
+              <td>
+                {% if observation.real_ip %}
+                  <span class="kc-value">{{ observation.real_ip }}</span>
+                  — always the peer this stack's nginx is talking to, never
+                  switched by the trust flag
+                {% else %}
+                  <span class="kc-absent">not present</span>
+                {% endif %}
+              </td>
+            </tr>
+            <tr>
+              <th>The connection this panel accepted</th>
+              <td>
+                {% if observation.peer %}
+                  <span class="kc-value">{{ observation.peer }}</span>
+                {% else %}
+                  <span class="kc-absent">no client address on the connection</span>
+                {% endif %}
+                , scheme <span class="kc-value">{{ observation.scheme }}</span>
+              </td>
+            </tr>
+            <tr>
+              <th>The address the system decided on</th>
+              <td>
+                {% if observation.decided_address %}
+                  <strong class="kc-value">{{ observation.decided_address }}</strong>
+                {% else %}
+                  <span class="kc-absent">none</span>
+                {% endif %}
+                <div>
+                  from {{ observation.decided_from }} — this is the value
+                  <code>db/detection.py</code>'s <code>client_ip</code> returns,
+                  which is what the blocklist and the rate limit are keyed on.
+                </div>
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# ----------------------------------------------------------- configuration #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #003223;"></div>
+    <div class="card-body">
+      <div class="kc-deploy">
+        <h3 class="card-title">The settings, and how this page knows them</h3>
+        <p>
+          Two of these are read out of this process's own environment. One of
+          them cannot be: it belongs to the <code>web</code> container's nginx,
+          and this panel is a different process in a different container. A
+          page that claimed to know a value it had inferred would be worse than
+          one that says what it saw.
+        </p>
+
+        <table class="table table-sm">
+          <thead>
+            <tr>
+              <th style="width: 34%;">Setting</th>
+              <th style="width: 22%;">Value</th>
+              <th>How this page knows</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <th>KAICALC_TRUST_FORWARDED_HEADERS<br>
+                <small>may our nginx believe what it receives</small></th>
+              <td><span class="kc-absent">not readable here</span></td>
+              <td>
+                A different container, and the variable is deliberately not
+                copied into this one — a second copy of a setting is a second
+                thing that can silently disagree with it. What can be observed
+                is the chain above:
+                {% if observation.chain|length >= 2 %}
+                  <strong>{{ observation.chain|length }} entries arrived, which only
+                  the trusting branch can produce.</strong>
+                {% elif observation.chain|length == 1 %}
+                  <strong>one entry arrived, which both branches produce
+                  identically.</strong>
+                {% else %}
+                  <strong>no forwarded header arrived at all.</strong>
+                {% endif %}
+                To read the setting itself:
+                <code>docker exec kaicalc-web printenv KAICALC_TRUST_FORWARDED_HEADERS</code>.
+              </td>
+            </tr>
+            <tr>
+              <th>SESSION_HTTPS_ONLY<br>
+                <small>is the staff session cookie marked Secure</small></th>
+              <td><span class="kc-value">{{ settings.session_https_only | lower }}</span></td>
+              <td>Read from this process's own environment. In force for the
+                page you are reading.</td>
+            </tr>
+            <tr>
+              <th>PROTECTION_TRUSTED_PROXY<br>
+                <small>may this application believe what our nginx sends</small></th>
+              <td><span class="kc-value">{{ settings.protection_trusted_proxy | lower }}</span></td>
+              <td>
+                Read from this process's own environment. The public API is a
+                separate process with its own copy of this variable, and this
+                page cannot see that one — <code>docker/compose.yaml</code>
+                hands both services the same value, but a deployment that does
+                not use that file is free to disagree.
+              </td>
+            </tr>
+            <tr>
+              <th>PROTECTION_ENABLED<br>
+                <small>context: does this panel apply any of it</small></th>
+              <td><span class="kc-value">{{ settings.protection_enabled | lower }}</span></td>
+              <td>
+                Read from this process's own environment. Not one of the three
+                above, but it decides whether the address in force is used for
+                anything here at all. The API does not read this variable.
+              </td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+{# --------------------------------------------------------------- the verdict #}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #FF5032;"></div>
+    <div class="card-body">
+      <div class="kc-deploy">
+        <h3 class="card-title">Whether they cohere</h3>
+        <p>
+          Some combinations of the settings above are incoherent, and which one
+          you are in is not something three values on their own tell you.
+        </p>
+        {% for finding in findings %}
+          <div class="kc-finding kc-finding-{{ finding.level }}">
+            <p style="margin-block-end: .35rem;">
+              <span class="kc-level kc-level-{{ finding.level }}">{{ finding.level }}</span>
+              <strong>{{ finding.title }}</strong>
+            </p>
+            <p style="margin-block-end: 0;">{{ finding.detail }}</p>
+          </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}

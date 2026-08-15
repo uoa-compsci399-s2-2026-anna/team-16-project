@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-16 (v1.38 draft)"
+date: "2026-08-16 (v1.39 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,19 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.39 — 2026-08-16 (the panel says what the proxy in front of it is doing; affects E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`/admin/deployment` — a read-only deployment read-back, administrator-only.** An operator putting this stack behind an edge proxy they already run gets it right on the second or third attempt, and until now the only way to find out whether an attempt landed was to ssh in and read environment variables out of three containers. This page is the read-back: configure the edge, open the page *through* it, and see whether the address and the scheme that arrive are the ones the edge is sending | §8.2 |
+| 2 | **It configures nothing, and that is the boundary rather than a limitation.** nginx renders its configuration once, at container start (`docker/web-config.sh`), so changing `KAICALC_TRUST_FORWARDED_HEADERS` needs a re-render and a reload, and the two application settings need a restart. A control that could trigger any of that would be a web page able to restart its own container — a privilege surface far larger than the diagnosis it saves. `README.md` documents the `docker exec` loop, including that the change does not survive the next start | §8.2 |
+| 3 | **The distinction between *configured* and *observed* is the page's design, not a caveat in its prose.** `SESSION_HTTPS_ONLY`, `PROTECTION_TRUSTED_PROXY` and `PROTECTION_ENABLED` are read from this process's own environment and are the values in force for the panel you are reading. `KAICALC_TRUST_FORWARDED_HEADERS` **is not readable here at all** — it belongs to the `web` container's nginx and `docker/compose.yaml` does not put it in this container's environment. **Adding it there was considered and rejected**: a value read from the panel's environment is not nginx's setting, it is a second copy free to disagree with it, which is the two-copies defect §7.8.1 exists to record. The page shows first-hand evidence instead, and says which row is which | §8.2, §7.8.1 |
+| 4 | **What the chain proves, exactly, and what it does not.** Two or more `X-Forwarded-For` entries can only be produced by the trusting branch, so the flag is on — but that does **not** prove the front-most proxy is the operator's, and the page says so rather than reading as an all-clear. One entry is produced identically by both branches and the page **will not guess** between them. No `X-Forwarded-For` at all means the request reached the panel's own published port rather than passing through nginx. `X-Real-IP` is the companion because `docker/nginx-proxy-headers.conf` deliberately does not switch it | §8.2, §7.8.1 |
+| 5 | **Incoherent combinations are named with their cost, not left as three values to reason about.** A chain arriving while `PROTECTION_TRUSTED_PROXY` is false is the state that looks configured and does nothing: one shared rate-limit bucket and one `ip_block` row that denies everyone. `PROTECTION_TRUSTED_PROXY` true on a request that bypassed nginx is the other direction — any caller reaching the panel directly can name their own address. `X-Forwarded-Proto: https` with `SESSION_HTTPS_ONLY` false is the one scheme fault provable from a single request | §8.2 |
+| 6 | **Displaying is not storing — checked, not assumed.** §2.3 forbids *storing* an address; rendering this request's own headers into a response that is discarded when it is sent stores nothing. But the nginx access log was found writing four forbidden fields once already, so three things were verified against the running stack rather than reasoned about: the rendered `kaicalc` log format carries no header and no address; uvicorn's own access line in the `admin` container logs `scope["client"]`, which is the nginx container's address and never the forwarded one; and no `audit_log` row is written by loading the page, which `tests/admin/test_deployment_view.py` asserts by counting the table across the request | §2.3, §8.2 |
+| 7 | **Administrator-only, enforced in three places because `@expose` inherits none of them.** The page describes the deployment's security posture, which sits with the blocklist and the audit log rather than with taxonomy CRUD. `is_visible` keeps it out of a `staff` member's sidebar, `is_accessible` is what the menu consults, and the explicit `_require_admin` at the top of the handler is the only one that actually refuses the URL. `AdministratorOnly` gains a `_session_maker_for(request)` hook so a `BaseView` — which sqladmin gives no `session_maker` — wears the same role floor rather than carrying a second copy of it | §8.3 |
+| 8 | **Reachable when `PROTECTION_ENABLED` is false, deliberately.** That switch turns off the blocklist, the header check and the rate limit together; hiding the page that says so would remove the diagnosis exactly when the deployment has least protection. The page keeps working and leads with a finding naming the state, and notes that the public API does not read that variable at all | §8.2 |
 
 ### v1.38 — 2026-08-16 (one landing page, and a drawer to reach the rest; affects C and D)
 
@@ -3101,6 +3114,13 @@ Requirements: list views must offer search and filtering.
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
 | Audit log | `/admin/audit-log` | Read-only, filterable by actor, time and table. **`role = admin` only** from v1.15 — see the change log for why "their own entries only" was rejected |
+| Deployment | `/admin/deployment` | Read-only read-back of the forwarding state, **`role = admin` only** (v1.39). Shows what this request carried (the `X-Forwarded-For` chain in order, `X-Forwarded-Proto`, `X-Real-IP`, the connection, and the address `db/detection.py::client_ip` decided on), then the settings with **how the page knows each one**, then whether they cohere. **It configures nothing** — see below |
+
+> **The deployment page is a diagnostic, not a control, and the line is drawn at the restart boundary.** nginx renders its configuration at container start, so changing `KAICALC_TRUST_FORWARDED_HEADERS` needs a re-render and a reload; `SESSION_HTTPS_ONLY` and `PROTECTION_TRUSTED_PROXY` need a process restart. A page that could trigger either would be a page that restarts its own container, reachable by anybody who reaches the panel. `README.md` documents the `docker exec` loop instead, including that the change does not survive the next start.
+
+> **It separates what it read from what it inferred, and refuses to close the gap by guessing.** Three of the four values are read from this process's own environment and are exactly what is in force for the panel. `KAICALC_TRUST_FORWARDED_HEADERS` is not one of them: it belongs to another container, and copying it into this one would create a second copy of a setting that is free to disagree with the first — the defect §7.8.1 exists to record. What the page has instead is evidence. Two or more forwarded entries can only come from the trusting branch, so the flag is on; one entry is produced identically by both branches and the page says so rather than picking; none at all means the request never went through nginx. And a chain arriving proves the flag is on, **not** that the proxy that sent it is the operator's — a page that read as an all-clear on that would be worse than one that says what it saw.
+
+> **Nothing on it is stored, and that was checked rather than assumed** — the nginx access log was found writing `$remote_addr`, `$http_user_agent`, `$http_referer` and `$http_x_forwarded_for` once already. The rendered `kaicalc` log format carries no header and no address; uvicorn's access line in the `admin` container logs `scope["client"]`, which is the nginx container's own address and never the forwarded one, because `ProxyHeadersMiddleware` declines to rewrite `scope` in this topology (§7.8.1); and `tests/admin/test_deployment_view.py` counts `audit_log` across the request and inspects `before_json`/`after_json` for the address the request carried.
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
@@ -3119,6 +3139,7 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Taxonomy, factor and formula CRUD | ✅ | ✅ |
 | Dry run, view submissions | ✅ | ✅ |
 | View the audit log | ❌ | ✅ |
+| Read the deployment's forwarding state (`/admin/deployment`, v1.39) | ❌ | ✅ |
 | Set `excluded_from_public` | ✅ | ✅ |
 | Publish, roll back | ✅ | ✅ |
 | Create, deactivate, re-role and delete accounts | ❌ | ✅ |

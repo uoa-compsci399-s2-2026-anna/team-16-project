@@ -52,7 +52,9 @@ playwright_api = pytest.importorskip(
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "calculate_response_single.json").read_text(encoding="utf-8"))
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/")
+#: `/index.html`, not `/`. `/` serves `home.html` now, and the calculator
+#: opens on step one rather than on an introduction screen.
+BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
 
 
 def _english(url: str) -> str:
@@ -152,7 +154,7 @@ def page_at(browser):
         page.add_style_tag(content=FORCE_AUTO)
         if MUTATION_CSS:
             page.add_style_tag(content=MUTATION_CSS)
-        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        page.wait_for_selector('input[name="sector"]', timeout=10000)
         return page
 
     yield open_page
@@ -162,7 +164,13 @@ def page_at(browser):
 
 def walk(page):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
-    at each screen — intro, 0..4, then results (5).
+    at each screen — 0..4, then results (5).
+
+    **There is no intro screen to yield any more.** It used to be step -1: a hero
+    with its own "Start calculator" button, which every visitor met because nginx
+    served `index.html` at `/`. `/` serves `home.html` now, so this page is the
+    calculator and opens on step one — one screen fewer to walk, and one fewer to
+    measure.
 
     A generator rather than a `go_to(step)` because the wizard is a sequence:
     re-walking it once per screen measures the same seven screens seven times
@@ -171,8 +179,6 @@ def walk(page):
     Each screen is yielded before it is interacted with, because that is the
     state the visitor lands in and the moment they look for the next action.
     """
-    yield -1
-    page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
     yield 0
     page.evaluate("document.querySelector('input[name=sector]').click()")
@@ -206,11 +212,13 @@ def advance_to(page, step):
     raise AssertionError(f"step {step} was never reached")
 
 
-#: The screen, and the selector for the action that advances it. The intro has
-#: no bar — it is a full-bleed hero whose own CTA measures -447 / -362 / -273 —
-#: and the results screen's advancing action is the download.
+#: The screen, and the selector for the action that advances it. The results
+#: screen's advancing action is the download.
+#:
+#: Step -1 was here — the introduction screen's own full-bleed CTA, measured at
+#: -447 / -362 / -273 — and it is gone with the screen. Nothing else in this
+#: table changed: `/index.html` now opens on step 0.
 PRIMARY = {
-    -1: '[data-action="start"]',
     0: '.step-nav [data-action="continue"]',
     1: '.step-nav [data-action="continue"]',
     2: '.step-nav [data-action="continue"]',
@@ -245,7 +253,13 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
     page = page_at(width, height, dpr)
     failures = []
     for step in walk(page):
-        if step == -1:
+        # Step one has no Back: it is the first screen of the calculator, the
+        # introduction screen it used to return to is gone, and a Back that goes
+        # nowhere is worse than no Back.
+        if step == 0:
+            assert page.query_selector('.step-nav [data-action="go-step"]') is None, (
+                "step one has a Back button again; it has nowhere to go"
+            )
             continue
         page.wait_for_timeout(100)
         past = page.evaluate(PAST_FOLD, '.step-nav [data-action="go-step"]')

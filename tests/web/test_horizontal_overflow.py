@@ -53,8 +53,12 @@ PATHS = {
     # The factor-set summary: fetched from the API after load, and the element
     # the defect was in.
     "/methodology.html": ".review-destinations dd",
-    # The calculator opens on its hero, before any step is entered.
-    "/": "#main-content .hero h1",
+    # The calculator, and it is at `/index.html` now: `/` serves `home.html`,
+    # which is measured on its own line below. The hero this used to wait on
+    # was the introduction screen, which is gone - the calculator opens on step
+    # one, whose heading appears only once the taxonomy has resolved, so it is
+    # the same kind of marker the hero was and a stricter one.
+    "/index.html": "#main-content #stage-title",
     # The two content pages joined this measurement at v1.30, when the language
     # chooser was added to their header rows. That row already carried a brand
     # lockup and a four-link navigation, so it is the third block in a row that

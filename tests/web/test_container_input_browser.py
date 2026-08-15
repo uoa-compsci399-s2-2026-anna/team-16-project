@@ -99,7 +99,9 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive the container input; it is unverified without it",
 )
 
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/")
+#: `/index.html`, not `/`. `/` serves `home.html` now, and the calculator opens
+#: on step one rather than on an introduction screen with a Start button.
+BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
 
 #: The preset this file drives, and the mass it must produce. Held here rather
 #: than read from the API so that a seed change has to be *noticed*: this test's
@@ -219,7 +221,7 @@ def page_at(browser, taxonomy):
         except Exception as error:  # pragma: no cover - environment guard
             pytest.skip(f"the front end is not being served at {BASE}: {error}")
         page.add_style_tag(content=FORCE_AUTO)
-        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        page.wait_for_selector('input[name="sector"]', timeout=10000)
         return page
 
     yield open_page
@@ -241,7 +243,6 @@ RESULT_STUB = {
 
 def to_amount_step(page):
     """Walk to step 3 and stop."""
-    page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
@@ -464,7 +465,6 @@ def test_switching_from_tonnes_to_containers_leaves_step_four_in_kilograms(page_
     the defect invisible to them.
     """
     page = page_at(1278, 983)
-    page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
     page.wait_for_timeout(60)
@@ -546,7 +546,6 @@ def test_the_request_body_is_what_a_typed_mass_would_have_sent(page_at):
     from_container = page.sent[-1]
 
     typed = page_at(1278, 983)
-    typed.click('[data-action="start"]')
     typed.wait_for_selector('input[name="sector"]')
     typed.evaluate("document.querySelector('input[name=sector]').click()")
     typed.wait_for_timeout(60)

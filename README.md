@@ -85,7 +85,8 @@ creates two administrator accounts and starts the calculator behind nginx.
 docker compose -f docker/compose.yaml up -d
 ```
 
-Then open **<http://localhost:18080/>**.
+Then open **<http://localhost:18080/>**, which is the home page. The calculator itself
+is at `/index.html`, and every page links to every other.
 
 That command builds the images from this checkout. If you were handed the **published
 images** instead of the source, the file to use is `docker/compose.deploy.yaml` — same

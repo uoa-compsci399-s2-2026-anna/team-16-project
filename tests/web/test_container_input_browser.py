@@ -99,9 +99,18 @@ playwright_api = pytest.importorskip(
     reason="playwright is required to drive the container input; it is unverified without it",
 )
 
-#: `/index.html`, not `/`. `/` serves `home.html` now, and the calculator opens
-#: on step one rather than on an introduction screen with a Start button.
-BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+#: The ORIGIN, not a page. Two things are built from it and they are not the same
+#: shape: the calculator's URL, and the API URL the `taxonomy` fixture reads. Folding
+#: `/index.html` into this constant made the second one
+#: `http://localhost:18080/index.html/api/v1/taxonomy`, which 404s - and because that
+#: fixture *skips* on an unreachable taxonomy rather than failing, all twenty-four
+#: assertions in this file went green as skips and measured nothing.
+BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+
+#: The calculator's own URL. `/` serves `home.html` now, so it has to be named:
+#: `/` reaches a page with no wizard on it and every `wait_for_selector` below would
+#: time out on a page that is working exactly as intended.
+CALCULATOR = BASE + "/index.html"
 
 #: The preset this file drives, and the mass it must produce. Held here rather
 #: than read from the API so that a seed change has to be *noticed*: this test's
@@ -162,7 +171,7 @@ REALLY_VISIBLE = """
 @pytest.fixture(scope="session")
 def taxonomy():
     """The served taxonomy, so a stale stack skips rather than fails."""
-    url = BASE.rstrip("/") + "/api/v1/taxonomy"
+    url = BASE + "/api/v1/taxonomy"
     try:
         with urllib.request.urlopen(url, timeout=10) as response:
             served = json.loads(response.read())
@@ -215,11 +224,11 @@ def page_at(browser, taxonomy):
             )
 
         page.route("**/api/v1/calculate*", capture)
-        url = BASE + ("&" if "?" in BASE else "?") + f"lang={language}"
+        url = CALCULATOR + ("&" if "?" in CALCULATOR else "?") + f"lang={language}"
         try:
             page.goto(url, wait_until="networkidle", timeout=20000)
         except Exception as error:  # pragma: no cover - environment guard
-            pytest.skip(f"the front end is not being served at {BASE}: {error}")
+            pytest.skip(f"the front end is not being served at {CALCULATOR}: {error}")
         page.add_style_tag(content=FORCE_AUTO)
         page.wait_for_selector('input[name="sector"]', timeout=10000)
         return page

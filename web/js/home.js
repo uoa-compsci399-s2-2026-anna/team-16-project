@@ -54,36 +54,43 @@ function safeNewsLink(value) {
 }
 
 /**
- * **`post.imageUrl` is deliberately not rendered, and rendering it needs a CSP
- * change first. Read this before you add the `<img>`.**
+ * **`post.imageUrl` is still not rendered, but the CSP no longer blocks it and the
+ * order of work has changed. Read this before you add the `<img>` — the previous
+ * version of this note told you to work in an order that no longer applies.**
  *
- * `news.js` normalises `imageUrl` from `wp:featuredmedia`, so the field is on
- * every object this receives and is a plausible thing to reach for. Nothing
- * renders it, which is why the page works.
+ * `news.js` normalises `imageUrl` from `wp:featuredmedia`, so the field is on every
+ * object this receives and is a plausible thing to reach for. Nothing renders it,
+ * which is why the page works; nothing has been added here because rendering the
+ * image is a design change and this note is not one.
  *
- * The public Content-Security-Policy (`docker/nginx.conf`, `location /`) sets
- * `img-src 'self' data:`. A WordPress featured image is on neither: it is on
- * whatever origin the client's media library serves from. An `<img>` built from
- * this field is refused by the browser, silently as far as the page is
- * concerned — a card with a broken image and a console line nobody is reading.
+ * **What changed.** `img-src` used to be a flat `'self' data:`, and widening it meant
+ * *guessing* the media origin — kaicommitment.org.nz serves the client's site, but
+ * WordPress media commonly comes off a CDN (`i0.wp.com` and friends when Jetpack is
+ * on), and a directive widened to the wrong host is both looser than before and still
+ * broken. That argument was about a guess, and there is no guess left to make: the
+ * news origin is now `KAICALC_NEWS_ORIGIN`, and `docker/web-config.sh` builds
+ * `img-src` from the same value it builds `connect-src` and `config.js` from. It
+ * grants nothing new in practice either — `connect-src` already reaches that origin.
  *
- * **The directive was left as it is rather than widened now, on purpose.** The
- * origin is a guess until somebody looks: kaicommitment.org.nz serves the site,
- * but WordPress media commonly comes off a CDN (`i0.wp.com` and friends when
- * Jetpack is on), and a directive widened to the wrong host is both looser than
- * before and still broken. Widening a policy for a feature nobody has built is
- * how a CSP stops meaning anything.
+ * So on a configured deployment an `<img src={post.imageUrl}>` whose host is the news
+ * site loads, and on an unconfigured one there is no news section to put it in.
+ *
+ * **The one case still to check is media on a separate host.** If the client's
+ * library serves from a CDN rather than from the site origin, that host is not in
+ * `img-src` and the image is refused — silently, as a card with a broken image and a
+ * console line nobody is reading. `KAICALC_NEWS_IMAGE_ORIGINS` exists for exactly
+ * that: a space-separated list added to `img-src` and to nothing else.
  *
  * It is not left to be discovered by a user, either.
- * `tests/web/test_csp.py::test_no_public_page_violates_its_own_policy` loads
- * this page with the policy enforced and collects every
- * `securitypolicyviolation` the document raises, so the first commit that
- * renders a remote image fails that test by name, with the blocked URI in the
- * message — which is also the one place the real origin can be read off.
+ * `tests/web/test_csp.py::test_no_public_page_violates_its_own_policy` loads this page
+ * with the policy enforced and collects every `securitypolicyviolation` the document
+ * raises, so the first commit that renders an image from an unlisted host fails that
+ * test by name with the blocked URI in the message — which is where the CDN's real
+ * origin can be read off.
  *
- * So: add the `<img>`, run that test, take the origin out of the failure, add
- * it to `img-src` in `docker/nginx.conf` and to `REQUIRED_CSP` in
- * `tests/test_d_statistics_content.py`, in that order.
+ * So: add the `<img>`, run that test, and if it fails put the host it names into
+ * `KAICALC_NEWS_IMAGE_ORIGINS`. No file in this repository has to change for that,
+ * which is the difference from before.
  */
 export function createNewsCard(post = {}) {
   const article = element('article', { className: 'home-news-card' })
@@ -143,6 +150,21 @@ export function renderNews(posts, target = document.querySelector('#news-feed'))
   target.setAttribute('aria-busy', 'false')
 }
 
+/**
+ * Take the whole news section off the page.
+ *
+ * Used only when no news origin is configured, which is not a failure: most deployments
+ * of this calculator have no WordPress behind them. The heading, the standfirst and the
+ * feed all go, because leaving the furniture with an "unavailable" notice underneath it
+ * reports an outage for a service that was never asked to exist — and the reader has no
+ * way to tell those two apart.
+ */
+function removeNewsSection(target) {
+  const section = target && typeof target.closest === 'function' ? target.closest('.home-news') : null
+  const doomed = section || target
+  if (doomed && typeof doomed.remove === 'function') doomed.remove()
+}
+
 export async function loadNews(options = {}) {
   const generation = ++latestRequestGeneration
   const target = options.target || document.querySelector('#news-feed')
@@ -151,6 +173,13 @@ export async function loadNews(options = {}) {
   try {
     const posts = await (options.fetchNews || fetchNews)(6)
     if (generation !== latestRequestGeneration) return null
+    // `null` is "this deployment has no news origin"; `[]` is "the site was asked and
+    // gave nothing usable". Only the second is worth telling a reader about.
+    if (posts === null) {
+      latestPosts = null
+      removeNewsSection(target)
+      return null
+    }
     latestPosts = posts
     renderNews(posts, target)
     return posts

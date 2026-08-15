@@ -178,6 +178,27 @@ services:
         condition: service_healthy
       admin:
         condition: service_healthy
+    environment:
+      # The news origin, the API origin and any media CDN. One value each, feeding
+      # both the public Content-Security-Policy and web/js/config.js so the two
+      # cannot disagree. `${VAR-default}` without the colon, so an empty value in
+      # the environment means "no news feed" rather than falling back. The full
+      # argument for each is in docker/compose.yaml; this file is a copy.
+      KAICALC_NEWS_ORIGIN: ${KAICALC_NEWS_ORIGIN-https://kaicommitment.org.nz}
+      KAICALC_API_ORIGIN: ${KAICALC_API_ORIGIN-}
+      KAICALC_NEWS_IMAGE_ORIGINS: ${KAICALC_NEWS_IMAGE_ORIGINS-}
+
+      # Whether another proxy - one you operate - is in front of this one. Almost
+      # certainly TRUE for a real deployment of this file, because a published
+      # instance terminates TLS somewhere and it is rarely here. Left false,
+      # nginx tells the applications the request is plain http and reports every
+      # visitor as the edge's one address. Set true only when nothing can reach
+      # :18080 except through that edge. Pair it with PROTECTION_TRUSTED_PROXY;
+      # docker/compose.yaml and docker/nginx.conf carry the full argument.
+      KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
+      # Not read by nginx - it lets the entrypoint warn when this proxy would
+      # forward an address the applications are configured to ignore.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

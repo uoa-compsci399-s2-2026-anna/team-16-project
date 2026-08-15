@@ -64,4 +64,16 @@ echo 'the container is removed.'
 echo 'They are also kept encrypted until each account sets a password of its'
 echo 'own, so one lost line can be read back by the OTHER administrator from'
 echo '/admin/staff/list. Losing both means nobody can log in: run'
-echo '`kaicalc-admin issue-password admin` on this container.'
+# `kaicalc`, not `kaicalc-admin` - and the difference is not cosmetic here even
+# though line 55 above calls `kaicalc-admin` correctly. That call runs inside
+# this script, which the image's ENTRYPOINT started, so SECRET_KEY is already
+# resolved. The reader of THIS sentence is at a host shell and will reach for
+# `docker exec`, which does not run the entrypoint and inherits none of the
+# environment it builds; the bare console script then dies with
+# `MissingSettingError: SECRET_KEY is not set`. `kaicalc` is the wrapper that
+# resolves the secret first (docker/kaicalc-wrapper.sh).
+#
+# This sentence is read by somebody locked out of the panel, so the one form it
+# names has to be the one that works from where they are standing. Do not
+# "correct" it to match line 55.
+echo '`docker exec kaicalc-admin kaicalc issue-password admin` from the host.'

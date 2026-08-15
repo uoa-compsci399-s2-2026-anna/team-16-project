@@ -1,7 +1,16 @@
 import { t } from './i18n.js'
+import { API_ORIGIN, NEWS_ORIGIN } from './config.js'
 
-const API_BASE = '/api/v1'
-const NEWS_API = 'https://kaicommitment.org.nz/wp-json/wp/v2/posts'
+// `API_ORIGIN` is empty in the designed topology, so this is `/api/v1` — a relative path,
+// resolved against whatever origin served the page. See config.js for why it is
+// configurable at all and for what stops it being pointed anywhere a visitor chooses.
+const API_BASE = `${API_ORIGIN}/api/v1`
+
+// WordPress's REST route is fixed by WordPress; only the origin is a deployment fact, and
+// it arrives from config.js so that the same value builds the `connect-src` this fetch has
+// to satisfy. An empty origin is not a URL and is never requested — `getNewsPosts` returns
+// null rather than asking a guessed domain for posts.
+const NEWS_PATH = '/wp-json/wp/v2/posts'
 const searchParams = new URLSearchParams(window.location.search)
 const MOCK_MODE = searchParams.get('mock') === '1'
 const MOCK_ERROR = searchParams.get('mockError')
@@ -188,13 +197,23 @@ export function getFactors(opts = {}) {
   return request(`/factors${query}`)
 }
 
+/**
+ * The client's WordPress posts, or `null` when no news origin is configured.
+ *
+ * **`null` is not a failure and must not be flattened into an empty list.** It says the
+ * deployment has no WordPress, which is the common case; an empty list says the site was
+ * asked and had nothing to give. The home page removes its news section for the first and
+ * shows a temporarily-unavailable notice for the second.
+ */
 export async function getNewsPosts(limit = 6) {
+  if (!NEWS_ORIGIN) return null
+
   const numericLimit = Number(limit)
   const integerLimit = Number.isFinite(numericLimit) ? Math.trunc(numericLimit) : 6
   const safeLimit = Math.min(100, Math.max(1, integerLimit))
   const per_page = String(safeLimit)
   const query = new URLSearchParams({ per_page })
-  const url = `${NEWS_API}?${query.toString()}&_embed`
+  const url = `${NEWS_ORIGIN}${NEWS_PATH}?${query.toString()}&_embed`
 
   let response
   try {

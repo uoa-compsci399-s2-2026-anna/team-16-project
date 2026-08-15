@@ -312,6 +312,85 @@ services:
         condition: service_healthy
       admin:
         condition: service_healthy
+    environment:
+      # THE ONLY PLACE THE CLIENT'S DOMAIN IS WRITTEN DOWN, AND IT IS NOT IN AN
+      # IMAGE. docker/web-config.sh renders both the `connect-src`/`img-src` of
+      # the public Content-Security-Policy and web/js/config.js from this one
+      # value at container start, so the policy and the page cannot disagree
+      # about where the news feed lives. It used to be written twice - api.js and
+      # nginx.conf - and the two failed asymmetrically when they drifted: a wrong
+      # policy means the news quietly does not load, a wrong URL means the browser
+      # goes and asks a domain nobody chose. This project's deliverable is source
+      # and documentation; DNS and hosting are out of scope, which is exactly why
+      # the domain belongs to the deployment recipe and not to a built artefact.
+      #
+      # SET IT EMPTY AND THE HOME PAGE DROPS ITS NEWS SECTION ENTIRELY. That is a
+      # supported deployment, not a degraded one - most installations of this
+      # calculator have no WordPress behind them, and an unset origin is not an
+      # error to report to a reader.
+      #
+      # `${VAR-default}`, NOT `${VAR:-default}`. With the colon an empty value in
+      # the environment falls back to the default, so `KAICALC_NEWS_ORIGIN=` in a
+      # .env would silently keep pointing at the client's site and there would be
+      # no way to turn the feed off short of editing this file. Without it, unset
+      # means the client's site and empty means no feed - which are two different
+      # intentions and have to stay expressible separately.
+      KAICALC_NEWS_ORIGIN: ${KAICALC_NEWS_ORIGIN-https://kaicommitment.org.nz}
+
+      # EMPTY, AND IT SHOULD STAY EMPTY HERE. The front end builds `/api/v1`, a
+      # relative path, and nginx routes it on: same-origin is the designed
+      # topology and needs no configuration at all.
+      #
+      # It exists because the alternative was worse. Split the API onto its own
+      # subdomain and the path in api.js and the `connect-src` in nginx.conf both
+      # have to change, or every call is refused by our own policy with nothing in
+      # the failure pointing at nginx - the same two-copies defect one layer up.
+      # Set here, one value feeds both.
+      #
+      # **Weigh it as you would the nginx configuration itself.** This is the
+      # front end of a tool whose numbers are the product, and pointing it at an
+      # API the client does not control puts the client's branding over somebody
+      # else's arithmetic. It is readable only from the operator's environment,
+      # never from a URL a visitor can construct; the entrypoint refuses to start
+      # on anything that is not a bare scheme://host[:port]; and `connect-src` is
+      # generated from this same string, so the page can reach the one origin
+      # named here and no other.
+      KAICALC_API_ORIGIN: ${KAICALC_API_ORIGIN-}
+
+      # img-src only, space-separated, for a WordPress media library that serves
+      # from a CDN rather than from the site origin. Empty unless the client's
+      # does. See the note on `createNewsCard` in web/js/home.js.
+      KAICALC_NEWS_IMAGE_ORIGINS: ${KAICALC_NEWS_IMAGE_ORIGINS-}
+
+      # IS THERE ANOTHER PROXY IN FRONT OF THIS ONE? Default false, and false
+      # is what the shipped `docker compose up` wants: nginx then sets
+      # X-Forwarded-Proto and X-Forwarded-For from what it saw itself and
+      # throws away any inbound copy, so no caller can forge either.
+      #
+      # Set it true when somebody else's TLS terminator fronts this stack -
+      # the ordinary shape on a public IPv4 whose port 443 already belongs to
+      # another site:
+      #
+      #     browser --https--> their nginx :443 --http--> this stack :18080
+      #
+      # Left false in that topology the panel is told the request is not on
+      # TLS, and every visitor arrives as the edge's single address. Set true
+      # while this nginx is directly reachable and any caller can claim any
+      # address and strip Secure off a live staff session cookie. It is
+      # therefore a statement about the network, not a preference.
+      #
+      # SEPARATE FROM PROTECTION_TRUSTED_PROXY ON PURPOSE - that one is about
+      # the hop from nginx to the applications, this one about the hop into
+      # nginx, and all four combinations are real deployments. See
+      # docker/nginx.conf.
+      KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
+
+      # Not read by nginx. It is here so docker/web-config.sh can warn at
+      # start-up about the one combination that silently does nothing:
+      # this proxy forwarding the visitor's real address while api/ and admin/
+      # are still configured to ignore X-Forwarded-For. Same expansion as the
+      # api and admin services above, so the three cannot disagree.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

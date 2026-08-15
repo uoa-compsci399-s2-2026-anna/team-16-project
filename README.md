@@ -278,16 +278,153 @@ stored secret in one transaction, and it clears the IP blocklist, telling you ho
 rows it removed (an address is stored as an HMAC, and an HMAC cannot be re-keyed — the
 rows would otherwise survive matching nobody). Re-apply any blocks that are still needed.
 
-The other settings, each documented at length in **`.env.example`** with the failure it
-prevents:
+The other settings. The application ones are documented at length in **`.env.example`**,
+each with the failure it prevents; the `KAICALC_*` ones are **compose** variables, which
+`docker compose -f docker/compose.yaml` reads from the environment or from `docker/.env`
+and never from the root `.env` that `.env.example` describes — those carry their reasoning
+in `docker/compose.yaml` at the point of use, and below:
 
 | Setting | Note |
 | --- | --- |
 | `MYSQL_ROOT_PASSWORD`, `MYSQL_USER`, `MYSQL_PASSWORD` | change these for anything that is not a laptop |
 | `KAICALC_SESSION_HTTPS_ONLY` | defaults to `false` so the shipped plain-http stack is usable. **Set it to `true` the moment TLS is in front.** |
+| `KAICALC_NEWS_ORIGIN` | the client's WordPress site, as `scheme://host[:port]` with no trailing slash. **Set it empty and the home page removes its news section entirely** — a supported deployment, not a degraded one. Details below. |
+| `KAICALC_API_ORIGIN` | empty, and it should stay empty unless the API is on its own origin. Details below. |
+| `KAICALC_NEWS_IMAGE_ORIGINS` | space-separated, `img-src` only, for a WordPress media library on a CDN rather than on the site origin. |
+| `KAICALC_TRUST_FORWARDED_HEADERS` | defaults to `false`. **Set it true when another proxy — one you operate — terminates TLS in front of this stack.** Left false there, the panel is told the request is not on TLS and every visitor arrives as your edge's one address. Set true while this nginx is directly reachable, and any caller can claim any address. Details below. |
 | `PROTECTION_TRUSTED_PROXY` | defaults to `false`. Behind a real reverse proxy, leave it false and every caller arrives as the proxy — the API's per-visitor rate limits collapse into one site-wide bucket. Set it true, and remove the direct `ports:` for `api` and `admin`, together. |
 | `PROTECTION_ENABLED` | the escape hatch if the panel's protection layer locks everyone out. Every setting is read once at start-up, so edit *and restart*. |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | login throttling. Lockout counters live in process memory, so `docker compose -f docker/compose.yaml restart admin` clears every lockout immediately. |
+
+### Where the front end gets its origins
+
+**No domain is baked into any image.** `KAICALC_NEWS_ORIGIN`, `KAICALC_API_ORIGIN` and
+`KAICALC_NEWS_IMAGE_ORIGINS` are read once at container start by `docker/web-config.sh`,
+which writes **both** consumers from them: the `connect-src` and `img-src` of the public
+Content-Security-Policy in `docker/nginx.conf`, and `web/js/config.js`, the ES module the
+front end imports. One value each, two outputs, so the policy and the page cannot name
+different hosts. `docker/compose.yaml` is the only file in this repository that mentions
+the client's site, and it is deployment configuration rather than an artefact — DNS,
+certificates and hosting are out of scope for this project.
+
+That is a fix, not a refinement. The domain used to be written out twice — in
+`web/js/api.js` as the WordPress base and in `docker/nginx.conf` as a `connect-src` entry
+— and the two had to agree while failing in opposite directions when they did not: a
+wrong policy means the news quietly does not load, and a wrong URL means the browser goes
+and asks a domain nobody chose.
+
+These are **compose variables, not application settings**, so they belong in the
+environment or in `docker/.env` — not in the root `.env` that `.env.example` describes,
+which `docker compose -f docker/compose.yaml` never reads (Compose takes its project
+directory from the compose file's own directory). Same as `KAICALC_WEB_PORT` above.
+
+```bash
+# The client's site (the default), no news at all, and the API on its own origin:
+KAICALC_NEWS_ORIGIN=https://kaicommitment.org.nz  docker compose -f docker/compose.yaml up -d web
+KAICALC_NEWS_ORIGIN=                              docker compose -f docker/compose.yaml up -d web
+KAICALC_API_ORIGIN=https://api.example.org        docker compose -f docker/compose.yaml up -d web
+
+# What is actually in force. Read both — the whole point is that they agree:
+curl -sI http://localhost:18080/ | grep -i content-security-policy
+curl -s  http://localhost:18080/js/config.js
+```
+
+An empty value is honoured rather than defaulted: `docker/compose.yaml` writes
+`${KAICALC_NEWS_ORIGIN-…}` without the colon, so `KAICALC_NEWS_ORIGIN=` means *no feed*
+and only an absent variable falls back to the client's site. With the colon there would
+be no way to turn the feed off short of editing the compose file.
+
+**An unset news origin removes the home page's news section rather than reporting an
+outage.** Most deployments of this calculator have no WordPress behind them, so unset is a
+supported arrangement; leaving the heading standing over "temporarily unavailable" would
+describe a fault nobody caused, and guessing a domain would be worse.
+
+**`KAICALC_API_ORIGIN` should stay empty unless you mean it.** The front end builds
+`/api/v1`, a relative path, and nginx routes it on — same-origin is the designed topology
+and needs no configuration. It is settable because splitting the API onto its own
+subdomain otherwise means editing `web/js/api.js` *and* `connect-src` in
+`docker/nginx.conf`, or every call is refused by our own policy with nothing in the
+failure pointing at nginx. Weigh it as you would the nginx configuration itself: this is
+the front end of a tool whose numbers are the product. It is readable only from the
+container's environment, never from anything a visitor can put in a URL; a value that is
+not a bare `scheme://host[:port]` **stops the container from starting** rather than
+reaching the policy; and `connect-src` is generated from the same string, so the page can
+reach the one origin you named and no other.
+
+### Putting it behind a TLS terminator you already run
+
+A public IPv4 has one port 443, and it is often already taken. The ordinary answer is to
+front this stack with the nginx (or Caddy, or Traefik) that already holds it:
+
+```
+browser --https--> your edge :443 --http--> this stack :18080
+```
+
+DNS, certificates and hosting are out of scope for this project. Working correctly *behind*
+somebody else's terminator is not, and it needs one variable:
+
+```bash
+KAICALC_TRUST_FORWARDED_HEADERS=true \
+PROTECTION_TRUSTED_PROXY=true \
+  docker compose -f docker/compose.yaml up -d
+```
+
+**What each half does.** nginx sends `X-Forwarded-Proto` and `X-Forwarded-For` to the API
+and the panel. By default it builds both from what *it* saw — which is right while it is
+the outermost proxy, and wrong behind an edge: the panel is then told the request is not
+on TLS, and every visitor on earth arrives as the edge's single address, so the API's
+per-visitor rate limits become one site-wide counter and one blocklist entry denies
+everyone. `KAICALC_TRUST_FORWARDED_HEADERS=true` makes nginx pass the edge's values
+through instead: the scheme if it is exactly `http` or `https`, and the forwarded chain
+with the visitor left-most.
+
+**Turn it on only when the edge is the only way in.** While `:18080` is reachable
+directly, any caller can send both headers — claiming an address the rate limit and the
+blocklist then measure, and stripping `Secure` off a live staff session cookie by claiming
+the request is plain http. That is why it is off by default and why it is a *separate*
+variable from `PROTECTION_TRUSTED_PROXY`: that one says the applications may believe the
+header **our** nginx sends, this one says our nginx may believe the header **it receives**.
+Setting this without that leaves nginx forwarding an address the applications ignore —
+the container warns about it at start-up. Also remove the `ports:` blocks for `api` and
+`admin`, as `docker/nginx-proxy-headers.conf` describes, and set
+`KAICALC_SESSION_HTTPS_ONLY=true`.
+
+```bash
+# What is actually in force:
+docker logs kaicalc-web 2>&1 | grep 'forwarded headers'
+```
+
+**Trying a setting without a restart.** Getting an edge proxy right usually takes a few
+attempts, and rebuilding the container for each one is slow enough to discourage checking.
+nginx reloads its configuration without dropping a connection, and the script that renders
+that configuration can be re-run with a different value:
+
+```bash
+# 1. Re-render with the value you want to try. It prints what it decided.
+docker exec -e KAICALC_TRUST_FORWARDED_HEADERS=true kaicalc-web \
+  /docker-entrypoint.d/16-kaicalc-config.sh
+
+# 2. Check the result parses before asking nginx to adopt it.
+docker exec kaicalc-web nginx -t
+
+# 3. Reload. Existing connections finish on the old workers; nothing is dropped.
+docker exec kaicalc-web nginx -s reload
+```
+
+**This does not persist, and that is the trap.** The container starts from
+`docker/compose.yaml` and the environment, so the next restart silently returns to whatever
+is written there — including a restart nobody performed deliberately, such as a host reboot
+or a `docker compose up` after an unrelated change. The setting that reverts is a security
+one: an edge-fronted deployment that quietly goes back to `false` starts telling the panel
+every visitor shares one address.
+
+So use the reload to **find** the right value, then write it into `docker/compose.yaml` or
+your `.env` and bring the stack up normally. The line printed by step 1 and the one printed
+at start-up are the same sentence, which is what lets you confirm the two agree.
+
+The same three steps work for `KAICALC_NEWS_ORIGIN` and `KAICALC_API_ORIGIN`; the script
+re-renders `web/js/config.js` alongside the CSP, so the front end and the header stay in
+step even mid-experiment.
 
 ### Stopping it
 

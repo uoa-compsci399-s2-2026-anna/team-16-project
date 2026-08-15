@@ -73,18 +73,34 @@ check_origin() {
         "$1=$2 is not a bare origin. Use scheme://host[:port] with no trailing slash and no path (for example https://kaicommitment.org.nz)."
 }
 
-# A boolean, in the same vocabulary admin/config.py accepts (`1/true/yes/on` and
-# `0/false/no/off`, case-insensitive), so an operator setting PROTECTION_TRUSTED_PROXY
-# and KAICALC_TRUST_FORWARDED_HEADERS in the same file does not have to spell them two
-# different ways. Echoes the nginx-side literal - `on` or `off` - and nothing else, which
-# is what makes the value safe to interpolate into the configuration: the rendered token
-# is one of two constants chosen here, never a string that came from the environment.
-# An unrecognised value stops the container, on the same terms as a malformed origin.
+# A boolean, in the same vocabulary admin/config.py's `_bool` accepts - `1/true/yes/on`
+# and `0/false/no/off`, case-insensitive, surrounding whitespace stripped - so an operator
+# setting PROTECTION_TRUSTED_PROXY and KAICALC_TRUST_FORWARDED_HEADERS in the same file
+# does not have to spell them two different ways, and a value one layer accepts is not one
+# the other rejects.
+#
+# Echoes the nginx-side literal - `on` or `off` - and nothing else, which is what makes the
+# value safe to interpolate into the configuration: the rendered token is one of two
+# constants chosen here, never a string that came from the environment. An unrecognised
+# value stops the container, on the same terms as a malformed origin and for the same
+# reason `_bool` raises rather than defaulting: a typo in a security setting must not
+# quietly resolve to whichever side the author did not mean.
 normalise_bool() {
-    case "$(printf '%s' "$2" | tr '[:upper:]' '[:lower:]')" in
+    case "$(printf '%s' "$2" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')" in
         1|true|yes|on) printf 'on' ;;
         0|false|no|off|'') printf 'off' ;;
         *) fail "$1=$2 is not a recognised boolean. Use true or false." ;;
+    esac
+}
+
+# The same vocabulary, without the refusal. Used only for PROTECTION_TRUSTED_PROXY, which
+# this container does not consume and only reports on: a value nginx does not use must not
+# be able to stop nginx, and anything unrecognised is treated as not-on, which is the side
+# that produces the warning rather than the side that suppresses it.
+looks_true() {
+    case "$(printf '%s' "$1" | sed 's/^[[:space:]]*//;s/[[:space:]]*$//' | tr '[:upper:]' '[:lower:]')" in
+        1|true|yes|on) return 0 ;;
+        *) return 1 ;;
     esac
 }
 
@@ -156,8 +172,7 @@ TRUST_FORWARDED=$(normalise_bool KAICALC_TRUST_FORWARDED_HEADERS "${KAICALC_TRUS
 # here, and a container that refused to start on that would be refusing a correct
 # deployment on the strength of a variable it cannot actually see.
 if [ "$TRUST_FORWARDED" = on ]; then
-    APP_TRUST=$(normalise_bool PROTECTION_TRUSTED_PROXY "${PROTECTION_TRUSTED_PROXY:-}") || exit 1
-    if [ "$APP_TRUST" != on ]; then
+    if ! looks_true "${PROTECTION_TRUSTED_PROXY:-}"; then
         echo "$ME: WARNING - KAICALC_TRUST_FORWARDED_HEADERS is on but" \
              "PROTECTION_TRUSTED_PROXY is not. nginx will forward the visitor's address" \
              "in X-Forwarded-For and the applications will ignore it, so every caller is" \

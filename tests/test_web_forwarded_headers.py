@@ -491,7 +491,7 @@ def test_the_proxy_still_forwards_the_host_header_unchanged(trusting: Stack):
 # ---------------------------------------------------------------------------------------
 
 
-@pytest.mark.parametrize("value", ["maybe", "yes please", "1 "])
+@pytest.mark.parametrize("value", ["maybe", "yes please", "ture", "on;"])
 def test_a_value_that_is_not_a_boolean_stops_the_container(value: str):
     """The same failure mode as a malformed origin, and for the same reason.
 
@@ -513,6 +513,34 @@ def test_a_value_that_is_not_a_boolean_stops_the_container(value: str):
     assert "KAICALC_TRUST_FORWARDED_HEADERS" in result.stdout + result.stderr, (
         "the refusal must name the variable that is wrong"
     )
+
+
+@pytest.mark.parametrize("value,expected", [
+    (" true ", '"on"'),
+    ("TRUE", '"on"'),
+    ("on", '"on"'),
+    ("1", '"on"'),
+    ("no", '"off"'),
+    ("", '"off"'),
+])
+def test_the_boolean_vocabulary_matches_the_applications(value: str, expected: str):
+    """Same words, same trimming, same casing as ``admin/config.py``'s ``_bool``.
+
+    An operator sets this and ``PROTECTION_TRUSTED_PROXY`` in one file. A value one layer
+    accepts and the other refuses turns a working deployment into a container that will
+    not start, for no reason a reader could see.
+    """
+
+    rendered = subprocess.run(
+        ["docker", "run", "--rm", "--user", "nginx",
+         "-e", f"KAICALC_TRUST_FORWARDED_HEADERS={value}",
+         "--entrypoint", "sh", WEB_IMAGE, "-c",
+         "/docker-entrypoint.d/16-kaicalc-config.sh >/dev/null 2>&1 && "
+         "grep -A1 'map .host .kaicalc_trust_forwarded' /etc/nginx/conf.d/kaicalc.conf"],
+        capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=120,
+    )
+    assert rendered.returncode == 0, rendered.stderr
+    assert expected in rendered.stdout, rendered.stdout
 
 
 def test_trusting_nginx_with_untrusting_applications_is_reported_at_start_up():

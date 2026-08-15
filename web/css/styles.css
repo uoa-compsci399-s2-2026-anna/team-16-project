@@ -578,7 +578,7 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
    `test_a_short_step_is_not_floored_by_a_stale_min_height` measures. */
 .container-total {
   min-height: 1.5em;
-  margin: 4px 0 0;
+  margin: 10px 0 0;
   font-weight: 700;
   color: var(--green-dark);
 }

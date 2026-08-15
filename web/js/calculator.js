@@ -210,6 +210,13 @@ function containerTotalText() {
  * for a mass, `#unit-count` for a count. Two ids rather than one because the two are
  * different quantities and `state` holds them apart — switching from 1,200 kilograms to
  * wheelie bins must not carry 1,200 over as a bin count.
+ *
+ * **The running total goes inside the count's own field, under the input.** It sat after
+ * the whole panel first, which reads fine on a desktop and put it *behind the sticky
+ * navigation bar at 390x700* — the one width where the confirmation matters most, hidden
+ * by the element that is always on screen. Under the input it is beside the number it
+ * describes at every width, and it is the field's own last child so nothing separates
+ * "2" from "about 139.200 kg".
  */
 function amountStep() {
   const container = state.measureMode === 'container'
@@ -220,7 +227,7 @@ function amountStep() {
     ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
     : t('Use up to two decimal places.')
   const amountValue = container ? state.unitCount : state.totalAmount
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit"><optgroup label="${escapeHtml(t('Weight'))}"><option value="kilograms" ${unitSelectValue() === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${unitSelectValue() === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></optgroup>${presets.length ? `<optgroup label="${escapeHtml(t('Containers'))}">${presets.map(preset => {
+  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit"><optgroup label="${escapeHtml(t('Weight'))}"><option value="kilograms" ${unitSelectValue() === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${unitSelectValue() === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></optgroup>${presets.length ? `<optgroup label="${escapeHtml(t('Containers'))}">${presets.map(preset => {
     // `preset.label` is `unit_preset.label` — staff-typed, and §7.7.7's ruling of
     // 14 August is that anything a staff member can edit is published exactly as
     // written. It is escaped and it is never passed through `t()`. Everything
@@ -229,7 +236,7 @@ function amountStep() {
     // consequence of that rule.
     const value = PRESET_OPTION + preset.code
     return `<option value="${escapeHtml(value)}" ${unitSelectValue() === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
-  }).join('')}</optgroup>` : ''}</select></div></div>${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}${stepNav({ step: 2, back: 1 })}</section>`
+  }).join('')}</optgroup>` : ''}</select></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**

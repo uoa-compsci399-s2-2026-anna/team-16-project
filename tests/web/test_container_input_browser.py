@@ -323,6 +323,63 @@ def test_a_visitor_can_actually_reach_and_use_both_controls(page_at, width, heig
 
 
 @pytest.mark.parametrize("width,height", VIEWPORTS)
+def test_the_running_total_is_on_screen_without_scrolling(page_at, width, height):
+    """**The whole feature is this sentence, and on a phone it was hidden.**
+
+    The running total first sat after the amount panel, which reads correctly on
+    a desktop and put it behind `.step-nav` — `position: sticky; bottom: 0`, so
+    always on screen — at 390x700. A visitor on a phone typed "2", and the
+    confirmation that two wheelie bins is 139.200 kg was underneath the bar
+    telling them to continue. Every assertion passed; the screenshot is what
+    showed it.
+
+    It is now the last child of the count's own field. **The measurement is taken
+    with the input scrolled into view**, which is where a visitor typing into it
+    necessarily is — at 390x700 the whole amount panel is below the fold at
+    scroll top and always has been; §7.6.3's rule is about the *primary action*,
+    and `test_continue_stays_reachable_without_scrolling` is what holds that.
+    What this test holds is that the answer is next to the question: adjacent to
+    the input, and clear of the bar at the moment the visitor can see the input
+    at all.
+    """
+    page = fill_container(to_container_step(page_at(width, height)))
+    measured = page.evaluate(
+        """() => {
+          const input = document.querySelector('#unit-count');
+          const total = document.querySelector('#container-total');
+          if (!total) return null;
+          input.scrollIntoView({ block: 'center' });
+          const i = input.getBoundingClientRect();
+          const t = total.getBoundingClientRect();
+          const b = document.querySelector('.step-nav').getBoundingClientRect();
+          return {
+            text: total.textContent.trim(),
+            gap: Math.round(t.top - i.bottom),
+            top: Math.round(t.top),
+            bottom: Math.round(t.bottom),
+            viewport: window.innerHeight,
+            barTop: Math.round(b.top),
+          };
+        }"""
+    )
+    assert measured and measured["text"], f"no running total at {width}x{height}"
+    # Adjacent to the input, not stranded past the unit select — which is where it
+    # was, and is what put it behind the bar on a phone.
+    assert 0 <= measured["gap"] <= 40, (
+        f"the running total is {measured['gap']}px from the input it describes at "
+        f"{width}x{height}: {measured}"
+    )
+    assert measured["top"] >= 0 and measured["bottom"] <= measured["viewport"], (
+        f"the running total is off screen with the input centred at {width}x{height}: "
+        f"{measured}"
+    )
+    assert measured["bottom"] <= measured["barTop"], (
+        f"the running total is behind the sticky navigation bar at {width}x{height}: "
+        f"{measured}"
+    )
+
+
+@pytest.mark.parametrize("width,height", VIEWPORTS)
 def test_continue_stays_reachable_without_scrolling(page_at, width, height):
     """Container mode adds a fieldset and a running total above the bar. §7.6.3
     and `test_step_navigation.py`: advancing must never require scrolling."""

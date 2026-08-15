@@ -406,24 +406,38 @@ def test_the_unit_presets_come_back_smallest_container_first(seeded_session):
     sorted, which is a statement about a file, and a mutation putting
     `.order_by(UnitPreset.code)` back survived it untouched.
 
-    Alphabetically by code the shipped set reads 1100 L, 660 L, 120 L, 140 L,
-    240 L, 80 L — a list nobody can scan for their own bin. The assertion is on
-    the masses rather than on a hard-coded code order, because the seed is
-    allowed to gain a container without editing this test; what it is not allowed
-    to do is serve them out of size order.
+    **The rows are added here rather than taken from whatever the fixture holds,
+    because the assertion is only meaningful against codes that sort the other
+    way from their masses.** A list can be alphabetical and ascending at the same
+    time, and a test written over an incidentally-agreeing set would be green
+    against the very ordering it exists to refuse. These three disagree in both
+    directions: `a_` is the smallest and sorts first either way, `m_` is the
+    largest and sorts second by code, `z_` is in the middle and sorts last.
+
+    The shipped set has the same shape for real — `front_loader_1100l` precedes
+    `front_loader_660l` alphabetically, and `wheelie_bin_140l` precedes
+    `wheelie_bin_80l` — which is what the ordering was changed for.
     """
+    for code, kilograms in (
+        ("a_small_bucket", "2.9000"),
+        ("m_front_loader", "319.0000"),
+        ("z_wheelie_bin", "69.6000"),
+    ):
+        seeded_session.add(
+            UnitPreset(code=code, label=code, food_category_id=None,
+                       kg_per_unit=Decimal(kilograms))
+        )
+    seeded_session.flush()
+
     presets = get_taxonomy(seeded_session).unit_presets
+    ordered = [(row.code, str(row.kg_per_unit)) for row in presets]
     masses = [row.kg_per_unit for row in presets]
-    assert masses == sorted(masses), [
-        (row.code, str(row.kg_per_unit)) for row in presets
-    ]
-    #: Proof the assertion above can fail: two shipped presets whose codes sort
-    #: the other way round from their masses. Without a pair like this the list
-    #: could be alphabetical and sorted at the same time, and the test would be
-    #: green against the very ordering it exists to refuse.
+    assert masses == sorted(masses), ordered
+
     by_code = {row.code: index for index, row in enumerate(presets)}
-    assert by_code["front_loader_660l"] < by_code["front_loader_1100l"]
-    assert by_code["wheelie_bin_80l"] < by_code["wheelie_bin_140l"]
+    assert by_code["z_wheelie_bin"] < by_code["m_front_loader"], (
+        "the presets came back in code order, not size order: " + repr(ordered)
+    )
 
 
 def test_a_preset_for_every_category_stays_and_one_naming_a_hidden_category_goes(

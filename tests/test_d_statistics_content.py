@@ -1098,15 +1098,25 @@ def test_nginx_public_static_location_has_the_required_csp_semantics():
     # asymmetrically, so nothing would have caught the drift. Both now derive from one
     # environment variable, and re-adding a literal host to any directive - the natural
     # fix when a resource is refused - silently re-creates the pair.
-    for directive, values in actual.items():
-        for value in values:
-            assert not re.match(r"(?i)^(https?:)?//", value), (
-                f"CSP {directive} names the literal origin {value}. Origins reach this "
-                "policy from KAICALC_NEWS_ORIGIN / KAICALC_API_ORIGIN / "
-                "KAICALC_NEWS_IMAGE_ORIGINS through docker/web-config.sh, which builds "
-                "web/js/config.js from the same values - a host written here is a second "
-                "copy the front end does not follow."
-            )
+    # The whole template, not only the policy: a host added to a `proxy_pass`, a
+    # `sub_filter` or a new `add_header` is the same defect wearing a different hat. The
+    # comments were stripped at the top of this function, so prose about the client's site
+    # is not what this reads.
+    #
+    # A DOT IS WHAT SEPARATES THE TWO KINDS OF HOST HERE. `proxy_pass http://api:18000`
+    # and `http://admin:18001` name compose services - single labels that resolve only on
+    # the internal network, are not deployment facts, and are the routing this file exists
+    # to express. Anything with a dot in it is a public name or an address: a domain, or
+    # an IP somebody wrote down.
+    for origin in re.findall(r"(?i)\bhttps?://[A-Za-z0-9][A-Za-z0-9-]*(?:\.[A-Za-z0-9-]+)+", source):
+        assert False, (
+            f"docker/nginx.conf names the literal origin {origin}. Origins reach this file "
+            "from KAICALC_NEWS_ORIGIN / KAICALC_API_ORIGIN / KAICALC_NEWS_IMAGE_ORIGINS "
+            "through docker/web-config.sh, which builds web/js/config.js from the same "
+            "values - a host written here is a second copy the front end does not follow, "
+            "and the two fail asymmetrically: a wrong policy means the news quietly does "
+            "not load, a wrong URL means the browser asks a domain nobody chose."
+        )
 
 
 def test_stats_and_factors_have_one_canonical_fixture_each():

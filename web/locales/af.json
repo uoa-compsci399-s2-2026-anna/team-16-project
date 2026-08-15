@@ -306,6 +306,22 @@
     "Value per unit": "Waarde per eenheid",
     "What we record": "Wat ons aanteken",
     "Yes": "Ja",
-    "Across %(count)s calculations run in this tool.": "Oor %(count)s berekenings wat in hierdie hulpmiddel uitgevoer is."
+    "Across %(count)s calculations run in this tool.": "Oor %(count)s berekenings wat in hierdie hulpmiddel uitgevoer is.",
+    "By container": "Volgens houer",
+    "By weight": "Volgens gewig",
+    "Choose a container": "Kies 'n houer",
+    "Choose the container you are measuring in.": "Kies die houer waarin jy meet.",
+    "Choose the container you fill.": "Kies die houer wat jy volmaak.",
+    "Container": "Houer",
+    "Enter no more than %(limit)s containers.": "Voer nie meer as %(limit)s houers in nie.",
+    "How do you want to enter the amount?": "Hoe wil jy die hoeveelheid invoer?",
+    "How many?": "Hoeveel?",
+    "If you know how many bins, buckets or crates you fill.": "As jy weet hoeveel drome, emmers of kratte jy volmaak.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "As jy jou voedselafval weeg, of die gewig op 'n afhaalfaktuur het.",
+    "No containers have been set up for this food category.": "Geen houers is vir hierdie voedselkategorie opgestel nie.",
+    "Number of containers must be greater than zero.": "Die aantal houers moet groter as nul wees.",
+    "That container is no longer available. Choose another.": "Daardie houer is nie meer beskikbaar nie. Kies 'n ander een.",
+    "That is about %(mass)s in total.": "Dit is altesaam ongeveer %(mass)s.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "Gebruik tot twee desimale plekke — voer 0.5 in vir 'n halfvol houer."
   }
 }

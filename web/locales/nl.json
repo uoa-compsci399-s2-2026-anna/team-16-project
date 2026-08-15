@@ -306,6 +306,22 @@
     "Value per unit": "Waarde per eenheid",
     "What we record": "Wat wij vastleggen",
     "Yes": "Ja",
-    "Across %(count)s calculations run in this tool.": "Over %(count)s berekeningen die in deze rekentool zijn uitgevoerd."
+    "Across %(count)s calculations run in this tool.": "Over %(count)s berekeningen die in deze rekentool zijn uitgevoerd.",
+    "By container": "Per afvalcontainer",
+    "By weight": "Op gewicht",
+    "Choose a container": "Kies een afvalcontainer",
+    "Choose the container you are measuring in.": "Kies de afvalcontainer waarin u meet.",
+    "Choose the container you fill.": "Kies de afvalcontainer die u vult.",
+    "Container": "Afvalcontainer",
+    "Enter no more than %(limit)s containers.": "Voer niet meer dan %(limit)s containers in.",
+    "How do you want to enter the amount?": "Hoe wilt u de hoeveelheid invoeren?",
+    "How many?": "Hoeveel?",
+    "If you know how many bins, buckets or crates you fill.": "Als u weet hoeveel bakken, emmers of kratten u vult.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "Als u uw voedselverspilling weegt, of het gewicht op een ophaalfactuur staat.",
+    "No containers have been set up for this food category.": "Voor deze voedselcategorie zijn geen containers ingesteld.",
+    "Number of containers must be greater than zero.": "Het aantal containers moet groter zijn dan nul.",
+    "That container is no longer available. Choose another.": "Die container is niet meer beschikbaar. Kies een andere.",
+    "That is about %(mass)s in total.": "Dat is in totaal ongeveer %(mass)s.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "Gebruik maximaal twee decimalen — voer 0,5 in voor een halfvolle container."
   }
 }

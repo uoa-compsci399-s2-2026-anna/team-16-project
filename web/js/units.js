@@ -81,6 +81,59 @@ export function toKg(count, presetCode, presets) {
   )
 }
 
+/**
+ * `toKg` made total: the kilograms a container entry describes, or `''`.
+ *
+ * **It has to be total, and it has to be here.** `toKg` throws on a preset code it cannot
+ * find, which is reachable — §6.1 says a consumer must not assume the taxonomy is stable
+ * across a publish, and a page holds a selection made before one — and both callers run
+ * this inside a render, where a throw blanks the screen.
+ *
+ * Whether the count is *typeable* is a separate question and is not asked here: `1.` and
+ * `1.2345` both simply fail to convert. The two-decimal input rule lives in
+ * `calculator.js` beside the same rule for the mass field.
+ *
+ * @param {{unitPreset: string|null, unitCount: string}} entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {string}  Kilograms at 3 decimal places, or '' when there is no total yet
+ */
+export function containerKg(entry, presets) {
+  if (!entry?.unitPreset) return ''
+  try {
+    return toKg(entry.unitCount, entry.unitPreset, presets || [])
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * The one place the two step-3 measurement modes are reconciled: an entry's total as
+ * `{amount, unit}`, in the unit its destination rows are entered in.
+ *
+ * **A container entry always answers kilograms.** A container estimates the *total*, and
+ * the total is a mass: step 4 splits it across destinations, §6.2's mass-conservation rule
+ * compares the two, and both have to be in one unit — "0.37 wheelie bins to landfill" is
+ * not something anyone can enter or check. So a container entry reaches the API as exactly
+ * the `qty_kg` a visitor who had typed the kilograms would have sent, which is the property
+ * that makes the container input safe to add at all.
+ *
+ * **In `units.js` rather than in `calculator.js` because it has two consumers.** The
+ * results export prints each entry's waste amount too, and it read `entry.totalAmount`
+ * directly — which is `''` for a container entry, so the downloaded report would have said
+ * "0.00 kilograms" for an entry whose form showed 139.200 kg. `results.js` cannot import
+ * `calculator.js` (that module imports this one), and a second copy of the rule is how the
+ * two would come to disagree — §7.3's whole reason for existing.
+ *
+ * @param {object} entry   A draft or saved entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {{amount: string, unit: 'kilograms'|'tonnes'}}
+ */
+export function entryTotal(entry, presets) {
+  return entry?.measureMode === 'container'
+    ? { amount: containerKg(entry, presets), unit: 'kilograms' }
+    : { amount: entry?.totalAmount ?? '', unit: entry?.totalUnit || 'kilograms' }
+}
+
 export function massToKg(amount, unit) {
   const numericAmount = Number(amount)
   if (!Number.isFinite(numericAmount)) return null

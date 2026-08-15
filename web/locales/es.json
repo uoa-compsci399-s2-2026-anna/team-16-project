@@ -306,6 +306,22 @@
     "Value per unit": "Valor por unidad",
     "What we record": "Qué registramos",
     "Yes": "Sí",
-    "Across %(count)s calculations run in this tool.": "En el conjunto de %(count)s cálculos realizados en esta herramienta."
+    "Across %(count)s calculations run in this tool.": "En el conjunto de %(count)s cálculos realizados en esta herramienta.",
+    "By container": "Por contenedor",
+    "By weight": "Por peso",
+    "Choose a container": "Elija un contenedor",
+    "Choose the container you are measuring in.": "Elija el contenedor en el que está midiendo.",
+    "Choose the container you fill.": "Elija el contenedor que llena.",
+    "Container": "Contenedor",
+    "Enter no more than %(limit)s containers.": "No introduzca más de %(limit)s contenedores.",
+    "How do you want to enter the amount?": "¿Cómo quiere introducir la cantidad?",
+    "How many?": "¿Cuántos?",
+    "If you know how many bins, buckets or crates you fill.": "Si sabe cuántos cubos, baldes o cajas llena.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "Si pesa sus residuos de alimentos o tiene el peso en una factura de recogida.",
+    "No containers have been set up for this food category.": "No se ha configurado ningún contenedor para esta categoría de alimentos.",
+    "Number of containers must be greater than zero.": "El número de contenedores debe ser mayor que cero.",
+    "That container is no longer available. Choose another.": "Ese contenedor ya no está disponible. Elija otro.",
+    "That is about %(mass)s in total.": "Eso es unos %(mass)s en total.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "Use hasta dos decimales: introduzca 0,5 para un contenedor medio lleno."
   }
 }

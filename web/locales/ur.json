@@ -307,6 +307,22 @@
     "Value per unit": "فی یونٹ قدر",
     "What we record": "ہم کیا ریکارڈ کرتے ہیں",
     "Yes": "جی ہاں",
-    "Across %(count)s calculations run in this tool.": "اس ٹول میں کیے گئے %(count)s حسابات میں۔"
+    "Across %(count)s calculations run in this tool.": "اس ٹول میں کیے گئے %(count)s حسابات میں۔",
+    "By container": "کنٹینر کے حساب سے",
+    "By weight": "وزن کے حساب سے",
+    "Choose a container": "ایک برتن منتخب کریں",
+    "Choose the container you are measuring in.": "وہ برتن منتخب کریں جس میں آپ پیمائش کر رہے ہیں۔",
+    "Choose the container you fill.": "وہ برتن منتخب کریں جسے آپ بھرتے ہیں۔",
+    "Container": "برتن",
+    "Enter no more than %(limit)s containers.": "%(limit)s سے زیادہ برتن درج نہ کریں۔",
+    "How do you want to enter the amount?": "آپ مقدار کس طرح درج کرنا چاہتے ہیں؟",
+    "How many?": "کتنے؟",
+    "If you know how many bins, buckets or crates you fill.": "اگر آپ کو معلوم ہے کہ آپ کتنے کوڑے دان، بالٹیاں یا کریٹ بھرتے ہیں۔",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "اگر آپ اپنا کھانے کا فضلہ تولتے ہیں، یا وزن جمع کرنے کے بل پر درج ہے۔",
+    "No containers have been set up for this food category.": "اس غذائی زمرے کے لیے کوئی برتن مقرر نہیں کیا گیا۔",
+    "Number of containers must be greater than zero.": "برتنوں کی تعداد صفر سے زیادہ ہونی چاہیے۔",
+    "That container is no longer available. Choose another.": "وہ برتن اب دستیاب نہیں ہے۔ کوئی دوسرا منتخب کریں۔",
+    "That is about %(mass)s in total.": "یہ مجموعی طور پر تقریباً %(mass)s ہے۔",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "زیادہ سے زیادہ دو اعشاریہ مقامات استعمال کریں — آدھے بھرے برتن کے لیے 0.5 درج کریں۔"
   }
 }

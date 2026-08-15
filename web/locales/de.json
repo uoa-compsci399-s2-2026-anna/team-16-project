@@ -306,6 +306,22 @@
     "Value per unit": "Wert je Einheit",
     "What we record": "Was wir speichern",
     "Yes": "Ja",
-    "Across %(count)s calculations run in this tool.": "Aus %(count)s in diesem Rechner durchgeführten Berechnungen."
+    "Across %(count)s calculations run in this tool.": "Aus %(count)s in diesem Rechner durchgeführten Berechnungen.",
+    "By container": "Nach Behälter",
+    "By weight": "Nach Gewicht",
+    "Choose a container": "Behälter auswählen",
+    "Choose the container you are measuring in.": "Wählen Sie den Behälter, in dem Sie messen.",
+    "Choose the container you fill.": "Wählen Sie den Behälter, den Sie füllen.",
+    "Container": "Behälter",
+    "Enter no more than %(limit)s containers.": "Geben Sie höchstens %(limit)s Behälter an.",
+    "How do you want to enter the amount?": "Wie möchten Sie die Menge angeben?",
+    "How many?": "Wie viele?",
+    "If you know how many bins, buckets or crates you fill.": "Wenn Sie wissen, wie viele Tonnen, Eimer oder Kisten Sie füllen.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "Wenn Sie Ihre Lebensmittelabfälle wiegen oder das Gewicht auf einer Abholrechnung steht.",
+    "No containers have been set up for this food category.": "Für diese Lebensmittelkategorie wurden keine Behälter eingerichtet.",
+    "Number of containers must be greater than zero.": "Die Anzahl der Behälter muss größer als null sein.",
+    "That container is no longer available. Choose another.": "Dieser Behälter ist nicht mehr verfügbar. Wählen Sie einen anderen.",
+    "That is about %(mass)s in total.": "Das sind insgesamt etwa %(mass)s.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "Höchstens zwei Nachkommastellen — geben Sie 0,5 für einen halb vollen Behälter an."
   }
 }

@@ -306,6 +306,22 @@
     "Value per unit": "単位あたりの値",
     "What we record": "記録する内容",
     "Yes": "はい",
-    "Across %(count)s calculations run in this tool.": "このツールで行われた計算 %(count)s 件全体の集計です。"
+    "Across %(count)s calculations run in this tool.": "このツールで行われた計算 %(count)s 件全体の集計です。",
+    "By container": "容器で入力",
+    "By weight": "重量で入力",
+    "Choose a container": "容器を選択してください",
+    "Choose the container you are measuring in.": "測定に使う容器を選んでください。",
+    "Choose the container you fill.": "実際に満たしている容器を選んでください。",
+    "Container": "容器",
+    "Enter no more than %(limit)s containers.": "容器は %(limit)s 個までで入力してください。",
+    "How do you want to enter the amount?": "量をどのように入力しますか。",
+    "How many?": "いくつですか。",
+    "If you know how many bins, buckets or crates you fill.": "ごみ箱・バケツ・コンテナをいくつ満たすか分かる場合。",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "食品廃棄物を計量している場合、または収集の請求書に重量がある場合。",
+    "No containers have been set up for this food category.": "この食品カテゴリー向けの容器は設定されていません。",
+    "Number of containers must be greater than zero.": "容器の数はゼロより大きくしてください。",
+    "That container is no longer available. Choose another.": "その容器は利用できなくなりました。別のものを選んでください。",
+    "That is about %(mass)s in total.": "合計で約 %(mass)s です。",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "小数第2位まで入力できます。容器が半分なら 0.5 と入力してください。"
   }
 }

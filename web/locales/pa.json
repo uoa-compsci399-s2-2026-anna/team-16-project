@@ -308,6 +308,22 @@
     "Value per unit": "ਪ੍ਰਤੀ ਇਕਾਈ ਮੁੱਲ",
     "What we record": "ਅਸੀਂ ਕੀ ਦਰਜ ਕਰਦੇ ਹਾਂ",
     "Yes": "ਹਾਂ",
-    "Across %(count)s calculations run in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ %(count)s ਗਣਨਾਵਾਂ ਵਿੱਚ।"
+    "Across %(count)s calculations run in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ %(count)s ਗਣਨਾਵਾਂ ਵਿੱਚ।",
+    "By container": "ਡੱਬੇ ਅਨੁਸਾਰ",
+    "By weight": "ਭਾਰ ਅਨੁਸਾਰ",
+    "Choose a container": "ਇੱਕ ਭਾਂਡਾ ਚੁਣੋ",
+    "Choose the container you are measuring in.": "ਉਹ ਭਾਂਡਾ ਚੁਣੋ ਜਿਸ ਵਿੱਚ ਤੁਸੀਂ ਮਾਪ ਰਹੇ ਹੋ।",
+    "Choose the container you fill.": "ਉਹ ਭਾਂਡਾ ਚੁਣੋ ਜਿਸਨੂੰ ਤੁਸੀਂ ਭਰਦੇ ਹੋ।",
+    "Container": "ਭਾਂਡਾ",
+    "Enter no more than %(limit)s containers.": "%(limit)s ਤੋਂ ਵੱਧ ਭਾਂਡੇ ਦਰਜ ਨਾ ਕਰੋ।",
+    "How do you want to enter the amount?": "ਤੁਸੀਂ ਮਾਤਰਾ ਕਿਵੇਂ ਦਰਜ ਕਰਨਾ ਚਾਹੁੰਦੇ ਹੋ?",
+    "How many?": "ਕਿੰਨੇ?",
+    "If you know how many bins, buckets or crates you fill.": "ਜੇ ਤੁਹਾਨੂੰ ਪਤਾ ਹੈ ਕਿ ਤੁਸੀਂ ਕਿੰਨੇ ਡੱਬੇ, ਬਾਲਟੀਆਂ ਜਾਂ ਕਰੇਟ ਭਰਦੇ ਹੋ।",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "ਜੇ ਤੁਸੀਂ ਆਪਣਾ ਖਾਣੇ ਦਾ ਕੂੜਾ ਤੋਲਦੇ ਹੋ, ਜਾਂ ਇਕੱਤਰੀਕਰਨ ਬਿੱਲ ਉੱਤੇ ਭਾਰ ਦਿੱਤਾ ਹੈ।",
+    "No containers have been set up for this food category.": "ਇਸ ਖਾਣਾ ਸ਼੍ਰੇਣੀ ਲਈ ਕੋਈ ਭਾਂਡਾ ਸਥਾਪਤ ਨਹੀਂ ਕੀਤਾ ਗਿਆ।",
+    "Number of containers must be greater than zero.": "ਭਾਂਡਿਆਂ ਦੀ ਗਿਣਤੀ ਸਿਫ਼ਰ ਤੋਂ ਵੱਧ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।",
+    "That container is no longer available. Choose another.": "ਉਹ ਭਾਂਡਾ ਹੁਣ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੋਈ ਹੋਰ ਚੁਣੋ।",
+    "That is about %(mass)s in total.": "ਇਹ ਕੁੱਲ ਮਿਲਾ ਕੇ ਲਗਭਗ %(mass)s ਹੈ।",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "ਦੋ ਦਸ਼ਮਲਵ ਥਾਵਾਂ ਤੱਕ ਵਰਤੋ — ਅੱਧੇ ਭਰੇ ਭਾਂਡੇ ਲਈ 0.5 ਦਰਜ ਕਰੋ।"
   }
 }

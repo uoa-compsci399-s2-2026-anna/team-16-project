@@ -306,6 +306,22 @@
     "Value per unit": "Giá trị mỗi đơn vị",
     "What we record": "Chúng tôi ghi lại những gì",
     "Yes": "Có",
-    "Across %(count)s calculations run in this tool.": "Trên tổng số %(count)s phép tính đã chạy trong công cụ này."
+    "Across %(count)s calculations run in this tool.": "Trên tổng số %(count)s phép tính đã chạy trong công cụ này.",
+    "By container": "Theo thùng chứa",
+    "By weight": "Theo khối lượng",
+    "Choose a container": "Chọn một thùng chứa",
+    "Choose the container you are measuring in.": "Chọn thùng chứa mà bạn dùng để đo.",
+    "Choose the container you fill.": "Chọn thùng chứa mà bạn đổ đầy.",
+    "Container": "Thùng chứa",
+    "Enter no more than %(limit)s containers.": "Không nhập quá %(limit)s thùng chứa.",
+    "How do you want to enter the amount?": "Bạn muốn nhập lượng theo cách nào?",
+    "How many?": "Bao nhiêu?",
+    "If you know how many bins, buckets or crates you fill.": "Nếu bạn biết mình đổ đầy bao nhiêu thùng rác, xô hoặc két.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "Nếu bạn cân rác thải thực phẩm, hoặc có khối lượng trên hóa đơn thu gom.",
+    "No containers have been set up for this food category.": "Chưa thiết lập thùng chứa nào cho nhóm thực phẩm này.",
+    "Number of containers must be greater than zero.": "Số thùng chứa phải lớn hơn không.",
+    "That container is no longer available. Choose another.": "Thùng chứa đó không còn khả dụng. Hãy chọn thùng khác.",
+    "That is about %(mass)s in total.": "Tổng cộng khoảng %(mass)s.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "Dùng tối đa hai chữ số thập phân — nhập 0,5 cho thùng chứa đầy một nửa."
   }
 }

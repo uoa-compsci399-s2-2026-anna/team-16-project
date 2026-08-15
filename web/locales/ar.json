@@ -307,6 +307,22 @@
     "Value per unit": "القيمة لكل وحدة",
     "What we record": "ما الذي نسجّله",
     "Yes": "نعم",
-    "Across %(count)s calculations run in this tool.": "عبر %(count)s من العمليات الحسابية التي أُجريت في هذه الأداة."
+    "Across %(count)s calculations run in this tool.": "عبر %(count)s من العمليات الحسابية التي أُجريت في هذه الأداة.",
+    "By container": "حسب الحاوية",
+    "By weight": "حسب الوزن",
+    "Choose a container": "اختر حاوية",
+    "Choose the container you are measuring in.": "اختر الحاوية التي تقيس بها.",
+    "Choose the container you fill.": "اختر الحاوية التي تملؤها.",
+    "Container": "الحاوية",
+    "Enter no more than %(limit)s containers.": "لا تُدخل أكثر من %(limit)s حاوية.",
+    "How do you want to enter the amount?": "كيف تريد إدخال الكمية؟",
+    "How many?": "كم العدد؟",
+    "If you know how many bins, buckets or crates you fill.": "إذا كنت تعرف عدد الصناديق أو الدلاء أو الأقفاص التي تملؤها.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "إذا كنت تزن نفايات الطعام لديك، أو لديك الوزن في فاتورة الجمع.",
+    "No containers have been set up for this food category.": "لم يتم إعداد أي حاويات لفئة الطعام هذه.",
+    "Number of containers must be greater than zero.": "يجب أن يكون عدد الحاويات أكبر من صفر.",
+    "That container is no longer available. Choose another.": "لم تعد تلك الحاوية متاحة. اختر غيرها.",
+    "That is about %(mass)s in total.": "هذا يعادل نحو %(mass)s إجمالًا.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "استخدم منزلتين عشريتين كحد أقصى — أدخل 0.5 لحاوية نصف ممتلئة."
   }
 }

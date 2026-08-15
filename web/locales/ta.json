@@ -306,6 +306,22 @@
     "Value per unit": "அலகுக்கான மதிப்பு",
     "What we record": "நாங்கள் என்ன பதிவு செய்கிறோம்",
     "Yes": "ஆம்",
-    "Across %(count)s calculations run in this tool.": "இந்தக் கருவியில் செய்யப்பட்ட %(count)s கணக்கீடுகள் முழுவதும்."
+    "Across %(count)s calculations run in this tool.": "இந்தக் கருவியில் செய்யப்பட்ட %(count)s கணக்கீடுகள் முழுவதும்.",
+    "By container": "கொள்கலன் அடிப்படையில்",
+    "By weight": "எடை அடிப்படையில்",
+    "Choose a container": "ஒரு கொள்கலனைத் தேர்ந்தெடுக்கவும்",
+    "Choose the container you are measuring in.": "நீங்கள் அளக்கும் கொள்கலனைத் தேர்ந்தெடுக்கவும்.",
+    "Choose the container you fill.": "நீங்கள் நிரப்பும் கொள்கலனைத் தேர்ந்தெடுக்கவும்.",
+    "Container": "கொள்கலன்",
+    "Enter no more than %(limit)s containers.": "%(limit)s-க்கு மேல் கொள்கலன்களை உள்ளிட வேண்டாம்.",
+    "How do you want to enter the amount?": "அளவை எப்படி உள்ளிட விரும்புகிறீர்கள்?",
+    "How many?": "எத்தனை?",
+    "If you know how many bins, buckets or crates you fill.": "நீங்கள் எத்தனை தொட்டிகள், வாளிகள் அல்லது பெட்டிகளை நிரப்புகிறீர்கள் என்று தெரிந்தால்.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "உணவுக் கழிவை நீங்கள் எடைபோட்டால், அல்லது சேகரிப்பு விலைப்பட்டியலில் எடை இருந்தால்.",
+    "No containers have been set up for this food category.": "இந்த உணவு வகைக்கு எந்தக் கொள்கலனும் அமைக்கப்படவில்லை.",
+    "Number of containers must be greater than zero.": "கொள்கலன்களின் எண்ணிக்கை பூஜ்ஜியத்தை விட அதிகமாக இருக்க வேண்டும்.",
+    "That container is no longer available. Choose another.": "அந்தக் கொள்கலன் இனி கிடைக்காது. வேறொன்றைத் தேர்ந்தெடுக்கவும்.",
+    "That is about %(mass)s in total.": "அது மொத்தம் தோராயமாக %(mass)s ஆகும்.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "இரண்டு தசம இடங்கள் வரை பயன்படுத்தவும் — பாதி நிரம்பிய கொள்கலனுக்கு 0.5 என உள்ளிடவும்."
   }
 }

@@ -306,6 +306,22 @@
     "Value per unit": "ค่าต่อหน่วย",
     "What we record": "ข้อมูลที่เราบันทึก",
     "Yes": "ใช่",
-    "Across %(count)s calculations run in this tool.": "จากการคำนวณ %(count)s ครั้งที่ทำในเครื่องมือนี้"
+    "Across %(count)s calculations run in this tool.": "จากการคำนวณ %(count)s ครั้งที่ทำในเครื่องมือนี้",
+    "By container": "ตามภาชนะ",
+    "By weight": "ตามน้ำหนัก",
+    "Choose a container": "เลือกภาชนะ",
+    "Choose the container you are measuring in.": "เลือกภาชนะที่คุณใช้วัด",
+    "Choose the container you fill.": "เลือกภาชนะที่คุณใส่จนเต็ม",
+    "Container": "ภาชนะ",
+    "Enter no more than %(limit)s containers.": "กรอกได้ไม่เกิน %(limit)s ใบ",
+    "How do you want to enter the amount?": "คุณต้องการกรอกปริมาณอย่างไร",
+    "How many?": "จำนวนเท่าใด",
+    "If you know how many bins, buckets or crates you fill.": "หากคุณทราบว่าใส่ถังขยะ ถัง หรือลังกี่ใบจนเต็ม",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "หากคุณชั่งน้ำหนักขยะอาหาร หรือมีน้ำหนักอยู่ในใบแจ้งหนี้การเก็บขน",
+    "No containers have been set up for this food category.": "ยังไม่มีการตั้งค่าภาชนะสำหรับหมวดอาหารนี้",
+    "Number of containers must be greater than zero.": "จำนวนภาชนะต้องมากกว่าศูนย์",
+    "That container is no longer available. Choose another.": "ภาชนะนั้นไม่พร้อมใช้งานแล้ว โปรดเลือกอย่างอื่น",
+    "That is about %(mass)s in total.": "รวมแล้วประมาณ %(mass)s",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "ใช้ทศนิยมได้ไม่เกินสองตำแหน่ง — กรอก 0.5 สำหรับภาชนะที่เต็มครึ่งใบ"
   }
 }

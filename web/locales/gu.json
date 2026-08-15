@@ -306,6 +306,22 @@
     "Value per unit": "એકમ દીઠ મૂલ્ય",
     "What we record": "અમે શું નોંધીએ છીએ",
     "Yes": "હા",
-    "Across %(count)s calculations run in this tool.": "આ ટૂલમાં કરેલી %(count)s ગણતરીઓમાં."
+    "Across %(count)s calculations run in this tool.": "આ ટૂલમાં કરેલી %(count)s ગણતરીઓમાં.",
+    "By container": "કન્ટેનર પ્રમાણે",
+    "By weight": "વજન પ્રમાણે",
+    "Choose a container": "એક પાત્ર પસંદ કરો",
+    "Choose the container you are measuring in.": "તમે જેમાં માપી રહ્યા છો તે પાત્ર પસંદ કરો.",
+    "Choose the container you fill.": "તમે જે પાત્ર ભરો છો તે પસંદ કરો.",
+    "Container": "પાત્ર",
+    "Enter no more than %(limit)s containers.": "%(limit)s થી વધુ પાત્ર દાખલ કરશો નહીં.",
+    "How do you want to enter the amount?": "તમે જથ્થો કેવી રીતે દાખલ કરવા માંગો છો?",
+    "How many?": "કેટલા?",
+    "If you know how many bins, buckets or crates you fill.": "જો તમને ખબર હોય કે તમે કેટલા ડબ્બા, ડોલ કે ક્રેટ ભરો છો.",
+    "If you weigh your food waste, or have the weight on a collection invoice.": "જો તમે તમારો ખોરાકનો કચરો તોલો છો, અથવા સંગ્રહ બિલ પર વજન હોય.",
+    "No containers have been set up for this food category.": "આ ખોરાક શ્રેણી માટે કોઈ પાત્ર સેટ કરવામાં આવ્યું નથી.",
+    "Number of containers must be greater than zero.": "પાત્રોની સંખ્યા શૂન્યથી વધુ હોવી જોઈએ.",
+    "That container is no longer available. Choose another.": "તે પાત્ર હવે ઉપલબ્ધ નથી. બીજું પસંદ કરો.",
+    "That is about %(mass)s in total.": "તે કુલ મળીને લગભગ %(mass)s થાય છે.",
+    "Use up to two decimal places — enter 0.5 for a half-full container.": "બે દશાંશ સ્થાન સુધી વાપરો — અડધા ભરેલા પાત્ર માટે 0.5 દાખલ કરો."
   }
 }

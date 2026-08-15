@@ -564,6 +564,25 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .simple-choice small { color: var(--muted); line-height: 1.45; }
 
 .amount-grid { display: grid; gap: 0 20px; }
+
+/* Step 3's "by weight / by container" choice. The legend is visible here — unlike the
+   food-type step's, which is `.sr-only` under its own <h1> — because the question it asks
+   is not the one in the heading above it. */
+.measure-mode { margin-top: 22px; }
+.measure-mode legend { max-width: 760px; padding: 0 0 12px; font-weight: 700; }
+
+/* The running kilogram total under the container fields.
+   **It keeps its box when it is empty.** `aria-live` announces a change to a region that
+   was already in the accessibility tree; an element created at the moment the first
+   character is typed is a new node, not a change, and several screen readers say nothing.
+   `min-height` also stops the step-navigation bar jumping a line the first time a count
+   becomes convertible. */
+.container-total {
+  min-height: 1.5em;
+  margin: 4px 0 0;
+  font-weight: 700;
+  color: var(--green-dark);
+}
 .allocation-summary {
   position: sticky;
   top: 10px;
@@ -800,6 +819,9 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 @media (min-width: 650px) {
   .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .amount-grid { grid-template-columns: 1.6fr 1fr; }
+  /* Two short options side by side once there is room. Below 650px they stack, which is
+     the `.simple-choice-list` default and is what the food-type step does at every width. */
+  .measure-mode-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .impact-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

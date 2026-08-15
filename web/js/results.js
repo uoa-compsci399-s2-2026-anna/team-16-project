@@ -1,6 +1,6 @@
 import { escapeHtml, formatNumber, stepNav } from './view.js'
 import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
-import { kgToTonnes } from './units.js'
+import { entryTotal, kgToTonnes } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
@@ -273,6 +273,23 @@ function comparisonLines(state) {
  * @param {object} state
  * @returns {string}
  */
+/**
+ * One entry's waste amount, as the visitor gave it.
+ *
+ * Mass mode reads the field the visitor typed in. Container mode reads the count and the
+ * container, and appends the kilograms `entryTotal` derives — never the kilograms alone,
+ * because the number a reader can check against their own bins is the count.
+ */
+function wasteAmountLine(entry, taxonomy) {
+  if (entry.measureMode !== 'container') {
+    return `${t('Waste amount')}: ${typed(entry.totalAmount).toFixed(2)} ${t(entry.totalUnit === 'tonnes' ? 'tonnes' : 'kilograms')}`
+  }
+  const preset = findByCode(taxonomy.unit_presets || [], entry.unitPreset)
+  const kilograms = entryTotal(entry, taxonomy.unit_presets).amount
+  const container = preset?.label || entry.unitPreset || ''
+  return `${t('Waste amount')}: ${typed(entry.unitCount).toFixed(2)} × ${container} (${kilograms} kg)`
+}
+
 export function buildResultsReport(state) {
   const totals = state.result?.totals || {}
   const totalKg = number(totals.total_kg)
@@ -291,7 +308,13 @@ export function buildResultsReport(state) {
     return [
       t('Entry %(number)s: %(sector)s', { number: index + 1, sector: sector?.name || entry.sector }),
       `${t('Food type')}: ${food?.name || t('Not provided')}`,
-      `${t('Waste amount')}: ${typed(entry.totalAmount).toFixed(2)} ${t(entry.totalUnit === 'tonnes' ? 'tonnes' : 'kilograms')}`,
+      // A container entry has no `totalAmount` — the visitor said "two 240 L wheelie
+      // bins", not "139.20 kilograms" — so reading that field printed **0.00 kilograms**
+      // into a report whose whole job is to be attached to an email and believed. The
+      // report says what was entered and the kilograms it came to, in that order, and
+      // `entryTotal` is the same reconciliation the form uses rather than a second copy
+      // of it. `preset.label` is staff-typed and is published as written (§7.7.7).
+      wasteAmountLine(entry, state.taxonomy),
       `${t('Destinations')}:`, ...destinations,
       ...(impact.length ? [`${t('Impact for this entry')}:`, ...impact] : []),
       ...(byDestination.length ? [`${t('Impact by destination')}:`, ...byDestination] : []),

@@ -1,35 +1,42 @@
-// A plain decimal literal: optional sign, digits, optional fractional digits. No
-// exponent — `1e3` is not something a user types into a number input, and admitting
-// it here would mean admitting `Infinity` and `NaN` by the same door.
-const DECIMAL_LITERAL = /^[+-]?\d+(\.\d+)?$/
+// A plain **non-negative** decimal literal: digits, optional fractional digits.
+//
+// No sign, and the omission is load-bearing rather than tidy. Neither operand of a
+// container conversion is ever legitimately negative — a count of containers cannot be,
+// and `unit_preset.kg_per_unit` carries a `kg_per_unit >= 0` CHECK constraint (§2.1)
+// written for precisely this multiplication, whose model docstring says so: "one negative
+// row turns 'three buckets' into a negative mass and feeds a negative quantity into every
+// metric downstream of it". Admitting `-` here reproduces that from the other operand,
+// where no database constraint can reach it. `-2` is a string a `<input type="number">`
+// will hand over quite happily.
+//
+// No exponent either: `1e3` is not something a number input produces, and admitting it
+// would mean admitting `Infinity` and `NaN` by the same door.
+const DECIMAL_LITERAL = /^\d+(\.\d+)?$/
 
 /**
- * A decimal string as an exact integer and the power of ten it is scaled by.
+ * A non-negative decimal string as an exact integer and the power of ten it is scaled by.
  *
  * `'6.6700'` becomes `{digits: 66700n, scale: 4}`. Nothing is rounded and nothing
  * passes through a double, which is the entire reason this exists.
  *
  * @param {string|number} value
  * @returns {{digits: bigint, scale: number}|null} null when the input is not a
- *   plain decimal literal
+ *   plain non-negative decimal literal
  */
 function decimalParts(value) {
   const text = String(value).trim()
   if (!DECIMAL_LITERAL.test(text)) return null
-  const negative = text.startsWith('-')
-  const [whole, fraction = ''] = text.replace(/^[+-]/, '').split('.')
-  const digits = BigInt((whole || '0') + fraction)
-  return { digits: negative ? -digits : digits, scale: fraction.length }
+  const [whole, fraction = ''] = text.split('.')
+  return { digits: BigInt((whole || '0') + fraction), scale: fraction.length }
 }
 
 /**
- * `{digits, scale}` printed at exactly `places` decimals, rounded half away from
- * zero — the rounding a person doing this on paper performs, and the one
- * `Decimal.quantize(ROUND_HALF_UP)` performs on the Python side.
+ * `{digits, scale}` printed at exactly `places` decimals, rounded half up — the rounding
+ * a person doing this on paper performs, and the one `Decimal.quantize(ROUND_HALF_UP)`
+ * performs on the Python side. Python's own `round()` is banker's rounding and is not it.
  */
 function formatParts({ digits, scale }, places) {
-  const negative = digits < 0n
-  let magnitude = negative ? -digits : digits
+  let magnitude = digits
   if (scale > places) {
     const divisor = 10n ** BigInt(scale - places)
     const quotient = magnitude / divisor
@@ -42,8 +49,7 @@ function formatParts({ digits, scale }, places) {
   }
   const text = magnitude.toString().padStart(places + 1, '0')
   const point = text.length - places
-  const body = places ? `${text.slice(0, point)}.${text.slice(point)}` : text
-  return negative && magnitude !== 0n ? `-${body}` : body
+  return places ? `${text.slice(0, point)}.${text.slice(point)}` : text
 }
 
 /**
@@ -66,7 +72,7 @@ function formatParts({ digits, scale }, places) {
  * @returns {string}             Kilograms as a string with 3 decimal places,
  *                               ready to send to the API (§6.2 refuses a fourth)
  * @throws {Error}               presetCode does not exist, or either operand is
- *                               not a plain decimal literal
+ *                               not a plain non-negative decimal literal
  */
 export function toKg(count, presetCode, presets) {
   const preset = presets.find(item => item.code === presetCode)

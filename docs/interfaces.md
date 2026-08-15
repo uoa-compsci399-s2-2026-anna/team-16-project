@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-15 (v1.33 draft)"
+date: "2026-08-15 (v1.34 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,19 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.34 — 2026-08-15 (the language chooser becomes one component on both surfaces; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The chooser is one raised capsule on both surfaces, and the `<select>` inside it has no box of its own.** It was a bare `LANGUAGE` label beside a bordered `<select>` on the calculator, which reads as a form control somebody forgot to remove, and three unstyled platform controls on the panel. It is now a white capsule with a 1px hairline, a two-layer shadow, a 12px radius and an 18px globe at its inline-start; the border, the radius and the shadow belong to the **component**, and the select keeps its behaviour and loses its frame. **Nothing about the mechanism moves**: §7.7.4's asymmetry stands unchanged — the panel's is still a real `<form method="post">` with a visible submit button and no `onchange`, the calculator's is still built by `web/js/i18n.js`, and neither is converted to the other's shape | §7.7.4 |
+| 2 | **The hairline is an inset `box-shadow`, not a `border`, and that is arithmetic rather than taste.** The `<select>` is 44px because 44px is the touch target this calculator uses and `tests/web/test_i18n_browser.py` measures it; a 1px border round it makes the capsule 46px. §7.7.4's header budget is a **measured** one — a separate strip for this control cost 57px and was removed — so the treatment is required to cost nothing, and an inset shadow draws the same line and occupies no layout. Measured after: **92px header at 1278×983 and at 938×898, 126px wrapped at 390×700** — the same three numbers as before it, and `test_a_short_step_is_not_floored_by_a_stale_min_height` still passes | §7.7.4, §7.6.3 |
+| 3 | **The globe is inline SVG, drawn on both surfaces rather than fetched, and `aria-hidden`.** §7.6 rule 7 forbids a runtime asset from a third-party host and the public policy is `img-src 'self' data:`; there is no icon font and no build step, so a drawn icon is the only kind either surface can have. It is silent to a screen reader because the `<label>` beside it already names the control — announcing "globe, Language" is one thing said twice. **Below 720px, where the label is `.sr-only`, it is the only thing on screen that says what the control is for**, which is what it is there for as much as decoration | §7.6, §7.7.4 |
+| 4 | **RTL comes from `dir` alone and nothing was added to make it.** The globe sits at the capsule's `padding-inline-start` and the `<select>`'s arrow is the browser's own, drawn at the select's inline-end, so the two land on opposite sides in both directions and the arrow is deliberately **not** replaced with a drawn one. Measured in Arabic and Urdu in a browser, not inferred | §7.7.4 |
+| 5 | **The panel's chooser stops being a full-bleed strip and becomes a floating capsule — v1.27 item 9's "the panel keeps a row of its own" is amended.** That reading produced a white band with a bottom rule across the top of every screen, which is chrome the panel had grown to hold one small control. The reason the sentence gave still holds: the panel has no above-the-fold budget and the capsule is not squeezed into an existing row the way the calculator's is. It floats on the page's own ground at the top inline-start instead | §7.7.4 |
+| 6 | **`admin/static/language.css` is new, and the defect it closes is that the chooser had rules the panel proper never got.** `brand.css` is linked from `brand/base.html`, which is the five gate pages; the panel proper is sqladmin's Tabler layout, whose `<head>` is in a template this project does not fork. So every screen a signed-in person actually uses rendered the chooser as raw platform controls while the login page they had just left was styled. The fix reaches Tabler rather than forking it — `{% block head %}` is declared in sqladmin's own base and overridden by nobody, so `sqladmin/layout.html` claims it — and **one file serves both skins**, which is what stops them drifting. Loading `brand.css` into Tabler was refused: it styles `body`, `h1`, `input`, `button` and `table` globally | §7.7.4, §8 |
+| 7 | **No new interface string.** The globe is decoration with an `aria-hidden`, so all twenty calculator catalogues and the panel's Chinese one are untouched at 309 entries: zero missing, zero orphaned | §7.7.1 |
+| 8 | **Two defects found by measuring rather than by reading.** `max-width: min(100%, 22ch)` never clamped the select's max-content **contribution** — a percentage inside `min()` is indefinite while a flex container is sized from its contents — so the capsule shrink-wrapped to **396px around a 183px control**, 83px of it empty. Invisible while the select carried the only border; a visible hole the moment the box moved outwards. An explicit `width` fixes it at 316px, and the documentation and statistics headers stop wrapping as a result. Separately, `.intro-header`'s rule tinting the label white for the Kale ground had to be **deleted**: the label is inside a white capsule now, so it would have painted white on white — present, still the control's accessible name, invisible to everyone who can see | §7.7.4 |
 
 ### v1.33 — 2026-08-15 (step 3 offers containers; the seed becomes New Zealand's actual bin sizes; affects B, C and E)
 
@@ -2784,7 +2797,17 @@ Matching inside one tag is unchanged: RFC 4647 truncation, with a catalogue's ow
 
 The header row is already 93px tall and carries a 67px logo, so a 44px control fits in space that is there and the row does not grow. **The lockup is not altered**: the logo keeps its own element, its own size and its own spacing, nothing is drawn over or through it, and `.brand` takes `margin-inline-end: auto` so it stays hard against the reading-start edge rather than being stranded mid-row by `space-between`. Below 720px the row wraps, putting the chooser on its own line above the brand — at 390px the control and the 220px wordmark cannot share a line, and without wrapping the wordmark was clipped by the viewport edge.
 
-**On the panel it remains a row of its own**, because the panel is a data-entry surface with no such above-the-fold budget and a strip there costs nothing that matters.
+**On the panel it is a floating capsule at the top inline-start, not a strip** (v1.34, amending v1.27 item 9). The panel has no above-the-fold budget to protect, so the capsule is not squeezed into an existing row the way the calculator's is; but a full-bleed white band with a rule under it is chrome the panel grew in order to hold one small control, and it is what made the chooser read as debug scaffolding. It floats on the page's own ground instead.
+
+**One capsule, on both surfaces** (v1.34). It is a white ground, a 1px hairline, a 12px radius, a two-layer shadow, and an 18px globe at the inline-start — and the `<select>` inside gives up its own border, radius and ground, because the frame belongs to the component and drawing a second one 2px inside it is the implementation that reads as a mistake. The panel's submit button is a **segment** of the same capsule, joined at its inline-end corners; the button cannot be designed away, since that surface has to work with scripting off.
+
+**The hairline is an inset `box-shadow` rather than a `border`, and the reason is the budget above.** The `<select>` is 44px because that is the touch target; a 1px border round it makes the capsule 46px and the wrapped row at 390px 2px taller than it was measured at. An inset shadow draws the same line and occupies no layout, so the treatment costs nothing: 92px at 1278×983, 92px at 938×898, 126px at 390×700 — the three numbers this section already carried.
+
+**The globe is inline SVG on both surfaces, and `aria-hidden="true"`.** §7.6 rule 7 forbids a runtime asset from a third-party host, the public policy is `img-src 'self' data:`, there is no icon font and there is no build step, so it is drawn rather than fetched — by `web/js/i18n.js` on the calculator and in `brand/_language_chooser.html` on the panel. It is silent because the `<label>` already names the control. Below 720px, where the label is `.sr-only`, it is the only thing on screen saying what the control is for.
+
+**The mirroring is from `dir` and nothing else.** The globe is at the capsule's `padding-inline-start`; the `<select>`'s arrow is the browser's own, drawn at the select's inline-end. They therefore sit on opposite sides of the capsule in both directions, which is why the arrow is left alone rather than replaced with a drawn one.
+
+**The panel's rules live in `admin/static/language.css`, linked from `brand/base.html` and from `sqladmin/layout.html`'s `head` block.** `brand.css` reaches the five gate pages only — the panel proper is Tabler, whose `<head>` sits in a template this project does not fork — so rules placed there style the login page and no screen behind it. One file for both skins is what keeps them from drifting; `brand.css` must not carry a `.language-bar` rule again.
 
 **Each language in its own name** — `Deutsch`, never `German`. An endonym is never passed through `t()`.
 

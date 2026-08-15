@@ -354,10 +354,14 @@ async def test_the_panel_proper_reaches_the_chooser_s_stylesheet(admin_client, c
     # blockified - so `display: inline-flex` alone produced a capsule stretched
     # across the whole content area, a 1,250px pill holding 320px of control.
     # `align-self: flex-start` is what stops it. It cannot be measured where the
-    # rest of this treatment is measured: the browser module reaches the login
-    # gate, which is ordinary block flow, and there `inline-flex` shrink-wraps
-    # correctly with or without this declaration - the mutant survives. Reaching
-    # a page inside the panel means the whole login gauntlet in a browser.
+    # rest of this treatment is measured, and the reason CHANGED at v1.35
+    # without changing the conclusion: the login gate is a flex column now too
+    # (`body:has(> .gate)`), so it is no longer "the browser module only reaches
+    # block flow". Deleting this declaration and rebuilding was tried on the
+    # gate, and the mutant still survives - `width: fit-content` in the same
+    # rule is the belt to its braces and holds the capsule at 416px on its own.
+    # Reaching a page where the two can be told apart means the whole login
+    # gauntlet in a browser.
     # So it is anchored the way tests/admin/test_list_table.py anchors its four:
     # to the selector, then to the declaration inside that same rule body, so
     # moving it elsewhere fails.
@@ -365,6 +369,43 @@ async def test_the_panel_proper_reaches_the_chooser_s_stylesheet(admin_client, c
         "`.language-bar` no longer pins itself to the start of Tabler's flex "
         "column, so the capsule stretches across the panel's content area"
     )
+
+
+async def test_the_chooser_s_stylesheet_carries_no_physical_direction(admin_client):
+    """The same rule `styles.css` has had since Arabic shipped, on the surface
+    that did not have it.
+
+    `language.css` has claimed "LOGICAL PROPERTIES THROUGHOUT" in its own header
+    since it was written and nothing enforced it. The calculator's copy of that
+    claim is enforced - `tests/web/test_i18n_web.py::
+    test_the_stylesheet_carries_no_physical_direction_left` - and the panel's
+    was not, on the file that is the *reason* the calculator's rule exists:
+    §7.7.4 says the two surfaces must not disagree about which way "top left"
+    mirrors, and only one of them was being held to it.
+
+    Not hypothetical on this file: the chooser is now a floating island at the
+    top inline-start of a Kale field, so which edge it hugs is a visible fact
+    about the page rather than a detail inside a control.
+
+    **What this catches and what it does not, stated rather than assumed.** It
+    forbids the physical *properties*, the same seven the calculator's copy
+    forbids - `padding-left: 12px` in place of `padding-inline: 12px 0` fails
+    here. It cannot see a four-value **shorthand**: `margin: 14px 20px 14px
+    60px` pins the island physically left and is spelled `margin`, which is a
+    logical-agnostic property name. That mutant is killed in a browser instead,
+    by `test_the_island_moves_to_the_other_side_when_the_page_reads_right_to_left`,
+    which measures the gap from the reading edge in both directions. The
+    calculator's copy of this test has the same blind spot and the same
+    browser-side partner; neither is sufficient alone.
+    """
+    css = (await admin_client.get("/admin/static/language.css")).text
+    # Comments here explain the rule and name the properties it forbids.
+    body = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+    offenders = re.findall(
+        r"(?:margin|padding|border)-(?:left|right)[-\w]*\s*:|text-align\s*:\s*(?:left|right)",
+        body,
+    )
+    assert not offenders, f"physical direction in language.css: {offenders}"
 
 
 async def test_the_globe_is_inline_svg_and_is_not_announced(admin_client):

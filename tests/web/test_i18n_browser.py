@@ -461,6 +461,33 @@ def _contrast(foreground, background):
     return (lighter + 0.05) / (darker + 0.05)
 
 
+#: Whether the `<select>`'s currently selected text fits inside it, arrow and
+#: padding included. A `<select>` clips its closed value silently — no ellipsis,
+#: no overflow, no scrollWidth to read — so the only way to know is to measure
+#: the text and compare. The probe copies the control's own font rather than
+#: assuming one, and is removed before it can be seen.
+_VALUE_FITS = """
+() => {
+  const select = document.getElementById('language-chooser');
+  const style = getComputedStyle(select);
+  const probe = document.createElement('span');
+  probe.style.cssText = 'position:absolute;visibility:hidden;white-space:nowrap;left:-9999px';
+  probe.style.font = style.font;
+  probe.style.letterSpacing = style.letterSpacing;
+  probe.textContent = select.options[select.selectedIndex].textContent.trim();
+  document.body.append(probe);
+  const text = probe.getBoundingClientRect().width;
+  probe.remove();
+  const room = select.clientWidth
+    - parseFloat(style.paddingInlineStart) - parseFloat(style.paddingInlineEnd);
+  // The browser draws its own arrow inside the control. Chromium's is about
+  // 16px wide with its spacing; 20 is that with a pixel of margin either side.
+  return {text: Math.round(text), room: Math.round(room), arrow: 20,
+          value: probe.textContent};
+}
+"""
+
+
 def _paints_something(page, selector):
     """Whether hiding this element changes the pixels where it says it is.
 
@@ -553,6 +580,14 @@ def test_the_chooser_is_one_raised_surface_and_the_select_has_no_box_of_its_own(
         assert seen["bar"]["right"] - seen["select"]["right"] <= 12, (
             "the capsule is wider than what is in it — dead space between the "
             f"value and its inline-end edge: {seen}"
+        )
+
+        # And the other end of the same rule: the control is not so narrow that
+        # the language it names is clipped. A `<select>` truncates its closed
+        # value in silence, so the text is measured against the room it has.
+        fit = page.evaluate(_VALUE_FITS)
+        assert fit["room"] >= fit["text"] + fit["arrow"], (
+            f"the selected language is clipped inside its own control: {fit}"
         )
     finally:
         context.close()
@@ -767,6 +802,15 @@ def test_the_panel_chooser_is_the_same_capsule_and_its_button_works(browser):
         assert seen["button"]["left"] - seen["select"]["right"] <= 12, (
             f"dead space between the control and the button it is joined to: {seen}"
         )
+        # **And the value inside it is readable.** `.language-bar__select` is
+        # sized in `ch` for exactly this, and a `<select>` clips its closed value
+        # in silence - no ellipsis, no overflow, nothing to read off the DOM. The
+        # first sizing this capsule was given settled the control at 146px
+        # against a 145px value: correct by one pixel, and by accident.
+        fit = page.evaluate(_VALUE_FITS)
+        assert fit["room"] >= fit["text"] + fit["arrow"], (
+            f"the selected language is clipped inside its own control: {fit}"
+        )
 
         assert seen["globe"] is not None and seen["globe"]["w"] >= 14, seen
         assert _paints_something(page, ".language-bar__globe"), (
@@ -796,6 +840,72 @@ def test_the_panel_chooser_is_the_same_capsule_and_its_button_works(browser):
             "the button no longer submits the form it is drawn into"
         )
         assert page.eval_on_selector("#language-chooser", "el => el.value") == "zh"
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("width", [390])
+def test_the_panel_chooser_fits_a_phone_and_still_names_its_language(browser, width):
+    """The capsule is four things wide and a phone is not.
+
+    **390 and not 320, stated rather than left as a gap.** 320 is the
+    *calculator's* declared floor (`body { min-width: 320px }`); the panel makes
+    no such promise and does not keep one — `brand/_list_table_css.html` records
+    four of its own screens scrolling sideways at 390 for reasons that have
+    nothing to do with this control. Measured at 320 the value needs 139px and
+    has 117px, so "Follow the system" is clipped; making it fit costs a stack of
+    narrow-width tweaks to the margin, the button's padding and the gap, on a
+    width nothing else on this surface supports. It is written down instead.
+
+    `fit-content` is the sum of a globe, a word, a 20ch control and a button —
+    395px — and 390px of screen is 350px once the capsule's own margins are off
+    it. Measured hanging 45px off the gate page and 22px off a Tabler page before
+    the ceiling existed, which is a control a reader has to scroll sideways to
+    reach on the one screen a locked-out account can still open.
+
+    Two rules carry it and both are asserted here, because the first alone is not
+    enough: the capsule takes a ceiling, and the label stops being **drawn** below
+    720px so that the `<select>` is not what pays for it. With the word still
+    there the control was squeezed to 101px at 390 and 31px at 320, which is not
+    a control anybody reads a language out of — and its `<label for>` association
+    survives, so the accessible name does not change.
+    """
+    context = browser.new_context(viewport={"width": width, "height": 900})
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/login", wait_until="networkidle")
+
+        seen = page.evaluate(
+            """(w) => {
+              const bar = document.querySelector('.language-bar');
+              const b = bar.getBoundingClientRect();
+              return {left: Math.round(b.left), right: Math.round(b.right),
+                      width: Math.round(b.width), height: Math.round(b.height),
+                      overflow: document.documentElement.scrollWidth
+                                - document.documentElement.clientWidth,
+                      labelDrawn: document.querySelector('.language-bar__label')
+                                    .getBoundingClientRect().width > 2,
+                      name: document.querySelector('label[for="language-chooser"]')
+                              .textContent.trim()};
+            }""",
+            width,
+        )
+        assert seen["overflow"] <= 0, f"{width}px: the page scrolls sideways: {seen}"
+        assert seen["left"] >= 0 and seen["right"] <= width, (
+            f"{width}px: the capsule hangs off the screen: {seen}"
+        )
+        assert seen["height"] == 44, seen
+        assert not seen["labelDrawn"], (
+            f"{width}px: the word is still drawn and the control is paying for it: {seen}"
+        )
+        assert seen["name"] == "Language", (
+            "hiding the word must not take the control's accessible name with it"
+        )
+
+        fit = page.evaluate(_VALUE_FITS)
+        assert fit["room"] >= fit["text"] + fit["arrow"], (
+            f"{width}px: the selected language is clipped inside its own control: {fit}"
+        )
     finally:
         context.close()
 

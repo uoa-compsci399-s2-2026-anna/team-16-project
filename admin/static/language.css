@@ -71,6 +71,15 @@
      belt to its braces if the panel's own layout changes underneath us. */
   align-self: flex-start;
   width: fit-content;
+  /* **AND A CEILING, or the capsule hangs off a phone.** `fit-content` is the
+     sum of what is in it - a globe, a word, a 20ch control and a button - which
+     is 395px, and a 390px screen is 350px once this element's own 20px margins
+     are taken off. Measured overflowing by 45px on the gate page and 22px on a
+     Tabler page before this line existed, on the one screen a locked-out account
+     can still open. The 40px is those two margins; the select carries
+     `min-width: 0` so it is the part that gives way, which is right - it
+     truncates its closed value and the open list does not. */
+  max-width: calc(100% - 40px);
   margin: 14px 20px;
   min-height: 44px;
   padding-block: 0;
@@ -141,21 +150,62 @@
   white-space: nowrap;
 }
 
+/* **The label is read by a screen reader in every case; it is only DRAWN where
+   there is room.** The same 720px rule the calculator uses, and it earns its
+   place here by measurement: the capsule is capped at the page width above, so
+   below that cap the `<select>` is what gives way - with the word still drawn it
+   was squeezed to 101px at 390px and 31px at 320px, which is not a control
+   anybody reads a language out of. With it gone the control measures 146px at
+   390px. The globe is what says what this is at those widths, which is half of
+   why it is there.
+
+   `.sr-only`'s own body rather than the class: that class is in brand.css, and
+   this file is loaded on pages that do not have it. */
+@media (max-width: 720px) {
+  .language-bar__label {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    padding: 0;
+    margin: -1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+    border: 0;
+  }
+}
+
 /* THE SELECT HAS NO BOX OF ITS OWN. The capsule carries the border, the radius
    and the shadow; drawing them again 2px inside would be a box in a box, which
    is the obvious implementation and the one that looks like a mistake. The 44px
    stays, because that is the touch target and it has to survive losing the
    frame that used to give it away. */
-/* `width` AS WELL AS `max-width`: a percentage inside `min()` is indefinite while
-   a flex container is sized from its contents, so `min(100%, 20ch)` clamps the
-   used width and not the max-content contribution - the capsule shrink-wraps 80-odd
-   pixels wider than the control and the gap shows as a hole between the value and
-   the button. Measured on the calculator, where the same pair is written the same
-   way. */
+/* A PLAIN `width` AND NO PERCENTAGE ANYWHERE - which is deliberately not what the
+   calculator's copy of this rule says, so the difference is written down.
+
+   There it is `width: 22ch` PLUS `max-width: min(100%, 22ch)`, because its bar is
+   a flex ITEM of the header row: a percentage inside `min()` is indefinite while a
+   flex container is sized from its contents, so the clamp never reached the
+   select's max-content contribution and the capsule shrink-wrapped 83px wider than
+   the control. **This capsule does not have that problem** - it is
+   `width: fit-content` in a block flow, which resolves the clamp properly.
+   Measured both ways on both panel skins: the gap between the control and the
+   button is 8px with the explicit `width` and without it.
+
+   `min(100%, 20ch)` was here and is gone, because it is not inert - it is wrong.
+   The percentage resolved against a containing block still being sized and settled
+   the control at 146px against the 167px 20ch is; "Follow the system" measures
+   145px with its arrow, so the value fitted by one pixel and by accident. Narrow
+   viewports are handled by the capsule's ceiling above and `min-width` below
+   instead, which is the mechanism that can actually see the viewport. */
 .language-bar__select {
   min-height: 44px;
   width: 20ch;
-  max-width: min(100%, 20ch);
+  /* A flex item's `min-width` is `auto`, which refuses to shrink below its own
+     min-content; without this the capsule's ceiling has nothing that can give
+     way and the overflow comes straight back. With it, `width` is the size the
+     control wants and the ceiling is what it settles for. */
+  min-width: 0;
   padding-block: 0;
   padding-inline: 0 6px;
   color: var(--lang-ink);

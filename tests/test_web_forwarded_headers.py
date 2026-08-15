@@ -238,6 +238,23 @@ class Stack:
         argv += [f"http://mid:18080{path}"]
         return json.loads(_docker(*argv).stdout)
 
+    def edge_address(self) -> str:
+        """The edge container's address on this network — what ``mid`` sees as its peer.
+
+        Read from Docker rather than from the reply under test, so that "the untrusting
+        default reports the peer it saw" is checked against a value this test knows
+        independently. Asserting only that the edge's *claimed* client is absent would
+        pass just as happily against an empty header, and an empty ``X-Forwarded-For`` is
+        worse than a wrong one: ``db.detection.client_ip`` normalises it to ``None`` and
+        both callers then skip the blocklist and the rate limit outright.
+        """
+
+        return _docker(
+            "inspect", "-f",
+            "{{range .NetworkSettings.Networks}}{{.IPAddress}}{{end}}",
+            self.edge,
+        ).stdout.strip()
+
     def mid_logs(self) -> str:
         return _docker("logs", self.mid).stdout + _docker("logs", self.mid).stderr
 
@@ -300,6 +317,10 @@ def test_the_default_reports_what_this_proxy_saw_and_nothing_it_was_told(
     assert "," not in received["x-forwarded-for"], (
         "X-Forwarded-For was appended to rather than overwritten; both applications read "
         "the left-most entry, so a caller could name their own address"
+    )
+    assert received["x-forwarded-for"] == not_trusting.edge_address(), (
+        "X-Forwarded-For is not the peer this proxy actually saw; got "
+        f"{received['x-forwarded-for']!r}"
     )
 
 
@@ -368,7 +389,9 @@ def test_the_chain_keeps_this_proxys_own_peer_on_the_right(trusting: Stack):
     ]
     assert len(chain) == 2, f"expected visitor, edge; got {chain}"
     assert chain[0] == EDGE_CLIENT
-    assert chain[1] != EDGE_CLIENT and chain[1], "the edge's own address is missing"
+    assert chain[1] == trusting.edge_address(), (
+        f"the hop this deployment controls is not recorded on the right; got {chain}"
+    )
 
 
 @pytest.mark.parametrize("value", [
@@ -420,7 +443,10 @@ def test_a_missing_inbound_header_falls_back_rather_than_arriving_empty(trusting
     received = trusting.straight_at_the_proxy("/api/v1/probe")["headers"]
 
     assert received["x-forwarded-proto"] == "http"
-    assert received["x-forwarded-for"].strip(), "X-Forwarded-For arrived empty"
+    assert received["x-forwarded-for"] == trusting.edge_address(), (
+        "with no inbound header to trust, X-Forwarded-For must be the peer this proxy "
+        f"saw; got {received['x-forwarded-for']!r}"
+    )
     assert EDGE_CLIENT not in received["x-forwarded-for"]
 
 

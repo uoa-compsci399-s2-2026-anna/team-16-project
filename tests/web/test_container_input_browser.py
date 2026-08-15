@@ -37,7 +37,7 @@ test here skips with the reason rather than failing, because a stack at 0013 is 
 stale environment and not a defect in this branch.
 
 **Mutation record.** Each was `docker cp`'d into the running web container and
-the named test watched to fail. All eleven were killed — but **three did not
+the named test watched to fail. All thirteen were killed — but **four did not
 start that way**, and what they exposed is written into the tests they now fail:
 
 =====================================================  =====================================
@@ -48,15 +48,17 @@ Mutation                                               Killed by
 the 10,000 bound is deleted                             `..._more_than_ten_thousand_is_refused`
 the two-decimal rule is deleted from the count          `..._third_decimal_place_..._refused`
 the option text becomes a catalogue string              `..._container_names_are_not[ar]`
-the mode radio stops pinning kilograms                  `..._tonnes_to_containers_..._kilograms`
+the unit select stops pinning kilograms                 `..._tonnes_to_containers_..._kilograms`
 the review prints kilograms instead of the container    `..._review_step_says_what_was_entered`
 the select is re-sorted alphabetically by code          `..._offered_smallest_first`
+the containers are left off the select entirely         `..._offered_smallest_first`
+the `preset:` prefix is dropped from the value          `..._running_total_shows_the_mass`
 the count is rounded to a whole container               `..._half_full_bin_is_half_the_mass`
 the total uses a locale-aware formatter                 `..._digits_are_not[de]`
 the fields are pinned behind the sticky bar             `..._reach_and_use_both_controls`
 =====================================================  =====================================
 
-The three that survived first time, and what changed:
+The four that survived first time, and what changed:
 
 1. **The tonnes mutant** was found by an assertion that scanned the whole
    `.content-section` for `"139.200 kg"` — and the *destinations* block two rows
@@ -73,6 +75,13 @@ The three that survived first time, and what changed:
    _for`, because an indirect `t(SOMETHING)` is invisible to the key extractor
    and the entry reads as stale. The mutation was replaced with one that does
    change behaviour.
+4. **`totalUnit: target.value`** survived, and the mutation was the weak half of
+   it: `unitLabel()` answers "kilograms" for anything that is not `tonnes`, so
+   assigning the raw option value still *displayed* kilograms. The mutation that
+   matters is `totalUnit: preset ? state.totalUnit : target.value` — keep
+   whatever was there — which is the tonnes-then-container path and does kill
+   `test_switching_from_tonnes_to_containers_leaves_step_four_in_kilograms`.
+   A mutation can be behaviour-preserving; that says nothing about the test.
 """
 
 from __future__ import annotations
@@ -230,8 +239,8 @@ RESULT_STUB = {
 }
 
 
-def to_container_step(page):
-    """Walk to step 3 and switch it into container mode."""
+def to_amount_step(page):
+    """Walk to step 3 and stop."""
     page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
     page.evaluate("document.querySelector('input[name=sector]').click()")
@@ -239,10 +248,29 @@ def to_container_step(page):
     page.click('[data-action="continue"]')
     page.wait_for_selector('input[name="food-category"]')
     page.click('[data-action="continue"]')
-    page.wait_for_selector("#measure-mode-container")
-    page.click("#measure-mode-container")
-    page.wait_for_selector("#unit-preset")
+    page.wait_for_selector("#total-unit")
     return page
+
+
+def to_container_step(page, code=PRESET_CODE):
+    """Walk to step 3 and choose a container on the unit `<select>`.
+
+    **There is no separate mode control.** The containers are an `<optgroup>` on
+    the select that already asks for the unit, and choosing one *is* switching
+    the mode. The first build put a "By weight / By container" radio pair above
+    the form instead; it cost 169px at 1278x983 on a step with 50px of headroom
+    and broke three of `test_step_navigation.py`'s assertions — §7.6.3, that
+    advancing must never require scrolling. `preset:` distinguishes a container
+    code from `kilograms` and `tonnes` inside one value space.
+    """
+    to_amount_step(page)
+    page.select_option("#total-unit", f"preset:{code}")
+    page.wait_for_selector("#unit-count")
+    return page
+
+
+#: The container `<optgroup>`, which is always the last one on the select.
+CONTAINER_OPTIONS = "#total-unit optgroup:last-of-type option"
 
 
 def review_block(page, heading):
@@ -262,8 +290,9 @@ def review_block(page, heading):
 
 
 def fill_container(page, code=PRESET_CODE, count=COUNT):
-    page.select_option("#unit-preset", code)
-    page.wait_for_selector("#unit-count")
+    if not page.query_selector("#unit-count"):
+        page.select_option("#total-unit", f"preset:{code}")
+        page.wait_for_selector("#unit-count")
     page.fill("#unit-count", count)
     page.wait_for_timeout(80)
     return page
@@ -282,7 +311,7 @@ def test_a_visitor_can_actually_reach_and_use_both_controls(page_at, width, heig
     direction.
     """
     page = to_container_step(page_at(width, height))
-    for selector in ("#unit-preset", "#unit-count"):
+    for selector in ("#total-unit", "#unit-count"):
         seen = page.evaluate(REALLY_VISIBLE, selector)
         assert seen["found"], f"{selector} is not in the document at {width}x{height}"
         assert seen["width"] > 0 and seen["height"] >= 40, (selector, seen)
@@ -320,9 +349,10 @@ def test_the_containers_are_offered_smallest_first(page_at, taxonomy):
     """`get_taxonomy` orders by `kg_per_unit` and the form renders that order as
     given. Alphabetically by code, `front_loader_1100l` precedes
     `front_loader_660l` — this asserts it does not."""
-    page = to_container_step(page_at(1278, 983))
+    page = to_amount_step(page_at(1278, 983))
     codes = page.eval_on_selector_all(
-        "#unit-preset option", "nodes => nodes.map(n => n.value).filter(Boolean)"
+        "#total-unit optgroup:last-of-type option",
+        "nodes => nodes.map(n => n.value.replace(/^preset:/, ''))",
     )
     served = [row["code"] for row in taxonomy["unit_presets"]]
     assert codes == served
@@ -388,8 +418,8 @@ def test_switching_from_tonnes_to_containers_leaves_step_four_in_kilograms(page_
     page.select_option("#total-unit", "tonnes")
     page.wait_for_timeout(80)
     page.fill("#total-waste", "5")
-    page.click("#measure-mode-container")
-    page.wait_for_selector("#unit-preset")
+    page.select_option("#total-unit", f"preset:{PRESET_CODE}")
+    page.wait_for_selector("#unit-count")
     fill_container(page)
     page.click('[data-action="continue"]')
     page.wait_for_selector('[data-line-field="amount"]')
@@ -516,21 +546,25 @@ def test_the_interface_is_translated_and_the_container_names_are_not(page_at, ta
     the defect: `unit_preset.label` is edited in the panel, and the panel has no
     catalogue to edit it in.
     """
-    page = to_container_step(page_at(1278, 983, language=language))
-    english = to_container_step(page_at(1278, 983, language="en"))
+    page = to_amount_step(page_at(1278, 983, language=language))
+    english = to_amount_step(page_at(1278, 983, language="en"))
 
     served = [row["label"] for row in taxonomy["unit_presets"]]
     options = page.eval_on_selector_all(
-        "#unit-preset option", "nodes => nodes.map(n => n.textContent).filter(Boolean)"
+        "#total-unit optgroup:last-of-type option",
+        "nodes => nodes.map(n => n.textContent)",
     )
-    assert [option for option in options if option in served] == served, (
+    assert options == served, (
         f"a container label changed in {language}; §7.7.7 publishes it as written"
     )
 
-    legend = page.inner_text(".measure-mode legend")
-    assert legend != english.inner_text(".measure-mode legend"), (
-        f"the mode question is still English in {language}"
+    # The `<optgroup>` labels around them are interface strings and must change.
+    groups = page.eval_on_selector_all(
+        "#total-unit optgroup", "nodes => nodes.map(n => n.label)"
     )
+    assert groups != english.eval_on_selector_all(
+        "#total-unit optgroup", "nodes => nodes.map(n => n.label)"
+    ), f"the option-group labels are still English in {language}"
     assert page.get_attribute("html", "lang") == language
 
 

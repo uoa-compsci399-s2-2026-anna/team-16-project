@@ -22,6 +22,7 @@ Requires the stack rebuilt: `docker compose -f docker/compose.yaml up -d
 from __future__ import annotations
 
 import json
+import os
 import re
 import urllib.error
 import urllib.request
@@ -33,7 +34,15 @@ from tests.web import i18n_keys
 
 pytestmark = pytest.mark.browser
 
-BASE = "http://localhost:18080"
+#: `KAICALC_WEB_URL` like every other browser module here, which this one alone
+#: did not read. It hard-coded :18080, so it measured the stack on that port
+#: whatever the rest of the run was pointed at — and
+#: `test_every_catalogue_is_actually_in_the_built_image`, whose whole subject is
+#: whether the *current* checkout's catalogues shipped, was reading an image
+#: built from some earlier one. A stale image is exactly what that test exists to
+#: report, so it did report it; but it reported it about the wrong stack, and it
+#: could not be pointed at the right one.
+BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
 
 #: Set through `Page.add_init_script` before any of the page's own scripts run,
 #: because `web/js/i18n.js` reads `navigator.languages` at module evaluation.

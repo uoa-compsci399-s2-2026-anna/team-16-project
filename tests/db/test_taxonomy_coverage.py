@@ -394,6 +394,38 @@ def test_no_destination_names_a_group_the_response_omits(seeded_session):
     assert {row.group for row in snapshot.destinations} <= listed
 
 
+def test_the_unit_presets_come_back_smallest_container_first(seeded_session):
+    """§6.1 (v1.33). `unit_preset` is the one taxonomy table with no `sort_order`,
+    and the step-3 `<select>` renders this response order **as given** — the
+    front end sorts nothing, deliberately, because re-sorting there could only
+    disagree with here and would mean `Number()` on an API decimal for something
+    that is not display.
+
+    So the order has to be right in this function, and this is the only test that
+    looks at it: `tests/api/test_fixture_consistency.py` asserts the *fixture* is
+    sorted, which is a statement about a file, and a mutation putting
+    `.order_by(UnitPreset.code)` back survived it untouched.
+
+    Alphabetically by code the shipped set reads 1100 L, 660 L, 120 L, 140 L,
+    240 L, 80 L — a list nobody can scan for their own bin. The assertion is on
+    the masses rather than on a hard-coded code order, because the seed is
+    allowed to gain a container without editing this test; what it is not allowed
+    to do is serve them out of size order.
+    """
+    presets = get_taxonomy(seeded_session).unit_presets
+    masses = [row.kg_per_unit for row in presets]
+    assert masses == sorted(masses), [
+        (row.code, str(row.kg_per_unit)) for row in presets
+    ]
+    #: Proof the assertion above can fail: two shipped presets whose codes sort
+    #: the other way round from their masses. Without a pair like this the list
+    #: could be alphabetical and sorted at the same time, and the test would be
+    #: green against the very ordering it exists to refuse.
+    by_code = {row.code: index for index, row in enumerate(presets)}
+    assert by_code["front_loader_660l"] < by_code["front_loader_1100l"]
+    assert by_code["wheelie_bin_80l"] < by_code["wheelie_bin_140l"]
+
+
 def test_a_preset_for_every_category_stays_and_one_naming_a_hidden_category_goes(
     seeded_session,
 ):

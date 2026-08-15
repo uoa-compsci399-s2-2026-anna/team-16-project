@@ -214,3 +214,101 @@ def test_a_mass_entry_is_untouched(call):
     assert call(("entryTotal", [entry, PRESETS]))[0] == {
         "ok": {"amount": "12.5", "unit": "tonnes"}
     }
+
+
+# ------------------------------------------------- the food-category filter
+#
+# `unit_preset.food_category_id` is nullable, and §2.1 says NULL means "applies
+# to every category". What a **non-NULL** one means is per-food density: a bin
+# of bread and a bin of potatoes do not weigh the same, so a preset naming a
+# category is a conversion that is only true of that category.
+#
+# **No shipped preset names one**, because no measured per-food density exists
+# (O-6) and inventing one is the move that item forbids. So nothing in a browser
+# can exercise this filter — which is exactly why it is exercised here, against
+# a taxonomy this file builds. A rule with no test is a rule that will be
+# deleted by the next person who reads the seed and sees ten NULLs.
+
+CALCULATOR_HARNESS = """
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { containerPresets } = await import(process.argv[2])
+const { state } = await import(process.argv[3])
+const input = JSON.parse(readFileSync(process.argv[4], 'utf8'))
+state.taxonomy = { unit_presets: input.presets }
+state.foodCategory = input.foodCategory
+writeFileSync(process.argv[5], JSON.stringify(containerPresets().map(p => p.code)), 'utf8')
+"""
+
+#: Two generic containers and two that are only true of one food each.
+MIXED_PRESETS = [
+    {"code": "wheelie_bin_240l", "food_category": None, "kg_per_unit": "69.6000"},
+    {"code": "bucket_20l_full", "food_category": None, "kg_per_unit": "5.8000"},
+    {"code": "bread_crate_bakery", "food_category": "bakery_grains", "kg_per_unit": "4.1000"},
+    {"code": "spud_bin_vegetables", "food_category": "vegetables", "kg_per_unit": "31.5000"},
+]
+
+
+def offered(tmp_path, food_category, presets=None):
+    harness = tmp_path / "calculator_harness.mjs"
+    harness.write_text(CALCULATOR_HARNESS, encoding="utf-8")
+    payload = tmp_path / "input.json"
+    payload.write_text(
+        json.dumps({"presets": MIXED_PRESETS if presets is None else presets,
+                    "foodCategory": food_category}),
+        encoding="utf-8",
+    )
+    out = tmp_path / "codes.json"
+    completed = subprocess.run(
+        [shutil.which("node"), str(harness),
+         (ROOT / "web" / "js" / "calculator.js").as_uri(),
+         (ROOT / "web" / "js" / "state.js").as_uri(),
+         str(payload), str(out)],
+        capture_output=True, text=True,
+    )
+    assert completed.returncode == 0, completed.stderr
+    return json.loads(out.read_text(encoding="utf-8"))
+
+
+@node
+def test_a_preset_with_no_food_category_is_always_offered(tmp_path):
+    """NULL is "a wheelie bin is a wheelie bin" and shows whatever step 2 said —
+    including when step 2 was skipped, which is the normal case."""
+    for category in (None, "vegetables", "dairy"):
+        codes = offered(tmp_path, category)
+        assert "wheelie_bin_240l" in codes, category
+        assert "bucket_20l_full" in codes, category
+
+
+@node
+def test_a_preset_naming_a_category_appears_only_for_that_category(tmp_path):
+    """The whole point of the column. Offering a bread crate's conversion to
+    somebody weighing potatoes applies a density that is not true of what they
+    have — silently, since the form would show a plausible number either way."""
+    assert offered(tmp_path, "bakery_grains") == [
+        "wheelie_bin_240l", "bucket_20l_full", "bread_crate_bakery",
+    ]
+    assert offered(tmp_path, "vegetables") == [
+        "wheelie_bin_240l", "bucket_20l_full", "spud_bin_vegetables",
+    ]
+
+
+@node
+def test_skipping_the_food_step_offers_the_generic_containers_alone(tmp_path):
+    """Step 2 is optional (§6.2 resolves a null `food_category` to the standard
+    mix), and a visitor who skipped it has not told the calculator which food
+    this is. Offering a bread crate then would be guessing on their behalf."""
+    assert offered(tmp_path, None) == ["wheelie_bin_240l", "bucket_20l_full"]
+
+
+@node
+def test_the_served_order_is_preserved_and_not_re_sorted(tmp_path):
+    """§6.1 orders the presets smallest first and the form renders that order as
+    given. Re-sorting in the browser could only disagree with the server, and
+    would mean `Number()` on an API decimal for something that is not display."""
+    reversed_presets = list(reversed(MIXED_PRESETS))
+    assert offered(tmp_path, "vegetables", reversed_presets) == [
+        "spud_bin_vegetables", "bucket_20l_full", "wheelie_bin_240l",
+    ]

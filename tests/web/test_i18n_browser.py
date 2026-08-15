@@ -487,6 +487,17 @@ _VALUE_FITS = """
 }
 """
 
+#: Breathing room the value has to have beyond "it happens to fit".
+#:
+#: **A bare fit is not a size, it is a coincidence, and this control has already
+#: been one.** The panel's first sizing settled the `<select>` at 146px around a
+#: value measuring 145px with its arrow: correct by a pixel, on this machine, in
+#: this Chromium, with this font loaded. Deleting the rule that sizes the control
+#: left it at 140px against 139px and every assertion stayed green — which is how
+#: that mutant survived twice. Twelve pixels is under a character at this size and
+#: is the difference between a control that was measured and one that was lucky.
+_VALUE_SLACK = 12
+
 
 def _paints_something(page, selector):
     """Whether hiding this element changes the pixels where it says it is.
@@ -586,8 +597,8 @@ def test_the_chooser_is_one_raised_surface_and_the_select_has_no_box_of_its_own(
         # the language it names is clipped. A `<select>` truncates its closed
         # value in silence, so the text is measured against the room it has.
         fit = page.evaluate(_VALUE_FITS)
-        assert fit["room"] >= fit["text"] + fit["arrow"], (
-            f"the selected language is clipped inside its own control: {fit}"
+        assert fit["room"] >= fit["text"] + fit["arrow"] + _VALUE_SLACK, (
+            f"the selected language is clipped, or fits only by accident: {fit}"
         )
     finally:
         context.close()
@@ -816,8 +827,8 @@ def test_the_panel_chooser_is_the_same_capsule_and_its_button_works(browser):
         # first sizing this capsule was given settled the control at 146px
         # against a 145px value: correct by one pixel, and by accident.
         fit = page.evaluate(_VALUE_FITS)
-        assert fit["room"] >= fit["text"] + fit["arrow"], (
-            f"the selected language is clipped inside its own control: {fit}"
+        assert fit["room"] >= fit["text"] + fit["arrow"] + _VALUE_SLACK, (
+            f"the selected language is clipped, or fits only by accident: {fit}"
         )
 
         assert seen["globe"] is not None and seen["globe"]["w"] >= 14, seen
@@ -926,9 +937,9 @@ def test_the_panel_chooser_fits_a_phone_and_still_names_its_language(browser, wi
 
         fit = page.evaluate(_VALUE_FITS)
         if width >= 390:
-            assert fit["room"] >= fit["text"] + fit["arrow"], (
-                f"{width}px: the selected language is clipped inside its own "
-                f"control: {fit}"
+            assert fit["room"] >= fit["text"] + fit["arrow"] + _VALUE_SLACK, (
+                f"{width}px: the selected language is clipped, or fits only by"
+                f" accident: {fit}"
             )
         else:
             # Asserted as the known state rather than left unmentioned, so that

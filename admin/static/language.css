@@ -1,0 +1,224 @@
+/* THE PANEL'S LANGUAGE CHOOSER. Contract §7.7.4, open item O-8.
+   Partial: admin/templates/brand/_language_chooser.html.
+
+   ---------------------------------------------------------------------------
+   WHY THIS IS A FILE OF ITS OWN, AND NOT MORE OF brand.css.
+
+   The panel has two skins and only one of them loads brand.css:
+
+     * the five GATE pages (login, verify, enrol, change_password, low_codes)
+       render through brand/base.html, which carries the `<link>` to brand.css;
+     * the PANEL PROPER is sqladmin's Tabler layout, whose `<head>` lives in
+       sqladmin/base.html - a file this project deliberately does not fork.
+
+   The chooser is on both. Its rules used to sit in brand.css, so on every
+   screen a signed-in person actually uses it rendered as raw platform
+   controls: `Language [English v] [Set language]` jammed against the top-left
+   edge, which is what it looked like when this was reported.
+
+   Two mechanisms were available and this is the second:
+
+     * brand/_list_table_css.html inlines a `<style>` into the Tabler page.
+       That is the right shape for rules that reach ONLY the seventeen list
+       screens, which is what it is for - but the chooser is on every screen,
+       and an inlined block is re-sent with every one of them and cannot be
+       cached.
+     * `{% block head %}` is declared in sqladmin/base.html and overridden by
+       nobody in the chain, so our own sqladmin/layout.html shadow can claim
+       it. That is a `<link>`, cached once, on every panel screen. brand/base
+       .html links the same file, so the gate pages and the panel proper are
+       styled from one source and cannot drift.
+
+   Loading brand.css itself into Tabler was the third option and is refused:
+   it styles `body`, `h1`, `input`, `button` and `table` globally and would
+   restyle a panel that is not ours to restyle.
+
+   ---------------------------------------------------------------------------
+   NO `--kale` HERE. This file is loaded on pages that do not have brand.css's
+   `:root` tokens, so it declares its own on the component. The values are the
+   brand's, and they are written out for the same reason
+   brand/_list_table_css.html writes `rgba(0, 50, 35, 0.22)` out.
+
+   LOGICAL PROPERTIES THROUGHOUT. The panel ships English and Chinese today, but
+   the calculator ships Arabic and Urdu and its stylesheet has a test refusing a
+   physical direction property. Two surfaces disagreeing about which way "top
+   left" mirrors is the defect that rule exists to prevent, so the rule is the
+   same one here.
+   ------------------------------------------------------------------------- */
+
+/* THE CAPSULE. One raised surface holding the globe, the word, the control and
+   the button, rather than four loose elements sharing a strip.
+
+   It floats: `inline-flex` plus a margin, so the page's own ground shows around
+   it. The full-bleed white strip with a bottom rule that stood here read as
+   chrome the panel had grown, which is exactly what it was not - it is one
+   small control, and it should be the size of one. */
+.language-bar {
+  --lang-ink: #003223;          /* Kale */
+  --lang-white: #FFFFFF;
+  --lang-mint: #DFF8ED;         /* the Pea tint, for the globe's sphere */
+  --lang-focus: #005AE6;        /* Blueberry */
+  --lang-hairline: rgba(0, 50, 35, 0.18);
+
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  /* **`align-self` AND `width` BOTH, and neither is redundant.** Tabler lays
+     `.page-wrapper` out as a flex COLUMN, and a flex item is blockified - so
+     `inline-flex` alone gave a capsule stretched across the entire content area,
+     a 1,250px pill holding 320px of control. `align-self` stops the stretch in
+     that context and does nothing in the gate pages' block flow; `width` is the
+     belt to its braces if the panel's own layout changes underneath us. */
+  align-self: flex-start;
+  width: fit-content;
+  margin: 14px 20px;
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 12px 0;
+  border: 0;
+  border-radius: 12px;
+  background: var(--lang-white);
+  color: var(--lang-ink);
+  font-family: 'Kumbh Sans', Helvetica, Arial, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.2;
+  /* **THE HAIRLINE IS AN INSET SHADOW, NOT A `border`.** The `<select>` and the
+     button inside are 44px because that is the touch target; a 1px border would
+     make the capsule 46px around them. An inset shadow draws the same line and
+     occupies no layout, so the capsule is exactly as tall as the control it
+     holds. It is the same construction as the calculator's, for the same reason
+     - see web/css/styles.css, where the height is a measured budget.
+
+     Then two outer layers: a tight contact shadow that seats it and a wider soft
+     one that lifts it. Kale rather than black, so the shade belongs to the
+     palette. The hairline's colour is a custom property so hover and focus can
+     restate one value instead of all three layers. */
+  box-shadow:
+    inset 0 0 0 1px var(--lang-hairline),
+    0 1px 1px rgba(0, 50, 35, 0.05),
+    0 6px 16px -8px rgba(0, 50, 35, 0.35);
+}
+
+.language-bar:hover { --lang-hairline: rgba(0, 50, 35, 0.34); }
+
+/* **The ring is drawn around the capsule, not around whichever part has focus**,
+   because the capsule is the object a reader sees. `:focus-within` rather than
+   `:has(:focus-visible)`: it has been in every browser since 2017, and a focus
+   indicator is the last rule that should depend on recent syntax. The select's
+   and the button's own outlines are suppressed below ONLY because this rule
+   replaces them - remove it and the control has no focus indicator at all. */
+.language-bar:focus-within {
+  --lang-hairline: var(--lang-ink);
+  outline: 2px solid var(--lang-focus);
+  outline-offset: 2px;
+}
+
+/* THE GLOBE. Inline SVG in the partial, never an `<img>` and never an icon font:
+   there is no build step here and the public origin's policy forbids a
+   third-party asset, so the same drawing is used on both surfaces and both draw
+   it rather than fetch it. `aria-hidden` in the markup, because the `<label>`
+   beside it already names the control.
+
+   Colour is `currentColor` so the drawing needs no second copy for a dark
+   ground; the sphere's Pea tint is the one spot of brand colour on a Tabler
+   screen, which is where it earns its place - it says this control is the Kai
+   Commitment's and not one of sqladmin's. */
+.language-bar__globe {
+  flex: 0 0 auto;
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.4;
+}
+.language-bar__globe-sphere { fill: var(--lang-mint); }
+
+.language-bar__label {
+  color: var(--lang-ink);
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  white-space: nowrap;
+}
+
+/* THE SELECT HAS NO BOX OF ITS OWN. The capsule carries the border, the radius
+   and the shadow; drawing them again 2px inside would be a box in a box, which
+   is the obvious implementation and the one that looks like a mistake. The 44px
+   stays, because that is the touch target and it has to survive losing the
+   frame that used to give it away. */
+/* `width` AS WELL AS `max-width`: a percentage inside `min()` is indefinite while
+   a flex container is sized from its contents, so `min(100%, 20ch)` clamps the
+   used width and not the max-content contribution - the capsule shrink-wraps 80-odd
+   pixels wider than the control and the gap shows as a hole between the value and
+   the button. Measured on the calculator, where the same pair is written the same
+   way. */
+.language-bar__select {
+  min-height: 44px;
+  width: 20ch;
+  max-width: min(100%, 20ch);
+  padding-block: 0;
+  padding-inline: 0 6px;
+  color: var(--lang-ink);
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  font: inherit;
+  font-size: 0.9rem;
+  cursor: pointer;
+  outline: none;
+}
+
+/* THE BUTTON IS A SEGMENT OF THE CAPSULE, not a control sitting next to one.
+   It has to exist - this chooser is a real form post and works with scripting
+   off (contract §7.7.4), so there is no `onchange` to replace it - and joining
+   it to the field is what stops "a select and a button" reading as two things
+   the reader has to relate to each other.
+
+   The corner radii are logical, so the joined edge is the inline-END one in
+   both directions - the button is at the reading end of the capsule in Chinese
+   and would be at the left of it in a right-to-left catalogue, without a second
+   rule. `border-inline-start` is the divider; the capsule's inset hairline is
+   the outside, and the button paints over the stretch of it that it covers,
+   which is the right result: the button's own edge is the capsule's edge there. */
+.language-bar__submit {
+  align-self: stretch;
+  min-height: 44px;
+  padding-block: 0;
+  padding-inline: 14px;
+  color: var(--lang-white);
+  background: var(--lang-ink);
+  border: 0;
+  border-inline-start: 1px solid var(--lang-hairline);
+  border-radius: 0;
+  border-start-end-radius: 12px;
+  border-end-end-radius: 12px;
+  font: inherit;
+  font-size: 0.85rem;
+  font-weight: 700;
+  white-space: nowrap;
+  cursor: pointer;
+  outline: none;
+}
+
+.language-bar__submit:hover { background: #01452f; }
+
+/* The stored choice names a language this panel has no catalogue for. Beetroot
+   on Lavender is the brand's light-ground pairing for a statement that is not an
+   alarm: nothing has gone wrong, and the visitor's choice is still intact.
+
+   It floats on the same margins as the capsule and directly under it, so the two
+   read as one control and its note. It is a SIBLING of the form rather than
+   inside it, because the form's opening tag is asserted verbatim by
+   tests/admin/test_i18n_pages.py and a wrapper there would be a markup change
+   with no design in it. */
+.language-bar__unavailable {
+  max-width: 46rem;
+  margin: -4px 20px 14px;
+  padding: 10px 14px;
+  color: #87005A;
+  background: #E6BEFF;
+  border-radius: 12px;
+  font-family: 'Kumbh Sans', Helvetica, Arial, sans-serif;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}

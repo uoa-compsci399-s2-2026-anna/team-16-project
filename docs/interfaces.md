@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-15 (v1.32 draft)"
+date: "2026-08-15 (v1.33 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,25 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.33 — 2026-08-15 (step 3 offers containers; the seed becomes New Zealand's actual bin sizes; affects B, C and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The container input is built, and §7.2's standing requirement is met.** `taxonomy.unit_presets` was served, `units.js::toKg` was written for exactly this, the seed had the rows, and **nothing called any of it** — step 3 offered kilograms and tonnes and no way to say "two 240 L wheelie bins". That is the client's stated case: a café or a school does not know its kilograms, it knows it fills two bins a week, and making it guess a weight is how a made-up number gets into a public statistic (§7.6.1). Step 3 now asks *how* you want to enter the amount, By weight is unchanged, and By container is a container `<select>`, a count, and a running kilogram total | §7.2, §7.3 |
+| 2 | **`state` gains `measureMode`, `unitPreset` and `unitCount`** — the shape §7.2 named as absent. `unitCount` holds the raw string the visitor typed, for the same reason `qtyInput` does: nothing rounds until `units.js` converts it | §7.2 |
+| 3 | **A container entry allocates in kilograms, and `measureMode: 'container'` therefore implies `totalUnit: 'kilograms'`.** A container estimates the *total*; the total is a mass. Step 4 splits it across destinations, §6.2's mass-conservation rule compares the two, and both have to be in one unit — "0.37 wheelie bins to landfill" is not enterable or checkable. **The consequence that matters: a container entry reaches the API as exactly the `qty_kg` a visitor who had typed the kilograms would have sent.** That is the property that makes the input safe to add at all, and it is asserted request-body against request-body in a browser | §6.2, §7.2, §7.3 |
+| 4 | **The two-decimal rule follows the count, not the derived total** — §7.2 recorded this collision as the decision building this input would require, and this is the decision. Two decimals is an input rule about *typing*; `toKg` returns three because §6.2 refuses a fourth, and "139.200" is not a number anybody enters. **The count is additionally bounded at 10,000 containers**: half a wheelie bin is a reasonable thing to say and two hundred and forty thousand of them is not, and 10,000 of the largest preset is 3,190 t — inside §6.2's 10,000,000 kg per-line ceiling, so the bound a visitor meets is expressed in containers rather than in kilograms | §6.2, §7.2, §7.3 |
+| 5 | **`toKg` multiplies in decimal, not in double, and this was wrong in the third decimal place.** Both operands are decimals — the count is typed and `kg_per_unit` crosses the wire as a string precisely so `Number` never sees it (§1.2) — and the old body was `Number(a) * Number(b)` then `.toFixed(3)`. A quarter of the seeded 23 L food scraps bin is `0.25 × 6.6700 = 1.6675 kg` exactly; the nearest double to `6.67` is below it, so `toFixed` reads the exact tie as under the half and answers `"1.667"`. It is now integer arithmetic rounded half up, and asserted against `decimal.Decimal` | §7.3 |
+| 6 | **`toKg` refuses a negative operand.** `unit_preset` carries a `kg_per_unit >= 0` CHECK written for this multiplication; the *count* is the operand no database constraint can reach, and `<input type="number">` hands over `"-2"` quite happily. Found by the test, not by review | §2.1, §7.3 |
+| 7 | **`units.js` gains `containerKg(entry, presets)` and `entryTotal(entry, presets)`.** `entryTotal` is the one place the two measurement modes reconcile. It is in `units.js` rather than in `calculator.js` because the **results export needs it too and cannot import that module** — it read `entry.totalAmount` directly, which is empty for a container entry, so a downloaded report said "0.00 kilograms" for an entry whose screen said 139.200 kg | §7.3, §7.3a |
+| 8 | **`GET /api/v1/taxonomy` orders `unit_presets` by `kg_per_unit`, smallest first**, and the form renders that order as given. This is the one taxonomy table with no `sort_order`; alphabetically by `code` the 1100 L front-loader sorted above the 660 L one and the 140 L kerbside bin above the 80 L one. No schema change buys this — the column already carries the order | §6.1 |
+| 9 | **A preset naming a `food_category` is offered only once that category is chosen**, which is what §2.1's nullable column is for: a bin of bread and a bin of potatoes do not weigh the same. NULL means "every category" and always shows. A selection that leaves the list when step 2 changes is **cleared from state with it** — a conversion nobody can see is a conversion nobody can check | §2.1, §6.1, §7.2 |
+| 10 | **A preset's `label` is not translated.** §7.7.7's ruling of 14 August applies unchanged: it is staff-typed, so it is published exactly as written, and a Thai visitor gets a Thai form listing English container names. Sixteen new keys across twenty catalogues cover everything around it | §7.7.7 |
+| 11 | **The seeded `unit_preset` rows become New Zealand's actual containers** — ten of them, replacing five. Added: the **23 L kerbside food scraps bin** most of urban Auckland was issued from March 2023, the **80 L and 140 L** kerbside bins councils issue instead of the 120 L, and the **660 L and 1100 L front-loader** bins that are the standard commercial sizes here. **The density is sourced and is still not measured**: 0.29 kg/L from the Food Loss & Waste Protocol's *Guidance on FLW Quantification Methods*, Table 3.2, where it appears twice independently (household food waste in a small container, WRAP 2010; commerce-and-industry animal and vegetable wastes, Jacobs Engineering UK 2010). It is not a New Zealand figure, none was found, and MfE's *Solid Waste Analysis Protocol* publishes none and warns against volume-based estimation for exactly this reason. Every row's `source_note` says all of that. **O-6 stays open** — a sourced placeholder is not measured data | §2.1 |
+| 12 | **Migration `0015` is data-only** and exists because `admin.seed._ensure` creates a row and never updates one, so a seed edit alone reaches a fresh database and leaves every deployed one on the old numbers. It rewrites only rows still carrying the untouched placeholder `source_note`, so a staff correction is never clobbered, and it writes no `audit_log` row — a migration has no actor to record | §2.1, §2.4 |
+
+> **Still open after this revision.** **O-6** is not closed and this revision does not claim to close it: the container *sizes* are now real and traceable, and the *density* converting them to kilograms is a published overseas factor standing in for a New Zealand measurement nobody has taken. Read the `source_note` on any row before quoting a figure from it. **O-1** is unchanged.
 
 ### v1.32 — 2026-08-15 (the placeholder-data flag stops being a tick and starts being two actions; affects B and E)
 
@@ -713,12 +732,18 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | Column | Type | Constraints | Notes |
 | --- | --- | --- | --- |
 | `id` | INT | PK, AI | |
-| `code` | VARCHAR(64) | UNIQUE, NOT NULL | `bucket_20l_full` |
-| `label` | VARCHAR(128) | NOT NULL | "20 L bucket (full)" |
+| `code` | VARCHAR(64) | UNIQUE, NOT NULL | `wheelie_bin_240l` |
+| `label` | VARCHAR(128) | NOT NULL | "240 L wheelie bin (full)". Staff-typed, so **published exactly as written and never translated** (§7.7.7) |
 | `food_category_id` | INT | FK, NULL | Null means it applies to all categories |
-| `kg_per_unit` | DECIMAL(12,4) | NOT NULL | |
+| `kg_per_unit` | DECIMAL(12,4) | NOT NULL | `kg_per_unit >= 0` CHECK. Not integral in the shipped seed |
 | `source_note` | TEXT | NULL | Basis for the conversion |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+> **No `sort_order`, deliberately.** §6.1 orders this table by `kg_per_unit` — smallest container first — and the step-3 `<select>` renders that order as given. Size is the only order a visitor scanning for their own bin can use, and the column already carries it, so no schema change buys it.
+
+> **What `food_category_id` is *for*, since it is the one column here that is easy to read as decorative (v1.33).** It is per-food density. A bin of bread and a bin of potatoes do not weigh the same, so a preset naming a category is a conversion that is only true of that category and the calculator offers it **only once step 2 has chosen it**; a NULL row is "a wheelie bin is a wheelie bin" and always shows. Step 2 is optional, so a visitor who skipped it sees the generic containers alone. **A selection that stops being on the list when the category changes is cleared from the front end's state with it** — a conversion still in force behind a choice nobody can see is the shape of defect §10 keeps recording.
+>
+> **Nothing in the shipped seed uses it.** All ten rows are NULL, because no measured per-food density exists to put on one and inventing one would be worse than the placeholder it replaced. See O-6.
 
 ## 2.2 Factors
 
@@ -1851,7 +1876,7 @@ Called once on page load to build every dropdown and input row.
 | `sector` | it appears as `factor_upstream.sector_id`, **or** as a non-NULL `factor_downstream.sector_id` (v1.31) |
 | `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
 | `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
-| `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category |
+| `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category. **Ordered by `kg_per_unit`, smallest first (v1.33)** — this is the one taxonomy table with no `sort_order`, the list is a `<select>` a visitor scans for their own bin, and alphabetically by `code` the 1100 L front-loader sorted above the 660 L one. `code` breaks the tie. **The front end renders this order as given and sorts nothing** |
 | `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
 
 > **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
@@ -1891,8 +1916,8 @@ Called once on page load to build every dropdown and input row.
       "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 1 }
   ],
   "unit_presets": [
-    { "code": "bucket_20l_full", "label": "20 L bucket (full)",
-      "food_category": null, "kg_per_unit": "12.0000" }
+    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)",
+      "food_category": null, "kg_per_unit": "69.6000" }
   ]
 }
 ```
@@ -2333,7 +2358,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | --- | --- |
 | Server data | `taxonomy`, `result` |
 | Session | `token` — initialised from `sessionStorage.kaiCalculatorToken` at module load |
-| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `current: [{id, destination, qtyInput}]` |
+| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `current: [{id, destination, qtyInput}]` |
 | Multi-entry | `entries: []` — committed entries, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
 | Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
@@ -2345,7 +2370,11 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 **Still requirements, and still unmet:**
 
-- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission. **What it will cost, so the next person is not surprised:** `toKg` returns kilograms at **three** decimal places (§7.3, API-ready) and `calculator.js` validates `totalAmount` against `/^\d+(\.\d{1,2})?$/`, so a preset whose `kg_per_unit` is not a whole number produces a total the form then refuses. `unit_preset.kg_per_unit` is `DECIMAL(12,4)` (§2.1) and every value in `tests/fixtures/taxonomy.json` happens to be integral, so the collision is invisible on the current fixture and certain on real data. Building the input therefore requires a decision — either the two-decimal rule moves, or the preset writes a rounded amount and `units.js` gains the rounding — and it is a decision about what a user is allowed to type, not a refactor.
+- ~~**`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.**~~ **Built at v1.33.** `measureMode`, `unitPreset` and `unitCount` are on the draft entry above, and they sit on the **entry**, not on the line: a container estimates the total that step 4 then allocates, and a destination row reading "0.37 wheelie bins" is neither enterable nor checkable against §6.2's mass-conservation rule.
+
+  **The decision this section said would be required, made.** The two-decimal rule follows the **count**, which is what somebody types; `toKg` still returns three decimal places because §6.2 refuses a fourth, and `"139.200"` is not a number anybody enters. So `totalAmount`'s `/^\d+(\.\d{1,2})?$/` is applied to `unitCount` in container mode and to nothing derived. The collision this section predicted was real and is now moot: the seeded `kg_per_unit` values are **no longer integral** (v1.33 item 11), so a count of 1 on the 23 L bin is `6.670` kg and a total of three decimals is the normal case rather than the exotic one.
+
+  **`measureMode: 'container'` implies `totalUnit: 'kilograms'`, and `calculator.js` maintains it.** `totalUnit` is the unit step 4 allocates in. A visitor who chooses tonnes and *then* switches to containers would otherwise reach a step 4 whose rows say "tonnes" against a total in kilograms — a thousandfold error on a screen that looks entirely normal, refused by nothing, because both numbers are individually plausible. `tests/web/test_container_input_browser.py` walks exactly that path; no other test does, because the default is already kilograms.
 - **`gwpHorizon` is set to 100 at initialisation and no control ever writes it.** §6.2 makes the horizon user-selectable between 20 and 100; a stated requirement is currently unmet and invisible on screen.
 
 > **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths **apply different validity rules to the same field**. As of 2026-08-09 the divergence is narrower than it was and is not zero: on a negative amount `updateLine` marks only the row being typed in, while `destinationRows` marks every negative row on the screen; and `destinationRows` additionally marks a row named by `state.fieldErrors`, which `updateLine` clears on the first keystroke because blanking or filling a row changes which lines the request would carry, so the server's line positions stop meaning what they meant. Any change to a validation rule has to be made in both.
@@ -2357,17 +2386,63 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 ```js
 /**
  * Convert a container count to kilograms.
- * @param {number} count       Number of containers
- * @param {string} presetCode  unit_preset code
- * @param {Array}  presets     taxonomy.unit_presets
- * @returns {string}           Kilograms as a string with 3 decimal places,
- *                             ready to send to the API
- * @throws {Error}             presetCode does not exist, or the product is
- *                             not finite
- * ** Still imported by nothing — see §7.2, the preset input is not built, and
- *    the note there states what building it costs. **
+ *
+ * **The multiplication is decimal, not double (v1.33).** Both operands are decimals:
+ * the count is what the visitor typed and `kg_per_unit` crosses the wire as a string
+ * (§1.2) precisely so that `Number` never sees it. The previous body was
+ * `Number(count) * Number(preset.kg_per_unit)` then `.toFixed(3)`, and that is wrong
+ * in the **third** decimal place — a quarter of the seeded 23 L food scraps bin is
+ * `0.25 × 6.6700 = 1.6675 kg` exactly, the nearest double to `6.67` is below it, and
+ * `toFixed` reads the exact tie as under the half and answers `"1.667"`. Integer
+ * arithmetic, rounded half up, which is what `Decimal.quantize(ROUND_HALF_UP)` does
+ * on the Python side. (Python's own `round()` is banker's rounding and is not it.)
+ *
+ * **Neither operand may be negative.** `unit_preset` carries a `kg_per_unit >= 0`
+ * CHECK (§2.1) written for this multiplication; the count is the operand no database
+ * constraint can reach, and an `<input type="number">` hands over `"-2"` quite
+ * happily.
+ *
+ * @param {number|string} count  Number of containers, as the visitor typed it
+ * @param {string} presetCode    unit_preset code
+ * @param {Array}  presets       taxonomy.unit_presets
+ * @returns {string}             Kilograms as a string with 3 decimal places,
+ *                               ready to send to the API (§6.2 refuses a fourth)
+ * @throws {Error}               presetCode does not exist, or either operand is
+ *                               not a plain non-negative decimal literal
  */
 export function toKg(count, presetCode, presets);
+
+/**
+ * `toKg` made total: the kilograms a container entry describes, or `''`.
+ *
+ * Called inside a render by both consumers, so it may not throw — and `toKg` throwing
+ * on an unknown preset code is reachable, because §6.1 says a consumer must not assume
+ * the taxonomy is stable across a publish and the page holds a selection made before
+ * one. Whether the count is *typeable* is a separate question asked in
+ * `calculator.js`, beside the same two-decimal rule the mass field takes.
+ *
+ * @param {{unitPreset: string|null, unitCount: string}} entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {string}  Kilograms at 3 decimal places, or '' when there is no total yet
+ */
+export function containerKg(entry, presets);
+
+/**
+ * The one place the two step-3 measurement modes reconcile: an entry's total as
+ * `{amount, unit}`, in the unit its destination rows are entered in.
+ *
+ * A container entry **always** answers kilograms — see §7.2. In `units.js` rather than
+ * in `calculator.js` because it has two consumers: `results.js` prints each entry's
+ * waste amount in the downloaded report and cannot import `calculator.js` (that module
+ * imports this one). It read `entry.totalAmount` directly, which is `''` for a
+ * container entry, so the report said "0.00 kilograms" for an entry whose screen said
+ * 139.200 kg.
+ *
+ * @param {object} entry   A draft or saved entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {{amount: string, unit: 'kilograms'|'tonnes'}}
+ */
+export function entryTotal(entry, presets);
 
 /**
  * @param {number|string} amount

@@ -309,16 +309,26 @@ That is a fix, not a refinement. The domain used to be written out twice — in
 wrong policy means the news quietly does not load, and a wrong URL means the browser goes
 and asks a domain nobody chose.
 
+These are **compose variables, not application settings**, so they belong in the
+environment or in `docker/.env` — not in the root `.env` that `.env.example` describes,
+which `docker compose -f docker/compose.yaml` never reads (Compose takes its project
+directory from the compose file's own directory). Same as `KAICALC_WEB_PORT` above.
+
 ```bash
 # The client's site (the default), no news at all, and the API on its own origin:
 KAICALC_NEWS_ORIGIN=https://kaicommitment.org.nz  docker compose -f docker/compose.yaml up -d web
 KAICALC_NEWS_ORIGIN=                              docker compose -f docker/compose.yaml up -d web
 KAICALC_API_ORIGIN=https://api.example.org        docker compose -f docker/compose.yaml up -d web
 
-# What is actually in force:
+# What is actually in force. Read both — the whole point is that they agree:
 curl -sI http://localhost:18080/ | grep -i content-security-policy
 curl -s  http://localhost:18080/js/config.js
 ```
+
+An empty value is honoured rather than defaulted: `docker/compose.yaml` writes
+`${KAICALC_NEWS_ORIGIN-…}` without the colon, so `KAICALC_NEWS_ORIGIN=` means *no feed*
+and only an absent variable falls back to the client's site. With the colon there would
+be no way to turn the feed off short of editing the compose file.
 
 **An unset news origin removes the home page's news section rather than reporting an
 outage.** Most deployments of this calculator have no WordPress behind them, so unset is a

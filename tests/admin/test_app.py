@@ -226,7 +226,20 @@ async def test_startup_prints_the_credentials_in_the_cli_bootstrap_wording(
     assert (
         "the other administrator can read it back from /admin/staff/list" in out
     )
-    assert "kaicalc-admin issue-password admin" in out
+    # Names the form that works from where the reader is standing, and refuses
+    # the one that does not. `docker exec` runs no entrypoint, so the bare
+    # console script exits on `MissingSettingError: SECRET_KEY is not set` -
+    # while `kaicalc-admin --help` works, which is what kept the wrong form
+    # looking right until a deployment test read the sentence and tried it.
+    #
+    # Both halves are needed. The positive alone passes against a message
+    # carrying both forms in either order; the negative alone passes against a
+    # message that names no command at all. The negative is written against
+    # `kaicalc-admin issue-password` rather than `kaicalc-admin`, because the
+    # sentence legitimately offers that spelling as the second option for a
+    # `pip install`ed CLI with no container to exec into.
+    assert "docker exec kaicalc-admin kaicalc issue-password admin" in out
+    assert "run `kaicalc-admin issue-password admin` on the container" not in out
     assert "Do not send them by email." in out
 
 

@@ -353,10 +353,18 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     means one lost line is recoverable *by the other administrator*, from
     /admin/staff/list. Losing both is still terminal for the panel, because a reveal
     needs a signed-in administrator and there is nobody else; the way back
-    there is ``kaicalc-admin issue-password`` on the container. The message
-    below says exactly that, rather than the flat "cannot be recovered" it used
-    to carry, which was true when it was written and would now send an operator
-    to rebuild a deployment they could have logged in to.
+    there is ``docker exec kaicalc-admin kaicalc issue-password`` from the host.
+    The message below says exactly that, rather than the flat "cannot be
+    recovered" it used to carry, which was true when it was written and would
+    now send an operator to rebuild a deployment they could have logged in to.
+
+    **It named ``kaicalc-admin`` on the container until 2026-08-15, and that
+    form fails.** ``docker exec`` does not run the image's entrypoint, so
+    SECRET_KEY is unresolved and the console script exits on
+    ``MissingSettingError``. The mistake survived because it is true *here* —
+    this function runs inside the entrypoint — and because ``kaicalc-admin
+    --help`` works, so the form looks correct right up to the moment somebody
+    locked out of the panel needs it.
 
     Shared with ``admin.app``'s startup hook rather than written twice.
     Both the CLI subcommand and application start reach the same
@@ -380,11 +388,22 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
         "Log in with both accounts now, change both passwords, and enrol both "
         "authenticators. Do not send them by email."
     )
+    # `docker exec … kaicalc …` first, and the bare console script second, in
+    # that order because the compose stack is how this system is run and is
+    # therefore where a locked-out operator is standing. `kaicalc-admin` is
+    # correct only where the entrypoint has already resolved SECRET_KEY - which
+    # is true of this very process, and is exactly what made the wrong form look
+    # right for as long as it did. Under `docker exec` the entrypoint does not
+    # run, and the console script dies on `MissingSettingError: SECRET_KEY is
+    # not set`. Both forms are named because this message is also printed by a
+    # `pip install`ed CLI, where there is no container to exec into.
     print(
         "If you lose one of these lines, the other administrator can read it "
         f"back from {UNCLAIMED_PASSWORD_SCREEN} until that account changes its "
-        "password. If you lose both, nobody can log in: run `kaicalc-admin "
-        "issue-password admin` on the container."
+        "password. If you lose both, nobody can log in: run `docker exec "
+        "kaicalc-admin kaicalc issue-password admin` from the host, or "
+        "`kaicalc-admin issue-password admin` where the environment is already "
+        "set up."
     )
 
 
@@ -486,8 +505,8 @@ def main(argv: list[str] | None = None) -> int:
                 "If it is lost before they use it, it is still recoverable: an "
                 f"administrator can read it back from {UNCLAIMED_PASSWORD_SCREEN}, "
                 "under `Show the password waiting to be collected`, until the "
-                f"account changes it. Failing that, `kaicalc-admin "
-                f"issue-password {username}` mints another."
+                f"account changes it. Failing that, `docker exec kaicalc-admin "
+                f"kaicalc issue-password {username}` mints another."
             )
         elif args.command == "reset-mfa":
             cmd_reset_mfa(db_session, args.username)

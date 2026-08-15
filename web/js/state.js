@@ -8,6 +8,18 @@ export const state = {
   gwpHorizon: 100,
   totalAmount: '',
   totalUnit: 'kilograms',
+  // §7.3's container input. `measureMode` says which of the two step-3 fields is
+  // authoritative; `unitPreset` is a `taxonomy.unit_presets` code and `unitCount` is the
+  // raw string the visitor typed, held raw for the same reason `qtyInput` is — nothing
+  // rounds until `units.js` converts it for the API.
+  //
+  // **`measureMode: 'container'` implies `totalUnit: 'kilograms'`, and `calculator.js`
+  // maintains that.** `totalUnit` is the unit step 4 allocates in, and a destination row
+  // reading "0.37 wheelie bins" is not a thing anyone can enter; containers estimate the
+  // total and the total is then a mass.
+  measureMode: 'mass',
+  unitPreset: null,
+  unitCount: '',
   // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
   // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
@@ -77,6 +89,9 @@ export function resetCalculator() {
     foodCategory: null,
     totalAmount: '',
     totalUnit: 'kilograms',
+    measureMode: 'mass',
+    unitPreset: null,
+    unitCount: '',
     current: [],
     entries: [],
     result: null,

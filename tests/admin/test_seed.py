@@ -1,9 +1,11 @@
 """The NZ taxonomy as shipped. Contract §2.1."""
 
+from decimal import Decimal
+
 import pytest
 from sqlalchemy import func, select
 
-from admin.seed import seed_taxonomy
+from admin.seed import UNIT_PRESETS, seed_taxonomy
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
@@ -152,3 +154,82 @@ def test_unit_presets_are_marked_as_placeholder_data(session):
 
     for preset in session.scalars(select(UnitPreset)).all():
         assert "placeholder" in (preset.source_note or "").lower()
+
+
+def test_migration_0015_and_the_seed_hold_the_same_ten_containers():
+    """A transcription, and therefore a drift risk with nothing else watching it.
+
+    Revision 0015 writes the container numbers out longhand rather than
+    importing `admin.seed`, deliberately — a migration states the numbers of
+    its own moment, and a later seed edit must not retroactively change what an
+    applied revision did. The cost of that decision is that the two can silently
+    disagree, and the disagreement is invisible in normal use: `docker/init.sh`
+    runs `alembic upgrade head` **before** `seed-taxonomy`, so on a fresh
+    database the migration's INSERT lands first and `_ensure` then creates
+    nothing. A wrong number in the seed would never reach a deployment and would
+    never reach this suite either, because every test builds its schema with
+    `create_all()` and never runs migration DDL.
+
+    So they are compared here. If a future revision deliberately moves the
+    numbers on, this test is what makes that a decision: update the seed and add
+    the newer revision to the comparison, do not edit 0015.
+    """
+    import importlib.util
+    from pathlib import Path
+
+    path = (
+        Path(__file__).resolve().parents[2]
+        / "alembic" / "versions" / "0015_unit_preset_nz_containers.py"
+    )
+    spec = importlib.util.spec_from_file_location("_revision_0015", path)
+    revision = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(revision)
+
+    migrated = {
+        code: (label, Decimal(kilograms), revision._note(litres, kilograms))
+        for code, litres, label, kilograms in revision._CONTAINERS
+    }
+    seeded = {
+        code: (label, kg_per_unit, source_note)
+        for code, label, kg_per_unit, source_note in UNIT_PRESETS
+    }
+    assert migrated == seeded
+
+
+def test_every_unit_preset_shows_the_arithmetic_and_names_its_density_source(session):
+    """A sourced conversion, not a bare number — and still not a measurement.
+
+    The set this replaced carried one sentence saying the numbers were made up,
+    which was honest and useless: a staff member replacing them had no way to
+    tell what they were replacing. Every row now states its own capacity, the
+    density, the product, and where the density came from.
+
+    **The last assertion is the one that matters.** 0.29 kg/L is a published
+    figure from the FLW Protocol's Table 3.2, not a New Zealand measurement, and
+    a note that cited a source without saying so would read as authoritative
+    data — which is worse than the bare placeholder it replaced, and is exactly
+    what O-6 was raised about. O-6 stays open until a measured figure arrives,
+    so the disclaimer has to survive any later edit to the citation.
+    """
+    seed_taxonomy(session)
+    session.flush()
+
+    presets = session.scalars(select(UnitPreset)).all()
+    assert len(presets) == 10
+    for preset in presets:
+        note = preset.source_note or ""
+        litres, _, rest = note.partition(" L × 0.29 kg/L = ")
+        assert litres.isdigit(), f"{preset.code}: note does not open with a capacity"
+        product, _, _ = rest.partition(" kg.")
+        assert Decimal(product) == preset.kg_per_unit, (
+            f"{preset.code}: the note quotes {product} kg and the row holds "
+            f"{preset.kg_per_unit}"
+        )
+        assert Decimal(litres) * Decimal("0.29") == preset.kg_per_unit, (
+            f"{preset.code}: {litres} L at 0.29 kg/L is not {preset.kg_per_unit}"
+        )
+        assert "Food Loss & Waste Protocol" in note, f"{preset.code}: no source"
+        assert "not a New Zealand measurement" in note, (
+            f"{preset.code}: the note cites a source without saying the density "
+            "is not measured here, which reads as data the client has supplied"
+        )

@@ -30,7 +30,7 @@
       "source_note": "Smaller in magnitude than the downstream offset below, on purpose: this is what makes the metric total itself negative rather than merely reduced." }
   ],
   "downstream": [
-    { "destination": "animal_feed", "food_category": null,
+    { "destination": "animal_feed", "sector": null, "food_category": null,
       "metric": "co2e", "value_per_kg": "-0.1500000000",
       "source_note": "Negative on purpose: feeding surplus food to animals displaces feed that would otherwise have been grown. Contract 2.2 - a negative downstream factor is an offset, and charts must render it below the axis." }
   ],

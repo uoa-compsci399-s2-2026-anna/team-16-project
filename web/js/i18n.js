@@ -549,6 +549,59 @@ function optionLabel(entry) {
   return t(MACHINE_TRANSLATED_OPTION, { language: entry.endonym })
 }
 
+/** The namespace an `<svg>` and its children must be created in. `createElement('svg')`
+ *  produces an HTML element named "svg" that renders as nothing at all — the failure is
+ *  silent and looks like a CSS problem, which is why this is a named constant rather
+ *  than a literal repeated five times below. */
+const SVG_NS = 'http://www.w3.org/2000/svg'
+
+/**
+ * The chooser's globe. **Drawn here, because it cannot be fetched.**
+ *
+ * The public Content-Security-Policy is `img-src 'self' data:` with no third-party
+ * origin (`docker/nginx.conf`, contract §7.6 rule 7), there is no icon font, and there
+ * is no build step to inline one with. So the icon is eleven attributes of SVG: a
+ * sphere, an equator and a meridian ellipse, which is the smallest drawing that still
+ * reads as a globe at 18px.
+ *
+ * **`aria-hidden`, and that is not a shortcut.** The `<label>` beside it already names
+ * this control; a second name would make a screen reader say "globe, Language". It is
+ * decoration for the eye, and below 720px — where the label is `.sr-only` and the word
+ * is not drawn — it is the only thing on screen that says what the control is for.
+ *
+ * Colour comes from CSS (`stroke: currentColor`), not from attributes, so the same
+ * drawing serves the white header and the Kale one without a second copy.
+ */
+function globeIcon() {
+  const svg = document.createElementNS(SVG_NS, 'svg')
+  svg.setAttribute('class', 'language-bar__globe')
+  svg.setAttribute('viewBox', '0 0 20 20')
+  svg.setAttribute('aria-hidden', 'true')
+  // Keeps it out of the tab order in the browsers that once put SVG in it. The
+  // control after it is the one thing here that should take focus.
+  svg.setAttribute('focusable', 'false')
+
+  const sphere = document.createElementNS(SVG_NS, 'circle')
+  sphere.setAttribute('class', 'language-bar__globe-sphere')
+  sphere.setAttribute('cx', '10')
+  sphere.setAttribute('cy', '10')
+  sphere.setAttribute('r', '7.4')
+
+  const equator = document.createElementNS(SVG_NS, 'path')
+  equator.setAttribute('d', 'M2.6 10h14.8')
+
+  // The meridian is an ellipse rather than two arcs: one element, symmetric about both
+  // axes, so it mirrors under `dir="rtl"` by being unchanged.
+  const meridian = document.createElementNS(SVG_NS, 'ellipse')
+  meridian.setAttribute('cx', '10')
+  meridian.setAttribute('cy', '10')
+  meridian.setAttribute('rx', '3.5')
+  meridian.setAttribute('ry', '7.4')
+
+  svg.append(sphere, equator, meridian)
+  return svg
+}
+
 /**
  * Build the chooser and put it at the top inline-start of the page.
  *
@@ -607,7 +660,9 @@ export function installLanguageChooser(afterChange) {
   })
 
   paint()
-  bar.append(label, select)
+  // The globe is appended once, here, and not inside `paint()`: `paint()` runs again on
+  // every language change and would otherwise stack a second drawing on each switch.
+  bar.append(globeIcon(), label, select)
   // **Inside the header's own row, not in a strip above it, and the reason is
   // measured rather than aesthetic.** A strip of its own costs 57px on every
   // page: a 44px control plus padding and a rule. This calculator deleted an

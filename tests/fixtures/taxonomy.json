@@ -177,10 +177,15 @@
     { "code": "mass", "name": "Mass", "unit": "kg", "display_unit": "kg", "display_precision": 1, "sort_order": 50 }
   ],
   "unit_presets": [
-    { "code": "bucket_10l_full", "label": "10 L bucket (full)", "food_category": null, "kg_per_unit": "3.0000" },
-    { "code": "bucket_20l_full", "label": "20 L bucket (full)", "food_category": null, "kg_per_unit": "6.0000" },
-    { "code": "crate_30l_full", "label": "30 L crate (full)", "food_category": null, "kg_per_unit": "9.0000" },
-    { "code": "wheelie_bin_120l", "label": "120 L wheelie bin (full)", "food_category": null, "kg_per_unit": "36.0000" },
-    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)", "food_category": null, "kg_per_unit": "72.0000" }
+    { "code": "bucket_10l_full", "label": "10 L bucket (full)", "food_category": null, "kg_per_unit": "2.9000" },
+    { "code": "bucket_20l_full", "label": "20 L bucket (full)", "food_category": null, "kg_per_unit": "5.8000" },
+    { "code": "food_scraps_bin_23l", "label": "23 L kerbside food scraps bin (full)", "food_category": null, "kg_per_unit": "6.6700" },
+    { "code": "crate_30l_full", "label": "30 L crate (full)", "food_category": null, "kg_per_unit": "8.7000" },
+    { "code": "wheelie_bin_80l", "label": "80 L wheelie bin (full)", "food_category": null, "kg_per_unit": "23.2000" },
+    { "code": "wheelie_bin_120l", "label": "120 L wheelie bin (full)", "food_category": null, "kg_per_unit": "34.8000" },
+    { "code": "wheelie_bin_140l", "label": "140 L wheelie bin (full)", "food_category": null, "kg_per_unit": "40.6000" },
+    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)", "food_category": null, "kg_per_unit": "69.6000" },
+    { "code": "front_loader_660l", "label": "660 L front-loader bin (full)", "food_category": null, "kg_per_unit": "191.4000" },
+    { "code": "front_loader_1100l", "label": "1100 L front-loader bin (full)", "food_category": null, "kg_per_unit": "319.0000" }
   ]
 }

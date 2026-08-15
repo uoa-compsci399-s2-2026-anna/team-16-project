@@ -168,28 +168,94 @@ async def test_editing_a_drafts_notes_still_works(session, admin_client):
 
 
 @pytest.mark.asyncio
-async def test_editing_a_published_sets_is_mock_is_refused(session, admin_client):
-    """`is_mock` stayed on form_columns after `status` came off it, and
-    FactorSetAdmin.validate_before_commit only ever called
-    check_single_published_set. A staff member could open the live set and
-    switch `is_mock` off - removing the mandatory, non-dismissible
-    placeholder-data banner while the numbers underneath were still mock.
-    The client has not supplied real emissions factors yet (O-1), so that
-    banner is the whole of what stops a placeholder number being read as
-    real. Submitted without an `is_mock` field at all, which is how an
-    unticked checkbox actually arrives - HTML omits it rather than sending
-    "off"."""
+async def test_editing_a_published_sets_own_fields_is_still_refused(session, admin_client):
+    """The half of `validate_before_commit` that did not change when the
+    placeholder flag came off this form.
+
+    A published set's own fields must not change in place: every stored
+    result names that version, and editing it does not correct those results,
+    it quietly changes what they claimed. `notes` is the field under test
+    because it is the one a staff member has a genuine reason to want to
+    touch on a live set.
+
+    **This test used to submit no field change at all.** It posted
+    `version_label` unchanged and `notes=""` against a set whose notes were
+    already NULL, and passed - because the *omitted* `is_mock` checkbox was
+    itself the change that made the row dirty (HTML omits an unticked box
+    rather than sending "off"). Taking `is_mock` off `form_columns` made that
+    POST a no-op, `_write_audit_entries` returns before calling
+    `validate_before_commit` when nothing is dirty, and the assertion went
+    from proving the guard to proving that nothing happened. It now changes a
+    field the form still carries, which is what it always meant to.
+    """
     live = FactorSet(version_label=_FACTOR_SET_LABELS[0], status=FactorSetStatus.published,
-                     is_mock=True)
+                     is_mock=True, notes="as published")
     session.add(live)
     session.commit()
 
     response = await admin_client.post(f"/admin/factor-set/edit/{live.id}", data={
-        "version_label": _FACTOR_SET_LABELS[0], "notes": "",
+        "version_label": _FACTOR_SET_LABELS[0], "notes": "edited after publishing",
     })
 
     assert response.status_code == 400
     _resync(session)
     assert session.scalar(
         select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[0])
+    ).notes == "as published"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("started_mock, submitted", [(True, {}), (False, {"is_mock": "on"})])
+async def test_the_edit_form_cannot_move_the_placeholder_flag(
+    session, admin_client, started_mock, submitted
+):
+    """`is_mock` is off `form_columns`, so a submitted value is ignored - the
+    same property `status` has had since it came off, and asserted the same
+    way (tests above).
+
+    Both directions, because a form that ignored only the dangerous one would
+    still be a form: an unticked checkbox arrives as an *absent* field, so
+    "clear the flag" and "leave the flag alone" are the identical request and
+    the field cannot be trusted in either direction.
+
+    `notes` is posted alongside and asserted, so that a 404, a rejected CSRF
+    token or a WTForms failure on some other field - each of which would also
+    leave `is_mock` where it was - cannot pass this test. The claim is that
+    `is_mock` alone was ignored, not that nothing was.
+    """
+    draft = FactorSet(version_label=_FACTOR_SET_LABELS[2], status=FactorSetStatus.draft,
+                      is_mock=started_mock)
+    session.add(draft)
+    session.commit()
+
+    response = await admin_client.post(f"/admin/factor-set/edit/{draft.id}", data={
+        "version_label": _FACTOR_SET_LABELS[2], "notes": "x", **submitted,
+    })
+
+    assert response.status_code == 302
+    _resync(session)
+    updated = session.scalar(
+        select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[2])
+    )
+    assert updated.is_mock is started_mock
+    assert updated.notes == "x"
+
+
+@pytest.mark.asyncio
+async def test_a_new_factor_set_is_always_created_flagged_as_placeholder(
+    session, admin_client
+):
+    """"Nothing is published as real data by omission" used to rest on the
+    creator leaving a ticked box alone. `is_mock` is off the create form too,
+    so a new set takes the column default and there is no way to create one
+    unflagged - including by hand-posting the field, which is what this
+    submits."""
+    response = await admin_client.post("/admin/factor-set/create", data={
+        "version_label": _FACTOR_SET_LABELS[2], "notes": "new", "is_mock": "",
+    })
+
+    assert response.status_code == 302
+    _resync(session)
+    assert session.scalar(
+        select(FactorSet).where(FactorSet.version_label == _FACTOR_SET_LABELS[2])
     ).is_mock is True

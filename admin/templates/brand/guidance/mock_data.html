@@ -7,7 +7,10 @@
    `factor_set.is_mock`).
 
    The procedure at the end is the one this panel's owners will need first
-   and the one nothing else in the tree writes down. Pinned by
+   and the one nothing else in the tree writes down. It stopped being
+   "untick it on a draft before you publish": the flag is off the edit form
+   entirely and moves through two actions instead, because the real sequence
+   is publish, verify in front of real use, then clear. Pinned by
    tests/admin/test_guidance.py. #}
 <div class="col-12">
   <div class="card">
@@ -21,18 +24,40 @@
           scientific result.
         </p>
         <p>
-          <strong>Is Mock</strong> on a factor set is what says so — the tick
-          on its form, and the column of the same name on this list. While it is
-          ticked on the published set, every results page, the methodology page
-          and every file a visitor exports carries a warning they cannot dismiss.
-          Untick it and all of those disappear together — this one tick is the
-          only thing holding them up.
+          <strong>Is Mock</strong> on a factor set is what says so — the column
+          of that name on this list. While it is set on the published set,
+          every results page, the methodology page and every file a visitor
+          exports carries a warning they cannot dismiss. Clear it and all of
+          those disappear together — this one flag is the only thing holding
+          them up.
         </p>
+        <p>
+          <strong>It is not a tick on the edit form, and the two directions are
+          not the same size.</strong> A checkbox sitting on a form is something
+          you can take off by accident while you are changing a version label,
+          and the form has nowhere to ask whether you meant it. So:
+        </p>
+        <ul>
+          <li>
+            <strong>Flag as placeholder data</strong> adds the warning. It works
+            on a draft, on the published set and on an archived one, it asks
+            for nothing, and it takes effect at once. If you have any doubt
+            about the numbers under the live set, press it — being wrong this
+            way costs a warning on a page that did not need one, and the other
+            action takes it straight back off.
+          </li>
+          <li>
+            <strong>Clear placeholder flag</strong> removes the warning. It asks
+            for your password or a code from your authenticator first, and it
+            records who cleared it and when. Being signed in is the one thing
+            somebody who had taken your session would also have.
+          </li>
+        </ul>
         <p><strong>When the client supplies the real factors:</strong></p>
         <ol>
           <li>
-            Clone the published set. The clone is a draft, and it is still ticked
-            as mock.
+            Clone the published set. The clone is a draft, and it is still
+            flagged as mock.
           </li>
           <li>
             Replace the numbers in the draft — upstream factors, downstream
@@ -42,23 +67,33 @@
             where a number came from.
           </li>
           <li>
-            Untick Is Mock on the draft, once every number in it is real. It is
-            all or nothing — the warning cannot say that forty rows are measured
-            and twelve are still borrowed. The Data quality box on each row is
-            where that belongs.
-          </li>
-          <li>
             Run Try a scenario against the draft, and Compare with published,
             before publishing anything.
           </li>
           <li>
-            Publish. The warning stops appearing for the public at that moment.
+            Publish, with the flag still set. The public gets the real numbers
+            and the warning at the same time, which is the honest state while
+            nobody has checked them in front of real use yet.
+          </li>
+          <li>
+            Leave it a day or two and watch it. Then select the published set
+            and choose <strong>Clear placeholder flag</strong>. The warning
+            stops appearing at that moment.
           </li>
         </ol>
         <p>
-          The one sequence to avoid is unticking Is Mock on a half-finished
-          draft and publishing it to see how it looks: the public sees it too,
-          with placeholder numbers and nothing on the page saying so.
+          <strong>You do not need to clone a set to clear its flag.</strong>
+          That used to be the only way, and it was the wrong shape: it made a
+          new version label for a change in which not one factor value differs,
+          while every calculation recorded in between stayed stamped with the
+          old version — a break in the version history invented by the panel
+          rather than by the numbers.
+        </p>
+        <p>
+          Clear it only when <em>every</em> number in the set is real. It is all
+          or nothing — the warning cannot say that forty rows are measured and
+          twelve are still borrowed. The Data quality box on each row is where
+          that belongs.
         </p>
       </div>
     </div>

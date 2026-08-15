@@ -83,9 +83,10 @@ ReFED's taxonomy is not ours, so the fixture brings its own rather than mapping
 onto the New Zealand MfE categories: five supply chain stages, nine food types,
 twelve destinations. `refed-benchmark-taxonomy.json` adds
 
-- **1 sector** — `refed_us`
-- **39 food categories** — `refed_retail_produce`, `refed_farm_dry_goods`, and
-  so on: one per (stage, food type) pair ReFED actually publishes
+- **5 sectors** — `refed_farm`, `refed_manufacturing`, `refed_retail`,
+  `refed_foodservice`, `refed_residential`
+- **9 food categories** — `refed_produce`, `refed_dry_goods`,
+  `refed_standard_mix`, and six more: ReFED's own food departments
 - **12 destinations** — `refed_landfill`, `refed_composting`, …, assigned to
   the three existing destination groups the same way `admin/seed.py` assigns
   the identically-named New Zealand destinations, so the waste/non-waste split
@@ -94,16 +95,37 @@ twelve destinations. `refed-benchmark-taxonomy.json` adds
 Every code is prefixed `refed_`. Nothing existing is edited, renamed or
 deactivated; the loader creates only codes that are absent.
 
-**Why the food category carries the supply chain stage.** `factor_upstream` is
-keyed `(sector, food_category, destination)`, which matches ReFED's key
-exactly. `factor_downstream` is keyed `(destination, food_category)` and has no
-sector column — and ReFED's downstream factors genuinely differ by sector in
-**82 of their 102** (food type, destination) groups. Nine food category rows
-therefore cannot hold ReFED's downstream data without losing some of it. The
-39-row encoding is lossless: no two ReFED cells are merged and no number
-changes. Using a single sector row rather than five is what makes it impossible
-to select a stage that disagrees with the food category and get a plausible
-wrong answer instead of an obvious one.
+**It used to be 1 sector and 39 food categories, and why it is not any more.**
+`factor_upstream` is keyed `(sector, food_category, destination)`, which matches
+ReFED's key exactly. `factor_downstream` had no sector column until contract
+v1.31, and ReFED's downstream factors genuinely differ by sector in **82 of
+their 102** (food type, destination) groups — so this fixture folded the stage
+into the food category's *code*: one sector row, and 39 categories named
+`refed_retail_produce`, `refed_farm_dry_goods`.
+
+That was lossless in the numbers and wrong in the shape, and because taxonomy
+rows are global (§2.1 carries no `factor_set_id`) the cost landed in the
+product. The calculator's first step, "which stage of the food supply chain",
+offered exactly one option — a radio button that selected itself. Its second
+listed 39 compound entries the client read as stages rather than foods. And the
+statistics page's `by_sector` breakdown was one bucket at 100%, carrying no
+information at all.
+
+v1.31 gave `factor_downstream` a nullable `sector_id` — NULL meaning "every
+sector", exactly as `food_category_id` beside it already means "every
+category" — so the fold is unnecessary and the fixture is ReFED's own 5 × 9.
+**No number moved:** the comparison agreed with ReFED before the rebuild and
+agrees after, to the tolerance §10.3 derives from `DECIMAL(20,10)`.
+
+**Every downstream row states both its sector and its food category.** None is
+left NULL, even for the 20 groups whose value happens not to vary by sector.
+ReFED publishes only **39 of the 45** (sector, food type) pairs — Farm has Dry
+Goods, Produce and Standard Mix and nothing else — and a 5 × 9 taxonomy offers
+all 45, so a NULL-sector row would be found by a lookup for Farm / Frozen and
+would answer it with another sector's number. With every row explicit, those
+six pairs price at zero on every metric: visibly nothing rather than plausibly
+wrong. `test_an_unpublished_pair_prices_at_zero_rather_than_borrowing` asserts
+it for all six.
 
 No metric rows are added. Metric rows are global, and an extra active metric
 would add a column to what the New Zealand set reports.
@@ -158,8 +180,16 @@ python -m pytest tests/benchmark/refed/ -q
 
 To see it in the calculator interface instead, load it into a database (§7)
 and use the admin dry-run page at `/admin/try`, selecting the factor set
-`REFED-COMPARISON-2026-04-03 - NOT NZ DATA`, sector `refed_us`, food category
-`refed_retail_produce`. The dry-run path persists nothing, which is the point:
+`REFED-COMPARISON-2026-04-03 (sector dimension) - NOT NZ DATA`, sector
+`refed_retail`, food category `refed_produce`.
+
+A database that loaded this set before contract v1.31 still holds the older
+`REFED-COMPARISON-2026-04-03 - NOT NZ DATA`, which folded the supply-chain stage
+into the food category's code and so offered one sector and thirty-nine food
+categories. Both can sit in one database and the labels tell them apart. The
+older one is not deleted on the way past: `submission` rows stamp a factor set
+id and that foreign key is `NO ACTION`, so any set a calculation still refers to
+stays, which is what makes a historical result reproducible. The dry-run path persists nothing, which is the point:
 tuning against a benchmark would otherwise pollute the public statistics.
 
 ## 6. What agreement to expect
@@ -173,6 +203,29 @@ round trip:
 | Methane (MTCH4) | 0.166646 | 0.054191 | 0.112454 | Methane |
 | Water (US gallons) | 440,625.98 | 242,344.29 | 198,281.69 | Water |
 | Social cost of carbon (USD) | 6,410.92 | 3,041.43 | 3,369.49 | Social Cost of Carbon |
+
+**Two more scenarios, entered by hand on ReFED's own site and read off the
+screen.** They are the only expected answers in this repository that were
+neither computed by our code nor derived from a file we hold, and they are the
+check that survives a mistake made in the CSV reader and the totals reader at
+once. Both are single-scenario (`current` only).
+
+| Scenario | Lines | CO2e (MTCO2e) | CH4 (MTCH4) | Water (US gal) | SCC (USD) |
+| --- | --- | --- | --- | --- | --- |
+| **Farm / Standard Mix**, 1,000 kg | donations 200, animal feed 100, anaerobic digestion 100, landfill 200, dumping 100, sewer 300 | 0.68008173626 | 0.01802778698 | 36,629.3776 | 110.18175284 |
+| **Retail / Standard Mix**, 180 kg | donations 80, animal feed 100 | 0.52 | — | 47,179 | 150 |
+
+The Farm figures are transcribed at the eleven digits ReFED's interface shows,
+so the assertion is relative at 1e-8 — it bounds a transcription, not an
+arithmetic. The Retail figures are the display-rounded values ReFED shows for
+that scenario and are asserted as such, at the places shown, rather than
+pretending to more digits than were on screen. `tests/benchmark/refed/` also
+re-runs both against the full-precision totals file, where the bound is the
+storage precision.
+
+The Farm scenario is the one the old shape could not express naturally: under
+the 1 × 39 encoding "Farm" was a *food category*, so running it meant choosing
+a food named after a stage.
 
 Our own results come out in our units and need dividing to reach ReFED's:
 `co2e` and `ch4` totals are in kilograms, so divide by 1000; `water` is in
@@ -274,7 +327,7 @@ Three things to know before you load it into a database you care about:
 | `tests/benchmark/refed/impact_calculator_conversion_factors.csv` | ReFED's published factors, verbatim |
 | `tests/benchmark/refed/refed_calculator_totals.json` | ReFED's own combined totals, the independent expected answer |
 | `tests/benchmark/refed/build_refed_benchmark.py` | Derives the two JSON files from the CSV. The audit trail. |
-| `tests/benchmark/refed/refed-benchmark-taxonomy.json` | 1 sector, 39 food categories, 12 destinations |
+| `tests/benchmark/refed/refed-benchmark-taxonomy.json` | 5 sectors, 9 food categories, 12 destinations |
 | `tests/benchmark/refed/refed-benchmark-factors.json` | The factor set: 764 upstream rows, 1728 downstream rows |
 | `tests/benchmark/refed/load_refed_benchmark.py` | Loads both into a database in one transaction, as a draft |
 | `tests/benchmark/refed/test_refed_benchmark.py` | The comparison, with no database |

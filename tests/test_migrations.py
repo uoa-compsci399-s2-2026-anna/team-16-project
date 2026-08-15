@@ -128,30 +128,36 @@ def test_the_migration_chain_matches_the_models(migrated_engine):
 
 @pytest.mark.db
 @pytest.mark.parametrize(
-    "table, index, consequence",
+    "table, index, coalesced, consequence",
     [
         (
             "factor_downstream", "uq_factor_downstream_generic",
+            #: v1.31: **two** nullable columns, so two COALESCE key parts.
+            #: Collapsing only one of them leaves the other's duplicates legal
+            #: and the index looks right in every summary of it.
+            ("sector_id", "food_category_id"),
             "a second generic downstream row inserts happily and the engine's "
             "factor lookup becomes nondeterministic",
         ),
         (
             "submission_entry", "uq_submission_entry_generic",
+            ("food_category_id",),
             "one user's single 'no category breakdown' answer can be stored "
             "twice for the same sector, and §5.4's by_sector aggregation "
             "counts it twice in the public statistics",
         ),
         (
             "factor_upstream", "uq_factor_upstream_generic",
+            ("destination_id",),
             "a second generic upstream row inserts happily and the upstream "
             "fallback introduced for O-7 becomes nondeterministic — the same "
             "input returning a different net benefit run to run",
         ),
     ],
-    ids=lambda value: value if value.startswith("uq_") else None,
+    ids=lambda value: value if isinstance(value, str) and value.startswith("uq_") else None,
 )
 def test_the_chain_creates_the_functional_indexes_compare_metadata_cannot_see(
-    migrated_engine, table, index, consequence,
+    migrated_engine, table, index, coalesced, consequence,
 ):
     """The thing `_include_object` above deliberately stops checking.
 
@@ -189,11 +195,21 @@ def test_the_chain_creates_the_functional_indexes_compare_metadata_cannot_see(
     )
     assert all(row.NON_UNIQUE == 0 for row in rows), "the index is not unique"
 
-    expressions = [row.EXPRESSION for row in rows if row.EXPRESSION]
-    assert any("coalesce" in expr.lower() for expr in expressions), (
-        "the index exists but has no COALESCE key part, so NULLs still compare "
-        f"distinct and it does not do its job. Key parts: {rows}"
-    )
+    expressions = [row.EXPRESSION.lower() for row in rows if row.EXPRESSION]
+    #: **Every** nullable column of this index must be collapsed, and each is
+    #: named rather than counted. `any("coalesce" in ...)` was what this
+    #: asserted until v1.31 gave `factor_downstream` a second nullable column,
+    #: and it would have passed on an index that collapsed the new column and
+    #: dropped the old one — an index that exists, is unique, contains a
+    #: COALESCE, and silently stops enforcing half of what it was written for.
+    for column in coalesced:
+        assert any(
+            "coalesce" in expr and column in expr for expr in expressions
+        ), (
+            f"{index} has no COALESCE({column}, ...) key part, so NULLs in "
+            f"{column} still compare distinct and it does not do its job. "
+            f"Key parts: {rows}. Without it {consequence}."
+        )
 
 
 def test_the_chain_has_exactly_one_head_and_exactly_one_root():

@@ -112,7 +112,12 @@ REDACTED_FIELDS = {
     "initial_password_enc",
 }
 
-_bundle_cache: dict[int, Any] = {}
+#: `factor_set_id -> (is_mock as it was when the bundle was built, bundle)`.
+#: The flag rides alongside the bundle rather than being read off it because
+#: `load_factor_bundle`'s `bundle_factory` is injectable and what it returns
+#: is not this module's to introspect. See `load_factor_bundle` for why this
+#: one field is re-checked on every hit when nothing else in the bundle is.
+_bundle_cache: dict[int, tuple[bool, Any]] = {}
 _cache_lock = threading.RLock()
 
 
@@ -178,7 +183,8 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
       the ``food_category_id IS NULL`` row, which §2.2 defines as "every food
       category" and which is how a per-tonne charge like the waste levy is
       held -- **or** appears as a non-NULL ``factor_upstream.destination_id``;
-    * a **sector** appears as ``factor_upstream.sector_id``;
+    * a **sector** appears as ``factor_upstream.sector_id`` **or** as a
+      non-NULL ``factor_downstream.sector_id``;
     * a **food category** appears as ``factor_upstream.food_category_id`` or as
       a non-NULL ``factor_downstream.food_category_id``.
 
@@ -191,6 +197,18 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
     row per destination, so the column is where nearly all of its information
     lives. Reading only one of the two tables loses one of the two shapes, and
     both are in the deployed database today.
+
+    ``factor_downstream.sector_id`` joins the sector half for the mirror-image
+    reason, since v1.31. It is nullable and NULL means "every sector", so a
+    NULL row is no evidence about any particular sector and is skipped exactly
+    as a NULL ``food_category_id`` already was. It is not redundant with the
+    upstream read: a factor set may legitimately price a stage of the supply
+    chain downstream only -- a per-tonne disposal charge that differs by
+    collection contract, with no upstream footprint of its own -- and reading
+    only ``factor_upstream`` would drop that sector from the form while the
+    rows that price it sat in the database. The New Zealand set is unaffected,
+    because all of its downstream rows are NULL here and its sectors come from
+    ``factor_upstream`` as before.
     """
     upstream = session.execute(
         select(
@@ -202,15 +220,21 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
         .distinct()
     ).all()
     downstream = session.execute(
-        select(FactorDownstream.destination_id, FactorDownstream.food_category_id)
+        select(
+            FactorDownstream.destination_id,
+            FactorDownstream.sector_id,
+            FactorDownstream.food_category_id,
+        )
         .where(FactorDownstream.factor_set_id == factor_set_id)
         .distinct()
     ).all()
     sectors = {sector_id for sector_id, _, _ in upstream}
     foods = {food_id for _, food_id, _ in upstream}
     destinations = {dest_id for _, _, dest_id in upstream if dest_id is not None}
-    for dest_id, food_id in downstream:
+    for dest_id, sector_id, food_id in downstream:
         destinations.add(dest_id)
+        if sector_id is not None:
+            sectors.add(sector_id)
         if food_id is not None:
             foods.add(food_id)
     return {"sectors": sectors, "food_categories": foods, "destinations": destinations}
@@ -318,11 +342,20 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         .where(Destination.active.is_(True), DestinationGroup.active.is_(True))
         .order_by(Destination.sort_order, Destination.code)
     ).all()
+    #: **Smallest container first, and that is why the order is `kg_per_unit`
+    #: rather than `code`.** This is the one taxonomy table with no
+    #: `sort_order`, and the list is a `<select>` a visitor scans for their own
+    #: bin. Alphabetical on the code put the 1100 L front-loader above the 660 L
+    #: one and the 140 L kerbside bin above the 80 L one, which is a list nobody
+    #: can scan. Size is the only meaningful order and the column already
+    #: carries it, so no schema change buys it. `code` breaks the tie so the
+    #: order is total and a fixture can assert it; two rows may legitimately
+    #: share a mass once one of them is category-specific.
     presets = session.execute(
         select(UnitPreset, FoodCategory.code)
         .outerjoin(FoodCategory, UnitPreset.food_category_id == FoodCategory.id)
         .where(UnitPreset.active.is_(True))
-        .order_by(UnitPreset.code)
+        .order_by(UnitPreset.kg_per_unit, UnitPreset.code)
     ).all()
 
     # ---- the narrowing, applied once the active rows are in hand ----------
@@ -419,9 +452,15 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
         .join(Metric, FactorUpstream.metric_id == Metric.id)
         .where(FactorUpstream.factor_set_id == factor_set_id)
     ).all()
+    #: `factor_downstream` outer-joins **both** Sector and FoodCategory, for
+    #: the reason the note above gives about Destination: each is nullable and
+    #: NULL means "every value of that dimension", so an inner join would
+    #: publish only the rows that name one and silently drop every general row.
     downstream = session.execute(
-        select(FactorDownstream, Destination.code, FoodCategory.code, Metric.code)
+        select(FactorDownstream, Destination.code, Sector.code, FoodCategory.code,
+               Metric.code)
         .join(Destination, FactorDownstream.destination_id == Destination.id)
+        .outerjoin(Sector, FactorDownstream.sector_id == Sector.id)
         .outerjoin(FoodCategory, FactorDownstream.food_category_id == FoodCategory.id)
         .join(Metric, FactorDownstream.metric_id == Metric.id)
         .where(FactorDownstream.factor_set_id == factor_set_id)
@@ -474,13 +513,19 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
         "downstream": [
             {
                 "destination": destination,
+                #: §2.2/§10.2 (v1.31): `null` is a legal value meaning "every
+                #: sector", not a missing field, and must survive both
+                #: directions of the round trip — §4.1's lookup order runs
+                #: (sector, food_category), then (sector, NULL), then
+                #: (NULL, food_category), then (NULL, NULL), then zero.
+                "sector": sector,
                 "food_category": food,
                 "metric": metric,
                 "value_per_kg": str(x.value_per_kg),
                 "source_note": x.source_note,
                 "data_quality": x.data_quality,
             }
-            for x, destination, food, metric in downstream
+            for x, destination, sector, food, metric in downstream
         ],
         "equivalences": [
             {
@@ -556,6 +601,18 @@ def get_taxonomy_for_bundle(session: Session) -> dict[str, list[dict[str, Any]]]
     }
 
 
+def _live_is_mock(session: Session, factor_set_id: int) -> bool | None:
+    """This set's placeholder flag as the database has it right now.
+
+    A `SELECT` rather than `session.get`, which would answer out of the
+    identity map when the caller's session has already loaded the row —
+    the one case this check exists to catch.
+    """
+    return session.scalar(
+        select(FactorSet.is_mock).where(FactorSet.id == factor_set_id)
+    )
+
+
 def load_factor_bundle(
     session: Session,
     factor_set_id: int | None = None,
@@ -577,12 +634,41 @@ def load_factor_bundle(
     the cheaper of the two fixes and the only one that does not put a
     repository hook into all eleven admin views; a draft is dry-run by one
     person at a time, so there is no load argument on the other side.
+
+    **`is_mock` is re-read on every cache hit, and nothing else is.** The
+    flag is the only field of a published bundle that legitimately moves
+    while that set stays published (§2.2: staff publish the real factors,
+    verify them live for a day or two, then clear the flag through
+    FactorSetAdmin's confirmed action). Every other field is immutable in
+    place, which is what makes caching the rest of the bundle safe at all.
+
+    Nothing else can carry that change across: `invalidate_factor_bundle` is
+    a module-level dict in one process, and docker/compose.yaml runs the
+    panel and the API as **two services**, so the panel clearing its own slot
+    leaves the API's warm one untouched — for the lifetime of that process,
+    since this cache has no expiry. Without this check, clearing the flag
+    would take the placeholder banner off `/factors` (read live by
+    `get_factor_export`) and leave it on every `/calculate` result, and
+    *setting* the flag — the direction §2.2 requires to be instant and
+    frictionless, so that anyone can mark a set as placeholder data the
+    moment they doubt it — would not reach the public at all.
+
+    The cost is one primary-key `SELECT` of one boolean per calculation,
+    against a bundle of some 900 factor rows. What the cache is for is not
+    loading those.
     """
     factor_set_id = factor_set_id or get_published_factor_set_id(session)
     factory = bundle_factory or _default_bundle_factory
     with _cache_lock:
-        if factor_set_id in _bundle_cache:
-            return _bundle_cache[factor_set_id]
+        cached = _bundle_cache.get(factor_set_id)
+    if cached is not None:
+        cached_is_mock, bundle = cached
+        if _live_is_mock(session, factor_set_id) == cached_is_mock:
+            return bundle
+        # The flag moved under a warm slot. Drop it and rebuild below rather
+        # than patch the cached bundle: `bundle_factory` is injectable and
+        # what it returns is not this module's to reach into.
+        invalidate_factor_bundle(factor_set_id)
     bundle = factory(build_bundle_data(session, factor_set_id))
     # `build_bundle_data` has already loaded this row into the identity map,
     # so the status check costs no second round trip.
@@ -590,7 +676,9 @@ def load_factor_bundle(
     if factor_set is None or factor_set.status is not FactorSetStatus.published:
         return bundle
     with _cache_lock:
-        return _bundle_cache.setdefault(factor_set_id, bundle)
+        return _bundle_cache.setdefault(
+            factor_set_id, (factor_set.is_mock, bundle)
+        )[1]
 
 
 def _row_dict(row: Any) -> dict[str, Any]:

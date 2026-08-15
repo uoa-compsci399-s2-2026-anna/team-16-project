@@ -108,36 +108,42 @@ BUNDLE_JSON = {
     "downstream": [
         {
             "destination": "landfill",
+            "sector": None,
             "food_category": "dairy",
             "metric": "co2e",
             "value_per_kg": "0.9900000000",
         },
         {
             "destination": "landfill",
+            "sector": None,
             "food_category": None,
             "metric": "co2e",
             "value_per_kg": "0.7000000000",
         },
         {
             "destination": "landfill",
+            "sector": None,
             "food_category": None,
             "metric": "ch4",
             "value_per_kg": "0.0270000000",
         },
         {
             "destination": "compost",
+            "sector": None,
             "food_category": None,
             "metric": "co2e",
             "value_per_kg": "0.2100000000",
         },
         {
             "destination": "animal_feed",
+            "sector": None,
             "food_category": None,
             "metric": "co2e",
             "value_per_kg": "-0.1500000000",
         },
         {
             "destination": "prevention",
+            "sector": None,
             "food_category": None,
             "metric": "co2e",
             "value_per_kg": "0.0000000000",
@@ -265,6 +271,7 @@ def test_a_metric_added_to_the_bundle_needs_no_code_change(bundle):
     document["downstream"].append(
         {
             "destination": "landfill",
+            "sector": None,
             "food_category": None,
             "metric": "cost",
             "value_per_kg": "0.0600000000",

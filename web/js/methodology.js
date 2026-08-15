@@ -245,13 +245,18 @@ function renderFactors(payload) {
   fragment.append(makeCollectionSection(
     'downstream-heading',
     t('Downstream factors'),
-    t('A food category of All food categories is the generic row used where no category-specific factor is available. Negative values are retained because they represent published offsets.'),
+    // §2.2 (v1.31): a downstream row has **two** optional scopes now, and the
+    // order between them is not something a reader can infer from the rows —
+    // both "All sectors" and "All food categories" appear in the same table
+    // and neither column says which one gives way. The sentence has to.
+    t('A sector of All sectors, or a food category of All food categories, is a row that applies wherever no more specific row exists. Where a row naming a sector and a row naming only a food category could both apply, the one naming a sector is used. Negative values are retained because they represent published offsets.'),
     payload?.downstream,
     t('No downstream factors were returned.'),
     {
       caption: t('Published downstream impact factors'),
       columns: [
         { label: t('Destination'), value: row => recorded(row?.destination), code: true },
+        { label: t('Sector'), value: row => recorded(row?.sector, t('All sectors')), code: true },
         { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
         { label: t('Metric'), value: row => recorded(row?.metric), code: true },
         { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },

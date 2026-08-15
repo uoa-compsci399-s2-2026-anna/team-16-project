@@ -19,22 +19,41 @@ Nothing here is estimated, interpolated or remembered. Every stored number is a
 published ReFED number multiplied by an exact unit conversion, and the
 conversion applied to each row is recorded in that row's ``source_note``.
 
-WHY THE FOOD CATEGORY CODES CARRY A SECTOR
-------------------------------------------
+FIVE SECTORS AND NINE FOOD CATEGORIES, WHICH IS WHAT REFED PUBLISHES
+--------------------------------------------------------------------
 ReFED publishes upstream and downstream separately, and both vary by
-(sector, food_type, destination).  Our schema splits the two tables
-differently: ``factor_upstream`` is keyed (sector, food_category, destination)
--- which matches ReFED exactly -- but ``factor_downstream`` is keyed
-(destination, food_category) and has no sector column.  ReFED's downstream
-genuinely differs by sector in 82 of the 102 (food_type, destination) groups,
-so a nine-row food_category table cannot hold it without losing data.
+(sector, food_type, destination).  ``factor_upstream`` is keyed
+(sector, food_category, destination) and has always matched that exactly.
+``factor_downstream`` had no sector column until contract v1.31, and ReFED's
+downstream genuinely differs by sector in 82 of its 102 (food_type,
+destination) groups -- so this fixture used to fold the supply-chain stage
+into the food category's *code*: one sector row, 39 categories named
+``refed_farm_dry_goods``, ``refed_foodservice_frozen``.
 
-So this fixture uses one sector row and 39 food_category rows, one per ReFED
-(sector, food_type) pair that ReFED actually publishes.  That is a lossless
-re-encoding of ReFED's own dimensions, not a mapping onto New Zealand
-categories: the numbers are unchanged and no two ReFED cells are merged.  A
-single sector row also makes it impossible to pick a sector that disagrees
-with the food category and get a silently wrong answer.
+That was numerically lossless and structurally wrong, and every consequence was
+visible in the product rather than in the fixture.  The calculator's first step,
+"which stage of the food supply chain", offered a single radio button that
+selected itself.  Its second listed 39 compound entries the client read as
+stages rather than foods.  §5.4's ``by_sector`` chart was one bucket at 100%,
+carrying no information at all.
+
+``factor_downstream.sector_id`` (v1.31, nullable, NULL meaning "every sector")
+removed the reason, so the fixture is now **5 sectors x 9 food categories**,
+which is ReFED's own shape.  Nothing about the arithmetic changed: the same CSV
+cells reach the same metric totals through the same formulas, and
+``test_refed_benchmark.py`` asserts that against ReFED's separately published
+totals file.
+
+**Every downstream row names both its sector and its food category.**  None is
+left NULL, even for the 20 groups whose value happens not to vary by sector.
+Condensing those would save rows and cost correctness: ReFED publishes only 39
+of the 5 x 9 = 45 (sector, food type) pairs -- Farm has Dry Goods, Produce and
+Standard Mix and nothing else -- so a NULL-sector row would be found by a
+lookup for Farm / Frozen, a combination ReFED does not price and its own
+calculator does not offer, and would answer it with another sector's number.
+With every row explicit, that combination prices at zero on every metric, which
+is visibly nothing rather than plausibly wrong.  ``test_refed_benchmark.py``
+asserts it for all six pairs.
 
 UNIT CONVERSIONS
 ----------------
@@ -163,7 +182,23 @@ DESTINATIONS = [
 ]
 DEST_CODE = {label: code for label, code, _slug, _grp, _sort in DESTINATIONS}
 
-SECTOR_CODE = "refed_us"
+#: ReFED's own sector labels, in the order its calculator lists them. The
+#: `sort_order` each one takes is 900 + its index, keeping the whole fixture
+#: below the New Zealand rows in every dropdown.
+SECTOR_ORDER = ["Farm", "Manufacturing", "Retail", "Foodservice", "Residential"]
+#: ReFED's own food-type labels, likewise. `Standard Mix` goes last because it
+#: is the aggregate rather than one of the eight departments.
+FOOD_ORDER = [
+    "Breads & Bakery",
+    "Dairy & Eggs",
+    "Dry Goods",
+    "Fresh Meat & Seafood",
+    "Frozen",
+    "Prepared Foods",
+    "Produce",
+    "Ready-To-Drink Beverages",
+    "Standard Mix",
+]
 SOURCE_URL = (
     "https://refed-roadmap.s3-us-west-2.amazonaws.com/csv/public_downloads/"
     "impact_calculator/impact_calculator_conversion_factors.csv"
@@ -189,12 +224,12 @@ def read_csv(path: Path) -> tuple[list[dict[str, str]], str]:
     return rows, provenance
 
 
-def food_code(sector_label: str, food_label: str) -> str:
-    return f"refed_{SECTOR_SLUG[sector_label]}_{FOOD_SLUG[food_label]}"
+def sector_code(sector_label: str) -> str:
+    return f"refed_{SECTOR_SLUG[sector_label]}"
 
 
-def food_name(sector_label: str, food_label: str) -> str:
-    return f"ReFED {sector_label} / {food_label}"
+def food_code(food_label: str) -> str:
+    return f"refed_{FOOD_SLUG[food_label]}"
 
 
 def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
@@ -210,6 +245,21 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
 
     by_cell = {(r["sector"], r["food_type"], r["destination"]): r for r in rows}
 
+    # The CSV is the authority on the vocabulary, not the lists above: those
+    # only fix the order rows appear in. A ReFED redeploy that adds a sector or
+    # a food department has to be noticed here rather than silently dropped
+    # from the fixture, and the assertions below are what notice it.
+    sector_labels = [s for s in SECTOR_ORDER if s in {p[0] for p in pairs}]
+    food_labels = [f for f in FOOD_ORDER if f in {p[1] for p in pairs}]
+    unordered = ({p[0] for p in pairs} - set(SECTOR_ORDER)) | (
+        {p[1] for p in pairs} - set(FOOD_ORDER)
+    )
+    if unordered:
+        raise SystemExit(
+            f"the CSV names dimensions this script has no order for: "
+            f"{sorted(unordered)}. Add them to SECTOR_ORDER / FOOD_ORDER."
+        )
+
     # ---------------- taxonomy companion ----------------
     taxonomy = {
         "description": (
@@ -223,27 +273,30 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
         "source_header": provenance,
         "sectors": [
             {
-                "code": SECTOR_CODE,
-                "name": "ReFED comparison (United States)",
+                "code": sector_code(label),
+                "name": f"ReFED {label} (United States)",
                 "description": (
-                    "Benchmark fixture only. One sector row: ReFED's supply "
-                    "chain stage is carried in the food category code, because "
-                    "factor_downstream has no sector column and ReFED's "
-                    "downstream factors differ by sector."
+                    f"ReFED supply-chain stage '{label}'. Benchmark fixture "
+                    "only; not a New Zealand MfE sector."
                 ),
-                "sort_order": 900,
-                "active": True,
-            }
-        ],
-        "food_categories": [
-            {
-                "code": food_code(s, f),
-                "name": food_name(s, f),
-                "is_standard_mix": False,
                 "sort_order": 900 + index,
                 "active": True,
             }
-            for index, (s, f) in enumerate(pairs)
+            for index, label in enumerate(sector_labels)
+        ],
+        "food_categories": [
+            {
+                "code": food_code(label),
+                "name": f"ReFED {label}",
+                #: The New Zealand `standard_mix` keeps the flag. §2.1 requires
+                #: exactly one active row to carry it, and `refed_standard_mix`
+                #: is a ReFED aggregate rather than this database's answer to
+                #: "composition unknown".
+                "is_standard_mix": False,
+                "sort_order": 910 + index,
+                "active": True,
+            }
+            for index, label in enumerate(food_labels)
         ],
         "destinations": [
             {
@@ -272,7 +325,8 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
     downstream: list[dict[str, object]] = []
 
     for sector_label, food_label in pairs:
-        fcode = food_code(sector_label, food_label)
+        scode = sector_code(sector_label)
+        fcode = food_code(food_label)
         present = [
             label for label, *_ in DESTINATIONS
             if (sector_label, food_label, label) in by_cell
@@ -283,7 +337,7 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
             factor = CONV[metric]
             base = Decimal(base_row[column]) * factor
             upstream.append({
-                "sector": SECTOR_CODE,
+                "sector": scode,
                 "food_category": fcode,
                 "destination": None,
                 "metric": metric,
@@ -306,7 +360,7 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
                     continue
                 value = Decimal(cell[column]) * factor
                 upstream.append({
-                    "sector": SECTOR_CODE,
+                    "sector": scode,
                     "food_category": fcode,
                     "destination": DEST_CODE[label],
                     "metric": metric,
@@ -327,6 +381,9 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
                 value = Decimal(cell[column]) * factor
                 downstream.append({
                     "destination": DEST_CODE[label],
+                    # v1.31. Both dimensions are stated on every row; see the
+                    # module docstring for why none is left NULL.
+                    "sector": scode,
                     "food_category": fcode,
                     "metric": metric,
                     "value_per_kg": q(value),
@@ -342,6 +399,7 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
         for label in present:
             downstream.append({
                 "destination": DEST_CODE[label],
+                "sector": scode,
                 "food_category": fcode,
                 "metric": "water",
                 "value_per_kg": q(Decimal(0)),
@@ -359,10 +417,11 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
     # the New Zealand taxonomy and nothing else. Both are genuinely zero in
     # ReFED's data: prevented food was never produced.
     for sector_label, food_label in pairs:
-        fcode = food_code(sector_label, food_label)
+        scode = sector_code(sector_label)
+        fcode = food_code(food_label)
         for metric in UPSTREAM_COLS:
             upstream.append({
-                "sector": SECTOR_CODE,
+                "sector": scode,
                 "food_category": fcode,
                 "destination": "prevention",
                 "metric": metric,
@@ -377,13 +436,30 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
             })
 
     factors = {
-        "version_label": "REFED-COMPARISON-2026-04-03 - NOT NZ DATA",
+        # The date is ReFED's, not ours - it is the CSV's own "last updated".
+        # `(sector dimension)` distinguishes this set from the one built before
+        # contract v1.31, which folded the supply-chain stage into the food
+        # category's code because `factor_downstream` had no sector column. The
+        # two can sit in one database - a deployment that loaded the older set
+        # keeps it, because `submission` rows stamp a factor set id and the
+        # foreign key is NO ACTION, so the old set cannot be deleted while any
+        # calculation still refers to it. Two sets with one label could not be
+        # told apart in the panel's list, which is why the loader refuses a
+        # duplicate rather than versioning silently.
+        "version_label": "REFED-COMPARISON-2026-04-03 (sector dimension) - NOT NZ DATA",
         "is_mock": True,
         "notes": (
             "ReFED comparison fixture. United States factors published by "
             "ReFED, used to check this engine against an external calculator. "
             "THESE ARE NOT NEW ZEALAND FIGURES AND MUST NEVER BE PUBLISHED AS "
-            "THE LIVE FACTOR SET. Source: the 'Download factors' file behind "
+            "THE LIVE FACTOR SET. Five sectors and nine food categories, which "
+            "is ReFED's own shape: contract v1.31 gave factor_downstream a "
+            "nullable sector, so the supply-chain stage no longer has to be "
+            "folded into the food category's code. Every downstream row states "
+            "both its sector and its food category; none is left NULL, because "
+            "ReFED publishes only 39 of the 45 (sector, food type) pairs and a "
+            "NULL row would answer for the six it does not. Source: the "
+            "'Download factors' file behind "
             f"ReFED's Impact Calculator, {SOURCE_URL} , header line: "
             f"'{provenance}'. Every value is a published ReFED number per US "
             "short ton converted to a per-kilogram factor using 907.185 kg per "
@@ -436,8 +512,11 @@ def build(csv_path: Path, tax_path: Path, fac_path: Path) -> None:
 
     tax_path.write_text(json.dumps(taxonomy, indent=2) + "\n", encoding="utf-8")
     fac_path.write_text(json.dumps(factors, indent=2) + "\n", encoding="utf-8")
-    print(f"{tax_path.name}: 1 sector, {len(taxonomy['food_categories'])} food "
-          f"categories, {len(taxonomy['destinations'])} destinations")
+    print(f"{tax_path.name}: {len(taxonomy['sectors'])} sectors, "
+          f"{len(taxonomy['food_categories'])} food categories, "
+          f"{len(taxonomy['destinations'])} destinations "
+          f"({len(pairs)} of the {len(sector_labels) * len(food_labels)} pairs "
+          "are published by ReFED)")
     print(f"{fac_path.name}: {len(upstream)} upstream rows, "
           f"{len(downstream)} downstream rows")
 

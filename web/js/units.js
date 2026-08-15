@@ -1,9 +1,143 @@
+// A plain **non-negative** decimal literal: digits, optional fractional digits.
+//
+// No sign, and the omission is load-bearing rather than tidy. Neither operand of a
+// container conversion is ever legitimately negative — a count of containers cannot be,
+// and `unit_preset.kg_per_unit` carries a `kg_per_unit >= 0` CHECK constraint (§2.1)
+// written for precisely this multiplication, whose model docstring says so: "one negative
+// row turns 'three buckets' into a negative mass and feeds a negative quantity into every
+// metric downstream of it". Admitting `-` here reproduces that from the other operand,
+// where no database constraint can reach it. `-2` is a string a `<input type="number">`
+// will hand over quite happily.
+//
+// No exponent either: `1e3` is not something a number input produces, and admitting it
+// would mean admitting `Infinity` and `NaN` by the same door.
+const DECIMAL_LITERAL = /^\d+(\.\d+)?$/
+
+/**
+ * A non-negative decimal string as an exact integer and the power of ten it is scaled by.
+ *
+ * `'6.6700'` becomes `{digits: 66700n, scale: 4}`. Nothing is rounded and nothing
+ * passes through a double, which is the entire reason this exists.
+ *
+ * @param {string|number} value
+ * @returns {{digits: bigint, scale: number}|null} null when the input is not a
+ *   plain non-negative decimal literal
+ */
+function decimalParts(value) {
+  const text = String(value).trim()
+  if (!DECIMAL_LITERAL.test(text)) return null
+  const [whole, fraction = ''] = text.split('.')
+  return { digits: BigInt((whole || '0') + fraction), scale: fraction.length }
+}
+
+/**
+ * `{digits, scale}` printed at exactly `places` decimals, rounded half up — the rounding
+ * a person doing this on paper performs, and the one `Decimal.quantize(ROUND_HALF_UP)`
+ * performs on the Python side. Python's own `round()` is banker's rounding and is not it.
+ */
+function formatParts({ digits, scale }, places) {
+  let magnitude = digits
+  if (scale > places) {
+    const divisor = 10n ** BigInt(scale - places)
+    const quotient = magnitude / divisor
+    // `remainder * 2 >= divisor` is "the dropped tail is at least a half", asked
+    // without ever forming the half — which at these scales is not representable
+    // as an integer division.
+    magnitude = (magnitude % divisor) * 2n >= divisor ? quotient + 1n : quotient
+  } else {
+    magnitude *= 10n ** BigInt(places - scale)
+  }
+  const text = magnitude.toString().padStart(places + 1, '0')
+  const point = text.length - places
+  return places ? `${text.slice(0, point)}.${text.slice(point)}` : text
+}
+
+/**
+ * Convert a container count to kilograms.
+ *
+ * **This multiplication is done in decimal, not in double.** Both operands are
+ * decimals — the count is what the visitor typed and `kg_per_unit` is a
+ * `DECIMAL(12,4)` that §1.2 puts on the wire as a string precisely so that
+ * JavaScript's `Number` never sees it. `Number(count) * Number(preset.kg_per_unit)`
+ * followed by `.toFixed(3)` was the previous body and it is wrong at the third
+ * decimal place, not the fifteenth: a quarter of the seeded 23 L food scraps bin
+ * is `0.25 × 6.6700 = 1.6675 kg` exactly, and the double nearest `6.67` is a
+ * shade *below* it, so `toFixed(3)` reads the exact tie as a value under the half
+ * and answers `"1.667"`. The correct answer is `"1.668"`, and `tests/web/
+ * test_unit_presets.py` asserts that number for that reason.
+ *
+ * @param {number|string} count  Number of containers, as the visitor typed it
+ * @param {string} presetCode    unit_preset code
+ * @param {Array}  presets       taxonomy.unit_presets
+ * @returns {string}             Kilograms as a string with 3 decimal places,
+ *                               ready to send to the API (§6.2 refuses a fourth)
+ * @throws {Error}               presetCode does not exist, or either operand is
+ *                               not a plain non-negative decimal literal
+ */
 export function toKg(count, presetCode, presets) {
   const preset = presets.find(item => item.code === presetCode)
   if (!preset) throw new Error(`Unknown unit preset: ${presetCode}`)
-  const kilograms = Number(count) * Number(preset.kg_per_unit)
-  if (!Number.isFinite(kilograms)) throw new Error('Container count must be a valid number.')
-  return kilograms.toFixed(3)
+  const left = decimalParts(count)
+  if (!left) throw new Error('Container count must be a valid number.')
+  const right = decimalParts(preset.kg_per_unit)
+  if (!right) throw new Error(`Unit preset ${presetCode} has no usable conversion.`)
+  return formatParts(
+    { digits: left.digits * right.digits, scale: left.scale + right.scale },
+    3,
+  )
+}
+
+/**
+ * `toKg` made total: the kilograms a container entry describes, or `''`.
+ *
+ * **It has to be total, and it has to be here.** `toKg` throws on a preset code it cannot
+ * find, which is reachable — §6.1 says a consumer must not assume the taxonomy is stable
+ * across a publish, and a page holds a selection made before one — and both callers run
+ * this inside a render, where a throw blanks the screen.
+ *
+ * Whether the count is *typeable* is a separate question and is not asked here: `1.` and
+ * `1.2345` both simply fail to convert. The two-decimal input rule lives in
+ * `calculator.js` beside the same rule for the mass field.
+ *
+ * @param {{unitPreset: string|null, unitCount: string}} entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {string}  Kilograms at 3 decimal places, or '' when there is no total yet
+ */
+export function containerKg(entry, presets) {
+  if (!entry?.unitPreset) return ''
+  try {
+    return toKg(entry.unitCount, entry.unitPreset, presets || [])
+  } catch {
+    return ''
+  }
+}
+
+/**
+ * The one place the two step-3 measurement modes are reconciled: an entry's total as
+ * `{amount, unit}`, in the unit its destination rows are entered in.
+ *
+ * **A container entry always answers kilograms.** A container estimates the *total*, and
+ * the total is a mass: step 4 splits it across destinations, §6.2's mass-conservation rule
+ * compares the two, and both have to be in one unit — "0.37 wheelie bins to landfill" is
+ * not something anyone can enter or check. So a container entry reaches the API as exactly
+ * the `qty_kg` a visitor who had typed the kilograms would have sent, which is the property
+ * that makes the container input safe to add at all.
+ *
+ * **In `units.js` rather than in `calculator.js` because it has two consumers.** The
+ * results export prints each entry's waste amount too, and it read `entry.totalAmount`
+ * directly — which is `''` for a container entry, so the downloaded report would have said
+ * "0.00 kilograms" for an entry whose form showed 139.200 kg. `results.js` cannot import
+ * `calculator.js` (that module imports this one), and a second copy of the rule is how the
+ * two would come to disagree — §7.3's whole reason for existing.
+ *
+ * @param {object} entry   A draft or saved entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {{amount: string, unit: 'kilograms'|'tonnes'}}
+ */
+export function entryTotal(entry, presets) {
+  return entry?.measureMode === 'container'
+    ? { amount: containerKg(entry, presets), unit: 'kilograms' }
+    : { amount: entry?.totalAmount ?? '', unit: entry?.totalUnit || 'kilograms' }
 }
 
 export function massToKg(amount, unit) {

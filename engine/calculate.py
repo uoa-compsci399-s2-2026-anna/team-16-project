@@ -175,7 +175,15 @@ def calculate_scenario(
                 spec.code,
             )
             downstream = bundle.downstream(
-                scenario_line.destination_code, food_category, spec.code
+                scenario_line.destination_code,
+                # v1.31's dimension. The sector reaches the downstream lookup
+                # as the caller gave it, unresolved: unlike `food_category`
+                # above there is no standard-mix stand-in for a sector, and
+                # §6.2 requires one on every entry, so what arrives here is
+                # always what the user chose.
+                sector_code,
+                food_category,
+                spec.code,
             )
             value = evaluate(
                 formula,

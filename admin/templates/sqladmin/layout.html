@@ -42,6 +42,31 @@
    about the document language here; this template is not where it happens. #}
 {% extends "sqladmin_original/layout.html" %}
 
+{# THE CHOOSER'S STYLESHEET, AND THE ONE PLACE THIS PAGE CAN ASK FOR IT.
+
+   `head` is declared in sqladmin/base.html and overridden by nobody between it
+   and this file, so claiming it here adds a `<link>` without copying a line of
+   sqladmin's own `<head>` - the same "reach it, do not fork it" rule the
+   language attribute is handled by (admin/i18n.py::_HtmlElement).
+
+   Until this existed the chooser had rules and this skin did not get them:
+   brand.css is linked from brand/base.html, which is the five GATE pages, and
+   Tabler's `<head>` is out of reach of every block that file defines. So a
+   signed-in person - which is everyone who uses this panel - saw raw platform
+   controls jammed against the top-left edge on every screen while the login
+   page they had just left was styled.
+
+   A `<link>` rather than the inlined `<style>` that brand/_list_table_css.html
+   uses: that block is for the seventeen list screens and is re-sent with each
+   of them, and the chooser is on every screen and is worth caching once.
+
+   `super()` is called because `head` is empty upstream today and might not stay
+   that way; overriding it silently would drop whatever arrives there next. #}
+{% block head %}
+{{ super() }}
+<link rel="stylesheet" href="/admin/static/language.css">
+{% endblock %}
+
 {% block topbar %}
 {% if kaicalc_machine_translated() %}
 <div class="alert alert-warning m-0 rounded-0 text-center" role="status" id="machine-translation-notice">

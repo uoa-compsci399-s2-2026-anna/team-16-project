@@ -52,6 +52,40 @@ h1, h2, h3 {
   margin: 0 0 0.5rem;
 }
 
+/* ---------------------------------------------------------------------------
+   THE GATE GROUND IS THE PAGE'S GROUND, NOT THE SHELL'S.
+
+   `.gate` painted Kale and `body` painted white, and the language chooser is a
+   SIBLING of `.gate` rather than a child of it - it has to be, because it is
+   `brand/base.html`'s own markup and every page's `{% block shell %}` replaces
+   what is under it. So the chooser sat on 72px of full-bleed white with a hard
+   edge under it and the Kale field starting below: a patch stuck onto the page.
+
+   `body:has(> .gate)` rather than a class on `<body>`, and that is the decision
+   this rule records. A class would mean naming the ground TWICE - once by
+   choosing the gate shell, once by remembering to set the class - and the six
+   templates here that override `shell` with `<main class="page">` are six
+   chances to forget. `:has()` derives it from what the page actually rendered,
+   so it cannot drift, and it needs no test to police a rule that no longer
+   exists. Where `:has()` is not supported the body stays white and the chooser
+   keeps its light skin, which is exactly what shipped before this rule - the
+   fallback is the old appearance rather than an unreadable one.
+
+   The flex column is not decoration either: `.gate` asks for `100vh` and the
+   chooser is 72px of content above it, so the login page scrolled by 72px for
+   no reason anyone could see. The column makes `.gate` claim what is LEFT.
+   --------------------------------------------------------------------------- */
+body:has(> .gate) {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  background: var(--kale);
+}
+body:has(> .gate) > .gate {
+  flex: 1 0 auto;
+  min-height: 0;
+}
+
 /* Centred single-column layout for every gate in the login gauntlet. */
 .gate {
   min-height: 100vh;
@@ -488,70 +522,10 @@ input.sr-only {
   text-align: center;
 }
 
-/* THE LANGUAGE BAR, at the top inline-start of every panel screen and every gate
-   page. Logical properties throughout, and `justify-content: flex-start` rather
-   than a physical side, so that "top left" becomes "top right" under `dir="rtl"`
-   without a second rule - the panel ships only English and Chinese today, but the
-   rule has to be the one the calculator uses or the two surfaces would disagree
-   the first time a right-to-left catalogue is dropped into admin/locales/. */
-.language-bar {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: flex-start;
-  gap: 10px;
-  padding: 8px 20px;
-  border-bottom: 1px solid rgba(0, 50, 35, 0.12);
-  background: #FFFFFF;
-  font-size: 0.85rem;
-}
-
-.language-bar__label {
-  color: #003223;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  text-transform: uppercase;
-}
-
-/* 44px is the touch target the rest of the panel uses. A real `<select>` and a
-   real submit button, because this control has to work with scripting off. */
-.language-bar__select,
-.language-bar__submit {
-  min-height: 44px;
-  padding: 6px 10px;
-  border-radius: 8px;
-  font: inherit;
-  font-size: 0.9rem;
-}
-
-.language-bar__select {
-  max-width: 100%;
-  color: #003223;
-  border: 1px solid rgba(0, 50, 35, 0.25);
-  background: #FFFFFF;
-}
-
-.language-bar__submit {
-  color: #FFFFFF;
-  border: 1px solid #003223;
-  background: #003223;
-  cursor: pointer;
-}
-
-.language-bar__select:focus-visible,
-.language-bar__submit:focus-visible {
-  outline: 2px solid #005AE6;
-  outline-offset: 2px;
-}
-
-/* The stored choice names a language this panel has no catalogue for. Beetroot
-   on Lavender is the brand's light-ground pairing for a statement that is not an
-   alarm: nothing has gone wrong, and the visitor's choice is still intact. */
-.language-bar__unavailable {
-  margin: 0;
-  padding: 10px 20px;
-  color: #87005A;
-  background: #E6BEFF;
-  font-size: 0.85rem;
-  line-height: 1.45;
-}
+/* THE LANGUAGE BAR IS NOT STYLED HERE ANY MORE. It was, and that was the defect:
+   this file reaches the five gate pages only, so on every screen a signed-in
+   person actually uses the chooser rendered as raw platform controls. Its rules
+   live in admin/static/language.css, which brand/base.html and
+   sqladmin/layout.html both link - one source for both skins. Do not put a
+   `.language-bar` rule back in this file; it would be a rule the panel proper
+   silently does not get. */

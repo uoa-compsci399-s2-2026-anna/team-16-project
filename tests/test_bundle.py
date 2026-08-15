@@ -19,8 +19,12 @@ upstream_factors = {
     ("processing", "dairy", "prevention", "co2e") : Decimal("0")
 }
 downstream_factors = {
-    ("landfill", "dairy", "co2e") : Decimal("0.99"),
-    ("compost", None, "co2e") : Decimal("0.25")
+    # v1.31 §4.1: the key gained a sector dimension between the destination
+    # and the food category. `None` in either slot means "every value of that
+    # dimension"; see `test_the_downstream_lookup_matrix_*` below for the
+    # order between them.
+    ("landfill", None, "dairy", "co2e") : Decimal("0.99"),
+    ("compost", None, None, "co2e") : Decimal("0.25")
 }
 formulas = {
     "co2e" : "qty_kg * (upstream + downstream)",
@@ -64,9 +68,9 @@ def test_upstream_falls_back_to_the_generic_row_then_to_zero():
     assert bundle.upstream("processing", "dairy", "compost", "water") == Decimal("0")
 
 def test_downstream():
-    assert bundle.downstream("landfill", "dairy", "co2e") == Decimal("0.99")
-    assert bundle.downstream("landfill", None, "co2e") == Decimal("0")
-    assert bundle.downstream("compost", "dairy", "co2e") == Decimal("0.25")
+    assert bundle.downstream("landfill", "processing", "dairy", "co2e") == Decimal("0.99")
+    assert bundle.downstream("landfill", "processing", None, "co2e") == Decimal("0")
+    assert bundle.downstream("compost", "processing", "dairy", "co2e") == Decimal("0.25")
 
 def test_constant_returns_existing_constant():
     assert bundle.constant("GWP_CH4_100") == Decimal("28")
@@ -181,18 +185,37 @@ def test_every_canonical_number_round_trips_at_full_scale():
     assert str(loaded.constant("GWP_CH4_20")) == "84.0000000000"
     assert str(loaded.equivalences()[0].value_per_unit) == "4.1800000000"
     # A negative downstream factor is an offset (SS2.2) and must survive.
-    assert loaded.downstream("animal_feed", "dairy", "co2e") == Decimal("-0.1500000000")
+    assert loaded.downstream(
+        "animal_feed", "processing", "dairy", "co2e"
+    ) == Decimal("-0.1500000000")
 
 
 def test_the_canonical_generic_and_specific_downstream_rows_both_survive():
     """`food_category: null` is a key, not an absent field (SS10.2)."""
     loaded = FactorBundle.from_json(canonical_bundle_json())
 
-    assert loaded.downstream("landfill", "dairy", "co2e") == Decimal("0.9900000000")
-    assert loaded.downstream("landfill", "vegetables", "co2e") == Decimal("0.7000000000")
-    # The waste levy: a per-tonne charge carried on the generic row alone.
-    assert loaded.downstream("landfill", "dairy", "cost") == Decimal("0.0600000000")
-    assert loaded.downstream("compost", "dairy", "mass") == Decimal("0")
+    assert loaded.downstream(
+        "landfill", "processing", "dairy", "co2e"
+    ) == Decimal("0.9900000000")
+    assert loaded.downstream(
+        "landfill", "processing", "vegetables", "co2e"
+    ) == Decimal("0.7000000000")
+    # The waste levy: a per-tonne charge carried on the row that names neither
+    # a sector nor a category.
+    assert loaded.downstream(
+        "landfill", "processing", "dairy", "cost"
+    ) == Decimal("0.0600000000")
+    assert loaded.downstream("compost", "processing", "dairy", "mass") == Decimal("0")
+    # The New Zealand set does not vary by sector, so the sector must make no
+    # difference to any of the above. Asserted rather than assumed: this is the
+    # whole of the claim that v1.31 left the live set alone.
+    for sector in ("processing", "primary_production", "consumer_hospitality"):
+        assert loaded.downstream(
+            "landfill", sector, "dairy", "co2e"
+        ) == Decimal("0.9900000000")
+        assert loaded.downstream(
+            "landfill", sector, "dairy", "cost"
+        ) == Decimal("0.0600000000")
 
 
 def test_the_canonical_prevention_upstream_rows_survive_as_a_whole_offset():
@@ -291,8 +314,8 @@ def _minimal():
              "value_per_kg": "0.0000000000"},
         ],
         "downstream": [
-            {"destination": "landfill", "food_category": None, "metric": "co2e",
-             "value_per_kg": "0.7000000000"}
+            {"destination": "landfill", "sector": None, "food_category": None,
+             "metric": "co2e", "value_per_kg": "0.7000000000"}
         ],
         "equivalences": [
             {"code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
@@ -345,12 +368,19 @@ def test_a_missing_upstream_destination_key_is_malformed_not_null():
     assert "destination" in str(raised.value)
 
 
-def test_a_missing_downstream_food_category_key_is_malformed_not_null():
+@pytest.mark.parametrize("key", ["food_category", "sector"])
+def test_a_missing_downstream_nullable_key_is_malformed_not_null(key):
+    """Both nullable dimensions, on §10.2's terms: `null` is a value, an absent
+    key is a malformed row. A downstream row that had lost its `sector` would
+    load as the every-sector row and price every stage the same, which is a
+    plausible answer rather than an error."""
     data = _minimal()
-    del data["downstream"][0]["food_category"]
+    del data["downstream"][0][key]
 
-    with pytest.raises(BundleFormatError):
+    with pytest.raises(BundleFormatError) as raised:
         FactorBundle.from_json(data)
+
+    assert key in str(raised.value)
 
 
 def test_a_json_number_where_a_decimal_string_belongs_is_refused():
@@ -428,6 +458,7 @@ def test_validate_reports_an_upstream_row_naming_anything_absent(field_name, val
 
 @pytest.mark.parametrize("field_name,value", [
     ("destination", "incinerator"),
+    ("sector", "manufacturing"),
     ("food_category", "diary"),
     ("metric", "co2"),
 ])
@@ -440,11 +471,13 @@ def test_validate_reports_a_downstream_row_naming_anything_absent(field_name, va
     assert any(value in problem for problem in problems)
 
 
-def test_validate_accepts_the_two_legal_nulls():
-    """`upstream[].destination` and `downstream[].food_category` are `null` on
-    the rows that carry the general case, and neither is a problem."""
+def test_validate_accepts_the_three_legal_nulls():
+    """`upstream[].destination`, `downstream[].sector` and
+    `downstream[].food_category` are `null` on the rows that carry the general
+    case, and none of the three is a problem."""
     data = _minimal()
     assert data["upstream"][0]["destination"] is None
+    assert data["downstream"][0]["sector"] is None
     assert data["downstream"][0]["food_category"] is None
 
     assert FactorBundle.from_json(data).validate() == []
@@ -508,7 +541,8 @@ def test_validate_never_raises_on_a_bundle_that_is_wrong_in_every_way():
     """SS4.1: it returns problems, and the API decides how to present them."""
     data = _minimal()
     data["upstream"][0].update(sector="x", food_category="y", destination="z", metric="m")
-    data["downstream"][0].update(destination="p", food_category="q", metric="r")
+    data["downstream"][0].update(destination="p", sector="s2", food_category="q",
+                                 metric="r")
     data["destinations"][0]["group"] = "s"
     data["food_categories"][0]["is_standard_mix"] = False
     data["formulas"][0]["metric"] = "t"
@@ -516,7 +550,7 @@ def test_validate_never_raises_on_a_bundle_that_is_wrong_in_every_way():
 
     problems = FactorBundle.from_json(data).validate()
 
-    assert len(problems) == 11
+    assert len(problems) == 12
     assert all(isinstance(problem, str) for problem in problems)
 
 
@@ -539,3 +573,251 @@ def test_validate_invents_no_problems_on_a_hand_built_bundle():
     assert any("water" in problem for problem in problems)
     assert not any("is_standard_mix" in problem for problem in problems)
     assert not any("group" in problem for problem in problems)
+
+# ==========================================================================
+# The two-dimensional downstream lookup (contract v1.31, SS4.1)
+# ==========================================================================
+#
+# `factor_downstream` has two nullable dimensions, so four rows may legally
+# exist for one (destination, metric) and exactly one of them must win:
+#
+#     1. (sector, food_category)   -- both stated
+#     2. (sector, NULL)            -- this sector, every food category
+#     3. (NULL, food_category)     -- every sector, this food category
+#     4. (NULL, NULL)              -- every sector, every food category
+#     5. Decimal('0')
+#
+# Steps 2 and 3 both name one dimension, so specificity cannot separate them.
+# The sector wins; SS2.2 carries the reasoning.
+#
+# **Every cell is asserted on the value, not on the presence of a value.** A
+# wrong precedence here returns a plausible number rather than an error, so a
+# test that only checked "some row came back" would pass against every one of
+# the twenty-four orderings of these four candidates. Each constant below is
+# distinct and each assertion names which row it expects by name.
+
+#: One value per candidate row, chosen so that no two are equal and no sum or
+#: difference of two of them equals a third -- an off-by-one in the candidate
+#: list cannot coincide with a right answer.
+BOTH = Decimal("11.0000000000")        # (sector, food_category)
+SECTOR_ONLY = Decimal("22.0000000000")  # (sector, NULL)
+FOOD_ONLY = Decimal("33.0000000000")    # (NULL, food_category)
+NEITHER = Decimal("44.0000000000")      # (NULL, NULL)
+
+#: The four rows keyed exactly as `FactorBundle.downstream_factors` is.
+ALL_FOUR = {
+    ("landfill", "processing", "dairy", "co2e"): BOTH,
+    ("landfill", "processing", None, "co2e"): SECTOR_ONLY,
+    ("landfill", None, "dairy", "co2e"): FOOD_ONLY,
+    ("landfill", None, None, "co2e"): NEITHER,
+}
+
+
+def _matrix_bundle(present):
+    """A bundle carrying only the named subset of the four candidate rows.
+
+    Built by hand rather than through `from_json` so that the test is about the
+    lookup and nothing else; `test_the_downstream_sector_survives_from_json`
+    below covers the loader.
+    """
+    return FactorBundle(
+        upstream_factors={},
+        downstream_factors={key: ALL_FOUR[key] for key in present},
+        constants={},
+        formulas={},
+        destinations={"landfill"},
+        sectors={"processing", "retail"},
+        food_categories={"dairy", "vegetables"},
+        standard_mix="standard_mix",
+        version_label="MATRIX",
+        is_mock=True,
+        metrics=(MetricSpec("co2e", "kg CO2e", 1),),
+        equivalence_specs=(),
+    )
+
+
+#: Every subset of the four rows, paired with what a lookup for
+#: (landfill, processing, dairy, co2e) must return from it. Sixteen cases: the
+#: full power set, so no combination is left to an assumption. The empty set
+#: is the documented fall to zero.
+FULL_MATRIX = [
+    ((), Decimal("0")),
+
+    # One row present: whichever one it is, it applies.
+    ((("landfill", "processing", "dairy", "co2e"),), BOTH),
+    ((("landfill", "processing", None, "co2e"),), SECTOR_ONLY),
+    ((("landfill", None, "dairy", "co2e"),), FOOD_ONLY),
+    ((("landfill", None, None, "co2e"),), NEITHER),
+
+    # Two rows present. The pair that matters is the third of these: a row
+    # naming only the sector against a row naming only the food category,
+    # neither more specific than the other by any count of stated dimensions.
+    ((("landfill", "processing", "dairy", "co2e"),
+      ("landfill", "processing", None, "co2e")), BOTH),
+    ((("landfill", "processing", "dairy", "co2e"),
+      ("landfill", None, "dairy", "co2e")), BOTH),
+    ((("landfill", "processing", None, "co2e"),
+      ("landfill", None, "dairy", "co2e")), SECTOR_ONLY),
+    ((("landfill", "processing", None, "co2e"),
+      ("landfill", None, None, "co2e")), SECTOR_ONLY),
+    ((("landfill", None, "dairy", "co2e"),
+      ("landfill", None, None, "co2e")), FOOD_ONLY),
+    ((("landfill", "processing", "dairy", "co2e"),
+      ("landfill", None, None, "co2e")), BOTH),
+
+    # Three rows present.
+    ((("landfill", "processing", "dairy", "co2e"),
+      ("landfill", "processing", None, "co2e"),
+      ("landfill", None, "dairy", "co2e")), BOTH),
+    ((("landfill", "processing", "dairy", "co2e"),
+      ("landfill", "processing", None, "co2e"),
+      ("landfill", None, None, "co2e")), BOTH),
+    ((("landfill", "processing", "dairy", "co2e"),
+      ("landfill", None, "dairy", "co2e"),
+      ("landfill", None, None, "co2e")), BOTH),
+    ((("landfill", "processing", None, "co2e"),
+      ("landfill", None, "dairy", "co2e"),
+      ("landfill", None, None, "co2e")), SECTOR_ONLY),
+
+    # All four.
+    (tuple(ALL_FOUR), BOTH),
+]
+
+
+@pytest.mark.parametrize("present,expected", FULL_MATRIX,
+                         ids=lambda x: None)
+def test_the_downstream_lookup_matrix_returns_the_right_row(present, expected):
+    """All sixteen subsets of the four candidate rows, by value.
+
+    The assertion is on which row came back, never on whether one did: three
+    of the four candidates are non-zero, so `!= 0` would pass on a bundle that
+    returned the wrong row every time.
+    """
+    bundle = _matrix_bundle(present)
+
+    assert bundle.downstream("landfill", "processing", "dairy", "co2e") == expected
+
+
+def test_the_sector_beats_the_food_category_when_only_one_of_each_exists():
+    """The precedence decision itself, stated once on its own.
+
+    Called out separately from the matrix above because it is the only cell
+    where the answer was chosen rather than derived, and because a reader
+    coming to this file after a wrong number in the field will look for it by
+    name.
+    """
+    bundle = _matrix_bundle((
+        ("landfill", "processing", None, "co2e"),
+        ("landfill", None, "dairy", "co2e"),
+    ))
+
+    assert bundle.downstream("landfill", "processing", "dairy", "co2e") == SECTOR_ONLY
+    assert bundle.downstream("landfill", "processing", "dairy", "co2e") != FOOD_ONLY
+
+
+def test_a_different_sector_falls_past_the_sector_row_to_the_food_row():
+    """The other half of the same decision: a sector row applies to *its*
+    sector and to no other. Without this, a test suite could pass with a
+    lookup that ignored the sector value and always preferred slot two."""
+    bundle = _matrix_bundle((
+        ("landfill", "processing", None, "co2e"),
+        ("landfill", None, "dairy", "co2e"),
+    ))
+
+    assert bundle.downstream("landfill", "retail", "dairy", "co2e") == FOOD_ONLY
+
+
+def test_a_different_food_category_falls_past_the_food_row_to_the_general_row():
+    bundle = _matrix_bundle((
+        ("landfill", None, "dairy", "co2e"),
+        ("landfill", None, None, "co2e"),
+    ))
+
+    assert bundle.downstream("landfill", "processing", "vegetables", "co2e") == NEITHER
+
+
+def test_asking_for_the_general_rows_directly_does_not_skip_them():
+    """SS4.1: when `sector` is None, step 1 *is* step 3 and step 2 *is* step 4,
+    so the fallbacks have to be looked up rather than assumed absent. A lookup
+    written as `if exact not in ...: return fallback` would return the wrong
+    row here, or nothing."""
+    bundle = _matrix_bundle(tuple(ALL_FOUR))
+
+    assert bundle.downstream("landfill", None, "dairy", "co2e") == FOOD_ONLY
+    assert bundle.downstream("landfill", None, None, "co2e") == NEITHER
+    assert bundle.downstream("landfill", "processing", None, "co2e") == SECTOR_ONLY
+
+
+def test_an_unknown_sector_and_category_reach_the_row_that_names_neither():
+    """A destination priced only by the row naming neither dimension -- the
+    waste levy shape -- must answer for every sector and every category,
+    including ones the bundle has never heard of."""
+    bundle = _matrix_bundle((("landfill", None, None, "co2e"),))
+
+    assert bundle.downstream("landfill", "moon", "moon_cheese", "co2e") == NEITHER
+
+
+def test_the_downstream_sector_survives_from_json_in_both_states():
+    """SS10.2: `sector` is a key whose value may be null, and both the null and
+    the named form must round-trip. A loader that dropped the field entirely
+    would still pass every matrix test above, because those build the dict
+    directly."""
+    data = _minimal()
+    data["downstream"] = [
+        {"destination": "landfill", "sector": None, "food_category": None,
+         "metric": "co2e", "value_per_kg": "0.7000000000"},
+        {"destination": "landfill", "sector": "processing", "food_category": None,
+         "metric": "co2e", "value_per_kg": "1.2500000000"},
+    ]
+
+    loaded = FactorBundle.from_json(data)
+
+    assert loaded.validate() == []
+    assert loaded.downstream(
+        "landfill", "processing", "dairy", "co2e"
+    ) == Decimal("1.2500000000")
+    assert loaded.downstream(
+        "landfill", "consumer", "dairy", "co2e"
+    ) == Decimal("0.7000000000")
+
+
+def test_two_downstream_rows_differing_only_in_sector_are_not_duplicates():
+    """The sector is part of the key, so these are two rows and not one.
+
+    `validate()` reports a duplicate key as a problem, and if the loader built
+    its key without the sector one of these would silently overwrite the other
+    -- the later row winning, which is precisely the failure the duplicate
+    check exists to name. Asserting the *absence* of a problem is weak on its
+    own, so both values are asserted too.
+    """
+    data = _minimal()
+    data["downstream"] = [
+        {"destination": "landfill", "sector": "processing", "food_category": "dairy",
+         "metric": "co2e", "value_per_kg": "0.7000000000"},
+        {"destination": "landfill", "sector": None, "food_category": "dairy",
+         "metric": "co2e", "value_per_kg": "1.2500000000"},
+    ]
+
+    loaded = FactorBundle.from_json(data)
+
+    assert loaded.validate() == []
+    assert loaded.downstream(
+        "landfill", "processing", "dairy", "co2e"
+    ) == Decimal("0.7000000000")
+    assert loaded.downstream(
+        "landfill", "retail", "dairy", "co2e"
+    ) == Decimal("1.2500000000")
+
+
+def test_validate_reports_a_downstream_row_naming_a_sector_that_is_absent():
+    """The mirror of the upstream destination check, and silent in the same
+    way: a misspelled sector here does not raise, it falls through to the
+    every-sector row and the calculator prices the wrong stage."""
+    data = _minimal()
+    data["downstream"][0]["sector"] = "prcoessing"
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "prcoessing" in problems[0]
+    assert "sector" in problems[0]

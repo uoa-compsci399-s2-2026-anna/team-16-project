@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-15 (v1.30 draft)"
+date: "2026-08-15 (v1.35 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,85 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.35 — 2026-08-15 (the gate's ground runs under the chooser, and the capsule gains a second skin; affects E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The gate pages' Kale ground is now the page's ground and not the shell's, and v1.34 item 5's "it floats on the page's own ground" is where the defect hid.** That sentence was true and the ground was white: `brand.css` painted `.gate`, and the chooser is a **sibling** of `.gate` — it has to be, because `brand/base.html` owns it and every page's `{% block shell %}` replaces what is under it. So the capsule floated on a 72px full-bleed white strip with a hard edge under it and the deep green starting below, which is the full-bleed band v1.34 removed, reappearing as the body's own background. `body` carries the Kale now on any page wearing the gate shell, and the shell claims **what is left of the viewport** rather than a fresh `100vh` — the login page had been scrolling by exactly the height of the chooser for as long as the two were stacked | §7.7.4, §8 |
+| 2 | **The ground is derived from `body:has(> .gate)`, not declared by a class on `<body>`.** The gate shell is chosen by *not* overriding a Jinja block, so a class would mean naming the ground a second time, and the six templates that do override `shell` with `<main class="page">` are six chances to forget — the failure being white text on a white page. `:has()` reads what the page actually rendered. Where it is unsupported the body stays white and the capsule keeps its light skin, which is exactly what shipped at v1.34: the fallback is the old appearance, not an unreadable one | §7.7.4 |
+| 3 | **One capsule, two skins, and only colour differs.** v1.34 item 1's white surface, Kale shadow and Kale-filled button are all correct on Tabler's grey and all wrong on a Kale field: a Kale shadow cannot be seen there and a white capsule reads as a hole punched in the ground rather than an object on it. Every colour is a `--lang-*` token on `.language-bar` itself — which keeps `language.css` independent of `brand.css`, as v1.34 item 6 requires — and one block restates them for the Kale ground, selected the same derived way. **Nothing but colour is restated**: 44px, the 12px radius, the margins, `width: 20ch` and the 720px label rule are shared, so the two skins cannot come to disagree about the shape of the control. **The panel proper is unchanged** — same colours, same 416×44 box, same position | §7.7.4 |
+| 4 | **On Kale the island is Kale at 12% white, lit along its top edge, and its only bright element is the button.** Elevation is inverted rather than recoloured: on a light ground an object is raised by the shade it casts, and #003223 cannot be darkened perceptibly at a 16px blur, so the raise is carried by a lit edge and a hairline. White was refused for the surface because it is the sign-in card's material and a second white object at the top of the page competes with the one the reader came for; the card stays the only white thing in the composition. The globe's disc is Pea, the same green as the card's half-circle | §7.7.4 |
+| 5 | **The focus ring is two lines and ground-aware.** Blueberry measures **2.2:1 on Kale**, under the 3:1 a non-text indicator needs, and it was the ring on both grounds. It stays Blueberry on the light one — `brand.css` rings the login card's own inputs with it, so one page keeps one focus colour — and is **Banana at 10.9:1** on Kale, which is also the brand's dark-ground pairing and unmistakably not a colour a browser draws by itself. Underneath either, the capsule's own hairline goes to full contrast, so the indicator survives losing half of itself. Widened to 3px to match `brand.css`'s input ring | §7.7.4 |
+| 6 | **A ground block out-specified `:focus-within` and silently disabled it, and only reading the painted layer back could see it.** `body:has(> .gate) .language-bar` is 0-2-1 and `.language-bar:focus-within` is 0-2-0, so a ground that assigned `--lang-hairline` itself won: the ring's inner line stayed at its resting 0.28 translucency on the ground where the ring matters most, and `:hover` did nothing at all. A ground names three variants (`-rest`, `-hover`, `-focus`); only the state rules assign the value the capsule paints with. The hairline is a layer inside a `box-shadow`, so nothing shorter than splitting that shadow on the focused element and reading its **alpha** would have found it | §7.7.4 |
+| 7 | **No new interface string, and no markup change.** `brand/_language_chooser.html` and `brand/base.html` are untouched: the skin is derived from the shell the page already renders, so the partial both surfaces `{% include %}` is not forked and its opening tag — asserted verbatim by `tests/admin/test_i18n_pages.py` — still reads exactly as v1.34 left it. All twenty calculator catalogues and the panel's Chinese one are untouched | §7.7.1, §7.7.4 |
+| 8 | **Six browser tests, and one of them is photographic on purpose.** A computed `backgroundColor` on `<body>` passes against a Kale body with a white strip still spanning the top of it, so a square beside the capsule and a square from the middle of the field are photographed and compared as bytes: one ground or two. The others measure the shell ending at the fold; the capsule's four colour pairs on Kale **and** that its surface differs from the field, which is the assertion a capsule painted the colour of the ground would otherwise pass; the ring against the ground it is offset onto; the fall back to the light skin when the one class the ground is derived from is taken out of the page, which is the condition every Tabler screen is in; and that the island **mirrors** rather than merely moves under `dir="rtl"`. Ten mutants applied, nine killed by their intended test — `align-self: flex-start` survives its deletion on the gate as it did before, because `width: fit-content` in the same rule holds the capsule at 416px alone, and the anchored pattern in `tests/admin/test_i18n_pages.py` stays the only guard | §7.7.4 |
+| 9 | **`language.css` now has the physical-direction test its own header has claimed since it was written.** `styles.css` has had one since Arabic shipped; the panel's stylesheet asserted "LOGICAL PROPERTIES THROUGHOUT" in a comment and nothing enforced it, on the file that is the reason the calculator's rule exists. Both copies forbid the physical **properties** and neither can see a four-value **shorthand** — `margin: 14px 20px 14px 60px` pins the island physically left and is spelled `margin` — which is why the browser-side RTL test measures the gap from the reading edge in both directions instead. Neither is sufficient alone, and that is now written down in both | §7.7.4 |
+
+### v1.34 — 2026-08-15 (the language chooser becomes one component on both surfaces; affects C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The chooser is one raised capsule on both surfaces, and the `<select>` inside it has no box of its own.** It was a bare `LANGUAGE` label beside a bordered `<select>` on the calculator, which reads as a form control somebody forgot to remove, and three unstyled platform controls on the panel. It is now a white capsule with a 1px hairline, a two-layer shadow, a 12px radius and an 18px globe at its inline-start; the border, the radius and the shadow belong to the **component**, and the select keeps its behaviour and loses its frame. **Nothing about the mechanism moves**: §7.7.4's asymmetry stands unchanged — the panel's is still a real `<form method="post">` with a visible submit button and no `onchange`, the calculator's is still built by `web/js/i18n.js`, and neither is converted to the other's shape | §7.7.4 |
+| 2 | **The hairline is an inset `box-shadow`, not a `border`, and that is arithmetic rather than taste.** The `<select>` is 44px because 44px is the touch target this calculator uses and `tests/web/test_i18n_browser.py` measures it; a 1px border round it makes the capsule 46px. §7.7.4's header budget is a **measured** one — a separate strip for this control cost 57px and was removed — so the treatment is required to cost nothing, and an inset shadow draws the same line and occupies no layout. Measured after: **92px header at 1278×983 and at 938×898, 126px wrapped at 390×700** — the same three numbers as before it, and `test_a_short_step_is_not_floored_by_a_stale_min_height` still passes | §7.7.4, §7.6.3 |
+| 3 | **The globe is inline SVG, drawn on both surfaces rather than fetched, and `aria-hidden`.** §7.6 rule 7 forbids a runtime asset from a third-party host and the public policy is `img-src 'self' data:`; there is no icon font and no build step, so a drawn icon is the only kind either surface can have. It is silent to a screen reader because the `<label>` beside it already names the control — announcing "globe, Language" is one thing said twice. **Below 720px, where the label is `.sr-only`, it is the only thing on screen that says what the control is for**, which is what it is there for as much as decoration | §7.6, §7.7.4 |
+| 4 | **RTL comes from `dir` alone and nothing was added to make it.** The globe sits at the capsule's `padding-inline-start` and the `<select>`'s arrow is the browser's own, drawn at the select's inline-end, so the two land on opposite sides in both directions and the arrow is deliberately **not** replaced with a drawn one. Measured in Arabic and Urdu in a browser, not inferred | §7.7.4 |
+| 5 | **The panel's chooser stops being a full-bleed strip and becomes a floating capsule — v1.27 item 9's "the panel keeps a row of its own" is amended.** That reading produced a white band with a bottom rule across the top of every screen, which is chrome the panel had grown to hold one small control. The reason the sentence gave still holds: the panel has no above-the-fold budget and the capsule is not squeezed into an existing row the way the calculator's is. It floats on the page's own ground at the top inline-start instead | §7.7.4 |
+| 6 | **`admin/static/language.css` is new, and the defect it closes is that the chooser had rules the panel proper never got.** `brand.css` is linked from `brand/base.html`, which is the five gate pages; the panel proper is sqladmin's Tabler layout, whose `<head>` is in a template this project does not fork. So every screen a signed-in person actually uses rendered the chooser as raw platform controls while the login page they had just left was styled. The fix reaches Tabler rather than forking it — `{% block head %}` is declared in sqladmin's own base and overridden by nobody, so `sqladmin/layout.html` claims it — and **one file serves both skins**, which is what stops them drifting. Loading `brand.css` into Tabler was refused: it styles `body`, `h1`, `input`, `button` and `table` globally | §7.7.4, §8 |
+| 7 | **No new interface string.** The globe is decoration with an `aria-hidden`, so all twenty calculator catalogues and the panel's Chinese one are untouched at 309 entries: zero missing, zero orphaned | §7.7.1 |
+| 8 | **Two defects found by measuring rather than by reading.** `max-width: min(100%, 22ch)` never clamped the select's max-content **contribution** — a percentage inside `min()` is indefinite while a flex container is sized from its contents — so the capsule shrink-wrapped to **396px around a 183px control**, 83px of it empty. Invisible while the select carried the only border; a visible hole the moment the box moved outwards. An explicit `width` fixes it at 316px, and the three content pages' four-link header stops wrapping onto a second line as a result — their row measures 92px at 1278×983, the same as the calculator's. Separately, `.intro-header`'s rule tinting the label white for the Kale ground had to be **deleted**: the label is inside a white capsule now, so it would have painted white on white — present, still the control's accessible name, invisible to everyone who can see | §7.7.4 |
+
+### v1.33 — 2026-08-15 (step 3 offers containers; the seed becomes New Zealand's actual bin sizes; affects B, C and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The container input is built, and §7.2's standing requirement is met.** `taxonomy.unit_presets` was served, `units.js::toKg` was written for exactly this, the seed had the rows, and **nothing called any of it** — step 3 offered kilograms and tonnes and no way to say "two 240 L wheelie bins". That is the client's stated case: a café or a school does not know its kilograms, it knows it fills two bins a week, and making it guess a weight is how a made-up number gets into a public statistic (§7.6.1). **The containers are an `<optgroup>` on the unit `<select>` step 3 already had**, valued `preset:<code>` to keep them apart from `kilograms` and `tonnes` in one value space; choosing one switches the amount field from a mass to a count and reveals a running kilogram total | §7.2, §7.3 |
+| 1a | **Why it is one control and not two, which is a measured decision rather than a taste.** The first build put a "By weight / By container" radio pair above the form. It cost **169px at 1278x983 on a step that had 50px of headroom**, pushed the document to 1102px in a 983px viewport, and broke three of `tests/web/test_step_navigation.py`'s assertions at once — §7.6.3's rule that advancing must never require scrolling, which this project measures rather than assumes. Folding the containers into the control that was already asking the question costs nothing, and "1,200 kilograms" and "2 × 240 L wheelie bin" are one question with one answer in any case. **Do not reinstate a separate mode control**; it takes back exactly the space this arrangement exists to keep | §7.6.3 |
+| 2 | **`state` gains `measureMode`, `unitPreset` and `unitCount`** — the shape §7.2 named as absent. `unitCount` holds the raw string the visitor typed, for the same reason `qtyInput` does: nothing rounds until `units.js` converts it | §7.2 |
+| 3 | **A container entry allocates in kilograms, and `measureMode: 'container'` therefore implies `totalUnit: 'kilograms'`.** A container estimates the *total*; the total is a mass. Step 4 splits it across destinations, §6.2's mass-conservation rule compares the two, and both have to be in one unit — "0.37 wheelie bins to landfill" is not enterable or checkable. **The consequence that matters: a container entry reaches the API as exactly the `qty_kg` a visitor who had typed the kilograms would have sent.** That is the property that makes the input safe to add at all, and it is asserted request-body against request-body in a browser | §6.2, §7.2, §7.3 |
+| 4 | **The two-decimal rule follows the count, not the derived total** — §7.2 recorded this collision as the decision building this input would require, and this is the decision. Two decimals is an input rule about *typing*; `toKg` returns three because §6.2 refuses a fourth, and "139.200" is not a number anybody enters. **The count is additionally bounded at 10,000 containers**: half a wheelie bin is a reasonable thing to say and two hundred and forty thousand of them is not, and 10,000 of the largest preset is 3,190 t — inside §6.2's 10,000,000 kg per-line ceiling, so the bound a visitor meets is expressed in containers rather than in kilograms | §6.2, §7.2, §7.3 |
+| 5 | **`toKg` multiplies in decimal, not in double, and this was wrong in the third decimal place.** Both operands are decimals — the count is typed and `kg_per_unit` crosses the wire as a string precisely so `Number` never sees it (§1.2) — and the old body was `Number(a) * Number(b)` then `.toFixed(3)`. A quarter of the seeded 23 L food scraps bin is `0.25 × 6.6700 = 1.6675 kg` exactly; the nearest double to `6.67` is below it, so `toFixed` reads the exact tie as under the half and answers `"1.667"`. It is now integer arithmetic rounded half up, and asserted against `decimal.Decimal` | §7.3 |
+| 6 | **`toKg` refuses a negative operand.** `unit_preset` carries a `kg_per_unit >= 0` CHECK written for this multiplication; the *count* is the operand no database constraint can reach, and `<input type="number">` hands over `"-2"` quite happily. Found by the test, not by review | §2.1, §7.3 |
+| 7 | **`units.js` gains `containerKg(entry, presets)` and `entryTotal(entry, presets)`.** `entryTotal` is the one place the two measurement modes reconcile. It is in `units.js` rather than in `calculator.js` because the **results export needs it too and cannot import that module** — it read `entry.totalAmount` directly, which is empty for a container entry, so a downloaded report said "0.00 kilograms" for an entry whose screen said 139.200 kg | §7.3, §7.3a |
+| 8 | **`GET /api/v1/taxonomy` orders `unit_presets` by `kg_per_unit`, smallest first**, and the form renders that order as given. This is the one taxonomy table with no `sort_order`; alphabetically by `code` the 1100 L front-loader sorted above the 660 L one and the 140 L kerbside bin above the 80 L one. No schema change buys this — the column already carries the order | §6.1 |
+| 9 | **A preset naming a `food_category` is offered only once that category is chosen**, which is what §2.1's nullable column is for: a bin of bread and a bin of potatoes do not weigh the same. NULL means "every category" and always shows. A selection that leaves the list when step 2 changes is **cleared from state with it** — a conversion nobody can see is a conversion nobody can check | §2.1, §6.1, §7.2 |
+| 10 | **A preset's `label` is not translated.** §7.7.7's ruling of 14 August applies unchanged: it is staff-typed, so it is published exactly as written, and a Thai visitor gets a Thai form listing English container names. The `<optgroup>` labels around them — "Weight", "Containers" — are interface strings and are translated, which is the boundary drawn on one control. Eight new keys across twenty catalogues, four retired; 309 per catalogue | §7.7.7 |
+| 11 | **The seeded `unit_preset` rows become New Zealand's actual containers** — ten of them, replacing five. Added: the **23 L kerbside food scraps bin** most of urban Auckland was issued from March 2023, the **80 L and 140 L** kerbside bins councils issue instead of the 120 L, and the **660 L and 1100 L front-loader** bins that are the standard commercial sizes here. **The density is sourced and is still not measured**: 0.29 kg/L from the Food Loss & Waste Protocol's *Guidance on FLW Quantification Methods*, Table 3.2, where it appears twice independently (household food waste in a small container, WRAP 2010; commerce-and-industry animal and vegetable wastes, Jacobs Engineering UK 2010). It is not a New Zealand figure, none was found, and MfE's *Solid Waste Analysis Protocol* publishes none and warns against volume-based estimation for exactly this reason. Every row's `source_note` says all of that. **O-6 stays open** — a sourced placeholder is not measured data | §2.1 |
+| 12 | **Migration `0015` is data-only** and exists because `admin.seed._ensure` creates a row and never updates one, so a seed edit alone reaches a fresh database and leaves every deployed one on the old numbers. It rewrites only rows still carrying the untouched placeholder `source_note`, so a staff correction is never clobbered, and it writes no `audit_log` row — a migration has no actor to record | §2.1, §2.4 |
+
+| 13 | **`tests/web/test_i18n_browser.py` now reads `KAICALC_WEB_URL`** like every other browser module. It alone hard-coded `:18080`, so `test_every_catalogue_is_actually_in_the_built_image` — whose whole subject is whether the *current* checkout's catalogues shipped — measured whichever stack held that port, and could not be pointed at the one under test. It reported a stale image correctly and about the wrong stack | §7.7.1 |
+
+> **Still open after this revision.** **O-6** is not closed and this revision does not claim to close it: the container *sizes* are now real and traceable, and the *density* converting them to kilograms is a published overseas factor standing in for a New Zealand measurement nobody has taken. Read the `source_note` on any row before quoting a figure from it. **O-1** is unchanged.
+
+### v1.32 — 2026-08-15 (the placeholder-data flag stops being a tick and starts being two actions; affects B and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`is_mock` comes off `FactorSetAdmin`'s edit form and moves to two actions, and the two directions are not symmetric.** Adding the warning is allowed in every status, from either role, with no proof — the safe direction has to be instant, so that anybody who doubts a published set can put the disclaimer in front of the public at once. Removing it takes a **press-then-prove** confirmation, the same one creating an account, deleting one and revealing an unclaimed password already take. A checkbox on a generic edit form could carry neither: the form has nowhere to ask, and a tick is something a staff member changing a version label can take off by accident | §2.2, §8.2 |
+| 2 | **Status no longer gates the flag, and that is a reversal.** The panel refused it on a published or archived set and told staff to clone first. The workflow it refused is the real one — publish the real factors, let them run publicly for a day or two to verify them, clear the flag then — and the clone it forced creates a `factor_set` row and a new version label for a change in which **not one factor value differs**, while every `submission` recorded meanwhile stamps the old id. That is a version discontinuity manufactured by the workflow rather than by the data. A published set's **other** fields are still refused in place; only this one field moved, and it moved off the form rather than into it | §2.2 |
+| 3 | **A draft takes the same proof as a published set.** Proportionality argues the other way — a draft has no public consequence — but `publish` takes no proof (§8.3 keeps it open to both roles deliberately), so a gate applied only to published sets has a one-button way round it: clear it on the draft, then publish. The cost of closing that is one password on an operation each factor set sees once in its life | §2.2, §8.3 |
+| 4 | **A new `audit_log.action`: `clear_placeholder`, with `flag_placeholder` for the other direction**, each carrying `before` and `after`. The change used to land as an ordinary `update`, which in the trail is indistinguishable from somebody fixing a typo in the same set's notes — on the one entry that answers "when did the public warning come off, and who took it off" | §2.2, §5.5 |
+| 5 | **`is_mock` is off the *create* form too**, so a set cannot be created unflagged. "Nothing is published as real data by omission" was resting on the creator leaving a ticked box alone; it is now structural | §2.2, §8.1 |
+| 6 | **§5.2's bundle cache re-reads `is_mock` on every hit, and nothing else.** Found while writing item 1: the flag rides on the cached published bundle, `invalidate_factor_bundle` is a dict in one process, and `docker/compose.yaml` runs the panel and the API as **two services** — so the flag could be changed and the API would serve the old value until it was restarted. `/factors` reads the row live and `/calculate` did not, which is the worst version: the placeholder disclaimer present on one public surface and absent on the other. The cost is one boolean `SELECT` per calculation, against a bundle of some 900 rows | §5.2, §2.2 |
+| 7 | **A test that was passing on the wrong mechanism.** `test_editing_a_published_sets_is_mock_is_refused` submitted **no field change at all** — `version_label` unchanged and `notes=""` against a NULL — and passed because the *omitted* `is_mock` checkbox was itself what made the row dirty. Taking the field off the form made that POST a no-op, the audit listener returns before calling `validate_before_commit` when nothing is dirty, and the assertion silently became "nothing happened". It now edits `notes`, which is what it always meant to test | §2.2 |
+
+> **Still open after this revision.** **O-1** remains the hard blocker: no real emissions factors have been supplied, so the published set stays flagged and the banner stays mandatory. Nothing here makes a placeholder set look real — it changes who has to prove they meant it, and what the trail says afterwards.
+
+### v1.31 — 2026-08-15 (`factor_downstream` gains a sector, and the ReFED fixture is rebuilt into ReFED's own shape; affects A, B, C, D and E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`factor_downstream.sector_id` — INT, FK, NULL, where NULL means "applies to every sector for this destination".** Structurally identical to `food_category_id` beside it. The table could not see which stage of the supply chain the waste arose at, and §10.3's ReFED fixture absorbed that by folding the stage into the *food category's code*: one sector row and 39 categories named `refed_farm_dry_goods`, `refed_foodservice_frozen`. v1.19 recorded that as lossless and said this note was "the first thing to check if a downstream factor ever does need to vary by sector". It did — and the cost was never in the arithmetic, it was in the product: the calculator's first step offered **one** radio button that selected itself, its second listed 39 compound entries the client read as stages rather than foods, and §5.4's `by_sector` chart was a single 100% bucket carrying no information at all | §2.2, §4.1, §10.2, §10.3 |
+| 2 | **The lookup is now two-dimensional, and the precedence is a decision rather than a derivation. Exact `(sector, food_category)` → `(sector, NULL)` → `(NULL, food_category)` → `(NULL, NULL)` → zero.** Steps 2 and 3 both name exactly one dimension, so specificity cannot separate them and one had to be chosen. **The sector wins**; §2.2 carries the three reasons in full. A wrong choice here returns a plausible number, not an error, which is why all sixteen subsets of the four candidate rows are asserted **by value** in `tests/test_bundle.py` rather than sampled | §2.2, §4.1 |
+| 3 | **`FactorBundle.downstream()` takes the sector: `downstream(destination, sector, food_cat, metric)`.** The new argument is positional and in the middle, deliberately — a call site left at three arguments is a `TypeError` at import-test time rather than a silent miss. `bundle.downstream_factors` is keyed `(destination, sector \| None, food_category \| None, metric)` | §4.1 |
+| 4 | **`downstream[].sector` is a required key whose value may be `null`**, on exactly the terms `downstream[].food_category` and `upstream[].destination` already have. A missing key is a malformed row, because a row that had silently lost it would load as the every-sector row and price every stage of the supply chain the same — a plausible answer rather than an exception | §10.2 |
+| 5 | **§6.3's factor export carries `sector` on every downstream row**, present-and-null rather than omitted, for the same reason it carries `source_note` that way: so a consumer can tell "this row applies to every sector" from "this endpoint does not report the sector" | §6.3 |
+| 6 | **§5.1's coverage filter: a sector is covered if it appears in `factor_upstream.sector_id` *or* as a non-NULL `factor_downstream.sector_id`.** Not redundant with the upstream read — a set may legitimately price a stage downstream only, a per-tonne disposal charge that differs by collection contract with no upstream footprint of its own, and reading one table would drop that sector from the form while the rows pricing it sat in the database. Mirrors what v1.21 already does for destinations across the two tables | §5.1 |
+| 7 | **The ReFED comparison fixture is rebuilt: 5 sectors × 9 food categories, not 1 × 39.** `refed_farm`, `refed_retail`, …; `refed_produce`, `refed_dry_goods`, …. **The numbers did not move.** `python -m pytest tests/benchmark/refed/ -q` agrees with ReFED's separately published totals to ~1e-9 before and after, and two scenarios run by hand on ReFED's live calculator are now tests: Farm / Standard Mix over six destinations, and Retail / Standard Mix over two | §10.3 |
+| 8 | **Every downstream row in that fixture states both dimensions; none is left NULL**, even for the 20 of 102 groups whose value does not vary by sector. ReFED publishes only **39 of the 45** (sector, food type) pairs — Farm has Dry Goods, Produce and Standard Mix and nothing else — and a 5 × 9 taxonomy offers all 45, so a NULL-sector row would answer a Farm / Frozen lookup with Retail's number. With every row explicit those six pairs price at **zero on every metric**, which is visibly nothing rather than plausibly wrong. Asserted for all six | §10.3 |
+| 9 | **The New Zealand set is unchanged and that is evidence, not an assumption.** Its downstream factors do not vary by sector, so all fifteen rows take NULL. In the golden suite the rebuild touched **only `bundle.json`** — not one `expected.json` and not one `request.json` — and all nine cases pass | §10.1, §2.2 |
+| 10 | **Migration `0014`.** Nullable column, no backfill: an existing row's NULL says "every sector", which is what that row already said by having no opinion. `uq_factor_downstream` becomes five columns and `uq_factor_downstream_generic` COALESCEs **both** nullable columns — collapsing only the new one would make duplicate `food_category IS NULL` rows legal again and quietly undo what 0005 created that index for | §2.2 |
+| 11 | **The documentation page's downstream table gains a `Sector` column**, reading `All sectors` where the row applies to every one, and the sentence above it states §4.1's order. Omitting the column would print the ReFED set's 1,728 rows with five of them identical in every visible field and different only in the number. **One new key (`All sectors`) and one reworded sentence**, in all twenty catalogues — 301 entries each, zero missing, zero orphaned. The admin panel's two optional downstream fields carry the same rule, and the Chinese description of the food-category field is retranslated rather than left: it stated the precedence for a lookup that no longer exists, which reads as current and is worse than an untranslated one | §7.6, §7.7, §8.1 |
 
 ### v1.30 — 2026-08-15 (the three content pages are translated, and charts get a translation path of their own; affects C and D)
 
@@ -683,12 +762,18 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | Column | Type | Constraints | Notes |
 | --- | --- | --- | --- |
 | `id` | INT | PK, AI | |
-| `code` | VARCHAR(64) | UNIQUE, NOT NULL | `bucket_20l_full` |
-| `label` | VARCHAR(128) | NOT NULL | "20 L bucket (full)" |
+| `code` | VARCHAR(64) | UNIQUE, NOT NULL | `wheelie_bin_240l` |
+| `label` | VARCHAR(128) | NOT NULL | "240 L wheelie bin (full)". Staff-typed, so **published exactly as written and never translated** (§7.7.7) |
 | `food_category_id` | INT | FK, NULL | Null means it applies to all categories |
-| `kg_per_unit` | DECIMAL(12,4) | NOT NULL | |
+| `kg_per_unit` | DECIMAL(12,4) | NOT NULL | `kg_per_unit >= 0` CHECK. Not integral in the shipped seed |
 | `source_note` | TEXT | NULL | Basis for the conversion |
 | `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+> **No `sort_order`, deliberately.** §6.1 orders this table by `kg_per_unit` — smallest container first — and the step-3 `<select>` renders that order as given. Size is the only order a visitor scanning for their own bin can use, and the column already carries it, so no schema change buys it.
+
+> **What `food_category_id` is *for*, since it is the one column here that is easy to read as decorative (v1.33).** It is per-food density. A bin of bread and a bin of potatoes do not weigh the same, so a preset naming a category is a conversion that is only true of that category and the calculator offers it **only once step 2 has chosen it**; a NULL row is "a wheelie bin is a wheelie bin" and always shows. Step 2 is optional, so a visitor who skipped it sees the generic containers alone. **A selection that stops being on the list when the category changes is cleared from the front end's state with it** — a conversion still in force behind a choice nobody can see is the shape of defect §10 keeps recording.
+>
+> **Nothing in the shipped seed uses it.** All ten rows are NULL, because no measured per-food density exists to put on one and inventing one would be worse than the placeholder it replaced. See O-6.
 
 ## 2.2 Factors
 
@@ -699,7 +784,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `id` | INT | PK, AI | |
 | `version_label` | VARCHAR(128) | UNIQUE, NOT NULL | `MOCK-v0 — PLACEHOLDER` / `2026-Q3` |
 | `status` | ENUM | NOT NULL | `draft` / `published` / `archived` |
-| `is_mock` | BOOLEAN | NOT NULL, DEFAULT TRUE | Triggers the site-wide warning banner |
+| `is_mock` | BOOLEAN | NOT NULL, DEFAULT TRUE | Triggers the site-wide warning banner. **Not on any edit form** — see below |
 | `effective_from` | DATETIME | NULL | |
 | `published_at` | DATETIME | NULL | |
 | `published_by` | VARCHAR(128) | NULL | Staff username |
@@ -715,6 +800,52 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 > publish and rollback actions of §8.2 will additionally take `SELECT ... FOR
 > UPDATE` over the table, because two staff members publishing different
 > drafts at the same moment is a race this hook alone cannot settle.
+
+> **`is_mock` moves through two actions, never through a form, and the two
+> directions are not symmetric.** `false → true` — *adding* the mandatory,
+> non-dismissible placeholder warning of §7.6.2 — is allowed in **every**
+> status, from either role, with no proof: the safe direction has to be
+> instant, so that anybody who doubts a published set can put the disclaimer
+> in front of the public at once. `true → false` — *removing* it — is allowed
+> in every status too, and takes a **press-then-prove** confirmation (the
+> current password or a live TOTP code, §8.3's `reauthenticate`) plus its own
+> `audit_log` action, `clear_placeholder`, carrying both values. It is the
+> only switch in the system that makes a public disclaimer disappear.
+>
+> **Status does not gate it, and that is a reversal.** The panel used to
+> refuse the flag on a published or archived set and tell staff to clone
+> first. The workflow that refuses is the real one: publish the real factors,
+> let them run publicly for a day or two to verify them, then clear the flag.
+> Forcing a clone there creates a `factor_set` row and a version label for a
+> change in which **not one factor value differs**, while every `submission`
+> recorded meanwhile stamps the old id — a version discontinuity manufactured
+> by the workflow rather than by the data. A published set's **other** fields
+> are still immutable in place and `validate_before_commit` still refuses
+> them.
+>
+> **A draft takes the same proof as a published set**, deliberately. A draft
+> has no public consequence of its own, but `publish` takes no proof (§8.3
+> keeps it open to both roles on purpose), so a gate applied only to published
+> sets has a one-button way round it: clear it on the draft, then publish.
+>
+> The write path is `admin/factor_lifecycle.py`'s `set_placeholder_flag`,
+> beside `publish` / `rollback` / `archive` and under the same
+> `SELECT ... FOR UPDATE`; it refuses a no-op for the reason publishing an
+> already-published set is refused. The proof is the view's, because a service
+> function has neither the request's form nor the login throttle.
+>
+> **`is_mock` is off the *create* form as well**, so a new set always takes
+> the column default and cannot be created unflagged. "Nothing is published as
+> real data by omission" is structural rather than a habit.
+>
+> **The published set's `is_mock` is never served from a warm bundle cache.**
+> §5.2's `load_factor_bundle` re-reads this one column on every hit. It is the
+> only field of a published set that legitimately moves while it stays
+> published, and `invalidate_factor_bundle` cannot carry the change across:
+> the panel and the API are separate processes and that cache is a dict per
+> process, with no expiry. Without the re-read, clearing the flag takes the
+> banner off `/factors` (read live) and leaves it on every `/calculate`
+> result, and *setting* it does not reach the public at all.
 
 ### `factor_upstream`
 
@@ -749,23 +880,46 @@ UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `destination_id`, `metr
 | `id` | BIGINT | PK, AI | |
 | `factor_set_id` | INT | FK, NOT NULL | |
 | `destination_id` | INT | FK, NOT NULL | |
+| `sector_id` | INT | FK, **NULL** | **NULL means the row applies to every sector for that destination.** NULL is the normal value; the New Zealand set takes it on every row |
 | `food_category_id` | INT | FK, **NULL** | **NULL means the row applies to every food category for that destination** |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | **May be negative** (an offset) |
 | `source_note` | TEXT | NULL | Where this number came from |
 | `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
-UNIQUE(`factor_set_id`, `destination_id`, `food_category_id`, `metric_id`)
+UNIQUE(`factor_set_id`, `destination_id`, `sector_id`, `food_category_id`, `metric_id`)
 
 > **Why every factor row carries its own provenance.** The client has not yet supplied real factors, and when they arrive they will not arrive uniformly: the Otago 2025 baseline states plainly that data quality varies by an order of magnitude across the supply chain, and that primary-production loss rates are largely borrowed from Australian figures. A calculator that cannot say which of its numbers are measured and which are proxies cannot be defended in public — and `is_mock` on the factor set is all-or-nothing, unable to express "these forty rows are solid and those twelve are borrowed".
 >
 > These columns exist now, empty, so that the arrival of real data is an **import** rather than a **migration**. `data_quality` is free text rather than an enum for the same reason the destination groupings are a table and not a hard-coded set: nobody yet knows which categories the client will use, and a column that must be altered to accept a new value puts us back where we started.
 
-> **This UNIQUE does not do what it appears to, and a functional index is required.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — the very rows where `food_category_id IS NULL`. The lookup below would then pick one of them nondeterministically, and the calculator would return different numbers for the same input with nothing in the logs to explain it. Add a unique index over `COALESCE(food_category_id, 0)` alongside the declared constraint, and test it by inserting the second generic row and asserting `IntegrityError`. The same caveat applies to `submission_entry` (§2.3) and to any other UNIQUE containing a nullable column.
+> **This UNIQUE does not do what it appears to, and a functional index is required.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — the very rows where `food_category_id IS NULL`, and since v1.31 the rows where `sector_id IS NULL` as well. The lookup below would then pick one of them nondeterministically, and the calculator would return different numbers for the same input with nothing in the logs to explain it. Add a unique index over `COALESCE(sector_id, 0)` **and** `COALESCE(food_category_id, 0)` alongside the declared constraint, and test it by inserting the second generic row and asserting `IntegrityError`. **Both columns, not just the newer one:** collapsing only `sector_id` leaves two `food_category_id IS NULL` rows legal again and quietly undoes what this index was created for. The same caveat applies to `submission_entry` (§2.3) and to any other UNIQUE containing a nullable column.
 >
 > Raised by B during implementation, before it could produce a wrong answer in the field.
 
-> The nullable `food_category_id` exists for cost items such as the waste levy, which are charged per tonne regardless of food type, so no special case is needed. Lookup order: exact match on `food_category_id` first, then fall back to the NULL row, then treat as zero.
+> The nullable `food_category_id` exists for cost items such as the waste levy, which are charged per tonne regardless of food type, so no special case is needed. The nullable `sector_id` (v1.31) exists so that a factor set can price the same disposal route differently by stage of the supply chain — a kerbside collection contract and a commercial one at the same landfill — without every set that does not need to being forced to say so.
+
+#### The downstream lookup order (v1.31)
+
+Two nullable dimensions means four rows may legally exist for one `(destination, metric)`, and exactly one of them must win:
+
+| # | Row | Meaning |
+| --- | --- | --- |
+| 1 | (`sector`, `food_category`) | this sector, this food category |
+| 2 | (`sector`, NULL) | this sector, every food category |
+| 3 | (NULL, `food_category`) | every sector, this food category |
+| 4 | (NULL, NULL) | every sector, every food category — the waste levy shape |
+| 5 | — | `Decimal('0')` |
+
+Steps 1, 4 and 5 are not in question: more specific beats less, and absence is zero. **Steps 2 and 3 are the decision.** Both name exactly one dimension, so no count of stated dimensions separates them, and there is no obviously right answer. The sector wins, for three reasons:
+
+1. **The sector is always something the caller stated; the food category may not be.** `submission_entry.sector_id` is NOT NULL and §6.2 requires a sector on every entry, while `food_category` is nullable and §6.2 *resolves* a null one to `standard_mix`. At the moment steps 2 and 3 are compared, the sector in hand is what the user chose and the category may be a substitution the server made on their behalf. Honouring the dimension that was actually stated is the safer of the two.
+2. **A row naming a sector is a stronger claim than a row naming none.** This column exists because a downstream factor was found to vary by supply-chain stage. A row that names a sector is therefore a positive assertion made *after* that dimension was known to matter; `sector IS NULL` says only that no sector-specific figure was supplied. Letting the weaker claim beat the stronger one would reproduce, inside the fallback, the very defect the column removes.
+3. **It is what a staff member entering the row will expect.** Someone who adds "landfill costs more for the farm sector" must see that number applied to every farm line. Under the other order it would silently not apply to the food categories that happen to carry an all-sector row of their own — a plausible wrong number on the client's headline figure, with nothing anywhere to explain it.
+
+The waste levy is untouched by any of this: it is the (NULL, NULL) row, it is still the last resort, and it still applies wherever nothing more specific exists.
+
+**Test every cell.** A wrong precedence returns a number rather than an error, so a test asserting "a row came back" passes against all twenty-four orderings of the four candidates. `tests/test_bundle.py` asserts all sixteen subsets of the four rows **by value**, with four distinct constants, plus the two directional cases a value-blind test would miss: a *different* sector must fall past the sector row to the food-category row, and a *different* food category must fall past the food row to the row naming neither.
 
 ### `constant`
 
@@ -1194,9 +1348,23 @@ class FactorBundle:
         downstream() below, and (destination, None, metric)-style misses must
         be *looked up*, not assumed absent."""
 
-    def downstream(self, destination: str, food_cat: str, metric: str) -> Decimal:
-        """Exact match on food_cat first; then fall back to the generic row
-        (food_category NULL); then Decimal('0'). May return a negative value."""
+    def downstream(self, destination: str, sector: str | None,
+                   food_cat: str | None, metric: str) -> Decimal:
+        """Four steps, in order (v1.31), then Decimal('0'):
+
+            1. (sector, food_cat)   2. (sector, None)
+            3. (None, food_cat)     4. (None, None)
+
+        Both middle dimensions are nullable on `factor_downstream` (§2.2), so
+        all four may exist at once and exactly one must win. Steps 2 and 3 name
+        one dimension each: **the sector wins**, and §2.2 carries the three
+        reasons. `sector` is a positional argument in the middle rather than an
+        optional one at the end, so a caller left at the pre-v1.31 signature
+        raises TypeError instead of silently reading the wrong row.
+
+        When `sector` or `food_cat` is itself None, step 1 *is* step 3 or step
+        2, so the later steps must be **looked up**, not assumed absent — the
+        same caveat `upstream()` carries. May return a negative value."""
 
     def constant(self, code: str) -> Decimal:
         """Raises UnknownConstantError when not found."""
@@ -1227,9 +1395,10 @@ class FactorBundle:
         Checks: every upstream row's sector / food_category / metric exists
         in this bundle and its destination is null or exists; every
         downstream row's destination / metric exists
-        and its food_category is null or exists; every destination.group
-        exists; exactly one food_category has is_standard_mix; every
-        formula.metric and every equivalence.source_metric exists."""
+        and its sector and food_category are each null or exist; every
+        destination.group exists; exactly one food_category has
+        is_standard_mix; every formula.metric and every
+        equivalence.source_metric exists."""
 ```
 
 > `from_json()` is required by the golden test suite regardless (§10.1 loads a `bundle.json` per case). Dry-run requests are simply a second caller of it. `validate()` exists because a bundle arriving over HTTP may be internally inconsistent in ways a database-loaded one cannot be; the rules are engine domain knowledge and are therefore implemented once, here, rather than duplicated in the API layer.
@@ -1734,13 +1903,15 @@ Called once on page load to build every dropdown and input row.
 | Row | Covered when |
 | --- | --- |
 | `destination` | it has at least one `factor_downstream` row in the published set — **including the `food_category_id IS NULL` row**, which §2.2 defines as "every food category" and which is how a per-tonne charge like the waste levy is held — **or** it appears as a non-NULL `factor_upstream.destination_id` (the O-7 column, v1.8) |
-| `sector` | it appears as `factor_upstream.sector_id` |
+| `sector` | it appears as `factor_upstream.sector_id`, **or** as a non-NULL `factor_downstream.sector_id` (v1.31) |
 | `food_category` | it appears as `factor_upstream.food_category_id`, **or** as a non-NULL `factor_downstream.food_category_id` |
 | `destination_group` | at least one covered destination belongs to it. An empty group is omitted; no `destinations[].group` may ever name a group the response omits |
-| `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category |
+| `unit_preset` | its `food_category` is null (applies to every category) or names a covered food category. **Ordered by `kg_per_unit`, smallest first (v1.33)** — this is the one taxonomy table with no `sort_order`, the list is a `<select>` a visitor scans for their own bin, and alphabetically by `code` the 1100 L front-loader sorted above the 660 L one. `code` breaks the tie. **The front end renders this order as given and sorts nothing** |
 | `metric` | **always** — metrics are the output vocabulary and nothing a user types is one |
 
 > **Both halves of the destination rule are needed because both factor-set shapes exist.** A set built the New Zealand way carries one generic upstream row per `(sector, food_category, metric)` and a `prevention` override, so `factor_upstream.destination_id` is where its only per-destination information lives; a set built the ReFED way carries an explicit upstream row per destination. Reading one table loses one shape.
+>
+> **Both halves of the sector rule are needed for the mirror-image reason (v1.31).** `factor_downstream.sector_id` is nullable and NULL means "every sector", so a NULL row is no evidence about any particular sector and is skipped — exactly as a NULL `food_category_id` already is on the row below. The non-NULL half is not redundant with the upstream read: a set may legitimately price a stage of the supply chain **downstream only** — a per-tonne disposal charge that differs by collection contract, with no upstream footprint of its own — and reading `factor_upstream` alone would drop that sector from the form while the rows pricing it sat in the database, which is precisely the silent zero this whole rule exists to remove. The New Zealand set is unaffected: all of its downstream rows are NULL here and its sectors come from `factor_upstream` as before.
 
 > **Every `is_prevention` destination and the `is_standard_mix` food category are never filtered out.** A prevention destination's factors are zero **by construction** — that is the whole of what makes it a 100% offset and what keeps the two scenarios mass-conserving (§6.2) — so an absence of factor rows is *not* evidence a set does not support it, which is the inference this endpoint makes for every other row. Flagged rows are held out **by the flag** (§2.1) and their groups are kept with them; this read `db.types.PREVENTION_CODE` until v1.22, which subjected every *other* vocabulary's prevention row to an inference that cannot be true of it. `prevention` happens to be covered in any set `publish_factor_set` will accept, since that refuses a set whose generic upstream rows have no matching zero override — **a coincidence of two other rules, not a guarantee**, and the improvement panel is unusable the day it stops holding.
 >
@@ -1775,8 +1946,8 @@ Called once on page load to build every dropdown and input row.
       "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 1 }
   ],
   "unit_presets": [
-    { "code": "bucket_20l_full", "label": "20 L bucket (full)",
-      "food_category": null, "kg_per_unit": "12.0000" }
+    { "code": "wheelie_bin_240l", "label": "240 L wheelie bin (full)",
+      "food_category": null, "kg_per_unit": "69.6000" }
   ]
 }
 ```
@@ -2038,7 +2209,7 @@ Factors and formulas are published openly (Decision 7).
       "data_quality": "definitional" }
   ],
   "downstream": [
-    { "destination": "landfill", "food_category": "dairy",
+    { "destination": "landfill", "sector": null, "food_category": "dairy",
       "metric": "co2e", "value_per_kg": "0.9900000000",
       "source_note": null, "data_quality": "proxy-AU" }
   ],
@@ -2057,7 +2228,9 @@ Factors and formulas are published openly (Decision 7).
 
 **`name` and `sort_order` are part of the equivalence rows, and v1.4 added them here rather than removing them from the export.** They were emitted from the beginning and appeared in no version of this section. Three reasons the contract moved rather than the code. §10.2's `bundle.json` **requires** both on every equivalence row, and this response is produced by the same projection — dropping them here means writing a second projection whose only purpose is to hide two harmless fields, and a second projection is a second thing to keep in step. `name` is the short human label (`Kilometres driven`); `label_template` is a whole sentence, so a consumer building a heading, a legend or a CSV column has nothing else to use — D needs it and the alternative is hard-coding it, which §7.3a already rules out for the labels themselves. And `sort_order` is the display order §4.1's `equivalences()` promises; a consumer reading this endpoint directly would otherwise have to invent one.
 
-With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other.
+**`downstream[].sector` is present on every row and may be `null` (v1.31),** meaning the row applies to every sector for that destination. Present-and-null rather than omitted, for the same reason the provenance columns are: a consumer must be able to tell "this row applies to every sector" from "this endpoint does not report the sector". §4.1's four-step lookup order is what a consumer re-deriving a figure from this export has to implement, and it cannot be inferred from the rows alone.
+
+With `format=csv`, one CSV file per table is returned, bundled as a zip archive (`Content-Type: application/zip`). The two provenance columns are columns in the `upstream` and `downstream` CSVs like any other, as is `sector`.
 
 ## 6.4 `GET /api/v1/stats`
 
@@ -2215,7 +2388,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | --- | --- |
 | Server data | `taxonomy`, `result` |
 | Session | `token` — initialised from `sessionStorage.kaiCalculatorToken` at module load |
-| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `current: [{id, destination, qtyInput}]` |
+| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `current: [{id, destination, qtyInput}]` |
 | Multi-entry | `entries: []` — committed entries, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
 | Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
@@ -2227,7 +2400,13 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 **Still requirements, and still unmet:**
 
-- **`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.** `taxonomy.unit_presets` is never read and `units.js`'s `toKg` is never imported. §7.3 remains a live requirement, not a documented omission. **What it will cost, so the next person is not surprised:** `toKg` returns kilograms at **three** decimal places (§7.3, API-ready) and `calculator.js` validates `totalAmount` against `/^\d+(\.\d{1,2})?$/`, so a preset whose `kg_per_unit` is not a whole number produces a total the form then refuses. `unit_preset.kg_per_unit` is `DECIMAL(12,4)` (§2.1) and every value in `tests/fixtures/taxonomy.json` happens to be integral, so the collision is invisible on the current fixture and certain on real data. Building the input therefore requires a decision — either the two-decimal rule moves, or the preset writes a rounded amount and `units.js` gains the rounding — and it is a decision about what a user is allowed to type, not a refactor.
+- ~~**`unitPreset` and `unitCount` are absent from the line shape because the container-preset input was never built.**~~ **Built at v1.33.** `measureMode`, `unitPreset` and `unitCount` are on the draft entry above, and they sit on the **entry**, not on the line: a container estimates the total that step 4 then allocates, and a destination row reading "0.37 wheelie bins" is neither enterable nor checkable against §6.2's mass-conservation rule.
+
+  **The decision this section said would be required, made.** The two-decimal rule follows the **count**, which is what somebody types; `toKg` still returns three decimal places because §6.2 refuses a fourth, and `"139.200"` is not a number anybody enters. So `totalAmount`'s `/^\d+(\.\d{1,2})?$/` is applied to `unitCount` in container mode and to nothing derived. The collision this section predicted was real and is now moot: the seeded `kg_per_unit` values are **no longer integral** (v1.33 item 11), so a count of 1 on the 23 L bin is `6.670` kg and a total of three decimals is the normal case rather than the exotic one.
+
+  **`measureMode: 'container'` implies `totalUnit: 'kilograms'`, and `calculator.js` maintains it.** `totalUnit` is the unit step 4 allocates in. A visitor who chooses tonnes and *then* chooses a wheelie bin would otherwise reach a step 4 whose rows say "tonnes" against a total in kilograms — a thousandfold error on a screen that looks entirely normal, refused by nothing, because both numbers are individually plausible. `tests/web/test_container_input_browser.py` walks exactly that path; no other test does, because the default is already kilograms.
+
+  **Neither key is on the line shape, and the amount field changes its id with the mode** — `#total-waste` for a mass, `#unit-count` for a count. Two ids rather than one because they are different quantities and `state` holds them apart: switching from 1,200 kilograms to wheelie bins must not carry 1,200 over as a bin count.
 - **`gwpHorizon` is set to 100 at initialisation and no control ever writes it.** §6.2 makes the horizon user-selectable between 20 and 100; a stated requirement is currently unmet and invisible on screen.
 
 > **Documented exception to "no ad-hoc DOM manipulation".** Two modules deliberately bypass `setState` and mutate the DOM directly on keystroke (`calculator.js`, `improvement.js`). The reason is sound — `render()` replaces `main.innerHTML`, so a `setState` per keystroke destroys the focused input — but the exception must be documented rather than merely present, because the two fast paths **apply different validity rules to the same field**. As of 2026-08-09 the divergence is narrower than it was and is not zero: on a negative amount `updateLine` marks only the row being typed in, while `destinationRows` marks every negative row on the screen; and `destinationRows` additionally marks a row named by `state.fieldErrors`, which `updateLine` clears on the first keystroke because blanking or filling a row changes which lines the request would carry, so the server's line positions stop meaning what they meant. Any change to a validation rule has to be made in both.
@@ -2239,17 +2418,63 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 ```js
 /**
  * Convert a container count to kilograms.
- * @param {number} count       Number of containers
- * @param {string} presetCode  unit_preset code
- * @param {Array}  presets     taxonomy.unit_presets
- * @returns {string}           Kilograms as a string with 3 decimal places,
- *                             ready to send to the API
- * @throws {Error}             presetCode does not exist, or the product is
- *                             not finite
- * ** Still imported by nothing — see §7.2, the preset input is not built, and
- *    the note there states what building it costs. **
+ *
+ * **The multiplication is decimal, not double (v1.33).** Both operands are decimals:
+ * the count is what the visitor typed and `kg_per_unit` crosses the wire as a string
+ * (§1.2) precisely so that `Number` never sees it. The previous body was
+ * `Number(count) * Number(preset.kg_per_unit)` then `.toFixed(3)`, and that is wrong
+ * in the **third** decimal place — a quarter of the seeded 23 L food scraps bin is
+ * `0.25 × 6.6700 = 1.6675 kg` exactly, the nearest double to `6.67` is below it, and
+ * `toFixed` reads the exact tie as under the half and answers `"1.667"`. Integer
+ * arithmetic, rounded half up, which is what `Decimal.quantize(ROUND_HALF_UP)` does
+ * on the Python side. (Python's own `round()` is banker's rounding and is not it.)
+ *
+ * **Neither operand may be negative.** `unit_preset` carries a `kg_per_unit >= 0`
+ * CHECK (§2.1) written for this multiplication; the count is the operand no database
+ * constraint can reach, and an `<input type="number">` hands over `"-2"` quite
+ * happily.
+ *
+ * @param {number|string} count  Number of containers, as the visitor typed it
+ * @param {string} presetCode    unit_preset code
+ * @param {Array}  presets       taxonomy.unit_presets
+ * @returns {string}             Kilograms as a string with 3 decimal places,
+ *                               ready to send to the API (§6.2 refuses a fourth)
+ * @throws {Error}               presetCode does not exist, or either operand is
+ *                               not a plain non-negative decimal literal
  */
 export function toKg(count, presetCode, presets);
+
+/**
+ * `toKg` made total: the kilograms a container entry describes, or `''`.
+ *
+ * Called inside a render by both consumers, so it may not throw — and `toKg` throwing
+ * on an unknown preset code is reachable, because §6.1 says a consumer must not assume
+ * the taxonomy is stable across a publish and the page holds a selection made before
+ * one. Whether the count is *typeable* is a separate question asked in
+ * `calculator.js`, beside the same two-decimal rule the mass field takes.
+ *
+ * @param {{unitPreset: string|null, unitCount: string}} entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {string}  Kilograms at 3 decimal places, or '' when there is no total yet
+ */
+export function containerKg(entry, presets);
+
+/**
+ * The one place the two step-3 measurement modes reconcile: an entry's total as
+ * `{amount, unit}`, in the unit its destination rows are entered in.
+ *
+ * A container entry **always** answers kilograms — see §7.2. In `units.js` rather than
+ * in `calculator.js` because it has two consumers: `results.js` prints each entry's
+ * waste amount in the downloaded report and cannot import `calculator.js` (that module
+ * imports this one). It read `entry.totalAmount` directly, which is `''` for a
+ * container entry, so the report said "0.00 kilograms" for an entry whose screen said
+ * 139.200 kg.
+ *
+ * @param {object} entry   A draft or saved entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {{amount: string, unit: 'kilograms'|'tonnes'}}
+ */
+export function entryTotal(entry, presets);
 
 /**
  * @param {number|string} amount
@@ -2458,6 +2683,8 @@ No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`
 
 No exports. Uses top-level `await` to call `getFactors()`, then writes the factor-set metadata and the published-formula table into `#factor-content`, prefixed by the placeholder-data banner when `factor_set.is_mock`. Renders an escaped error block on failure. `formula.expression` is staff-authored content reaching a public page and is escaped inside `<code>`.
 
+> **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
+
 ## 7.4 `charts.js` (written by D)
 
 ```js
@@ -2584,7 +2811,38 @@ Matching inside one tag is unchanged: RFC 4647 truncation, with a catalogue's ow
 
 The header row is already 93px tall and carries a 67px logo, so a 44px control fits in space that is there and the row does not grow. **The lockup is not altered**: the logo keeps its own element, its own size and its own spacing, nothing is drawn over or through it, and `.brand` takes `margin-inline-end: auto` so it stays hard against the reading-start edge rather than being stranded mid-row by `space-between`. Below 720px the row wraps, putting the chooser on its own line above the brand — at 390px the control and the 220px wordmark cannot share a line, and without wrapping the wordmark was clipped by the viewport edge.
 
-**On the panel it remains a row of its own**, because the panel is a data-entry surface with no such above-the-fold budget and a strip there costs nothing that matters.
+**On the panel it is a floating capsule at the top inline-start, not a strip** (v1.34, amending v1.27 item 9). The panel has no above-the-fold budget to protect, so the capsule is not squeezed into an existing row the way the calculator's is; but a full-bleed white band with a rule under it is chrome the panel grew in order to hold one small control, and it is what made the chooser read as debug scaffolding. It floats on the page's own ground instead.
+
+**And the page's own ground is the page's, not the shell's** (v1.35). The five gate pages are a Kale field painted by `.gate`, and the chooser is a **sibling** of `.gate` — `brand/base.html` owns it and every page's `{% block shell %}` replaces what is under it — so "the page's own ground" above the shell was `body`'s white. The band v1.34 deleted came straight back as a 72px white strip with a hard edge under it, and the page scrolled by exactly the height of the chooser, because `.gate` asks for `100vh` and something now sat above it. **`body` carries the ground on any page wearing the gate shell, and the shell claims what is left of the viewport.**
+
+**The ground is derived, never declared twice.** `body:has(> .gate)` selects it, in `brand.css` for the background and in `language.css` for the capsule's skin. A class on `<body>` was refused: the gate shell is chosen by *not* overriding a block, so the six templates that override it with `<main class="page">` would each have to remember to say so, and the failure mode is white text on a white page. Where `:has()` is unsupported the body stays white and the capsule keeps its light skin — the fallback is v1.34's appearance, not an unreadable one.
+
+**One capsule, two skins, and only colour differs** (v1.34, amended v1.35). It is a 1px hairline, a 12px radius, a layered shadow, and an 18px globe at the inline-start — and the `<select>` inside gives up its own border, radius and ground, because the frame belongs to the component and drawing a second one 2px inside it is the implementation that reads as a mistake. The panel's submit button is a **segment** of the same capsule, joined at its inline-end corners; the button cannot be designed away, since that surface has to work with scripting off.
+
+Every colour is a `--lang-*` token declared on `.language-bar` itself, which is what keeps `language.css` free of any dependency on `brand.css`; one block restates them for the Kale ground. **Nothing but colour is restated** — 44px, the radius, the margins, `width: 20ch` and the 720px label rule are shared, so the two skins cannot come to disagree about the shape of the control.
+
+| | Light ground (Tabler, and any `.page` shell) | Kale ground (the gate shell) |
+| --- | --- | --- |
+| Surface | White | Kale at 12% white |
+| Ink | Kale | White |
+| Globe's disc | Pea tint | Pea |
+| Submit segment | Kale ground, white ink | White ground, Kale ink |
+| Elevation | contact shadow and a soft lift, in Kale | a **lit** top edge and a deep seat |
+| Focus ring | Blueberry | Banana |
+
+Elevation is inverted rather than recoloured, which is why the whole stack is one token: on a light ground an object is raised by the shade it casts, and #003223 cannot be darkened perceptibly at a 16px blur. White was refused for the Kale surface because it is the sign-in card's material and a second white object at the top of the page competes with the one the reader came for.
+
+**A ground block out-specifies the state rules, and that is a trap this file has already fallen into.** `body:has(> .gate) .language-bar` is 0-2-1; `.language-bar:focus-within` is 0-2-0. A ground assigning `--lang-hairline` therefore **beats** focus and hover, and both went silently dead on the ground where the focus ring matters most. A ground names `--lang-hairline-rest`, `-hover` and `-focus`; only the state rules assign `--lang-hairline`.
+
+**The focus ring is two lines and it is chosen per ground.** Blueberry measures 2.2:1 on Kale, under the 3:1 a non-text indicator needs; it stays Blueberry on the light ground, where `brand.css` rings the card's own inputs with it, and is Banana at 10.9:1 on Kale. Underneath either, the capsule's hairline goes to full contrast, so losing one line still leaves an indicator. The ring carries `outline-offset`, so it is drawn on the **page's** ground and is measured against that.
+
+**The hairline is an inset `box-shadow` rather than a `border`, and the reason is the budget above.** The `<select>` is 44px because that is the touch target; a 1px border round it makes the capsule 46px and the wrapped row at 390px 2px taller than it was measured at. An inset shadow draws the same line and occupies no layout, so the treatment costs nothing: **92px at 1278×983, 92px at 938×898 and 126px wrapped at 390×700, measured before the change and again after it, identical**. (92 rather than the 93 above: the same row, remeasured — `.header-inner` declares `min-height: 92px` and the logo is 67px inside 24px of padding, so the min-height is what decides it.)
+
+**The globe is inline SVG on both surfaces, and `aria-hidden="true"`.** §7.6 rule 7 forbids a runtime asset from a third-party host, the public policy is `img-src 'self' data:`, there is no icon font and there is no build step, so it is drawn rather than fetched — by `web/js/i18n.js` on the calculator and in `brand/_language_chooser.html` on the panel. It is silent because the `<label>` already names the control. Below 720px, where the label is `.sr-only`, it is the only thing on screen saying what the control is for.
+
+**The mirroring is from `dir` and nothing else.** The globe is at the capsule's `padding-inline-start`; the `<select>`'s arrow is the browser's own, drawn at the select's inline-end. They therefore sit on opposite sides of the capsule in both directions, which is why the arrow is left alone rather than replaced with a drawn one.
+
+**The panel's rules live in `admin/static/language.css`, linked from `brand/base.html` and from `sqladmin/layout.html`'s `head` block.** `brand.css` reaches the five gate pages only — the panel proper is Tabler, whose `<head>` sits in a template this project does not fork — so rules placed there style the login page and no screen behind it. One file for both skins is what keeps them from drifting; `brand.css` must not carry a `.language-bar` rule again.
 
 **Each language in its own name** — `Deutsch`, never `German`. An endonym is never passed through `t()`.
 
@@ -2681,6 +2939,8 @@ Requirements: list views must offer search and filtering.
 | View | Path | Function |
 | --- | --- | --- |
 | Factor sets | `/admin/factor-sets` | Clone, publish, archive, roll back; shows draft/published/archived state. **`status` is not on the edit form** — these four actions are the only way it changes, so each one takes `SELECT ... FOR UPDATE`, revalidates the set's formulas where relevant, stamps `published_at` / `published_by`, and writes its own audit entry. Archiving the currently published set is permitted and takes the calculator offline: `NO_PUBLISHED_FACTOR_SET` (503) is the designed response to having none |
+| Flag as placeholder data | `/admin/factor-set/action/flag-placeholder` | Sets `is_mock`. Any status, either role, one confirmation and no proof — §2.2's safe direction |
+| Clear placeholder flag | `/admin/factor-set/clear-placeholder` | Clears `is_mock`, after the current password or a live TOTP code. Any status, either role. Names the consequence on the page and in the dialog: this removes the placeholder warning from every public result and export, immediately. Writes `audit_log.action = 'clear_placeholder'` with both values |
 | Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
@@ -3293,10 +3553,13 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
       "metric": "co2e", "value_per_kg": "0.0000000000" }
   ],
   "downstream": [
-    { "destination": "landfill", "food_category": "dairy",
+    { "destination": "landfill", "sector": null, "food_category": "dairy",
       "metric": "co2e", "value_per_kg": "0.9900000000" },
-    { "destination": "landfill", "food_category": null,
-      "metric": "cost", "value_per_kg": "0.0650000000" }
+    { "destination": "landfill", "sector": null, "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0650000000" },
+    { "destination": "landfill", "sector": "primary_production",
+      "food_category": null,
+      "metric": "cost", "value_per_kg": "0.0400000000" }
   ],
   "equivalences": [
     { "code": "km_driven", "name": "Kilometres driven", "source_metric": "co2e",
@@ -3322,6 +3585,8 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
 
+`downstream[].sector` (v1.31) may be `null` on identical terms, meaning the row applies to every sector for that destination, and `null` is the *usual* value — the New Zealand set carries it on every row. A **missing** `sector` key is a malformed row, not a `null` one: a bundle whose rows had silently lost it would load as every-sector rows and price every stage of the supply chain the same, computing a plausible, wrong answer instead of raising. The example above shows all three states in one section — a category-specific row, the row naming neither dimension, and a sector-specific row — because §4.1's four-step order is only exercised when more than one of them is present.
+
 `upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
 
 ## 10.3 The ReFED Comparison Fixture (owner: A)
@@ -3332,14 +3597,16 @@ It runs one scenario through two implementations — ours, and ReFED's Impact Ca
 
 | Rule | Why |
 | --- | --- |
-| **`refed_` is a reserved taxonomy code prefix.** No `sector`, `food_category` or `destination` row that is part of the New Zealand product may take it | Taxonomy rows are global — §2.1's tables carry no `factor_set_id`, and there is no way to give a factor set a private vocabulary. The fixture's 1 sector, 39 food categories and 12 destinations are therefore rows in the same tables the product uses. The prefix is the whole of what keeps the two vocabularies distinguishable, in the database and in a dropdown |
+| **`refed_` is a reserved taxonomy code prefix.** No `sector`, `food_category` or `destination` row that is part of the New Zealand product may take it | Taxonomy rows are global — §2.1's tables carry no `factor_set_id`, and there is no way to give a factor set a private vocabulary. The fixture's 5 sectors, 9 food categories and 12 destinations are therefore rows in the same tables the product uses. The prefix is the whole of what keeps the two vocabularies distinguishable, in the database and in a dropdown |
 | **The fixture is loaded as a `draft` and must never be published** | It is United States data. `is_mock` is `true` on it and the placeholder banner is correct while it is selected (§6.2). Publishing it would archive the live New Zealand set — that is what `publish_factor_set` is for and it is not what this fixture is for. It is reached through §6.2.1's `dry_run.factor_set_version`, which persists nothing |
 | **No metric rows are added for it** | `metric` is global and the engine iterates every active row (§4.1). An added metric would appear, at zero, in every New Zealand result. This is why ReFED's meals-recovered figure is not represented and cannot be compared |
 
-> **Our two factor tables cannot hold ReFED's shape one-for-one.** `factor_upstream` is keyed `(sector, food_category, destination)` and matches ReFED's key exactly. `factor_downstream` is keyed `(destination, food_category)` and has no sector column — and ReFED's downstream factors genuinely differ by sector in **82 of their 102** (food type, destination) groups.
+> **Our two factor tables hold ReFED's shape one-for-one, since v1.31.** `factor_upstream` is keyed `(sector, food_category, destination)` and always matched ReFED's key exactly. `factor_downstream` had no sector column, and ReFED's downstream factors genuinely differ by sector in **82 of their 102** (food type, destination) groups — so the fixture absorbed the difference by making its `food_category` codes carry the stage: one sector row, and 39 categories named `refed_retail_produce`, `refed_farm_dry_goods`.
 >
-> That is not a defect in §2.2. No New Zealand requirement asks for a downstream factor that varies by supply chain stage, and adding a sector column to `factor_downstream` to serve a test fixture would be the tail wagging the dog. The fixture absorbs the difference instead, by making its `food_category` codes carry the stage — `refed_retail_produce`, `refed_farm_dry_goods` — which is lossless: no two ReFED cells are merged and no number changes.
+> **That was numerically lossless and structurally wrong, and the cost landed in the product rather than in the fixture.** No two ReFED cells were merged and no number changed — the comparison agreed with ReFED's live calculator to the integer before the rebuild and agrees to ~1e-9 after it. But taxonomy rows are global, so those 39 rows were rows in the product's own tables: the calculator's first step, "which stage of the food supply chain", offered exactly **one** option, a radio button that selected itself; its second listed 39 compound entries like `ReFED Farm / Dry Goods`, which the client read as a stage rather than a food; and §5.4's `by_sector` breakdown was a single bucket at 100%, so that chart carried no information at all. The previous revision of this note said adding a sector column "to serve a test fixture would be the tail wagging the dog" and asked to be re-read the first time a downstream factor really did need to vary by sector. It was right to ask; the answer is that the fixture was never the reason — the reason is that the shape was wrong and three visible defects were downstream of it.
 >
-> **Record it here because it is the first thing to check if a downstream factor ever does need to vary by sector.** If the client's data arrives with, say, a different landfill emission factor for kerbside collection than for a commercial contract, this is the schema change that implies, and this note is where the shape of the problem is already written down.
+> **The fixture is now 5 sectors × 9 food categories.** `refed_farm`, `refed_manufacturing`, `refed_retail`, `refed_foodservice`, `refed_residential`; `refed_breads_bakery` … `refed_standard_mix`.
+>
+> **Every downstream row states both its sector and its food category; none is left NULL.** ReFED publishes only **39 of the 45** pairs — Farm has Dry Goods, Produce and Standard Mix and nothing else — but a 5 × 9 taxonomy offers all 45, so a NULL-sector row would be found by a Farm / Frozen lookup and would answer it with another sector's number. With every row explicit those six pairs price at zero on every metric: visibly nothing rather than plausibly wrong. This is the one place the fixture deliberately does *not* exercise §4.1's fallback, and `tests/benchmark/refed/` asserts both halves — that no row is NULL, and that all six unpublished pairs return zero.
 
 The tolerance the comparison asserts is **derived, not chosen**: `value_per_kg` is `DECIMAL(20,10)` (§2.2), so each factor is rounded at the tenth decimal place and a line of `qty` kilograms carries at most `1e-10 × qty` of error in the metric total. That is invisible for water and dominates for methane. **If that tolerance ever has to be widened, the storage precision has changed and this document is what should have changed first.**

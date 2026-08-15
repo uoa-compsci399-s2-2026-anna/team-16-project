@@ -4,285 +4,103 @@
   "source_header": "Calculated by ReFED based on data from various sources. See https://insights.refed.com/methodology for more information. Data last updated April 03 2026",
   "sectors": [
     {
-      "code": "refed_us",
-      "name": "ReFED comparison (United States)",
-      "description": "Benchmark fixture only. One sector row: ReFED's supply chain stage is carried in the food category code, because factor_downstream has no sector column and ReFED's downstream factors differ by sector.",
+      "code": "refed_farm",
+      "name": "ReFED Farm (United States)",
+      "description": "ReFED supply-chain stage 'Farm'. Benchmark fixture only; not a New Zealand MfE sector.",
       "sort_order": 900,
+      "active": true
+    },
+    {
+      "code": "refed_manufacturing",
+      "name": "ReFED Manufacturing (United States)",
+      "description": "ReFED supply-chain stage 'Manufacturing'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 901,
+      "active": true
+    },
+    {
+      "code": "refed_retail",
+      "name": "ReFED Retail (United States)",
+      "description": "ReFED supply-chain stage 'Retail'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 902,
+      "active": true
+    },
+    {
+      "code": "refed_foodservice",
+      "name": "ReFED Foodservice (United States)",
+      "description": "ReFED supply-chain stage 'Foodservice'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 903,
+      "active": true
+    },
+    {
+      "code": "refed_residential",
+      "name": "ReFED Residential (United States)",
+      "description": "ReFED supply-chain stage 'Residential'. Benchmark fixture only; not a New Zealand MfE sector.",
+      "sort_order": 904,
       "active": true
     }
   ],
   "food_categories": [
     {
-      "code": "refed_farm_dry_goods",
-      "name": "ReFED Farm / Dry Goods",
-      "is_standard_mix": false,
-      "sort_order": 900,
-      "active": true
-    },
-    {
-      "code": "refed_farm_produce",
-      "name": "ReFED Farm / Produce",
-      "is_standard_mix": false,
-      "sort_order": 901,
-      "active": true
-    },
-    {
-      "code": "refed_farm_standard_mix",
-      "name": "ReFED Farm / Standard Mix",
-      "is_standard_mix": false,
-      "sort_order": 902,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_breads_bakery",
-      "name": "ReFED Foodservice / Breads & Bakery",
-      "is_standard_mix": false,
-      "sort_order": 903,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_dairy_eggs",
-      "name": "ReFED Foodservice / Dairy & Eggs",
-      "is_standard_mix": false,
-      "sort_order": 904,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_dry_goods",
-      "name": "ReFED Foodservice / Dry Goods",
-      "is_standard_mix": false,
-      "sort_order": 905,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_fresh_meat_seafood",
-      "name": "ReFED Foodservice / Fresh Meat & Seafood",
-      "is_standard_mix": false,
-      "sort_order": 906,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_frozen",
-      "name": "ReFED Foodservice / Frozen",
-      "is_standard_mix": false,
-      "sort_order": 907,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_prepared_foods",
-      "name": "ReFED Foodservice / Prepared Foods",
-      "is_standard_mix": false,
-      "sort_order": 908,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_produce",
-      "name": "ReFED Foodservice / Produce",
-      "is_standard_mix": false,
-      "sort_order": 909,
-      "active": true
-    },
-    {
-      "code": "refed_foodservice_ready_to_drink_beverages",
-      "name": "ReFED Foodservice / Ready-To-Drink Beverages",
+      "code": "refed_breads_bakery",
+      "name": "ReFED Breads & Bakery",
       "is_standard_mix": false,
       "sort_order": 910,
       "active": true
     },
     {
-      "code": "refed_foodservice_standard_mix",
-      "name": "ReFED Foodservice / Standard Mix",
+      "code": "refed_dairy_eggs",
+      "name": "ReFED Dairy & Eggs",
       "is_standard_mix": false,
       "sort_order": 911,
       "active": true
     },
     {
-      "code": "refed_manufacturing_breads_bakery",
-      "name": "ReFED Manufacturing / Breads & Bakery",
+      "code": "refed_dry_goods",
+      "name": "ReFED Dry Goods",
       "is_standard_mix": false,
       "sort_order": 912,
       "active": true
     },
     {
-      "code": "refed_manufacturing_dairy_eggs",
-      "name": "ReFED Manufacturing / Dairy & Eggs",
+      "code": "refed_fresh_meat_seafood",
+      "name": "ReFED Fresh Meat & Seafood",
       "is_standard_mix": false,
       "sort_order": 913,
       "active": true
     },
     {
-      "code": "refed_manufacturing_dry_goods",
-      "name": "ReFED Manufacturing / Dry Goods",
+      "code": "refed_frozen",
+      "name": "ReFED Frozen",
       "is_standard_mix": false,
       "sort_order": 914,
       "active": true
     },
     {
-      "code": "refed_manufacturing_fresh_meat_seafood",
-      "name": "ReFED Manufacturing / Fresh Meat & Seafood",
+      "code": "refed_prepared_foods",
+      "name": "ReFED Prepared Foods",
       "is_standard_mix": false,
       "sort_order": 915,
       "active": true
     },
     {
-      "code": "refed_manufacturing_frozen",
-      "name": "ReFED Manufacturing / Frozen",
+      "code": "refed_produce",
+      "name": "ReFED Produce",
       "is_standard_mix": false,
       "sort_order": 916,
       "active": true
     },
     {
-      "code": "refed_manufacturing_prepared_foods",
-      "name": "ReFED Manufacturing / Prepared Foods",
+      "code": "refed_ready_to_drink_beverages",
+      "name": "ReFED Ready-To-Drink Beverages",
       "is_standard_mix": false,
       "sort_order": 917,
       "active": true
     },
     {
-      "code": "refed_manufacturing_produce",
-      "name": "ReFED Manufacturing / Produce",
+      "code": "refed_standard_mix",
+      "name": "ReFED Standard Mix",
       "is_standard_mix": false,
       "sort_order": 918,
-      "active": true
-    },
-    {
-      "code": "refed_manufacturing_ready_to_drink_beverages",
-      "name": "ReFED Manufacturing / Ready-To-Drink Beverages",
-      "is_standard_mix": false,
-      "sort_order": 919,
-      "active": true
-    },
-    {
-      "code": "refed_manufacturing_standard_mix",
-      "name": "ReFED Manufacturing / Standard Mix",
-      "is_standard_mix": false,
-      "sort_order": 920,
-      "active": true
-    },
-    {
-      "code": "refed_residential_breads_bakery",
-      "name": "ReFED Residential / Breads & Bakery",
-      "is_standard_mix": false,
-      "sort_order": 921,
-      "active": true
-    },
-    {
-      "code": "refed_residential_dairy_eggs",
-      "name": "ReFED Residential / Dairy & Eggs",
-      "is_standard_mix": false,
-      "sort_order": 922,
-      "active": true
-    },
-    {
-      "code": "refed_residential_dry_goods",
-      "name": "ReFED Residential / Dry Goods",
-      "is_standard_mix": false,
-      "sort_order": 923,
-      "active": true
-    },
-    {
-      "code": "refed_residential_fresh_meat_seafood",
-      "name": "ReFED Residential / Fresh Meat & Seafood",
-      "is_standard_mix": false,
-      "sort_order": 924,
-      "active": true
-    },
-    {
-      "code": "refed_residential_frozen",
-      "name": "ReFED Residential / Frozen",
-      "is_standard_mix": false,
-      "sort_order": 925,
-      "active": true
-    },
-    {
-      "code": "refed_residential_prepared_foods",
-      "name": "ReFED Residential / Prepared Foods",
-      "is_standard_mix": false,
-      "sort_order": 926,
-      "active": true
-    },
-    {
-      "code": "refed_residential_produce",
-      "name": "ReFED Residential / Produce",
-      "is_standard_mix": false,
-      "sort_order": 927,
-      "active": true
-    },
-    {
-      "code": "refed_residential_ready_to_drink_beverages",
-      "name": "ReFED Residential / Ready-To-Drink Beverages",
-      "is_standard_mix": false,
-      "sort_order": 928,
-      "active": true
-    },
-    {
-      "code": "refed_residential_standard_mix",
-      "name": "ReFED Residential / Standard Mix",
-      "is_standard_mix": false,
-      "sort_order": 929,
-      "active": true
-    },
-    {
-      "code": "refed_retail_breads_bakery",
-      "name": "ReFED Retail / Breads & Bakery",
-      "is_standard_mix": false,
-      "sort_order": 930,
-      "active": true
-    },
-    {
-      "code": "refed_retail_dairy_eggs",
-      "name": "ReFED Retail / Dairy & Eggs",
-      "is_standard_mix": false,
-      "sort_order": 931,
-      "active": true
-    },
-    {
-      "code": "refed_retail_dry_goods",
-      "name": "ReFED Retail / Dry Goods",
-      "is_standard_mix": false,
-      "sort_order": 932,
-      "active": true
-    },
-    {
-      "code": "refed_retail_fresh_meat_seafood",
-      "name": "ReFED Retail / Fresh Meat & Seafood",
-      "is_standard_mix": false,
-      "sort_order": 933,
-      "active": true
-    },
-    {
-      "code": "refed_retail_frozen",
-      "name": "ReFED Retail / Frozen",
-      "is_standard_mix": false,
-      "sort_order": 934,
-      "active": true
-    },
-    {
-      "code": "refed_retail_prepared_foods",
-      "name": "ReFED Retail / Prepared Foods",
-      "is_standard_mix": false,
-      "sort_order": 935,
-      "active": true
-    },
-    {
-      "code": "refed_retail_produce",
-      "name": "ReFED Retail / Produce",
-      "is_standard_mix": false,
-      "sort_order": 936,
-      "active": true
-    },
-    {
-      "code": "refed_retail_ready_to_drink_beverages",
-      "name": "ReFED Retail / Ready-To-Drink Beverages",
-      "is_standard_mix": false,
-      "sort_order": 937,
-      "active": true
-    },
-    {
-      "code": "refed_retail_standard_mix",
-      "name": "ReFED Retail / Standard Mix",
-      "is_standard_mix": false,
-      "sort_order": 938,
       "active": true
     }
   ],
@@ -301,6 +119,7 @@
       "name": "ReFED Donations",
       "group_code": "reuse",
       "description": "ReFED destination 'Donations' (ReFED slug 'donations'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 210,
       "active": true
     },
@@ -309,6 +128,7 @@
       "name": "ReFED Animal Feed",
       "group_code": "reuse",
       "description": "ReFED destination 'Animal Feed' (ReFED slug 'animal-feed'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 230,
       "active": true
     },
@@ -317,6 +137,7 @@
       "name": "ReFED Industrial Uses",
       "group_code": "recycle_recovery",
       "description": "ReFED destination 'Industrial Uses' (ReFED slug 'biomaterial-processing'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 280,
       "active": true
     },
@@ -325,6 +146,7 @@
       "name": "ReFED Composting",
       "group_code": "recycle_recovery",
       "description": "ReFED destination 'Composting' (ReFED slug 'composting'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 240,
       "active": true
     },
@@ -333,6 +155,7 @@
       "name": "ReFED Anaerobic Digestion",
       "group_code": "recycle_recovery",
       "description": "ReFED destination 'Anaerobic Digestion' (ReFED slug 'anaerobic-digestion'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 250,
       "active": true
     },
@@ -341,6 +164,7 @@
       "name": "ReFED Land Application",
       "group_code": "recycle_recovery",
       "description": "ReFED destination 'Land Application' (ReFED slug 'land-application'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 260,
       "active": true
     },
@@ -349,6 +173,7 @@
       "name": "ReFED Not Harvested",
       "group_code": "recycle_recovery",
       "description": "ReFED destination 'Not Harvested' (ReFED slug 'not-harvested'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 270,
       "active": true
     },
@@ -357,6 +182,7 @@
       "name": "ReFED Incineration",
       "group_code": "disposal",
       "description": "ReFED destination 'Incineration' (ReFED slug 'incineration'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 300,
       "active": true
     },
@@ -365,6 +191,7 @@
       "name": "ReFED Landfill",
       "group_code": "disposal",
       "description": "ReFED destination 'Landfill' (ReFED slug 'landfill'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 310,
       "active": true
     },
@@ -373,6 +200,7 @@
       "name": "ReFED Dumping",
       "group_code": "disposal",
       "description": "ReFED destination 'Dumping' (ReFED slug 'refuse-discards'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 320,
       "active": true
     },
@@ -381,6 +209,7 @@
       "name": "ReFED Sewer",
       "group_code": "disposal",
       "description": "ReFED destination 'Sewer' (ReFED slug 'sewer'). Benchmark fixture only; not a New Zealand MfE destination.",
+      "is_prevention": false,
       "sort_order": 330,
       "active": true
     }

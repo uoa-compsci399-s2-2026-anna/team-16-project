@@ -214,14 +214,25 @@ def main() -> int:
 
         for index, row in enumerate(data.get("downstream", [])):
             where = f"downstream[{index}]"
-            #: `food_category` is nullable and means "every food category for
-            #: this destination" - how a per-tonne charge like the waste levy
-            #: is represented.
+            #: Both `sector` and `food_category` are nullable and mean "every
+            #: value of that dimension for this destination" - a null category
+            #: is how a per-tonne charge like the waste levy is represented,
+            #: and a null sector is what a set whose disposal routes cost the
+            #: same wherever the waste arose takes on every row (v1.31).
+            #: `.get` rather than `[...]`, matching `destination` above: this
+            #: seed is the first-run path for a hand-written file, and a set
+            #: written before v1.31 has no `sector` key at all - reading it as
+            #: absent means "every sector", which is what those rows meant.
+            sector = row.get("sector")
             food = row.get("food_category")
             session.add(FactorDownstream(
                 factor_set_id=set_id,
                 destination_id=_lookup(
                     destinations, row["destination"], "destination", where
+                ),
+                sector_id=(
+                    None if sector is None
+                    else _lookup(sectors, sector, "sector", where)
                 ),
                 food_category_id=(
                     None if food is None

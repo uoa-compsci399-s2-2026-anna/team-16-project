@@ -211,11 +211,22 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
         counts["upstream"] += 1
 
     for row in data.get("downstream", []):
+        #: `row["sector"]` and `row["food_category"]`, not `.get(...)`: both are
+        #: nullable dimensions where `null` means "every value" (§2.2, v1.31),
+        #: so a row that had lost its key would be loaded as the general row
+        #: and the set would price a destination it was never meant to. A
+        #: KeyError here stops the load; the alternative is a silent
+        #: mis-scoping that the totals comparison would only notice by luck.
+        sector = row["sector"]
         food_category = row["food_category"]
         session.add(FactorDownstream(
             factor_set_id=set_id,
             destination_id=_lookup(
                 destinations, row["destination"], "destination", "downstream"),
+            sector_id=(
+                None if sector is None
+                else _lookup(sectors, sector, "sector", "downstream")
+            ),
             food_category_id=(
                 None if food_category is None
                 else _lookup(foods, food_category, "food category", "downstream")

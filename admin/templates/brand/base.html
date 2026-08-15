@@ -18,6 +18,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title>{% block title %}Kai Commitment{% endblock %} — Kai Commitment</title>
   <link rel="stylesheet" href="/admin/static/brand.css">
+  {# The chooser's own stylesheet, and it is separate from brand.css on purpose:
+     brand.css reaches these five gate pages only, and the chooser is also on
+     every screen of the Tabler panel, which does not load it. One file, linked
+     from here and from sqladmin/layout.html, is what stops the two skins
+     drifting. See admin/static/language.css for the whole reasoning. #}
+  <link rel="stylesheet" href="/admin/static/language.css">
   {% block head %}{% endblock %}
 </head>
 <body>

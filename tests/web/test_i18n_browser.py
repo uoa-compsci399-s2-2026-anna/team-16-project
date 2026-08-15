@@ -2546,3 +2546,77 @@ def test_the_figures_take_no_locale_aware_separator(browser):
             )
     finally:
         context.close()
+
+
+# ---------------------------------------------------------------------------
+# The language machinery must not be contingent on any one section of a page
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("language", ["zh", "ar"])
+def test_a_home_page_with_no_news_section_still_translates(browser, language):
+    """The rule, separated from the accident of ordering that used to satisfy it.
+
+    ``web/js/home.js`` once installed the chooser, set ``<html lang>`` and ran the
+    ``data-i18n`` walk *inside* ``if (document.querySelector('#news-feed'))``. On the
+    shipped markup that always passed — the feed element is parsed into the document
+    and it is ``loadNews`` that removes it afterwards — so no test on the shipped page
+    could tell the two arrangements apart, and an unconfigured deployment kept its
+    chooser by luck rather than by design.
+
+    So the page is served here **without a news section at all**, by rewriting the
+    response body on the way through. That is not a hypothetical document: it is what
+    the module would face the first time anybody edits the news block out of
+    ``home.html`` for a deployment that has no WordPress, and the failure it produces
+    is silent and total — an English page announced as ``en-NZ`` with no control to
+    change it.
+
+    Restore the guard around those three calls and this fails; nothing else in the
+    suite does.
+    """
+    catalogue = i18n_keys.catalogue(language)
+    strings = catalogue["strings"]
+    source = (Path(__file__).resolve().parents[2] / "web" / "home.html").read_text(
+        encoding="utf-8"
+    )
+    stripped = re.sub(
+        r'<section class="home-news".*?</section>', "", source, flags=re.S
+    )
+    assert "home-news" not in stripped and stripped != source, (
+        "the news section could not be removed from home.html, so this test would "
+        "measure the ordinary page and prove nothing"
+    )
+
+    context = browser.new_context(
+        extra_http_headers={"Accept-Language": "%s,en" % language}
+    )
+    page = context.new_page()
+    page.add_init_script(
+        _LANGUAGES_SHIM.format(
+            languages=json.dumps([language, "en"]), first=json.dumps(language)
+        )
+    )
+    page.route(
+        "**/home.html",
+        lambda route: route.fulfill(
+            status=200, content_type="text/html; charset=utf-8", body=stripped
+        ),
+    )
+    try:
+        page.goto("%s/home.html" % BASE, wait_until="networkidle")
+        page.wait_for_timeout(400)
+        assert page.locator("#news-feed").count() == 0, (
+            "the rewrite did not take; this is the ordinary page"
+        )
+        assert page.get_attribute("html", "lang") == language
+        assert page.get_attribute("html", "dir") == catalogue.get("dir", "ltr")
+        assert page.inner_text("h1#home-title") == strings[
+            "Turn food waste information into action"
+        ], "a home page with no news section was left in English"
+        chooser = page.locator("#language-chooser")
+        assert chooser.count() == 1 and chooser.is_visible(), (
+            "a home page with no news section has no language chooser, so a reader "
+            "who cannot read it has no way out"
+        )
+    finally:
+        context.close()

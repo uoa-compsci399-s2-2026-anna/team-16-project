@@ -39,6 +39,8 @@ from pathlib import Path
 
 import pytest
 
+from tests.web import i18n_keys
+
 pytestmark = pytest.mark.browser
 
 playwright_api = pytest.importorskip(
@@ -284,6 +286,70 @@ def test_an_unconfigured_home_page_removes_its_news_section_and_asks_nobody(brow
             f"the unconfigured page went off-origin: {external}. An unset news origin must "
             "mean no request, not a request to a guessed host."
         )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("language", ["zh", "ar"])
+def test_an_unconfigured_home_page_still_chooses_its_language(browser, unconfigured_base,
+                                                              language):
+    """A deployment with no news origin is still a deployment in twenty languages.
+
+    **Filed here rather than with the rest of the translation tests because of the
+    container.** The only unconfigured web container this suite starts is the one
+    ``unconfigured_base`` above owns, and this is a question about that deployment:
+    the news feed is the *one* thing an unset origin is allowed to cost, and the
+    language chooser, ``<html lang>`` and the page's own prose are not on that list.
+
+    Everything expected is read out of ``web/locales/<language>.json`` by Python and
+    compared with what Chromium rendered after fetching the same file over HTTP, so
+    the assertion cannot agree with itself. Arabic is included because it is also the
+    direction check: a chooser that is present but renders the page left-to-right has
+    not applied the catalogue, only found it.
+
+    The control is *used*, not merely counted. A `<select>` that exists and does
+    nothing is the defect this project has recorded six times over, so the last two
+    assertions switch languages through it and read the heading back.
+    """
+    catalogue = i18n_keys.catalogue(language)
+    strings = catalogue["strings"]
+    context = browser.new_context(
+        viewport={"width": 1278, "height": 983},
+        extra_http_headers={"Accept-Language": f"{language},en"},
+    )
+    page = context.new_page()
+    page.add_init_script(
+        "Object.defineProperty(navigator, 'languages', {get: () => %s});"
+        "Object.defineProperty(navigator, 'language', {get: () => %s});"
+        % (json.dumps([language, "en"]), json.dumps(language))
+    )
+    try:
+        page.goto(f"{unconfigured_base}/home.html", wait_until="networkidle", timeout=20000)
+        page.wait_for_timeout(600)
+
+        assert page.locator(".home-news").count() == 0, (
+            "the premise of this test is gone: this container has a news section"
+        )
+        assert page.get_attribute("html", "lang") == language, (
+            "an unconfigured home page is announced in the wrong language, so a screen "
+            "reader pronounces it with English phonetics"
+        )
+        assert page.get_attribute("html", "dir") == catalogue.get("dir", "ltr")
+        assert page.inner_text("h1#home-title") == strings[
+            "Turn food waste information into action"
+        ], "the home page did not translate with no news origin configured"
+
+        chooser = page.locator("#language-chooser")
+        assert chooser.count() == 1, "no language chooser on an unconfigured home page"
+        assert chooser.is_visible(), (
+            "the language chooser is in the document but not on the screen"
+        )
+        chooser.select_option("en")
+        page.wait_for_timeout(400)
+        assert page.inner_text("h1#home-title") == (
+            "Turn food waste information into action"
+        ), "the chooser is present but choosing a language changes nothing"
+        assert page.get_attribute("html", "lang") == "en-NZ"
     finally:
         context.close()
 

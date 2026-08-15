@@ -395,10 +395,15 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
   window.addEventListener('pagehide', leavePage)
   window.addEventListener('beforeunload', leavePage)
+  // Unconditional, for the reason spelled out at the foot of `home.js`: a page's
+  // language is not contingent on any one section of it being present. The guard below
+  // is about whether there is anywhere to *put* statistics, which is a different
+  // question from which language the page is read in.
+  applyDocumentLanguage()
+  applyToDocument()
+  installLanguageChooser(rerenderInActiveLanguage)
+
   if (document.querySelector('#stats-summary') && document.querySelector('#stats-breakdown-content')) {
-    applyDocumentLanguage()
-    applyToDocument()
-    installLanguageChooser(rerenderInActiveLanguage)
     loadStats()
   }
 }

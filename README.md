@@ -394,6 +394,38 @@ the container warns about it at start-up. Also remove the `ports:` blocks for `a
 docker logs kaicalc-web 2>&1 | grep 'forwarded headers'
 ```
 
+**Trying a setting without a restart.** Getting an edge proxy right usually takes a few
+attempts, and rebuilding the container for each one is slow enough to discourage checking.
+nginx reloads its configuration without dropping a connection, and the script that renders
+that configuration can be re-run with a different value:
+
+```bash
+# 1. Re-render with the value you want to try. It prints what it decided.
+docker exec -e KAICALC_TRUST_FORWARDED_HEADERS=true kaicalc-web \
+  /docker-entrypoint.d/16-kaicalc-config.sh
+
+# 2. Check the result parses before asking nginx to adopt it.
+docker exec kaicalc-web nginx -t
+
+# 3. Reload. Existing connections finish on the old workers; nothing is dropped.
+docker exec kaicalc-web nginx -s reload
+```
+
+**This does not persist, and that is the trap.** The container starts from
+`docker/compose.yaml` and the environment, so the next restart silently returns to whatever
+is written there — including a restart nobody performed deliberately, such as a host reboot
+or a `docker compose up` after an unrelated change. The setting that reverts is a security
+one: an edge-fronted deployment that quietly goes back to `false` starts telling the panel
+every visitor shares one address.
+
+So use the reload to **find** the right value, then write it into `docker/compose.yaml` or
+your `.env` and bring the stack up normally. The line printed by step 1 and the one printed
+at start-up are the same sentence, which is what lets you confirm the two agree.
+
+The same three steps work for `KAICALC_NEWS_ORIGIN` and `KAICALC_API_ORIGIN`; the script
+re-renders `web/js/config.js` alongside the CSP, so the front end and the header stay in
+step even mid-experiment.
+
 ### Stopping it
 
 ```bash

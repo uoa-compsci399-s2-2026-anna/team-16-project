@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "सुधार की तुलना पूरी नहीं हो सकी।",
     "The request could not be completed.": "अनुरोध पूरा नहीं हो सका।",
     "The taxonomy could not be loaded.": "वर्गीकरण लोड नहीं हो सका।",
-    "The total waste amount in kilograms or tonnes": "कुल अपशिष्ट की मात्रा किलोग्राम या टन में",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "यह कैलकुलेटर सामूहिक आँकड़ों के लिए दर्ज किया गया क्षेत्र, खाद्य श्रेणी और मात्राएँ संग्रहीत करता है। यह ऐसा कुछ भी संग्रहीत नहीं करता जिससे आपकी या आपके व्यवसाय की पहचान हो सके।",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "इस इंटरफ़ेस का अनुवाद स्वचालित रूप से किया गया है और इस भाषा के किसी वक्ता ने इसकी जाँच नहीं की है। आँकड़ों पर इसका कोई असर नहीं पड़ता; शब्दावली गलत हो सकती है।",
     "This published factor set is marked as mock and is not a verified scientific result.": "यह प्रकाशित कारक समूह नमूने के रूप में चिह्नित है और सत्यापित वैज्ञानिक परिणाम नहीं है।",
@@ -314,6 +313,7 @@
     "Weight": "वज़न",
     "Containers": "पात्र",
     "How many containers?": "कितने पात्र?",
-    "Choose a weight, or the container you fill.": "वज़न की इकाई चुनें, या वह पात्र जिसे आप भरते हैं।"
+    "Choose a weight, or the container you fill.": "वज़न की इकाई चुनें, या वह पात्र जिसे आप भरते हैं।",
+    "The total waste amount — a weight, or how many containers you fill": "कुल अपशिष्ट मात्रा — वज़न, या आप कितने पात्र भरते हैं"
   }
 }

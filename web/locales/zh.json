@@ -167,7 +167,6 @@
     "The improvement comparison could not be completed.": "无法完成改进方案的对比。",
     "The request could not be completed.": "无法完成该请求。",
     "The taxonomy could not be loaded.": "无法载入分类数据。",
-    "The total waste amount in kilograms or tonnes": "以千克或吨为单位的浪费总量",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "本计算器会保存您填写的行业环节、食物类别和数量，用于汇总统计。不会保存任何能识别您本人或您企业的信息。",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "此界面由机器翻译，尚未经过该语言使用者审校。数字不受影响，但措辞可能有误。",
     "This published factor set is marked as mock and is not a verified scientific result.": "这套已发布的因子集被标记为模拟数据，并非经过核实的科学结果。",
@@ -318,6 +317,7 @@
     "Weight": "重量",
     "Containers": "容器",
     "How many containers?": "有多少个容器？",
-    "Choose a weight, or the container you fill.": "选择重量单位，或您实际装满的容器。"
+    "Choose a weight, or the container you fill.": "选择重量单位，或您实际装满的容器。",
+    "The total waste amount — a weight, or how many containers you fill": "浪费总量——重量，或您装满了多少个容器"
   }
 }

@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "改善の比較を完了できませんでした。",
     "The request could not be completed.": "リクエストを完了できませんでした。",
     "The taxonomy could not be loaded.": "分類データを読み込めませんでした。",
-    "The total waste amount in kilograms or tonnes": "キログラムまたはトンでの総廃棄量",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "この計算ツールは、集計統計のために入力された業種、食品カテゴリー、数量を保存します。あなたや事業者を特定できる情報は一切保存しません。",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "この画面は機械翻訳されたもので、この言語の話者による確認は受けていません。数値に影響はありませんが、表現が正しくない場合があります。",
     "This published factor set is marked as mock and is not a verified scientific result.": "この公開係数セットは仮のものとして扱われており、検証済みの科学的な結果ではありません。",
@@ -314,6 +313,7 @@
     "Weight": "重量",
     "Containers": "容器",
     "How many containers?": "容器はいくつですか。",
-    "Choose a weight, or the container you fill.": "重量の単位、または実際に満たしている容器を選んでください。"
+    "Choose a weight, or the container you fill.": "重量の単位、または実際に満たしている容器を選んでください。",
+    "The total waste amount — a weight, or how many containers you fill": "廃棄物の総量。重量、または満たしている容器の数"
   }
 }

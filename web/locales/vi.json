@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "Không hoàn tất được phép so sánh cải thiện.",
     "The request could not be completed.": "Không hoàn tất được yêu cầu.",
     "The taxonomy could not be loaded.": "Không tải được bảng phân loại.",
-    "The total waste amount in kilograms or tonnes": "Tổng lượng bỏ đi tính bằng kilôgam hoặc tấn",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "Công cụ này lưu lại lĩnh vực, nhóm thực phẩm và các số lượng bạn nhập để phục vụ thống kê tổng hợp. Công cụ không lưu bất kỳ thông tin nào nhận dạng bạn hay doanh nghiệp của bạn.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "Giao diện này được dịch tự động bằng máy và chưa được người nói ngôn ngữ này rà soát. Các con số không bị ảnh hưởng; câu chữ có thể chưa chính xác.",
     "This published factor set is marked as mock and is not a verified scientific result.": "Bộ hệ số đã công bố này được đánh dấu là dữ liệu tạm và không phải kết quả khoa học đã kiểm chứng.",
@@ -314,6 +313,7 @@
     "Weight": "Khối lượng",
     "Containers": "Thùng chứa",
     "How many containers?": "Bao nhiêu thùng chứa?",
-    "Choose a weight, or the container you fill.": "Chọn đơn vị khối lượng, hoặc thùng chứa mà bạn đổ đầy."
+    "Choose a weight, or the container you fill.": "Chọn đơn vị khối lượng, hoặc thùng chứa mà bạn đổ đầy.",
+    "The total waste amount — a weight, or how many containers you fill": "Tổng lượng rác thải — một khối lượng, hoặc số thùng chứa bạn đổ đầy"
   }
 }

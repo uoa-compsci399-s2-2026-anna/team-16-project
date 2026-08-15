@@ -164,7 +164,6 @@
     "The improvement comparison could not be completed.": "بہتری کا موازنہ مکمل نہیں ہو سکا۔",
     "The request could not be completed.": "درخواست مکمل نہیں ہو سکی۔",
     "The taxonomy could not be loaded.": "درجہ بندی لوڈ نہیں ہو سکی۔",
-    "The total waste amount in kilograms or tonnes": "کل ضیاع کی مقدار کلوگرام یا ٹن میں",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "یہ کیلکولیٹر مجموعی اعداد و شمار کے لیے درج کیا گیا شعبہ، کھانے کا زمرہ اور مقداریں محفوظ کرتا ہے۔ ایسی کوئی چیز محفوظ نہیں کرتا جو آپ کی یا آپ کے کاروبار کی شناخت ظاہر کرے۔",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "یہ انٹرفیس مشینی طور پر ترجمہ کیا گیا ہے اور اس زبان کے کسی بولنے والے نے اس کا جائزہ نہیں لیا۔ اعداد پر کوئی اثر نہیں پڑتا؛ البتہ الفاظ غلط ہو سکتے ہیں۔",
     "This published factor set is marked as mock and is not a verified scientific result.": "یہ شائع شدہ عوامل کا سیٹ آزمائشی کے طور پر نشان زد ہے اور تصدیق شدہ سائنسی نتیجہ نہیں ہے۔",
@@ -315,6 +314,7 @@
     "Weight": "وزن",
     "Containers": "برتن",
     "How many containers?": "کتنے برتن؟",
-    "Choose a weight, or the container you fill.": "وزن کی اکائی منتخب کریں، یا وہ برتن جسے آپ بھرتے ہیں۔"
+    "Choose a weight, or the container you fill.": "وزن کی اکائی منتخب کریں، یا وہ برتن جسے آپ بھرتے ہیں۔",
+    "The total waste amount — a weight, or how many containers you fill": "فضلے کی کل مقدار — وزن، یا آپ کتنے برتن بھرتے ہیں"
   }
 }

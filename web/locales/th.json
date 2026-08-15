@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "ไม่สามารถเปรียบเทียบแผนปรับปรุงให้เสร็จได้",
     "The request could not be completed.": "ไม่สามารถดำเนินการตามคำขอได้",
     "The taxonomy could not be loaded.": "ไม่สามารถโหลดระบบหมวดหมู่ได้",
-    "The total waste amount in kilograms or tonnes": "ปริมาณขยะทั้งหมดเป็นกิโลกรัมหรือตัน",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "เครื่องคำนวณนี้จะเก็บข้อมูลภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอก เพื่อใช้ทำสถิติรวม โดยไม่เก็บสิ่งใดที่ระบุตัวคุณหรือธุรกิจของคุณได้",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "หน้าจอนี้แปลด้วยระบบแปลอัตโนมัติ และยังไม่ได้รับการตรวจทานจากผู้ใช้ภาษานี้ ตัวเลขไม่ได้รับผลกระทบ แต่ถ้อยคำอาจไม่ถูกต้อง",
     "This published factor set is marked as mock and is not a verified scientific result.": "ชุดค่าตัวคูณที่เผยแพร่นี้ถูกทำเครื่องหมายว่าเป็นข้อมูลจำลอง และไม่ใช่ผลทางวิทยาศาสตร์ที่ผ่านการตรวจสอบ",
@@ -314,6 +313,7 @@
     "Weight": "น้ำหนัก",
     "Containers": "ภาชนะ",
     "How many containers?": "ภาชนะกี่ใบ",
-    "Choose a weight, or the container you fill.": "เลือกหน่วยน้ำหนัก หรือภาชนะที่คุณใส่จนเต็ม"
+    "Choose a weight, or the container you fill.": "เลือกหน่วยน้ำหนัก หรือภาชนะที่คุณใส่จนเต็ม",
+    "The total waste amount — a weight, or how many containers you fill": "ปริมาณขยะทั้งหมด — น้ำหนัก หรือจำนวนภาชนะที่คุณใส่จนเต็ม"
   }
 }

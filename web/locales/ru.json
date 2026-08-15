@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "Не удалось выполнить сравнение улучшений.",
     "The request could not be completed.": "Не удалось выполнить запрос.",
     "The taxonomy could not be loaded.": "Не удалось загрузить классификацию.",
-    "The total waste amount in kilograms or tonnes": "Общий объём отходов в килограммах или тоннах",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "Этот калькулятор сохраняет указанные отрасль, категорию продуктов и количества для сводной статистики. Он не сохраняет ничего, что позволяет установить вас или ваш бизнес.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "Этот интерфейс переведён автоматически и не проверялся носителем языка. На цифры это не влияет; формулировки могут быть неточными.",
     "This published factor set is marked as mock and is not a verified scientific result.": "Этот опубликованный набор коэффициентов помечен как условный и не является проверенным научным результатом.",
@@ -314,6 +313,7 @@
     "Weight": "Вес",
     "Containers": "Контейнеры",
     "How many containers?": "Сколько контейнеров?",
-    "Choose a weight, or the container you fill.": "Выберите единицу веса или контейнер, который вы наполняете."
+    "Choose a weight, or the container you fill.": "Выберите единицу веса или контейнер, который вы наполняете.",
+    "The total waste amount — a weight, or how many containers you fill": "Общее количество отходов — вес или число контейнеров, которые вы наполняете"
   }
 }

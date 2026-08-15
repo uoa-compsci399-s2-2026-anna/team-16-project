@@ -164,7 +164,6 @@
     "The improvement comparison could not be completed.": "تعذّر إتمام مقارنة التحسين.",
     "The request could not be completed.": "تعذّر إتمام الطلب.",
     "The taxonomy could not be loaded.": "تعذّر تحميل التصنيف.",
-    "The total waste amount in kilograms or tonnes": "إجمالي كمية الهدر بالكيلوغرام أو الطن",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "تحفظ هذه الحاسبة القطاع وفئة الطعام والكميات المُدخلة لأغراض الإحصاءات المجمّعة. ولا تحفظ أي شيء يحدد هويتك أو هوية عملك.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "تُرجمت هذه الواجهة آليًا ولم يراجعها متحدث بهذه اللغة. الأرقام غير متأثرة؛ لكن الصياغة قد تكون خاطئة.",
     "This published factor set is marked as mock and is not a verified scientific result.": "مجموعة المعاملات المنشورة هذه معلّمة كتجريبية وليست نتيجة علمية مُتحقَّقًا منها.",
@@ -315,6 +314,7 @@
     "Weight": "الوزن",
     "Containers": "الحاويات",
     "How many containers?": "كم عدد الحاويات؟",
-    "Choose a weight, or the container you fill.": "اختر وحدة وزن، أو الحاوية التي تملؤها."
+    "Choose a weight, or the container you fill.": "اختر وحدة وزن، أو الحاوية التي تملؤها.",
+    "The total waste amount — a weight, or how many containers you fill": "إجمالي كمية الهدر — وزن، أو عدد الحاويات التي تملؤها"
   }
 }

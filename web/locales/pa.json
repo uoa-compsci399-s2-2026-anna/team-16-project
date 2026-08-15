@@ -165,7 +165,6 @@
     "The improvement comparison could not be completed.": "ਸੁਧਾਰ ਦੀ ਤੁਲਨਾ ਪੂਰੀ ਨਹੀਂ ਹੋ ਸਕੀ।",
     "The request could not be completed.": "ਬੇਨਤੀ ਪੂਰੀ ਨਹੀਂ ਹੋ ਸਕੀ।",
     "The taxonomy could not be loaded.": "ਵਰਗੀਕਰਨ ਲੋਡ ਨਹੀਂ ਹੋ ਸਕਿਆ।",
-    "The total waste amount in kilograms or tonnes": "ਕਿਲੋਗ੍ਰਾਮ ਜਾਂ ਟਨ ਵਿੱਚ ਕੁੱਲ ਬਰਬਾਦੀ ਦੀ ਮਾਤਰਾ",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "ਇਹ ਕੈਲਕੁਲੇਟਰ ਸਮੁੱਚੇ ਅੰਕੜਿਆਂ ਲਈ ਦਰਜ ਕੀਤਾ ਖੇਤਰ, ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਅਤੇ ਮਾਤਰਾਵਾਂ ਸੰਭਾਲਦਾ ਹੈ। ਇਹ ਅਜਿਹਾ ਕੁਝ ਨਹੀਂ ਸੰਭਾਲਦਾ ਜੋ ਤੁਹਾਡੀ ਜਾਂ ਤੁਹਾਡੇ ਕਾਰੋਬਾਰ ਦੀ ਪਛਾਣ ਦੱਸੇ।",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "ਇਹ ਇੰਟਰਫੇਸ ਮਸ਼ੀਨੀ ਤੌਰ ਉੱਤੇ ਅਨੁਵਾਦ ਕੀਤਾ ਗਿਆ ਹੈ ਅਤੇ ਇਸ ਭਾਸ਼ਾ ਦੇ ਕਿਸੇ ਬੋਲਣ ਵਾਲੇ ਨੇ ਇਸਦੀ ਪੜਤਾਲ ਨਹੀਂ ਕੀਤੀ। ਅੰਕੜਿਆਂ ਉੱਤੇ ਕੋਈ ਅਸਰ ਨਹੀਂ; ਪਰ ਸ਼ਬਦਾਵਲੀ ਗਲਤ ਹੋ ਸਕਦੀ ਹੈ।",
     "This published factor set is marked as mock and is not a verified scientific result.": "ਇਹ ਪ੍ਰਕਾਸ਼ਿਤ ਕਾਰਕ ਸੈੱਟ ਨਮੂਨੇ ਵਜੋਂ ਨਿਸ਼ਾਨਬੱਧ ਹੈ ਅਤੇ ਇਹ ਪ੍ਰਮਾਣਿਤ ਵਿਗਿਆਨਕ ਨਤੀਜਾ ਨਹੀਂ ਹੈ।",
@@ -316,6 +315,7 @@
     "Weight": "ਭਾਰ",
     "Containers": "ਭਾਂਡੇ",
     "How many containers?": "ਕਿੰਨੇ ਭਾਂਡੇ?",
-    "Choose a weight, or the container you fill.": "ਭਾਰ ਦੀ ਇਕਾਈ ਚੁਣੋ, ਜਾਂ ਉਹ ਭਾਂਡਾ ਜਿਸਨੂੰ ਤੁਸੀਂ ਭਰਦੇ ਹੋ।"
+    "Choose a weight, or the container you fill.": "ਭਾਰ ਦੀ ਇਕਾਈ ਚੁਣੋ, ਜਾਂ ਉਹ ਭਾਂਡਾ ਜਿਸਨੂੰ ਤੁਸੀਂ ਭਰਦੇ ਹੋ।",
+    "The total waste amount — a weight, or how many containers you fill": "ਕੂੜੇ ਦੀ ਕੁੱਲ ਮਾਤਰਾ — ਭਾਰ, ਜਾਂ ਤੁਸੀਂ ਕਿੰਨੇ ਭਾਂਡੇ ਭਰਦੇ ਹੋ"
   }
 }

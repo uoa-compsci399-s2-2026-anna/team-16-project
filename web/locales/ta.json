@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "முன்னேற்ற ஒப்பீட்டை முடிக்க முடியவில்லை.",
     "The request could not be completed.": "கோரிக்கையை முடிக்க முடியவில்லை.",
     "The taxonomy could not be loaded.": "வகைப்பாட்டை ஏற்ற முடியவில்லை.",
-    "The total waste amount in kilograms or tonnes": "கிலோகிராம் அல்லது டன்னில் மொத்தக் கழிவின் அளவு",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "இந்தக் கால்குலேட்டர், ஒட்டுமொத்தப் புள்ளிவிவரங்களுக்காக நீங்கள் உள்ளிட்ட துறை, உணவு வகைப்பாடு மற்றும் அளவுகளைச் சேமிக்கிறது. உங்களையோ உங்கள் நிறுவனத்தையோ அடையாளம் காட்டும் எதையும் இது சேமிப்பதில்லை.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "இந்த இடைமுகம் தானியங்கி முறையில் மொழிபெயர்க்கப்பட்டது; இந்த மொழியைப் பேசுபவர் யாரும் இதைச் சரிபார்க்கவில்லை. எண்களில் எந்த மாற்றமும் இல்லை; சொற்கள் தவறாக இருக்கக்கூடும்.",
     "This published factor set is marked as mock and is not a verified scientific result.": "இந்த வெளியிடப்பட்ட காரணித் தொகுப்பு மாதிரி எனக் குறிக்கப்பட்டுள்ளது; இது சரிபார்க்கப்பட்ட அறிவியல் முடிவு அல்ல.",
@@ -314,6 +313,7 @@
     "Weight": "எடை",
     "Containers": "கொள்கலன்கள்",
     "How many containers?": "எத்தனை கொள்கலன்கள்?",
-    "Choose a weight, or the container you fill.": "எடை அலகு, அல்லது நீங்கள் நிரப்பும் கொள்கலனைத் தேர்ந்தெடுக்கவும்."
+    "Choose a weight, or the container you fill.": "எடை அலகு, அல்லது நீங்கள் நிரப்பும் கொள்கலனைத் தேர்ந்தெடுக்கவும்.",
+    "The total waste amount — a weight, or how many containers you fill": "மொத்தக் கழிவின் அளவு — எடை, அல்லது நீங்கள் நிரப்பும் கொள்கலன்களின் எண்ணிக்கை"
   }
 }

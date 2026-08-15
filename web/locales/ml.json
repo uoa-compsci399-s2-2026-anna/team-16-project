@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "മെച്ചപ്പെടുത്തലിന്റെ താരതമ്യം പൂർത്തിയാക്കാനായില്ല.",
     "The request could not be completed.": "അഭ്യർത്ഥന പൂർത്തിയാക്കാനായില്ല.",
     "The taxonomy could not be loaded.": "വർഗ്ഗീകരണം ലോഡ് ചെയ്യാനായില്ല.",
-    "The total waste amount in kilograms or tonnes": "കിലോഗ്രാമിലോ ടണ്ണിലോ ഉള്ള ആകെ മാലിന്യത്തിന്റെ അളവ്",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "ഈ കാൽക്കുലേറ്റർ സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾക്കായി നൽകിയ മേഖല, ഭക്ഷ്യ വിഭാഗം, അളവുകൾ എന്നിവ സൂക്ഷിക്കുന്നു. നിങ്ങളെയോ നിങ്ങളുടെ സ്ഥാപനത്തെയോ തിരിച്ചറിയുന്ന ഒന്നും ഇത് സൂക്ഷിക്കുന്നില്ല.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "ഈ ഇന്റർഫേസ് സ്വയമേവ വിവർത്തനം ചെയ്തതാണ്; ഈ ഭാഷ സംസാരിക്കുന്ന ആരും ഇത് പരിശോധിച്ചിട്ടില്ല. കണക്കുകൾക്ക് മാറ്റമില്ല; വാക്കുകൾ തെറ്റാകാം.",
     "This published factor set is marked as mock and is not a verified scientific result.": "പ്രസിദ്ധീകരിച്ച ഈ ഘടക സെറ്റ് മാതൃകയായി അടയാളപ്പെടുത്തിയിരിക്കുന്നു; ഇത് സ്ഥിരീകരിച്ച ശാസ്ത്രീയ ഫലമല്ല.",
@@ -314,6 +313,7 @@
     "Weight": "ഭാരം",
     "Containers": "പാത്രങ്ങൾ",
     "How many containers?": "എത്ര പാത്രങ്ങൾ?",
-    "Choose a weight, or the container you fill.": "ഭാര യൂണിറ്റ്, അല്ലെങ്കിൽ നിങ്ങൾ നിറയ്ക്കുന്ന പാത്രം തിരഞ്ഞെടുക്കുക."
+    "Choose a weight, or the container you fill.": "ഭാര യൂണിറ്റ്, അല്ലെങ്കിൽ നിങ്ങൾ നിറയ്ക്കുന്ന പാത്രം തിരഞ്ഞെടുക്കുക.",
+    "The total waste amount — a weight, or how many containers you fill": "മൊത്തം മാലിന്യത്തിന്റെ അളവ് — ഭാരം, അല്ലെങ്കിൽ നിങ്ങൾ എത്ര പാത്രങ്ങൾ നിറയ്ക്കുന്നു"
   }
 }

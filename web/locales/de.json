@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "Der Verbesserungsvergleich konnte nicht abgeschlossen werden.",
     "The request could not be completed.": "Die Anfrage konnte nicht abgeschlossen werden.",
     "The taxonomy could not be loaded.": "Die Systematik konnte nicht geladen werden.",
-    "The total waste amount in kilograms or tonnes": "Die gesamte Abfallmenge in Kilogramm oder Tonnen",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "Dieser Rechner speichert den Sektor, die Lebensmittelkategorie und die eingegebenen Mengen für zusammengefasste Statistiken. Er speichert nichts, was Sie oder Ihren Betrieb identifiziert.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "Diese Oberfläche wurde automatisch übersetzt und nicht von einer Person geprüft, die diese Sprache spricht. Die Zahlen sind davon nicht betroffen; die Formulierungen können falsch sein.",
     "This published factor set is marked as mock and is not a verified scientific result.": "Dieser veröffentlichte Faktorensatz ist als Beispiel gekennzeichnet und stellt kein geprüftes wissenschaftliches Ergebnis dar.",
@@ -314,6 +313,7 @@
     "Weight": "Gewicht",
     "Containers": "Behälter",
     "How many containers?": "Wie viele Behälter?",
-    "Choose a weight, or the container you fill.": "Wählen Sie eine Gewichtseinheit oder den Behälter, den Sie füllen."
+    "Choose a weight, or the container you fill.": "Wählen Sie eine Gewichtseinheit oder den Behälter, den Sie füllen.",
+    "The total waste amount — a weight, or how many containers you fill": "Die gesamte Abfallmenge — ein Gewicht oder die Anzahl der Behälter, die Sie füllen"
   }
 }

@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "De verbetervergelijking kon niet worden voltooid.",
     "The request could not be completed.": "Het verzoek kon niet worden voltooid.",
     "The taxonomy could not be loaded.": "De indeling kon niet worden geladen.",
-    "The total waste amount in kilograms or tonnes": "De totale hoeveelheid afval in kilogram of ton",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "Deze rekentool bewaart de sector, de voedselcategorie en de ingevoerde hoeveelheden voor geaggregeerde statistieken. Er wordt niets bewaard waarmee u of uw bedrijf kan worden geïdentificeerd.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "Deze interface is automatisch vertaald en is niet nagekeken door iemand die deze taal spreekt. De cijfers zijn hierdoor niet beïnvloed; de formulering kan onjuist zijn.",
     "This published factor set is marked as mock and is not a verified scientific result.": "Deze gepubliceerde factorenset is aangemerkt als voorbeeld en is geen geverifieerd wetenschappelijk resultaat.",
@@ -314,6 +313,7 @@
     "Weight": "Gewicht",
     "Containers": "Afvalcontainers",
     "How many containers?": "Hoeveel containers?",
-    "Choose a weight, or the container you fill.": "Kies een gewichtseenheid of de container die u vult."
+    "Choose a weight, or the container you fill.": "Kies een gewichtseenheid of de container die u vult.",
+    "The total waste amount — a weight, or how many containers you fill": "De totale hoeveelheid afval — een gewicht, of hoeveel containers u vult"
   }
 }

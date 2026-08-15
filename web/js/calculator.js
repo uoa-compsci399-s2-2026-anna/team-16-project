@@ -74,12 +74,14 @@ const totalOf = entry => entryTotal(entry, presetList())
  * a named one shows only once step 2 has chosen it. Step 2 is optional, so a visitor who
  * skipped it sees the generic containers alone, which is the correct outcome: there is no
  * category to be specific about.
+ *
+ * Exported for `tests/web/test_unit_presets.py`, which runs it under Node against a
+ * taxonomy it builds — the same seam `entryDestinations` is exported through, and for the
+ * same reason: a test that greps this file for `food_category` asserts that a property
+ * name was typed, not that a row leaves the list. **No shipped preset names a category**
+ * (O-6: no measured per-food density exists), so nothing in a browser can exercise this
+ * filter at all.
  */
-// Exported for tests/web/test_unit_presets.py, which runs it under Node against a
-// taxonomy it builds — the same seam `entryDestinations` is exported through, and for the
-// same reason: a test that greps this file for `food_category` asserts that a property
-// name was typed, not that a row leaves the list. No shipped preset names a category, so
-// nothing in a browser can exercise this filter at all.
 export const containerPresets = () => presetList()
   .filter(preset => !preset.food_category || preset.food_category === state.foodCategory)
 
@@ -135,7 +137,7 @@ function introduction() {
   return `<section class="hero" aria-labelledby="page-title">
     <div class="hero-copy"><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are submitted anonymously when you calculate results.'))}</p></div>
     <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" />${[150, 450, 750, 1050, 1350].flatMap(centre => [`<ellipse cx="${centre}" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/>`, `<ellipse cx="${centre}" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/>`]).join('')}${[300, 600, 900, 1200].map(x => `<path d="M ${x} 72 L ${x + 36} 126 L ${x} 181 L ${x - 36} 126 Z" fill="black"/>`).join('')}</mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
-    <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount in kilograms or tonnes'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
+    <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount — a weight, or how many containers you fill'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
   </section>`
 }
 

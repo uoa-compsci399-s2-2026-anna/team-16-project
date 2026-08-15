@@ -163,7 +163,6 @@
     "The improvement comparison could not be completed.": "Die verbeteringsvergelyking kon nie voltooi word nie.",
     "The request could not be completed.": "Die versoek kon nie voltooi word nie.",
     "The taxonomy could not be loaded.": "Die taksonomie kon nie gelaai word nie.",
-    "The total waste amount in kilograms or tonnes": "Die totale afvalhoeveelheid in kilogram of ton",
     "This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.": "Hierdie berekener stoor die sektor, voedselkategorie en hoeveelhede wat ingevoer is vir saamgevoegde statistiek. Dit stoor niks wat jou of jou onderneming identifiseer nie.",
     "This interface was machine translated and has not been reviewed by a speaker of this language. The figures are unaffected; the wording may be wrong.": "Hierdie koppelvlak is masjienvertaal en is nog nie deur 'n spreker van hierdie taal nagegaan nie. Die syfers word nie geraak nie; die bewoording kan verkeerd wees.",
     "This published factor set is marked as mock and is not a verified scientific result.": "Hierdie gepubliseerde faktorstel is as plaasvervangend gemerk en is nie 'n geverifieerde wetenskaplike resultaat nie.",
@@ -314,6 +313,7 @@
     "Weight": "Gewig",
     "Containers": "Houers",
     "How many containers?": "Hoeveel houers?",
-    "Choose a weight, or the container you fill.": "Kies 'n gewig, of die houer wat jy volmaak."
+    "Choose a weight, or the container you fill.": "Kies 'n gewig, of die houer wat jy volmaak.",
+    "The total waste amount — a weight, or how many containers you fill": "Die totale afvalhoeveelheid — 'n gewig, of hoeveel houers jy volmaak"
   }
 }

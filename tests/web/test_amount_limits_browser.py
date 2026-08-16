@@ -10,11 +10,22 @@ rejects `1e`, then accepts `1e5` — three values for three keystrokes.
 **The rules under test, and where they come from.**
 
 ``qty_kg`` is the only number that crosses the wire. §6.2 bounds it at
-``MAX_LINE_QTY`` = 10,000,000 kg per destination line and ``MAX_SCENARIO_QTY`` =
-50,000,000 kg per entry scenario (``api/schemas.py``). The step-3 total is never
-sent — it is the ceiling of the step-4 allocation — so the client rule that
-restates the scenario cap belongs on it, and the one that restates the line cap
-belongs on a destination row. Neither refuses anything the server would accept.
+``MAX_LINE_QTY`` per destination line and ``MAX_SCENARIO_QTY`` per entry
+scenario (``api/schemas.py``), and since v1.46 both are 50,000,000 kg. The
+step-3 total is never sent — it is the ceiling of the step-4 allocation — so
+the client rule that restates the scenario cap belongs on it, and the one that
+restates the line cap belongs on a destination row. Neither refuses anything the
+server would accept.
+
+**That last sentence stayed true through a real defect, which is the point.**
+The line cap was 10,000,000 kg — a fifth of the scenario cap — so a legal
+50,000 t total sent to a single destination was refused at step 4 with a limit
+the visitor had not crossed at step 3. The browser was *right*: the API refused
+it too. The rule being restated was the wrong rule, and "the client agrees with
+the server" cannot detect that. What could have is an assertion that the
+permitted case is permitted, and every ceiling test in this file asserted only
+a refusal. ``test_one_destination_may_carry_an_entire_legal_scenario`` is the
+missing half, and it fails against v1.45 on both sides of the wire.
 
 A previous attempt used ``999999999999.99`` for both, five orders of magnitude
 above the real bound and, read as tonnes, past the ``DECIMAL(16,3)`` column
@@ -713,10 +724,14 @@ def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(pa
     read once.
     """
     page = to_amount_step(page_at(1278, 983))
-    type_into(page, "#total-waste", "30000000")
+    # At the ceiling, with the line one kilogram past it. Until v1.46 this read
+    # 30,000,000 and 10,000,001; raising `MAX_LINE_QTY` made that pair legal and
+    # the test failed, correctly - it needs a state step 4 actually refuses, and
+    # the per-line ceiling is the rule it is meant to walk back onto.
+    type_into(page, "#total-waste", "50000000")
     page.click('[data-action="continue"]')
     page.wait_for_selector('[data-line-field="amount"]')
-    type_into(page, '[data-line-field="amount"] >> nth=0', "10000001")
+    type_into(page, '[data-line-field="amount"] >> nth=0', "50000001")
     first = continue_from_step_four(page)
     assert first["disabled"], first
 
@@ -730,7 +745,7 @@ def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(pa
              disabled: document.querySelector('[data-action="continue"]').disabled,
            })"""
     )
-    assert redrawn["value"] == "10000001", redrawn
+    assert redrawn["value"] == "50000001", redrawn
     assert redrawn["disabled"], redrawn
 
 

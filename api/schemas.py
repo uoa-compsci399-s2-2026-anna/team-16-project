@@ -68,10 +68,19 @@ MAX_LINE_QTY = MAX_SCENARIO_QTY
 MAX_SCENARIO_LINES = 20
 MAX_ENTRIES = 20
 
-#: The ceilings as §9 states them. Formatted from the constants rather than
-#: written out, so a message can never name a bound the code is not enforcing.
+
 def _kg(limit: Decimal) -> str:
+    """A ceiling as §9's messages state it: `50,000,000 kg`.
+
+    Formatted from the constant rather than written out beside it. The message
+    the user saw when the ratio was wrong was itself accurate - "no more than
+    10,000 tonnes" was true of the rule as it stood - so nothing about the
+    wording gave the defect away. A hand-written figure adds a second way for
+    the same sentence to be wrong, one that a reader *can* catch, and there is
+    no reason to carry it.
+    """
     return f"{int(limit):,} kg"
+
 
 #: §6.2. Absolute, and derived from this contract's own limits rather than
 #: picked: `improvement.js` rounds each alternative line to 3 decimal places

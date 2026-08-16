@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-16 (v1.44 draft)"
+date: "2026-08-16 (v1.45 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,23 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.45 — 2026-08-16 (`index.html` is the landing page again and carries its introduction screen; `home.html`, `home.js` and `news.js` are retired, not deleted; affects C and D)
+
+This reverses the information-architecture half of v1.38/v1.41 at the team's request, relayed by the owner: **`home.html` looked poor and duplicated the client's own website**, which already carries this material. It changes no request body, no response body and no schema.
+
+**What did *not* change is worth stating first.** The drawer stays and is still how every page is reached. No security header was moved. `KAICALC_NEWS_ORIGIN`, `KAICALC_NEWS_IMAGE_ORIGINS` and the `connect-src`/`img-src` they build are exactly as they were.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`/` serves `index.html` again** — `docker/nginx.conf` says `index index.html`, still a literal and still not a redirect, for the reason the previous note gave and which did not change with the file name. `index.html` opens on `state.step === -1`, the introduction screen: the eyebrow, the `<h1>`, the lead, "Start calculator", the arch band, the "What you will need" check-list and the privacy note. Step one carries a Back button again. **The screen was recovered from `a749f70^`, not rewritten** — it is the reviewed original, reconciled by hand into a file that had gained the drawer, the language chooser, the container-preset input and the amount ceilings around it | §7.2, §7.8 |
+| 2 | **The extra click is accepted, and the defect it once caused is closed by something else.** Two landing pages was the original defect and one behind a link from the other was the same defect with a click in it; that is no longer the shape, because there is now one landing page and no second one. What made `home.html` undiscoverable — a page at an address nobody visits — is prevented by the drawer, not by which file `index` names | §7.9, §7.8 |
+| 3 | **The drawer lists three destinations, not four: Calculator, Statistics, Documentation.** `Home` went with the retired page. The row for the page you are already on stays, as a link to itself, so the block is byte-identical on all three pages; the drawer still claims no `aria-current`, because `stats.html` and `methodology.html` mark the current page in their header navigation and the calculator deliberately marks none. `home.html` also left both header navigations and the wordmark link on both content pages, which now points at `./index.html` | §7.9, §7.6 |
+| 4 | **`home.html`, `web/js/home.js` and `web/js/news.js` are RETIRED: in the tree, served if the address is typed, reachable from nothing.** They are kept because **the client has not decided about the news feed**, which is the one thing on that page that exists nowhere else in this front end. Each of the three files states this at the top, and `tests/test_d_statistics_content.py` holds both halves: `test_the_retired_home_page_is_still_in_the_tree_and_still_whole` fails if it rots, and `test_no_reachable_page_links_to_a_retired_one` fails if a drawer row, a nav entry or a wordmark `href` quietly un-retires it | §7.4, §7.5 |
+| 5 | **The retired pages keep their catalogue keys in all twenty catalogues, and that is the decision rather than the path of least resistance.** `tests/web/i18n_keys.py` extracts from every `web/*.html` and `web/js/*.js` in the tree; it does not ask what is reachable. So a key remains evidence that some code renders the string — still true here — and both the coverage test and the stale-key test agree without either being silenced. Reviving the page is then a routing decision, not a re-translation. If the client says no, the three files and their keys go in **one** commit | §7.7 |
+| 6 | **Six keys came back with the screen** (`Food Waste Impact Calculator`, `For New Zealand food businesses`, `Start calculator`, the lead sentence, and the two `…return to the introduction` strings that had been reworded to `…start again`), restored from the catalogues as they stood at `a749f70^` rather than re-translated. The two `…start again` strings are gone: clearing the form lands on the introduction again, so the reworded wording is no longer true | §7.7 |
+| 7 | **No security header was widened or narrowed, and the reasoning is recorded in `docker/nginx.conf` and `docker/compose.yaml` rather than left to be inferred.** With `home.html` unreachable, the `connect-src` and `img-src` grants built from `KAICALC_NEWS_ORIGIN` have no consumer on any route a visitor can take — a fair argument for narrowing them, and the narrowing is one empty variable away with no code change. It is not taken here: the grants are operator configuration, narrowing them means changing every deployment's shipped default, and **a security header that moves as a side effect of a layout change is a header nobody reviewed.** It belongs in the commit that records the client's answer | §7.6, §7.8 |
+| 8 | **`state.step === -1` and the seventh screen are back in the test suite, not merely in the code.** `tests/web/test_step_navigation.py` walks the introduction again and measures its full-bleed CTA at all three viewports; the Back assertion on step one flipped from "must be absent" to "must be present"; `tests/web/test_i18n_browser.py` measures `h1#page-title` and the Start button again in twenty catalogues, and its right-to-left mirroring test moved back off `home.html` to the check-list on this screen. Two browser fixtures and the overflow suite press "Start calculator" where they previously landed on step one | §7.2, §7.7 |
 
 ### v1.44 — 2026-08-16 (a plaintext bypass of the TLS path is sent to https, and the health check is not; affects E, and B only in what a JSON client on that one path receives)
 
@@ -2876,6 +2893,8 @@ export function renderBar(el, rows, opts);
 
 ## 7.5 `news.js` (written by D)
 
+> **RETIRED AT v1.45, NOT DELETED.** `web/home.html` is the only page that renders this feed, and it is retired: `/` serves `index.html`, nothing links to `home.html`, and no reachable page calls `fetchNews`. Both modules and the page stay in the tree because **the client has not decided whether they want a news feed**, and the feed is the one thing on that page that exists nowhere else in this front end. Everything below is still accurate and still exercised at `/home.html`. Their catalogue keys stay in all twenty catalogues (§7.7), and the `KAICALC_NEWS_ORIGIN` grants in the public CSP were deliberately left untouched (§7.6, §7.8).
+
 ```js
 /**
  * Fetches news from the client's WordPress site. No second news system
@@ -2894,7 +2913,7 @@ Source: `${NEWS_ORIGIN}/wp-json/wp/v2/posts?per_page={limit}&_embed`
 
 **The route is fixed by WordPress; the origin is `NEWS_ORIGIN` from §7.8 and appears in no file in this repository.** It used to be written out here as a literal *and* in `docker/nginx.conf`'s `connect-src`, two copies that had to agree and failed asymmetrically when they did not. Do not restore the literal: `tests/test_d_statistics_content.py` fails on an absolute origin in `api.js`, and on one in the nginx configuration.
 
-> **§7.4 and §7.5 were specifications rather than descriptions, and both have since been built (v1.36).** `web/js/charts.js`, `web/js/news.js` and `web/js/home.js` are in the tree, Chart.js is vendored under `web/vendor/`, and `home.html` links the feed from every public page's navigation. Read this section as the contract they are held to, not as work outstanding.
+> **§7.4 and §7.5 were specifications rather than descriptions, and both have since been built (v1.36).** `web/js/charts.js`, `web/js/news.js` and `web/js/home.js` are in the tree and Chart.js is vendored under `web/vendor/`. Read this section as the contract they are held to, not as work outstanding. `charts.js` is live on `stats.html`; `news.js` and `home.js` are retired with `home.html` at v1.45 — see the banner above.
 
 ## 7.6 Front-End Hard Constraints
 
@@ -3197,6 +3216,8 @@ The second is a **plaintext bypass of the first**, and it serves `/admin` in the
 
 The drawer is **markup first and script second**, and the split is the design rather than an implementation detail.
 
+**Three destinations since v1.45.** `Home` was a fourth until `home.html` was retired; a retired page is not a destination. The row for the page the reader is already on stays, as a link to itself, so this block is byte-identical on `index.html`, `stats.html` and `methodology.html` — a reader who has opened it once knows where every row will be. It carries no `aria-current`: the two content pages mark the current page in their header navigation, and the calculator deliberately marks none, so a claim here would give a page two current pages.
+
 ```html
 <details class="site-drawer" id="site-drawer">
   <summary class="site-drawer__handle">
@@ -3204,7 +3225,6 @@ The drawer is **markup first and script second**, and the split is the design ra
   </summary>
   <div class="site-drawer__panel">
     <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
-      <a href="./home.html" data-i18n>Home</a>
       <a href="./index.html" data-i18n>Calculator</a>
       <a href="./stats.html" data-i18n>Statistics</a>
       <a href="./methodology.html" data-i18n>Documentation</a>
@@ -3223,7 +3243,7 @@ The drawer is **markup first and script second**, and the split is the design ra
 export function installDrawer(root = document)
 ```
 
-**The block above is identical on all four public pages** and is the whole of the navigation on `index.html`, which carries no header nav (§7.3a records the measurement). It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
+**The block above is identical on all three reachable pages** and is the whole of the navigation on `index.html`, which carries no header nav (§7.3a records the measurement). It was four pages and four rows until v1.45 retired `home.html`. It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
 
 > **It overlays; it never compresses.** `position: fixed`, `inset-inline-start: 0`, vertically centred, `z-index: 40`. Horizontal space is the binding constraint on this interface: the owner's laptop is a **938px** CSS viewport, already below the 960 breakpoint, and a destination row on step 4 has a **544px** floor — a 240px sidebar in flow would leave 698px. `tests/web/test_site_drawer.py::test_opening_the_drawer_moves_nothing_on_the_page` measures `#main-content`'s box and the document's scroll width before and after opening, at 1278×983, 938×898, 390×700 and 320px.
 

@@ -5,26 +5,45 @@ build step: the browser runs the files in this directory directly.
 
 ## Public pages
 
-- `home.html` — **the production `/` page.** What the tool is, what to have to hand,
-  where the numbers come from, what the statistics are not, and the latest Kai Commitment
-  news. Every word of it also appears in `methodology.html`, `stats.html` or the
-  calculator, deliberately: the page adds no new English to translate into twenty
-  catalogues, and it carries no placeholder waiting for copy the client may never send
-- `index.html` — the calculator, and only the calculator. It opens on step one; the
-  landing screen it used to open on repeated what `home.html` says and stood between a
-  visitor and the first question
+- `index.html` — **the production `/` page**, and the calculator. It opens on its own
+  introduction screen: the eyebrow, the heading, "Start the calculator", the "What you
+  will need" check-list and the privacy note. That screen costs one click before step
+  one, and the team accepted it
 - `stats.html` — privacy-protected aggregate statistics and charts
 - `methodology.html` — published methodology, factors and provenance
 
-Every page links to the other three through the shared public navigation. The calculator
-keeps its own in-page step navigation and reset controls.
+Every page links to the other two through the drawer (`js/drawer.js`), which is on all
+three; `stats.html` and `methodology.html` also carry the header navigation. The
+calculator keeps its own in-page step navigation and reset controls.
+
+### Retired, and why it is still here
+
+- `home.html`, with `js/home.js` and `js/news.js` — **retired. Nothing links to it and
+  `/` no longer serves it.** It was the landing page for one week. The team dropped it:
+  it looked poor, and it duplicated the client's own website, which already carries this
+  material.
+
+  It is **retired rather than deleted because the client has not decided about the news
+  feed** it carries, which is the one thing on it that exists nowhere else. Typing
+  `/home.html` still works — the page renders, the feed loads when `KAICALC_NEWS_ORIGIN`
+  is set, and every string on it is still translated in all twenty catalogues, because
+  `tests/web/i18n_keys.py` reads the files in this directory and does not ask which of
+  them anybody can reach.
+
+  Reviving it is one line in `docker/nginx.conf`, one drawer row on three pages, and a
+  decision about the calculator's introduction screen — the thing this page displaced.
+  Deleting it also means three modules' keys out of twenty catalogues,
+  `KAICALC_NEWS_ORIGIN`, `KAICALC_NEWS_IMAGE_ORIGINS` and the two CSP directives derived
+  from them. **Neither is a tidy-up; both need the client's answer.**
 
 ## Structure
 
 ```text
 web/
-  home.html                 The home page, served at `/`
-  index.html                Six-step calculator, opening on step one
+  index.html                Six-step calculator, served at `/`, opening on its
+                            own introduction screen
+  home.html                 RETIRED - see above. In the tree, reachable from
+                            nothing, pending the client's decision on the news feed
   stats.html                Aggregate statistics page
   methodology.html          Documentation and published-factor page
   README.md                 This file
@@ -33,8 +52,8 @@ web/
   locales/                  One catalogue per language, plus the manifest
   js/api.js                 The only module that calls fetch()
   js/i18n.js                Catalogues, negotiation and the language chooser
-  js/news.js                WordPress post normalisation
-  js/home.js                Home/news page entry point
+  js/news.js                WordPress post normalisation - RETIRED with home.html
+  js/home.js                Home/news page entry point - RETIRED with home.html
   js/charts.js              Chart.js adapters for bar and doughnut charts
   js/stats.js               Statistics page entry point
   js/methodology.js         Documentation page entry point

@@ -19,16 +19,37 @@
 # The two can run side by side: this file's database is not published at all
 # and its containers are named differently.
 #
-# PORTS. Nothing binds 80, 8000, 8080, 3000 or 5000 - a clean machine very
-# often has something on all of them already, and a port clash on the first
-# `up` is precisely the out-of-the-box failure this arrangement exists to
-# prevent (8000 was already occupied on the machine this was developed on).
-# Every published port is an environment variable with a high default:
+# PORTS. NGINX IS THE ONLY WAY IN, AND THAT IS WHAT MAKES THE PROTECTION WORK.
+# Exactly one port is published:
 #
-#   KAICALC_WEB_PORT     18080   nginx - the only one that MUST be published
-#   KAICALC_API_PORT     18000   the public API, direct (development only)
-#   KAICALC_ADMIN_PORT   18001   the admin panel, direct (development only)
+#   KAICALC_WEB_PORT     18080   nginx - the calculator, the API and the panel
+#   api / admin           ----   NOT PUBLISHED. Reached through nginx.
 #   MySQL                 ----   NOT PUBLISHED. Compose-internal only.
+#
+# 18080 is a high port on purpose: nothing here binds 80, 8000, 8080, 3000 or
+# 5000, because a clean machine very often has something on all of them
+# already and a port clash on the first `up` is precisely the out-of-the-box
+# failure this arrangement exists to prevent (8000 was already occupied on the
+# machine this was developed on).
+#
+# THE API AND THE PANEL USED TO BE PUBLISHED ON 18000 AND 18001, AND STOPPING
+# THAT IS WHAT LETS `PROTECTION_TRUSTED_PROXY` DEFAULT TO true BELOW. While
+# they were published, a caller could reach either application directly and
+# send any `X-Forwarded-For` it liked, so the applications could not be
+# allowed to believe that header - and not believing it meant every proxied
+# visitor arrived as this nginx's one container address: one rate-limit
+# bucket for everyone, and one `ip_block` row denying everyone. Measured, both
+# ways round, on the running stack; the note beside the setting on the `api`
+# service has the numbers.
+#
+# YOU CAN HAVE THEM BACK, AS ONE COMMAND AND AS A MATCHED PAIR:
+#
+#     docker compose -f docker/compose.yaml -f docker/compose.direct-ports.yaml up
+#
+# That override republishes both ports AND puts `PROTECTION_TRUSTED_PROXY`
+# back to false, because those two facts must move together and putting them
+# in one file is the only way this project has found to stop half of the pair
+# landing on its own. Read its header before you use it.
 #
 # RUNNING AN ADMIN COMMAND AGAINST A LIVE STACK.
 #
@@ -201,25 +222,52 @@ services:
       # raised on either side. That is why it is a shared volume and not two
       # `openssl rand` calls.
       SECRET_KEY: ${SECRET_KEY:-}
-      # See docker/nginx-proxy-headers.conf for the full argument. False while
-      # the direct `ports:` below are published; flip it and remove them
-      # together, never one without the other.
+      # TRUE HERE, AND THE `ports:` BLOCK THAT USED TO SIT BELOW IS WHY.
       #
-      # THE COST OF LEAVING IT FALSE IS NOT ABSTRACT. api/router.py allows 600
-      # GETs and 120 calculates per hour, keyed on the caller's address - and
-      # behind this proxy every caller IS the proxy, so those become 600 and
-      # 120 SITE-WIDE per hour rather than per visitor. In production the
-      # pairing below is required, not a refinement.
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      # It asks one question: may this application believe the
+      # `X-Forwarded-For` that OUR nginx sends it? With nothing published but
+      # 18080, the only process that can set that header on a request reaching
+      # this service is our own nginx - and docker/nginx-proxy-headers.conf
+      # OVERWRITES it with the peer nginx actually saw rather than appending
+      # to whatever arrived, so a visitor cannot smuggle a value through it
+      # either. Both halves are needed and both are now true, so the answer is
+      # yes.
+      #
+      # WHAT IT COSTS TO GET THIS WRONG, IN BOTH DIRECTIONS, MEASURED RATHER
+      # THAN REASONED ABOUT:
+      #
+      #   false WITH this proxy in front (what this file shipped until now).
+      #   db/detection.py's client_ip reads the TCP peer, which is the nginx
+      #   container - 172.20.0.5, the same value for every visitor on earth.
+      #   api/router.py's 600 GETs and 120 calculates per hour stop being per
+      #   visitor and become SITE-WIDE per hour, and one ip_block row denies
+      #   everyone. Demonstrated on this stack: one container sent 34 requests
+      #   through :18080, exhausted the panel's minute at the 30th, and a
+      #   SECOND container's next request was refused 429 on its first try.
+      #
+      #   true with the direct ports published (the state this pairing
+      #   forbids). A caller who skips nginx sets X-Forwarded-For to anything
+      #   it likes and is measured as that address - out of the rate-limit
+      #   bucket and out of the blocklist. Strictly worse than the above,
+      #   which is why the ports had to go first and why
+      #   docker/compose.direct-ports.yaml puts this back to false when it
+      #   republishes them.
+      #
+      # THE CODE DEFAULT IS STILL false, AND THAT IS NOT A DISAGREEMENT.
+      # api/app.py and admin/config.py cannot see their own topology: a bare
+      # `./run.sh api` on a laptop has no proxy in front, and there `true`
+      # would let any caller forge any address for nothing gained. This file
+      # is the thing that MAKES nginx the only way in, so this file is the
+      # thing entitled to assert it. One variable still governs both
+      # applications (contract 6.5) - the same expansion is handed to api,
+      # admin and web below, so the three cannot disagree.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
     volumes:
       - secret:/var/lib/kaicalc
-    ports:
-      # DEVELOPMENT CONVENIENCE, NOT A REQUIREMENT. nginx reaches this service
-      # over the compose network as `api:18000` and does not need it published.
-      # Remove this block (and admin's) when you set
-      # PROTECTION_TRUSTED_PROXY=true - while it is here, a caller can bypass
-      # nginx and send any X-Forwarded-For they like.
-      - "${KAICALC_API_PORT:-18000}:18000"
+    # NO `ports:`. nginx reaches this service over the compose network as
+    # `api:18000`; the host does not need it and must not have it. See the
+    # PORTS note at the head of this file, and docker/compose.direct-ports.yaml
+    # if you want it back.
     healthcheck:
       # No curl in python:3.11-slim, and adding one for a health check is 4 MB
       # of attack surface for a one-line urllib call.
@@ -247,7 +295,11 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
       SECRET_KEY: ${SECRET_KEY:-}
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      # The same expansion the api service above carries, with the same
+      # default and for the same reason - one deployment fact, one setting
+      # (contract 6.5). The long argument is on the api service; do not let
+      # these two drift.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
 
       # WHERE THE PANEL FINDS POST /api/v1/calculate. Used by /admin/try (the
       # dry-run view) and by the pre-publish comparison view; both fail with
@@ -276,10 +328,10 @@ services:
       SESSION_HTTPS_ONLY: ${KAICALC_SESSION_HTTPS_ONLY:-false}
     volumes:
       - secret:/var/lib/kaicalc
-    ports:
-      # Same note as the api service above: development convenience. nginx
-      # reaches the panel as `admin:18001`.
-      - "${KAICALC_ADMIN_PORT:-18001}:18001"
+    # NO `ports:`, for the reason given on the api service above. nginx reaches
+    # the panel as `admin:18001` and serves it at /admin on 18080. A panel
+    # published on its own port is a second, unproxied door into the one
+    # application in this stack that can publish a factor set.
     healthcheck:
       # A TCP connect, not an HTTP request. Every HTML path under /admin is
       # behind ProtectionMiddleware's headless-client detection, which refuses
@@ -367,6 +419,15 @@ services:
       # X-Forwarded-Proto and X-Forwarded-For from what it saw itself and
       # throws away any inbound copy, so no caller can forge either.
       #
+      # UNPUBLISHING api AND admin DID NOT CHANGE THIS ANSWER, AND THAT IS THE
+      # DISTINCTION THIS PAIR OF SETTINGS EXISTS TO KEEP. That change says
+      # nothing can reach the APPLICATIONS except through this nginx, which is
+      # why PROTECTION_TRUSTED_PROXY above could become true. It says nothing
+      # whatever about whether :18080 is reachable from the internet - on a
+      # laptop and on a bare VPS it is, and a caller who reaches it directly
+      # is exactly who this default refuses to believe. Only an operator who
+      # knows an edge they run is the only route to :18080 may set this true.
+      #
       # Set it true when somebody else's TLS terminator fronts this stack -
       # the ordinary shape on a public IPv4 whose port 443 already belongs to
       # another site:
@@ -390,7 +451,7 @@ services:
       # this proxy forwarding the visitor's real address while api/ and admin/
       # are still configured to ignore X-Forwarded-For. Same expansion as the
       # api and admin services above, so the three cannot disagree.
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

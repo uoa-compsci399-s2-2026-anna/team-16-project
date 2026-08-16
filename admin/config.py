@@ -132,8 +132,8 @@ class Settings:
     # where it comes from. Stated the right way round, and measured against
     # the running stack rather than reasoned about:
     #
-    #   False WITH a proxy in front (THE SHIPPED DEFAULT - docker/compose.yaml
-    #   routes every visitor through the `web` container's nginx). client_ip
+    #   False WITH a proxy in front (what docker/compose.yaml shipped until
+    #   the direct ports became opt-in). client_ip
     #   reads request.client.host, which is nginx's own container address, the
     #   same value for every visitor on earth. Measured: uvicorn's access line
     #   in kaicalc-api reads `172.20.0.5` for a request through :18080 and
@@ -151,13 +151,27 @@ class Settings:
     #   bucket and out of the blocklist. That is the worse of the two, which
     #   is why False remains the default and not because it is free.
     #
-    # False is therefore a TRADE and not a fix, and the trade is only settled
-    # in one direction: set this True once nothing can reach api/ or admin/
-    # except through a proxy that overwrites X-Forwarded-For itself. Today
-    # docker/compose.yaml still publishes 18000 and 18001 as a development
-    # convenience, so nginx can be bypassed and the header forged, and True is
-    # not yet safe here. `/admin/deployment` reports which of these two states
-    # a live deployment is actually in; the API logs the same fact at start-up
+    # False is therefore a TRADE and not a fix, and the trade is settled in
+    # one direction only: this may be True once nothing can reach api/ or
+    # admin/ except through a proxy that overwrites X-Forwarded-For itself.
+    #
+    # **THAT CONDITION IS NOW TRUE OF THE SHIPPED DEPLOYMENT, AND THE DEFAULT
+    # THERE HAS MOVED — but not here, and the difference is the point.**
+    # docker/compose.yaml publishes nothing but nginx's 18080 and hands api,
+    # admin and web `PROTECTION_TRUSTED_PROXY=true`. This dataclass default is
+    # what a process gets when NOBODY told it, and a process cannot see its own
+    # topology: `./run.sh admin` on a laptop has no proxy in front, and there
+    # True would let any caller forge any address for nothing gained. So the
+    # compose file — the thing that actually makes nginx the only way in — is
+    # the thing that asserts it, and an unconfigured process still assumes the
+    # cautious side. Contract §6.5's "one variable governs both applications"
+    # is unaffected: compose hands api and admin the same expansion.
+    #
+    # Reaching the api or the panel directly is opt-in, via
+    # docker/compose.direct-ports.yaml, which republishes 18000/18001 and puts
+    # this back to False in the same file so the pair cannot half-land.
+    # `/admin/deployment` reports which state a live deployment is actually in;
+    # the API logs the same fact at start-up
     # (api/app.py::_UNTRUSTED_PROXY_WARNING). Contract §6.5, §7.8.1, §8.2.
     protection_trusted_proxy: bool = False
 

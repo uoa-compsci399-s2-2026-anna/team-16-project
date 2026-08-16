@@ -65,7 +65,9 @@ _UNTRUSTED_PROXY_WARNING = (
     "every visitor at once. Set PROTECTION_TRUSTED_PROXY=true only once the "
     "proxy is confirmed to overwrite X-Forwarded-For itself - with no such "
     "proxy, trusting that header lets any caller claim any address, which is "
-    "the worse failure of the two."
+    "the worse failure of the two. docker/compose.yaml already sets it true, "
+    "because it publishes nothing but nginx's port; seeing this line from a "
+    "container started by that file means something overrode it."
 )
 
 #: Logged at most once per process, the first time a request arrives with no
@@ -215,6 +217,14 @@ def create_app(
     #: trusting ``X-Forwarded-For`` with no proxy in front that overwrites it
     #: lets any caller claim to be any address - and therefore claim not to be
     #: the blocked one.
+    #:
+    #: **The default here is what an unconfigured process assumes, not what
+    #: the shipped deployment runs.** ``docker/compose.yaml`` publishes nothing
+    #: but nginx's 18080 and sets this ``true`` for both applications, which is
+    #: safe precisely because that file is what makes nginx the only way in.
+    #: This process cannot see that - ``./run.sh api`` on a laptop has no proxy
+    #: at all - so the code default stays on the cautious side and the compose
+    #: file, which knows, overrides it. See ``admin/config.py``'s note.
     app.state.trusted_proxy = (
         _env_bool("PROTECTION_TRUSTED_PROXY", False)
         if trusted_proxy is None

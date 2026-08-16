@@ -55,7 +55,11 @@
 # up replaces those containers rather than standing a second copy beside them.
 #
 # Ports, teardown, `docker exec kaicalc-admin kaicalc ...`: all exactly as
-# docker/compose.yaml documents them.
+# docker/compose.yaml documents them. That includes publishing ONLY 18080 -
+# the api and the panel are reached through nginx, which is what lets
+# PROTECTION_TRUSTED_PROXY default to true here. docker/compose.direct-ports.yaml
+# overlays this file too, and republishes 18000/18001 with that setting put
+# back to false; read its header before using it on anything public.
 
 name: kaicalc
 
@@ -125,11 +129,9 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
       SECRET_KEY: ${SECRET_KEY:-}
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
     volumes:
       - secret:/var/lib/kaicalc
-    ports:
-      - "${KAICALC_API_PORT:-18000}:18000"
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:18000/openapi.json', timeout=5).status == 200 else 1)"]
       interval: 10s
@@ -152,13 +154,11 @@ services:
     environment:
       DATABASE_URL: mysql+pymysql://${MYSQL_USER:-kaicalc}:${MYSQL_PASSWORD:-devpass}@db:3306/${MYSQL_DATABASE:-kaicalc}
       SECRET_KEY: ${SECRET_KEY:-}
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
       API_BASE_URL: ${KAICALC_API_BASE_URL:-http://api:18000}
       SESSION_HTTPS_ONLY: ${KAICALC_SESSION_HTTPS_ONLY:-false}
     volumes:
       - secret:/var/lib/kaicalc
-    ports:
-      - "${KAICALC_ADMIN_PORT:-18001}:18001"
     healthcheck:
       test: ["CMD", "python", "-c", "import socket,sys; s=socket.create_connection(('127.0.0.1',18001),5); s.close()"]
       interval: 10s
@@ -198,7 +198,7 @@ services:
       KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
       # Not read by nginx - it lets the entrypoint warn when this proxy would
       # forward an address the applications are configured to ignore.
-      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}
     ports:
       - "${KAICALC_WEB_PORT:-18080}:18080"
 

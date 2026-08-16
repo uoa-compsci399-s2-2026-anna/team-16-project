@@ -343,7 +343,7 @@ out of a false-positive lockout:
 | --- | --- | --- |
 | `PROTECTION_ENABLED` | `true` | Whether any of the three checks run at all. **This is the escape hatch.** Setting it to `false` and restarting turns off the blocklist, the header check and the rate limit together — there is no finer-grained switch. Use it when protection itself is producing the lockout (a false-positive header match, a shared address hitting the rate limit) and reaching the CLI's `unblock` command would not fix it, because the block is not what is refusing the request. |
 | `PROTECTION_MAX_REQUESTS_PER_MINUTE` | `30` | Requests per minute, per address, before further ones are refused with 429. Counted in this process's own memory (`db/detection.py`'s `RequestRate`, shared with the public API's own limiter) — running more than one worker multiplies the effective limit by the worker count, since each worker holds its own counter. Must be 1 or greater; `admin/config.py` refuses to start on `0` or a negative value, because a limit of `0` refuses the first unauthenticated request from every address, `/admin/login` included. |
-| `PROTECTION_TRUSTED_PROXY` | `false` | Whether to read the caller's address from `X-Forwarded-For` instead of the raw TCP connection. **Must stay `false` unless a reverse proxy that itself overwrites `X-Forwarded-For` genuinely sits in front of this panel.** With no such proxy, `X-Forwarded-For` is a header any caller can set to any value — trusting it lets one visitor forge another's address, collapses the rate limit into a single shared counter, and can turn one legitimate block into a block on every visitor at once. |
+| `PROTECTION_TRUSTED_PROXY` | `false` in code, **`true` in `docker/compose.yaml`** | Whether to read the caller's address from `X-Forwarded-For` instead of the raw TCP connection. **Must stay `false` unless a reverse proxy that itself overwrites `X-Forwarded-For` genuinely sits in front of this panel — and cannot be bypassed.** The shipped compose files satisfy both halves: they publish nothing but nginx's `18080`, so `true` is their default; `docker/compose.direct-ports.yaml` republishes `18000`/`18001` and reverses it in the same file. The code default stays `false` because a process cannot see its own topology. With no such proxy, `X-Forwarded-For` is a header any caller can set to any value — trusting it lets one visitor forge another's address, collapses the rate limit into a single shared counter, and can turn one legitimate block into a block on every visitor at once. |
 
 **Every one of these settings needs a process restart to take effect.**
 `load_settings()` (`admin/config.py`) reads the environment once, at start-up,
@@ -403,10 +403,10 @@ Re-apply any blocks that are still needed after a rotation.
 
 **`/admin/login` and `/admin/verify` are exempt from the rate limit.** From
 that check only — the blocklist and the header check still apply to both. This
-is not a convenience: with `PROTECTION_TRUSTED_PROXY` correctly `false` and a
-reverse proxy in front (the shipped arrangement — TLS is terminated upstream),
-every caller arrives as the proxy's own address and shares **one** rate-limit
-bucket, and `RequestRate.record` counts refused requests too. So one request a
+is not a convenience: with `PROTECTION_TRUSTED_PROXY` `false` and a reverse
+proxy in front — what the stack shipped until the `api` and `admin` ports
+became opt-in, and what any deployment can still be in — every caller arrives
+as the proxy's own address and shares **one** rate-limit bucket, and `RequestRate.record` counts refused requests too. So one request a
 second from any unauthenticated caller anywhere kept that single bucket
 permanently over the limit and answered 429 to every unauthenticated request in
 the deployment, including the two login pages — and the authenticated-staff
@@ -482,10 +482,14 @@ is measuring callers by a value the deployment may not be giving it — and
 neither has an in-process fix, so both are warned about at `WARNING` level and
 named here:
 
-1. **Behind the shipped deployment, every API caller arrives as the proxy's own
-   address.** TLS terminates upstream and `PROTECTION_TRUSTED_PROXY` correctly
-   defaults to `false`, so §6.5's "600 / hour / IP" is one global bucket for all
-   public traffic, and one blocklist entry denies every visitor at once. On the
+1. **With `PROTECTION_TRUSTED_PROXY` `false` behind a proxy, every API caller
+   arrives as the proxy's own address**, so §6.5's "600 / hour / IP" is one
+   global bucket for all public traffic, and one blocklist entry denies every
+   visitor at once. **The shipped deployment is no longer in that state** —
+   `docker/compose.yaml` publishes only nginx's port and sets the flag `true`,
+   which was measured both ways round on the running stack (contract v1.42) —
+   but a deployment overlaying `docker/compose.direct-ports.yaml`, or one
+   assembled without these files, still is. On the
    panel this exact chain was a Critical — any unauthenticated caller could
    lock out every administrator remotely — and `_RATE_EXEMPT_PATHS` is what
    made it survivable by keeping the login handshake reachable. **A public API
@@ -1324,7 +1328,7 @@ There was a second thread leading to the same place. `admin/auth.py::require_sta
 | --- | --- |
 | **1. Signed proof minted by the panel** (`db/staff_proof.py`) | **Chosen.** Both processes already share one `SECRET_KEY` through one mounted volume, and the §2.3 blocklist fingerprint already proves keys derived from it agree across the boundary |
 | **2. Move the panel's session machinery into `db/` and let the API read the session cookie** | **Rejected**, and this is the substantive rejection. It is not a layering problem — `admin/protection.py` already decodes that cookie standalone, so moving it was entirely feasible. It is that doing so would make the API **a second place where a staff session is established**, so a mistake in it becomes an authentication defect in the public-facing service. It also widens reach: `/admin` and `/api/v1/` are one origin behind nginx, so a shared session cookie is sent by the browser to the API too, and any staff member's browser could then drive the arbitrary `dry_run.bundle` path directly. Option 1 keeps authentication in exactly one place and gives the API a smaller question to answer |
-| **3. An internal network boundary** — trust anything that can reach `api:18000` | **Rejected.** It makes the guarantee a deployment property rather than a code one. The `ports:` block in `docker/compose.yaml` publishes the API on 18000 for development, so out of the box the boundary does not exist, and the failure is silent |
+| **3. An internal network boundary** — trust anything that can reach `api:18000` | **Rejected**, and still rejected now that the boundary exists. `docker/compose.yaml` no longer publishes the API on 18000, so out of the box that boundary is real — but the rejection was never that it was absent, it was that it makes the guarantee a *deployment* property rather than a code one, and the failure when a deployment differs is silent. `docker/compose.direct-ports.yaml` reopens the port on request, and a deployment that does not use these files never had the boundary at all. Option 1 holds either way |
 | **4. Move the dry run into the panel against its own engine import** | **Rejected** by the contract, not by preference: v1.1 decision 1 already resolved §4.2 against §8.2 in favour of the HTTP path, because two calculation paths drift and the point of a dry run is that it exercises what production exercises |
 
 ### The security boundary, stated
@@ -1337,7 +1341,7 @@ There was a second thread leading to the same place. `admin/auth.py::require_sta
 
 **What it deliberately does not do.** The API performs no `staff` lookup: it holds no `staff` model, and giving the public service a reason to read the credential table would be a worse trade than the one taken. So an account deactivated in the seconds after a proof was minted can have that proof accepted for up to `PROOF_TTL_SECONDS` (60). The window is bounded, it buys only a calculation that persists nothing, and if it ever stops being acceptable the fix is a lookup here — not a wider credential.
 
-**A residual, named rather than left implicit.** `SESSION_HTTPS_ONLY` defaults to `false` in the shipped compose file so the panel is usable over plain http, and `PROTECTION_TRUSTED_PROXY` defaults to `false` alongside it. The proof travels only between two containers on the compose network, so it is not exposed by that default, but it is a bearer credential for its 60 seconds and TLS in front is what keeps it that way in production. This is the same pairing `docker/compose.yaml` already documents.
+**A residual, named rather than left implicit.** `SESSION_HTTPS_ONLY` defaults to `false` in the shipped compose file so the panel is usable over plain http. The proof travels only between two containers on the compose network — and since the `api` and `admin` `ports:` blocks became opt-in, that network has no host-published door at all, so nothing outside it can observe the proof in flight. It remains a bearer credential for its 60 seconds, and TLS in front is what keeps the *panel's own* traffic that way in production. This is the same pairing `docker/compose.yaml` already documents.
 
 ### What was done
 

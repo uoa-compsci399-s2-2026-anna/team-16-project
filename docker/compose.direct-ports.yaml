@@ -1,0 +1,80 @@
+# THE DIRECT PORTS, BACK ON, AS A MATCHED PAIR. An OVERLAY, never a stack of
+# its own - it declares no image, no build and no database, so it cannot start
+# anything by itself and `-f docker/compose.yaml` (or compose.deploy.yaml) has
+# to come first:
+#
+#     docker compose -f docker/compose.yaml -f docker/compose.direct-ports.yaml up
+#     docker compose -f docker/compose.yaml -f docker/compose.direct-ports.yaml down
+#
+# The same two `-f` flags on every later command against the stack, including
+# `down`, `ps` and `logs`. Compose resolves the project from the files it is
+# given; naming only the first one afterwards describes a different stack.
+#
+# WHY THIS FILE EXISTS. docker/compose.yaml publishes exactly one port, 18080,
+# and nginx is the only way to the API and the panel. That is what lets the
+# applications believe the `X-Forwarded-For` nginx sends them, which is what
+# makes the per-visitor rate limit and the blocklist actually per-visitor. But
+# `http://localhost:18000/docs` is a real convenience and a real debugging
+# tool, and taking it away without leaving a door is how a change like this
+# gets reverted in a hurry by somebody who needed it at 2am.
+#
+# WHY IT CARRIES `PROTECTION_TRUSTED_PROXY` AS WELL AS THE PORTS, WHICH IS THE
+# WHOLE POINT OF THE FILE. These two facts must move together:
+#
+#   ports published + applications trust X-Forwarded-For
+#       = a caller who skips nginx sends `X-Forwarded-For: <anything>` and is
+#         measured as that address. Out of the rate-limit bucket, out of the
+#         `ip_block` list. STRICTLY WORSE than not trusting the header at all,
+#         because a block a staff member applied simply stops holding.
+#
+# docker/nginx-proxy-headers.conf used to instruct the reader to make that
+# edit in two places and warned "both halves must land together". Half of a
+# two-place edit landing on its own is a defect this repository has found more
+# than once, so the two halves are one file now and the pairing is not
+# something anybody has to remember.
+#
+# THE COST, STATED PLAINLY. With this overlay in force the deployment is back
+# to where it was before: every visitor arriving through nginx shares ONE
+# rate-limit bucket and ONE blocklist entry, because the applications are
+# reading the TCP peer again and the TCP peer is the nginx container. That is
+# fine on a laptop with one developer on it. It is not fine anywhere the
+# public can reach, and `/admin/deployment` will say so in as many words.
+#
+# TIGHTER, IF YOU WANT IT: put `127.0.0.1:` in front of each host port below
+# and the two applications answer only on the loopback interface, so the
+# bypass exists for you and not for the network. Left off by default because
+# it is not what the removed blocks did, and a developer reaching this stack
+# from a second machine or a WSL guest would find the door apparently open and
+# refusing them, with nothing to point at.
+#
+# `KAICALC_API_PORT` and `KAICALC_ADMIN_PORT` still choose the host side, so a
+# machine that already has something on 18000 can move them without editing
+# this file.
+
+name: kaicalc
+
+services:
+
+  api:
+    environment:
+      # Back to false, and this line is the reason the file is safe to use.
+      # Still an expansion rather than a literal: an operator who has bound
+      # the ports to loopback only, and knows it, can set
+      # PROTECTION_TRUSTED_PROXY=true in the environment and have it. The
+      # DEFAULT is the safe half of the pair, which is what a default is for.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+    ports:
+      - "${KAICALC_API_PORT:-18000}:18000"
+
+  admin:
+    environment:
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}
+    ports:
+      - "${KAICALC_ADMIN_PORT:-18001}:18001"
+
+  web:
+    environment:
+      # nginx does not read this one; docker/web-config.sh only reports on it.
+      # It is here so that all three services still agree, which is the
+      # property the start-up warning depends on being able to see.
+      PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-false}

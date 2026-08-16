@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-16 (v1.43 draft)"
+date: "2026-08-16 (v1.44 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,24 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.44 — 2026-08-16 (a plaintext bypass of the TLS path is sent to https, and the health check is not; affects E, and B only in what a JSON client on that one path receives)
+
+Nothing here changes a request body, a response body or a schema. It adds one deployment variable that is **empty by default and does nothing when empty**, so every deployment that exists today behaves exactly as it does now.
+
+**The deployment.** A router forwards public 443 to the operator's edge and public 18080 straight at this stack, and the second path is a plaintext bypass of the first. It serves `/admin` in the clear, where a session cookie marked `Secure` by `KAICALC_SESSION_HTTPS_ONLY` is accepted by the browser and then never sent back — a login that fails looking like nothing at all. Port 80, where a redirect normally lives, is deliberately unlistened on that deployment, so the fix has to be in this stack's own nginx.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`KAICALC_PUBLIC_ORIGIN` names this stack's own public origin, and unset — the default and the state of every existing deployment — nothing is redirected.** Expressed as an origin rather than a boolean because nginx needs the one thing a plaintext bypass request cannot be trusted to supply: where it should have gone. Validated as a bare `https://host[:port]` by `docker/web-config.sh`, which refuses to start the container otherwise, on the same terms as `KAICALC_NEWS_ORIGIN` | §7.8, §7.8.2 |
+| 2 | **The rule keys on two facts at once — the browser's scheme is `http` AND the `Host` is the configured public one — because either alone takes the stack down, in opposite directions.** Scheme alone redirects the container's own `HEALTHCHECK`, which carries no `X-Forwarded-Proto`: `wget: bad address`, five failed probes, `unhealthy`, and `restart: unless-stopped` loops the stack. `Host` alone redirects the **https** path to itself forever, because the edge forwards the client's `Host` — the worse of the two, since the health check keeps passing while every visitor loops. Four alternatives were weighed and are recorded with why each fails | §7.8.2 |
+| 3 | **307, not 301 and not 308.** The usual framing — "301 is cached forever, so use 308" — is wrong: RFC 9110 §15.4.9 makes 308 permanent and cacheable on identical terms, so either would be remembered long after the variable was unset, with no server-side way to withdraw it. 307 is the only status that preserves the method without the permanent cache. The cost is one uncached round trip per plaintext request | §7.8.2 |
+| 4 | **`/api/v1/` is redirected too, and this is the entry B should read.** A JSON client that does not follow redirects sees a 307 where it expected a §9 envelope. It is deliberate: 307 preserves the method and body so a following client's `POST /calculate` completes over TLS, a non-following client gets a `Location` naming where to go, and carving the path out would leave `POST /api/v1/calculate` — the one request carrying a visitor's own figures, which §2.3 then persists — as the only thing still readable on the wire on the public hostname. **This is the opposite exclusion from `proxy_intercept_errors off`** and does not weaken it | §7.8.2, §6.2 |
+| 5 | **It requires `KAICALC_TRUST_FORWARDED_HEADERS` and the entrypoint refuses to start without it**, because with trust off nginx sees `http` for the edge's own traffic too and every page load would redirect to itself. A refusal where §7.8.1's `PROTECTION_TRUSTED_PROXY` mismatch is a warning: that one is second-hand, this one is two values read by the same script governing the same nginx | §7.8.2, §7.8.1 |
+| 6 | **The `envsubst` name list grew from three to five**, as two narrow names rather than one holding a rendered map entry — a value carrying quotes and a semicolon could not pass the validation that makes the others safe to interpolate. A placeholder written into a **comment** is substituted just as happily and blanks the paragraph explaining the rule, so the header of `docker/nginx.conf` now names the substituted variables without their `${}` | §7.8, §7.8.2 |
+| 7 | **A live defect closed beside it: `location @not_a_page` built its `Location` from `$scheme`**, so a 404 on the https path answered `http://<public host>/` — port 80, the port this operator has nothing on. A dead end reached by mistyping a URL on a working site. Now `$kaicalc_client_proto`, which is `$scheme` whenever forwarded headers are untrusted, so nothing without an edge changes | §7.8.2 |
+
+**`.env.example` deliberately does not gain a line.** It documents the *application* settings a bare `./run.sh` reads, and `docker compose -f docker/compose.yaml` takes its project directory from the compose file's own directory and never reads the root `.env` — which is why the other `KAICALC_*` variables were removed from it. The reasoning lives in `docker/compose.yaml` at the point of use, and in `README.md`.
 
 ### v1.43 — 2026-08-16 (the amount fields get the server's real limits, and nginx stops letting a browser run the last release; affects C and D)
 
@@ -3086,6 +3104,7 @@ export const API_ORIGIN;    // string
 | `KAICALC_API_ORIGIN` | `API_ORIGIN`, `connect-src` | `/api/v1`, relative — the designed same-origin topology |
 | `KAICALC_NEWS_IMAGE_ORIGINS` | `img-src` only (space-separated) | nothing added |
 | `KAICALC_TRUST_FORWARDED_HEADERS` | the `map` blocks that build `X-Forwarded-Proto` and `X-Forwarded-For` | `false` — both headers are built from what this nginx observed, and an inbound copy of either is discarded |
+| `KAICALC_PUBLIC_ORIGIN` | the `map` behind the plain-http redirect, as a host to match and a `Location` to send | **nothing is redirected** — a plaintext request to `:18080` is served as-is, which is what every deployment does today |
 
 ### 7.8.1 The two forwarded headers, when this nginx is not the outermost proxy
 
@@ -3129,6 +3148,48 @@ DNS, certificates and hosting are out of this project's deliverable. *Behaving c
 > **`img-src` follows `KAICALC_NEWS_ORIGIN`, which reverses an earlier decision.** The directive was kept at `'self' data:` because widening it meant *guessing* the media origin. The origin is configuration now, so there is no guess left to make, and it grants nothing new in practice because `connect-src` already reaches that host. `post.imageUrl` is still rendered nowhere; the note on `createNewsCard` in `web/js/home.js` records what changed and what is left to check — a WordPress library that serves from a CDN is a different host, and `KAICALC_NEWS_IMAGE_ORIGINS` is where it goes.
 
 **Tests.** `tests/test_web_runtime_config.py` sets a value that is not the default and reads it back out of the built image, from both the rendered header and the served module, for the configured and the unconfigured case; `tests/web/test_csp.py` starts a second, unconfigured container and asserts, with the policy enforced in a real browser, that the home page removes its news section **and** makes no off-origin request.
+
+### 7.8.2 The plain-http redirect, when a bypass of the TLS path exists
+
+A router can forward two things to one host, and a real deployment of this stack does:
+
+```
+public 443    --> the operator's edge nginx --http--> this stack :18080
+public 18080  ---------------------------------------> this stack :18080
+```
+
+The second is a **plaintext bypass of the first**, and it serves `/admin` in the clear. Once `KAICALC_SESSION_HTTPS_ONLY` is `true` — which §7.8.1 says it must be the moment TLS is in front — the panel's session cookie carries `Secure`, so a browser accepts the login, refuses to send the cookie back over http, and returns to the login page. Nothing is logged and nothing is raised; the panel simply cannot be entered by that route. The usual repair is a redirect on port 80, and an operator may deliberately have **no listener there** (an unfirewalled port 80 is scanned continuously), which leaves this stack's own nginx as the only thing in the plaintext path.
+
+**`KAICALC_PUBLIC_ORIGIN` names the origin visitors actually type, and unset it redirects nothing.** That is the shipped state and the state of every deployment that exists today, including `http://localhost:18080`.
+
+**The condition is two facts at once, and only a public visitor on the bypass has both:** the browser's scheme is `http` **and** the request's `Host` is the configured public one.
+
+| caller | `$kaicalc_client_proto` | `$host` | redirected |
+| --- | --- | --- | --- |
+| the image's own `HEALTHCHECK` | `http` | `127.0.0.1` | no |
+| the operator on the LAN | `http` | `10.0.0.130` | no |
+| a visitor through the edge | `https` | the public host | no |
+| a visitor on the plaintext bypass | `http` | the public host | **yes — 307** |
+
+> **Either fact on its own takes the stack down, in opposite directions.** `docker/nginx.conf` is one server block and it also answers the container's health check and the operator's own LAN address, neither of which carries `X-Forwarded-Proto`. So "no https, therefore redirect" answers the health check a 307 to a host it cannot resolve, `wget` exits non-zero, compose marks the container unhealthy and `restart: unless-stopped` loops the whole stack — measured, `wget: bad address`, five failed probes. And the edge forwards the client's own `Host`, so keying on the `Host` alone redirects the **https** path to itself forever: the worse of the two, because the health check keeps passing while every real visitor loops.
+
+> **`$host`, not `$http_host`.** nginx lower-cases `$host` and strips the port, so one map key matches the bypass visitor arriving on `:18080` and the edge's request arriving with no port at all. `$http_host` would need a key per published port and would stop matching the day a third is published.
+
+> **What was rejected.** `$http_x_forwarded_proto` alone breaks the health check and the LAN path exactly as above, believes a header from any caller whenever trust is off, and **cannot build the `Location` anyway** — a request that never carried the public name cannot be redirected to it, so the target has to be configuration whatever the condition is. A second listener for the health check moves `EXPOSE`, the `HEALTHCHECK` and compose and still redirects the operator's LAN address, because it separates *the health check* from everyone else rather than *a public visitor* from everyone else. A health-check path exclusion has the same defect one size smaller and stops the check exercising what a visitor gets — §0.1's list already carries a health check that reported healthy over a socket the real server had not bound. `$server_addr` is this container's own address for the health check and for a visitor from the internet identically and cannot tell them apart at all; `$remote_addr` could, but only with the edge's address written into the configuration, which is the hard-coded-host rule §7.8 exists to enforce.
+
+> **The `Host` is spoofable and that costs nothing.** Anyone who can reach `:18080` can claim the public name and collect a 307 to the real site. The `Location` is the configured literal and never a string derived from the request, so this cannot become an open redirect — which is the only thing spoofing it could buy.
+
+> **307, and the usual framing of that choice is wrong.** "301 is cached essentially forever, so use 308" trades nothing away: RFC 9110 §15.4.9 makes 308 permanent and cacheable on **exactly the same terms as 301**. Both would be remembered by browsers long after the variable was unset, stranding an operator who wants the plaintext path back with no server-side way to withdraw it. The two axes are independent — permanent (301/308) versus temporary (302/307), and method-rewriting (301/302) versus method-preserving (307/308) — and **307 is the only cell that keeps the method without the permanent cache.** The cost is one uncached round trip per plaintext request, forever, which is the right price for a rule whose whole condition is a variable an operator may unset and which must therefore be re-decided by the server on every request.
+
+> **`/api/v1/` is redirected with everything else, and that is a decision against the obvious one.** A 307 to a JSON client is not free: a caller that does not follow redirects sees a 307 where it expected a body. It is still right. The method and the body survive for every client that does follow, so a `POST /api/v1/calculate` completes against https rather than failing; a client that does not follow gets a status and a `Location` naming exactly where to go, which is diagnosable in a way that a plaintext `200` is not; and excluding it would leave `POST /api/v1/calculate` — the one request in this system carrying a visitor's own figures, which §2.3 then **persists** — as the only thing still readable on the wire on the public hostname, which inverts the point of the rule. The front end never meets it: a plaintext page load is redirected before a single module is fetched, and a page served over https makes its relative `/api/v1` calls over https. Note this is the *opposite* exclusion from `proxy_intercept_errors off`, which keeps §9's JSON envelope out of the static root's `error_page` — that one protects a front end branching on `error.code` from an HTML redirect, and there is no such branch on the plaintext bypass.
+
+**It requires `KAICALC_TRUST_FORWARDED_HEADERS`, and the entrypoint refuses to start without it.** With trust off, `$kaicalc_client_proto` is the constant `$scheme`, which behind a terminator is `http` for every request including the ones the browser made over https — so the edge's own traffic matches the key and every page load becomes an infinite redirect. There is no deployment in which that pair is correct. **It is a refusal where the `PROTECTION_TRUSTED_PROXY` mismatch in §7.8.1 is a warning, and that is not an inconsistency:** that one is second-hand, because the container is told the applications' setting by a compose file it need not have been started from, whereas both values here are read by the same script from the same container's environment and govern the same nginx. The origin must also be `https://` and a bare `scheme://host[:port]`, on the same terms and for the same injection reason as the other two origins.
+
+**The `envsubst` name list grew from three to five**, and §7.8's rule applies unchanged: `KAICALC_PUBLIC_HOST` (the bare lower-cased host) and `KAICALC_PUBLIC_REDIRECT` (the full origin) each occur **exactly once** in the template. Two narrow names rather than one wide one holding the whole rendered map entry, because a value carrying nginx syntax — quotes and a semicolon — could not pass the same "no quote, no semicolon, no space" validation that makes everything else here safe to interpolate. Writing a placeholder into a **comment** costs the same property from the other side: `envsubst` substitutes it there too, blanking the paragraph that explains the rule, which is why the header of `docker/nginx.conf` names the three substituted variables without their `${}`.
+
+**One defect beside it, closed in the same change.** `location @not_a_page` built its `Location` from `$scheme`, so a 404 on the **https** path answered `http://<public host>/` — port 80, which this same operator has deliberately left unlistened. A dead end reached by mistyping a URL on a working site. It now uses `$kaicalc_client_proto`, which resolves to `$scheme` whenever forwarded headers are untrusted, so no deployment without an edge changes behaviour. Same bug class as `absolute_redirect off` two directives above it and as the `Host $http_host` fix in `kaicalc_proxy_headers.conf`: a `Location` assembled from what this hop saw rather than from what the browser used.
+
+**Tests.** `tests/test_web_https_redirect.py` chains a real edge nginx in front of the real image and reads every status line off a socket: the bypass visitor gets 307 with path and query intact, the same `Host` **through the edge** gets 200, the health check's own `Host` and the LAN address get 200, `POST` stays `POST`, an unset origin redirects nothing including a `Host`-less HTTP/1.0 request, and the three refusals stop the container. The health-check claim is not read out of the configuration: the test waits for Docker's own health state to reach `healthy`, restarts the container, waits again, then watches it stay healthy across further probes and asserts every probe's exit code. The scheme-only mutation kills that test with `wget: bad address` and five failed probes.
 
 ---
 

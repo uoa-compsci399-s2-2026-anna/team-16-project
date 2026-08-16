@@ -3,12 +3,13 @@
 # ONE ENVIRONMENT VARIABLE, TWO CONSUMERS THAT CANNOT DISAGREE.
 #
 # Installed as /docker-entrypoint.d/16-kaicalc-config.sh, so nginx's own entrypoint runs
-# it before the server binds. It reads four variables from the environment and writes
+# it before the server binds. It reads five variables from the environment and writes
 # two files from them:
 #
 #   /etc/nginx/conf.d/kaicalc.conf        the server block, with `connect-src`,
-#                                         `img-src` and the forwarded-header trust
-#                                         flag filled in
+#                                         `img-src`, the forwarded-header trust
+#                                         flag and the https-redirect rule filled
+#                                         in
 #   /usr/share/nginx/html/js/config.js    the ES module web/js/api.js imports
 #
 # THE DEFECT THIS EXISTS TO REMOVE. The client's production domain used to be written
@@ -34,16 +35,30 @@
 # whitelist is built from whichever variables happen to exist at start-up, which is a
 # weaker promise than naming them.
 #
-# THE LIST GREW FROM TWO NAMES TO THREE, AND THAT WAS A DECISION. A name on it is a
-# name envsubst is licensed to replace, so each one has to be a string that appears in
-# the template for exactly that purpose and nowhere else. `KAICALC_TRUST_FORWARDED`
-# qualifies: it occurs once, as the sole `default` of one `map`, and the only two values
-# that can reach it are the literals `on` and `off` - see the normalisation below, which
-# refuses everything else and stops the container rather than rendering it. The
-# alternative considered was a second generated file (`conf.d/00-kaicalc-forwarded.conf`)
-# holding whichever of two literal map blocks applied, which would have kept the list at
-# two names at the cost of a second place the forwarding rule is written down. One
-# template, one rule.
+# THE LIST GREW FROM TWO NAMES TO THREE, AND THEN TO FIVE, AND EACH STEP WAS A DECISION.
+# A name on it is a name envsubst is licensed to replace, so each one has to be a string
+# that appears in the template for exactly that purpose and nowhere else.
+# `KAICALC_TRUST_FORWARDED` qualifies: it occurs once, as the sole `default` of one `map`,
+# and the only two values that can reach it are the literals `on` and `off` - see the
+# normalisation below, which refuses everything else and stops the container rather than
+# rendering it. The alternative considered was a second generated file
+# (`conf.d/00-kaicalc-forwarded.conf`) holding whichever of two literal map blocks
+# applied, which would have kept the list at two names at the cost of a second place the
+# forwarding rule is written down. One template, one rule.
+#
+# `KAICALC_PUBLIC_HOST` AND `KAICALC_PUBLIC_REDIRECT` ARE THE FOURTH AND FIFTH, AND THEY
+# ARE TWO NAMES RATHER THAN ONE ON PURPOSE. They are the key and the value of a single
+# `map` entry - a bare lower-cased host to compare against nginx's `$host`, and the full
+# `https://host` to put in the `Location`. Both occur exactly once, on the same line. The
+# alternative was one name holding the whole rendered map entry, which is fewer names on
+# the list at the cost of putting nginx SYNTAX in a shell variable: a value that has to
+# carry quotes and a semicolon cannot be validated by the same "no quote, no semicolon,
+# no space" rule that makes everything else here safe to interpolate. Two narrow values
+# that are each still just a host beat one wide value that is a fragment of configuration.
+#
+# Neither is derived from anything a request can carry. Both come from KAICALC_PUBLIC_ORIGIN,
+# validated below as a bare origin exactly as the other two are, so the `Location` this
+# renders is a configured literal and the redirect cannot be pointed anywhere by a caller.
 #
 # VALIDATION IS ALSO THE INJECTION GUARD. Each origin has to match a bare
 # scheme://host[:port] before it is used, so no value reaching either output can contain
@@ -185,14 +200,82 @@ if [ "$TRUST_FORWARDED" = on ]; then
     fi
 fi
 
+# THE STACK'S OWN PUBLIC ORIGIN, AND WHY IT HAS TO BE TOLD RATHER THAN GUESSED.
+#
+# Unset - the state every existing deployment is in - renders both halves of the redirect
+# map empty, and nothing redirects. That is the point of expressing this as an origin
+# rather than as a boolean: `KAICALC_HTTPS_REDIRECT=true` would have to invent the target
+# from the request, and a request that arrived in the clear on a bypass port is exactly
+# the request that cannot be trusted to name where it should have gone.
+#
+# THREE CHECKS, AND THE SECOND AND THIRD ARE THE ONES THAT ARE NOT OBVIOUS.
+#
+# 1. A bare origin, by the same `check_origin` the news and API origins pass through. The
+#    value is interpolated into a `Location`, so it must not be able to carry a quote, a
+#    semicolon, a space or a newline - the same guard, for the same reason.
+#
+# 2. It must be `https://`. An `http://` public origin would redirect a plaintext request
+#    to plaintext, which is either a no-op or an infinite loop depending on the host, and
+#    in neither reading is it what anybody meant by this variable. Refusing is the only
+#    answer that cannot be misread.
+#
+# 3. KAICALC_TRUST_FORWARDED_HEADERS must be on. This is the one that would take the site
+#    down if it were a warning. With trust off, `$kaicalc_client_proto` in the template is
+#    the constant `$scheme`, which behind a TLS terminator is `http` for every request
+#    including the ones the browser made over https - so the edge's own traffic matches
+#    the redirect key and every page load becomes an infinite redirect to itself. There
+#    is no deployment in which setting this origin without that flag is correct.
+#
+#    IT IS A REFUSAL WHERE THE PROTECTION_TRUSTED_PROXY MISMATCH ABOVE IS A WARNING, AND
+#    THE DIFFERENCE IS NOT INCONSISTENCY. That one is second-hand: this container is told
+#    the applications' setting by a compose file it does not have to be started from, so
+#    refusing could refuse a correct deployment on the strength of a variable it cannot
+#    really see. Both values here are read by this script, from this container's own
+#    environment, and both govern this same nginx. The contradiction is first-hand and
+#    provable, so it stops the container.
+PUBLIC_ORIGIN=${KAICALC_PUBLIC_ORIGIN:-}
+PUBLIC_HOST=
+PUBLIC_REDIRECT=
+
+if [ -n "$PUBLIC_ORIGIN" ]; then
+    check_origin KAICALC_PUBLIC_ORIGIN "$PUBLIC_ORIGIN"
+
+    case "$PUBLIC_ORIGIN" in
+        https://*) ;;
+        *) fail "KAICALC_PUBLIC_ORIGIN=$PUBLIC_ORIGIN is not an https origin. This value \
+is the target of the plain-http redirect, so an http:// origin would redirect a plaintext \
+request to plaintext - a no-op at best and an infinite loop at worst. Use \
+https://your.host, or leave it unset to redirect nothing." ;;
+    esac
+
+    if [ "$TRUST_FORWARDED" != on ]; then
+        fail "KAICALC_PUBLIC_ORIGIN=$PUBLIC_ORIGIN is set but \
+KAICALC_TRUST_FORWARDED_HEADERS is not on. Without it nginx cannot tell an https request \
+that arrived through your edge from a plaintext one - it sees http for both - so every \
+page load through the edge would be redirected to itself forever. Set \
+KAICALC_TRUST_FORWARDED_HEADERS=true (and PROTECTION_TRUSTED_PROXY=true with it), or \
+unset KAICALC_PUBLIC_ORIGIN."
+    fi
+
+    # nginx's `$host` is lower-cased and carries no port, so the map key must be too:
+    # one entry then matches the visitor arriving on `:18080` and the edge's request
+    # arriving on none. Strip the scheme, then anything from the first colon.
+    PUBLIC_HOST=$(printf '%s' "${PUBLIC_ORIGIN#https://}" | sed 's/:.*$//' \
+        | tr '[:upper:]' '[:lower:]')
+    PUBLIC_REDIRECT=$PUBLIC_ORIGIN
+fi
+
 [ -f "$TEMPLATE" ] || fail "$TEMPLATE is missing; the image is built wrong."
 
 KAICALC_CSP_CONNECT_SRC=$CONNECT_SRC
 KAICALC_CSP_IMG_SRC=$IMG_SRC
 KAICALC_TRUST_FORWARDED=$TRUST_FORWARDED
+KAICALC_PUBLIC_HOST=$PUBLIC_HOST
+KAICALC_PUBLIC_REDIRECT=$PUBLIC_REDIRECT
 export KAICALC_CSP_CONNECT_SRC KAICALC_CSP_IMG_SRC KAICALC_TRUST_FORWARDED
+export KAICALC_PUBLIC_HOST KAICALC_PUBLIC_REDIRECT
 
-envsubst '${KAICALC_CSP_CONNECT_SRC} ${KAICALC_CSP_IMG_SRC} ${KAICALC_TRUST_FORWARDED}' \
+envsubst '${KAICALC_CSP_CONNECT_SRC} ${KAICALC_CSP_IMG_SRC} ${KAICALC_TRUST_FORWARDED} ${KAICALC_PUBLIC_HOST} ${KAICALC_PUBLIC_REDIRECT}' \
     < "$TEMPLATE" > "$CONF" \
     || fail "could not write $CONF. It must be writable by the user nginx runs as."
 
@@ -221,4 +304,13 @@ else
     echo "$ME: forwarded headers not trusted - X-Forwarded-Proto and X-Forwarded-For are" \
          "set from what this proxy observed, and any inbound copy is discarded. Set" \
          "KAICALC_TRUST_FORWARDED_HEADERS=true if you terminate TLS in front of this."
+fi
+if [ -n "$PUBLIC_ORIGIN" ]; then
+    echo "$ME: https redirect ON - a request whose Host is '$PUBLIC_HOST' and whose" \
+         "browser scheme is http is answered 307 to $PUBLIC_REDIRECT. Every other" \
+         "caller, including the health check and any other host name this port answers" \
+         "on, is served normally."
+else
+    echo "$ME: public origin <unset - nothing is redirected; a plaintext request to this" \
+         "port is served as-is>"
 fi

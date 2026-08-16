@@ -331,6 +331,7 @@ in `docker/compose.yaml` at the point of use, and below:
 | `KAICALC_API_ORIGIN` | empty, and it should stay empty unless the API is on its own origin. Details below. |
 | `KAICALC_NEWS_IMAGE_ORIGINS` | space-separated, `img-src` only, for a WordPress media library on a CDN rather than on the site origin. |
 | `KAICALC_TRUST_FORWARDED_HEADERS` | defaults to `false`. **Set it true when another proxy — one you operate — terminates TLS in front of this stack.** Left false there, the panel is told the request is not on TLS and every visitor arrives as your edge's one address. Set true while this nginx is directly reachable, and any caller can claim any address. Details below. |
+| `KAICALC_PUBLIC_ORIGIN` | **empty, and empty redirects nothing.** Set it to the origin visitors type — `https://your.host` — and a *plaintext* request for that host is answered `307` to it. This is how you close a port-forward that reaches `:18080` around your TLS terminator. The health check, your LAN address and the edge's own traffic are untouched. Requires `KAICALC_TRUST_FORWARDED_HEADERS`; the container refuses to start without it. Details below. |
 | `PROTECTION_TRUSTED_PROXY` | **`docker/compose.yaml` sets it `true`**, which is what makes the rate limit and the blocklist per-visitor rather than per-proxy. Safe only because that file publishes nothing but nginx's port; `docker/compose.direct-ports.yaml` republishes the other two and puts this back to `false` in the same file. The *code* default (`./run.sh`, no compose) is `false` — a process with no proxy in front must not believe the header. |
 | `PROTECTION_ENABLED` | the escape hatch if the panel's protection layer locks everyone out. Every setting is read once at start-up, so edit *and restart*. |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | login throttling. Lockout counters live in process memory, so `docker compose -f docker/compose.yaml restart admin` clears every lockout immediately. |
@@ -439,6 +440,76 @@ route in. Set `KAICALC_SESSION_HTTPS_ONLY=true` at the same time.
 ```bash
 # What is actually in force:
 docker logs kaicalc-web 2>&1 | grep 'forwarded headers'
+```
+
+### Closing a plaintext bypass of your TLS path
+
+A router can forward two things to one host, and if yours does, the second one is a hole:
+
+```
+public 443    --> your edge :443 --http--> this stack :18080     the TLS path
+public 18080  ---------------------------> this stack :18080     a bypass of it
+```
+
+That second line serves `/admin` in the clear. With `KAICALC_SESSION_HTTPS_ONLY=true` — which
+you must set once TLS is in front — the panel's session cookie carries `Secure`, so a browser
+on that path accepts your password, refuses to send the cookie back over http, and returns you
+to the login form. **Nothing is logged and nothing is raised.** It looks like a wrong password.
+
+The usual answer is a redirect on port 80, and you may deliberately have nothing listening
+there — an unfirewalled port 80 gets scanned continuously. So this stack's own nginx does it,
+and it needs to be told the origin your visitors actually type:
+
+```bash
+KAICALC_PUBLIC_ORIGIN=https://your.host \
+KAICALC_TRUST_FORWARDED_HEADERS=true \
+KAICALC_SESSION_HTTPS_ONLY=true \
+  docker compose -f docker/compose.yaml up -d
+```
+
+A plaintext request whose `Host` is `your.host` is then answered `307 https://your.host/…`,
+path and query intact, method preserved.
+
+**Nothing else is redirected, and that is the whole difficulty.** This is the same nginx that
+answers the container's own health check (`Host: 127.0.0.1:18080`), your LAN address
+(`http://10.0.0.130:18080/`), and every request the TLS path itself delivers — your edge
+speaks plain http to us. A rule of "not https, therefore redirect" answers the **health
+check** with a redirect it cannot follow; the container goes unhealthy, `restart:
+unless-stopped` restarts it, and the stack loops. A rule of "that `Host`, therefore redirect"
+loops the **https** path instead, because your edge forwards the visitor's `Host` unchanged.
+So the rule needs both facts, and only a visitor on the bypass has both: the browser used
+`http` *and* asked for your public name.
+
+| who | redirected |
+| --- | --- |
+| the container's health check | no |
+| you, at `http://<lan-address>:18080/` | no |
+| a visitor through your edge, over TLS | no |
+| a visitor at `http://your.host:18080/` | **yes — 307** |
+
+**Unset means unset.** Leave `KAICALC_PUBLIC_ORIGIN` empty and nothing is redirected anywhere,
+including `http://localhost:18080` — which is what every existing deployment does and what
+`docker compose up` still does out of the box.
+
+**It refuses to start without `KAICALC_TRUST_FORWARDED_HEADERS`.** Without that flag nginx sees
+`http` for your edge's traffic too, so it could not tell the TLS path from the bypass and every
+page load would redirect to itself. There is no correct deployment of the pair apart, so the
+container stops rather than serving a loop. The origin must be `https://` and a bare
+`scheme://host[:port]` for the same reason the news and API origins must be.
+
+**`307`, not `301`.** A `301` — and a `308`, which browsers cache on identical terms — would be
+remembered by every browser that ever saw it, long after you unset the variable, with no way to
+withdraw it from the server side. `307` is temporary *and* preserves the method, so a
+`POST /api/v1/calculate` re-issues correctly over TLS. The price is that it is never cached:
+one extra round trip per plaintext request.
+
+**`/api/v1/` is redirected too.** A JSON client that does not follow redirects will see a `307`
+where it expected a body. That is intended — the alternative leaves `POST /api/v1/calculate`,
+the one request carrying a visitor's own figures, readable on the wire on your public hostname.
+
+```bash
+# What is actually in force:
+docker logs kaicalc-web 2>&1 | grep 'https redirect\|public origin'
 ```
 
 **Reading it back from a browser instead.** Sign in to the panel as an administrator and

@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <meta name="description" data-i18n-attr="content" content="Use the Kai Commitment food waste impact calculator and read the latest Kai Commitment news.">
     <title data-i18n>Home | Kai Commitment Food Waste Impact Calculator</title>
-    <link rel="stylesheet" href="./css/styles.css">
+    <link rel="stylesheet" href="./css/styles.css?v=20260816-6">
   </head>
   <body class="home-page">
     <!-- **THIS IS THE PAGE `/` SERVES.** `docker/nginx.conf` says `index home.html`, so a
@@ -60,19 +60,6 @@
          content pages carries it, and a second element claiming to be the current page
          is a page with two current pages. On the calculator nothing claims it, which is
          what `tests/test_d_statistics_content.py` asserts. -->
-    <details class="site-drawer" id="site-drawer">
-      <summary class="site-drawer__handle">
-        <span class="sr-only" data-i18n>Site navigation</span>
-      </summary>
-      <div class="site-drawer__panel">
-        <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
-          <a href="./home.html" data-i18n>Home</a>
-          <a href="./index.html" data-i18n>Calculator</a>
-          <a href="./stats.html" data-i18n>Statistics</a>
-          <a href="./methodology.html" data-i18n>Documentation</a>
-        </nav>
-      </div>
-    </details>
     <header class="site-header">
       <div class="header-inner public-header-inner home-header-inner">
         <a class="brand" href="./home.html" data-i18n-attr="aria-label" aria-label="Kai Commitment home">
@@ -89,6 +76,7 @@
     </header>
 
     <main class="main-content home-main" id="main-content" tabindex="-1">
+      <div class="home-hero-shell">
       <section class="home-hero" aria-labelledby="home-title">
         <div>
           <p class="eyebrow" data-i18n>Food waste impact calculator</p>
@@ -109,6 +97,7 @@
            Decorative, so `aria-hidden`; the arches are cut out of a solid Kale band with
            a mask, and the photograph behind shows through the holes. -->
       <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" /><ellipse cx="150" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="150" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="450" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="450" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="750" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="750" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="1050" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="1050" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><ellipse cx="1350" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/><ellipse cx="1350" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/><path d="M 300 72 L 336 126 L 300 181 L 264 126 Z" fill="black"/><path d="M 600 72 L 636 126 L 600 181 L 564 126 Z" fill="black"/><path d="M 900 72 L 936 126 L 900 181 L 864 126 Z" fill="black"/><path d="M 1200 72 L 1236 126 L 1200 181 L 1164 126 Z" fill="black"/></mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
+      </div>
 
       <!-- Step zero: what to have to hand before starting. It is the one half of the
            calculator's introduction screen that told the reader something, and it belongs
@@ -164,6 +153,6 @@
       <p data-i18n>Kai Commitment · Food Waste Impact Calculator</p>
       <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record" data-i18n>What we record</a></p>
     </footer>
-    <script type="module" src="./js/home.js"></script>
+    <script type="module" src="./js/home.js?v=20260816-1"></script>
   </body>
 </html>

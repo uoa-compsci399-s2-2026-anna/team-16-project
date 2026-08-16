@@ -1330,8 +1330,8 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    measured, with the `max-width` kept as the narrow-viewport guard it was. */
 .language-bar__select {
   min-height: 44px;
-  width: 22ch;
-  max-width: min(100%, 22ch);
+  width: 14ch;
+  max-width: min(100%, 14ch);
   padding-block: 0;
   padding-inline: 0 6px;
   color: var(--kai-kale);
@@ -1360,6 +1360,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 /* Statistics page: kept under a page namespace so the shared public shell can be unified
    without coupling calculator controls to Chart.js layout. */
 .stats-page .stats-main { max-width: 1120px; }
+.stats-page #stats-title { max-width: none; white-space: nowrap; }
 .stats-page .stats-status-panel { margin: 34px 0; padding: 22px; border-radius: 14px; background: var(--mint); }
 .stats-page .stats-status-panel p:last-child { margin-bottom: 0; }
 .stats-page .stats-calculation-total { font-size: 1.2rem; }
@@ -1379,6 +1380,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 /* Home page: isolated from calculator components so the public shell can be unified later. */
 .home-page .home-main { max-width: 1120px; }
+.home-page .home-hero-shell {
+  margin-top: -54px;
+  padding-top: 54px;
+  background: var(--kai-kale);
+  box-shadow: 0 0 0 100vmax var(--kai-kale);
+  clip-path: inset(0 -100vmax);
+}
 .home-page .home-hero { padding: clamp(36px, 7vw, 76px); border-radius: 22px; color: var(--kai-white); background: var(--kai-kale); }
 .home-page .home-hero .eyebrow { color: var(--kai-pea); }
 .home-page .home-hero .lead { color: rgba(255, 255, 255, 0.84); }
@@ -1390,7 +1398,14 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    corner radius at its foot, so the two read as one block rather than a band parked below
    a card. It came from the calculator's deleted introduction screen with its own rules
    (`.hero-food-pattern`, `.food-arch-mask`) intact; only the placement is new. */
-.home-page .hero-food-pattern { margin-top: -22px; border-end-end-radius: 22px; border-end-start-radius: 22px; }
+.home-page .hero-food-pattern {
+  margin-top: -22px;
+  margin-inline: calc(50% - 50vw);
+  max-width: none;
+  border-end-end-radius: 0;
+  border-end-start-radius: 0;
+  background-image: none;
+}
 
 .home-page .home-needs { margin-top: 40px; }
 .home-page .home-needs .needs-panel { margin: 0; }
@@ -1437,6 +1452,104 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .home-page .home-news-date { margin-bottom: 10px; color: var(--muted); font-size: 0.88rem; }
 .home-page .home-news-card h3 { margin-bottom: 10px; }
 .home-page .home-news-link { min-height: 44px; margin-top: auto; display: inline-flex; align-items: center; color: var(--kai-kale); font-weight: 700; text-underline-offset: 4px; }
+
+/* Layout refinement: preserve the established palette while giving the public pages a
+   clearer rhythm and a more deliberate responsive header. */
+@media (min-width: 1000px) {
+  .public-header-inner {
+    max-width: 1240px;
+    display: grid;
+    grid-template-columns: minmax(320px, auto) minmax(0, 1fr) auto;
+    column-gap: 24px;
+  }
+  .public-header-inner .brand { margin-inline-end: 0; }
+  .public-header-inner .public-nav { justify-self: end; }
+  .public-header-inner .language-bar { justify-self: end; }
+}
+
+.home-page .home-main { padding-top: 54px; padding-bottom: 88px; }
+.home-page .home-hero {
+  min-height: 470px;
+  padding: clamp(44px, 6vw, 72px);
+  display: flex;
+  align-items: center;
+}
+.home-page .home-hero > div { width: 100%; max-width: 820px; }
+.home-page .home-hero h1 { max-width: 820px; margin-bottom: 24px; }
+.home-page .home-hero .lead { max-width: 740px; margin-bottom: 26px; }
+.home-page .home-hero .button-primary { min-width: 200px; justify-content: center; }
+.home-page .home-needs { margin-top: 48px; }
+.home-page .home-needs .needs-panel { padding: 32px; }
+.home-page .home-needs h2 { margin-bottom: 22px; }
+.home-page .home-explainers { margin-top: 28px; gap: 24px; }
+.home-page .home-explainer {
+  min-height: 310px;
+  padding: 30px;
+  border-radius: 20px;
+  box-shadow: var(--shadow);
+  transition: transform 160ms ease, box-shadow 160ms ease;
+}
+.home-page .home-explainer:hover { transform: translateY(-4px); }
+.home-page .home-explainer h2 { margin-bottom: 14px; line-height: 1.25; }
+.home-page .home-explainer p:not(.eyebrow) { margin-bottom: 22px; }
+.home-page .home-news { padding-top: 76px; }
+
+.stats-page .stats-introduction,
+.methodology-page .methodology-main > section:first-child { padding-top: 8px; }
+.stats-page .stats-status-panel { padding: 28px; border-radius: 18px; }
+.stats-page .stats-breakdown { padding: 28px; border-radius: 18px; }
+
+@media (min-width: 700px) {
+  .home-page .home-needs .check-list {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    column-gap: 36px;
+  }
+}
+
+@media (max-width: 999px) {
+  .public-header-inner {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px 18px;
+  }
+  .public-header-inner .brand { margin-inline-end: 0; }
+  .public-header-inner .language-bar { grid-column: 2; grid-row: 1; justify-self: end; }
+  .public-header-inner .public-nav {
+    grid-column: 1 / -1;
+    grid-row: 2;
+    width: 100%;
+    justify-content: flex-end;
+  }
+}
+
+@media (max-width: 560px) {
+  .public-header-inner { grid-template-columns: 1fr; gap: 8px; padding-block: 14px; }
+  .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; }
+  .public-header-inner .language-bar { grid-column: 1; grid-row: 2; justify-self: end; max-width: 100%; }
+  .public-header-inner .public-nav {
+    grid-column: 1;
+    grid-row: 3;
+    justify-content: flex-start;
+    gap: 2px 16px;
+  }
+  .home-page .home-main { padding-top: 30px; padding-bottom: 64px; }
+  .home-page .home-hero-shell { margin-top: -30px; padding-top: 30px; }
+  .home-page .home-hero { min-height: 0; padding: 34px 28px 42px; border-radius: 18px; }
+  .home-page .home-hero h1 { margin-bottom: 20px; font-size: clamp(2.2rem, 12vw, 3.2rem); }
+  .home-page .home-hero .lead { margin-bottom: 22px; font-size: 1.02rem; }
+  .home-page .home-hero .button-primary { width: 100%; }
+  .home-page .hero-food-pattern { height: 126px; margin-top: -18px; border-end-end-radius: 18px; border-end-start-radius: 18px; }
+  .home-page .home-needs { margin-top: 30px; }
+  .home-page .home-needs .needs-panel,
+  .home-page .home-explainer { padding: 22px; }
+  .home-page .home-explainer { min-height: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .home-page .home-explainer { transition: none; }
+  .home-page .home-explainer:hover { transform: none; }
+}
 
 @media (min-width: 700px) {
   .home-page .home-news-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }

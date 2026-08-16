@@ -681,6 +681,6 @@ export function installLanguageChooser(afterChange) {
   // its own element, its own size and its own spacing, and nothing is drawn
   // over or through it.
   const row = header.querySelector('.header-inner') || header
-  row.prepend(bar)
+  row.append(bar)
   return select
 }

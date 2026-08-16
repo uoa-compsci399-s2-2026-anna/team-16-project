@@ -1,5 +1,5 @@
 import { escapeHtml, formatNumber, stepNav } from './view.js'
-import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
+import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js?v=20260816-1'
 import { entryTotal, kgToTonnes } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 

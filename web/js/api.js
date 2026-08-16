@@ -1,4 +1,4 @@
-import { t } from './i18n.js'
+import { t } from './i18n.js?v=20260816-1'
 import { API_ORIGIN, NEWS_ORIGIN } from './config.js'
 
 // `API_ORIGIN` is empty in the designed topology, so this is `/api/v1` — a relative path,

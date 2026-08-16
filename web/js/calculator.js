@@ -680,6 +680,52 @@ export function bindCalculator(main, retryTaxonomy) {
     }
   })
 
+  /**
+   * Where a minus sign may land, decided before it lands.
+   *
+   * **This is the one place a keystroke is declined, and it declines a
+   * character rather than editing a number.** Nothing below assigns to
+   * `.value`: a visitor who gets a negative number into one of these fields
+   * keeps it on screen and is refused by `validateCurrentStep` on Continue,
+   * in their own language, which is how every other rule in this file works.
+   *
+   * **The reason a minus is worth intercepting at all is `<input
+   * type="number">`'s sanitising.** "5-" is not a valid floating-point number,
+   * so the browser reports `.value === ''` while still *showing* "5-" in the
+   * box. The row then reads as empty to `updateLine`, the allocation summary
+   * drops it, and nothing on the screen says why — a field that looks filled
+   * and counts as blank. Refusing the character is what stops that state
+   * existing; refusing the number is not, because there is no number.
+   *
+   * **The two totals and the destination rows take opposite rulings, and the
+   * asymmetry is deliberate.** `#total-waste` and `#unit-count` have no use for
+   * a minus in any state, so it never lands. A destination amount must accept
+   * one *at the start*, because `validateCurrentStep` refuses negative
+   * destination amounts and `destinationStep` marks the summary and the row
+   * invalid while it is typed — a refusal the visitor cannot see is a refusal
+   * that teaches nothing, and blocking the character would hide it.
+   *
+   * **`value !== ''` stands in for "the caret is at the start", because a
+   * number input has no caret to ask.** `selectionStart` throws
+   * `InvalidStateError` on `type="number"`, so the only signal available is
+   * whether anything is there yet. The cost is that "5" cannot be turned into
+   * "-5" by prefixing; it has to be cleared first. That is the narrow side of
+   * the trade and it is the right side: the wide one readmits "5-".
+   */
+  main.addEventListener('beforeinput', event => {
+    const target = event.target
+    if (!event.data?.includes('-')) return
+    if (target.id === 'total-waste' || target.id === 'unit-count') {
+      event.preventDefault()
+      return
+    }
+    if (!target.matches('[data-line-field="amount"]')) return
+    const alreadyEntered = target.dataset.minusEntered === 'true' ? 1 : 0
+    const incoming = [...event.data].filter(character => character === '-').length
+    if (target.value !== '' || !event.data.startsWith('-') || alreadyEntered + incoming > 1) event.preventDefault()
+    else target.dataset.minusEntered = 'true'
+  })
+
   main.addEventListener('input', event => {
     const target = event.target
     if (target.id === 'total-waste') {
@@ -687,7 +733,25 @@ export function bindCalculator(main, retryTaxonomy) {
       state.error = null
     }
     if (target.id === 'unit-count') updateContainerCount(target)
-    if (target.matches('[data-line-field="amount"]')) updateLine(target)
+    if (target.matches('[data-line-field="amount"]')) {
+      // `beforeinput` cannot always be the whole story. A lone "-" leaves
+      // `.value === ''` — the browser will not call one character a number — so
+      // the flag has to be carried across that keystroke rather than recomputed
+      // from a value that is not there yet, and it has to be *released* when the
+      // field is emptied again or a second leading minus could never be typed.
+      //
+      // The other half is defensive. The InputEvent spec puts a paste's content
+      // on `dataTransfer` and permits `data` to be null for `insertFromPaste`;
+      // this Chromium populates `data` for a plain-text paste, so the guard
+      // above does catch one today. Where it does not, the paste lands and this
+      // line restores the invariant from what actually arrived — which is also
+      // exactly what a refusal is supposed to do here: keep the visitor's
+      // number and say no on Continue.
+      if (target.value !== '' || event.inputType?.startsWith('delete')) {
+        target.dataset.minusEntered = String(target.value.startsWith('-'))
+      }
+      updateLine(target)
+    }
     if (target.matches('[data-improvement-code]')) updateImprovementInput(target, state)
   })
 

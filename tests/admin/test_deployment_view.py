@@ -61,6 +61,10 @@ def http_test(fn):
 EDGE_CLIENT = "203.0.113.9"
 MIDDLE_HOP = "203.0.113.44"
 FORGED_CLIENT = "198.51.100.7"
+#: The stack's own nginx, as the panel sees it on the container network. What
+#: `X-Real-IP` carries, and - with the trust flag off - the whole of what
+#: `X-Forwarded-For` carries, for every visitor alike.
+NGINX_PEER = "172.18.0.5"
 
 
 def _flat(html: str) -> str:
@@ -496,6 +500,64 @@ def test_a_forwarded_chain_that_the_application_ignores_is_a_warning():
     joined = _details(warnings)
     assert "one shared rate-limit bucket" in joined
     assert "denies everyone" in joined
+
+
+def test_the_shipped_default_behind_our_own_nginx_is_a_warning():
+    """The state `docker compose up` actually produces, which read as an
+    all-clear until 2026-08-16.
+
+    With `KAICALC_TRUST_FORWARDED_HEADERS` off - also the default - nginx
+    OVERWRITES `X-Forwarded-For` with the peer it saw, so exactly ONE entry
+    arrives. That falls past the two-entry warning, and the page's final `ok`
+    then said "the address in force is the connection this panel accepted" and
+    stopped. True, and not the finding: the connection is the nginx container,
+    the same value for every visitor, so the rate limit is one bucket and one
+    `ip_block` row denies everyone. Measured on the running stack - a container
+    exhausted the panel's minute and the next request from a different machine
+    was refused 429 on its first try.
+
+    `real_ip` is what makes this branch reachable rather than the chain: nginx
+    sets `X-Real-IP` in both branches of the trust flag, so it is the evidence
+    that the stack's proxy is in the path at all.
+    """
+    findings = assess(
+        _observation(
+            forwarded_for=NGINX_PEER,
+            chain=(NGINX_PEER,),
+            real_ip=NGINX_PEER,
+            decided_address=NGINX_PEER,
+        ),
+        _settings(protection_trusted_proxy=False),
+    )
+
+    warnings = [f for f in findings if f.level == "warn"]
+    assert warnings, f"no warning raised; findings were: {_titles(findings)}"
+    joined = _details(warnings)
+    assert "one shared rate-limit bucket" in joined, joined
+    assert "denies everyone" in joined, joined
+    # Named as a trade, with the condition that would settle it. A warning
+    # that only says "this is wrong" invites the unsafe repair, which is
+    # flipping the flag while 18000 and 18001 are still published.
+    assert "18000 and 18001" in joined, joined
+
+
+def test_the_shipped_default_with_no_proxy_in_the_path_is_not_a_warning():
+    """What stops the rule above from being "warn whenever trust is off".
+
+    A request straight to the panel's published port carries neither header,
+    and there `PROTECTION_TRUSTED_PROXY` false is simply correct: the
+    connection IS the caller. Without this, a page that warned unconditionally
+    would pass the test above.
+    """
+    findings = assess(
+        _observation(forwarded_for=None, chain=(), real_ip=None),
+        _settings(protection_trusted_proxy=False),
+    )
+
+    address_findings = [f for f in findings if "address in force" in f.title]
+    assert address_findings, _titles(findings)
+    assert all(f.level != "warn" for f in address_findings), _titles(address_findings)
+    assert "one shared rate-limit bucket" not in _details(findings)
 
 
 def test_trusting_with_no_forwarded_header_is_a_warning():

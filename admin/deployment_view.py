@@ -338,7 +338,27 @@ def assess(observation: Observation, settings: Settings) -> list[Finding]:
 
 def _assess_address(observation: Observation, settings: Settings) -> list[Finding]:
     """Whether the address in force is the visitor's, and what it costs when
-    it is not."""
+    it is not.
+
+    **The shipped default is one of the states this reports, and it used to
+    read as an all-clear.** ``PROTECTION_TRUSTED_PROXY`` false while the
+    stack's own nginx is in the path is what ``docker compose up`` produces,
+    and with the trust flag off nginx overwrites ``X-Forwarded-For`` so exactly
+    one entry arrives — which fell past the two-entry warning below into the
+    final ``ok``. The page then said "the address in force is the connection
+    this panel accepted" and stopped, which is true and is not the finding: the
+    connection is nginx, so the rate limit is one bucket for everyone and one
+    ``ip_block`` row denies everyone. That was measured on the running stack,
+    not inferred — a container exhausted the panel's minute and the next
+    request from a different machine was refused on its first try.
+
+    It is reported as a ``warn`` and named as a **trade**, because it is one:
+    the alternative default lets any caller who can reach ``api/`` or
+    ``admin/`` directly forge the header, and ``docker/compose.yaml`` still
+    publishes both ports. A diagnostics page that exists to surface deployment
+    truth is the one place this belongs; see ``admin/config.py``'s note on the
+    setting for which cost belongs to which case.
+    """
     findings: list[Finding] = []
     trusted = settings.protection_trusted_proxy
 
@@ -353,6 +373,27 @@ def _assess_address(observation: Observation, settings: Settings) -> list[Findin
             "ip_block row that denies everyone. This is the combination that looks "
             "configured and does nothing — docker/web-config.sh warns about it at "
             "container start too. Set both, or neither.",
+        ))
+    elif not trusted and observation.through_our_nginx:
+        findings.append(Finding(
+            "warn",
+            "This panel is measuring the proxy, so every visitor shares one bucket",
+            "This request came through the stack's own nginx — it carried "
+            "X-Forwarded-For or X-Real-IP, and nginx sets both on everything it "
+            "proxies — and PROTECTION_TRUSTED_PROXY is false, so client_ip "
+            "(db/detection.py) reads the connection instead. That connection is "
+            "nginx's own container address, the same value for every visitor on "
+            "earth. Concretely, for every request that arrives this way: section "
+            "6.5's per-caller rate limit is one shared rate-limit bucket, and one "
+            "ip_block row denies everyone. The address in force below is the "
+            "evidence — if it is a container address, that is what is being "
+            "limited and blocked. This is the shipped default and it is a trade "
+            "rather than an oversight: while this stack's api and admin ports are "
+            "still published (18000 and 18001 in docker/compose.yaml) nginx can be "
+            "bypassed, and trusting X-Forwarded-For then lets any caller name "
+            "their own address, which is the worse failure. Setting it true is "
+            "safe only once those ports: blocks are gone and nginx is the only way "
+            "in.",
         ))
     elif trusted and not observation.chain:
         findings.append(Finding(
@@ -378,8 +419,9 @@ def _assess_address(observation: Observation, settings: Settings) -> list[Findin
             "The address in force is the connection this panel accepted",
             "PROTECTION_TRUSTED_PROXY is false, so X-Forwarded-For is ignored "
             "entirely and no caller can name their own address. This is the "
-            "shipped default and it is right whenever this panel is directly "
-            "reachable.",
+            "shipped default, and on this request it is measuring a real caller: "
+            "nothing forwarded arrived, so no proxy of this stack's is in the "
+            "path to be measured instead.",
         ))
 
     if _is_not_public(observation.decided_address):

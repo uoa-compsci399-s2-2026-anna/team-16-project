@@ -126,16 +126,39 @@ class Settings:
     protection_enabled: bool = True
     protection_max_requests_per_minute: int = 30
     # Whether to trust X-Forwarded-For for the caller's address. Defaults
-    # False, and that default is load-bearing, not a placeholder: behind a
-    # reverse proxy every caller arrives as the proxy's own address, so with
-    # this True but no proxy in front, the rate limit becomes one counter
-    # shared by every visitor and a single blocked address blocks everyone.
-    # With this False (the only safe default) admin/protection.py reads
-    # request.client.host and ignores X-Forwarded-For entirely - a header a
-    # caller can set to anything, so trusting it without a proxy that
-    # actually strips/overwrites inbound copies of it would let any caller
-    # forge whichever address they like. Set True only once a reverse proxy
-    # that overwrites X-Forwarded-For itself sits in front of this panel.
+    # False. **Both settings of this cost something, and until 2026-08-16 the
+    # comment here had the two costs attached to the wrong cases** - it read
+    # the consequence below out of "True with no proxy in front", which is not
+    # where it comes from. Stated the right way round, and measured against
+    # the running stack rather than reasoned about:
+    #
+    #   False WITH a proxy in front (THE SHIPPED DEFAULT - docker/compose.yaml
+    #   routes every visitor through the `web` container's nginx). client_ip
+    #   reads request.client.host, which is nginx's own container address, the
+    #   same value for every visitor on earth. Measured: uvicorn's access line
+    #   in kaicalc-api reads `172.20.0.5` for a request through :18080 and
+    #   `172.20.0.1` for one to the published :18000. So §6.5's per-caller
+    #   rate limit is ONE bucket for all proxied traffic and ONE ip_block row
+    #   denies everyone. Demonstrated, not inferred: 30 requests from a
+    #   container exhausted the panel's minute, and the next request from a
+    #   different machine was refused 429 on its first try.
+    #
+    #   True with NO proxy in front. X-Forwarded-For is absent, so client_ip
+    #   falls through to request.client.host and each caller is still measured
+    #   separately - the bucket does not collapse. What breaks instead is that
+    #   the header is now believed WHEN IT IS PRESENT, and any caller can put
+    #   one on a request: an address of their choosing, out of the rate-limit
+    #   bucket and out of the blocklist. That is the worse of the two, which
+    #   is why False remains the default and not because it is free.
+    #
+    # False is therefore a TRADE and not a fix, and the trade is only settled
+    # in one direction: set this True once nothing can reach api/ or admin/
+    # except through a proxy that overwrites X-Forwarded-For itself. Today
+    # docker/compose.yaml still publishes 18000 and 18001 as a development
+    # convenience, so nginx can be bypassed and the header forged, and True is
+    # not yet safe here. `/admin/deployment` reports which of these two states
+    # a live deployment is actually in; the API logs the same fact at start-up
+    # (api/app.py::_UNTRUSTED_PROXY_WARNING). Contract §6.5, §7.8.1, §8.2.
     protection_trusted_proxy: bool = False
 
 

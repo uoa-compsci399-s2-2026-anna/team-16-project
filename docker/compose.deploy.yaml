@@ -196,6 +196,18 @@ services:
       # :18080 except through that edge. Pair it with PROTECTION_TRUSTED_PROXY;
       # docker/compose.yaml and docker/nginx.conf carry the full argument.
       KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
+
+      # This stack's own public origin, `https://your.host`. Empty means nothing
+      # is redirected. Set it and a plaintext request whose Host is that name is
+      # answered 307 to it - which is what closes a router's `public 18080 ->
+      # :18080` bypass of your TLS path, where /admin is served in the clear and
+      # a Secure session cookie is accepted and then never sent back. The health
+      # check, the LAN address and the edge's own forwarded traffic are all
+      # unaffected, because the rule needs the public Host AND a browser scheme
+      # of http, and no internal caller has both. Requires
+      # KAICALC_TRUST_FORWARDED_HEADERS; the container refuses to start without
+      # it. docker/compose.yaml and docker/nginx.conf carry the full argument.
+      KAICALC_PUBLIC_ORIGIN: ${KAICALC_PUBLIC_ORIGIN-}
       # Not read by nginx - it lets the entrypoint warn when this proxy would
       # forward an address the applications are configured to ignore.
       PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}

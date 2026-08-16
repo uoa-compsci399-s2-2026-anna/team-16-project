@@ -446,6 +446,39 @@ services:
       # docker/nginx.conf.
       KAICALC_TRUST_FORWARDED_HEADERS: ${KAICALC_TRUST_FORWARDED_HEADERS:-false}
 
+      # THIS STACK'S OWN PUBLIC ORIGIN, AND THE ONLY THING THAT TURNS ON THE
+      # PLAIN-HTTP REDIRECT. Empty by default, and empty means NOTHING is
+      # redirected - every deployment that does not set this behaves exactly as
+      # it does today, including a laptop's http://localhost:18080.
+      #
+      # WHAT IT IS FOR. A router can forward public 443 to your edge and public
+      # 18080 straight here, and that second path is a plaintext bypass of the
+      # first. It serves /admin in the clear, where a session cookie marked
+      # Secure by KAICALC_SESSION_HTTPS_ONLY is accepted by the browser and then
+      # never sent back - a login that fails silently. Set this to the origin
+      # visitors actually type, `https://your.host`, and nginx answers a
+      # plaintext request for that host with a 307 to it.
+      #
+      # WHY AN ORIGIN AND NOT A BOOLEAN. nginx has to know one thing a plaintext
+      # request cannot be trusted to supply - where it should have gone - and one
+      # thing that separates a public visitor from the health check, the LAN and
+      # the edge's own forwarded traffic. The host you name is both. A boolean
+      # could express neither, and "no https, therefore redirect" sends the
+      # container's own health check a 307 it cannot follow, which marks the
+      # container unhealthy and restarts the stack in a loop.
+      #
+      # IT REQUIRES KAICALC_TRUST_FORWARDED_HEADERS, AND THE CONTAINER REFUSES TO
+      # START WITHOUT IT. Without that flag nginx sees `http` for the edge's
+      # traffic too, and every page load through the edge would redirect to
+      # itself forever. Set the pair, and KAICALC_SESSION_HTTPS_ONLY=true with
+      # them. docker/nginx.conf carries the whole argument, including what was
+      # rejected.
+      #
+      # `${VAR-}` without the colon, for the reason KAICALC_NEWS_ORIGIN gives:
+      # unset and explicitly empty must stay expressible separately, even though
+      # both mean "no redirect" today.
+      KAICALC_PUBLIC_ORIGIN: ${KAICALC_PUBLIC_ORIGIN-}
+
       # Not read by nginx. It is here so docker/web-config.sh can warn at
       # start-up about the one combination that silently does nothing:
       # this proxy forwarding the visitor's real address while api/ and admin/

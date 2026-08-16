@@ -279,8 +279,42 @@ def test_envsubst_does_not_eat_nginx_own_variables():
                      # normalises to None - skipping the blocklist and the rate limit
                      # outright, for every caller, with nothing raised anywhere.
                      "$remote_addr", "$http_x_forwarded_proto",
-                     "$proxy_add_x_forwarded_for"):
+                     "$proxy_add_x_forwarded_for",
+                     # The https-redirect rule. `$host` eaten leaves the map keyed on
+                     # nothing, and `$request_uri` eaten sends every redirected visitor to
+                     # the bare origin instead of the page they asked for - both of which
+                     # are still valid nginx and neither of which raises anything.
+                     "$host", "$request_uri"):
         assert variable in conf, f"envsubst ate nginx's own {variable}"
+    # Every real placeholder, by name, must be gone from the rendered file. `${KAICALC_CSP_*}`
+    # in the header's prose is not one - `*` cannot be part of a shell name, so envsubst
+    # cannot touch it - and it is the reason this is a name list rather than a `${KAICALC_`
+    # substring check.
+    #
+    # THE FAILURE THIS CATCHES IS THE ONE THAT LOOKS LIKE NOTHING. A placeholder left
+    # unrendered inside a `map` is not a syntax error: nginx reads `${KAICALC_PUBLIC_HOST}`
+    # as a literal string, so the container starts, serves, passes its health check, and
+    # simply never redirects anybody. The mirror-image failure is a placeholder written into
+    # a COMMENT, which envsubst substitutes just as happily - blanking the paragraph that
+    # explains the rule, and quietly costing the "occurs exactly once" property that makes
+    # adding a name to the list safe at all.
+    for placeholder in ("${KAICALC_CSP_CONNECT_SRC}", "${KAICALC_CSP_IMG_SRC}",
+                        "${KAICALC_TRUST_FORWARDED}", "${KAICALC_PUBLIC_HOST}",
+                        "${KAICALC_PUBLIC_REDIRECT}"):
+        assert placeholder not in conf, (
+            f"{placeholder} survived unrendered; it is not on the envsubst name list in "
+            "docker/web-config.sh, and nginx will read it as a literal string rather than "
+            "refuse to start"
+        )
+    template = (ROOT / "docker" / "nginx.conf").read_text(encoding="utf-8")
+    for placeholder in ("${KAICALC_TRUST_FORWARDED}", "${KAICALC_PUBLIC_HOST}",
+                        "${KAICALC_PUBLIC_REDIRECT}"):
+        assert template.count(placeholder) == 1, (
+            f"{placeholder} appears {template.count(placeholder)} times in the template. A "
+            "name on the envsubst list must occur exactly once, at the point it is meant to "
+            "be replaced - a second occurrence in a comment is silently blanked, and a "
+            "second occurrence in a directive is a rule nobody wrote down twice on purpose."
+        )
     # The header's own prose names `${KAICALC_CSP_*}`, which is not a variable name and is
     # left alone; the directives are what must have been substituted.
     for values in _directives(conf).values():

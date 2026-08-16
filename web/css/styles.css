@@ -545,12 +545,20 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
   gap: 12px;
   border: 1px solid rgba(40, 200, 130, 0.5);
   border-radius: 14px;
-  background: rgba(223, 248, 237, 0.68);
+  /* OPAQUE, AND THE SAME COLOUR IT LOOKED BEFORE.
+     This is `position: sticky`, so the destination rows scroll underneath it —
+     and at 0.68 alpha they were legible through it, labels and input borders
+     both. The replacement is the composite, not a new colour:
+     rgba(223,248,237,0.68) over --kai-white (#fff) is 233.24 / 250.24 / 242.76,
+     which is #e9faf3 to the byte, so the summary is pixel-identical over the
+     ground it actually sits on and only stops being see-through. Same for the
+     invalid state below: rgba(255,80,50,0.07) over #fff is #fff3f1. */
+  background: #e9faf3;
   box-shadow: 0 5px 18px rgba(0, 50, 35, 0.045);
 }
 .allocation-summary div { display: grid; gap: 4px; }
 .allocation-summary span { color: var(--muted); font-size: 0.82rem; font-weight: 700; }
-.allocation-summary.invalid { border-color: var(--error); color: var(--error); background: rgba(255, 80, 50, 0.07); box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.08); }
+.allocation-summary.invalid { border-color: var(--error); color: var(--error); background: #fff3f1; box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.08); }
 .allocation-summary.invalid span { color: var(--error); }
 .destination-list { border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 16px; background: #fff; overflow: hidden; }
 .destination-list.has-error { border-color: var(--error); }

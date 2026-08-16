@@ -311,7 +311,6 @@
     "The total waste amount — a weight, or how many containers you fill": "La quantité totale de déchets — un poids, ou le nombre de contenants que vous remplissez",
     "Clear calculator data and start again": "Effacer les données du calculateur et recommencer",
     "Clear all calculator data and start again?": "Effacer toutes les données du calculateur et recommencer ?",
-    "Site navigation": "Navigation du site",
     "Write the number out in full, using digits only.": "Écrivez le nombre en entier, en chiffres uniquement.",
     "Enter no more than %(limit)s %(unit)s.": "N'indiquez pas plus de %(limit)s %(unit)s.",
     "Enter destination amounts of no more than %(limit)s %(unit)s.": "Saisissez des quantités par destination d'au maximum %(limit)s %(unit)s."

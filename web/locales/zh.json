@@ -315,7 +315,6 @@
     "The total waste amount — a weight, or how many containers you fill": "浪费总量——重量，或您装满了多少个容器",
     "Clear calculator data and start again": "清除计算器数据并重新开始",
     "Clear all calculator data and start again?": "要清除所有计算器数据并重新开始吗？",
-    "Site navigation": "站点导航",
     "Write the number out in full, using digits only.": "请完整写出数字，只使用阿拉伯数字。",
     "Enter no more than %(limit)s %(unit)s.": "填写的数量不得超过 %(limit)s %(unit)s。",
     "Enter destination amounts of no more than %(limit)s %(unit)s.": "各去向的数量不得超过 %(limit)s %(unit)s。"

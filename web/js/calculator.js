@@ -2,7 +2,7 @@ import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
 import { containerKg, countLimit, entryTotal, isPlainDecimal, kgString, kgToTonnes, massToKg } from './units.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
-import { t } from './i18n.js?v=20260816-1'
+import { t } from './i18n.js'
 import { downloadResults, renderResults } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 

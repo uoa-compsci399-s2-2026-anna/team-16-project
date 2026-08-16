@@ -447,9 +447,12 @@ function validateCurrentStep() {
     if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')
     if (!isPlainDecimal(state.totalAmount)) return t('Write the number out in full, using digits only.')
     if (!decimalPattern.test(state.totalAmount)) return t('Enter no more than two decimal places.')
-    // `null` is a total that is not a finite mass — four hundred digits is a plain decimal
-    // and reaches `Infinity` through `Number`, which is over every ceiling there is and
-    // must not fall through a `>` comparison as false.
+    // **`null` is over the ceiling, not under it.** `massToKg` answers `null` when there
+    // is no finite mass, and `null > MAX` is `false` — so a bare comparison lets the one
+    // case the whole guard exists for straight through. It is reachable: 308 nines is the
+    // longest run a number input keeps (309 is outside a double's range and the browser
+    // blanks it), it is a plain decimal, it passes the two-decimal rule, and *as tonnes*
+    // it is `Infinity` kilograms.
     const kilograms = totalKilograms(state)
     if (kilograms === null || kilograms > MAX_SCENARIO_KG) {
       return t('Enter no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_SCENARIO_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
@@ -466,10 +469,10 @@ function validateCurrentStep() {
     // at the *scenario* ceiling, which is five lines' worth, so a visitor who puts all of
     // a legal total into one destination is over this one and under that one.
     //
-    // `Number.isFinite` used to be asked two rules above, folded into the negative check,
-    // which answered "Destination amounts must be zero or greater" for a row of four
-    // hundred nines. It is asked here instead, where the true answer is that the row is
-    // too large and the message says so.
+    // The finiteness check used to be folded into the negative rule two lines above,
+    // which answered "Destination amounts must be zero or greater" for a row far too
+    // large to be either. It is asked here, through the same `null`, where the true
+    // answer is that the row is over the limit and the message says which limit.
     const overLine = lines.some(line => {
       if (line.qtyInput === '') return false
       const kilograms = massToKg(line.qtyInput, state.totalUnit)

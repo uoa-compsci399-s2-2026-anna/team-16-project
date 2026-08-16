@@ -34,7 +34,7 @@ came from the browser, not from `web/locales/de.json`.
 
 **Mutation record.** Each was applied to ``web/js/calculator.js`` or
 ``web/js/units.js``, ``docker cp``'d into the running web container, and the
-named test watched to fail. All fourteen are killed:
+named test watched to fail. All fifteen are killed:
 
 ============================================================  ===========================================================
 Mutation                                                      Killed by
@@ -53,6 +53,7 @@ the guard clamps ``.value`` in place                          ``..._the_number_t
 the minus guard drops ``#unit-count``                         ``..._a_minus_never_lands_in_the_container_count``
 the minus guard drops the position-0 exception                ``..._a_leading_minus_stays_visible...``
 ``minusEntered`` is never released on delete                  ``..._clearing_the_field_allows_a_new_leading_minus``
+the availability check moves back below the count bound       ``..._a_container_with_no_usable_conversion_says_so``
 ============================================================  ===========================================================
 
 **One survived first time, and it was the test that was wrong.** Dropping
@@ -163,7 +164,7 @@ def page_at(browser, taxonomy):
     """
     contexts = []
 
-    def open_page(width, height, language="en", heavy_preset=None):
+    def open_page(width, height, language="en", extra_preset=None):
         ctx = browser.new_context(
             viewport={"width": width, "height": height},
             locale="en-NZ",
@@ -179,7 +180,7 @@ def page_at(browser, taxonomy):
             route.fulfill(status=200, content_type="application/json", body=json.dumps(RESULT_STUB))
 
         page.route("**/api/v1/calculate*", capture)
-        if heavy_preset is not None:
+        if extra_preset is not None:
             # **Every seeded preset is too light to reach the kilogram ceiling.**
             # The heaviest is 319 kg, so 50,000,000 kg is 156,739 of them and the
             # 10,000-container plausibility bound is always the smaller of the
@@ -188,7 +189,7 @@ def page_at(browser, taxonomy):
             # so a heavy container is a state the deployed system can reach; this
             # serves one, and nothing else about the taxonomy is touched.
             served = dict(taxonomy)
-            served["unit_presets"] = [*taxonomy["unit_presets"], heavy_preset]
+            served["unit_presets"] = [*taxonomy["unit_presets"], extra_preset]
             page.route(
                 "**/api/v1/taxonomy*",
                 lambda route: route.fulfill(
@@ -453,7 +454,7 @@ def test_the_container_ceiling_is_the_mass_expressed_in_containers(page_at):
         "kg_per_unit": "6000.0000",
         "food_category": None,
     }
-    page = to_amount_step(page_at(1278, 983, heavy_preset=heavy))
+    page = to_amount_step(page_at(1278, 983, extra_preset=heavy))
     page.select_option("#total-unit", "preset:test_skip_bin")
     page.wait_for_selector("#unit-count")
 
@@ -508,6 +509,32 @@ def test_the_largest_number_the_field_will_hold_is_over_the_ceiling(page_at, uni
     refused = continue_from_step_three(page)
     assert not refused["advanced"], refused
     assert refused["error"] == f"Enter no more than {named}.", refused
+
+
+def test_a_container_with_no_usable_conversion_says_so(page_at):
+    """The taxonomy's fault must not be reported as the visitor's.
+
+    `countLimit` answers 0 when a preset has no usable `kg_per_unit` - it is
+    derived from the same missing number - so asking the count bound before the
+    availability check refuses an ordinary "5" with **"Enter no more than 0
+    containers."**, a sentence about typing for a fault in the data. §6.1 says a
+    consumer must not assume the taxonomy is stable across a publish, and this
+    is that state made concrete: a preset on the select whose conversion will
+    not parse.
+    """
+    broken = {
+        "code": "test_broken_bin",
+        "label": "Test unusable bin",
+        "kg_per_unit": "n/a",
+        "food_category": None,
+    }
+    page = to_amount_step(page_at(1278, 983, extra_preset=broken))
+    page.select_option("#total-unit", "preset:test_broken_bin")
+    page.wait_for_selector("#unit-count")
+    type_into(page, "#unit-count", "5")
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == "That container is no longer available. Choose another.", refused
 
 
 # --------------------------------------------------------- the per-line ceiling

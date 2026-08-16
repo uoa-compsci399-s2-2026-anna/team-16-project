@@ -436,12 +436,17 @@ function validateCurrentStep() {
     // Ask the two questions separately and each answer is true of what was typed.
     if (!isPlainDecimal(state.unitCount)) return t('Write the number out in full, using digits only.')
     if (!decimalPattern.test(state.unitCount)) return t('Enter no more than two decimal places.')
-    if (Number(state.unitCount) > containerLimit()) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(containerLimit(), 0) })
     // A preset whose code the taxonomy no longer holds, or whose `kg_per_unit` will not
     // parse, leaves `containerKg` at '' — and a step that continued on that would carry a
     // zero total into step 4 and refuse every allocation with a message about the
     // allocation. Say what is actually wrong instead.
+    //
+    // **Ahead of the count bound, because that bound is derived from the same missing
+    // number.** `countLimit` answers 0 when there is no usable conversion, so asking the
+    // bound first would refuse a perfectly ordinary count with "Enter no more than 0
+    // containers." — a sentence about the visitor's typing for a fault in the taxonomy.
     if (!state.unitPreset || containerTotal(state) === '') return t('That container is no longer available. Choose another.')
+    if (Number(state.unitCount) > containerLimit()) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(containerLimit(), 0) })
   }
   if (state.step === 2 && state.measureMode !== 'container') {
     if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')

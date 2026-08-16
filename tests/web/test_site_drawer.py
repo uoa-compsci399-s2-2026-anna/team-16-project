@@ -249,7 +249,7 @@ def test_the_handle_is_a_forty_four_pixel_target_at_the_narrowest_width(browser)
 def test_the_handle_reports_its_state_and_escape_closes_it(browser):
     """`aria-expanded`, `Escape`, and where focus goes afterwards.
 
-    The direction a triangle points is the only visible statement of this control's
+    The direction the chevron points is the only visible statement of this control's
     state, and a shape says nothing to a reader who is not looking at it. `Escape` is
     the second half: closing a drawer and leaving focus on a link that is no longer
     reachable strands a keyboard user in the document body. There is one accessibility
@@ -288,6 +288,60 @@ def test_the_handle_reports_its_state_and_escape_closes_it(browser):
         context.close()
 
 
+def test_the_handle_shows_its_state_as_well_as_announcing_it(browser):
+    """`aria-expanded` above covers everyone who cannot see the handle. This covers
+    everyone who can.
+
+    The disc itself does not move - it is a fixed brand mark, and flipping it would put
+    its curve against the edge of the screen - so the whole of the sighted cue is the
+    chevron's rotation, which must therefore actually change. Asserting a half turn
+    rather than a literal angle: what matters is that it points back the way it came,
+    not which number the stylesheet reached that by.
+
+    Read off `::after`, and the disc is read off `::before` in the same breath, because a
+    chevron that turned while the shape underneath it vanished would still pass on the
+    rotation alone.
+    """
+    context, page = _open_page(browser, "/methodology.html")
+    try:
+        def state():
+            return page.evaluate(
+                """() => {
+                     const el = document.querySelector('.site-drawer__handle');
+                     const arrow = getComputedStyle(el, '::after');
+                     const disc = getComputedStyle(el, '::before');
+                     return {
+                       rotate: arrow.rotate,
+                       disc: disc.backgroundColor,
+                       radius: disc.borderStartEndRadius,
+                     };
+                   }"""
+            )
+
+        closed = state()
+        page.click(".site-drawer__handle")
+        page.wait_for_timeout(400)
+        opened = state()
+
+        def turn(value):
+            degrees = re.findall(r"(-?[\d.]+)deg", value)
+            assert degrees, value
+            return float(degrees[-1])
+
+        assert abs(turn(opened["rotate"]) - turn(closed["rotate"])) == 180, (
+            "the chevron did not reverse when the drawer opened: %s -> %s"
+            % (closed["rotate"], opened["rotate"])
+        )
+
+        # The disc is painted and it is round on its reading-end edge. `rgb(255, 80, 50)`
+        # is Kai Orange; asserted as a colour rather than by name because a token that
+        # stopped resolving would compute to `rgba(0, 0, 0, 0)` and look like nothing.
+        assert closed["disc"] == "rgb(255, 80, 50)", closed
+        assert re.match(r"^100%", closed["radius"]), closed
+    finally:
+        context.close()
+
+
 @pytest.mark.parametrize("path", STATIC_PAGES)
 def test_the_drawer_navigates_with_scripting_switched_off(browser, path):
     """The reason it is a `<details>` and not a button with a class toggle.
@@ -314,10 +368,16 @@ def test_the_drawer_navigates_with_scripting_switched_off(browser, path):
 def test_the_drawer_mirrors_in_a_right_to_left_page(browser):
     """`dir="rtl"` proves nothing on its own; the drawer has to change edges.
 
-    The handle's drop shadow is measured too. It is the one physical value in the
-    component - a shadow offset cannot be written logically - so it is the one that
-    silently stays put when everything around it mirrors, and a shadow falling the
-    wrong way is the half-mirrored page this project decided against shipping.
+    The handle's two physical values are measured too. Neither a shadow offset nor a
+    rotation can be written logically, so they are the ones that silently stay put when
+    everything around them mirrors, and a shadow falling the wrong way - or a chevron
+    pointing back at the edge it came from - is the half-mirrored page this project
+    decided against shipping.
+
+    Both are read off `::before` and `::after`, because the `<summary>` itself is
+    deliberately an unpainted rectangle: the shape and the arrow live on the
+    pseudo-elements so that the element's own box, which is what takes the press, stays
+    square and unrounded. See the stylesheet's note on the hit area.
     """
     def measure(language):
         context, page = _open_page(browser, "/stats.html", width=938, height=898,
@@ -328,14 +388,15 @@ def test_the_drawer_mirrors_in_a_right_to_left_page(browser):
             return page.evaluate(
                 """() => {
                      const panel = document.querySelector('.site-drawer__panel').getBoundingClientRect();
-                     const handle = document.querySelector('.site-drawer__handle').getBoundingClientRect();
+                     const el = document.querySelector('.site-drawer__handle');
+                     const handle = el.getBoundingClientRect();
                      return {
                        dir: document.documentElement.dir,
                        panelStart: Math.round(panel.x),
                        panelEnd: Math.round(panel.right),
                        handleStart: Math.round(handle.x),
-                       shadow: getComputedStyle(
-                         document.querySelector('.site-drawer__handle')).filter,
+                       shadow: getComputedStyle(el, '::before').boxShadow,
+                       chevron: getComputedStyle(el, '::after').rotate,
                        viewport: window.innerWidth,
                        overflows: document.documentElement.scrollWidth >
                                   document.documentElement.clientWidth + 1,
@@ -357,23 +418,43 @@ def test_the_drawer_mirrors_in_a_right_to_left_page(browser):
     assert rtl["handleStart"] <= rtl["panelStart"], rtl
     assert not rtl["overflows"], "the mirrored drawer made the page scroll sideways"
 
-    def offset(filter_value):
+    def offset(shadow_value):
         """The shadow's x offset, in px.
 
         Read with a regex rather than by splitting on the first token, because
-        `getComputedStyle` re-serialises the function with the colour FIRST -
-        `drop-shadow(rgba(0, 50, 35, 0.22) 3px 3px 0px)` - and the shorthand this is
-        written from puts it last.
+        `getComputedStyle` re-serialises the shorthand with the colour FIRST -
+        `rgba(0, 50, 35, 0.34) 2px 3px 12px 0px` - and the declaration this is written
+        from puts it last.
         """
-        assert "drop-shadow" in filter_value, filter_value
-        lengths = re.findall(r"(-?[\d.]+)px", filter_value)
-        assert len(lengths) >= 3, filter_value
+        assert "rgba" in shadow_value, shadow_value
+        lengths = re.findall(r"(-?[\d.]+)px", shadow_value)
+        assert len(lengths) >= 3, shadow_value
         return float(lengths[0])
 
     assert offset(ltr["shadow"]) > 0, ltr["shadow"]
     assert offset(rtl["shadow"]) == -offset(ltr["shadow"]), (
         "the handle's shadow falls the same way in both directions: %s vs %s"
         % (ltr["shadow"], rtl["shadow"])
+    )
+
+    def turn(rotate_value):
+        """The chevron's rotation, in degrees.
+
+        `getComputedStyle` serialises the `rotate` property as `225deg`, or as
+        `0 0 1 225deg` where an axis was given. The last number is the angle either way.
+        """
+        degrees = re.findall(r"(-?[\d.]+)deg", rotate_value)
+        assert degrees, rotate_value
+        return float(degrees[-1])
+
+    # Measured with the drawer OPEN, which is the state `measure` leaves it in: the
+    # chevron then points back the way the panel will close, so LTR aims at the
+    # reading-start and RTL at the mirror of it. Asserting the negation rather than a
+    # literal is what survives the angle being retuned.
+    assert turn(ltr["chevron"]) != 0, ltr["chevron"]
+    assert turn(rtl["chevron"]) == -turn(ltr["chevron"]), (
+        "the handle's chevron points the same physical way in both directions: %s vs %s"
+        % (ltr["chevron"], rtl["chevron"])
     )
 
 
@@ -385,26 +466,53 @@ def test_the_drawer_does_not_animate_under_reduced_motion(browser):
     animation in the ordinary case - an assertion that only checked for `none` would
     pass against a drawer that had never animated at all, which is a rule nothing
     holds.
+
+    The handle's chevron is measured on the same terms. It is the second moving part in
+    this component and it lives in the same override, one line below the panel's - which
+    is the line somebody removing the transition property would drop, and the panel's
+    assertion would not notice. The chevron still TURNS under reduced motion: the
+    rotation is the state, not decoration. It turns instantly.
     """
-    def animation(reduced):
+    def motion(reduced):
         context, page = _open_page(
             browser, "/methodology.html", reduced_motion="reduce" if reduced else "no-preference"
         )
         try:
             page.click(".site-drawer__handle")
-            page.wait_for_timeout(150)
+            # Longer than the chevron's own 0.2s, because the un-reduced case is read
+            # mid-tween otherwise and `rotate` computes to whatever degree it had got
+            # to - 217.891deg on the run that caught this.
+            page.wait_for_timeout(400)
             return page.evaluate(
-                "() => getComputedStyle(document.querySelector('.site-drawer__panel'))"
-                ".animationName"
+                """() => {
+                     const handle = document.querySelector('.site-drawer__handle');
+                     return {
+                       panel: getComputedStyle(
+                         document.querySelector('.site-drawer__panel')).animationName,
+                       chevron: getComputedStyle(handle, '::after').transitionProperty,
+                       turned: getComputedStyle(handle, '::after').rotate,
+                     };
+                   }"""
             )
         finally:
             context.close()
 
-    assert animation(reduced=False) != "none", (
+    ordinary = motion(reduced=False)
+    reduced = motion(reduced=True)
+
+    assert ordinary["panel"] != "none", (
         "the drawer does not animate at all, so the reduced-motion rule below asserts "
         "nothing"
     )
-    assert animation(reduced=True) == "none"
+    assert reduced["panel"] == "none"
+
+    assert ordinary["chevron"] != "none", (
+        "the chevron does not transition at all, so the reduced-motion rule below "
+        "asserts nothing"
+    )
+    assert reduced["chevron"] == "none", reduced
+    # And it has still turned: the cue survives, only the tweening goes.
+    assert reduced["turned"] == ordinary["turned"], reduced
 
 
 def test_the_open_drawer_clears_the_sticky_step_bar(browser):

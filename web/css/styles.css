@@ -895,9 +895,36 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 /* ------------------------------------------------------------------------------------
    THE NAVIGATION DRAWER.
 
-   A drawer with a physical pull-tab: closed, a triangular handle is the only thing at
-   the page's reading-start edge; pulled, a Kale panel slides out from behind it and the
-   handle rides to the panel's outer face, turned round to point the way back.
+   A drawer with a physical pull-tab: closed, a half-disc handle is the only thing at the
+   page's reading-start edge; pulled, a Kale panel slides out from behind it and the
+   handle rides to the panel's outer face, its chevron turned round to point the way back.
+
+   **THE HANDLE IS THE BRAND'S HALF-CIRCLE, WHICH IS WHY IT IS THAT SHAPE AND NOT A
+   WEDGE.** It was a flat Orange triangle with a hard offset shadow: it satisfied the
+   brief ("a triangle, Orange or Blueberry") and belonged to nothing. The half-circle
+   derived from the logo is the brand's primary supporting graphic, and the guidelines
+   give it two modes - singly at large scale, or in odd-numbered overlapping groups at
+   small scale. This is the first mode: ONE half-disc, flat edge flush to the viewport,
+   the curve bulging into the page. It is the positive form of the same primitive the
+   home page's arch band cuts holes with, so the two read as one family rather than as a
+   graphic and a control that happen to share a palette. **The group mode was considered
+   and rejected here**: three arcs inside a 44px box is 14px each, which is decoration on
+   a control rather than a supporting graphic, and the thing a thumb aims at should be
+   one object.
+
+   **Orange, because the panel's own spine is Orange.** `.site-drawer__panel` carries
+   `border-inline-end: 4px solid var(--kai-orange)` on the edge nearest the handle, so
+   open, the spine runs straight into the disc and the two are one continuous form - the
+   front of the drawer, drawn once. The chevron is white, which is the pairing the
+   guidelines set for a dark ground (Kale / Blueberry / Orange take white). Orange is
+   also the one body colour that holds on **both** grounds this handle crosses: white
+   content on three pages, and the Kale hero on the home page, where a Kale handle would
+   disappear and a white one would read as a hole.
+
+   **The shadow is soft and Kale-tinted, not a hard grey offset.** A zero-blur offset
+   shadow is what made the old handle read as a sticker laid on the page. It is now
+   `box-shadow` rather than `filter: drop-shadow` - the shape is a rounded box, so a box
+   shadow follows it exactly, which is the thing that was untrue of the triangle.
 
    **IT OVERLAYS AND NEVER COMPRESSES, AND THAT IS THE MEASUREMENT THIS DESIGN IS BUILT
    ON.** Horizontal space is the binding constraint on this interface: the owner's laptop
@@ -915,19 +942,25 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    is pinned to the inline-start edge and vertically centred, which is also the one band
    of the page that no step's controls occupy.
 
-   **`inset-inline-start`, `border-inline-*`, and `scaleX(-1)` for the state.** The
-   handle is a border triangle whose solid side is its inline-start border, so its apex
-   points at the reading-end in English and at the reading-start in Arabic with no second
-   rule. Open, the whole handle is flipped on the inline axis, which is the same
-   operation in both directions - the trick `.comparison-arrow` already uses. The only
-   physical value in here is the drop shadow's x offset, which cannot be logical and is
-   mirrored explicitly under `[dir="rtl"]`.
+   **`inset-inline-start`, `border-inline-*`, and the chevron alone turns.** The disc is
+   rounded on its `border-*-end-radius` corners, so it opens toward the reading-end in
+   English and the reading-start in Arabic with no second rule; the chevron is a square
+   wearing `border-block-start` and `border-inline-end`, so it aims the same way for the
+   same reason. Open, the DISC STAYS PUT and only the chevron rotates 180 degrees - the
+   old rule flipped the whole handle, which was free on a symmetrical triangle and would
+   put a half-disc's curve against the viewport edge with half of it off screen. Keeping
+   the disc still also keeps it a stable brand mark rather than a thing that jumps.
 
-   **THE HANDLE'S HIT AREA IS ITS BORDER BOX, ON PURPOSE.** A triangle drawn with
-   `clip-path` is pressable only where it is painted, and at 390px the difference between
-   the shape and its box is the difference between hitting the control and not. Drawn
-   with borders, the element's box is 46x88 and every pixel of it takes the press, so the
-   target clears 44px in both axes while what is on screen is a triangle.
+   Two physical values cannot be written logically and are mirrored explicitly under
+   `[dir="rtl"]`: the shadow's x offset, and the chevron's rotation.
+
+   **THE HANDLE'S HIT AREA IS ITS BORDER BOX, ON PURPOSE.** A shape pressable only where
+   it is painted loses its corners, and at 390px that is the difference between hitting
+   the control and not - `border-radius` is honoured by hit testing exactly as `clip-path`
+   is. So the `<summary>` itself stays an unrounded, transparent 46x88 rectangle and every
+   pixel of it takes the press; `::before` is what is rounded and painted. Nothing about
+   the target changes when the shape does, which is what `test_the_handle_is_a_forty_four_
+   pixel_target_at_the_narrowest_width`'s four corner probes hold in place.
 
    **The motion is an `animation`, not a `transition`, and that is a portability
    decision.** A closed `<details>` does not render its content, so there is nothing for
@@ -940,6 +973,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 .site-drawer {
   --drawer-width: min(268px, 74vw);
   --drawer-handle-inline: 46px;
+  --drawer-handle-block: 88px;
   /* Above the sticky step bar (z-index 3) and the header: the drawer is the only thing
      on these pages that deliberately covers content. */
   position: fixed;
@@ -957,28 +991,61 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 .site-drawer__handle {
   /* `block`, not the UA's `list-item`: it removes the disclosure marker, which would
-     otherwise sit beside the triangle this control already is. */
+     otherwise sit beside the disc this control already is. `list-style: none` is the
+     belt to that brace - the marker had nowhere to render when this element was 0x0 and
+     now it would have a 46x88 box to sit in. */
   display: block;
+  list-style: none;
   flex: 0 0 auto;
-  width: 0;
-  height: 0;
-  border-block-start: 44px solid transparent;
-  border-block-end: 44px solid transparent;
-  border-inline-start: var(--drawer-handle-inline) solid var(--kai-orange);
-  /* Follows the painted shape, which `box-shadow` would not - a rectangular shadow
-     round a triangle reads as a bug rather than as depth. */
-  filter: drop-shadow(3px 3px 0 rgba(0, 50, 35, 0.22));
+  /* Deliberately square and unrounded: this is the pressable box. The shape lives on
+     ::before. */
+  position: relative;
+  inline-size: var(--drawer-handle-inline);
+  block-size: var(--drawer-handle-block);
+  background: transparent;
   cursor: pointer;
   transition: translate 0.16s ease;
 }
 .site-drawer__handle::-webkit-details-marker { display: none; }
-.site-drawer__handle:hover { translate: 2px 0; }
-.site-drawer[open] .site-drawer__handle {
-  /* The apex turns to face the way it will move. Flipping the element is one rule for
-     both writing directions; re-colouring the opposite border would be two. */
-  transform: scaleX(-1);
+
+/* The brand's half-circle. `100% 50%` on both reading-end corners is a half-disc at any
+   box size - the horizontal radius is the full width and the vertical radius is half the
+   height - so the phone override below changes one number and not this shape. */
+.site-drawer__handle::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background: var(--kai-orange);
+  border-start-end-radius: 100% 50%;
+  border-end-end-radius: 100% 50%;
+  box-shadow: 2px 3px 12px rgba(0, 50, 35, 0.34);
 }
-[dir="rtl"] .site-drawer__handle { filter: drop-shadow(-3px 3px 0 rgba(0, 50, 35, 0.22)); }
+
+/* The direction cue: a square wearing two adjacent logical borders, turned 45 degrees.
+   `aria-expanded` (web/js/drawer.js) is what carries this state to anyone who cannot see
+   it; this is the sighted half of the same fact. Sat at 34% of the width because the
+   disc's visual weight is toward its flat edge, not at its box centre. */
+.site-drawer__handle::after {
+  content: "";
+  position: absolute;
+  inset-block-start: 50%;
+  inset-inline-start: 34%;
+  inline-size: 10px;
+  block-size: 10px;
+  border-block-start: 3px solid var(--kai-white);
+  border-inline-end: 3px solid var(--kai-white);
+  translate: 0 -50%;
+  rotate: 45deg;
+  transition: rotate 0.2s ease;
+}
+
+.site-drawer__handle:hover { translate: 2px 0; }
+.site-drawer[open] .site-drawer__handle::after { rotate: 225deg; }
+
+/* The two values with no logical form. */
+[dir="rtl"] .site-drawer__handle::before { box-shadow: -2px 3px 12px rgba(0, 50, 35, 0.34); }
+[dir="rtl"] .site-drawer__handle::after { rotate: -45deg; }
+[dir="rtl"] .site-drawer[open] .site-drawer__handle::after { rotate: -225deg; }
 [dir="rtl"] .site-drawer__handle:hover { translate: -2px 0; }
 
 .site-drawer__panel {
@@ -1039,9 +1106,9 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      and this is the width where that costs something.** At 1278px it is in the gutter
      and covers nothing; at 938px it reaches 6px into a step-4 row, inside that row's
      own padding, so no text is under it. At 390px `.main-content` has 20px of padding
-     and the document is 390px wide, so there is no gutter left: the triangle covers
-     from x=20 to its own edge at its widest point, tapering to nothing at top and
-     bottom - a few characters on one or two lines of a paragraph.
+     and the document is 390px wide, so there is no gutter left: the disc covers from
+     x=20 to its own edge at its widest point, narrowing at top and bottom where the
+     curve pulls back - a few characters on one or two lines of a paragraph.
 
      It cannot be moved out of the way. Taking width out of the document is the one
      thing this component may not do, the header row is a measured budget and the
@@ -1053,11 +1120,12 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      which costs more than four characters of a standfirst. */
   .site-drawer {
     --drawer-handle-inline: 44px;
+    --drawer-handle-block: 44px;
   }
-  .site-drawer__handle {
-    border-block-start-width: 22px;
-    border-block-end-width: 22px;
-  }
+  /* A 44x44 box makes the half-disc squatter than the 46x88 one - the same construction,
+     a shorter arc. The chevron does not shrink with it: it is already the smallest thing
+     on screen that still reads as an arrow. */
+  .site-drawer__handle::after { inset-inline-start: 30%; }
 }
 
 /* **Here, not in the general `prefers-reduced-motion` block above, and that is not a
@@ -1074,6 +1142,9 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .site-drawer[open] .site-drawer__panel,
   [dir="rtl"] .site-drawer[open] .site-drawer__panel { animation: none; }
   .site-drawer__handle { transition: none; }
+  /* The chevron still turns - it is the state, not decoration - it just turns instantly.
+     Same reasoning as the panel: the drawer arrives rather than sliding. */
+  .site-drawer__handle::after { transition: none; }
   .site-drawer__handle:hover,
   [dir="rtl"] .site-drawer__handle:hover { translate: 0 0; }
 }

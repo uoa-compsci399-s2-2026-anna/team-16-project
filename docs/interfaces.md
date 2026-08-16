@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-16 (v1.42 draft)"
+date: "2026-08-16 (v1.43 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,26 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.43 — 2026-08-16 (the amount fields get the server's real limits, and nginx stops letting a browser run the last release; affects C and D)
+
+Nothing here changes a request, a response or a schema. It restates two of §6.2's own bounds in the browser, splits one refusal that was answering the wrong question, and closes a caching hole that could pair a stale generated module with a fresh policy.
+
+**A client-side guard restates a server rule.** It may refuse earlier and more kindly than the API would; if it refuses something the API would accept, that is a defect, and this entry is written against that test in both directions.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Step 3's total is bounded by `MAX_SCENARIO_QTY` (50,000,000 kg) and a step-4 destination amount by `MAX_LINE_QTY` (10,000,000 kg)** — §6.2's own two numbers, and which one goes where follows from what is sent. The step-3 total **never crosses the wire**: `buildLines` sends the destination rows, and the total's only job is to be the ceiling of the allocation, so it takes the scenario cap. Putting the *line* cap on the total is the tempting simplification and it refuses 30,000,000 kg split across three destinations, which the API accepts. `DECIMAL(16,3)` is four orders of magnitude wider again and is never the binding constraint | §6.2, §7.3 |
+| 2 | **The bound is on kilograms and the field is not always kilograms**, so it is compared against the **converted mass** in all three modes: kilograms, tonnes, and a count times a preset's `kg_per_unit`. A guard on the typed number is wrong in two of the three — 50,001 tonnes is 50,000,001 kg and looks tiny. For a container the ceiling is divided back into containers by the new `units.js::countLimit`, so the existing "no more than N containers" refusal keeps its wording and the check and the message are the same number by construction | §7.2, §7.3 |
+| 3 | **`MAX_CONTAINER_COUNT` (10,000) stays and is now the smaller of two bounds.** It is the plausibility bound a visitor meets; the kilogram ceiling is the one a staff-edited `kg_per_unit` can bring below it (§8.1 makes that column editable, and 10,000 of anything heavier than 5,000 kg is over the scenario cap) | §7.2 |
+| 4 | **The decimal rules are unchanged and were being confused with each other.** §6.2 accepts three decimal places on `qty_kg`; the front end accepts **two typed**, on every amount field, hinted there and produced as three by `kgString`/`toKg`. What changed is that `1e5` — a value `<input type="number">` hands over quite happily — was told it had too many decimal places, and it has none. `validateCurrentStep` now asks two questions and each answer is true of what was typed | §7.2, §7.3 |
+| 5 | **A refusal never edits the visitor's number.** No `.value` is assigned anywhere in the guard: the field keeps what was typed and `validateCurrentStep` refuses on Continue with a `t()` string, which is what every other rule in `calculator.js` already did. Clamping to a maximum and reverting to a previous value are the same defect — the visitor pastes one figure and submits another | §7.6 |
+| 6 | **A minus sign is declined at `beforeinput` on `#total-waste` and `#unit-count`, and allowed at position 0 only on a destination amount.** The asymmetry is the design: `validateCurrentStep` refuses negative destination amounts and `destinationStep` marks the row and the summary invalid as it is typed, so the character must land for the refusal to be visible. The character is worth intercepting because `<input type="number">` reports `.value === ''` for "5-" while still showing it — a field that looks filled and counts as blank | §7.2, §7.3a |
+| 7 | **`units.js::massToKg` checks the product, not only the input.** A finite number of tonnes past ~1.8e305 came back as `Infinity` from a function documented to answer `null`, and `Infinity` is the one value that passes `mass > limit ? refuse : accept` without being either. Found by a mutation that survived every assertion in the new suite | §7.3 |
+| 8 | **`units.js` gains `isPlainDecimal` and `countLimit`; `destinationStep`'s `canContinue` now asks `validateCurrentStep()`** instead of restating three of its rules inline, so the render path and the keystroke path cannot disagree about one button. Reachable: Back to step 3 and Continue again re-renders step 4 over the line that is still there | §7.3, §7.3a |
+| 9 | **Three new catalogue strings**, translated into all twenty languages: the two ceiling refusals and the plain-number one. The figures inside them keep `formatNumber`'s pinned `en-NZ` grouping in every language, per §7.7.7 | §7.7 |
+| 10 | **`docker/nginx.conf`'s `location /` emits `Cache-Control: no-cache`.** It emitted nothing, and nothing is not uncacheable: RFC 9111 4.2.2 lets a cache invent a freshness lifetime from `Last-Modified`, and browsers use a tenth of the document's age. Nothing under `web/` is fingerprinted — there is no build step — so a returning browser could run the previous release for days. The sharpest case is `web/js/config.js`, **generated at container start** from `KAICALC_API_ORIGIN`, which pairs with a `connect-src` built from the same variable in the same run: heuristic freshness put the previous release's API origin under this release's policy, which is a fetch the browser refuses and the page cannot explain. The twenty catalogues share the exposure. `no-cache`, not `no-store` — nginx answers the revalidation from the ETag with a bodiless 304 | §7.8.1 |
+| 11 | **`.allocation-summary` is opaque.** It is `position: sticky` and was `rgba(223, 248, 237, 0.68)`, so the destination rows scrolled legibly underneath it. The replacements are the composites over `--kai-white` — `#e9faf3` and `#fff3f1` — so it is pixel-identical and only stops being see-through | §7.6 |
 
 ### v1.42 — 2026-08-16 (nginx becomes the only way in, and the protection becomes per-visitor; affects B and E)
 
@@ -2575,11 +2595,45 @@ export function entryTotal(entry, presets);
 /**
  * @param {number|string} amount
  * @param {'kilograms'|'tonnes'} unit
- * @returns {number|null}  null when amount is not finite
- * Imported by calculator.js (the review step's kg figure) and improvement.js
- * (lineKg, which is every allocation percentage's denominator).
+ * @returns {number|null}  null when there is no finite mass — checked on the
+ *                         PRODUCT, not only on `amount`. A finite number of
+ *                         tonnes past ~1.8e305 is an infinite number of
+ *                         kilograms, and this used to return that Infinity
+ *                         from an input it had just certified finite.
+ * Imported by calculator.js (the review step's kg figure, and step 3's ceiling)
+ * and improvement.js (lineKg, which is every allocation percentage's
+ * denominator).
  */
 export function massToKg(amount, unit);
+
+/**
+ * Whether a value is written as a plain non-negative decimal literal: digits,
+ * one optional point, digits. No sign and no exponent — `1e5` is false.
+ *
+ * The regular expression behind `decimalParts` and `toKg`, exported so that
+ * `calculator.js` can tell "too precise" (`1.234`) from "not written as a
+ * decimal at all" (`1e5`, which a number input hands over quite happily and
+ * which has no decimal places to complain about) without a second copy of the
+ * rule. The **two-decimal typing rule is not this** and stays in
+ * `calculator.js` beside the field hints that state it.
+ * @param {string|number} value
+ * @returns {boolean}
+ */
+export function isPlainDecimal(value);
+
+/**
+ * The largest container count whose mass stays inside `maxKg`.
+ *
+ * §6.2's bounds are on kilograms; a container entry's field holds a count. This
+ * is the one conversion between the two, so a kilogram ceiling can be checked
+ * and *stated* in the unit of the field it guards, from a single number. The
+ * result is floored, so a double's error can only tighten the bound.
+ * @param {string|null} presetCode
+ * @param {Array} presets  taxonomy.unit_presets
+ * @param {number} maxKg
+ * @returns {number}  a whole count, or 0 when there is no usable conversion
+ */
+export function countLimit(presetCode, presets, maxKg);
 
 /** massToKg(...) fixed to 3 decimal places, i.e. API-ready.
  *  @returns {string|null}  null when massToKg returns null.

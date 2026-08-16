@@ -269,7 +269,19 @@ p { line-height: 1.65; }
   justify-content: center;
   text-align: center;
 }
-.hero-copy h1 { margin-inline: auto; }
+/* **`anywhere`, not `break-word`, and the difference is the whole fix.** `.hero-copy` is
+   a column flex box with `align-items: center`, so this heading is sized to its own
+   fit-content on the cross axis - and fit-content is never smaller than min-content, which
+   for "Lebensmittelabfällen" is the whole word. `break-word` breaks a word that has already
+   overflowed but leaves min-content alone, so the box stays too wide and the page still
+   scrolls: measured on the introduction screen at 320px in German, 363 against 305 with
+   `break-word` and 320 with `anywhere`. Display-size type is where this shows first - at
+   34px a German compound is 343px wide inside a 280px column.
+
+   `hyphens: auto` reads better and measures the same here, but it is only as good as the
+   browser's hyphenation dictionary for the reader's language; a missing dictionary is a
+   silent return to the overflow. It can be layered on top of this, never instead of it. */
+.hero-copy h1 { margin-inline: auto; overflow-wrap: anywhere; }
 .hero .eyebrow { color: var(--green); }
 .hero .lead { margin-inline: auto; color: rgba(255, 255, 255, 0.82); }
 .hero .needs-panel { color: var(--ink); }
@@ -1471,8 +1483,16 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   color: var(--kai-white);
   background: var(--kai-kale);
 }
-.home-page .home-hero > div { width: 100%; max-width: 820px; }
-.home-page .home-hero h1 { max-width: 820px; margin-bottom: 24px; }
+/* The same German defect as the calculator's introduction hero, and the same one-word
+   answer; see the note on `.hero-copy h1`. The hero is a flex row, a flex item's default
+   `min-width: auto` means "never narrower than min-content", and the min-content width of
+   "Lebensmittelabfälle" is the whole word. Measured on this page at 390px in German: the
+   `<h1>` set 437px inside a 279px box and took the document to 485px; at 320px, to 407px.
+   `min-width: 0` lets the item shrink and `overflow-wrap: anywhere` lets the word inside
+   it stop being unbreakable. It was green in Arabic and English throughout, which is what
+   `tests/web/test_horizontal_overflow.py` running German is for. */
+.home-page .home-hero > div { width: 100%; min-width: 0; max-width: 820px; }
+.home-page .home-hero h1 { max-width: 820px; margin-bottom: 24px; overflow-wrap: anywhere; }
 .home-page .home-hero .eyebrow { color: var(--kai-pea); }
 .home-page .home-hero .lead { max-width: 740px; margin-bottom: 26px; color: rgba(255, 255, 255, 0.84); }
 .home-page .home-hero .button-primary { min-width: 200px; display: inline-flex; align-items: center; justify-content: center; color: var(--kai-kale); background: var(--kai-pea); text-decoration: none; }

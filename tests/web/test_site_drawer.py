@@ -255,7 +255,8 @@ def test_the_handle_is_a_forty_four_pixel_target_at_the_narrowest_width(browser)
         context.close()
 
 
-def test_the_handle_reports_its_state_and_escape_closes_it(browser):
+@pytest.mark.parametrize("path", PAGES)
+def test_the_handle_reports_its_state_and_escape_closes_it(browser, path):
     """`aria-expanded`, `Escape`, and where focus goes afterwards.
 
     The direction the chevron points is the only visible statement of this control's
@@ -265,8 +266,19 @@ def test_the_handle_reports_its_state_and_escape_closes_it(browser):
     regression on record here from a focus call placed where it fired on every state
     change, so the resting case is asserted too - focus must NOT be dragged to the
     handle by an ordinary open.
+
+    **Run on all three pages, and that is the fix for a real hole.** These two
+    behaviours come from `web/js/drawer.js`, which is a side-effect import in FOUR
+    separate entry modules - `main.js`, `stats.js`, `methodology.js` and the retired
+    `home.js` - and nothing else in this file would notice one of them losing it. All
+    four were deleted at once in a change that reached `main`; the drawer's markup was
+    intact, every `href` was correct, the panel opened and closed on its own as a
+    `<details>` does, and the only symptom was that `Escape` did nothing and
+    `aria-expanded` never changed from `false`. Measured on `/stats.html` alone, three
+    of the four deletions were invisible. This costs two more page loads and closes
+    that.
     """
-    context, page = _open_page(browser, "/stats.html")
+    context, page = _open_page(browser, path)
     try:
         handle = page.locator(".site-drawer__handle")
         assert handle.get_attribute("aria-expanded") == "false"

@@ -479,6 +479,53 @@ def test_the_public_host_matches_on_any_port_it_is_published_on(redirecting: Sta
 
 
 # ---------------------------------------------------------------------------------------
+# The other Location in this file, which had the same defect
+# ---------------------------------------------------------------------------------------
+
+
+def test_a_missing_page_on_the_tls_path_is_sent_to_https_and_not_to_port_80(
+    redirecting: Stack,
+):
+    """``@not_a_page`` built its ``Location`` from ``$scheme``, and that was live.
+
+    ``$scheme`` is what *this* server was reached on, which behind a TLS terminator is
+    always ``http``. So mistyping a URL on a working https site answered
+    ``http://<public host>/`` — port 80, which is exactly the port this deployment's
+    operator has deliberately left unlistened. A dead end, reached from a working site,
+    with nothing in the failure naming the cause.
+
+    Same bug class as ``absolute_redirect off`` two directives above it and as the
+    ``Host $host`` one in ``kaicalc_proxy_headers.conf``: a ``Location`` assembled from
+    what this hop saw rather than from what the browser used.
+    """
+
+    answer = redirecting.request("/no-such-page", host=PUBLIC_HOST, through_edge=True)
+
+    assert answer["status"] == 302, answer
+    assert answer["location"] == f"https://{PUBLIC_HOST}/", (
+        f"a 404 on the https path was sent to {answer['location']!r}"
+    )
+
+
+def test_a_missing_page_on_a_plaintext_host_still_keeps_its_scheme_and_port(
+    redirecting: Stack,
+):
+    """The negative half, and it is the half that would otherwise rot.
+
+    ``$kaicalc_client_proto`` resolves to ``$scheme`` whenever forwarded headers are not
+    trusted, so no deployment without an edge in front changes behaviour. Reaching the
+    stack by an address that is not the public one must still land on that same address,
+    port and all — the default publish port is 18080 and dropping it sends the operator
+    to port 80 from the other direction.
+    """
+
+    answer = redirecting.request("/no-such-page", host=LAN_HOST)
+
+    assert answer["status"] == 302, answer
+    assert answer["location"] == f"http://{LAN_HOST}/", answer
+
+
+# ---------------------------------------------------------------------------------------
 # The health check, watched rather than reasoned about
 # ---------------------------------------------------------------------------------------
 

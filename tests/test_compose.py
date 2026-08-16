@@ -166,6 +166,131 @@ def test_service_is_identical_apart_from_the_image(
     )
 
 
+# ---------------------------------------------------------------------------
+# nginx is the only way in, and the overlay that undoes it is a matched pair
+# ---------------------------------------------------------------------------
+#
+# WHAT THESE DO AND DO NOT ESTABLISH. They read YAML, so they establish that
+# somebody wrote the intended thing down - nothing more. The BEHAVIOUR this
+# arrangement exists to produce is "two visitors through the proxy get their
+# own rate-limit buckets", and that is asserted by sending two visitors, in
+# `tests/admin/test_protection.py::
+# test_two_visitors_through_the_proxy_do_not_share_a_rate_limit_bucket`, which
+# reads its setting out of the same file these tests guard. These are the
+# regression net for the recipe; that one is the evidence.
+
+
+@pytest.mark.parametrize("service", ["api", "admin"])
+@pytest.mark.parametrize("which", ["build", "deploy"])
+def test_the_applications_publish_no_host_port(
+    build: dict, deploy: dict, which: str, service: str
+) -> None:
+    """The api and the panel are reached through nginx and by no other route.
+
+    This is the precondition for `PROTECTION_TRUSTED_PROXY` defaulting to true
+    below: the applications may believe the `X-Forwarded-For` our nginx sends
+    them only because nothing else can send them anything. A `ports:` block
+    here reopens the bypass, at which point a caller names their own address
+    and walks out of the blocklist - strictly worse than not trusting the
+    header at all.
+    """
+    compose = build if which == "build" else deploy
+    assert "ports" not in compose["services"][service], (
+        f"the `{service}` service publishes a host port in docker/compose"
+        f"{'' if which == 'build' else '.deploy'}.yaml. That is the bypass "
+        f"PROTECTION_TRUSTED_PROXY=true is unsafe with; if you want it for "
+        f"development, overlay docker/compose.direct-ports.yaml, which turns "
+        f"the setting back off in the same file."
+    )
+
+
+@pytest.mark.parametrize("which", ["build", "deploy"])
+def test_only_nginx_publishes_a_port(build: dict, deploy: dict, which: str) -> None:
+    """Stated over the whole file rather than service by service.
+
+    Without this, a fourth service published tomorrow would be a second door
+    into the network with nothing failing. `db` is the other one that must stay
+    unpublished and has its own reasons (an unattended machine gets its MySQL
+    port scanned); `migrate` exits.
+    """
+    compose = build if which == "build" else deploy
+    published = {
+        name: service["ports"]
+        for name, service in compose["services"].items()
+        if "ports" in service
+    }
+    assert set(published) == {"web"}, (
+        f"exactly one service may publish a host port and it is nginx; found "
+        f"{sorted(published)}"
+    )
+
+
+@pytest.mark.parametrize("service", ["api", "admin", "web"])
+@pytest.mark.parametrize("which", ["build", "deploy"])
+def test_the_stack_tells_the_applications_to_trust_its_proxy(
+    build: dict, deploy: dict, which: str, service: str
+) -> None:
+    """All three services, one expansion, defaulting to true.
+
+    `web`'s copy is not read by nginx - docker/web-config.sh only reports on
+    it - but it must agree with the other two or the start-up warning is
+    reasoning from a value the applications do not have.
+
+    The code defaults in `admin/config.py` and `api/app.py` are deliberately
+    still False and are NOT asserted here: a process that nobody told cannot
+    see whether a proxy is in front of it, and this file is the thing that
+    makes one so.
+    """
+    compose = build if which == "build" else deploy
+    value = compose["services"][service]["environment"]["PROTECTION_TRUSTED_PROXY"]
+    assert value == "${PROTECTION_TRUSTED_PROXY:-true}", (
+        f"`{service}` sets PROTECTION_TRUSTED_PROXY to {value!r}. It must be an "
+        f"expansion defaulting to true - a literal cannot be overridden by an "
+        f"operator, and a different default disagrees with the other services."
+    )
+
+
+def test_the_direct_ports_overlay_restores_the_ports_and_the_caution_together(
+    build: dict,
+) -> None:
+    """The pairing, in one file, so that half of it cannot land alone.
+
+    `docker/nginx-proxy-headers.conf` used to instruct a reader to make this
+    edit in two places and warned that both halves must land together. A
+    two-place edit where one place is easy to forget is a defect this
+    repository has found more than once, so the overlay carries both.
+
+    Asserted against the base file rather than in isolation: the host ports it
+    restores have to be the ones the base file documents, and the container
+    ports have to be the ones nginx proxies to.
+    """
+    overlay = _load(REPO / "docker" / "compose.direct-ports.yaml")
+
+    for service, port in (("api", 18000), ("admin", 18001)):
+        assert overlay["services"][service]["ports"] == [
+            f"${{KAICALC_{'API' if service == 'api' else 'ADMIN'}_PORT:-{port}}}:{port}"
+        ], overlay["services"][service].get("ports")
+
+    for service in ("api", "admin", "web"):
+        value = overlay["services"][service]["environment"]["PROTECTION_TRUSTED_PROXY"]
+        assert value == "${PROTECTION_TRUSTED_PROXY:-false}", (
+            f"the overlay republishes the direct ports but leaves `{service}` "
+            f"trusting X-Forwarded-For ({value!r}). A caller who bypasses nginx "
+            f"can then name any address they like, which is worse than the "
+            f"shared bucket this overlay is accepting."
+        )
+
+    assert overlay["name"] == build["name"], (
+        "the overlay must name the same compose project, or it stands up a "
+        "second stack instead of modifying the first"
+    )
+    for service in overlay["services"].values():
+        assert "image" not in service and "build" not in service, (
+            "the overlay must add nothing but ports and that one setting - it "
+            "is an overlay, not a second definition of the stack"
+        )
+
+
 def test_deploy_file_builds_nothing(deploy: dict) -> None:
     """A `build:` block anywhere in the deployment file is a bug.
 

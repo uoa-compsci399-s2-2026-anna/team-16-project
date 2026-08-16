@@ -27,8 +27,13 @@ docker compose -f docker/compose.yaml up -d
 ```
 
 First run takes a few minutes (three image builds, plus the MySQL pull). Then the
-calculator is at <http://localhost:18080/>, the API at <http://localhost:18000/> and the
-panel at <http://localhost:18001/>. README's *How to run it* is the full version,
+calculator is at <http://localhost:18080/>, the API under
+<http://localhost:18080/api/v1/> and the panel at <http://localhost:18080/admin>. That one
+port is the only one published: nginx is the only way in, which is what lets the rate
+limit and the blocklist key on the visitor rather than on the proxy.
+`docker/compose.direct-ports.yaml` puts the API back on 18000 and the panel on 18001 for
+development, and turns that guarantee off in the same file. README's *How to run it* is the
+full version,
 including the three things that stop this command on a machine that has never run it.
 
 ---
@@ -198,7 +203,7 @@ The annotated original — every comment explaining why a setting is what it is 
 | `Head …/kaicalc-api:local: denied` | You are running `compose.yaml` with `--no-build` on a machine that has never built | Drop `--no-build`, or use `compose.deploy.yaml` |
 | `SECRET_KEY is required` | A container started by hand, without the image's entrypoint | Use compose, or pass `SECRET_KEY` |
 | `permission denied … /var/run/docker.sock` | Your user is not in the `docker` group | README, *Three things that stop the command above* |
-| `address already in use` and only one application container | A published port was taken; see the symptom in README | `KAICALC_WEB_PORT`, `KAICALC_API_PORT`, `KAICALC_ADMIN_PORT` |
+| `address already in use` | 18080 was taken, or 18000/18001 were with the direct-ports overlay in force; see the symptom in README | `KAICALC_WEB_PORT`, and `KAICALC_API_PORT`/`KAICALC_ADMIN_PORT` with that overlay |
 
 Check a login is really working:
 

@@ -252,14 +252,160 @@ async def test_exceeding_the_rate_limit_is_refused(client, settings):
     assert response.status_code == 429
 
 
+# ---------------------------------------------------------------------------
+# Two visitors through the proxy do not share a bucket
+# ---------------------------------------------------------------------------
+#
+# THIS IS THE BEHAVIOUR THE UNPUBLISHED api/admin PORTS EXIST TO BUY, AND IT IS
+# ASSERTED AS BEHAVIOUR RATHER THAN AS A SETTING. `docker/compose.yaml` saying
+# `PROTECTION_TRUSTED_PROXY: ${PROTECTION_TRUSTED_PROXY:-true}` is a string in
+# a YAML file; a test that reads it back has asserted that somebody typed it.
+# What matters is that two visitors arriving through the proxy are counted
+# separately, and the only way to know that is to send two and look.
+#
+# So the value is READ FROM THE COMPOSE FILE AND USED TO BUILD THE APP. That
+# coupling is the point: revert the compose default to `false` and this test
+# fails, because the app it builds then measures the connection - which is one
+# address for both visitors - instead of the forwarded one. Measured the same
+# way against the running stack before the change: one container exhausted the
+# panel's minute through :18080 and a second container's next request was
+# refused 429 on its first try.
+
+#: Two visitors, as an edge or our own nginx would report them. TEST-NET-2 and
+#: TEST-NET-3 (RFC 5737): unroutable, and not addresses any test harness can
+#: supply by accident, so a bucket keyed on one of these got there from the
+#: header and from nowhere else.
+_VISITOR_A = "198.51.100.11"
+_VISITOR_B = "203.0.113.22"
+
+
+def _compose_trusted_proxy_default(service: str) -> bool:
+    """What `docker compose up` actually hands ``service``, parsed from the file.
+
+    Not a copy of the value and not a hard-coded ``True``: either would let
+    the compose file drift away from the behaviour asserted below while every
+    test still passed, which is the failure this whole module keeps finding in
+    other forms.
+    """
+    import re
+    from pathlib import Path
+
+    import yaml
+
+    compose = yaml.safe_load(
+        (Path(__file__).resolve().parents[2] / "docker" / "compose.yaml")
+        .read_text(encoding="utf-8")
+    )
+    raw = compose["services"][service]["environment"]["PROTECTION_TRUSTED_PROXY"]
+    # `${PROTECTION_TRUSTED_PROXY:-true}` -> `true`. An expansion with no
+    # default, or a literal, would not match and is a failure rather than a
+    # guess: this test may not invent the value it is supposed to be checking.
+    match = re.fullmatch(r"\$\{PROTECTION_TRUSTED_PROXY:-(\w+)\}", str(raw).strip())
+    assert match, (
+        f"docker/compose.yaml's {service} service sets PROTECTION_TRUSTED_PROXY "
+        f"to {raw!r}, which this test cannot read a default out of"
+    )
+    return match.group(1).lower() in ("1", "true", "yes", "on")
+
+
+@pytest.fixture
+def stack_app(monkeypatch):
+    """The panel, built the way ``docker/compose.yaml`` builds it.
+
+    Same body as ``admin_app`` above apart from the one line that matters -
+    see that fixture's docstring for why the environment has to be set inside
+    the fixture that owns the ``create_app()`` call rather than beside it.
+    """
+    monkeypatch.setenv("SECRET_KEY", "test-secret-key-not-used-anywhere-real")
+    monkeypatch.setenv("DATABASE_URL", TEST_URL)
+    monkeypatch.setenv("SESSION_HTTPS_ONLY", "false")
+    monkeypatch.setenv("PROTECTION_ENABLED", "true")
+    monkeypatch.setenv(
+        "PROTECTION_TRUSTED_PROXY",
+        "true" if _compose_trusted_proxy_default("admin") else "false",
+    )
+    app = create_app()
+    yield app
+    app.state.session_factory.kw["bind"].dispose()
+
+
+@pytest_asyncio.fixture
+async def stack_client(stack_app):
+    """Every request from one peer address, which is the whole point.
+
+    ``ASGITransport`` gives every request the same ``scope["client"]``, exactly
+    as nginx does when it is the only thing connecting to this application. The
+    two visitors below are distinguished by ``X-Forwarded-For`` and by nothing
+    else, so if that header is not what the limiter keys on, they are one
+    caller.
+    """
+    transport = ASGITransport(app=stack_app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as c:
+        yield c
+
+
+async def test_two_visitors_through_the_proxy_do_not_share_a_rate_limit_bucket(
+    stack_client, settings
+):
+    """The acceptance test, and the previous experiment run backwards.
+
+    Visitor A spends the whole minute; visitor B, arriving through the same
+    proxy on the same connection, must still be served. Before the api and
+    admin ports became opt-in this failed - `PROTECTION_TRUSTED_PROXY` was
+    false, `client_ip` read the connection, and both visitors were the one
+    address nginx connects from.
+
+    B is asserted at both ends of A's flood. The first assertion is what stops
+    a green result from meaning "B was refused for some reason that has nothing
+    to do with buckets", and the last is the property itself.
+    """
+    limit = settings.protection_max_requests_per_minute
+    a = dict(_RATE_TEST_HEADERS, **{"x-forwarded-for": _VISITOR_A})
+    b = dict(_RATE_TEST_HEADERS, **{"x-forwarded-for": _VISITOR_B})
+
+    assert (await stack_client.get("/admin/factor-set/list", headers=b)).status_code != 429
+
+    for i in range(limit + 1):
+        response = await stack_client.get("/admin/factor-set/list", headers=a)
+    assert response.status_code == 429, (
+        f"visitor A was still being served after {limit + 1} requests, so this "
+        "test never reached the state it is about"
+    )
+
+    served = await stack_client.get("/admin/factor-set/list", headers=b)
+    assert served.status_code != 429, (
+        "a second visitor through the same proxy was refused because the first "
+        "one had spent the minute - the rate-limit bucket is shared, which is "
+        "the defect unpublishing the api and admin ports exists to fix"
+    )
+
+
+# WHAT THIS FILE DELIBERATELY DOES NOT TEST: that a FORGED X-Forwarded-For
+# cannot move another visitor's bucket. It cannot be tested here, and writing
+# something that looked like it would be worse than the gap. The application
+# now believes the header, so from inside it a forged chain and a real one are
+# the same bytes - by design. What stops the forgery is that nginx OVERWRITES
+# X-Forwarded-For with the peer it saw, so a forger's claim lands in the
+# forger's own bucket. That is a property of the proxy and is asserted against
+# the real image in `tests/test_web_forwarded_headers.py`
+# (`test_a_forged_header_lands_in_the_forgers_own_bucket`). Both halves are
+# needed and neither implies the other: this file failing means the
+# application stopped keying on the header, that file failing means nginx
+# stopped sanitising it.
+
+
 @pytest.mark.parametrize("path", ["/admin/login", "/admin/verify"])
 async def test_the_login_handshake_is_never_rate_limited(client, settings, path):
     """The remote-lockout weapon this exemption removes.
 
-    The shipped deployment terminates TLS upstream, so a reverse proxy is in
-    front of the panel, while `PROTECTION_TRUSTED_PROXY` correctly defaults to
-    False - so every caller arrives as the proxy's own address and shares one
-    rate-limit bucket. `RequestRate.record` counts refused requests too, so
+    A reverse proxy is in front of the panel in every deployment of it, and
+    while `PROTECTION_TRUSTED_PROXY` is False every caller arrives as that
+    proxy's own address and shares one rate-limit bucket. `docker/compose.yaml`
+    now defaults it True and publishes no route around nginx, so the shipped
+    stack is not in that state - but a deployment that overlays
+    `docker/compose.direct-ports.yaml`, or one assembled without those files,
+    still is, and this exemption is what keeps it recoverable.
+    `RequestRate.record` counts refused requests too, so
     one request a second from any unauthenticated caller anywhere kept that
     single bucket permanently over the limit and answered 429 to *everyone* -
     including these two pages. The authenticated-staff exemption structurally

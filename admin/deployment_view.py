@@ -53,8 +53,11 @@ exactly one entry arrives. With it on, nginx sends
   with nothing sending a chain. The two are indistinguishable from here, and
   the page says so rather than guessing.
 * **no ``X-Forwarded-For`` at all** means the request did not come through
-  the stack's nginx — the panel's own published port (18001) was reached
-  directly.
+  the stack's nginx. ``docker/compose.yaml`` publishes nothing but 18080, so
+  on the shipped arrangement there is no such route to reach: seeing this
+  means either ``docker/compose.direct-ports.yaml`` is overlaid — which
+  republishes 18001 — or the panel is being served by something that is not
+  this stack at all.
 
 ``X-Real-IP`` is the useful companion because ``docker/nginx-proxy-headers.
 conf`` deliberately does **not** switch it on the flag: it is always
@@ -283,21 +286,29 @@ def assess(observation: Observation, settings: Settings) -> list[Finding]:
     if not observation.through_our_nginx:
         detail = (
             "Neither X-Forwarded-For nor X-Real-IP arrived, and the stack's nginx "
-            "sets both on every request it proxies. So this request reached the "
-            "panel's own published port (18001 in docker/compose.yaml) rather "
-            "than passing through the proxy — nothing on this page describes the "
-            "proxied path."
+            "sets both on every request it proxies. So this request did not pass "
+            "through the proxy, and nothing on this page describes the proxied "
+            "path. docker/compose.yaml publishes nothing but 18080, so there is "
+            "normally no such route: either docker/compose.direct-ports.yaml is "
+            "overlaid — it republishes the panel on 18001 — or this panel is not "
+            "being run from that file at all."
         )
         if settings.protection_trusted_proxy:
             findings.append(Finding(
                 "warn",
-                "This request bypassed the proxy, and this panel trusts forwarded addresses",
-                detail + " That combination is the dangerous one: with "
-                "PROTECTION_TRUSTED_PROXY true and the panel directly reachable, a "
-                "caller who connects to it can put any address in X-Forwarded-For "
-                "and be measured as that address — out of the rate-limit bucket and "
-                "out of the blocklist. Remove the api and admin ports: blocks from "
-                "docker/compose.yaml, or set PROTECTION_TRUSTED_PROXY back to false.",
+                "This panel trusts forwarded addresses and can be reached without the proxy",
+                detail + " That is the dangerous combination, and it is the one "
+                "state this deployment's defaults cannot produce on their own: "
+                "PROTECTION_TRUSTED_PROXY defaults to true only BECAUSE nothing "
+                "can reach this panel except through nginx, and this request is "
+                "standing evidence that something can. A caller who connects "
+                "directly puts any address it likes in X-Forwarded-For and is "
+                "measured as that address — out of the rate-limit bucket, and out "
+                "of the blocklist, so a block another administrator applied simply "
+                "stops holding. Drop docker/compose.direct-ports.yaml from the "
+                "command (it sets PROTECTION_TRUSTED_PROXY=false itself, so having "
+                "reached this finding you have overridden that too), or set "
+                "PROTECTION_TRUSTED_PROXY back to false and keep the ports.",
             ))
         else:
             findings.append(Finding(
@@ -338,7 +349,30 @@ def assess(observation: Observation, settings: Settings) -> list[Finding]:
 
 def _assess_address(observation: Observation, settings: Settings) -> list[Finding]:
     """Whether the address in force is the visitor's, and what it costs when
-    it is not."""
+    it is not.
+
+    **This is the finding the shipped default moved across, and both positions
+    were deliberate.** Until the api and admin ports became opt-in,
+    ``docker compose up`` produced ``PROTECTION_TRUSTED_PROXY`` false with the
+    stack's own nginx in the path — and with the trust flag off nginx
+    overwrites ``X-Forwarded-For``, so exactly one entry arrives, which fell
+    past the two-entry warning below into the final ``ok``. The page said "the
+    address in force is the connection this panel accepted" and stopped, which
+    is true and is not the finding: the connection is nginx, so the rate limit
+    was one bucket for everyone and one ``ip_block`` row denied everyone. That
+    was measured, not inferred — a container exhausted the panel's minute and
+    the next request from a *different* container was refused on its first try.
+
+    ``docker/compose.yaml`` now publishes nothing but 18080 and defaults the
+    setting to true, so the state above is no longer what an unconfigured
+    deployment produces. It is still a ``warn`` when it occurs, because it is
+    still that defect — it just means somebody turned the setting off rather
+    than that it shipped that way. What the page must NOT do is warn about the
+    new default: trust true with our nginx in the path is the arrangement this
+    stack is built to produce, and a diagnostics page that flags its own
+    correct state teaches operators to skip it. See ``admin/config.py`` on
+    which cost belongs to which case.
+    """
     findings: list[Finding] = []
     trusted = settings.protection_trusted_proxy
 
@@ -354,6 +388,29 @@ def _assess_address(observation: Observation, settings: Settings) -> list[Findin
             "configured and does nothing — docker/web-config.sh warns about it at "
             "container start too. Set both, or neither.",
         ))
+    elif not trusted and observation.through_our_nginx:
+        findings.append(Finding(
+            "warn",
+            "This panel is measuring the proxy, so every visitor shares one bucket",
+            "This request came through the stack's own nginx — it carried "
+            "X-Forwarded-For or X-Real-IP, and nginx sets both on everything it "
+            "proxies — and PROTECTION_TRUSTED_PROXY is false, so client_ip "
+            "(db/detection.py) reads the connection instead. That connection is "
+            "nginx's own container address, the same value for every visitor on "
+            "earth. Concretely, for every request that arrives this way: section "
+            "6.5's per-caller rate limit is one shared rate-limit bucket, and one "
+            "ip_block row denies everyone. The address in force below is the "
+            "evidence — if it is a container address, that is what is being "
+            "limited and blocked. This is NOT the shipped default any more: "
+            "docker/compose.yaml publishes nothing but 18080 and hands api, admin "
+            "and web PROTECTION_TRUSTED_PROXY=true, so something has turned it "
+            "off here. The likely cause is docker/compose.direct-ports.yaml, "
+            "which republishes 18000 and 18001 and sets this back to false — "
+            "correctly, because a caller who can bypass nginx could otherwise "
+            "forge any address, which is the worse of the two failures. That "
+            "overlay is a development convenience; drop it and this becomes "
+            "per-visitor again.",
+        ))
     elif trusted and not observation.chain:
         findings.append(Finding(
             "warn",
@@ -368,18 +425,27 @@ def _assess_address(observation: Observation, settings: Settings) -> list[Findin
             "ok",
             "The address in force is the one the chain reported",
             "PROTECTION_TRUSTED_PROXY is true and the left-most forwarded entry is "
-            "what the blocklist and the rate limit are keyed on. That is correct "
-            "only while nothing can reach api/ or admin/ except through this "
-            "stack's nginx — see the ports: blocks in docker/compose.yaml.",
+            "what the blocklist and the rate limit are keyed on, so each visitor "
+            "gets their own bucket and a block lands on one of them. This is the "
+            "shipped arrangement: docker/compose.yaml publishes nothing but 18080, "
+            "so nothing can reach api/ or admin/ except through this stack's "
+            "nginx, and nginx overwrites X-Forwarded-For with the peer it saw "
+            "rather than appending to what arrived — which is what makes the "
+            "header safe to believe. It stops being safe if either half is undone: "
+            "republishing those ports (docker/compose.direct-ports.yaml) or "
+            "turning KAICALC_TRUST_FORWARDED_HEADERS on without an edge in front.",
         ))
     else:
         findings.append(Finding(
             "ok",
             "The address in force is the connection this panel accepted",
             "PROTECTION_TRUSTED_PROXY is false, so X-Forwarded-For is ignored "
-            "entirely and no caller can name their own address. This is the "
-            "shipped default and it is right whenever this panel is directly "
-            "reachable.",
+            "entirely and no caller can name their own address. On this request "
+            "that is measuring a real caller: nothing forwarded arrived, so no "
+            "proxy of this stack's is in the path to be measured instead. This is "
+            "the right pairing for a panel reached directly — what "
+            "docker/compose.direct-ports.yaml sets up, and what a bare "
+            "`./run.sh admin` gets from the code default.",
         ))
 
     if _is_not_public(observation.decided_address):

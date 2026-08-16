@@ -355,6 +355,40 @@ def test_a_forged_header_is_ignored_when_trust_is_off(
     )
 
 
+def test_a_forged_header_lands_in_the_forgers_own_bucket(not_trusting: Stack):
+    """The property that makes ``PROTECTION_TRUSTED_PROXY=true`` safe to ship.
+
+    ``docker/compose.yaml`` publishes nothing but this proxy's port and tells
+    both applications to believe the ``X-Forwarded-For`` it sends. Believing a
+    header is only safe if a caller cannot choose it, and the test above proves
+    only the weaker half - that the forged VALUE does not arrive. An empty
+    header, or one carrying some third address, would satisfy that and still be
+    broken: ``db.detection.client_ip`` normalises an empty value to ``None``
+    and both callers then skip the rate limit and the blocklist outright.
+
+    The property is stronger and is what this asserts: what arrives is the
+    forger's OWN address. So a caller who sets ``X-Forwarded-For`` to somebody
+    else's address spends their own rate-limit bucket and collects their own
+    block - they cannot push a named visitor over the limit, and they cannot
+    step out of a block by renaming themselves. The address is read from Docker
+    rather than from the reply, so this is checked against a value the test
+    knows independently of the thing under test.
+    """
+    received = not_trusting.straight_at_the_proxy(
+        "/api/v1/probe", X_Forwarded_For=FORGED_CLIENT
+    )["headers"]
+
+    assert received["x-forwarded-for"] == not_trusting.edge_address(), (
+        "a forged X-Forwarded-For did not resolve to the caller's own address; "
+        f"the application received {received['x-forwarded-for']!r}, so the "
+        "forger is being measured as somebody else"
+    )
+    assert "," not in received["x-forwarded-for"], (
+        "the forged entry was appended rather than overwritten; both "
+        "applications read the LEFT-MOST entry, so the forger named themselves"
+    )
+
+
 # ---------------------------------------------------------------------------------------
 # The trusting configuration: somebody else's TLS terminator is in front
 # ---------------------------------------------------------------------------------------

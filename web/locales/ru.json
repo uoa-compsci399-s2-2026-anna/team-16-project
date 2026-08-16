@@ -311,6 +311,9 @@
     "The total waste amount — a weight, or how many containers you fill": "Общее количество отходов — вес или число контейнеров, которые вы наполняете",
     "Clear calculator data and start again": "Удалить данные калькулятора и начать заново",
     "Clear all calculator data and start again?": "Удалить все данные калькулятора и начать заново?",
-    "Site navigation": "Навигация по сайту"
+    "Site navigation": "Навигация по сайту",
+    "Write the number out in full, using digits only.": "Запишите число полностью, только цифрами.",
+    "Enter no more than %(limit)s %(unit)s.": "Укажите не более %(limit)s %(unit)s.",
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Указывайте по способам утилизации не более %(limit)s %(unit)s."
   }
 }

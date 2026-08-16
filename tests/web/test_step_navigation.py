@@ -327,6 +327,43 @@ def test_the_allocation_summary_still_sticks(page_at):
     assert all(abs(top - 10) <= 1 for top in measured["tops"]), measured
 
 
+def test_the_allocation_summary_is_opaque_in_both_states(page_at):
+    """...and being sticky, that is the only thing stopping rows showing through.
+
+    The summary was `rgba(223, 248, 237, 0.68)`, and the destination rows scroll
+    *underneath* it: labels and input borders were legible through the one panel
+    on the screen whose whole job is to be readable while the list moves. The
+    sibling test above proves it sticks; this one proves it covers.
+
+    **Two assertions, because the fix had two halves.** Chromium serialises a
+    fully opaque background as `rgb(...)` and anything less as `rgba(...)`, so
+    the first is exactly "alpha is 1". The second pins the composite: the
+    replacements are the old translucent colours resolved over `--kai-white`
+    (#fff), which is the ground the summary sits on — 223/248/237 at 0.68 is
+    233.24, 250.24, 242.76, and 255/80/50 at 0.07 is 255, 242.75, 240.65. So the
+    panel is byte-identical to what it looked like before and only stops being
+    see-through. An opaque background of some *other* colour would satisfy the
+    first assertion and would be a redesign nobody asked for.
+
+    Mutation: `KAICALC_MUTATION_CSS` carrying the two original `rgba(...)` rules
+    fails both states.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 3)
+    normal = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.allocation-summary')).backgroundColor"
+    )
+    page.fill('[data-line-field="amount"] >> nth=0', "1001")
+    page.wait_for_timeout(80)
+    invalid = page.evaluate(
+        "() => getComputedStyle(document.querySelector('.allocation-summary.invalid')).backgroundColor"
+    )
+    measured = {"normal": normal, "invalid": invalid}
+    assert not normal.startswith("rgba("), measured
+    assert not invalid.startswith("rgba("), measured
+    assert normal.replace(" ", "") == "rgb(233,250,243)", measured
+    assert invalid.replace(" ", "") == "rgb(255,243,241)", measured
+
+
 def test_every_focused_control_is_scrolled_clear_of_the_bar(page_at):
     """`scroll-margin-bottom`. Sequential focus navigation scrolls a control
     flush to the viewport edge, which is underneath a bar pinned there — a

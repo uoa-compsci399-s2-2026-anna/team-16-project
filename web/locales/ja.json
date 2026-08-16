@@ -311,6 +311,9 @@
     "The total waste amount — a weight, or how many containers you fill": "廃棄物の総量。重量、または満たしている容器の数",
     "Clear calculator data and start again": "計算ツールのデータを消去して最初からやり直す",
     "Clear all calculator data and start again?": "計算ツールのデータをすべて消去して、最初からやり直しますか？",
-    "Site navigation": "サイトナビゲーション"
+    "Site navigation": "サイトナビゲーション",
+    "Write the number out in full, using digits only.": "数値は省略せず、数字だけで入力してください。",
+    "Enter no more than %(limit)s %(unit)s.": "%(limit)s %(unit)s までで入力してください。",
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "廃棄先ごとの量は %(limit)s %(unit)s までで入力してください。"
   }
 }

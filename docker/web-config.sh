@@ -163,7 +163,11 @@ TRUST_FORWARDED=$(normalise_bool KAICALC_TRUST_FORWARDED_HEADERS "${KAICALC_TRUS
 # decides whether api/ and admin/ READ it (db/detection.py's client_ip). They answer
 # different questions about different hops and are deliberately separate variables - our
 # nginx is the outermost proxy in the shipped topology, where the applications should
-# trust it and it should trust nobody - but "nginx forwards the visitor's real address
+# trust it and it should trust nobody, and since the api and admin `ports:` blocks became
+# opt-in that is exactly what docker/compose.yaml ships: this off, PROTECTION_TRUSTED_PROXY
+# true. Closing those container ports says who can reach the applications; it says nothing
+# about who can open a socket to :18080, which is what THIS setting is about, so it stayed
+# off - but "nginx forwards the visitor's real address
 # and the applications ignore it" is a configuration that does exactly nothing, which is
 # the failure this repository keeps finding. It is a warning and not a refusal because
 # this container's view of the applications' setting is second-hand: docker/compose.yaml

@@ -112,10 +112,18 @@ newgrp docker          # or log out and back in — the group is read at login
 Membership is a root-equivalent grant on that host. On a shared machine, `sudo` per
 command is the smaller decision.
 
-**2. If `18000` or `18001` is already taken, you get a stack that looks half-alive.**
-Compose starts `api` and `admin` together. Whichever one cannot bind its published port
-fails; the other one starts and reports **healthy**; `web` never starts at all, because it
-waits on `api: service_healthy` **and** `admin: service_healthy`. So the symptom is:
+**2. If `18080` is already taken, `up` fails — cleanly, and that is a recent improvement.**
+Only one port is published now, so there is only one port that can clash:
+
+```bash
+KAICALC_WEB_PORT=18090 docker compose -f docker/compose.yaml up -d
+```
+
+**This used to be the worst failure in this file, and it is worth knowing what it looked
+like, because you can still reach it deliberately.** `api` and `admin` were once published
+on `18000` and `18001` as well. Compose starts them together, so whichever one could not
+bind its port failed while the other started and reported **healthy** — and `web` never
+started at all, because it waits on `api: service_healthy` **and** `admin: service_healthy`:
 
 ```
 Error response from daemon: driver failed programming external connectivity on endpoint
@@ -138,17 +146,13 @@ web       Created
 error is printed once, by the `up` that failed. `docker ps` afterwards shows a
 plausible-looking subset with no error in it, because a container that was **created and
 never started** is not a container `docker ps` lists. `ps -a` is the command that shows
-what is missing rather than what is there.
+what is missing rather than what is there — keep that reflex; it is the general lesson and
+it applies to any `depends_on: service_healthy` chain.
 
-Move the ports rather than hunting the process:
-
-```bash
-KAICALC_WEB_PORT=18090 KAICALC_API_PORT=18010 KAICALC_ADMIN_PORT=18011 \
-  docker compose -f docker/compose.yaml up -d
-```
-
-Only `KAICALC_WEB_PORT` has to be reachable. The other two are development convenience —
-nginx reaches both services over the compose network and does not need either published.
+Those two ports are now opt-in (see **[Reaching the API and the panel
+directly](#reaching-the-api-and-the-panel-directly)** below), so the shipped `up` cannot
+produce that state. If you turn them back on, it can again, and
+`KAICALC_API_PORT` / `KAICALC_ADMIN_PORT` move them.
 
 **3. One instance per host.** `docker/compose.yaml` pins `name: kaicalc` and a fixed
 `container_name:` for every service, so a second copy of this repository in another
@@ -159,15 +163,49 @@ you did not start can be the one you just restarted. `docker compose ls -a` name
 directory each project was started from.
 
 Nothing binds port 80, 8000, 8080, 3000 or 5000 — a clean machine very often has
-something on all of them already. Every published port is an environment variable with a
-high default:
+something on all of them already. **nginx is the only way in, and that is a security
+property rather than a tidiness one** (see the next section for what it buys):
 
 | Variable | Default | What |
 | --- | --- | --- |
-| `KAICALC_WEB_PORT` | `18080` | nginx — the calculator, the API and the panel. **The only port that must be published.** |
-| `KAICALC_API_PORT` | `18000` | the API, direct. Development convenience only. |
-| `KAICALC_ADMIN_PORT` | `18001` | the panel, direct. Development convenience only. |
+| `KAICALC_WEB_PORT` | `18080` | nginx — the calculator, the API and the panel. **The only port published.** |
+| `KAICALC_API_PORT` | `18000` | the API, direct. **Not published** unless you overlay `docker/compose.direct-ports.yaml`; then this chooses the host port. |
+| `KAICALC_ADMIN_PORT` | `18001` | the panel, direct. Same — opt-in only. |
 | — | not published | MySQL. Reachable only from inside the compose network. |
+
+#### Reaching the API and the panel directly
+
+`http://localhost:18000/docs` is a real convenience, so there is a supported way back:
+
+```bash
+docker compose -f docker/compose.yaml -f docker/compose.direct-ports.yaml up -d
+```
+
+Pass **both** `-f` flags to every later command against that stack — `down`, `ps`, `logs`
+— or compose is describing a different project.
+
+**That overlay also sets `PROTECTION_TRUSTED_PROXY=false`, and it must.** With the
+applications reachable without going through nginx, a caller can send any
+`X-Forwarded-For` it likes and be measured as that address — out of the rate limit and out
+of the blocklist, so a block a staff member applied stops holding. The two facts move
+together, which is why they live in one file instead of in two places and a warning. The
+cost of using it is the one the default exists to avoid: every visitor arriving through
+nginx shares **one** rate-limit bucket and **one** blocklist entry again. Fine on a laptop;
+not fine anywhere the public can reach, and `/admin/deployment` will say so.
+
+**If you were reaching `:18000` or `:18001` before**, this is what changed and this is how
+to get it back. Most of what you were doing does not need it:
+
+| You were opening | Through nginx instead | |
+| --- | --- | --- |
+| `:18001/admin` | `:18080/admin` | the same panel, and the route was always there |
+| `:18000/api/v1/…` | `:18080/api/v1/…` | verified: `taxonomy`, `factors`, `stats` all answer `200` |
+| `:18000/docs`, `:18000/openapi.json` | **nothing** | the overlay is the only way |
+
+That last row is the one real loss, and it is deliberate rather than an oversight: nginx
+routes `/api/v1/` and `/admin` and nothing else to the applications, so FastAPI's
+interactive documentation — which sits at the API's root, outside `/api/v1/` — is not on
+the public origin and is not being put there. Use the overlay when you want it.
 
 nginx routes everything by default, so a headless server needs no further configuration:
 
@@ -293,7 +331,7 @@ in `docker/compose.yaml` at the point of use, and below:
 | `KAICALC_API_ORIGIN` | empty, and it should stay empty unless the API is on its own origin. Details below. |
 | `KAICALC_NEWS_IMAGE_ORIGINS` | space-separated, `img-src` only, for a WordPress media library on a CDN rather than on the site origin. |
 | `KAICALC_TRUST_FORWARDED_HEADERS` | defaults to `false`. **Set it true when another proxy — one you operate — terminates TLS in front of this stack.** Left false there, the panel is told the request is not on TLS and every visitor arrives as your edge's one address. Set true while this nginx is directly reachable, and any caller can claim any address. Details below. |
-| `PROTECTION_TRUSTED_PROXY` | defaults to `false`. Behind a real reverse proxy, leave it false and every caller arrives as the proxy — the API's per-visitor rate limits collapse into one site-wide bucket. Set it true, and remove the direct `ports:` for `api` and `admin`, together. |
+| `PROTECTION_TRUSTED_PROXY` | **`docker/compose.yaml` sets it `true`**, which is what makes the rate limit and the blocklist per-visitor rather than per-proxy. Safe only because that file publishes nothing but nginx's port; `docker/compose.direct-ports.yaml` republishes the other two and puts this back to `false` in the same file. The *code* default (`./run.sh`, no compose) is `false` — a process with no proxy in front must not believe the header. |
 | `PROTECTION_ENABLED` | the escape hatch if the panel's protection layer locks everyone out. Every setting is read once at start-up, so edit *and restart*. |
 | `LOGIN_MAX_FAILURES`, `LOGIN_LOCKOUT_MINUTES` | login throttling. Lockout counters live in process memory, so `docker compose -f docker/compose.yaml restart admin` clears every lockout immediately. |
 
@@ -366,9 +404,12 @@ somebody else's terminator is not, and it needs one variable:
 
 ```bash
 KAICALC_TRUST_FORWARDED_HEADERS=true \
-PROTECTION_TRUSTED_PROXY=true \
   docker compose -f docker/compose.yaml up -d
 ```
+
+(`PROTECTION_TRUSTED_PROXY=true` used to be needed on that line too. It is the default
+now — the api and admin ports are no longer published, so the applications can already
+believe the header this nginx sends them. This variable is the *other* hop.)
 
 **What each half does.** nginx sends `X-Forwarded-Proto` and `X-Forwarded-For` to the API
 and the panel. By default it builds both from what *it* saw — which is right while it is
@@ -386,9 +427,14 @@ the request is plain http. That is why it is off by default and why it is a *sep
 variable from `PROTECTION_TRUSTED_PROXY`: that one says the applications may believe the
 header **our** nginx sends, this one says our nginx may believe the header **it receives**.
 Setting this without that leaves nginx forwarding an address the applications ignore —
-the container warns about it at start-up. Also remove the `ports:` blocks for `api` and
-`admin`, as `docker/nginx-proxy-headers.conf` describes, and set
-`KAICALC_SESSION_HTTPS_ONLY=true`.
+the container warns about it at start-up.
+
+**Unpublishing the api and admin ports did not settle this one, and assuming it did is the
+mistake worth naming.** That change decided who can reach the *applications*, which is why
+`PROTECTION_TRUSTED_PROXY` could become the default. It decided nothing about who can open
+a socket to `:18080` — on a laptop and on a bare VPS, anyone can — and that is the only
+question this variable asks. It stays `false` until *you* know an edge you run is the only
+route in. Set `KAICALC_SESSION_HTTPS_ONLY=true` at the same time.
 
 ```bash
 # What is actually in force:

@@ -311,6 +311,9 @@
     "The total waste amount — a weight, or how many containers you fill": "Tổng lượng rác thải — một khối lượng, hoặc số thùng chứa bạn đổ đầy",
     "Clear calculator data and start again": "Xóa dữ liệu trong công cụ tính và bắt đầu lại",
     "Clear all calculator data and start again?": "Xóa toàn bộ dữ liệu trong công cụ tính và bắt đầu lại?",
-    "Site navigation": "Điều hướng trang web"
+    "Site navigation": "Điều hướng trang web",
+    "Write the number out in full, using digits only.": "Viết đầy đủ con số, chỉ dùng chữ số.",
+    "Enter no more than %(limit)s %(unit)s.": "Không nhập quá %(limit)s %(unit)s.",
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Nhập lượng tại mỗi điểm đến không quá %(limit)s %(unit)s."
   }
 }

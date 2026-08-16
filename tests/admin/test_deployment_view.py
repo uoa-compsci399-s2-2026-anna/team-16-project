@@ -61,6 +61,17 @@ def http_test(fn):
 EDGE_CLIENT = "203.0.113.9"
 MIDDLE_HOP = "203.0.113.44"
 FORGED_CLIENT = "198.51.100.7"
+#: The stack's own nginx, as the panel sees it on the container network. What
+#: `X-Real-IP` carries, and - with the trust flag off - the whole of what
+#: `X-Forwarded-For` carries, for every visitor alike.
+NGINX_PEER = "172.18.0.5"
+#: One real visitor, as the shipped arrangement reports them: nginx's own peer,
+#: forwarded and believed. A PUBLIC address on purpose - `_is_not_public` adds a
+#: `note` for anything private, which is correct and expected on a laptop, but
+#: it would be noise in the one test that asserts a clean reading. `9.9.9.9`
+#: rather than a TEST-NET address for the reason `test_a_public_address_in_force_
+#: is_not_noted` gives: `ipaddress.is_private` is True for those too.
+VISITOR = "9.9.9.9"
 
 
 def _flat(html: str) -> str:
@@ -498,9 +509,123 @@ def test_a_forwarded_chain_that_the_application_ignores_is_a_warning():
     assert "denies everyone" in joined
 
 
-def test_trusting_with_no_forwarded_header_is_a_warning():
-    """The other direction: the application will believe a header that is not
-    arriving, so anything that can reach it directly can supply one."""
+def test_trust_turned_off_behind_our_own_nginx_is_still_a_warning():
+    """The state `docker compose up` produced until the direct ports became
+    opt-in, and which read as an all-clear until 2026-08-16.
+
+    With `KAICALC_TRUST_FORWARDED_HEADERS` off - still the default - nginx
+    OVERWRITES `X-Forwarded-For` with the peer it saw, so exactly ONE entry
+    arrives. That falls past the two-entry warning, and the page's final `ok`
+    then said "the address in force is the connection this panel accepted" and
+    stopped. True, and not the finding: the connection is the nginx container,
+    the same value for every visitor, so the rate limit is one bucket and one
+    `ip_block` row denies everyone. Measured on the running stack - a container
+    exhausted the panel's minute and the next request from a different
+    container was refused 429 on its first try.
+
+    It is no longer the shipped default, and it is still a warning: reaching
+    it now means somebody turned the setting off (most likely by overlaying
+    `docker/compose.direct-ports.yaml`), which does not make the shared bucket
+    hurt any less.
+
+    `real_ip` is what makes this branch reachable rather than the chain: nginx
+    sets `X-Real-IP` in both branches of the trust flag, so it is the evidence
+    that the stack's proxy is in the path at all.
+    """
+    findings = assess(
+        _observation(
+            forwarded_for=NGINX_PEER,
+            chain=(NGINX_PEER,),
+            real_ip=NGINX_PEER,
+            decided_address=NGINX_PEER,
+        ),
+        _settings(protection_trusted_proxy=False),
+    )
+
+    warnings = [f for f in findings if f.level == "warn"]
+    assert warnings, f"no warning raised; findings were: {_titles(findings)}"
+    joined = _details(warnings)
+    assert "one shared rate-limit bucket" in joined, joined
+    assert "denies everyone" in joined, joined
+    # A warning that only says "this is wrong" invites the unsafe repair -
+    # flipping the flag back on while the direct ports are still published -
+    # so it has to name the thing that put the deployment here.
+    assert "direct-ports" in joined, joined
+
+
+def test_the_shipped_default_behind_our_own_nginx_raises_no_warning():
+    """What `docker compose up` produces NOW, and it must read as an all-clear.
+
+    One `X-Forwarded-For` entry (the trust flag is off, so nginx overwrites),
+    `X-Real-IP` set, `PROTECTION_TRUSTED_PROXY` true because nothing but nginx
+    can reach the panel. That is the arrangement this stack is built to
+    produce, and each visitor really does get their own bucket in it.
+
+    **This is the assertion that stops the rule above from being "warn
+    whenever our nginx is in the path".** A page that flags its own correct
+    state is a page operators learn to skip, which costs exactly the finding
+    that mattered on the day something was genuinely wrong. The address note
+    is excluded because a private address in force is expected on any local
+    run and is a `note`, not a `warn`; the assertion is about warnings.
+    """
+    findings = assess(
+        _observation(
+            forwarded_for=VISITOR,
+            chain=(VISITOR,),
+            real_ip=VISITOR,
+            decided_address=VISITOR,
+            decided_from=FROM_FORWARDED,
+            forwarded_proto="http",
+        ),
+        _settings(protection_trusted_proxy=True, session_https_only=False),
+    )
+
+    warnings = [f for f in findings if f.level == "warn"]
+    assert not warnings, (
+        "the shipped arrangement is being reported as a problem: "
+        f"{_titles(warnings)}"
+    )
+    address = [f for f in findings if "address in force" in f.title]
+    assert address and address[0].level == "ok", _titles(findings)
+
+
+def test_the_shipped_default_with_no_proxy_in_the_path_is_not_a_warning():
+    """What stops the rule above from being "warn whenever trust is off".
+
+    A request straight to the panel's published port carries neither header,
+    and there `PROTECTION_TRUSTED_PROXY` false is simply correct: the
+    connection IS the caller. Without this, a page that warned unconditionally
+    would pass the test above.
+    """
+    findings = assess(
+        _observation(forwarded_for=None, chain=(), real_ip=None),
+        _settings(protection_trusted_proxy=False),
+    )
+
+    address_findings = [f for f in findings if "address in force" in f.title]
+    assert address_findings, _titles(findings)
+    assert all(f.level != "warn" for f in address_findings), _titles(address_findings)
+    assert "one shared rate-limit bucket" not in _details(findings)
+
+
+def test_trusting_while_the_proxy_can_be_bypassed_is_a_warning():
+    """**The wrong state that the new defaults create room for**, and the one
+    the page most has to catch.
+
+    The application will believe `X-Forwarded-For`, and this request proves the
+    panel can be reached without going through the nginx that sets it - so
+    anything that can reach it directly can supply one, name any address, and
+    be out of both the rate limit and the blocklist. A block another
+    administrator applied simply stops holding.
+
+    Since `PROTECTION_TRUSTED_PROXY` defaults to true, this state is no longer
+    something an operator has to opt into by editing a variable: overlaying
+    `docker/compose.direct-ports.yaml` and then overriding the `false` it sets
+    reaches it, as does running the panel outside `docker/compose.yaml`
+    altogether. It was reported before this change and still is; what changed
+    is how it is worded and that it is now the more likely of the two
+    incoherences rather than the less.
+    """
     findings = assess(
         _observation(forwarded_for=None, chain=(), real_ip=None),
         _settings(protection_trusted_proxy=True),
@@ -508,7 +633,13 @@ def test_trusting_with_no_forwarded_header_is_a_warning():
 
     warnings = [f for f in findings if f.level == "warn"]
     assert warnings, f"no warning raised; findings were: {_titles(findings)}"
-    assert "any address in X-Forwarded-For" in _details(warnings)
+    joined = _details(warnings)
+    # The consequence, not just the observation. Asserted on the two things a
+    # reader has to be told: that the caller chooses the address, and that the
+    # blocklist is what stops working.
+    assert "X-Forwarded-For" in joined, joined
+    assert "blocklist" in joined, joined
+    assert "direct-ports" in joined, joined
 
 
 def test_a_single_entry_does_not_claim_to_know_the_trust_flag():

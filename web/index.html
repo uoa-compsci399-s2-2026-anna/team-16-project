@@ -8,7 +8,7 @@
          therefore lives in exactly one place on this page, the same rule the JS follows. -->
     <meta name="description" data-i18n-attr="content" content="Estimate the environmental and financial impact of food waste in New Zealand food businesses.">
     <title data-i18n>Food Waste Impact Calculator | Kai Commitment</title>
-    <link rel="stylesheet" href="./css/styles.css?v=20260816-6">
+    <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="calculator-page">
     <!-- The statement is about the calculator, not about the language chooser. This page
@@ -48,6 +48,19 @@
          content pages carries it, and a second element claiming to be the current page
          is a page with two current pages. On the calculator nothing claims it, which is
          what `tests/test_d_statistics_content.py` asserts. -->
+    <details class="site-drawer" id="site-drawer">
+      <summary class="site-drawer__handle">
+        <span class="sr-only" data-i18n>Site navigation</span>
+      </summary>
+      <div class="site-drawer__panel">
+        <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
+          <a href="./home.html" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
+      </div>
+    </details>
     <header class="site-header" id="site-header">
       <div class="header-inner public-header-inner">
         <!-- **No `intro-header` any more, because there is no introduction screen.** This
@@ -124,6 +137,6 @@
            element holding the key still holds nothing but the key. -->
       <p class="transparency-notice"><span data-i18n>This calculator stores the sector, food category and quantities entered for aggregate statistics. It stores nothing that identifies you or your business.</span> <a href="./methodology.html#what-we-record">What we record</a></p>
     </footer>
-    <script type="module" src="./js/main.js?v=20260816-1"></script>
+    <script type="module" src="./js/main.js"></script>
   </body>
 </html>

@@ -309,10 +309,15 @@
     "How many containers?": "용기는 몇 개입니까?",
     "Choose a weight, or the container you fill.": "무게 단위, 또는 실제로 채우는 용기를 선택하세요.",
     "The total waste amount — a weight, or how many containers you fill": "총 폐기물 양 — 무게, 또는 채우는 용기의 개수",
-    "Clear calculator data and start again": "계산 데이터를 지우고 처음부터 다시 시작하기",
-    "Clear all calculator data and start again?": "모든 계산 데이터를 지우고 처음부터 다시 시작할까요?",
+    "Site navigation": "사이트 탐색",
     "Write the number out in full, using digits only.": "숫자는 줄여 쓰지 말고 숫자만 사용해 모두 입력하세요.",
     "Enter no more than %(limit)s %(unit)s.": "%(limit)s %(unit)s 이하로 입력하세요.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "처리 경로별 양은 %(limit)s %(unit)s 이하로 입력하세요."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "처리 경로별 양은 %(limit)s %(unit)s 이하로 입력하세요.",
+    "Clear all calculator data and return to the introduction?": "모든 계산 데이터를 지우고 소개 화면으로 돌아갈까요?",
+    "Clear calculator data and return to the introduction": "계산 데이터를 지우고 소개 화면으로 돌아가기",
+    "Food Waste Impact Calculator": "음식물 폐기물 영향 계산기",
+    "For New Zealand food businesses": "뉴질랜드 식품 사업장을 위한 도구",
+    "Start calculator": "계산기 시작",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "측정한 음식물 폐기물 수치를 환경적·경제적 영향이 한눈에 보이는 형태로 바꿔 보세요."
   }
 }

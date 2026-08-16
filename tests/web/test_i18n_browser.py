@@ -85,10 +85,10 @@ def browser():
 def open_page(browser, languages, path="/index.html", query="", stats_fixture=False):
     """A page whose browser claims `languages`, in preference order.
 
-    **The default is `/index.html`, and it used to be `/`.** `/` is the home page
-    now - nginx serves `home.html` there - and every caller that passes no path is
-    asking for the calculator, which is where the wizard, the taxonomy and the
-    validation copy live.
+    **The default is `/index.html`, and `/` is the same document again** - nginx
+    says `index index.html`, `home.html` is retired. It is named explicitly rather
+    than left as `/` so that this file measures the calculator whatever the `index`
+    directive says next.
 
     `stats_fixture` serves `tests/fixtures/stats.json` in place of the live
     statistics response, the same way `test_statistics_browser.py` does. The
@@ -161,22 +161,21 @@ def test_every_catalogue_is_actually_in_the_built_image():
 # ---------------------------------------------------------------------------
 
 
-def test_the_first_screen_renders_in_chinese_for_a_chinese_browser(browser):
+def test_the_intro_renders_in_chinese_for_a_chinese_browser(browser):
     """The whole of change 1 on the public side: no picker, no cookie, no
     query string, and the first paint is already in the visitor's language.
 
-    The first screen is step one now. It was an introduction screen with its own
-    hero and a "Start calculator" button, which every visitor met because `/`
-    served this page; `/` serves `home.html` and the calculator opens on the first
-    question.
+    The first screen is the introduction again. It was step one for the week
+    `home.html` held `/`; `home.html` is retired, `/` serves this page, and this
+    page opens on its own hero.
     """
     context, page = open_page(browser, ["zh-CN", "zh", "en"])
     try:
         assert page.get_attribute("html", "lang") == "zh"
         # The element, not the page. A heading asserted "somewhere in the
         # markup" would pass against a string rendered into a comment.
-        assert page.inner_text("h1#stage-title") == "这些浪费发生在食物供应链的哪个环节？"
-        assert page.inner_text('.step-nav [data-action="continue"]') == "继续"
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
+        assert page.inner_text('[data-action="start"]') == "启动计算器"
         # Static HTML the browser parsed before any module ran.
         assert "Skip to calculator" not in page.inner_text(".skip-link")
         assert page.inner_text("footer .transparency-notice") != ""
@@ -190,9 +189,7 @@ def test_en_nz_reaches_english_and_nothing_is_translated(browser):
     context, page = open_page(browser, ["en-NZ", "en"])
     try:
         assert page.get_attribute("html", "lang") == "en-NZ"
-        assert page.inner_text("h1#stage-title") == (
-            "Where in the food supply chain did this waste occur?"
-        )
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
         assert page.locator("#machine-translation-notice").count() == 0
     finally:
         context.close()
@@ -215,19 +212,15 @@ def test_only_the_first_language_is_consulted_and_the_rest_is_not_walked(browser
     context, page = open_page(browser, ["sv-SE", "ko", "en"])
     try:
         assert page.get_attribute("html", "lang") == "en-NZ"
-        assert page.inner_text("h1#stage-title") == (
-            "Where in the food supply chain did this waste occur?"
-        )
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
     finally:
         context.close()
 
-    korean = i18n_keys.catalogue("ko")["strings"][
-        "Where in the food supply chain did this waste occur?"
-    ]
+    korean = i18n_keys.catalogue("ko")["strings"]["Food Waste Impact Calculator"]
     context, page = open_page(browser, ["ko", "sv-SE", "en"])
     try:
         assert page.get_attribute("html", "lang") == "ko"
-        assert page.inner_text("h1#stage-title") == korean
+        assert page.inner_text("h1#page-title") == korean
     finally:
         context.close()
 
@@ -237,13 +230,11 @@ def test_a_regional_first_tag_still_truncates_to_its_catalogue(browser):
     the lookup inside one — and this is the case that tells the two apart: a
     negotiator that had stopped truncating would answer English here and still
     pass every assertion above."""
-    german = i18n_keys.catalogue("de")["strings"][
-        "Where in the food supply chain did this waste occur?"
-    ]
+    german = i18n_keys.catalogue("de")["strings"]["Food Waste Impact Calculator"]
     context, page = open_page(browser, ["de-AT", "xx"])
     try:
         assert page.get_attribute("html", "lang") == "de"
-        assert page.inner_text("h1#stage-title") == german
+        assert page.inner_text("h1#page-title") == german
     finally:
         context.close()
 
@@ -257,13 +248,12 @@ def test_zh_tw_reaches_traditional_chinese_and_not_simplified(browser):
     context, page = open_page(browser, ["zh-TW", "zh", "en"])
     try:
         assert page.get_attribute("html", "lang") == "zh-Hant"
-        # The anchor moved with the heading. It was 計算 / 计算 in the
-        # introduction screen's title; step one's heading does not contain that
-        # word, so the pair is 供應鏈 / 供应链 - the same three characters written
-        # in each script, in the string this element actually carries.
-        heading = page.inner_text("h1#stage-title")
-        assert "供應鏈" in heading, heading
-        assert "供应链" not in heading, "zh-TW fell through to Simplified Chinese"
+        # 計算 / 计算 - the same word in each script, in the introduction screen's
+        # title. The anchor was 供應鏈 / 供应链 for the week that screen was deleted
+        # and step one's heading was the first one on the page.
+        heading = page.inner_text("h1#page-title")
+        assert "計算" in heading, heading
+        assert "计算" not in heading, "zh-TW fell through to Simplified Chinese"
     finally:
         context.close()
 
@@ -289,9 +279,7 @@ def test_an_unknown_tag_falls_all_the_way_to_english(browser):
     context, page = open_page(browser, ["xx-YY", "zz"])
     try:
         assert page.get_attribute("html", "lang") == "en-NZ"
-        assert page.inner_text("h1#stage-title") == (
-            "Where in the food supply chain did this waste occur?"
-        )
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
     finally:
         context.close()
 
@@ -1323,7 +1311,7 @@ def test_choosing_a_language_survives_a_reload_and_another_page(browser):
     context, page = open_page(browser, ["en-NZ"])
     try:
         _choose(page, "zh")
-        assert page.inner_text("h1#stage-title") == "这些浪费发生在食物供应链的哪个环节？"
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
 
         stored = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
         assert len(stored) == 1 and stored[0]["value"] == "zh"
@@ -1347,7 +1335,7 @@ def test_choosing_a_language_survives_a_reload_and_another_page(browser):
         )
 
         page.reload(wait_until="networkidle")
-        assert page.inner_text("h1#stage-title") == "这些浪费发生在食物供应链的哪个环节？"
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
         assert page.eval_on_selector("#language-chooser", "el => el.value") == "zh"
 
         page.goto(f"{BASE}/methodology.html", wait_until="networkidle")
@@ -1368,13 +1356,11 @@ def test_follow_the_system_reverts_and_is_stored_rather_than_deleted(browser):
     context, page = open_page(browser, ["zh-CN", "en"])
     try:
         _choose(page, "en")
-        assert page.inner_text("h1#stage-title") == (
-            "Where in the food supply chain did this waste occur?"
-        )
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
 
         _choose(page, "auto")
         # Back to the browser's own language, which is Chinese here.
-        assert page.inner_text("h1#stage-title") == "这些浪费发生在食物供应链的哪个环节？"
+        assert page.inner_text("h1#page-title") == "食物浪费影响计算器"
 
         stored = [c for c in context.cookies() if c["name"] == "kaicalc_lang"]
         assert len(stored) == 1, "follow-the-system deleted the cookie"
@@ -1416,9 +1402,7 @@ def test_a_stored_choice_beats_the_browser_and_the_notice_follows(browser):
         ) == "machine-translation-notice", "the chooser displaced the notice"
 
         _choose(page, "en")
-        assert page.inner_text("h1#stage-title") == (
-            "Where in the food supply chain did this waste occur?"
-        )
+        assert page.inner_text("h1#page-title") == "Food Waste Impact Calculator"
         assert page.locator("#machine-translation-notice").count() == 0, (
             "the notice outlived the language it was warning about"
         )
@@ -1689,18 +1673,20 @@ def test_the_right_to_left_layout_is_actually_mirrored(browser):
     border beside the wordmark all have to change sides, and the page must
     not gain a horizontal scrollbar doing it.
 
-    **On the home page, because that is where the check-list is.** "What you will
-    need" was the one half of the calculator's introduction screen worth keeping
-    and it moved to `home.html`, which carries the same `.check-list` markup and
-    the same `.prototype-label` in its header; the calculator has neither now.
+    **On the calculator, because that is where the check-list is again.** "What you
+    will need" spent a week on `home.html`, which is retired; it is back on the
+    introduction screen, which is also where `.prototype-label` lives. The label is
+    `display: none` under `.intro-header` and that is deliberate on both sides: it is
+    still in the DOM, so its logical border still resolves, and the wordmark beside
+    it is what says the same thing to a reader.
     """
-    context, page = open_page(browser, ["ar"], path="/home.html")
+    context, page = open_page(browser, ["ar"])
     try:
         rtl = _mirror_measurements(page)
     finally:
         context.close()
 
-    context, page = open_page(browser, ["en-NZ"], path="/home.html")
+    context, page = open_page(browser, ["en-NZ"])
     try:
         ltr = _mirror_measurements(page)
     finally:
@@ -1721,10 +1707,11 @@ def test_the_right_to_left_layout_is_actually_mirrored(browser):
 
 
 def test_the_wizard_is_translated_past_the_first_screen(browser):
-    """Step one is one screen of six. A page that translates the first screen and
-    reverts on the second is what a test of one screen alone would miss."""
+    """The intro is one function of six. A page that translates its hero and
+    reverts on step 1 is what a test of the landing screen alone would miss."""
     context, page = open_page(browser, ["zh-CN", "en"])
     try:
+        page.click('[data-action="start"]')
         page.wait_for_selector("#stage-title")
         assert page.inner_text("#stage-title") == "这些浪费发生在食物供应链的哪个环节？"
         # The step bar, which composes its label from a placeholder.
@@ -1745,6 +1732,7 @@ def test_the_taxonomy_stays_in_the_language_staff_typed_it(browser):
     """
     context, page = open_page(browser, ["zh-CN", "en"])
     try:
+        page.click('[data-action="start"]')
         page.wait_for_selector(".stage-card")
         names = page.locator(".stage-title").all_inner_texts()
         assert names, "no sectors rendered - is the API up?"
@@ -1759,6 +1747,7 @@ def test_a_validation_message_is_translated(browser):
     """Error copy is the text somebody reads when they are already stuck."""
     context, page = open_page(browser, ["zh-CN", "en"])
     try:
+        page.click('[data-action="start"]')
         page.wait_for_selector("#stage-title")
         page.click('.step-nav [data-action="continue"]')
         page.wait_for_selector(".field-error")
@@ -1942,14 +1931,12 @@ def test_every_catalogue_reaches_the_page_it_was_written_for(browser, language):
         assert page.get_attribute("html", "lang") == language
         assert page.get_attribute("html", "dir") == catalogue.get("dir", "ltr")
         assert (
-            page.inner_text("h1#stage-title")
-            == catalogue["strings"][
-                "Where in the food supply chain did this waste occur?"
-            ]
+            page.inner_text("h1#page-title")
+            == catalogue["strings"]["Food Waste Impact Calculator"]
         )
         assert (
-            page.inner_text('.step-nav [data-action="continue"]')
-            == catalogue["strings"]["Continue"]
+            page.inner_text('[data-action="start"]')
+            == catalogue["strings"]["Start calculator"]
         )
         # Static HTML, translated by `applyToDocument` rather than by a render.
         assert (
@@ -1958,7 +1945,9 @@ def test_every_catalogue_reaches_the_page_it_was_written_for(browser, language):
         # An attribute, which a text-only walk would miss.
         assert (
             page.get_attribute("#home-button", "aria-label")
-            == catalogue["strings"]["Clear calculator data and start again"]
+            == catalogue["strings"][
+                "Clear calculator data and return to the introduction"
+            ]
         )
         # `<title>`, which is neither text nor attribute.
         assert page.title() == catalogue["strings"][
@@ -2199,17 +2188,20 @@ def test_choosing_a_right_to_left_language_survives_and_reverts(browser, width):
 # ---------------------------------------------------------------------------
 
 #: page path -> (selector, catalogue key) for a heading only that page renders.
+#: `/home.html` is NOT here. It is retired - nothing links to it - so it is not a
+#: content page, and asserting its navigation would assert a route that no longer
+#: exists. Its strings are still translated in every catalogue, which
+#: `tests/web/test_i18n_web.py` covers from the file rather than from the route.
 CONTENT_PAGES = {
     "/stats.html": ("h1#stats-title", "Statistics from this tool"),
-    "/home.html": ("h1#home-title", "Turn food waste information into action"),
     "/methodology.html": (
         "h1#documentation-title",
         "Methodology and published factors",
     ),
 }
 
+#: Three links, not four: `Home` went with the retired page.
 _NAV_HREF = {
-    "Home": "home.html",
     "Calculator": "index.html",
     "Statistics": "stats.html",
     "Documentation": "methodology.html",
@@ -2217,7 +2209,6 @@ _NAV_HREF = {
 
 _PAGE_TITLE = {
     "/stats.html": "Statistics | Kai Commitment Food Waste Impact Calculator",
-    "/home.html": "Home | Kai Commitment Food Waste Impact Calculator",
     "/methodology.html": "Documentation | Kai Commitment Food Waste Impact Calculator",
 }
 
@@ -2597,6 +2588,13 @@ def test_the_figures_take_no_locale_aware_separator(browser):
 @pytest.mark.parametrize("language", ["zh", "ar"])
 def test_a_home_page_with_no_news_section_still_translates(browser, language):
     """The rule, separated from the accident of ordering that used to satisfy it.
+
+    **This is the one test that still drives `home.html`, and that is on purpose.**
+    The page is retired: nothing links to it, `/` serves the calculator, and it is
+    kept only because the client has not decided about the news feed. A retired page
+    with no test on it is a page that quietly stops working, so this one keeps its
+    language machinery honest at the URL it is still served from. If `home.html` is
+    ever deleted, this test goes with it.
 
     ``web/js/home.js`` once installed the chooser, set ``<html lang>`` and ran the
     ``data-i18n`` walk *inside* ``if (document.querySelector('#news-feed'))``. On the

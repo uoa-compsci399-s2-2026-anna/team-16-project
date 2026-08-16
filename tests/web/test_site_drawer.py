@@ -32,14 +32,21 @@ pytestmark = pytest.mark.browser
 
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
 
-#: All four public pages. The drawer is one markup block repeated, and "repeated" is a
-#: claim about four files that only four measurements can hold.
-PAGES = ("/", "/index.html", "/stats.html", "/methodology.html")
+#: All three reachable pages. The drawer is one markup block repeated, and "repeated"
+#: is a claim about three files that only three measurements can hold.
+#:
+#: **`/` is not listed separately any more, and `home.html` is not listed at all.** `/`
+#: serves `index.html`, so a `/` row would measure the same document twice and report
+#: the coverage as better than it is. `home.html` is retired - the team dropped it
+#: because it looked poor and duplicated the client's own website - and a retired page
+#: is not a destination, so its own drawer is frozen with the four rows it was reviewed
+#: with and is deliberately not compared against these.
+PAGES = ("/index.html", "/stats.html", "/methodology.html")
 
-#: The three that must work with scripting off. `index.html` is ES modules end to end
+#: The two that must work with scripting off. `index.html` is ES modules end to end
 #: and renders nothing without JavaScript, so it is exempt from that one requirement
 #: and from that one only.
-STATIC_PAGES = ("/", "/stats.html", "/methodology.html")
+STATIC_PAGES = ("/stats.html", "/methodology.html")
 
 _LANGUAGES = """
 Object.defineProperty(navigator, 'languages', {{ get: () => {languages} }});
@@ -140,8 +147,10 @@ def test_the_drawer_is_on_every_public_page_and_opens(browser, path):
         hrefs = page.eval_on_selector_all(
             ".site-drawer__nav a", "els => els.map(el => el.getAttribute('href'))"
         )
+        # Three rows. `home.html` is retired and is not a destination; the row for
+        # the page you are already on stays, as a link to itself, so that this block
+        # is the same markup everywhere.
         assert hrefs == [
-            "./home.html",
             "./index.html",
             "./stats.html",
             "./methodology.html",
@@ -246,7 +255,8 @@ def test_the_handle_is_a_forty_four_pixel_target_at_the_narrowest_width(browser)
         context.close()
 
 
-def test_the_handle_reports_its_state_and_escape_closes_it(browser):
+@pytest.mark.parametrize("path", PAGES)
+def test_the_handle_reports_its_state_and_escape_closes_it(browser, path):
     """`aria-expanded`, `Escape`, and where focus goes afterwards.
 
     The direction the chevron points is the only visible statement of this control's
@@ -256,8 +266,19 @@ def test_the_handle_reports_its_state_and_escape_closes_it(browser):
     regression on record here from a focus call placed where it fired on every state
     change, so the resting case is asserted too - focus must NOT be dragged to the
     handle by an ordinary open.
+
+    **Run on all three pages, and that is the fix for a real hole.** These two
+    behaviours come from `web/js/drawer.js`, which is a side-effect import in FOUR
+    separate entry modules - `main.js`, `stats.js`, `methodology.js` and the retired
+    `home.js` - and nothing else in this file would notice one of them losing it. All
+    four were deleted at once in a change that reached `main`; the drawer's markup was
+    intact, every `href` was correct, the panel opened and closed on its own as a
+    `<details>` does, and the only symptom was that `Escape` did nothing and
+    `aria-expanded` never changed from `false`. Measured on `/stats.html` alone, three
+    of the four deletions were invisible. This costs two more page loads and closes
+    that.
     """
-    context, page = _open_page(browser, "/stats.html")
+    context, page = _open_page(browser, path)
     try:
         handle = page.locator(".site-drawer__handle")
         assert handle.get_attribute("aria-expanded") == "false"
@@ -346,9 +367,9 @@ def test_the_handle_shows_its_state_as_well_as_announcing_it(browser):
 def test_the_drawer_navigates_with_scripting_switched_off(browser, path):
     """The reason it is a `<details>` and not a button with a class toggle.
 
-    `home.html`, `stats.html` and `methodology.html` are static content and must not
-    lose their navigation when scripting is off; the calculator renders nothing without
-    it and is exempt. This drives a real click through Playwright's actionability
+    `stats.html` and `methodology.html` are static content and must not lose their
+    navigation when scripting is off; the calculator renders nothing without it and is
+    exempt. This drives a real click through Playwright's actionability
     checks - which include the browser's own hit test - so a panel that were present
     but unreachable would fail here rather than pass on a `count()`.
     """
@@ -360,6 +381,65 @@ def test_the_drawer_navigates_with_scripting_switched_off(browser, path):
         page.wait_for_load_state("domcontentloaded")
         assert page.url.endswith("/methodology.html"), (
             f"{path}: the drawer did not navigate with scripting off: {page.url}"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("start", PAGES)
+def test_every_page_is_reachable_from_every_other_page(browser, start):
+    """**The defect that started this whole line of work, asserted end to end.**
+
+    `index.html` once had no navigation at all while `home.html` sat at the address
+    nobody visited, and every markup test was green throughout: a test that asserts a
+    page renders does not assert anyone can reach it. Nor does a test that reads
+    `href`s out of the markup - the drawer's panel is in the document whether it is
+    open or not, so a panel that had become unclickable would still list four correct
+    URLs.
+
+    So this walks it. From each page in turn, the drawer is opened and every OTHER
+    destination is clicked through Playwright's actionability checks - which include
+    the browser's own hit test - and the resulting URL is what is asserted. Three
+    pages, two departures each.
+
+    The page's own row is skipped rather than clicked: it navigates to itself, which
+    is true but proves nothing, and asserting it would make this pass with one row
+    working and the rest painted over.
+    """
+    destinations = [path.lstrip("/") for path in PAGES if path != start]
+    for destination in destinations:
+        context, page = _open_page(browser, start)
+        try:
+            page.click(".site-drawer__handle")
+            page.wait_for_timeout(300)
+            page.click('.site-drawer__nav a[href$="%s"]' % destination)
+            page.wait_for_load_state("domcontentloaded")
+            assert page.url.endswith("/" + destination), (
+                "%s: the drawer would not take a reader to %s; it landed on %s"
+                % (start, destination, page.url)
+            )
+        finally:
+            context.close()
+
+
+def test_the_bare_address_is_the_calculator_and_carries_the_drawer(browser):
+    """`/` and `/index.html` are one document, and `/` is the address people type.
+
+    nginx says `index index.html`. `home.html` was there for a week and is retired, so
+    what a visitor who types the host reaches is the calculator's introduction screen -
+    and it has to arrive with the drawer, or the bare address is once again a page with
+    no way out of it. That was the original defect, at the original address.
+    """
+    context, page = _open_page(browser, "/")
+    try:
+        assert page.locator("#site-drawer").count() == 1, "`/` has no drawer"
+        hrefs = page.eval_on_selector_all(
+            ".site-drawer__nav a", "els => els.map(el => el.getAttribute('href'))"
+        )
+        assert hrefs == ["./index.html", "./stats.html", "./methodology.html"], hrefs
+        # The introduction screen, not step one: `/` is the landing page again.
+        assert page.locator('[data-action="start"]').count() == 1, (
+            "`/` did not render the introduction screen"
         )
     finally:
         context.close()
@@ -527,6 +607,13 @@ def test_the_open_drawer_clears_the_sticky_step_bar(browser):
     """
     context, page = _open_page(browser, "/index.html", width=390, height=700)
     try:
+        # The calculator opens on its introduction screen, which is a full-bleed hero
+        # with no step bar on it at all. The bar this test is about exists from step
+        # one onward, so the visitor's own first click has to be made here too - and
+        # measuring the introduction instead would measure a screen that has nothing
+        # anchored to the bottom edge and pass for that reason.
+        page.click('[data-action="start"]')
+        page.wait_for_selector(".step-nav", timeout=10000)
         page.click(".site-drawer__handle")
         page.wait_for_timeout(400)
         boxes = page.evaluate(

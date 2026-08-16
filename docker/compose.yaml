@@ -381,6 +381,20 @@ services:
       # calculator have no WordPress behind them, and an unset origin is not an
       # error to report to a reader.
       #
+      # THE PAGE THIS CONFIGURES IS RETIRED, AND THIS DEFAULT WAS LEFT ALONE ON
+      # PURPOSE. web/home.html is the only page that reads the feed and nothing
+      # links to it any more, so on every route a visitor can take this value now
+      # grants a connect-src and an img-src that nothing uses. Emptying it would
+      # narrow the public Content-Security-Policy of every deployment - which is
+      # the safe direction, and still a security-header change made as a side
+      # effect of a layout decision. It is not made here.
+      #
+      # WHAT TO DO WHEN THE CLIENT ANSWERS. If they want no news feed, set this
+      # empty in the same commit that deletes web/home.html, web/js/home.js and
+      # web/js/news.js; the policy narrows itself, because both directives are
+      # built from this string. If they want the feed, home.html goes back into
+      # the drawer and nothing here changes at all.
+      #
       # `${VAR-default}`, NOT `${VAR:-default}`. With the colon an empty value in
       # the environment falls back to the default, so `KAICALC_NEWS_ORIGIN=` in a
       # .env would silently keep pointing at the client's site and there would be

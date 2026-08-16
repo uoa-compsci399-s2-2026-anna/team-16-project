@@ -118,11 +118,11 @@ def test_the_source_list_is_read_from_the_front_end_and_is_not_empty():
     """A regex that stopped matching would empty every coverage test below
     and turn this whole file green against no catalogue at all."""
     assert len(SOURCE) > 150, len(SOURCE)
-    # A plain `t('...')` call in `calculator.js`. It was `Start calculator` until
-    # the introduction screen this page opened on was removed - `/` serves
-    # `home.html` now - so the canary moved to another literal in the same module
-    # rather than being deleted with the screen.
-    assert "Clear all calculator data and start again?" in SOURCE
+    # A plain `t('...')` call in `calculator.js`, and the introduction screen's own
+    # button. The canary moved to another literal in the same module for the week
+    # that screen was deleted; the screen is back, `/` serves `index.html` again,
+    # and so is this.
+    assert "Start calculator" in SOURCE
     assert "Step %(step)s of %(total)s" in SOURCE
     # From `data-i18n` in index.html, which a JS-only scan would miss.
     assert "Skip to calculator" in SOURCE
@@ -132,7 +132,7 @@ def test_the_source_list_is_read_from_the_front_end_and_is_not_empty():
 
 
 def test_a_marked_element_inside_another_marked_element_is_still_extracted():
-    """The four public navigation links, which the previous extractor lost.
+    """The public navigation links, which the previous extractor lost.
 
     Each is an `<a data-i18n>` inside a `<nav data-i18n-attr="aria-label">`. The
     regex this replaced matched the outermost element carrying anything starting
@@ -144,6 +144,13 @@ def test_a_marked_element_inside_another_marked_element_is_still_extracted():
 
     Named individually rather than counted, because a count passes against four
     of something else.
+
+    **`Home` now comes only from `home.html`, which is retired.** No reachable page
+    lists it: the drawer and the two content-page navigations are three rows. The key
+    is still required here because the extractor reads the file, not the route - and
+    that is deliberate, so that reviving the page is a routing decision rather than a
+    re-translation. If `home.html` is ever deleted, this label goes with it and out of
+    twenty catalogues in the same commit.
     """
     for label in ("Home", "Calculator", "Statistics", "Documentation"):
         assert label in SOURCE, (

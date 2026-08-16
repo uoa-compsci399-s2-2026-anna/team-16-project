@@ -2,7 +2,7 @@ import { calculate } from './api.js'
 import { setState } from './state.js'
 import { kgString, massToKg } from './units.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
-import { t } from './i18n.js?v=20260816-1'
+import { t } from './i18n.js'
 
 // Display-only coercion of an API decimal string (§7.6.1). `Number(value) || 0` stood here
 // and made "the engine did not return this figure", "this figure is malformed" and "this

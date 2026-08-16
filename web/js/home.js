@@ -1,6 +1,22 @@
 /**
  * The home page: the hero, and the Kai Commitment news feed. Contract §7.5, §7.7.
  *
+ * **RETIRED, NOT DELETED. This module has no reachable page.** `web/home.html` was
+ * dropped as the landing page - it looked poor and duplicated the client's own website,
+ * which already carries that material - so `/` serves `index.html` again and nothing
+ * links to `home.html`. This file still runs, correctly, if that address is typed.
+ *
+ * It stays because the client has not decided whether they want a news feed at all, and
+ * `web/js/news.js` stays with it. Deleting either would also mean deleting their keys
+ * from twenty catalogues, `KAICALC_NEWS_ORIGIN`, `KAICALC_NEWS_IMAGE_ORIGINS` and the
+ * two Content-Security-Policy directives derived from them - a decision the client owns,
+ * not a tidy-up. **Do not wire it back into the navigation without that answer either.**
+ *
+ * Its strings are still required in every catalogue, and that is not an oversight:
+ * `tests/web/i18n_keys.py` reads every `web/js/*.js` and `web/*.html` in the tree, so a
+ * key is evidence that some code renders the string, which is still true here. The keys
+ * follow the code, and both are in one place waiting on one answer.
+ *
  * **The posts themselves are never translated.** Title, excerpt and date come
  * from the client's WordPress site; they are published content in the language
  * the client wrote them in, which is the same rule §7.7.7 states for anything
@@ -11,8 +27,10 @@
  */
 
 import { fetchNews } from './news.js'
-import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js?v=20260816-1'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 // The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 let latestRequestGeneration = 0
 // Held so a language change re-renders the cards without asking WordPress again.

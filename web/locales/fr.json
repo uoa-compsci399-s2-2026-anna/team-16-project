@@ -309,10 +309,15 @@
     "How many containers?": "Combien de contenants ?",
     "Choose a weight, or the container you fill.": "Choisissez une unité de poids ou le contenant que vous remplissez.",
     "The total waste amount — a weight, or how many containers you fill": "La quantité totale de déchets — un poids, ou le nombre de contenants que vous remplissez",
-    "Clear calculator data and start again": "Effacer les données du calculateur et recommencer",
-    "Clear all calculator data and start again?": "Effacer toutes les données du calculateur et recommencer ?",
+    "Site navigation": "Navigation du site",
     "Write the number out in full, using digits only.": "Écrivez le nombre en entier, en chiffres uniquement.",
     "Enter no more than %(limit)s %(unit)s.": "N'indiquez pas plus de %(limit)s %(unit)s.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Saisissez des quantités par destination d'au maximum %(limit)s %(unit)s."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Saisissez des quantités par destination d'au maximum %(limit)s %(unit)s.",
+    "Clear all calculator data and return to the introduction?": "Effacer toutes les données du calculateur et revenir à l'introduction ?",
+    "Clear calculator data and return to the introduction": "Effacer les données du calculateur et revenir à l'introduction",
+    "Food Waste Impact Calculator": "Calculateur d'impact du gaspillage alimentaire",
+    "For New Zealand food businesses": "Pour les entreprises alimentaires de Nouvelle-Zélande",
+    "Start calculator": "Lancer le calculateur",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Transformez vos mesures de gaspillage alimentaire en une vision plus claire de leur impact environnemental et financier potentiel."
   }
 }

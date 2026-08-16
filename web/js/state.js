@@ -33,11 +33,13 @@ export const state = {
   errorCode: null,
   fieldErrors: {},
   rateLimitedUntil: 0,
-  // **Step one, not an introduction screen.** `-1` was the landing screen `index.html`
-  // used to open on; `/` now serves `home.html` and this page is the calculator, so the
-  // first thing a visitor sees is the first question. See `sectorStep` in
-  // `web/js/calculator.js` for why the screen was removed rather than shortened.
-  step: 0,
+  // **-1 is the introduction screen, and it is the state this page opens in.** For one
+  // week this was `0` - `/` served `home.html` and the calculator opened on the first
+  // question. `home.html` is retired and `/` serves this page again, so the landing
+  // screen is `introduction()` in `web/js/calculator.js`, and `resetCalculator` below
+  // returns here. Anything that renders by index into `screens` must therefore guard
+  // -1 first; `render()` does.
+  step: -1,
   expandedSectors: [],
   resultBreakdownTab: 'stage',
   lastChangedDestination: null,
@@ -103,7 +105,7 @@ export function resetCalculator() {
     errorCode: null,
     fieldErrors: {},
     rateLimitedUntil: 0,
-    step: 0,
+    step: -1,
     expandedSectors: [],
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,

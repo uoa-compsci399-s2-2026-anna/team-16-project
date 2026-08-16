@@ -33,10 +33,54 @@ from pydantic import (
     model_validator,
 )
 
-MAX_LINE_QTY = Decimal("10000000")
+#: §6.2's amount ceilings, and **they are deliberately the same number.**
+#:
+#: Both arrived in one commit as two rows of §6.2's table with no rationale
+#: recorded for either, and nothing downstream requires either of them: the
+#: column they land in is `DECIMAL(16,3)` (`submission_line.qty_kg`), five
+#: orders of magnitude wider; no metric total is persisted at all; the
+#: evaluator has no magnitude cap; and §5.4's suppression keys on `count`,
+#: never on tonnage. They are plausibility guards, which is a legitimate thing
+#: to be - but a plausibility guard has to be plausible about the right thing.
+#:
+#: **The ratio between them was the defect.** A per-line cap at a fifth of the
+#: scenario cap makes "at least five destinations" a precondition of reaching
+#: the scenario ceiling, and nothing in the model asks a scenario to be
+#: divided. A site that only landfills, or sends everything to anaerobic
+#: digestion, could not describe itself at any tonnage above 10,000 t - while
+#: the identical mass split five ways was accepted. Reported by a user who
+#: entered 50,000 t at step 3 and sent all of it to animal feed at step 4: an
+#: ordinary, truthful answer that no combination of legal values could express.
+#:
+#: **Equal, rather than the line cap merely raised.** One line carrying a whole
+#: scenario is the case this exists for, so the largest legal line *is* the
+#: largest legal scenario, and writing that as one name means the ratio cannot
+#: silently reappear. `MAX_SCENARIO_QTY` is not lowered to meet it: 50,000 t is
+#: an unremarkable annual figure for a large processor.
+#:
+#: This raises no total. `MAX_SCENARIO_QTY` and `MAX_ENTRIES` already bound a
+#: request at 20 x 50,000,000 = 1e9 kg and still do; only the distribution
+#: changes. Note that `MAX_SCENARIO_LINES` x this cap has never equalled
+#: `MAX_SCENARIO_QTY` and does not now - the line count is a request-size
+#: bound, not a mass bound, and the scenario cap is what settles the mass.
 MAX_SCENARIO_QTY = Decimal("50000000")
+MAX_LINE_QTY = MAX_SCENARIO_QTY
 MAX_SCENARIO_LINES = 20
 MAX_ENTRIES = 20
+
+
+def _kg(limit: Decimal) -> str:
+    """A ceiling as §9's messages state it: `50,000,000 kg`.
+
+    Formatted from the constant rather than written out beside it. The message
+    the user saw when the ratio was wrong was itself accurate - "no more than
+    10,000 tonnes" was true of the rule as it stood - so nothing about the
+    wording gave the defect away. A hand-written figure adds a second way for
+    the same sentence to be wrong, one that a reader *can* catch, and there is
+    no reason to carry it.
+    """
+    return f"{int(limit):,} kg"
+
 
 #: §6.2. Absolute, and derived from this contract's own limits rather than
 #: picked: `improvement.js` rounds each alternative line to 3 decimal places
@@ -91,7 +135,7 @@ class ScenarioLinePayload(BaseModel):
         if value < 0:
             raise ValueError("must be greater than or equal to zero")
         if value > MAX_LINE_QTY:
-            raise ValueError("exceeds 10,000,000 kg")
+            raise ValueError(f"exceeds {_kg(MAX_LINE_QTY)}")
         if value != value.quantize(Decimal("0.001")):
             raise ValueError("must have no more than 3 decimal places")
         return value
@@ -118,7 +162,7 @@ def _check_scenario(lines: list[ScenarioLinePayload]) -> list[ScenarioLinePayloa
     if len(destinations) != len(set(destinations)):
         raise ValueError("contains a duplicate destination")
     if scenario_mass(lines) > MAX_SCENARIO_QTY:
-        raise ValueError("exceeds 50,000,000 kg")
+        raise ValueError(f"exceeds {_kg(MAX_SCENARIO_QTY)}")
     return lines
 
 

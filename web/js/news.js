@@ -1,3 +1,13 @@
+/**
+ * The WordPress news feed. Contract §7.5.
+ *
+ * **RETIRED, NOT DELETED, and its only consumer is `web/js/home.js`, which is retired
+ * with it.** `web/home.html` is no longer the landing page and nothing links to it, so
+ * nothing on a reachable page calls `fetchNews`. See the note at the top of `home.js`
+ * for why both files are still here and what deleting them would actually cost.
+ *
+ * @module news
+ */
 import { ApiError, getNewsPosts } from './api.js'
 
 const EMPTY_POST = Object.freeze({

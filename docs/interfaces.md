@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-16 (v1.44 draft)"
+date: "2026-08-17 (v1.46 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,40 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.46 — 2026-08-17 (`MAX_LINE_QTY` is raised to `MAX_SCENARIO_QTY`, so one destination may carry a whole scenario; affects B and C)
+
+**A validation rule refused an input that was entirely legitimate.** Step 3: 50,000 tonnes, accepted. Step 4: all of it to animal feed — *"Enter destination amounts of no more than 10,000 tonnes."* The scenario total was legal and every destination line was capped at a fifth of it, so **a scenario could only reach its own ceiling if it was spread across at least five destinations.** Nothing in the model asks a scenario to be divided, and a site that only landfills, or only sends to anaerobic digestion, could not describe itself at any tonnage above 10,000 t.
+
+**No request body, response body or schema changes**, and `tests/fixtures/*.json` is untouched — no fixture carried either figure. A request that was accepted before is accepted now.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`MAX_LINE_QTY` is now `MAX_SCENARIO_QTY`: 50,000,000 kg.** Written in `api/schemas.py` as one name assigned to the other rather than as a repeated literal, so the ratio cannot silently return. §6.2's table now reads `<= 50,000,000` on both rows, and §9's worked example says "may not exceed 50,000,000 kg". Both refusal messages are formatted **from the constants** instead of written out, so no message can name a bound the code is not enforcing — the sentence the user was shown was accurate, which is what made the defect hard to see | §6.2, §9 |
+| 2 | **`MAX_SCENARIO_QTY` is deliberately NOT lowered to meet it.** 50,000 t is an unremarkable annual figure for a large processor and the reporting user reached it on purpose; the repair that lowers the scenario cap fixes the inconsistency by refusing a real number. Rewording the message and leaving both was the weakest option available and was rejected outright: the message was already true | §6.2 |
+| 3 | **Neither figure ever had a stated rationale, and §6.2 now says so.** Both entered this document in one commit as two rows of the rules table, with no reasoning recorded for either, and were transcribed into `api/schemas.py` with no comment. Nothing downstream requires them: `submission_line.qty_kg` is `DECIMAL(16,3)`, five orders wider; no metric total is persisted at all; `engine/evaluator.py` has no magnitude cap (its defence is that `**` is not an operator, which is structural); and §5.4's suppression keys on `count`, never on tonnage. **They are plausibility guards** — a legitimate thing to be, and the honest label. A limit whose purpose nobody can state is a limit that will be wrong again | §6.2 |
+| 4 | **This raises no total.** `MAX_ENTRIES` × `MAX_SCENARIO_QTY` bounded a request at 1,000,000,000 kg before this change and still does; only the distribution within one scenario moved. §6.2 also now states that **the per-scenario line count is a request-size bound and not a mass bound** — 20 lines × the per-line cap has never equalled `MAX_SCENARIO_QTY`, and reading one as an implied statement about the other is the same mistake this entry corrects, from the other side | §6.2 |
+| 5 | **`web/js/calculator.js` follows the server; it does not lead it and does not disagree.** `MAX_LINE_KG` moves to 50,000,000 with `MAX_SCENARIO_KG`. **Which cap guards which field is unchanged** — the step-3 total takes the scenario cap because it never crosses the wire, a destination row takes the line cap because that number does — and the two names stay two names, so a future divergence in `api/schemas.py` is visible on this side rather than hidden by a merge. The comment that used to describe the ratio as a fact ("five lines' worth… over this one and under that one") now records it as the defect it was | §7.2, §7.3 |
+| 6 | **Of the three client-side messages built from these constants, one changed.** Step 3's total refusal is `Enter no more than 50,000,000 kilograms.` / `Enter no more than 50,000 tonnes.` — unchanged. The step-4 per-line refusal is now `Enter destination amounts of no more than 50,000,000 kilograms.` / `… 50,000 tonnes.` — previously 10,000,000 / 10,000. The container refusal is `Enter no more than 10,000 containers.` — unchanged, because `containerLimit` folds in `MAX_SCENARIO_KG`, not the line cap; the container input is a step-3 **total**. No catalogue string changed: all three interpolate `formatNumber`, so the twenty translations follow the constants | §7.2, §7.7 |
+| 7 | **`MAX_CONTAINER_COUNT` (10,000) is unchanged and its derivation still holds — but v1.33 stated it against the wrong ceiling.** §7.2's note says 10,000 of the largest preset is 3,190 t, "inside §6.2's 10,000,000 kg per-line ceiling". `containerLimit` has compared against `MAX_SCENARIO_KG` since v1.43, and a container count is a step-3 total, so the per-line cap was never the bound it was measured against. 3,190 t is inside both, so the plausibility bound is still the smaller of the two and still the one a visitor meets; what changed is only that the number the old sentence names no longer exists as a distinct value. The `> 5,000 kg per container` figure in v1.43's note is the correct statement of when the kilogram ceiling takes over, and it is unaffected | §7.2 |
+| 8 | **The bounds had no test that the permitted case is permitted, which is exactly how this shipped.** `MAX_LINE_QTY`'s only coverage was one parametrised refusal (`10000001`); **`MAX_SCENARIO_QTY` had no test at any layer.** Each bound is now asserted three ways — at the limit, one kilogram past it, and with a single line carrying an entire legal scenario — in `tests/test_schemas.py`, over HTTP in `tests/api/test_api_entries.py`, and in a real browser in both units in `tests/web/test_amount_limits_browser.py`. Seven mutations were applied and all seven are killed by the intended test | §6.2, §7.3 |
+
+### v1.45 — 2026-08-16 (`index.html` is the landing page again and carries its introduction screen; `home.html`, `home.js` and `news.js` are retired, not deleted; affects C and D)
+
+This reverses the information-architecture half of v1.38/v1.41 at the team's request, relayed by the owner: **`home.html` looked poor and duplicated the client's own website**, which already carries this material. It changes no request body, no response body and no schema.
+
+**What did *not* change is worth stating first.** The drawer stays and is still how every page is reached. No security header was moved. `KAICALC_NEWS_ORIGIN`, `KAICALC_NEWS_IMAGE_ORIGINS` and the `connect-src`/`img-src` they build are exactly as they were.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`/` serves `index.html` again** — `docker/nginx.conf` says `index index.html`, still a literal and still not a redirect, for the reason the previous note gave and which did not change with the file name. `index.html` opens on `state.step === -1`, the introduction screen: the eyebrow, the `<h1>`, the lead, "Start calculator", the arch band, the "What you will need" check-list and the privacy note. Step one carries a Back button again. **The screen was recovered from `a749f70^`, not rewritten** — it is the reviewed original, reconciled by hand into a file that had gained the drawer, the language chooser, the container-preset input and the amount ceilings around it | §7.2, §7.8 |
+| 2 | **The extra click is accepted, and the defect it once caused is closed by something else.** Two landing pages was the original defect and one behind a link from the other was the same defect with a click in it; that is no longer the shape, because there is now one landing page and no second one. What made `home.html` undiscoverable — a page at an address nobody visits — is prevented by the drawer, not by which file `index` names | §7.9, §7.8 |
+| 3 | **The drawer lists three destinations, not four: Calculator, Statistics, Documentation.** `Home` went with the retired page. The row for the page you are already on stays, as a link to itself, so the block is byte-identical on all three pages; the drawer still claims no `aria-current`, because `stats.html` and `methodology.html` mark the current page in their header navigation and the calculator deliberately marks none. `home.html` also left both header navigations and the wordmark link on both content pages, which now points at `./index.html` | §7.9, §7.6 |
+| 4 | **`home.html`, `web/js/home.js` and `web/js/news.js` are RETIRED: in the tree, served if the address is typed, reachable from nothing.** They are kept because **the client has not decided about the news feed**, which is the one thing on that page that exists nowhere else in this front end. Each of the three files states this at the top, and `tests/test_d_statistics_content.py` holds both halves: `test_the_retired_home_page_is_still_in_the_tree_and_still_whole` fails if it rots, and `test_no_reachable_page_links_to_a_retired_one` fails if a drawer row, a nav entry or a wordmark `href` quietly un-retires it | §7.4, §7.5 |
+| 5 | **The retired pages keep their catalogue keys in all twenty catalogues, and that is the decision rather than the path of least resistance.** `tests/web/i18n_keys.py` extracts from every `web/*.html` and `web/js/*.js` in the tree; it does not ask what is reachable. So a key remains evidence that some code renders the string — still true here — and both the coverage test and the stale-key test agree without either being silenced. Reviving the page is then a routing decision, not a re-translation. If the client says no, the three files and their keys go in **one** commit | §7.7 |
+| 6 | **Six keys came back with the screen** (`Food Waste Impact Calculator`, `For New Zealand food businesses`, `Start calculator`, the lead sentence, and the two `…return to the introduction` strings that had been reworded to `…start again`), restored from the catalogues as they stood at `a749f70^` rather than re-translated. The two `…start again` strings are gone: clearing the form lands on the introduction again, so the reworded wording is no longer true | §7.7 |
+| 7 | **No security header was widened or narrowed, and the reasoning is recorded in `docker/nginx.conf` and `docker/compose.yaml` rather than left to be inferred.** With `home.html` unreachable, the `connect-src` and `img-src` grants built from `KAICALC_NEWS_ORIGIN` have no consumer on any route a visitor can take — a fair argument for narrowing them, and the narrowing is one empty variable away with no code change. It is not taken here: the grants are operator configuration, narrowing them means changing every deployment's shipped default, and **a security header that moves as a side effect of a layout change is a header nobody reviewed.** It belongs in the commit that records the client's answer | §7.6, §7.8 |
+| 8 | **`state.step === -1` and the seventh screen are back in the test suite, not merely in the code.** `tests/web/test_step_navigation.py` walks the introduction again and measures its full-bleed CTA at all three viewports; the Back assertion on step one flipped from "must be absent" to "must be present"; `tests/web/test_i18n_browser.py` measures `h1#page-title` and the Start button again in twenty catalogues, and its right-to-left mirroring test moved back off `home.html` to the check-list on this screen. Two browser fixtures and the overflow suite press "Start calculator" where they previously landed on step one | §7.2, §7.7 |
 
 ### v1.44 — 2026-08-16 (a plaintext bypass of the TLS path is sent to https, and the health check is not; affects E, and B only in what a JSON client on that one path receives)
 
@@ -2155,7 +2189,7 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | --- | --- |
 | `qty_kg >= 0` | `VALIDATION_ERROR` |
 | `qty_kg` has at most 3 decimal places | `VALIDATION_ERROR` |
-| Per line `qty_kg <= 10,000,000` | `VALIDATION_ERROR` |
+| Per line `qty_kg <= 50,000,000` | `VALIDATION_ERROR` |
 | Per scenario total, per entry `<= 50,000,000` | `VALIDATION_ERROR` |
 | Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
 | Entry count `<= 20` | `VALIDATION_ERROR` |
@@ -2168,6 +2202,14 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | `dry_run.factor_set_version` and `dry_run.bundle` both non-null | `VALIDATION_ERROR` |
 | `dry_run.bundle` row count across all tables `<= 5000` | `VALIDATION_ERROR` |
 | `dry_run.bundle` fails `FactorBundle.validate()` | `VALIDATION_ERROR`, one `details` entry per problem |
+
+> **The two amount ceilings are the same number, and that is the rule — not a coincidence to be tidied away.** From v1.0 to v1.45 the per-line cap was 10,000,000 kg against a scenario cap of 50,000,000 kg. Nothing in this document ever said why either figure was chosen, and the ratio between them was never anybody's decision — it simply fell out of two numbers picked separately. Its effect was a rule the model does not contain: **a scenario could only reach its own ceiling if it was spread across at least five destinations.** A site that sends everything to landfill, or everything to anaerobic digestion, could not describe itself at any tonnage above 10,000 t; "all of our waste goes to one place" is an ordinary, truthful answer and no combination of legal values expressed it. Reported by a user who entered 50,000 t at step 3 and allocated all of it to animal feed at step 4.
+>
+> **Neither bound protects anything downstream, and implementers should know that rather than guess at it.** `submission_line.qty_kg` is `DECIMAL(16,3)` (§2.3) — five orders of magnitude wider, and never the binding constraint. No metric total is persisted anywhere: §4 computes results in memory and §6.2 serialises them. `engine/evaluator.py` has no magnitude cap; its defence against runaway arithmetic is structural (`**` is not in the operator set), not numeric. §5.4's suppression keys on `count`, never on tonnage, so no tonnage can move a bucket across the threshold. **Both are plausibility guards, which is a legitimate thing for a public input to have** — the honest description of them, and the one that stops the next reader inventing a constraint to justify a number.
+>
+> **`MAX_SCENARIO_QTY` was not lowered to meet `MAX_LINE_QTY`.** 50,000 t is an unremarkable annual figure for a large processor, and the alternative repair would have made the calculator refuse a real user's real number. Raising the line cap **raises no total**: `MAX_ENTRIES` × `MAX_SCENARIO_QTY` already bounded a request at 1,000,000,000 kg and still does. Only the *distribution* within a scenario changed.
+>
+> **Per scenario line count is a request-size bound, not a mass bound**, and the two have never agreed: 20 lines × the per-line cap has always exceeded the scenario cap (200,000,000 kg then, 1,000,000,000 kg now). The scenario cap is what settles a scenario's mass; the line count is what stops an unbounded array. Reading either as an implied statement about the other is what produced the defect above, from the opposite side.
 
 > **Why a prevention destination in a `current` scenario is a rejection and not a curiosity.** Until v1.5 nothing on the server refused it — only C's own UI, which never offers it in the current column. A hand-rolled request carrying it persists an ordinary `submission_line` with `scenario = 'current'`, and §5.4 selects exactly that, so the line becomes a bucket in the public `by_destination` chart. A prevention destination is where waste that *did not happen* goes; counting it as real waste is the failure §5.4's scenario predicate exists to prevent, arriving through the one door that predicate cannot close — the predicate excludes the alternative scenario, and this line is not in the alternative scenario. It also makes no sense as an input: the current scenario is a description of what a business is doing now, and "we sent 900 kg to not existing" is not a description of anything. `tests/api/test_fixture_consistency.py` asserted this of the *fixture*, which is what made it look covered; a fixture constrains the fixture.
 >
@@ -2876,6 +2918,8 @@ export function renderBar(el, rows, opts);
 
 ## 7.5 `news.js` (written by D)
 
+> **RETIRED AT v1.45, NOT DELETED.** `web/home.html` is the only page that renders this feed, and it is retired: `/` serves `index.html`, nothing links to `home.html`, and no reachable page calls `fetchNews`. Both modules and the page stay in the tree because **the client has not decided whether they want a news feed**, and the feed is the one thing on that page that exists nowhere else in this front end. Everything below is still accurate and still exercised at `/home.html`. Their catalogue keys stay in all twenty catalogues (§7.7), and the `KAICALC_NEWS_ORIGIN` grants in the public CSP were deliberately left untouched (§7.6, §7.8).
+
 ```js
 /**
  * Fetches news from the client's WordPress site. No second news system
@@ -2894,7 +2938,7 @@ Source: `${NEWS_ORIGIN}/wp-json/wp/v2/posts?per_page={limit}&_embed`
 
 **The route is fixed by WordPress; the origin is `NEWS_ORIGIN` from §7.8 and appears in no file in this repository.** It used to be written out here as a literal *and* in `docker/nginx.conf`'s `connect-src`, two copies that had to agree and failed asymmetrically when they did not. Do not restore the literal: `tests/test_d_statistics_content.py` fails on an absolute origin in `api.js`, and on one in the nginx configuration.
 
-> **§7.4 and §7.5 were specifications rather than descriptions, and both have since been built (v1.36).** `web/js/charts.js`, `web/js/news.js` and `web/js/home.js` are in the tree, Chart.js is vendored under `web/vendor/`, and `home.html` links the feed from every public page's navigation. Read this section as the contract they are held to, not as work outstanding.
+> **§7.4 and §7.5 were specifications rather than descriptions, and both have since been built (v1.36).** `web/js/charts.js`, `web/js/news.js` and `web/js/home.js` are in the tree and Chart.js is vendored under `web/vendor/`. Read this section as the contract they are held to, not as work outstanding. `charts.js` is live on `stats.html`; `news.js` and `home.js` are retired with `home.html` at v1.45 — see the banner above.
 
 ## 7.6 Front-End Hard Constraints
 
@@ -3197,6 +3241,8 @@ The second is a **plaintext bypass of the first**, and it serves `/admin` in the
 
 The drawer is **markup first and script second**, and the split is the design rather than an implementation detail.
 
+**Three destinations since v1.45.** `Home` was a fourth until `home.html` was retired; a retired page is not a destination. The row for the page the reader is already on stays, as a link to itself, so this block is byte-identical on `index.html`, `stats.html` and `methodology.html` — a reader who has opened it once knows where every row will be. It carries no `aria-current`: the two content pages mark the current page in their header navigation, and the calculator deliberately marks none, so a claim here would give a page two current pages.
+
 ```html
 <details class="site-drawer" id="site-drawer">
   <summary class="site-drawer__handle">
@@ -3204,7 +3250,6 @@ The drawer is **markup first and script second**, and the split is the design ra
   </summary>
   <div class="site-drawer__panel">
     <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
-      <a href="./home.html" data-i18n>Home</a>
       <a href="./index.html" data-i18n>Calculator</a>
       <a href="./stats.html" data-i18n>Statistics</a>
       <a href="./methodology.html" data-i18n>Documentation</a>
@@ -3223,7 +3268,7 @@ The drawer is **markup first and script second**, and the split is the design ra
 export function installDrawer(root = document)
 ```
 
-**The block above is identical on all four public pages** and is the whole of the navigation on `index.html`, which carries no header nav (§7.3a records the measurement). It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
+**The block above is identical on all three reachable pages** and is the whole of the navigation on `index.html`, which carries no header nav (§7.3a records the measurement). It was four pages and four rows until v1.45 retired `home.html`. It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
 
 > **It overlays; it never compresses.** `position: fixed`, `inset-inline-start: 0`, vertically centred, `z-index: 40`. Horizontal space is the binding constraint on this interface: the owner's laptop is a **938px** CSS viewport, already below the 960 breakpoint, and a destination row on step 4 has a **544px** floor — a 240px sidebar in flow would leave 698px. `tests/web/test_site_drawer.py::test_opening_the_drawer_moves_nothing_on_the_page` measures `#main-content`'s box and the document's scroll width before and after opening, at 1278×983, 938×898, 390×700 and 320px.
 
@@ -3663,11 +3708,11 @@ Every non-2xx response uses one envelope:
 {
   "error": {
     "code": "VALIDATION_ERROR",
-    "message": "A single line may not exceed 10,000,000 kg",
+    "message": "A single line may not exceed 50,000,000 kg",
     "details": [
       { "field": "entries[0].current[1].qty_kg",
         "issue": "exceeds_max",
-        "message": "A single line may not exceed 10,000,000 kg" }
+        "message": "A single line may not exceed 50,000,000 kg" }
     ]
   }
 }

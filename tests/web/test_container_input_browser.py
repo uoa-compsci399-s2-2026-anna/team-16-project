@@ -107,9 +107,8 @@ playwright_api = pytest.importorskip(
 #: assertions in this file went green as skips and measured nothing.
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
 
-#: The calculator's own URL. `/` serves `home.html` now, so it has to be named:
-#: `/` reaches a page with no wizard on it and every `wait_for_selector` below would
-#: time out on a page that is working exactly as intended.
+#: The calculator's own URL. `/` serves this same file, and it is named anyway so
+#: the constant does not move when the `index` directive does.
 CALCULATOR = BASE + "/index.html"
 
 #: The preset this file drives, and the mass it must produce. Held here rather
@@ -230,6 +229,9 @@ def page_at(browser, taxonomy):
         except Exception as error:  # pragma: no cover - environment guard
             pytest.skip(f"the front end is not being served at {CALCULATOR}: {error}")
         page.add_style_tag(content=FORCE_AUTO)
+        # The calculator opens on its introduction screen again - `home.html` is
+        # retired and `/` serves this page - so the wizard is one click away.
+        page.click('[data-action="start"]')
         page.wait_for_selector('input[name="sector"]', timeout=10000)
         return page
 

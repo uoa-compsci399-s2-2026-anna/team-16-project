@@ -1,8 +1,10 @@
 import { getTaxonomy } from './api.js'
 import { state, setState, subscribe, resetCalculator } from './state.js'
 import { bindCalculator, render, renderChrome } from './calculator.js'
-import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js?v=20260816-1'
+import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
 // The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 const main = document.getElementById('main-content')
 const homeButton = document.getElementById('home-button')
@@ -38,7 +40,7 @@ subscribe(() => {
 bindCalculator(main, loadTaxonomy)
 homeButton.addEventListener('click', () => resetCalculator())
 clearButton.addEventListener('click', () => {
-  if (window.confirm(t('Clear all calculator data and start again?'))) resetCalculator()
+  if (window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
 })
 
 // The static HTML the browser parsed before any of this ran - the header, the skip

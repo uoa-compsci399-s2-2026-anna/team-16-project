@@ -309,10 +309,15 @@
     "How many containers?": "എത്ര പാത്രങ്ങൾ?",
     "Choose a weight, or the container you fill.": "ഭാര യൂണിറ്റ്, അല്ലെങ്കിൽ നിങ്ങൾ നിറയ്ക്കുന്ന പാത്രം തിരഞ്ഞെടുക്കുക.",
     "The total waste amount — a weight, or how many containers you fill": "മൊത്തം മാലിന്യത്തിന്റെ അളവ് — ഭാരം, അല്ലെങ്കിൽ നിങ്ങൾ എത്ര പാത്രങ്ങൾ നിറയ്ക്കുന്നു",
-    "Clear calculator data and start again": "കാൽക്കുലേറ്റർ ഡാറ്റ മായ്ച്ച് വീണ്ടും തുടങ്ങുക",
-    "Clear all calculator data and start again?": "എല്ലാ കാൽക്കുലേറ്റർ ഡാറ്റയും മായ്ച്ച് വീണ്ടും തുടങ്ങണോ?",
+    "Site navigation": "സൈറ്റ് നാവിഗേഷൻ",
     "Write the number out in full, using digits only.": "സംഖ്യ പൂർണ്ണമായി, അക്കങ്ങൾ മാത്രം ഉപയോഗിച്ച് എഴുതുക.",
     "Enter no more than %(limit)s %(unit)s.": "%(limit)s %(unit)s-ൽ കൂടുതൽ നൽകരുത്.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "ലക്ഷ്യസ്ഥാന അളവുകൾ %(limit)s %(unit)s-ൽ കൂടുതൽ നൽകരുത്."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "ലക്ഷ്യസ്ഥാന അളവുകൾ %(limit)s %(unit)s-ൽ കൂടുതൽ നൽകരുത്.",
+    "Clear all calculator data and return to the introduction?": "എല്ലാ കാൽക്കുലേറ്റർ ഡാറ്റയും മായ്ച്ച് ആമുഖത്തിലേക്ക് മടങ്ങണോ?",
+    "Clear calculator data and return to the introduction": "കാൽക്കുലേറ്റർ ഡാറ്റ മായ്ച്ച് ആമുഖത്തിലേക്ക് മടങ്ങുക",
+    "Food Waste Impact Calculator": "ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്റർ",
+    "For New Zealand food businesses": "ന്യൂസിലൻഡിലെ ഭക്ഷ്യ സ്ഥാപനങ്ങൾക്കായി",
+    "Start calculator": "കാൽക്കുലേറ്റർ തുടങ്ങുക",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "നിങ്ങളുടെ ഭക്ഷ്യമാലിന്യ അളവുകളെ, അവയുടെ സാധ്യമായ പാരിസ്ഥിതികവും സാമ്പത്തികവുമായ ആഘാതത്തിന്റെ കൂടുതൽ വ്യക്തമായ ചിത്രമാക്കി മാറ്റുക."
   }
 }

@@ -309,10 +309,15 @@
     "How many containers?": "எத்தனை கொள்கலன்கள்?",
     "Choose a weight, or the container you fill.": "எடை அலகு, அல்லது நீங்கள் நிரப்பும் கொள்கலனைத் தேர்ந்தெடுக்கவும்.",
     "The total waste amount — a weight, or how many containers you fill": "மொத்தக் கழிவின் அளவு — எடை, அல்லது நீங்கள் நிரப்பும் கொள்கலன்களின் எண்ணிக்கை",
-    "Clear calculator data and start again": "கால்குலேட்டர் தரவை அழித்து மீண்டும் தொடங்கு",
-    "Clear all calculator data and start again?": "எல்லா கால்குலேட்டர் தரவையும் அழித்து மீண்டும் தொடங்கவா?",
+    "Site navigation": "தள வழிசெலுத்தல்",
     "Write the number out in full, using digits only.": "எண்ணை முழுமையாக, இலக்கங்களை மட்டும் பயன்படுத்தி எழுதவும்.",
     "Enter no more than %(limit)s %(unit)s.": "%(limit)s %(unit)s-க்கு மேல் உள்ளிட வேண்டாம்.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "சேருமிட அளவுகளை %(limit)s %(unit)s-க்கு மேல் உள்ளிட வேண்டாம்."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "சேருமிட அளவுகளை %(limit)s %(unit)s-க்கு மேல் உள்ளிட வேண்டாம்.",
+    "Clear all calculator data and return to the introduction?": "எல்லா கால்குலேட்டர் தரவையும் அழித்து அறிமுகப் பக்கத்திற்குத் திரும்பவா?",
+    "Clear calculator data and return to the introduction": "கால்குலேட்டர் தரவை அழித்து அறிமுகப் பக்கத்திற்குத் திரும்பு",
+    "Food Waste Impact Calculator": "உணவுக் கழிவு தாக்கக் கால்குலேட்டர்",
+    "For New Zealand food businesses": "நியூசிலாந்து உணவு நிறுவனங்களுக்காக",
+    "Start calculator": "கால்குலேட்டரைத் தொடங்கு",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "உங்கள் உணவுக் கழிவு அளவீடுகளை, அவற்றின் சாத்தியமான சுற்றுச்சூழல் மற்றும் நிதித் தாக்கம் குறித்த தெளிவான பார்வையாக மாற்றுங்கள்."
   }
 }

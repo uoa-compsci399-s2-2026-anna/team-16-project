@@ -10,11 +10,22 @@ rejects `1e`, then accepts `1e5` — three values for three keystrokes.
 **The rules under test, and where they come from.**
 
 ``qty_kg`` is the only number that crosses the wire. §6.2 bounds it at
-``MAX_LINE_QTY`` = 10,000,000 kg per destination line and ``MAX_SCENARIO_QTY`` =
-50,000,000 kg per entry scenario (``api/schemas.py``). The step-3 total is never
-sent — it is the ceiling of the step-4 allocation — so the client rule that
-restates the scenario cap belongs on it, and the one that restates the line cap
-belongs on a destination row. Neither refuses anything the server would accept.
+``MAX_LINE_QTY`` per destination line and ``MAX_SCENARIO_QTY`` per entry
+scenario (``api/schemas.py``), and since v1.46 both are 50,000,000 kg. The
+step-3 total is never sent — it is the ceiling of the step-4 allocation — so
+the client rule that restates the scenario cap belongs on it, and the one that
+restates the line cap belongs on a destination row. Neither refuses anything the
+server would accept.
+
+**That last sentence stayed true through a real defect, which is the point.**
+The line cap was 10,000,000 kg — a fifth of the scenario cap — so a legal
+50,000 t total sent to a single destination was refused at step 4 with a limit
+the visitor had not crossed at step 3. The browser was *right*: the API refused
+it too. The rule being restated was the wrong rule, and "the client agrees with
+the server" cannot detect that. What could have is an assertion that the
+permitted case is permitted, and every ceiling test in this file asserted only
+a refusal. ``test_one_destination_may_carry_an_entire_legal_scenario`` is the
+missing half, and it fails against v1.45 on both sides of the wire.
 
 A previous attempt used ``999999999999.99`` for both, five orders of magnitude
 above the real bound and, read as tonnes, past the ``DECIMAL(16,3)`` column
@@ -45,6 +56,8 @@ the non-finite branch is dropped from the ceiling             ``..._largest_numb
 ``containerLimit`` ignores the preset                         ``..._container_ceiling_is_the_mass_expressed...``
 the per-line ceiling is deleted                               ``..._one_destination_may_not_exceed...`` (both units)
 the LINE cap is put on the total instead                      ``..._a_scenario_spread_across_destinations_is_not_refused``
+``MAX_LINE_KG`` goes back to ``10000000`` (v1.46)             ``..._one_destination_may_carry_an_entire_legal...`` (both units)
+the per-line rule is asked AFTER the allocation rule (v1.46)  ``..._one_destination_may_not_exceed...`` (both units)
 the plain-number branch is deleted                            ``..._1e5_is_not_a_decimal_places_problem``
 the refusal ships an English literal                          ``..._refusal_is_in_the_pages_language_and_not_the_browsers``
 ``aria-invalid`` is written as an empty string                ``..._refused_field_is_announced_as_invalid``
@@ -91,8 +104,8 @@ playwright_api = pytest.importorskip(
 )
 
 #: The ORIGIN, not a page — the taxonomy probe and the calculator are built from
-#: it and are different shapes. `/` serves `home.html`, so the wizard has to be
-#: named.
+#: it and are different shapes. `/` serves this same file, and it is named anyway
+#: so the constant does not move when the `index` directive does.
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
 CALCULATOR = BASE + "/index.html"
 
@@ -101,7 +114,14 @@ CALCULATOR = BASE + "/index.html"
 #: that read the constant from the module it is checking would assert only that
 #: a name exists. These are the numbers in `api/schemas.py`; if that file moves
 #: them, this file is supposed to fail.
-MAX_LINE_KG = Decimal("10000000")
+#:
+#: **They are equal as of v1.46, and they are still two names.** The per-line cap
+#: was 10,000,000 kg — a fifth of the scenario cap — which meant a step-3 total
+#: at its own ceiling could only be allocated across five or more destinations.
+#: "All of it goes to animal feed" was refused at step 4 with a message about a
+#: limit the visitor had not exceeded at step 3. Collapsing the two names here
+#: would hide the next divergence rather than catch it.
+MAX_LINE_KG = Decimal("50000000")
 MAX_SCENARIO_KG = Decimal("50000000")
 
 #: The preset the container assertions drive, and its conversion. Same reasoning:
@@ -201,6 +221,9 @@ def page_at(browser, taxonomy):
         except Exception as error:  # pragma: no cover - environment guard
             pytest.skip(f"the front end is not being served at {CALCULATOR}: {error}")
         page.add_style_tag(content=FORCE_AUTO)
+        # The calculator opens on its introduction screen again - `home.html` is
+        # retired and `/` serves this page - so the wizard is one click away.
+        page.click('[data-action="start"]')
         page.wait_for_selector('input[name="sector"]', timeout=10000)
         return page
 
@@ -543,18 +566,23 @@ def test_a_container_with_no_usable_conversion_says_so(page_at):
 @pytest.mark.parametrize(
     "unit,total,line,named",
     [
-        pytest.param("kilograms", "30000000", "10000001", "10,000,000 kilograms", id="kilograms"),
-        pytest.param("tonnes", "30000", "10001", "10,000 tonnes", id="tonnes"),
+        pytest.param("kilograms", "50000000", "50000001", "50,000,000 kilograms", id="kilograms"),
+        pytest.param("tonnes", "50000", "50001", "50,000 tonnes", id="tonnes"),
     ],
 )
 def test_one_destination_may_not_exceed_the_per_line_ceiling(page_at, unit, total, line, named):
     """Section 6.2's `MAX_LINE_QTY`, restated where the number carrying it is typed.
 
-    It is not implied by the total. The total is capped at the *scenario*
-    ceiling, five times this one, so a visitor who puts all of a perfectly legal
-    total into a single destination is inside that cap and outside this one -
-    and the API would answer 400 on the line, after they had left the screen the
-    number is on.
+    Still its own rule after v1.46 made it equal to the scenario cap, and still
+    reachable: `validateCurrentStep` asks it *before* the allocation-exceeds-
+    total rule, so a row one kilogram over the ceiling is answered by the
+    ceiling and not by the allocation. That order is what this parametrisation
+    pins - if the two rules swapped, both rows here would get "Allocated waste
+    exceeds total waste by ..." instead.
+
+    The tonnes row is again the discriminating one: 50,001 is a small number and
+    50,001,000 kg is over the bound, so a guard comparing the typed figure
+    passes it and a guard comparing the mass does not.
     """
     page = to_amount_step(page_at(1278, 983))
     page.select_option("#total-unit", unit)
@@ -595,6 +623,52 @@ def test_a_scenario_spread_across_destinations_is_not_refused(page_at):
     assert page.sent, "no request was sent"
     lines = page.sent[0]["entries"][0]["current"]
     assert [line["qty_kg"] for line in lines] == ["10000000.000"] * 3, page.sent[0]
+
+
+@pytest.mark.parametrize(
+    "unit,total,named_total",
+    [
+        pytest.param("kilograms", "50000000", "50000000.000", id="kilograms"),
+        pytest.param("tonnes", "50000", "50000000.000", id="tonnes"),
+    ],
+)
+def test_one_destination_may_carry_an_entire_legal_scenario(page_at, unit, total, named_total):
+    """**The reported defect, at the screen the message appeared on.**
+
+    Step 3: 50,000 tonnes, which step 3 accepts. Step 4: all of it to animal
+    feed, which step 4 refused with "Enter destination amounts of no more than
+    10,000 tonnes." A site that only landfills, or only digests, has no second
+    destination to split across, and nothing in the model asks a scenario to be
+    divided - so "at least five destinations" was a rule the ratio between two
+    unexplained constants had invented.
+
+    Driven at exactly the scenario ceiling in both units, because anything
+    below 10,000 t passes against the old bound too and asserts nothing. The
+    tonnes row is the one that also proves the *conversion* is on the right side
+    of the comparison: 50,000 typed is 50,000,000 kg sent.
+
+    Asserted on the request body. "Not refused" is a claim about the screen;
+    "the whole figure left the browser in one line" is the claim that matters,
+    and only `page.sent` settles it.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    page.select_option("#total-unit", unit)
+    page.wait_for_selector("#total-waste")
+    type_into(page, "#total-waste", total)
+    assert continue_from_step_three(page)["advanced"]
+    page.wait_for_selector('[data-line-field="amount"]')
+
+    type_into(page, '[data-line-field="amount"] >> nth=0', total)
+    allocated = continue_from_step_four(page)
+    assert allocated["error"] == "", allocated
+    assert allocated["advanced"], allocated
+
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+    assert page.sent, "no request was sent"
+    lines = page.sent[0]["entries"][0]["current"]
+    assert len(lines) == 1, page.sent[0]
+    assert lines[0]["qty_kg"] == named_total, page.sent[0]
 
 
 # --------------------------------------------------- the number is never edited
@@ -650,10 +724,14 @@ def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(pa
     read once.
     """
     page = to_amount_step(page_at(1278, 983))
-    type_into(page, "#total-waste", "30000000")
+    # At the ceiling, with the line one kilogram past it. Until v1.46 this read
+    # 30,000,000 and 10,000,001; raising `MAX_LINE_QTY` made that pair legal and
+    # the test failed, correctly - it needs a state step 4 actually refuses, and
+    # the per-line ceiling is the rule it is meant to walk back onto.
+    type_into(page, "#total-waste", "50000000")
     page.click('[data-action="continue"]')
     page.wait_for_selector('[data-line-field="amount"]')
-    type_into(page, '[data-line-field="amount"] >> nth=0', "10000001")
+    type_into(page, '[data-line-field="amount"] >> nth=0', "50000001")
     first = continue_from_step_four(page)
     assert first["disabled"], first
 
@@ -667,7 +745,7 @@ def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(pa
              disabled: document.querySelector('[data-action="continue"]').disabled,
            })"""
     )
-    assert redrawn["value"] == "10000001", redrawn
+    assert redrawn["value"] == "50000001", redrawn
     assert redrawn["disabled"], redrawn
 
 

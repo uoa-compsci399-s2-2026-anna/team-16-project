@@ -380,9 +380,21 @@ def test_the_retired_home_page_is_still_in_the_tree_and_still_whole():
     """
     home = RETIRED_PAGES["home"]
     assert home.is_file(), "home.html was deleted; it is retired pending the client's "        "decision on the news feed, which has not been given"
-    text = _read(home).lower()
-    assert "news" in text, (
-        "the news section is the reason this page is kept rather than deleted"
+    text = _read(home)
+    # **The MARKUP, not the word.** Written as `"news" in text.lower()` this passed a
+    # mutation that deleted the whole `<section class="home-news">` - because the
+    # retirement note at the top of the file says "news feed" several times, and a
+    # comment about a section is not a section. `web/js/home.js` keys on `#news-feed`
+    # and removes `.home-news` when no origin is configured, so those are the two
+    # names the page has to keep for the module above it to still have a page.
+    assert 'class="home-news"' in text, (
+        "the news section is gone from home.html. It is the reason this page is kept "
+        "rather than deleted; without it the file is a duplicate of the client's own "
+        "site and nothing else"
+    )
+    assert 'id="news-feed"' in text, (
+        "`#news-feed` is what web/js/home.js fills and what it removes when no origin "
+        "is configured; without the element the retired module has no page"
     )
     assert "index.html" in text, "the retired page must still reach the calculator"
 

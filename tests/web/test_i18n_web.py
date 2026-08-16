@@ -118,7 +118,11 @@ def test_the_source_list_is_read_from_the_front_end_and_is_not_empty():
     """A regex that stopped matching would empty every coverage test below
     and turn this whole file green against no catalogue at all."""
     assert len(SOURCE) > 150, len(SOURCE)
-    assert "Start calculator" in SOURCE
+    # A plain `t('...')` call in `calculator.js`. It was `Start calculator` until
+    # the introduction screen this page opened on was removed - `/` serves
+    # `home.html` now - so the canary moved to another literal in the same module
+    # rather than being deleted with the screen.
+    assert "Clear all calculator data and start again?" in SOURCE
     assert "Step %(step)s of %(total)s" in SOURCE
     # From `data-i18n` in index.html, which a JS-only scan would miss.
     assert "Skip to calculator" in SOURCE

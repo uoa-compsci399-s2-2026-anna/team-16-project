@@ -65,7 +65,7 @@ def _live_descriptions() -> set[str]:
 
 
 def _base_views() -> list[type]:
-    """The seven BaseViews: Getting started, My security, Try a scenario, ...
+    """The eight BaseViews: Getting started, My security, Deployment, ...
 
     Enumerated separately because they are not ModelView subclasses, and the
     first version of this file walked only ModelView - which is exactly how
@@ -76,6 +76,7 @@ def _base_views() -> list[type]:
     """
     from sqladmin import BaseView, ModelView as _ModelView
 
+    import admin.deployment_view  # noqa: F401
     import admin.dryrun_views  # noqa: F401
     import admin.getting_started_view  # noqa: F401
     import admin.self_service_view  # noqa: F401

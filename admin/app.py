@@ -272,6 +272,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     admin.add_base_view(DryRunView)
     admin.add_base_view(CompareView)
 
+    # The deployment read-back. A BaseView rather than a model screen because
+    # it reads no table: everything on it comes from this request's own
+    # headers and from `settings`. Registered next to the audit log and the
+    # blocklist because it shares their role floor - it describes the
+    # deployment's security posture, which contract §8.3 makes an
+    # administrator's concern - and `AdministratorOnly` keeps it out of a
+    # staff member's sidebar.
+    from admin.deployment_view import DeploymentView
+
+    admin.add_base_view(DeploymentView)
+
     from admin.modelviews import AuditLogAdmin
 
     admin.add_view(AuditLogAdmin)

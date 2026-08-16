@@ -78,6 +78,16 @@ _ADMIN_ONLY: list[tuple[str, str, str]] = [
     ("GET", "/admin/staff/action/deactivate", "account management, §8.3"),
     ("GET", "/admin/staff/action/reactivate", "account management, §8.3"),
     ("GET", "/admin/staff/action/delete", "account management, §8.3"),
+    # --- the deployment read-back (§8.2, v1.39) ----------------------------
+    # A `@expose` route on a BaseView, so it inherits neither auditing nor
+    # `is_accessible` - the guard that actually refuses it is the
+    # `_require_admin` call at the top of the handler, and this line is what
+    # notices if that call is removed. Administrator-only because the page
+    # describes the deployment's security posture: which addresses are
+    # believed, whether the session cookie is Secure, whether the rate limit
+    # is measuring visitors or a proxy. That sits with the blocklist and the
+    # audit log, not with taxonomy CRUD.
+    ("GET", "/admin/deployment", "the deployment's security posture is administrator-only"),
     # --- the blocklist (§2.3) ----------------------------------------------
     ("GET", "/admin/ip-block/list", "blocking a public service is administrator-only"),
     ("GET", "/admin/ip-block/details/1", "ip_hmac is one click from the list"),

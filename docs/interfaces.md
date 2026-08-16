@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-16 (v1.37 draft)"
+date: "2026-08-16 (v1.39 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,34 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.39 — 2026-08-16 (the panel says what the proxy in front of it is doing; affects E)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`/admin/deployment` — a read-only deployment read-back, administrator-only.** An operator putting this stack behind an edge proxy they already run gets it right on the second or third attempt, and until now the only way to find out whether an attempt landed was to ssh in and read environment variables out of three containers. This page is the read-back: configure the edge, open the page *through* it, and see whether the address and the scheme that arrive are the ones the edge is sending | §8.2 |
+| 2 | **It configures nothing, and that is the boundary rather than a limitation.** nginx renders its configuration once, at container start (`docker/web-config.sh`), so changing `KAICALC_TRUST_FORWARDED_HEADERS` needs a re-render and a reload, and the two application settings need a restart. A control that could trigger any of that would be a web page able to restart its own container — a privilege surface far larger than the diagnosis it saves. `README.md` documents the `docker exec` loop, including that the change does not survive the next start | §8.2 |
+| 3 | **The distinction between *configured* and *observed* is the page's design, not a caveat in its prose.** `SESSION_HTTPS_ONLY`, `PROTECTION_TRUSTED_PROXY` and `PROTECTION_ENABLED` are read from this process's own environment and are the values in force for the panel you are reading. `KAICALC_TRUST_FORWARDED_HEADERS` **is not readable here at all** — it belongs to the `web` container's nginx and `docker/compose.yaml` does not put it in this container's environment. **Adding it there was considered and rejected**: a value read from the panel's environment is not nginx's setting, it is a second copy free to disagree with it, which is the two-copies defect §7.8.1 exists to record. The page shows first-hand evidence instead, and says which row is which | §8.2, §7.8.1 |
+| 4 | **What the chain proves, exactly, and what it does not.** Two or more `X-Forwarded-For` entries can only be produced by the trusting branch, so the flag is on — but that does **not** prove the front-most proxy is the operator's, and the page says so rather than reading as an all-clear. One entry is produced identically by both branches and the page **will not guess** between them. No `X-Forwarded-For` at all means the request reached the panel's own published port rather than passing through nginx. `X-Real-IP` is the companion because `docker/nginx-proxy-headers.conf` deliberately does not switch it | §8.2, §7.8.1 |
+| 5 | **Incoherent combinations are named with their cost, not left as three values to reason about.** A chain arriving while `PROTECTION_TRUSTED_PROXY` is false is the state that looks configured and does nothing: one shared rate-limit bucket and one `ip_block` row that denies everyone. `PROTECTION_TRUSTED_PROXY` true on a request that bypassed nginx is the other direction — any caller reaching the panel directly can name their own address. `X-Forwarded-Proto: https` with `SESSION_HTTPS_ONLY` false is the one scheme fault provable from a single request | §8.2 |
+| 6 | **Displaying is not storing — checked, not assumed.** §2.3 forbids *storing* an address; rendering this request's own headers into a response that is discarded when it is sent stores nothing. But the nginx access log was found writing four forbidden fields once already, so three things were verified against the running stack rather than reasoned about: the rendered `kaicalc` log format carries no header and no address; uvicorn's own access line in the `admin` container logs `scope["client"]`, which is the nginx container's address and never the forwarded one; and no `audit_log` row is written by loading the page, which `tests/admin/test_deployment_view.py` asserts by counting the table across the request | §2.3, §8.2 |
+| 7 | **Administrator-only, enforced in three places because `@expose` inherits none of them.** The page describes the deployment's security posture, which sits with the blocklist and the audit log rather than with taxonomy CRUD. `is_visible` keeps it out of a `staff` member's sidebar, `is_accessible` is what the menu consults, and the explicit `_require_admin` at the top of the handler is the only one that actually refuses the URL. `AdministratorOnly` gains a `_session_maker_for(request)` hook so a `BaseView` — which sqladmin gives no `session_maker` — wears the same role floor rather than carrying a second copy of it | §8.3 |
+| 8 | **Reachable when `PROTECTION_ENABLED` is false, deliberately.** That switch turns off the blocklist, the header check and the rate limit together; hiding the page that says so would remove the diagnosis exactly when the deployment has least protection. The page keeps working and leads with a finding naming the state, and notes that the public API does not read that variable at all | §8.2 |
+
+### v1.38 — 2026-08-16 (one landing page, and a drawer to reach the rest; affects C and D)
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`home.html` is the home page and `index.html` is the calculator, and `/` serves the first of the two.** `docker/nginx.conf` said `index index.html`, so the calculator was the de-facto home page — carrying its own landing screen with a "Start the calculator" button — while `home.html`, first in every public page's navigation, was reachable only by somebody who already knew it existed. Coming from it cost two clicks to step one and the middle click added no information. `index home.html`, **not** a 302: a redirect shows the reader a hop, costs a round trip before the first byte of HTML, and gives the page two URLs with no canonical. The directive stays a literal and is deliberately **not** on `envsubst`'s name list — which file is the home page is a property of the front end, not of the deployment | §7.8 |
+| 2 | **`home.html` gains what a home page has to say, and every word of it already existed.** What the tool is, what to have to hand, where the numbers come from, and what the statistics are not. The text is lifted from `methodology.html`, `stats.html` and the deleted introduction screen rather than written: **no new client-voiced copy**, so nothing on the page is a placeholder waiting for copy the client may never supply, and **every string is already a key in twenty catalogues** — new English here would have meant a home page in English on nineteen locales. §7.7.7's rule governs all of it: *the subject is the calculator, never New Zealand* | §7.5, §7.7 |
+| 3 | **`index.html` loses its introduction screen and `state.step` loses its `-1`.** The hero repeated what `home.html` now says. "What you will need" is genuinely step zero and moved to `home.html`, where it is read *before* the click; the arch band went with it, because the brand's primary supporting graphic had nowhere else left to be. Step one carries no Back button, and `.step-nav`'s three-column grid is told about the missing secondary so the primary action still sits at the end of the row. The header has one appearance now, so `.intro-header` and the second wordmark file are gone | §7.3a |
+| 4 | **Six catalogue keys left with that screen and two were reworded.** `For New Zealand food businesses`, `Food Waste Impact Calculator`, `Turn your food waste measurements into…` and `Start calculator` are removed from all twenty files; `Clear calculator data and return to the introduction` and its confirm become `…and start again`, because that is no longer where clearing the form lands | §7.7 |
+| 5 | **A navigation drawer, on all four pages, in one markup block.** `position: fixed` at the reading-start edge, vertically centred. **It overlays and never compresses**: horizontal space is the binding constraint here — the owner's laptop is a 938px CSS viewport, already under the 960 breakpoint, and a destination row has a 544px floor, so a 240px sidebar in flow would leave 698px and break a step this team measured and fixed. It is **not** in the header row, whose 93px is a measured budget defended by `test_a_short_step_is_not_floored_by_a_stale_min_height`, and **not** along the bottom, which belongs to `.step-nav`'s `position: sticky; bottom: 0` | §7.9 |
+| 6 | **This closes the gap `index.html` recorded rather than adding a second navigation.** That page's own comment said there was no link from the calculator to Home or Statistics, that it was a real gap, and that closing it wanted either 44px of height somewhere on the page or an in-page control. The drawer is the second. The measurement that ruled the four-link nav out of the header and out of the footer is unchanged, and the three content pages keep their header navigation — the drawer carries no `aria-current`, so no page ever claims to be current twice | §7.9 |
+| 7 | **`<details>`, not a button and a class toggle**, so `home`, `stats` and `methodology` keep their navigation with scripting off; the calculator renders nothing without JavaScript and loses nothing either way. `web/js/drawer.js` adds `Escape` — with focus returned to the handle on that path and on no other — and `aria-expanded`, which is **written from JavaScript alone** so that a page with no scripting never carries a stale one. The handle is a border triangle, so its hit area is its 46×88 box rather than the painted shape; at 390px that difference is whether a thumb lands on it. Motion is a keyframe animation rather than a transition, because a closed `<details>` has nothing to transition, and `prefers-reduced-motion` removes it | §7.9 |
+| 8 | **`web/js/home.js` hung the language chooser, `<html lang>` and every `data-i18n` string off `if (document.querySelector('#news-feed'))`.** It held only by an accident of ordering — the feed element is in the parsed markup and `loadNews()` removes it afterwards — so no test on the shipped page could tell that arrangement from a correct one, and an unconfigured deployment kept its chooser by luck. One markup edit away was an English page announced as `en-NZ` with no control to change it. `web/js/stats.js` had the same shape around a different guard. **The plan that commissioned this described it as broken in production; it was not, and the measurement is in `test_csp.py`, which passes under the mutation** | §7.5, §7.7 |
+| 9 | **One new key, `Site navigation`, in twenty catalogues.** The drawer's own accessible name, distinct from the header navigation's `Primary navigation` so that two landmarks on one page are not named the same thing | §7.7 |
+| 10 | **Sixteen browser assertions for the drawer, on hit-testing rather than on presence.** A closed `<details>` keeps a box, so `count()`, `bounding_box()` and `is_visible()` all answer yes about a panel nobody can touch; `elementFromPoint` is asked instead. Six mutations applied, six killed. Two defects were found while writing them: the `prefers-reduced-motion` override lost to the animation it was meant to cancel (equal specificity, and the general block sits earlier in the stylesheet than the drawer does), and a corner probe near the triangle's base passed against a `clip-path` implementation | §7.9 |
 
 ### v1.37 — 2026-08-16 (the forwarded headers survive a proxy in front of ours; affects B and E)
 
@@ -3005,6 +3033,56 @@ DNS, certificates and hosting are out of this project's deliverable. *Behaving c
 
 ---
 
+## 7.9 `drawer.js` — the navigation drawer (written by C and D)
+
+The drawer is **markup first and script second**, and the split is the design rather than an implementation detail.
+
+```html
+<details class="site-drawer" id="site-drawer">
+  <summary class="site-drawer__handle">
+    <span class="sr-only" data-i18n>Site navigation</span>
+  </summary>
+  <div class="site-drawer__panel">
+    <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
+      <a href="./home.html" data-i18n>Home</a>
+      <a href="./index.html" data-i18n>Calculator</a>
+      <a href="./stats.html" data-i18n>Statistics</a>
+      <a href="./methodology.html" data-i18n>Documentation</a>
+    </nav>
+  </div>
+</details>
+```
+
+```js
+/**
+ * Wire one drawer. Idempotent, and a no-op on a page that has none.
+ *
+ * @param {Document} root Document to search. Injectable so a test can pass its own.
+ * @returns {HTMLDetailsElement|null} The drawer, or `null` if the page has none.
+ */
+export function installDrawer(root = document)
+```
+
+**The block above is identical on all four public pages** and is the whole of the navigation on `index.html`, which carries no header nav (§7.3a records the measurement). It sits between the skip link and `<header>`, so it is early in the tab order and before the language bar `installLanguageChooser` inserts.
+
+> **It overlays; it never compresses.** `position: fixed`, `inset-inline-start: 0`, vertically centred, `z-index: 40`. Horizontal space is the binding constraint on this interface: the owner's laptop is a **938px** CSS viewport, already below the 960 breakpoint, and a destination row on step 4 has a **544px** floor — a 240px sidebar in flow would leave 698px. `tests/web/test_site_drawer.py::test_opening_the_drawer_moves_nothing_on_the_page` measures `#main-content`'s box and the document's scroll width before and after opening, at 1278×983, 938×898, 390×700 and 320px.
+
+> **Where it is, and the two places it is not.** Not in the header row: 93px holding a 67px logo and the 44px language chooser is a measured budget (§7.7.4), and a strip of its own was built once and cost 57px on every page. Not along the bottom: `.step-nav` is `position: sticky; bottom: 0` and is the single thing that put every step's primary action above the fold, so a bottom tab bar would fight it at 390px. Vertically centred at the inline-start edge is also the one band of these pages that no step's controls occupy.
+
+> **`<details>`, so it works with scripting off.** `home.html`, `stats.html` and `methodology.html` are static content and must not lose their navigation without JavaScript; the calculator renders nothing without it and is exempt from that requirement and from that one only. The element folds, takes a keyboard and reports its expanded state to assistive technology with no script at all.
+
+> **What the script adds, and what it deliberately does not.** `aria-expanded` on the handle — the direction a triangle points is the only visible statement of state, and a shape says nothing to a reader who is not looking at it. It is written **only from JavaScript**: an `aria-expanded="false"` shipped in the HTML is a lie the moment a no-JS reader opens the drawer, and a stale one is worse than none. `Escape` closes the drawer and returns focus to the handle, **on that path and on no other** — there is one accessibility regression on record here from a focus call that fired on every state change and threw keyboard users out of a radio group.
+
+> **The handle is a triangle whose hit area is its box.** Drawn with `border-block-start`, `border-block-end` and `border-inline-start`, so the element's 46×88 border box takes the press everywhere; a `clip-path` triangle is pressable only where it is painted, and at 390px that difference is whether a thumb lands on the control. Open, the whole handle is flipped with `scaleX(-1)`, which is one rule for both writing directions.
+
+> **Mirroring is entirely from `dir`.** `inset-inline-start`, `border-inline-*`, `flex-direction: row-reverse` and the panel's logical corner radii all follow the writing direction; `test_the_stylesheet_carries_no_physical_direction_left` refuses a physical property. The **one** physical value is the handle's `drop-shadow` x offset, which has no logical form and is mirrored explicitly under `[dir="rtl"]` — and is asserted, because it is the value that silently stays put when everything around it moves.
+
+> **Motion is a keyframe animation, not a transition, and `prefers-reduced-motion` removes it.** A closed `<details>` does not render its content, so there is nothing for a transition to run on; the recipes that manage it need `::details-content`, `@starting-style` and `allow-discrete`, which is one engine today. An animation runs the moment the panel becomes rendered, in every engine, and the close is instant — which is what `<details>` does everywhere anyway. **The reduced-motion override lives with the drawer's own rules and not in the stylesheet's general `prefers-reduced-motion` block**: the selectors have equal specificity, so source order decides, and the general block sits earlier in the file. Written there it lost, and the panel still sprang in from the edge of the screen for exactly the readers the rule exists for.
+
+**Tests.** `tests/web/test_site_drawer.py`, sixteen assertions in a browser. A closed `<details>` keeps a box, so `count()`, `bounding_box()` and `is_visible()` can all answer yes about a panel nobody can touch — every reachability assertion here is `document.elementFromPoint`, which is the browser's own answer to "what would a click land on". The scripting-off case drives a real click through Playwright's actionability checks and asserts the navigation happened.
+
+---
+
 # 8. Admin Panel (owner: E)
 
 Built on `sqladmin`, mounted at `/admin`, authentication required.
@@ -3036,6 +3114,13 @@ Requirements: list views must offer search and filtering.
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
 | Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
 | Audit log | `/admin/audit-log` | Read-only, filterable by actor, time and table. **`role = admin` only** from v1.15 — see the change log for why "their own entries only" was rejected |
+| Deployment | `/admin/deployment` | Read-only read-back of the forwarding state, **`role = admin` only** (v1.39). Shows what this request carried (the `X-Forwarded-For` chain in order, `X-Forwarded-Proto`, `X-Real-IP`, the connection, and the address `db/detection.py::client_ip` decided on), then the settings with **how the page knows each one**, then whether they cohere. **It configures nothing** — see below |
+
+> **The deployment page is a diagnostic, not a control, and the line is drawn at the restart boundary.** nginx renders its configuration at container start, so changing `KAICALC_TRUST_FORWARDED_HEADERS` needs a re-render and a reload; `SESSION_HTTPS_ONLY` and `PROTECTION_TRUSTED_PROXY` need a process restart. A page that could trigger either would be a page that restarts its own container, reachable by anybody who reaches the panel. `README.md` documents the `docker exec` loop instead, including that the change does not survive the next start.
+
+> **It separates what it read from what it inferred, and refuses to close the gap by guessing.** Three of the four values are read from this process's own environment and are exactly what is in force for the panel. `KAICALC_TRUST_FORWARDED_HEADERS` is not one of them: it belongs to another container, and copying it into this one would create a second copy of a setting that is free to disagree with the first — the defect §7.8.1 exists to record. What the page has instead is evidence. Two or more forwarded entries can only come from the trusting branch, so the flag is on; one entry is produced identically by both branches and the page says so rather than picking; none at all means the request never went through nginx. And a chain arriving proves the flag is on, **not** that the proxy that sent it is the operator's — a page that read as an all-clear on that would be worse than one that says what it saw.
+
+> **Nothing on it is stored, and that was checked rather than assumed** — the nginx access log was found writing `$remote_addr`, `$http_user_agent`, `$http_referer` and `$http_x_forwarded_for` once already. The rendered `kaicalc` log format carries no header and no address; uvicorn's access line in the `admin` container logs `scope["client"]`, which is the nginx container's own address and never the forwarded one, because `ProxyHeadersMiddleware` declines to rewrite `scope` in this topology (§7.8.1); and `tests/admin/test_deployment_view.py` counts `audit_log` across the request and inspects `before_json`/`after_json` for the address the request carried.
 
 > The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
 
@@ -3054,6 +3139,7 @@ Because a dry-run request body is a `bundle` plus a scenario, the dry-run view c
 | Taxonomy, factor and formula CRUD | ✅ | ✅ |
 | Dry run, view submissions | ✅ | ✅ |
 | View the audit log | ❌ | ✅ |
+| Read the deployment's forwarding state (`/admin/deployment`, v1.39) | ❌ | ✅ |
 | Set `excluded_from_public` | ✅ | ✅ |
 | Publish, roll back | ✅ | ✅ |
 | Create, deactivate, re-role and delete accounts | ❌ | ✅ |

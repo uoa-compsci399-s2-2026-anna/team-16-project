@@ -5,8 +5,14 @@ build step: the browser runs the files in this directory directly.
 
 ## Public pages
 
-- `index.html` — calculator entry point (and the production `/` page)
-- `home.html` — introduction, calculator call to action and latest Kai Commitment news
+- `home.html` — **the production `/` page.** What the tool is, what to have to hand,
+  where the numbers come from, what the statistics are not, and the latest Kai Commitment
+  news. Every word of it also appears in `methodology.html`, `stats.html` or the
+  calculator, deliberately: the page adds no new English to translate into twenty
+  catalogues, and it carries no placeholder waiting for copy the client may never send
+- `index.html` — the calculator, and only the calculator. It opens on step one; the
+  landing screen it used to open on repeated what `home.html` says and stood between a
+  visitor and the first question
 - `stats.html` — privacy-protected aggregate statistics and charts
 - `methodology.html` — published methodology, factors and provenance
 
@@ -17,8 +23,8 @@ keeps its own in-page step navigation and reset controls.
 
 ```text
 web/
-  home.html                 Home and news page
-  index.html                Six-step calculator, and the production `/` page
+  home.html                 The home page, served at `/`
+  index.html                Six-step calculator, opening on step one
   stats.html                Aggregate statistics page
   methodology.html          Documentation and published-factor page
   README.md                 This file

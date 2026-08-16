@@ -21,10 +21,57 @@
       <p class="noscript-notice">This calculator needs JavaScript to run. With scripting turned off it cannot load the food categories, calculate an impact, or be shown in a language other than English.</p>
     </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to calculator</a>
-    <header class="site-header intro-header" id="site-header">
+    <!-- **THE DRAWER. One markup block, the same on all four pages.**
+
+         `<details>`, not a button and a class toggle. It folds, takes a keyboard and
+         announces its own expanded state with no script at all, which matters on
+         `home.html`, `stats.html` and `methodology.html`: they are static content and
+         must not lose their navigation when scripting is off. `web/js/drawer.js` adds
+         `Escape` and syncs `aria-expanded`; neither is load-bearing.
+
+         **It overlays and never compresses.** `position: fixed`, pinned to the page's
+         inline-start edge and vertically centred, so it takes no width from the
+         document. Horizontal space is the binding constraint on this interface - the
+         owner's laptop is a 938px CSS viewport, already under the 960 breakpoint, and
+         a destination row has a 544px floor. A 240px sidebar in flow would leave
+         698px and break the step this team measured and fixed.
+
+         It is also **not in the header row**, which is a measured budget: 93px holding
+         a 67px logo and a 44px language chooser, defended by
+         `test_a_short_step_is_not_floored_by_a_stale_min_height`. A strip of its own
+         was tried once and cost 57px. And it is vertically centred rather than pinned
+         to the bottom, because the calculator's `position: sticky; bottom: 0` step bar
+         owns the bottom edge and is what put every step's primary action above the
+         fold.
+
+         **No `aria-current` here**, deliberately. The header navigation on the three
+         content pages carries it, and a second element claiming to be the current page
+         is a page with two current pages. On the calculator nothing claims it, which is
+         what `tests/test_d_statistics_content.py` asserts. -->
+    <details class="site-drawer" id="site-drawer">
+      <summary class="site-drawer__handle">
+        <span class="sr-only" data-i18n>Site navigation</span>
+      </summary>
+      <div class="site-drawer__panel">
+        <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
+          <a href="./home.html" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
+      </div>
+    </details>
+    <header class="site-header" id="site-header">
       <div class="header-inner public-header-inner">
-        <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and return to the introduction">
-          <img id="brand-logo" src="./assets/kai-commitment-logo-white.webp" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
+        <!-- **No `intro-header` any more, because there is no introduction screen.** This
+             page opened on a landing screen - a hero, a lead paragraph and a "Start
+             calculator" button - which repeated what `home.html` says and stood between a
+             visitor and step one for no gain. `/` now serves `home.html`, so this page is
+             the calculator and nothing else, and it opens on step one. The one half of
+             that screen that told the reader something, "What you will need", moved to
+             `home.html`, where it is read *before* the click rather than after it. -->
+        <button class="brand brand-home-button" id="home-button" type="button" data-i18n-attr="aria-label" aria-label="Clear calculator data and start again">
+          <img id="brand-logo" src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </button>
         <!-- **This page carries no four-link public navigation, and that is a
@@ -57,13 +104,18 @@
              the constant back" warning over the arithmetic this budget came
              from.
 
-             So the calculator is reachable *from* all three content pages, and
-             reaches the documentation page from its own footer and from the
-             results view's "View methodology". There is no link from here to
-             Home or Statistics, which is a real gap and is recorded rather
-             than hidden: it wants either 44px of height somewhere on this page
-             or an in-page control, and both are a decision rather than a merge
-             resolution. -->
+             **The gap that used to be recorded here is closed, and by the
+             second of the two answers it named.** This comment ended by saying
+             that there was no link from the calculator to Home or Statistics,
+             that it was a real gap, and that closing it wanted either 44px of
+             height somewhere on this page or an in-page control. The drawer
+             above is the in-page control: it is `position: fixed`, so it costs
+             this row nothing and costs the footer nothing, and the measurement
+             that ruled the nav out of both places still stands unchanged.
+
+             The calculator is still reachable *from* all three content pages,
+             and still reaches the documentation page from its own footer and
+             from the results view's "View methodology". -->
         <button class="text-button" id="clear-button" type="button" hidden data-i18n>Clear all data</button>
       </div>
     </header>

@@ -253,11 +253,29 @@ class AdministratorOnly:
     the role was taken away.
     """
 
+    def _session_maker_for(self, request):
+        """The session factory this check should read the role out of.
+
+        A hook rather than a straight ``self.session_maker`` because this
+        mixin is now worn by a ``BaseView`` as well (``admin/
+        deployment_view.py``), and ``BaseView`` has no ``session_maker`` —
+        sqladmin sets that attribute only on the ``ModelView``s it registers
+        through ``add_view``. A base view overrides this to reach its own
+        application's factory (``admin/runtime.py``'s ``get_runtime``).
+
+        The alternative was a second copy of the four methods below in the
+        base view. The role floor is the one rule on this panel that must
+        not exist twice: a second copy is a second thing to remember when
+        §8.3's table changes, and the copy that stops matching is the one
+        nobody notices.
+        """
+        return self.session_maker
+
     def _is_admin(self, request) -> bool:
         username = request.session.get(SESSION_KEY)
         if not username:
             return False
-        with self.session_maker() as session:
+        with self._session_maker_for(request)() as session:
             try:
                 return get_staff(session, username).role is StaffRole.admin
             except UnknownStaffError:

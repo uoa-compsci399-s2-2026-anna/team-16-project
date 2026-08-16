@@ -25,6 +25,46 @@
       <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the published factors, or be shown in a language other than English.</p>
     </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to methodology</a>
+    <!-- **THE DRAWER. One markup block, the same on all four pages.**
+
+         `<details>`, not a button and a class toggle. It folds, takes a keyboard and
+         announces its own expanded state with no script at all, which matters on
+         `home.html`, `stats.html` and `methodology.html`: they are static content and
+         must not lose their navigation when scripting is off. `web/js/drawer.js` adds
+         `Escape` and syncs `aria-expanded`; neither is load-bearing.
+
+         **It overlays and never compresses.** `position: fixed`, pinned to the page's
+         inline-start edge and vertically centred, so it takes no width from the
+         document. Horizontal space is the binding constraint on this interface - the
+         owner's laptop is a 938px CSS viewport, already under the 960 breakpoint, and
+         a destination row has a 544px floor. A 240px sidebar in flow would leave
+         698px and break the step this team measured and fixed.
+
+         It is also **not in the header row**, which is a measured budget: 93px holding
+         a 67px logo and a 44px language chooser, defended by
+         `test_a_short_step_is_not_floored_by_a_stale_min_height`. A strip of its own
+         was tried once and cost 57px. And it is vertically centred rather than pinned
+         to the bottom, because the calculator's `position: sticky; bottom: 0` step bar
+         owns the bottom edge and is what put every step's primary action above the
+         fold.
+
+         **No `aria-current` here**, deliberately. The header navigation on the three
+         content pages carries it, and a second element claiming to be the current page
+         is a page with two current pages. On the calculator nothing claims it, which is
+         what `tests/test_d_statistics_content.py` asserts. -->
+    <details class="site-drawer" id="site-drawer">
+      <summary class="site-drawer__handle">
+        <span class="sr-only" data-i18n>Site navigation</span>
+      </summary>
+      <div class="site-drawer__panel">
+        <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
+          <a href="./home.html" data-i18n>Home</a>
+          <a href="./index.html" data-i18n>Calculator</a>
+          <a href="./stats.html" data-i18n>Statistics</a>
+          <a href="./methodology.html" data-i18n>Documentation</a>
+        </nav>
+      </div>
+    </details>
     <header class="site-header">
       <div class="header-inner public-header-inner methodology-header-inner">
         <a class="brand" href="./home.html">

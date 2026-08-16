@@ -288,6 +288,33 @@ def test_envsubst_does_not_eat_nginx_own_variables():
             assert "$" not in value, f"a placeholder survived unrendered: {value}"
 
 
+def test_the_rendered_configuration_serves_the_home_page_at_the_bare_address():
+    """`/` is `home.html`, and it has to survive the render to be true of anything.
+
+    The information architecture was inverted for two releases: nginx said
+    `index index.html`, `index.html` is the calculator, and so the calculator was
+    the de-facto home page while `home.html` - first in every public page's
+    navigation - was reachable only by somebody who already knew it existed.
+
+    Asserted on the RENDERED configuration rather than on the template, because the
+    template is not what nginx loads. `index` is a literal and is deliberately not on
+    `envsubst`'s name list, so the failure this catches is the one that list exists to
+    prevent: a name added to it that also matches something here, leaving `index ;`.
+
+    The negative half is the half that would otherwise rot. `index index.html` coming
+    back is exactly the change that reads as a harmless tidy-up.
+    """
+
+    conf, _ = _render(KAICALC_NEWS_ORIGIN=NEWS)
+    directive = re.search(r"^\s*index\s+(\S+);", conf, re.M)
+    assert directive, "the rendered configuration has no `index` directive at all"
+    assert directive.group(1) == "home.html", (
+        "`/` serves %s. index.html is the calculator; home.html is the page that "
+        "says what the tool is and links to every part of it." % directive.group(1)
+    )
+    assert not re.search(r"^\s*index\s+index\.html;", conf, re.M), conf
+
+
 def test_the_image_ships_no_loadable_configuration_of_its_own():
     """conf.d is empty until the entrypoint fills it.
 

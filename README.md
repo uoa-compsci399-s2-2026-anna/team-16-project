@@ -85,7 +85,8 @@ creates two administrator accounts and starts the calculator behind nginx.
 docker compose -f docker/compose.yaml up -d
 ```
 
-Then open **<http://localhost:18080/>**.
+Then open **<http://localhost:18080/>**, which is the home page. The calculator itself
+is at `/index.html`, and every page links to every other.
 
 That command builds the images from this checkout. If you were handed the **published
 images** instead of the source, the file to use is `docker/compose.deploy.yaml` — same
@@ -393,6 +394,17 @@ the container warns about it at start-up. Also remove the `ports:` blocks for `a
 # What is actually in force:
 docker logs kaicalc-web 2>&1 | grep 'forwarded headers'
 ```
+
+**Reading it back from a browser instead.** Sign in to the panel as an administrator and
+open **Deployment** (`/admin/deployment`) — *through the edge you are configuring*, not on
+the panel's direct port. It shows the `X-Forwarded-For` chain that actually arrived, in
+order, `X-Forwarded-Proto`, and the address the applications decided on, then says whether
+the settings cohere. A chain of two whose left-most entry is your own public address means
+it worked; one entry that is a container address means it did not. The page **configures
+nothing** — changing any of these values still means the `docker exec` sequence below or a
+restart — and it is careful about the difference between what it read and what it inferred:
+`KAICALC_TRUST_FORWARDED_HEADERS` lives in another container and cannot be read from there
+at all, so the page reports the evidence rather than claiming to know the setting.
 
 **Trying a setting without a restart.** Getting an edge proxy right usually takes a few
 attempts, and rebuilding the container for each one is slow enough to discourage checking.

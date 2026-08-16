@@ -12,6 +12,9 @@
 
 import { fetchNews } from './news.js'
 import { applyDocumentLanguage, applyToDocument, installLanguageChooser, t } from './i18n.js'
+// The site drawer's `Escape` handler and `aria-expanded`. Side-effect import: the
+// drawer is a `<details>` in the markup and works without this; see web/js/drawer.js.
+import './drawer.js'
 
 let latestRequestGeneration = 0
 // Held so a language change re-renders the cards without asking WordPress again.
@@ -208,10 +211,23 @@ if (typeof window !== 'undefined' && typeof document !== 'undefined') {
   }
   window.addEventListener('pagehide', leavePage)
   window.addEventListener('beforeunload', leavePage)
+
+  // **The language machinery is unconditional. Only the news is conditional.**
+  //
+  // These three lines used to sit inside the `#news-feed` guard below, which made
+  // `<html lang>`, every `data-i18n` string and the language chooser itself hang off
+  // whether this deployment happens to have a WordPress behind it. That held together
+  // only by an accident of ordering — the feed element is in the parsed markup, and it
+  // is `loadNews` that removes it later — so an unconfigured deployment kept its
+  // chooser. Any edit that takes the news block out of `home.html`, or any page that
+  // reaches this module without one, would have silently served an untranslated page
+  // announced as `en-NZ` with no way to switch. A reader cannot repair that; it is not
+  // a dependency worth having, and there is no reason for one.
+  applyDocumentLanguage()
+  applyToDocument()
+  installLanguageChooser(rerenderInActiveLanguage)
+
   if (document.querySelector('#news-feed')) {
-    applyDocumentLanguage()
-    applyToDocument()
-    installLanguageChooser(rerenderInActiveLanguage)
     loadNews().catch(error => {
       // API failures have already become an empty feed in fetchNews. Re-surface an
       // unexpected program defect without leaving it as a silent rejected promise.

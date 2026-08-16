@@ -32,22 +32,38 @@ guard that shows ``target.validationMessage``, which Chromium writes in the
 the check: a German refusal that reads "Value must be less than or equal to …"
 came from the browser, not from `web/locales/de.json`.
 
-**Mutation record.** Each was applied to ``web/js/calculator.js``, the container
-rebuilt, and the named test watched to fail:
+**Mutation record.** Each was applied to ``web/js/calculator.js`` or
+``web/js/units.js``, ``docker cp``'d into the running web container, and the
+named test watched to fail. All fourteen are killed:
 
-=========================================================  =========================================
-Mutation                                                   Killed by
-=========================================================  =========================================
-the step-3 kilogram ceiling is deleted                     ``..._a_total_above_the_scenario_cap_...``
-the ceiling is compared against the typed number           ``..._the_ceiling_is_on_the_mass[tonnes]``
-the ceiling is compared against the typed count            ``..._the_ceiling_is_on_the_mass[container]``
-the per-line ceiling is deleted                            ``..._one_destination_may_not_exceed_...``
-the plain-number branch falls back to the decimal message  ``..._1e5_is_not_a_decimal_places_problem``
-the minus guard drops ``#unit-count``                      ``..._a_minus_never_lands_in_the_count``
-the minus guard drops the position-0 exception             ``..._a_leading_minus_stays_visible``
-``minusEntered`` is never released on delete               ``..._clearing_the_field_allows_a_new_...``
-the refusal assigns a clamped ``.value``                   ``..._the_number_typed_is_the_number_kept``
-=========================================================  =========================================
+============================================================  ===========================================================
+Mutation                                                      Killed by
+============================================================  ===========================================================
+the step-3 ceiling is deleted                                 ``..._ceiling_is_on_the_mass...`` (both units)
+the ceiling compares the typed number, not the mass           ``..._ceiling_is_on_the_mass...[tonnes]``
+the non-finite branch is dropped from the ceiling             ``..._largest_number_the_field_will_hold...[infinite]``
+``containerLimit`` ignores the preset                         ``..._container_ceiling_is_the_mass_expressed...``
+the per-line ceiling is deleted                               ``..._one_destination_may_not_exceed...`` (both units)
+the LINE cap is put on the total instead                      ``..._a_scenario_spread_across_destinations_is_not_refused``
+the plain-number branch is deleted                            ``..._1e5_is_not_a_decimal_places_problem``
+the refusal ships an English literal                          ``..._refusal_is_in_the_pages_language_and_not_the_browsers``
+``aria-invalid`` is written as an empty string                ``..._refused_field_is_announced_as_invalid``
+the guard clamps ``.value`` in place                          ``..._the_number_typed_is_the_number_kept``
+``canContinue`` goes back to restating three rules inline     ``..._returning_to_step_four_does_not_re_enable_continue...``
+the minus guard drops ``#unit-count``                         ``..._a_minus_never_lands_in_the_container_count``
+the minus guard drops the position-0 exception                ``..._a_leading_minus_stays_visible...``
+``minusEntered`` is never released on delete                  ``..._clearing_the_field_allows_a_new_leading_minus``
+============================================================  ===========================================================
+
+**One survived first time, and it was the test that was wrong.** Dropping
+``kilograms === null ||`` from the step-3 ceiling changed nothing, because
+``massToKg`` checked only its *input* for finiteness and then multiplied: a
+finite number of tonnes past about 1.8e305 came back as ``Infinity``, which is
+neither ``null`` nor under a ``>`` comparison, so the ceiling fired for the
+wrong reason and the branch this file claimed to cover had never run. ``units.js``
+now checks the product, the branch is reachable, and the mutation dies. That is
+the shape this project keeps finding: an assertion that passes, against a line
+that is never executed.
 
 **Running these.** Playwright is not a project dependency, for the reason
 ``test_step_navigation.py`` gives::
@@ -147,7 +163,7 @@ def page_at(browser, taxonomy):
     """
     contexts = []
 
-    def open_page(width, height, language="en"):
+    def open_page(width, height, language="en", heavy_preset=None):
         ctx = browser.new_context(
             viewport={"width": width, "height": height},
             locale="en-NZ",
@@ -163,6 +179,22 @@ def page_at(browser, taxonomy):
             route.fulfill(status=200, content_type="application/json", body=json.dumps(RESULT_STUB))
 
         page.route("**/api/v1/calculate*", capture)
+        if heavy_preset is not None:
+            # **Every seeded preset is too light to reach the kilogram ceiling.**
+            # The heaviest is 319 kg, so 50,000,000 kg is 156,739 of them and the
+            # 10,000-container plausibility bound is always the smaller of the
+            # two — which means the real taxonomy cannot tell a guard that
+            # converts from one that does not. `kg_per_unit` is staff-editable,
+            # so a heavy container is a state the deployed system can reach; this
+            # serves one, and nothing else about the taxonomy is touched.
+            served = dict(taxonomy)
+            served["unit_presets"] = [*taxonomy["unit_presets"], heavy_preset]
+            page.route(
+                "**/api/v1/taxonomy*",
+                lambda route: route.fulfill(
+                    status=200, content_type="application/json", body=json.dumps(served)
+                ),
+            )
         try:
             page.goto(f"{CALCULATOR}?lang={language}", wait_until="networkidle", timeout=20000)
         except Exception as error:  # pragma: no cover - environment guard
@@ -211,13 +243,45 @@ def value_of(page, selector):
     return page.eval_on_selector(selector, "el => el.value")
 
 
-def continue_and_read_error(page):
-    """Press Continue and return `(error text, step advanced?)`."""
+def continue_from_step_three(page):
+    """Press Continue on step 3 and report what happened.
+
+    `advanced` is read from the heading, not from the button: a refusal that
+    silently advanced anyway and a refusal that showed no message are different
+    defects and both have to be visible here.
+    """
     page.click('[data-action="continue"]')
-    page.wait_for_timeout(150)
-    error = page.query_selector(".form-field .field-error, #allocation-error")
-    text = (error.inner_text().strip() if error else "")
-    return text, page.query_selector("#total-waste") is None and page.query_selector("#unit-count") is None
+    page.wait_for_timeout(200)
+    error = page.query_selector("#amount-error")
+    return {
+        "error": error.inner_text().strip() if error else "",
+        "advanced": page.query_selector("#amount-title") is None,
+        "ariaInvalid": page.eval_on_selector(
+            "#total-waste, #unit-count", "el => el.getAttribute('aria-invalid')"
+        ) if page.query_selector("#total-waste, #unit-count") else None,
+    }
+
+
+def continue_from_step_four(page):
+    """Step 4 refuses *before* Continue, so this reads rather than clicks.
+
+    `updateLine` writes the message into `#allocation-error` and disables the
+    button on every keystroke — the allocation summary is live, so a rule that
+    only spoke when the button was pressed would contradict the running totals
+    beside it. The button is only pressed when it is enabled, which is what makes
+    `advanced` meaningful.
+    """
+    page.wait_for_timeout(120)
+    error = page.eval_on_selector("#allocation-error", "el => el.textContent.trim()")
+    disabled = page.eval_on_selector('[data-action="continue"]', "el => el.disabled")
+    if not disabled:
+        page.click('[data-action="continue"]')
+        page.wait_for_timeout(200)
+    return {
+        "error": error,
+        "disabled": disabled,
+        "advanced": page.query_selector("#destination-title") is None,
+    }
 
 
 def to_destination_step(page, total="1000"):
@@ -323,3 +387,352 @@ def test_clearing_the_field_allows_a_new_leading_minus(page_at):
     field.press_sequentially("-3", delay=12)
     page.wait_for_timeout(80)
     assert value_of(page, '[data-line-field="amount"] >> nth=0') == "-3"
+
+
+# ------------------------------------------------------------------ the ceiling
+
+
+#: The two ways a mass can be typed, and the mass each one comes to.
+#:
+#: **The tonnes row is the discriminating one.** 50,001 is five orders of
+#: magnitude below any plausible cap on a typed number and 50,000,001 kg is one
+#: kilogram over the scenario ceiling, so a guard that compares what was typed
+#: instead of what it converts to accepts it and a guard that converts refuses
+#: it. The kilograms row cannot tell those two apart; on its own it would pass
+#: against the wrong implementation.
+CEILING_CASES = [
+    pytest.param("kilograms", "50000000", "50000001", "50,000,000 kilograms", id="kilograms"),
+    pytest.param("tonnes", "50000", "50001", "50,000 tonnes", id="tonnes"),
+]
+
+
+@pytest.mark.parametrize("unit,largest_allowed,first_refused,named", CEILING_CASES)
+def test_the_ceiling_is_on_the_mass_not_on_the_typed_number(
+    page_at, unit, largest_allowed, first_refused, named
+):
+    """Section 6.2's 50,000,000 kg scenario cap, restated in the unit of the field.
+
+    The step-3 total is never sent - `buildLines` sends the destination rows -
+    so the bound that belongs on it is the one on the scenario those rows make
+    up, and the largest total that can be allocated is `MAX_SCENARIO_QTY`.
+
+    Both ends are asserted. A ceiling test that only shows the refusal is
+    satisfied by an implementation that refuses everything.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    page.select_option("#total-unit", unit)
+    page.wait_for_selector("#total-waste")
+
+    type_into(page, "#total-waste", first_refused)
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == f"Enter no more than {named}.", refused
+
+    type_into(page, "#total-waste", largest_allowed)
+    allowed = continue_from_step_three(page)
+    assert allowed["advanced"], allowed
+
+
+def test_the_container_ceiling_is_the_mass_expressed_in_containers(page_at):
+    """A count field guarded by a kilogram rule has to be told in containers.
+
+    Six thousand kilograms a container puts 8,333 of them at 49,998,000 kg and
+    8,334 at 50,004,000 kg, so the count bound is 8,333 - below the 10,000
+    plausibility bound, which is what makes this case discriminate. A guard that
+    compared the typed count against 50,000,000 would accept 8,334, and every
+    other count anybody could type; one that only knew about 10,000 would accept
+    it too, and both would carry 50,004,000 kg into step 4.
+
+    The number in the message is the number in the check, by construction:
+    `containerLimit()` is evaluated once for both, so they cannot drift apart at
+    the boundary the way a separate kilogram check and a separate sentence would.
+    """
+    heavy = {
+        "code": "test_skip_bin",
+        "label": "Test 6 t skip",
+        "kg_per_unit": "6000.0000",
+        "food_category": None,
+    }
+    page = to_amount_step(page_at(1278, 983, heavy_preset=heavy))
+    page.select_option("#total-unit", "preset:test_skip_bin")
+    page.wait_for_selector("#unit-count")
+
+    type_into(page, "#unit-count", "8334")
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == "Enter no more than 8,333 containers.", refused
+
+    type_into(page, "#unit-count", "8333")
+    assert continue_from_step_three(page)["advanced"]
+
+
+def test_the_plausibility_bound_still_holds_for_an_ordinary_container(page_at):
+    """The 10,000 bound is the smaller of the two for every seeded preset.
+
+    69.6 kg a wheelie bin makes the kilogram ceiling 718,390 bins, so folding it
+    in must not have loosened the bound a visitor actually meets.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    page.select_option("#total-unit", f"preset:{PRESET_CODE}")
+    page.wait_for_selector("#unit-count")
+    type_into(page, "#unit-count", "10001")
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == "Enter no more than 10,000 containers.", refused
+
+
+@pytest.mark.parametrize(
+    "unit,named",
+    [
+        pytest.param("kilograms", "50,000,000 kilograms", id="finite"),
+        pytest.param("tonnes", "50,000 tonnes", id="infinite"),
+    ],
+)
+def test_the_largest_number_the_field_will_hold_is_over_the_ceiling(page_at, unit, named):
+    """`Infinity` must not fall through a `>` comparison as false.
+
+    308 nines is the longest run Chromium keeps in a `type="number"` field: 309
+    is outside a double's range, so the browser's own sanitiser blanks it and
+    there is nothing left for a guard to catch. 308 is the interesting case
+    precisely because of what happens next - as kilograms it is finite and
+    simply enormous, and *multiplied by a thousand for tonnes* it is `Infinity`,
+    at which point `massToKg` answers `null` and a bare `kilograms > MAX` is
+    `false`. Same keystrokes, two branches, and the second is the one that
+    silently admits the overflow the whole guard exists for.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    page.select_option("#total-unit", unit)
+    page.wait_for_selector("#total-waste")
+    type_into(page, "#total-waste", "9" * 308)
+    assert len(value_of(page, "#total-waste")) == 308, "the browser did not keep the number"
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == f"Enter no more than {named}.", refused
+
+
+# --------------------------------------------------------- the per-line ceiling
+
+
+@pytest.mark.parametrize(
+    "unit,total,line,named",
+    [
+        pytest.param("kilograms", "30000000", "10000001", "10,000,000 kilograms", id="kilograms"),
+        pytest.param("tonnes", "30000", "10001", "10,000 tonnes", id="tonnes"),
+    ],
+)
+def test_one_destination_may_not_exceed_the_per_line_ceiling(page_at, unit, total, line, named):
+    """Section 6.2's `MAX_LINE_QTY`, restated where the number carrying it is typed.
+
+    It is not implied by the total. The total is capped at the *scenario*
+    ceiling, five times this one, so a visitor who puts all of a perfectly legal
+    total into a single destination is inside that cap and outside this one -
+    and the API would answer 400 on the line, after they had left the screen the
+    number is on.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    page.select_option("#total-unit", unit)
+    page.wait_for_selector("#total-waste")
+    type_into(page, "#total-waste", total)
+    page.click('[data-action="continue"]')
+    page.wait_for_selector('[data-line-field="amount"]')
+
+    type_into(page, '[data-line-field="amount"] >> nth=0', line)
+    refused = continue_from_step_four(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == f"Enter destination amounts of no more than {named}.", refused
+
+
+def test_a_scenario_spread_across_destinations_is_not_refused(page_at):
+    """**The client must not refuse what the API would take.**
+
+    Thirty million kilograms in three destinations is three legal lines and one
+    legal scenario, and `POST /api/v1/calculate` accepts it. Putting the
+    *per-line* cap on the total instead - the tempting simplification, and the
+    shape of the constant this replaced - refuses it at step 3, which would be
+    this project's own definition of a defect.
+
+    Asserted on the request body, because that is the only place the claim is
+    settled: the numbers that left the browser are the numbers the server was
+    asked to accept.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    type_into(page, "#total-waste", "30000000")
+    assert continue_from_step_three(page)["advanced"]
+    page.wait_for_selector('[data-line-field="amount"]')
+    for index in range(3):
+        type_into(page, f'[data-line-field="amount"] >> nth={index}', "10000000")
+    assert continue_from_step_four(page)["advanced"]
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+
+    assert page.sent, "no request was sent"
+    lines = page.sent[0]["entries"][0]["current"]
+    assert [line["qty_kg"] for line in lines] == ["10000000.000"] * 3, page.sent[0]
+
+
+# --------------------------------------------------- the number is never edited
+
+
+def test_the_number_typed_is_the_number_kept(page_at):
+    """A refusal leaves the field alone. It does not clamp and does not revert.
+
+    Clamping to a maximum and reverting to a previous value are the same defect
+    wearing different clothes: the visitor enters one figure, the page shows
+    another, and if they press on it is the page's figure that is submitted.
+    Every other rule in `calculator.js` refuses on Continue and keeps what was
+    typed; so does this one.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    typed = "99999999999"
+    type_into(page, "#total-waste", typed)
+    assert value_of(page, "#total-waste") == typed
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert value_of(page, "#total-waste") == typed, "the refusal rewrote the visitor's number"
+    assert page.sent == [], page.sent
+
+
+def test_the_refused_field_is_announced_as_invalid(page_at):
+    """`aria-invalid="true"`, not `aria-invalid=""`.
+
+    An empty string is how `toggleAttribute` writes a flag, and ARIA reads an
+    empty `aria-invalid` as **false** - a field a screen reader never announces
+    as wrong, under a message the same step's server-error path marks `"true"`.
+    The association is asserted with it, because a message with no link to the
+    box is a message a screen-reader user meets on its own.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    type_into(page, "#total-waste", "50000001")
+    refused = continue_from_step_three(page)
+    assert refused["ariaInvalid"] == "true", refused
+    described = page.eval_on_selector("#total-waste", "el => el.getAttribute('aria-describedby')")
+    assert described == "amount-error", described
+    assert page.query_selector("#amount-error").get_attribute("role") == "alert"
+
+
+def test_returning_to_step_four_does_not_re_enable_continue_on_a_refused_line(page_at):
+    """The render path and the keystroke path must agree about one button.
+
+    `updateLine` disables Continue from `validateCurrentStep()` on every
+    keystroke; `destinationStep` decides its state when the screen is drawn. The
+    render path used to restate three of those rules inline and so knew nothing
+    about the others - and this walk reaches it: Back to step 3 and Continue
+    again re-renders step 4 over the line that is still there. With two lists,
+    the button comes back **enabled** on a state the other list refuses, and the
+    only thing between the visitor and a 400 is the message they have already
+    read once.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    type_into(page, "#total-waste", "30000000")
+    page.click('[data-action="continue"]')
+    page.wait_for_selector('[data-line-field="amount"]')
+    type_into(page, '[data-line-field="amount"] >> nth=0', "10000001")
+    first = continue_from_step_four(page)
+    assert first["disabled"], first
+
+    page.click('[data-action="go-step"][data-step="2"]')
+    page.wait_for_selector("#total-waste")
+    page.click('[data-action="continue"]')
+    page.wait_for_selector('[data-line-field="amount"]')
+    redrawn = page.evaluate(
+        """() => ({
+             value: document.querySelector('[data-line-field="amount"]').value,
+             disabled: document.querySelector('[data-action="continue"]').disabled,
+           })"""
+    )
+    assert redrawn["value"] == "10000001", redrawn
+    assert redrawn["disabled"], redrawn
+
+
+# ------------------------------------------------- decimals, and what is not one
+
+
+def test_1e5_is_not_a_decimal_places_problem(page_at):
+    """`1e5` has no decimal places, so it cannot be told it has too many.
+
+    `<input type="number">` accepts it - this walks `1`, `1e` (which the browser
+    reports as `''`), `1e5` - and the one refusal the field had covered both
+    "too precise" and "not written as a decimal" with a sentence that is only
+    true of the first. Two questions, two answers, each true of what was typed.
+    """
+    page = to_amount_step(page_at(1278, 983))
+    type_into(page, "#total-waste", "1e5")
+    assert value_of(page, "#total-waste") == "1e5", "the browser did not keep 1e5"
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == "Write the number out in full, using digits only.", refused
+
+
+def test_three_decimal_places_still_gets_the_decimal_message(page_at):
+    """The other half of the pair, so the split is a split and not a rename."""
+    page = to_amount_step(page_at(1278, 983))
+    type_into(page, "#total-waste", "1.234")
+    refused = continue_from_step_three(page)
+    assert refused["error"] == "Enter no more than two decimal places.", refused
+
+
+# ------------------------------------------------------- language, and geometry
+
+
+#: `web/locales/de.json`. Held here rather than read from the catalogue: a test
+#: that looked the string up in the file the page loads would pass on any string
+#: at all, including Chromium's own.
+GERMAN_CEILING = "Geben Sie höchstens 50,000,000 Kilogramm ein."
+GERMAN_PLAIN = "Schreiben Sie die Zahl vollständig aus, nur mit Ziffern."
+
+
+def test_the_refusal_is_in_the_pages_language_and_not_the_browsers(page_at):
+    """The defect that can only be seen in a non-English locale.
+
+    A guard that reports `target.validationMessage` ships whatever Chromium
+    wrote - in the *browser's* language, from a string table the project does
+    not own - inside a page that has been translated to the visitor's. In
+    English the two are indistinguishable, which is why this test is in German.
+
+    The grouping is the other half: the figure keeps `formatNumber`'s pinned
+    `en-NZ` separators in every language, so German's own `50.000.000` would
+    mean the number had been formatted somewhere this project does not control.
+    """
+    page = to_amount_step(page_at(1278, 983, language="de"))
+    type_into(page, "#total-waste", "50000001")
+    refused = continue_from_step_three(page)
+    assert not refused["advanced"], refused
+    assert refused["error"] == GERMAN_CEILING, refused
+    assert "Value must be" not in refused["error"], refused
+    assert "Wert muss" not in refused["error"], refused
+
+    type_into(page, "#total-waste", "1e5")
+    assert continue_from_step_three(page)["error"] == GERMAN_PLAIN
+
+
+@pytest.mark.parametrize("width,height", VIEWPORTS)
+@pytest.mark.parametrize("language", ["en", "de"])
+def test_the_refusal_is_on_the_screen_at_both_widths(page_at, width, height, language):
+    """A message nobody can see refuses nothing.
+
+    390x700 is the width where the sticky navigation bar can sit on top of the
+    thing it is refusing, and a longer language is the case where the message
+    wraps into space that was measured in English.
+    """
+    page = to_amount_step(page_at(width, height, language=language))
+    type_into(page, "#total-waste", "50000001")
+    continue_from_step_three(page)
+    seen = page.evaluate(
+        """() => {
+          const el = document.querySelector('#amount-error');
+          if (!el) return { found: false };
+          el.scrollIntoView({ block: 'center' });
+          const box = el.getBoundingClientRect();
+          const at = document.elementFromPoint(box.left + 4, box.top + box.height / 2);
+          return {
+            found: true,
+            width: Math.round(box.width),
+            height: Math.round(box.height),
+            text: el.textContent.trim(),
+            covered: !(el === at || el.contains(at)),
+          };
+        }"""
+    )
+    assert seen["found"] and seen["width"] > 0 and seen["height"] > 0, seen
+    assert not seen["covered"], seen
+    assert seen["text"], seen

@@ -311,6 +311,9 @@
     "The total waste amount — a weight, or how many containers you fill": "ปริมาณขยะทั้งหมด — น้ำหนัก หรือจำนวนภาชนะที่คุณใส่จนเต็ม",
     "Clear calculator data and start again": "ล้างข้อมูลในเครื่องคำนวณและเริ่มใหม่",
     "Clear all calculator data and start again?": "ล้างข้อมูลทั้งหมดในเครื่องคำนวณและเริ่มใหม่หรือไม่",
-    "Site navigation": "การนำทางเว็บไซต์"
+    "Site navigation": "การนำทางเว็บไซต์",
+    "Write the number out in full, using digits only.": "กรอกตัวเลขให้เต็มจำนวน โดยใช้ตัวเลขเท่านั้น",
+    "Enter no more than %(limit)s %(unit)s.": "กรอกได้ไม่เกิน %(limit)s %(unit)s",
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "กรอกปริมาณของแต่ละปลายทางได้ไม่เกิน %(limit)s %(unit)s"
   }
 }

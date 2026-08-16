@@ -311,6 +311,9 @@
     "The total waste amount — a weight, or how many containers you fill": "மொத்தக் கழிவின் அளவு — எடை, அல்லது நீங்கள் நிரப்பும் கொள்கலன்களின் எண்ணிக்கை",
     "Clear calculator data and start again": "கால்குலேட்டர் தரவை அழித்து மீண்டும் தொடங்கு",
     "Clear all calculator data and start again?": "எல்லா கால்குலேட்டர் தரவையும் அழித்து மீண்டும் தொடங்கவா?",
-    "Site navigation": "தள வழிசெலுத்தல்"
+    "Site navigation": "தள வழிசெலுத்தல்",
+    "Write the number out in full, using digits only.": "எண்ணை முழுமையாக, இலக்கங்களை மட்டும் பயன்படுத்தி எழுதவும்.",
+    "Enter no more than %(limit)s %(unit)s.": "%(limit)s %(unit)s-க்கு மேல் உள்ளிட வேண்டாம்.",
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "சேருமிட அளவுகளை %(limit)s %(unit)s-க்கு மேல் உள்ளிட வேண்டாம்."
   }
 }

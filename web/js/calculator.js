@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
-import { containerKg, entryTotal, kgString, massToKg } from './units.js'
+import { containerKg, countLimit, entryTotal, isPlainDecimal, kgString, kgToTonnes, massToKg } from './units.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { downloadResults, renderResults } from './results.js'
@@ -87,12 +87,64 @@ export const containerPresets = () => presetList()
 
 const totalNumber = entry => Number(totalOf(entry).amount) || 0
 
+/**
+ * This entry's total **in kilograms**, or `null` when it is not a finite mass.
+ *
+ * The one form of the total that can be compared against §6.2's bounds, because those
+ * bounds are on kilograms and this field is only sometimes kilograms. `totalOf` has
+ * already reconciled the three ways of entering it — a weight in kilograms, a weight in
+ * tonnes, or a count of containers times a preset's `kg_per_unit` — so there is exactly
+ * one conversion left and it is the one `reviewStep` prints.
+ */
+const totalKilograms = entry => {
+  const total = totalOf(entry)
+  return massToKg(total.amount, total.unit)
+}
+
+// ------------------------------------------------------------------ the ceilings
+//
+// **§6.2's own two numbers, and nothing invented.** `api/schemas.py` bounds one
+// destination line at `MAX_LINE_QTY` = 10,000,000 kg and one entry's whole `current`
+// scenario at `MAX_SCENARIO_QTY` = 50,000,000 kg. The column behind them is
+// `DECIMAL(16,3)`, which is four orders of magnitude wider again and never the binding
+// constraint. A client-side guard restates a server rule: it may refuse earlier and more
+// kindly than the API would, and it must never refuse something the API would take.
+//
+// **Which bound goes on which field follows from what is actually sent.** The step-3
+// total never crosses the wire at all — `buildLines` sends the *destination lines* — so
+// the total's only job is to be the ceiling of the step-4 allocation, and the rule that
+// belongs on it is the scenario cap. The line cap belongs on a destination row, where the
+// number it bounds is the number that leaves the browser.
+//
+// Putting the *line* cap on the total instead is the tempting simplification and it is
+// wrong: 30,000,000 kg split across three destinations is three legal lines and one legal
+// scenario, and the API accepts it. Refusing that at step 3 would be this project's own
+// definition of a defect.
+const MAX_SCENARIO_KG = 50000000
+const MAX_LINE_KG = 10000000
+
+// A ceiling stated in the unit the visitor is typing in. "50,000 tonnes" is a number they
+// can act on; "50,000,000 kg" on a field labelled tonnes is a conversion they have to do
+// themselves to find out how far over they are.
+const limitIn = (kilograms, unit) => (unit === 'tonnes' ? kgToTonnes(kilograms) : kilograms)
+
 // Half a wheelie bin is a reasonable thing to say; two hundred and forty thousand of them
 // is not. Ten thousand containers is about twenty-seven a day for a year — past any single
-// site — and still leaves the largest seeded preset (1,100 L at 0.29 kg/L) at 3,190 t,
-// inside §6.2's 10,000,000 kg per-line ceiling. So the count bound is the one a visitor
-// ever meets, and the refusal can be written about containers rather than about kilograms.
+// site — and still leaves the largest seeded preset (1,100 L at 0.29 kg/L) at 3,190 t.
 const MAX_CONTAINER_COUNT = 10000
+
+/**
+ * The count this container may be entered to: the plausibility bound above, or the
+ * scenario ceiling expressed in these containers, whichever is smaller.
+ *
+ * **One number for the check and for the message.** `kg_per_unit` is staff-editable
+ * (§8.1), so `MAX_CONTAINER_COUNT` alone stops bounding the mass the moment somebody
+ * enters a preset heavier than 5,000 kg — and a second, separate kilogram check would
+ * have to be worded about kilograms on a field holding a count, and could disagree with
+ * this one by a container at the boundary. Folding the ceiling into the count means the
+ * refusal stays the sentence it already was, with a smaller number in it.
+ */
+const containerLimit = () => Math.min(MAX_CONTAINER_COUNT, countLimit(state.unitPreset, presetList(), MAX_SCENARIO_KG))
 
 /**
  * Whether the chosen preset would still be on the list under `foodCategory`.
@@ -290,7 +342,14 @@ function destinationStep() {
   const total = totalNumber(state)
   const allocated = allocatedAmount(state.current)
   const summaryInvalid = exceedsTotal(allocated, total) || state.current.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)
-  const canContinue = allocated > 0 && !summaryInvalid && !state.current.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))
+  // **The same question `updateLine` asks, asked the same way.** This used to restate
+  // three of `validateCurrentStep`'s rules inline and so knew nothing about the rest: it
+  // is the render path, reached by returning to step 4 from step 5, while `updateLine`'s
+  // `continueButton.disabled = Boolean(error)` is the keystroke path — two lists of rules
+  // for one button, and any rule added to one of them left the other enabling Continue on
+  // a state the other had just refused. There is one list now, and it is the one whose
+  // message the visitor is shown when they press it anyway.
+  const canContinue = !validateCurrentStep()
   return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.'))}</p>
     <div class="allocation-summary ${summaryInvalid ? 'invalid' : ''}" id="current-summary" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div></div>
     <div class="destination-list">${destinationRows()}</div>
@@ -372,8 +431,12 @@ function validateCurrentStep() {
     // number anybody entered. §7.2 recorded this collision as the decision building this
     // input would require; this is the decision.
     if (!state.unitCount || Number(state.unitCount) <= 0) return t('Number of containers must be greater than zero.')
+    // `1e5` is a value a number input hands over, it is not written as a decimal, and it
+    // has no decimal places — so the two-decimal message was the wrong sentence for it.
+    // Ask the two questions separately and each answer is true of what was typed.
+    if (!isPlainDecimal(state.unitCount)) return t('Write the number out in full, using digits only.')
     if (!decimalPattern.test(state.unitCount)) return t('Enter no more than two decimal places.')
-    if (Number(state.unitCount) > MAX_CONTAINER_COUNT) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(MAX_CONTAINER_COUNT, 0) })
+    if (Number(state.unitCount) > containerLimit()) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(containerLimit(), 0) })
     // A preset whose code the taxonomy no longer holds, or whose `kg_per_unit` will not
     // parse, leaves `containerKg` at '' — and a step that continued on that would carry a
     // zero total into step 4 and refuse every allocation with a message about the
@@ -382,14 +445,37 @@ function validateCurrentStep() {
   }
   if (state.step === 2 && state.measureMode !== 'container') {
     if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')
+    if (!isPlainDecimal(state.totalAmount)) return t('Write the number out in full, using digits only.')
     if (!decimalPattern.test(state.totalAmount)) return t('Enter no more than two decimal places.')
+    // `null` is a total that is not a finite mass — four hundred digits is a plain decimal
+    // and reaches `Infinity` through `Number`, which is over every ceiling there is and
+    // must not fall through a `>` comparison as false.
+    const kilograms = totalKilograms(state)
+    if (kilograms === null || kilograms > MAX_SCENARIO_KG) {
+      return t('Enter no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_SCENARIO_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
+    }
   }
   if (state.step === 3) {
     const total = totalNumber(state)
     const lines = state.current
     if (!lines.some(line => Number(line.qtyInput) > 0)) return t('Enter an amount for at least one waste destination.')
-    if (lines.some(line => line.qtyInput !== '' && (Number(line.qtyInput) < 0 || !Number.isFinite(Number(line.qtyInput))))) return t('Destination amounts must be zero or greater.')
+    if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return t('Destination amounts must be zero or greater.')
+    if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return t('Write the number out in full, using digits only.')
     if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return t('Enter destination amounts to no more than two decimal places.')
+    // §6.2's per-line bound, restated. It is not implied by the total: the total is capped
+    // at the *scenario* ceiling, which is five lines' worth, so a visitor who puts all of
+    // a legal total into one destination is over this one and under that one.
+    //
+    // `Number.isFinite` used to be asked two rules above, folded into the negative check,
+    // which answered "Destination amounts must be zero or greater" for a row of four
+    // hundred nines. It is asked here instead, where the true answer is that the row is
+    // too large and the message says so.
+    const overLine = lines.some(line => {
+      if (line.qtyInput === '') return false
+      const kilograms = massToKg(line.qtyInput, state.totalUnit)
+      return kilograms === null || kilograms > MAX_LINE_KG
+    })
+    if (overLine) return t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
     const sum = allocatedAmount(lines)
     if (exceedsTotal(sum, total)) return t('Allocated waste exceeds total waste by %(excess)s %(unit)s.', { excess: (sum - total).toFixed(2), unit: state.totalUnit === 'kilograms' ? 'kg' : t('tonnes') })
   }

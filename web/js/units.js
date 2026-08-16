@@ -14,6 +14,22 @@
 const DECIMAL_LITERAL = /^\d+(\.\d+)?$/
 
 /**
+ * Whether a value is written the way every amount field on this site accepts.
+ *
+ * **Exported so there is one copy of the rule.** `calculator.js` needs to tell a value
+ * that is merely too precise (`1.234`) from one that is not written as a plain decimal at
+ * all (`1e5`, which a `<input type="number">` produces quite happily and which carries no
+ * decimal places to complain about) — and a second regular expression over there is how
+ * the two would come to disagree about, say, whether an exponent is a number. The
+ * two-decimal *typing* rule is a separate and stricter thing and stays in `calculator.js`
+ * beside the field hints that state it.
+ *
+ * @param {string|number} value
+ * @returns {boolean}
+ */
+export const isPlainDecimal = value => DECIMAL_LITERAL.test(String(value).trim())
+
+/**
  * A non-negative decimal string as an exact integer and the power of ten it is scaled by.
  *
  * `'6.6700'` becomes `{digits: 66700n, scale: 4}`. Nothing is rounded and nothing
@@ -140,10 +156,51 @@ export function entryTotal(entry, presets) {
     : { amount: entry?.totalAmount ?? '', unit: entry?.totalUnit || 'kilograms' }
 }
 
+/**
+ * The largest container count whose mass stays inside `maxKg`.
+ *
+ * **A kilogram ceiling has to be restated in the unit of the field it guards.** §6.2's
+ * bounds are on kilograms, and a container entry's field holds a *count*; a guard that
+ * compared the typed number against a kilogram limit would be checking two containers
+ * against ten million and passing every count a visitor could type, whatever the preset
+ * weighed. Dividing here turns the one ceiling into the one number the message can name
+ * and the check can use — the same number for both, so they cannot disagree at the
+ * boundary the way a separate check and a separate message would.
+ *
+ * `Number(kg_per_unit)` is a double, which §7.6 allows for display and not for a
+ * calculation. This is neither: it is an input bound, it is floored, and it never reaches
+ * the wire. `toKg` still does the multiplication that does, exactly, in decimal. The floor
+ * is what keeps the double's error on the safe side — it can only make the bound one
+ * container tighter, never one looser.
+ *
+ * @param {string|null} presetCode
+ * @param {Array} presets  taxonomy.unit_presets
+ * @param {number} maxKg   the kilogram ceiling to translate
+ * @returns {number}  a whole count, or 0 when there is no usable conversion
+ */
+export function countLimit(presetCode, presets, maxKg) {
+  const preset = (presets || []).find(item => item.code === presetCode)
+  const perUnit = preset ? Number(preset.kg_per_unit) : 0
+  if (!Number.isFinite(perUnit) || perUnit <= 0) return 0
+  return Math.floor(maxKg / perUnit)
+}
+
+/**
+ * A mass in kilograms, or `null` when there is no finite mass to give.
+ *
+ * **The check is on what comes out, not only on what went in**, and the difference is
+ * one multiplication wide: a finite number of tonnes past about 1.8e305 is an infinite
+ * number of kilograms. This function used to test the input, return the product, and so
+ * hand back `Infinity` from an input it had just certified finite — and `Infinity` is the
+ * one value that passes a ceiling check written as `mass > limit ? refuse : accept`
+ * without being either. A mutation that removed `calculator.js`'s `=== null` branch
+ * survived every test because of it, which is how this was found.
+ */
 export function massToKg(amount, unit) {
   const numericAmount = Number(amount)
   if (!Number.isFinite(numericAmount)) return null
-  return unit === 'tonnes' ? numericAmount * 1000 : numericAmount
+  const kilograms = unit === 'tonnes' ? numericAmount * 1000 : numericAmount
+  return Number.isFinite(kilograms) ? kilograms : null
 }
 
 export function kgString(amount, unit) {

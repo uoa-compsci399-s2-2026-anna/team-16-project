@@ -104,24 +104,34 @@ const totalKilograms = entry => {
 // ------------------------------------------------------------------ the ceilings
 //
 // **§6.2's own two numbers, and nothing invented.** `api/schemas.py` bounds one
-// destination line at `MAX_LINE_QTY` = 10,000,000 kg and one entry's whole `current`
-// scenario at `MAX_SCENARIO_QTY` = 50,000,000 kg. The column behind them is
-// `DECIMAL(16,3)`, which is four orders of magnitude wider again and never the binding
-// constraint. A client-side guard restates a server rule: it may refuse earlier and more
-// kindly than the API would, and it must never refuse something the API would take.
+// destination line at `MAX_LINE_QTY` and one entry's whole `current` scenario at
+// `MAX_SCENARIO_QTY`, and **as of v1.46 those are the same number: 50,000,000 kg.**
+// The column behind them is `DECIMAL(16,3)`, five orders of magnitude wider again and
+// never the binding constraint. A client-side guard restates a server rule: it may
+// refuse earlier and more kindly than the API would, and it must never refuse something
+// the API would take.
+//
+// **They are written as two names for one number, not collapsed into one.** They guard
+// different fields for different reasons and §6.2 still states them as two rules; a
+// single `MAX_KG` here would make the next divergence in `api/schemas.py` invisible on
+// this side. They are asserted equal in `tests/test_schemas.py`, not here.
 //
 // **Which bound goes on which field follows from what is actually sent.** The step-3
 // total never crosses the wire at all — `buildLines` sends the *destination lines* — so
 // the total's only job is to be the ceiling of the step-4 allocation, and the rule that
 // belongs on it is the scenario cap. The line cap belongs on a destination row, where the
-// number it bounds is the number that leaves the browser.
+// number it bounds is the number that leaves the browser. That was already true when the
+// two differed and it is what has to stay true if they diverge again.
 //
-// Putting the *line* cap on the total instead is the tempting simplification and it is
-// wrong: 30,000,000 kg split across three destinations is three legal lines and one legal
-// scenario, and the API accepts it. Refusing that at step 3 would be this project's own
-// definition of a defect.
+// **The ratio between them was a defect, and this comment used to state it as a fact.**
+// It read: a visitor who puts all of a legal total into one destination "is over this one
+// and under that one" — describing, without noticing, that "at least five destinations"
+// had become a precondition of reaching the step-3 ceiling. A site that only landfills
+// has no second destination to split across, and 50,000 t to animal feed is an ordinary,
+// truthful answer. `MAX_LINE_QTY` was raised to meet the scenario cap; nothing here
+// lowered `MAX_SCENARIO_KG`, and nothing about which cap guards which field moved.
 const MAX_SCENARIO_KG = 50000000
-const MAX_LINE_KG = 10000000
+const MAX_LINE_KG = 50000000
 
 // A ceiling stated in the unit the visitor is typing in. "50,000 tonnes" is a number they
 // can act on; "50,000,000 kg" on a field labelled tonnes is a conversion they have to do
@@ -482,9 +492,12 @@ function validateCurrentStep() {
     if (lines.some(line => line.qtyInput !== '' && Number(line.qtyInput) < 0)) return t('Destination amounts must be zero or greater.')
     if (lines.some(line => line.qtyInput && !isPlainDecimal(line.qtyInput))) return t('Write the number out in full, using digits only.')
     if (lines.some(line => line.qtyInput && !decimalPattern.test(line.qtyInput))) return t('Enter destination amounts to no more than two decimal places.')
-    // §6.2's per-line bound, restated. It is not implied by the total: the total is capped
-    // at the *scenario* ceiling, which is five lines' worth, so a visitor who puts all of
-    // a legal total into one destination is over this one and under that one.
+    // §6.2's per-line bound, restated. Since v1.46 it is the same number as the step-3
+    // ceiling, so a visitor who puts all of a legal total into one destination is refused
+    // by neither — which is the whole point of the change and the case this guard used to
+    // get wrong. The check is kept as its own rule rather than dropped as redundant: the
+    // total is not sent, `MAX_LINE_KG` is what §6.2 bounds the row by, and a step-3 total
+    // entered in containers reaches step 4 through a different path.
     //
     // The finiteness check used to be folded into the negative rule two lines above,
     // which answered "Destination amounts must be zero or greater" for a row far too

@@ -115,6 +115,106 @@ async def test_duplicate_destinations_within_one_scenario_are_rejected(app):
 
 
 # --------------------------------------------------------------------------
+# §6.2: the two amount ceilings, at the wire
+#
+# A refusal test does not assert that the permitted case is permitted. Each
+# bound below is asserted three ways - at the limit, one kilogram over, and
+# (for the line bound) carrying an entire legal scenario on its own - because
+# the missing third case is the one that shipped as a defect: until v1.46 a
+# site that sends all of its waste to a single destination could not describe
+# itself above 10,000 t, while the scenario it formed was legal at 50,000 t.
+# --------------------------------------------------------------------------
+
+
+async def test_a_line_at_the_per_line_ceiling_is_accepted(app):
+    entry = {
+        "sector": "processing",
+        "food_category": "dairy",
+        "current": [{"destination": "landfill", "qty_kg": "50000000.000"}],
+    }
+    response = await _post(app, {"entries": [entry]})
+    assert response.status_code == 200, response.text
+    assert response.json()["totals"]["total_kg"] == "50000000.000"
+
+
+async def test_a_line_one_kilogram_over_the_per_line_ceiling_is_rejected(app):
+    entry = {
+        "sector": "processing",
+        "food_category": "dairy",
+        "current": [{"destination": "landfill", "qty_kg": "50000001.000"}],
+    }
+    response = await _post(app, {"entries": [entry]})
+    assert response.status_code == 400, response.text
+    detail = response.json()["error"]["details"][0]
+    assert detail["field"] == "entries[0].current[0].qty_kg", detail
+    assert "50,000,000 kg" in detail["message"], detail
+
+
+async def test_one_destination_may_carry_an_entire_legal_scenario(app):
+    """**The case that started this, and the one nothing asserted.**
+
+    "All of our waste goes to animal feed" is an ordinary, truthful answer, and
+    a site that only landfills or only digests has no second destination to
+    split across. Until v1.46 `MAX_LINE_QTY` was a fifth of `MAX_SCENARIO_QTY`,
+    which made "at least five destinations" a precondition of reaching the
+    scenario ceiling - a rule nothing in the model asks for and nothing in the
+    contract stated.
+
+    Asserted at exactly `MAX_SCENARIO_QTY`, not below it: any smaller figure
+    passes against the old bound as well and would assert nothing.
+    """
+    entry = {
+        "sector": "processing",
+        "food_category": "dairy",
+        "current": [{"destination": "animal_feed", "qty_kg": "50000000.000"}],
+    }
+    response = await _post(app, {"entries": [entry]})
+    assert response.status_code == 200, response.text
+    body = response.json()
+    assert body["totals"]["total_kg"] == "50000000.000"
+
+
+async def test_a_scenario_at_the_scenario_ceiling_is_accepted(app):
+    """Spread across five lines, which is what the old ratio required."""
+    entry = {
+        "sector": "processing",
+        "food_category": "dairy",
+        "current": [
+            {"destination": code, "qty_kg": "10000000.000"}
+            for code in (
+                "landfill", "animal_feed", "compost",
+                "anaerobic_digestion", "not_harvested",
+            )
+        ],
+    }
+    response = await _post(app, {"entries": [entry]})
+    assert response.status_code == 200, response.text
+    assert response.json()["totals"]["total_kg"] == "50000000.000"
+
+
+async def test_a_scenario_one_kilogram_over_the_scenario_ceiling_is_rejected(app):
+    """`MAX_SCENARIO_QTY` had no test at any layer before v1.46.
+
+    Two lines, because one line over the scenario cap is now also one line over
+    the per-line cap and would be refused by the wrong rule - the same trap the
+    old ratio hid behind from the other direction.
+    """
+    entry = {
+        "sector": "processing",
+        "food_category": "dairy",
+        "current": [
+            {"destination": "landfill", "qty_kg": "25000000.000"},
+            {"destination": "animal_feed", "qty_kg": "25000001.000"},
+        ],
+    }
+    response = await _post(app, {"entries": [entry]})
+    assert response.status_code == 400, response.text
+    detail = response.json()["error"]["details"][0]
+    assert detail["field"] == "entries[0].current", detail
+    assert "50,000,000 kg" in detail["message"], detail
+
+
+# --------------------------------------------------------------------------
 # §6.2: the two scenarios of an entry describe the same mass
 # --------------------------------------------------------------------------
 

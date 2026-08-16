@@ -8,15 +8,37 @@
     <link rel="stylesheet" href="./css/styles.css">
   </head>
   <body class="home-page">
-    <!-- **THIS IS THE PAGE `/` SERVES.** `docker/nginx.conf` says `index home.html`, so a
-         visitor who types the bare address arrives here and not on the calculator. The
-         calculator used to be the de-facto home page while this file was the designed one,
-         which meant nobody reaching the address ever learned this page existed.
+    <!-- **THIS PAGE IS RETIRED. NOTHING LINKS TO IT, AND `/` NO LONGER SERVES IT.**
+
+         The team dropped it as the landing page: it looked poor, and it duplicated the
+         client's own website, which already carries this material. `docker/nginx.conf`
+         says `index index.html` again, the calculator's introduction screen is back, and
+         `home.html` is gone from the drawer, from every header navigation and from the
+         wordmark link on `stats.html` and `methodology.html`.
+
+         **It is retired, not deleted, and the reason is the news feed.** The client has
+         not decided whether they want one. `web/js/home.js` and `web/js/news.js` are here
+         for the same reason and say so at the top of each file. Everything still works if
+         you type `/home.html`: the page renders, the feed loads when
+         `KAICALC_NEWS_ORIGIN` is set, and its strings are still translated in all twenty
+         catalogues, because `tests/web/i18n_keys.py` reads every `web/*.html` and
+         `web/js/*.js` in the tree and does not ask which of them anybody can reach.
+
+         **So do not delete this file, and do not wire it back up, without the client's
+         answer.** Reviving it is: one line in `docker/nginx.conf` if it is to be the
+         landing page again, one row in the drawer on three pages, and a decision about
+         the calculator's introduction screen, which is the thing this page displaced.
+         Deleting it is: this file, `home.js`, `news.js`, their catalogue keys in twenty
+         files, `KAICALC_NEWS_ORIGIN` and `KAICALC_NEWS_IMAGE_ORIGINS` and the two CSP
+         directives derived from them. Neither is a tidy-up.
+
+         What follows is the page exactly as it was reviewed, frozen.
 
          **Every word below is already somewhere else in this front end, and that is a
          constraint rather than a coincidence.** The hero is this page's own; the rest is
-         lifted verbatim from `index.html`'s deleted introduction screen, from
-         `methodology.html` and from `stats.html` - pages the team wrote and the client has
+         lifted verbatim from `index.html`'s introduction screen - deleted when this page
+         landed, restored when it was retired - and from `methodology.html` and
+         `stats.html`: pages the team wrote and the client has
          seen. Nothing here is newly client-voiced copy, and nothing here is a placeholder
          waiting for copy that may never arrive. It also means every string on this page is
          already a key in twenty catalogues: a home page written in new English would have
@@ -94,9 +116,11 @@
           <p class="eyebrow" data-i18n>Food waste impact calculator</p>
           <h1 id="home-title" data-i18n>Turn food waste information into action</h1>
           <p class="lead" data-i18n>Estimate the environmental and financial impact of food waste, then explore how changes to its destination could affect the result.</p>
-          <!-- **One click, and it lands on step one.** This used to open the calculator's
-               own introduction screen, which carried a second button and no information
-               the reader did not already have from this page. That screen is gone. -->
+          <!-- One click, and it used to land on step one. The calculator's introduction
+               screen is back now that this page is retired, so following this link from a
+               directly-typed /home.html reaches that screen rather than the first
+               question. Left as it is: this page is frozen at the state it was reviewed
+               in, and the link still goes to the calculator. -->
           <a class="button button-primary button-large" href="./index.html" data-i18n>Use the calculator</a>
           <p class="privacy-note" data-i18n>Your entries are submitted anonymously when you calculate results.</p>
         </div>

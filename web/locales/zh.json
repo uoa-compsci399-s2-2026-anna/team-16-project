@@ -313,11 +313,15 @@
     "How many containers?": "有多少个容器？",
     "Choose a weight, or the container you fill.": "选择重量单位，或您实际装满的容器。",
     "The total waste amount — a weight, or how many containers you fill": "浪费总量——重量，或您装满了多少个容器",
-    "Clear calculator data and start again": "清除计算器数据并重新开始",
-    "Clear all calculator data and start again?": "要清除所有计算器数据并重新开始吗？",
     "Site navigation": "站点导航",
     "Write the number out in full, using digits only.": "请完整写出数字，只使用阿拉伯数字。",
     "Enter no more than %(limit)s %(unit)s.": "填写的数量不得超过 %(limit)s %(unit)s。",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "各去向的数量不得超过 %(limit)s %(unit)s。"
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "各去向的数量不得超过 %(limit)s %(unit)s。",
+    "Clear all calculator data and return to the introduction?": "要清除所有计算器数据并返回简介页吗？",
+    "Clear calculator data and return to the introduction": "清除计算器数据并返回简介页",
+    "Food Waste Impact Calculator": "食物浪费影响计算器",
+    "For New Zealand food businesses": "为新西兰食品企业而设",
+    "Start calculator": "启动计算器",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "把您的食物浪费测量数据，变成对潜在环境与经济影响的清晰认识。"
   }
 }

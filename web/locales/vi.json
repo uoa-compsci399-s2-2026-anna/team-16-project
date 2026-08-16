@@ -309,11 +309,15 @@
     "How many containers?": "Bao nhiêu thùng chứa?",
     "Choose a weight, or the container you fill.": "Chọn đơn vị khối lượng, hoặc thùng chứa mà bạn đổ đầy.",
     "The total waste amount — a weight, or how many containers you fill": "Tổng lượng rác thải — một khối lượng, hoặc số thùng chứa bạn đổ đầy",
-    "Clear calculator data and start again": "Xóa dữ liệu trong công cụ tính và bắt đầu lại",
-    "Clear all calculator data and start again?": "Xóa toàn bộ dữ liệu trong công cụ tính và bắt đầu lại?",
     "Site navigation": "Điều hướng trang web",
     "Write the number out in full, using digits only.": "Viết đầy đủ con số, chỉ dùng chữ số.",
     "Enter no more than %(limit)s %(unit)s.": "Không nhập quá %(limit)s %(unit)s.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Nhập lượng tại mỗi điểm đến không quá %(limit)s %(unit)s."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Nhập lượng tại mỗi điểm đến không quá %(limit)s %(unit)s.",
+    "Clear all calculator data and return to the introduction?": "Xóa toàn bộ dữ liệu trong công cụ tính và quay về phần giới thiệu?",
+    "Clear calculator data and return to the introduction": "Xóa dữ liệu trong công cụ tính và quay về phần giới thiệu",
+    "Food Waste Impact Calculator": "Công cụ tính tác động của thực phẩm bỏ đi",
+    "For New Zealand food businesses": "Dành cho các doanh nghiệp thực phẩm ở New Zealand",
+    "Start calculator": "Mở công cụ tính",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Biến các số liệu đo lường thực phẩm bỏ đi của bạn thành bức tranh rõ hơn về tác động môi trường và tài chính có thể xảy ra."
   }
 }

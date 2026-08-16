@@ -91,8 +91,8 @@ playwright_api = pytest.importorskip(
 )
 
 #: The ORIGIN, not a page — the taxonomy probe and the calculator are built from
-#: it and are different shapes. `/` serves `home.html`, so the wizard has to be
-#: named.
+#: it and are different shapes. `/` serves this same file, and it is named anyway
+#: so the constant does not move when the `index` directive does.
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
 CALCULATOR = BASE + "/index.html"
 
@@ -201,6 +201,9 @@ def page_at(browser, taxonomy):
         except Exception as error:  # pragma: no cover - environment guard
             pytest.skip(f"the front end is not being served at {CALCULATOR}: {error}")
         page.add_style_tag(content=FORCE_AUTO)
+        # The calculator opens on its introduction screen again - `home.html` is
+        # retired and `/` serves this page - so the wizard is one click away.
+        page.click('[data-action="start"]')
         page.wait_for_selector('input[name="sector"]', timeout=10000)
         return page
 

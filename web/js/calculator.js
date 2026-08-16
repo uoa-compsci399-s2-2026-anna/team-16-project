@@ -186,24 +186,36 @@ const hasData = () => Boolean(state.entries.length || state.sector || state.food
 const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, current: state.current.map(line => ({ ...line })) })
 
 /**
- * **There is no introduction screen, and `state.step` no longer has a -1.**
+ * The introduction screen: `state.step === -1`, and the first thing a visitor meets.
  *
- * What stood here was a landing screen: an eyebrow, an `<h1>`, a lead paragraph, a
- * "Start calculator" button, a decorative arch band and a "What you will need" panel.
- * It was reached by every visitor because `nginx` served `index.html` at `/`, which
- * made the calculator the de-facto home page while `home.html` - first in every other
- * page's navigation - went undiscovered.
+ * **This screen was deleted once and is back by the team's decision, not by accident.**
+ * For one week `/` served `home.html` and this page opened on step one. `home.html` is
+ * retired now - the team's reading is that it looked poor and duplicated the client's
+ * own website, which already carries that material - so `/` serves `index.html` again
+ * and the landing screen is this one. The extra click between the address and step one
+ * is accepted: it buys the eyebrow, the heading, the privacy note and the "What you
+ * will need" list, and there is no longer a page in front of this one saying the same
+ * things.
  *
- * `/` now serves `home.html`. That leaves this screen saying, one click later, what the
- * page before it had just said, with a second button to press; the middle click carried
- * no information. So the hero and the button are gone, and the two things worth keeping
- * moved to `home.html` verbatim rather than being rewritten: the "What you will need"
- * list, which is genuinely step zero and is more use before the click than after it, and
- * the arch band, which is the brand's primary supporting graphic.
+ * Recovered from `a749f70^` rather than rewritten, so this is the reviewed original.
+ * Two things around it changed while it was gone and it inherits both: `.hero-food-pattern`
+ * now carries a photograph behind the arch cut-outs (the mask markup here is unchanged
+ * and does the cutting), and the header this screen puts on a Kale ground now also
+ * carries the language chooser, whose label sits in a white capsule - see the note over
+ * `.language-bar__label` in `styles.css` for why `.intro-header` must NOT repaint it.
  *
- * **Do not reinstate a landing screen here.** Two landing pages was the defect; a second
- * one behind a link from the first is the same defect with an extra click.
+ * `home.html` keeps its own static copy of the arch band and the check-list. That is
+ * duplication of markup, and it is deliberate: the retired page is frozen exactly as it
+ * was reviewed, so that reviving it is a routing decision rather than a rebuild.
  */
+function introduction() {
+  return `<section class="hero" aria-labelledby="page-title">
+    <div class="hero-copy"><p class="eyebrow">${escapeHtml(t('For New Zealand food businesses'))}</p><h1 id="page-title">${escapeHtml(t('Food Waste Impact Calculator'))}</h1><p class="lead">${escapeHtml(t('Turn your food waste measurements into a clearer view of their potential environmental and financial impact.'))}</p><button class="button button-primary button-large" type="button" data-action="start">${escapeHtml(t('Start calculator'))}</button><p class="privacy-note">${escapeHtml(t('Your entries are submitted anonymously when you calculate results.'))}</p></div>
+    <div class="hero-food-pattern" aria-hidden="true"><svg class="food-arch-mask" viewBox="0 0 1500 190" preserveAspectRatio="none"><defs><mask id="food-arch-cutouts"><rect width="1500" height="190" fill="white" />${[150, 450, 750, 1050, 1350].flatMap(centre => [`<ellipse cx="${centre}" cy="190" rx="205" ry="166" fill="none" stroke="black" stroke-width="32"/>`, `<ellipse cx="${centre}" cy="190" rx="151" ry="120" fill="none" stroke="black" stroke-width="28"/>`]).join('')}${[300, 600, 900, 1200].map(x => `<path d="M ${x} 72 L ${x + 36} 126 L ${x} 181 L ${x - 36} 126 Z" fill="black"/>`).join('')}</mask></defs><rect width="1500" height="190" fill="currentColor" mask="url(#food-arch-cutouts)"/></svg></div>
+    <div class="hero-support-grid"><div class="needs-panel"><h2>${escapeHtml(t('What you will need'))}</h2><ul class="check-list"><li>${escapeHtml(t('Where the waste occurred in the food supply chain'))}</li><li>${escapeHtml(t('The food category, if known'))}</li><li>${escapeHtml(t('The total waste amount — a weight, or how many containers you fill'))}</li><li>${escapeHtml(t('How that total was distributed across waste destinations'))}</li></ul></div></div>
+  </section>`
+}
+
 function sectorStep() {
   const sectors = sorted(state.taxonomy.sectors)
   return `<section class="content-section" aria-labelledby="stage-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 1 }))}</p><h1 id="stage-title">${escapeHtml(t('Where in the food supply chain did this waste occur?'))}</h1><p class="section-intro" id="supply-chain-support">${escapeHtml(t('Choose the stage that best describes where the food waste was generated.'))}</p>
@@ -212,7 +224,7 @@ function sectorStep() {
       const expanded = state.expandedSectors.includes(sector.code)
       const id = `sector-${slug(sector.code)}`
       return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(sector.description || '')}</span></span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label><button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${escapeHtml(expanded ? t('Hide details for %(name)s', { name: sector.name }) : t('Show details for %(name)s', { name: sector.name }))}">${escapeHtml(t('Details'))} <span class="chevron ${expanded ? 'expanded' : ''}" aria-hidden="true">⌄</span></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(sector.details || sector.description || t('Additional details have not been supplied.'))}</p></div></div>`
-    }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: null })}</section>`
+    }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: -1 })}</section>`
 }
 
 function foodStep() {
@@ -661,7 +673,7 @@ function clearDraft() {
 }
 
 export function render(main) {
-  main.className = 'main-content'
+  main.className = `main-content${state.step === -1 ? ' introduction-main' : ''}`
   if (state.loading && !state.taxonomy) {
     main.innerHTML = `<section class="content-section"><p class="loading-state" role="status">${escapeHtml(t('Loading calculator options…'))}</p></section>`
     return
@@ -673,7 +685,7 @@ export function render(main) {
     return
   }
   const screens = [sectorStep, foodStep, amountStep, destinationStep, reviewStep]
-  main.innerHTML = state.step === 5 ? renderResults(state) : screens[state.step]()
+  main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
 }
 
 /**
@@ -688,11 +700,19 @@ export function render(main) {
  * takes back exactly the space this change was made to free.
  */
 export function renderChrome() {
-  // The header no longer has two appearances. It carried a Kale ground and a white
-  // wordmark on the introduction screen and a white ground everywhere else; with the
-  // introduction gone there is one state, so the class toggle and the second logo file
-  // went with it rather than being left as a branch that can only take one side.
+  // The header has two appearances again: a Kale ground with the white wordmark on the
+  // introduction screen, a white ground with the dark one everywhere else. Both sides of
+  // the branch are reachable, which is what makes it a branch rather than a leftover.
+  //
+  // **What this must not repaint is the language chooser's label.** It sits in a white
+  // capsule on both grounds now, so an `.intro-header` colour rule would put white text
+  // on white - see the note over `.language-bar__label` in `styles.css`.
+  const header = document.getElementById('site-header')
+  const logo = document.getElementById('brand-logo')
   const clearButton = document.getElementById('clear-button')
+  const intro = state.step === -1
+  header.classList.toggle('intro-header', intro)
+  logo.src = intro ? './assets/kai-commitment-logo-white.webp' : './assets/kai-commitment-logo.png'
   clearButton.hidden = !hasData()
 }
 
@@ -702,6 +722,7 @@ export function bindCalculator(main, retryTaxonomy) {
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action
+    if (action === 'start') setState({ step: 0, ...clearedError() })
     if (action === 'go-step') setState({ step: Number(control.dataset.step), ...clearedError() })
     if (action === 'toggle-sector') {
       const code = control.dataset.sector
@@ -732,7 +753,7 @@ export function bindCalculator(main, retryTaxonomy) {
       setState({ entries: state.entries.filter((_, entryIndex) => entryIndex !== index), error: null })
     }
     if (action === 'calculate') submitCalculation()
-    if (action === 'start-over' && window.confirm(t('Clear all calculator data and start again?'))) resetCalculator()
+    if (action === 'start-over' && window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
     if (action === 'download-results') downloadResults(state)
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
     if (action === 'explore-improvements') openImprovement(state)
@@ -744,7 +765,7 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'compare-improvement') compareImprovement(state, publicError)
     if (action === 'retry' && !blocked()) retryTaxonomy()
     if (action === 'view-methodology') window.location.href = './methodology.html'
-    if (['go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
+    if (['start', 'go-step', 'continue', 'add-entry', 'edit-entry', 'calculate', 'start-over', 'retry', 'view-methodology'].includes(action)) {
       window.scrollTo({ top: 0, behavior: 'smooth' })
     }
   })

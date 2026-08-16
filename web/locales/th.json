@@ -309,11 +309,15 @@
     "How many containers?": "ภาชนะกี่ใบ",
     "Choose a weight, or the container you fill.": "เลือกหน่วยน้ำหนัก หรือภาชนะที่คุณใส่จนเต็ม",
     "The total waste amount — a weight, or how many containers you fill": "ปริมาณขยะทั้งหมด — น้ำหนัก หรือจำนวนภาชนะที่คุณใส่จนเต็ม",
-    "Clear calculator data and start again": "ล้างข้อมูลในเครื่องคำนวณและเริ่มใหม่",
-    "Clear all calculator data and start again?": "ล้างข้อมูลทั้งหมดในเครื่องคำนวณและเริ่มใหม่หรือไม่",
     "Site navigation": "การนำทางเว็บไซต์",
     "Write the number out in full, using digits only.": "กรอกตัวเลขให้เต็มจำนวน โดยใช้ตัวเลขเท่านั้น",
     "Enter no more than %(limit)s %(unit)s.": "กรอกได้ไม่เกิน %(limit)s %(unit)s",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "กรอกปริมาณของแต่ละปลายทางได้ไม่เกิน %(limit)s %(unit)s"
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "กรอกปริมาณของแต่ละปลายทางได้ไม่เกิน %(limit)s %(unit)s",
+    "Clear all calculator data and return to the introduction?": "ล้างข้อมูลทั้งหมดในเครื่องคำนวณและกลับไปที่หน้าแนะนำหรือไม่",
+    "Clear calculator data and return to the introduction": "ล้างข้อมูลในเครื่องคำนวณและกลับไปที่หน้าแนะนำ",
+    "Food Waste Impact Calculator": "เครื่องคำนวณผลกระทบจากขยะอาหาร",
+    "For New Zealand food businesses": "สำหรับธุรกิจอาหารในนิวซีแลนด์",
+    "Start calculator": "เริ่มใช้เครื่องคำนวณ",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "เปลี่ยนตัวเลขการวัดขยะอาหารของคุณ ให้เห็นภาพผลกระทบต่อสิ่งแวดล้อมและการเงินที่อาจเกิดขึ้นได้ชัดเจนขึ้น"
   }
 }

@@ -309,11 +309,15 @@
     "How many containers?": "Hoeveel containers?",
     "Choose a weight, or the container you fill.": "Kies een gewichtseenheid of de container die u vult.",
     "The total waste amount — a weight, or how many containers you fill": "De totale hoeveelheid afval — een gewicht, of hoeveel containers u vult",
-    "Clear calculator data and start again": "Gegevens van de rekentool wissen en opnieuw beginnen",
-    "Clear all calculator data and start again?": "Alle gegevens van de rekentool wissen en opnieuw beginnen?",
     "Site navigation": "Sitenavigatie",
     "Write the number out in full, using digits only.": "Schrijf het getal voluit, alleen met cijfers.",
     "Enter no more than %(limit)s %(unit)s.": "Voer niet meer dan %(limit)s %(unit)s in.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Voer hoeveelheden per bestemming van maximaal %(limit)s %(unit)s in."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Voer hoeveelheden per bestemming van maximaal %(limit)s %(unit)s in.",
+    "Clear all calculator data and return to the introduction?": "Alle gegevens van de rekentool wissen en terugkeren naar de inleiding?",
+    "Clear calculator data and return to the introduction": "Gegevens van de rekentool wissen en terugkeren naar de inleiding",
+    "Food Waste Impact Calculator": "Rekentool voor het effect van voedselafval",
+    "For New Zealand food businesses": "Voor Nieuw-Zeelandse voedselbedrijven",
+    "Start calculator": "Rekentool starten",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Zet uw metingen van voedselafval om in een duidelijker beeld van de mogelijke gevolgen voor het milieu en de financiën."
   }
 }

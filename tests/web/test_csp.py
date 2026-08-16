@@ -52,7 +52,14 @@ ROOT = Path(__file__).resolve().parents[2]
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080")
 STATS = json.loads((ROOT / "tests" / "fixtures" / "stats.json").read_text(encoding="utf-8"))
 
-PAGES = ("/", "/home.html", "/stats.html", "/methodology.html")
+#: The policy is set on nginx's static `location /`, so it covers every file under
+#: it - including `home.html`, which is retired but still served. It is listed here
+#: for that reason and for no other: a page nobody links to is still a page a policy
+#: has to be correct for, and it is the page whose news feed the `connect-src` and
+#: `img-src` grants exist for. `/` is `index.html`; both are named because `/` is the
+#: address a visitor types and the one whose headers a reverse proxy is most likely
+#: to rewrite.
+PAGES = ("/", "/index.html", "/home.html", "/stats.html", "/methodology.html")
 
 
 def _stack_is_up() -> bool:

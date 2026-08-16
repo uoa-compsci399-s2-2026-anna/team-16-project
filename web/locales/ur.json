@@ -310,11 +310,15 @@
     "How many containers?": "کتنے برتن؟",
     "Choose a weight, or the container you fill.": "وزن کی اکائی منتخب کریں، یا وہ برتن جسے آپ بھرتے ہیں۔",
     "The total waste amount — a weight, or how many containers you fill": "فضلے کی کل مقدار — وزن، یا آپ کتنے برتن بھرتے ہیں",
-    "Clear calculator data and start again": "کیلکولیٹر کا ڈیٹا مٹائیں اور دوبارہ شروع کریں",
-    "Clear all calculator data and start again?": "کیلکولیٹر کا سارا ڈیٹا مٹا کر دوبارہ شروع کریں؟",
     "Site navigation": "سائٹ نیویگیشن",
     "Write the number out in full, using digits only.": "عدد مکمل لکھیں، صرف ہندسوں میں۔",
     "Enter no more than %(limit)s %(unit)s.": "%(limit)s %(unit)s سے زیادہ درج نہ کریں۔",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "منزل کی مقدار %(limit)s %(unit)s سے زیادہ درج نہ کریں۔"
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "منزل کی مقدار %(limit)s %(unit)s سے زیادہ درج نہ کریں۔",
+    "Clear all calculator data and return to the introduction?": "کیلکولیٹر کا سارا ڈیٹا مٹا کر تعارف پر واپس جائیں؟",
+    "Clear calculator data and return to the introduction": "کیلکولیٹر کا ڈیٹا مٹائیں اور تعارف پر واپس جائیں",
+    "Food Waste Impact Calculator": "کھانے کے ضیاع کے اثر کا کیلکولیٹر",
+    "For New Zealand food businesses": "نیوزی لینڈ کے کھانے پینے کے کاروباروں کے لیے",
+    "Start calculator": "کیلکولیٹر شروع کریں",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "اپنے کھانے کے ضیاع کی پیمائشوں کو اُن کے ممکنہ ماحولیاتی اور مالی اثر کی واضح تصویر میں بدلیں۔"
   }
 }

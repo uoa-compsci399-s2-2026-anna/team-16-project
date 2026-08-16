@@ -29,11 +29,28 @@ ROOT = Path(__file__).resolve().parents[1]
 WEB = ROOT / "web"
 FIXTURES = ROOT / "tests" / "fixtures"
 
+#: The pages a visitor can reach. `home.html` is NOT one of them any more - see
+#: `RETIRED_PAGES` - so it is out of every relationship asserted below: it is not a
+#: link any page owes, and it is not a page that owes links.
 PAGES = {
-    "home": WEB / "home.html",
     "calculator": WEB / "index.html",
     "statistics": WEB / "stats.html",
     "documentation": WEB / "methodology.html",
+}
+
+#: In the tree, served if its address is typed, reachable from nothing.
+#:
+#: `home.html` was the landing page for one week. The team dropped it - it looked poor
+#: and duplicated the client's own website, which already carries that material - and
+#: `index.html`'s introduction screen came back in its place. It is retired rather than
+#: deleted because the client has not decided about the news feed it carries.
+#:
+#: **Retired must not become rotted**, which is the whole reason this constant exists
+#: rather than the file simply falling out of the suite. `test_the_retired_home_page…`
+#: below holds it to the shape it was reviewed in, so that reviving it is a routing
+#: decision rather than a repair job.
+RETIRED_PAGES = {
+    "home": WEB / "home.html",
 }
 
 REQUIRED_CSP = {
@@ -272,7 +289,9 @@ def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = Fals
     return resolved
 
 
-#: The three pages that carry the four-link public navigation in their header.
+#: The two pages that carry the public navigation in their header. It was three
+#: pages and four links until `home.html` was retired; the calculator has never
+#: been one of them.
 #:
 #: **The calculator is not one of them, and that is a measurement.** Its header
 #: row already carries the language chooser §7.7.4 admitted to it, and its whole
@@ -288,7 +307,7 @@ def _resolve_local(owner: Path, reference: str, *, allow_image_data: bool = Fals
 #: documentation page itself. That is what `test_the_calculator_is_reachable…`
 #: below asserts, so "the calculator carries no nav" can never quietly become
 #: "the calculator links nowhere".
-NAVIGATED_PAGES = ("home", "statistics", "documentation")
+NAVIGATED_PAGES = ("statistics", "documentation")
 
 
 def test_public_page_relationships_and_accessible_shells():
@@ -341,16 +360,54 @@ def test_public_page_relationships_and_accessible_shells():
 
         scripts = page.matching("script")
         assert scripts and any(script["attrs"].get("type") == "module" for script in scripts)
-    home_text = _read(PAGES["home"]).lower()
-    assert "news" in home_text
-    assert "calculator" in home_text and "index.html" in home_text
     assert "calculator" in _read(PAGES["calculator"]).lower()
+
+
+def test_the_retired_home_page_is_still_in_the_tree_and_still_whole():
+    """Retired, not deleted - and not rotted either.
+
+    `home.html` is reachable from nothing. That is the decision, and it means no other
+    test in this file looks at the file at all, which is exactly how a retired page
+    becomes a broken one nobody notices until the client asks for it back.
+
+    So the three things that must survive the retirement are asserted here: the file
+    exists, it still carries the news section that is the reason it was kept, and it
+    still links to the calculator - so a reader who reaches it from a bookmark or a
+    search result is not stranded on a page with no way into the tool.
+
+    **It is deliberately NOT asserted to be linked from anywhere.** If a link back to
+    it ever reappears, `test_no_reachable_page_links_to_a_retired_one` below fails.
+    """
+    home = RETIRED_PAGES["home"]
+    assert home.is_file(), "home.html was deleted; it is retired pending the client's "        "decision on the news feed, which has not been given"
+    text = _read(home).lower()
+    assert "news" in text, (
+        "the news section is the reason this page is kept rather than deleted"
+    )
+    assert "index.html" in text, "the retired page must still reach the calculator"
+
+
+def test_no_reachable_page_links_to_a_retired_one():
+    """The other half of retirement, and the half a comment cannot enforce.
+
+    A page is retired when nothing links to it. Restoring one row to the drawer, one
+    entry to a header navigation or one `href` on a wordmark quietly un-retires it -
+    each is a one-line change that reads as a fix, and the client has not asked for it.
+    """
+    for name in (path.name for path in RETIRED_PAGES.values()):
+        for role, path in PAGES.items():
+            linked = _linked_page_names(_page(path)[1])
+            assert name not in linked, (
+                f"{path.name} links to the retired page {name}. It is in the tree "
+                "pending the client's decision on the news feed; it is not a "
+                "destination. See RETIRED_PAGES."
+            )
 
 
 def test_the_calculator_is_reachable_from_every_page_and_reaches_the_documentation():
     """What the calculator's navigation exemption is bounded by.
 
-    The calculator carries no four-link navigation — see ``NAVIGATED_PAGES`` for
+    The calculator carries no header navigation — see ``NAVIGATED_PAGES`` for
     the measurement — so the two things that exemption must not cost are
     asserted here directly: a visitor can always get *to* the calculator, and a
     visitor *on* the calculator can always reach the page that publishes the
@@ -377,7 +434,7 @@ def test_every_declared_runtime_asset_is_local_and_present():
     """News article links may be external; scripts, CSS, fonts and images may not."""
 
     css_files: set[Path] = set()
-    for path in PAGES.values():
+    for path in (*PAGES.values(), *RETIRED_PAGES.values()):
         _, page = _page(path)
         references = [
             *(page.values("script", "src")),

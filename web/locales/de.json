@@ -309,11 +309,15 @@
     "How many containers?": "Wie viele Behälter?",
     "Choose a weight, or the container you fill.": "Wählen Sie eine Gewichtseinheit oder den Behälter, den Sie füllen.",
     "The total waste amount — a weight, or how many containers you fill": "Die gesamte Abfallmenge — ein Gewicht oder die Anzahl der Behälter, die Sie füllen",
-    "Clear calculator data and start again": "Daten des Rechners löschen und neu beginnen",
-    "Clear all calculator data and start again?": "Alle Daten des Rechners löschen und neu beginnen?",
     "Site navigation": "Website-Navigation",
     "Write the number out in full, using digits only.": "Schreiben Sie die Zahl vollständig aus, nur mit Ziffern.",
     "Enter no more than %(limit)s %(unit)s.": "Geben Sie höchstens %(limit)s %(unit)s ein.",
-    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Geben Sie Mengen je Entsorgungsweg von höchstens %(limit)s %(unit)s ein."
+    "Enter destination amounts of no more than %(limit)s %(unit)s.": "Geben Sie Mengen je Entsorgungsweg von höchstens %(limit)s %(unit)s ein.",
+    "Clear all calculator data and return to the introduction?": "Alle Daten des Rechners löschen und zur Einführung zurückkehren?",
+    "Clear calculator data and return to the introduction": "Daten des Rechners löschen und zur Einführung zurückkehren",
+    "Food Waste Impact Calculator": "Rechner für die Auswirkungen von Lebensmittelabfällen",
+    "For New Zealand food businesses": "Für neuseeländische Lebensmittelbetriebe",
+    "Start calculator": "Rechner starten",
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Machen Sie aus Ihren Messwerten zu Lebensmittelabfällen ein klareres Bild ihrer möglichen ökologischen und finanziellen Auswirkungen."
   }
 }

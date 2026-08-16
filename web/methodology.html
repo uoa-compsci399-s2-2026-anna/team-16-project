@@ -25,13 +25,18 @@
       <p class="noscript-notice">This page needs JavaScript to run. With scripting turned off it cannot load the published factors, or be shown in a language other than English.</p>
     </noscript>
     <a class="skip-link" href="#main-content" data-i18n>Skip to methodology</a>
-    <!-- **THE DRAWER. One markup block, the same on all four pages.**
+    <!-- **THE DRAWER. One markup block, the same on all three reachable pages.**
+
+         **Three rows, not four.** `home.html` is retired: the team's reading is that it
+         looked poor and duplicated the client's own website, which already carries that
+         material. The file is still in the tree (see `web/README.md`), but nothing links
+         to it, so it is not a destination and does not appear here.
 
          `<details>`, not a button and a class toggle. It folds, takes a keyboard and
          announces its own expanded state with no script at all, which matters on
-         `home.html`, `stats.html` and `methodology.html`: they are static content and
-         must not lose their navigation when scripting is off. `web/js/drawer.js` adds
-         `Escape` and syncs `aria-expanded`; neither is load-bearing.
+         `stats.html` and `methodology.html`: they are static content and must not lose
+         their navigation when scripting is off. `web/js/drawer.js` adds `Escape` and
+         syncs `aria-expanded`; neither is load-bearing.
 
          **It overlays and never compresses.** `position: fixed`, pinned to the page's
          inline-start edge and vertically centred, so it takes no width from the
@@ -48,7 +53,7 @@
          owns the bottom edge and is what put every step's primary action above the
          fold.
 
-         **No `aria-current` here**, deliberately. The header navigation on the three
+         **No `aria-current` here**, deliberately. The header navigation on the two
          content pages carries it, and a second element claiming to be the current page
          is a page with two current pages. On the calculator nothing claims it, which is
          what `tests/test_d_statistics_content.py` asserts. -->
@@ -58,7 +63,6 @@
       </summary>
       <div class="site-drawer__panel">
         <nav class="site-drawer__nav" data-i18n-attr="aria-label" aria-label="Site navigation">
-          <a href="./home.html" data-i18n>Home</a>
           <a href="./index.html" data-i18n>Calculator</a>
           <a href="./stats.html" data-i18n>Statistics</a>
           <a href="./methodology.html" data-i18n>Documentation</a>
@@ -67,12 +71,11 @@
     </details>
     <header class="site-header">
       <div class="header-inner public-header-inner methodology-header-inner">
-        <a class="brand" href="./home.html">
+        <a class="brand" href="./index.html">
           <img src="./assets/kai-commitment-logo.png" data-i18n-attr="alt" alt="Kai Commitment - Leading action on food waste">
           <span class="prototype-label" data-i18n>Impact calculator</span>
         </a>
         <nav class="public-nav" data-i18n-attr="aria-label" aria-label="Primary navigation">
-          <a href="./home.html" data-i18n>Home</a>
           <a href="./index.html" data-i18n>Calculator</a>
           <a href="./stats.html" data-i18n>Statistics</a>
           <a href="./methodology.html" aria-current="page" data-i18n>Documentation</a>

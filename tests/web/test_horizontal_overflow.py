@@ -53,15 +53,20 @@ PATHS = {
     # The factor-set summary: fetched from the API after load, and the element
     # the defect was in.
     "/methodology.html": ".review-destinations dd",
-    # The calculator, and it is at `/index.html` now: `/` serves `home.html`,
-    # which is measured on its own line below. The hero this used to wait on
-    # was the introduction screen, which is gone - the calculator opens on step
-    # one, whose heading appears only once the taxonomy has resolved, so it is
-    # the same kind of marker the hero was and a stricter one.
+    # The calculator. `/` serves it again, and `/index.html` is named rather than
+    # `/` so this measures the file whatever the `index` directive says next.
+    #
+    # **The marker is step one's heading, not the introduction screen's**, even
+    # though the introduction is what the page now opens on. `#stage-title` appears
+    # only once the taxonomy has resolved, so waiting on it measures the widest
+    # thing this page renders - forty food categories and eleven destination rows -
+    # rather than a hero that is one heading and a button. `walk()` in
+    # `tests/web/test_step_navigation.py` measures the introduction screen for
+    # overflow at every breakpoint, including 320px.
     "/index.html": "#main-content #stage-title",
     # The two content pages joined this measurement at v1.30, when the language
     # chooser was added to their header rows. That row already carried a brand
-    # lockup and a four-link navigation, so it is the third block in a row that
+    # lockup and a header navigation, so it is the third block in a row that
     # was measured as not fitting three at 938px - it wraps, and a wrap is
     # exactly the thing that stops being a wrap and starts being an overflow at
     # 320px in a language whose words are longer.
@@ -72,6 +77,9 @@ PATHS = {
     # the WordPress feed being reachable or on how many buckets survive
     # suppression today.
     "/stats.html": "#stats-breakdown-content[aria-busy='false']",
+    # Retired - nothing links to it - but still served, and still measured: a page
+    # kept for the client's pending decision on the news feed is a page that must
+    # still be readable when they make it.
     "/home.html": "#news-feed[aria-busy='false']",
 }
 
@@ -139,6 +147,14 @@ def _open(browser, path, language, width):
     )
     page = context.new_page()
     page.goto(f"{BASE}{path}", wait_until="networkidle")
+    # The calculator opens on its introduction screen again, and the marker below
+    # is step one's heading, so this file has to press the button a visitor presses.
+    # Measuring the introduction instead would measure one heading and a button
+    # where the wizard's widest screens are what this test exists for; the
+    # introduction is measured for overflow at every breakpoint by
+    # `tests/web/test_step_navigation.py::test_no_horizontal_overflow_at_any_breakpoint`.
+    if path == "/index.html":
+        page.click('[data-action="start"]')
     # Both pages render from JavaScript, so this waits for the page's own
     # marker element. Without it the measurement can be of an empty `<main>`,
     # which never overflows and would pass every assertion here for the wrong

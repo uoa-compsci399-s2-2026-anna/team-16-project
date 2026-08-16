@@ -52,8 +52,9 @@ playwright_api = pytest.importorskip(
 
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURE = json.loads((ROOT / "tests" / "fixtures" / "calculate_response_single.json").read_text(encoding="utf-8"))
-#: `/index.html`, not `/`. `/` serves `home.html` now, and the calculator
-#: opens on step one rather than on an introduction screen.
+#: `/index.html` rather than `/`, and they are now the same document: nginx says
+#: `index index.html` again. Named explicitly so this file measures the calculator
+#: whatever the `index` directive says next.
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
 
 
@@ -154,7 +155,7 @@ def page_at(browser):
         page.add_style_tag(content=FORCE_AUTO)
         if MUTATION_CSS:
             page.add_style_tag(content=MUTATION_CSS)
-        page.wait_for_selector('input[name="sector"]', timeout=10000)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
         return page
 
     yield open_page
@@ -164,13 +165,13 @@ def page_at(browser):
 
 def walk(page):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
-    at each screen — 0..4, then results (5).
+    at each screen — intro, 0..4, then results (5).
 
-    **There is no intro screen to yield any more.** It used to be step -1: a hero
-    with its own "Start calculator" button, which every visitor met because nginx
-    served `index.html` at `/`. `/` serves `home.html` now, so this page is the
-    calculator and opens on step one — one screen fewer to walk, and one fewer to
-    measure.
+    **The intro screen is back and is walked again.** It is step -1: a hero with its
+    own "Start calculator" button, which every visitor meets because nginx serves
+    `index.html` at `/`. It was deleted for a week while `home.html` held that
+    address; `home.html` is retired, so the screen and this yield came back with it —
+    seven screens to measure rather than six.
 
     A generator rather than a `go_to(step)` because the wizard is a sequence:
     re-walking it once per screen measures the same seven screens seven times
@@ -179,6 +180,8 @@ def walk(page):
     Each screen is yielded before it is interacted with, because that is the
     state the visitor lands in and the moment they look for the next action.
     """
+    yield -1
+    page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
     yield 0
     page.evaluate("document.querySelector('input[name=sector]').click()")
@@ -212,13 +215,12 @@ def advance_to(page, step):
     raise AssertionError(f"step {step} was never reached")
 
 
-#: The screen, and the selector for the action that advances it. The results
-#: screen's advancing action is the download.
-#:
-#: Step -1 was here — the introduction screen's own full-bleed CTA, measured at
-#: -447 / -362 / -273 — and it is gone with the screen. Nothing else in this
-#: table changed: `/index.html` now opens on step 0.
+#: The screen, and the selector for the action that advances it. The intro has
+#: no bar — it is a full-bleed hero whose own CTA measured -447 / -362 / -273 on
+#: the pass that put this table here — and the results screen's advancing action
+#: is the download.
 PRIMARY = {
+    -1: '[data-action="start"]',
     0: '.step-nav [data-action="continue"]',
     1: '.step-nav [data-action="continue"]',
     2: '.step-nav [data-action="continue"]',
@@ -253,14 +255,18 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
     page = page_at(width, height, dpr)
     failures = []
     for step in walk(page):
-        # Step one has no Back: it is the first screen of the calculator, the
-        # introduction screen it used to return to is gone, and a Back that goes
-        # nowhere is worse than no Back.
-        if step == 0:
-            assert page.query_selector('.step-nav [data-action="go-step"]') is None, (
-                "step one has a Back button again; it has nowhere to go"
-            )
+        # The intro screen has no step bar at all - it is a full-bleed hero - so
+        # there is no Back to measure on it.
+        if step == -1:
             continue
+        # Step one HAS a Back again, and it goes to the intro. It lost it for the
+        # week the intro was deleted; asserted rather than merely walked, because
+        # `go-step` with `back: null` renders no button and the loop below would
+        # then report "step 0 has no Back action" without saying why.
+        if step == 0:
+            assert page.query_selector('.step-nav [data-action="go-step"]') is not None, (
+                "step one has no Back button; it should return to the introduction"
+            )
         page.wait_for_timeout(100)
         past = page.evaluate(PAST_FOLD, '.step-nav [data-action="go-step"]')
         if past is None:

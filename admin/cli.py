@@ -340,6 +340,30 @@ def cmd_seed_taxonomy(db_session: Session) -> dict[str, int]:
 #: being served is a different failure, and that is the one the test catches.
 UNCLAIMED_PASSWORD_SCREEN = "/admin/staff/list"
 
+#: The first line ``report_bootstrap_result`` prints when it has something to
+#: report, and the signal ``docker/init.sh`` reads to choose its closing
+#: message.
+#:
+#: **It is a signal because this function's silence is not observable from a
+#: shell.** ``kaicalc-admin bootstrap`` exits 0 whether it created accounts or
+#: found them already there — it must, because ``init.sh`` runs under ``set -e``
+#: and a non-zero exit would abort the migrate job and stop the stack — and the
+#: CLI prints its own "nothing to do" acknowledgement either way. So the only
+#: thing that distinguishes the two runs is whether this line appeared.
+#:
+#: It cost something to learn that. ``init.sh`` used to close by telling every
+#: operator the passwords were "printed above", unconditionally, on every
+#: restart of an already-bootstrapped deployment — a sentence that is false on
+#: all of them but the first, read by exactly the person hunting for a password
+#: that was never there.
+#:
+#: A shell script matching a Python string literal is a coupling, so it is
+#: pinned: ``tests/admin/test_operator_guidance.py`` fails if ``init.sh`` stops
+#: containing this value, and fails separately if this function stops printing
+#: it. Neither test alone is enough — the first passes against a constant
+#: nothing emits, the second against a constant no script reads.
+BOOTSTRAP_CREATED_MARKER = "Created initial administrator accounts."
+
 
 def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """Print freshly created bootstrap credentials to standard output.
@@ -380,7 +404,7 @@ def report_bootstrap_result(created: list[tuple[str, str]]) -> None:
     """
     if not created:
         return
-    print("Created initial administrator accounts.")
+    print(BOOTSTRAP_CREATED_MARKER)
     for username, password in created:
         print(f"  {username}: {password}")
     print()

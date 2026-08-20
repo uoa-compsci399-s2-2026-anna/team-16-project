@@ -569,12 +569,16 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
         "the guard rewrote the visitor's number; it may only refuse the minus"
     )
 
-    # The slider is a SIBLING of `.percentage-input`, not a descendant, so the
-    # descendant combinator must not reach it. Both controls share
-    # `calculator.js`'s `input` listener and mirror each other through
-    # `updateImprovementInput`, so driving one and reading both proves it.
+    # Driving the slider needs a value away from its ceiling, and the reason is
+    # itself worth stating: typing `205` above mirrored straight into this
+    # sibling `input[type=range]`, whose `max="100"` made the browser clamp it —
+    # which is how we know `updateImprovementInput`'s mirroring is live. From
+    # 100 an ArrowUp has nowhere to go, so the field is reset first.
+    number.press("ControlOrMeta+A")
+    number.press("Backspace")
+    number.press_sequentially("10")
+
     slider = page.locator('input[type="range"][data-improvement-code]').first
-    slider.focus()
     before = slider.input_value()
     slider.press("ArrowUp")
     assert slider.input_value() != before, "the slider stopped responding"

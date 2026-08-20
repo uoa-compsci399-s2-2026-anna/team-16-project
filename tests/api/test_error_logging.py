@@ -1,0 +1,87 @@
+"""What an operator has to work with when the API answers 500.
+
+Before this file the answer was nothing at all: the envelope going out was
+correct and the exception behind it reached no log, no file and no stream. A
+probe that raised `RuntimeError("probe-marker-9f3a")` inside a route produced a
+clean 500 and zero log records naming it.
+
+Every test here asserts a pair — that the record exists AND that its content is
+what an operator needs — because "it logs something" is satisfied by logging the
+wrong thing, and this project has shipped that shape eleven times.
+"""
+
+import logging
+
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+pytestmark = pytest.mark.asyncio
+
+
+def rendered(record: logging.LogRecord) -> str:
+    """The record as a handler would emit it, traceback included."""
+    return logging.Formatter("%(name)s %(levelname)s %(message)s").format(record)
+
+
+def errors_from(caplog) -> list[logging.LogRecord]:
+    return [record for record in caplog.records if record.levelno >= logging.ERROR]
+
+
+async def test_a_deliberate_five_hundred_logs_the_exception_behind_it(
+    app, caplog, monkeypatch
+):
+    """`_repository_problem` maps an unrecognised repository failure onto a bare
+    `INTERNAL_ERROR`. The caller is owed exactly that and no more; the operator
+    is owed the class and the traceback, which `raise … from exc` has always
+    carried and nothing has ever read."""
+
+    class TaxonomyExploded(RuntimeError):
+        pass
+
+    def boom(_db):
+        raise TaxonomyExploded("marker-7c1e")
+
+    monkeypatch.setattr("api.router.get_taxonomy", boom)
+
+    with caplog.at_level(logging.DEBUG):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            response = await client.get("/api/v1/taxonomy")
+
+    assert response.status_code == 500
+    assert response.json()["error"]["code"] == "INTERNAL_ERROR"
+    assert response.json()["error"]["message"] == "An internal error occurred"
+
+    records = errors_from(caplog)
+    assert len(records) == 1, f"expected one error record, got {len(records)}"
+    text = rendered(records[0])
+    assert "TaxonomyExploded" in text, text
+    assert "marker-7c1e" in text, text
+    assert "GET" in text and "/api/v1/taxonomy" in text, text
+
+
+async def test_a_four_hundred_is_not_an_operator_incident(app, caplog):
+    """A visitor sending something bad is the system working. Logging a
+    traceback for it makes the log unreadable on the day it is needed — and this
+    is the affirmative half: it is not enough that failures log, non-failures
+    must not.
+
+    **Both 400 paths, because they are different code.** A route that raises
+    `ApiProblem(400, …)` reaches `api_problem_handler`, the function this task
+    edits. A malformed body never gets that far: FastAPI raises
+    `RequestValidationError` and `validation_handler` builds the envelope by
+    calling `problem_response` directly. Only the first can exercise the
+    `status >= 500` condition, so a test that used the second alone would pass
+    against `if exc.status >= 400` — a fix that logged every validation error —
+    and prove nothing."""
+    with caplog.at_level(logging.DEBUG):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            # Raised in the route: api/router.py:261. Goes through the handler.
+            raised = await client.get("/api/v1/factors?format=xml")
+            # Rejected before the route: entries has min_length=1. Goes through
+            # validation_handler instead.
+            malformed = await client.post("/api/v1/calculate", json={"entries": []})
+
+    assert raised.status_code == 400 and malformed.status_code == 400
+    assert errors_from(caplog) == []

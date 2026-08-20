@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import Request
@@ -9,6 +10,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
+logger = logging.getLogger(__name__)
 
 #: `details` omitted and `details` explicitly null are different envelopes.
 #: Every ordinary error carries `[]`; §9.2's `BLOCKED` carries `null`, and
@@ -67,7 +69,26 @@ def problem_response(problem: ApiProblem) -> ContractJSONResponse:
     )
 
 
-async def api_problem_handler(_request: Request, exc: ApiProblem) -> JSONResponse:
+async def api_problem_handler(request: Request, exc: ApiProblem) -> JSONResponse:
+    # A 4xx is the system working: the caller was told what to fix and there is
+    # nothing for an operator to do. A 5xx is the opposite, and it is the only
+    # one of the two an operator can act on, so it is the only one that logs.
+    #
+    # `exc.__cause__` is where the real failure is. Every 5xx `ApiProblem` in
+    # this codebase is raised with `from exc` — the seven sites in router.py,
+    # `_repository_problem`'s fallback, `engine_problem`'s fallback — so the
+    # original class and traceback are already attached and were, until now,
+    # simply never read. Falling back to `exc` itself keeps a hand-raised
+    # `ApiProblem(500, …)` from logging an empty traceback.
+    if exc.status >= 500:
+        logger.error(
+            "%s %s -> %d %s",
+            request.method,
+            request.url.path,
+            exc.status,
+            exc.code,
+            exc_info=exc.__cause__ or exc,
+        )
     return problem_response(exc)
 
 

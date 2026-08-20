@@ -36,7 +36,12 @@ from pathlib import Path
 
 import pytest
 
-from admin.cli import UNCLAIMED_PASSWORD_SCREEN, main, report_bootstrap_result
+from admin.cli import (
+    BOOTSTRAP_CREATED_MARKER,
+    UNCLAIMED_PASSWORD_SCREEN,
+    main,
+    report_bootstrap_result,
+)
 from tests.admin.conftest import _cleanup_staff_named
 
 #: `db` for the whole file; `asyncio` per test rather than file-wide. This file
@@ -279,3 +284,46 @@ def test_init_sh_closing_block_names_the_working_screen():
     assert not _bare_prefix_alone(text), (
         "docker/init.sh is back to naming the bare prefix, which 404s"
     )
+
+
+# --- the signal init.sh reads to choose its closing message ------------------
+#
+# `docker/init.sh` used to close by telling every operator the bootstrap
+# passwords were "printed above" - on every restart of an already-bootstrapped
+# deployment, where nothing had printed. It now branches on whether
+# `report_bootstrap_result` said anything, and these three tests are what hold
+# that together. Any one of them alone is satisfied by a broken implementation:
+# the first passes against a constant nothing emits, the second against a
+# constant no script reads, and the first two together pass against a function
+# that prints the marker unconditionally - which is the original defect exactly.
+
+
+def test_init_sh_reads_the_marker_the_cli_prints():
+    """Shell cannot import a Python constant, so this is the join."""
+    assert BOOTSTRAP_CREATED_MARKER in _INIT_SH.read_text(encoding="utf-8"), (
+        "docker/init.sh no longer matches the line admin/cli.py prints, so its "
+        "closing message will take the wrong branch on every run"
+    )
+
+
+def test_the_bootstrap_report_prints_that_marker_when_it_creates(capsys):
+    """The other half: a constant no code emits is a string, not a signal."""
+    report_bootstrap_result([("admin", "x" * 20), ("admin2", "y" * 20)])
+
+    assert BOOTSTRAP_CREATED_MARKER in capsys.readouterr().out
+
+
+def test_the_bootstrap_report_is_silent_when_it_creates_nothing(capsys):
+    """**The one that makes the other two mean anything.**
+
+    The marker is a discriminator only if it is absent on the ordinary run.
+    `kaicalc-admin bootstrap` exits 0 either way — it has to, because
+    `docker/init.sh` runs under `set -e` — so its output is the only thing that
+    separates "created two accounts" from "found two accounts". A
+    `report_bootstrap_result` that printed this line unconditionally would
+    satisfy both tests above and put init.sh back to announcing passwords that
+    were never printed.
+    """
+    report_bootstrap_result([])
+
+    assert capsys.readouterr().out == ""

@@ -94,6 +94,158 @@ That command builds the images from this checkout. If you were handed the **publ
 images** instead of the source, the file to use is `docker/compose.deploy.yaml` — same
 topology, no build, see [Released images and the wheel](#released-images-and-the-wheel).
 
+### The commands, one at a time
+
+Every command in this section names `docker/compose.yaml`, which **builds from this
+checkout**. If you were handed the published images, swap in `docker/compose.deploy.yaml`
+and export `KAICALC_IMAGE_TAG` first; nothing else changes.
+
+#### 1. Get the images
+
+Only the published-image path pulls. The source path has nothing to pull — `up` builds
+what is missing.
+
+```bash
+export KAICALC_IMAGE_TAG=alpha                       # or X.Y.Z, or a short commit SHA
+docker compose -f docker/compose.deploy.yaml pull
+```
+
+There is no default tag: `up` fails and tells you to set one. And `pull` before `up` is
+not decoration — Compose's default pull policy is `missing`, so a moving tag already in
+your local image store is reused and the registry is never asked.
+
+From a checkout, `docker compose -f docker/compose.yaml build` is available but optional;
+`up` builds anything absent. Use it to force a rebuild after changing a `Dockerfile`.
+
+#### 2. Start it, the first time
+
+```bash
+docker compose -f docker/compose.yaml up -d
+```
+
+Brings up MySQL, migrates it, seeds the taxonomy, publishes the mock factor set, creates
+two administrator accounts and starts the calculator behind nginx. Takes a minute or two;
+the database health check gates everything after it.
+
+#### 3. Stop it
+
+Two different things, and the difference matters:
+
+```bash
+docker compose -f docker/compose.yaml stop      # containers stopped, kept
+docker compose -f docker/compose.yaml down      # containers removed, data kept
+```
+
+Neither touches the volumes, so the database and the `SECRET_KEY` survive both. But
+**`down` deletes the `kaicalc-migrate` container, and the initial administrator passwords
+live only in that container's log** — see §6, which also covers the other, quieter way to
+lose them.
+
+#### 4. Start it again, second time onwards
+
+```bash
+docker compose -f docker/compose.yaml start     # after `stop` — fast, nothing recreated
+docker compose -f docker/compose.yaml up -d     # after `down` — recreates the containers
+```
+
+`up -d` is safe to repeat. The migrate job re-runs and finds nothing to apply, and the
+bootstrap step creates administrators **only if none exist** — so a second start prints no
+passwords and does not disturb the accounts you already have. That is why §7 exists.
+
+#### 5. Erase everything and start over
+
+```bash
+docker compose -f docker/compose.yaml down -v
+```
+
+**Destructive and not recoverable.** `-v` removes both volumes: the database *and* the
+generated `SECRET_KEY`. Every submission, every factor set edit and every staff account
+goes with them. The next `up -d` is a first start again — new secret, new administrator
+accounts, new one-time passwords.
+
+The secret is deliberately destroyed alongside the data rather than kept: a `SECRET_KEY`
+that outlived the database it protects would be the worse of the two states, because the
+TOTP secrets and recoverable passwords it decrypts would no longer exist.
+
+#### 6. Read the initial administrator passwords
+
+```bash
+docker compose -f docker/compose.yaml logs migrate
+```
+
+On the start that created the accounts, and **only** that one:
+
+```
+Created initial administrator accounts.
+  admin: nEzVAJpKqCLvB1UPOFdP
+  admin2: wWJv6nKE206RFhYbjkrK
+```
+
+**Expect this to be gone, and do not read the closing paragraph as evidence it is not.**
+The migrate job runs on every start and its last lines always say "the administrator
+passwords above are printed here and nowhere else" — even on a run that printed none. What
+you look for is the `Created initial administrator accounts.` line. Two ordinary things
+remove it while leaving that reassuring paragraph in place:
+
+- **`down`**, which deletes the container and its log with it (§3).
+- **A rebuild.** Compose recreates the migrate container when its image changes, and a
+  recreated container starts with an empty log. No `down` required.
+
+On any later start, step 4 of 4 reports `Administrator accounts already exist. Nothing to
+do.` — that is the healthy state, not a failure.
+
+If the line is gone, you have not lost the system. Two routes back, in order:
+
+1. While an account still has its **original** password, the *other* administrator can
+   read it from `/admin/staff/list` — it is kept encrypted until that account sets a
+   password of its own.
+2. Otherwise mint a new one from the host with §7. This always works.
+
+#### 7. Reset an administrator password
+
+```bash
+docker exec kaicalc-admin kaicalc issue-password admin
+```
+
+Mints a new random password and forces a change at next login. Works whether or not the
+account still has its original one.
+
+**`kaicalc`, not `kaicalc-admin`.** The second is the console script and it fails under
+`docker exec` with `MissingSettingError: SECRET_KEY is not set`, because `docker exec`
+does not run the image's entrypoint and inherits none of the environment it builds.
+`kaicalc-admin --help` *does* work, which is what makes the wrong form look correct right
+up to the moment it is needed.
+
+#### 8. Everything else
+
+Staff and access, all through the same wrapper on the running admin container:
+
+```bash
+docker exec kaicalc-admin kaicalc create-staff bob "Bob Smith" --admin
+docker exec kaicalc-admin kaicalc issue-password alice        # new password, forced change
+docker exec kaicalc-admin kaicalc reset-mfa alice             # clear a lost authenticator
+docker exec kaicalc-admin kaicalc reactivate-staff alice      # let a deactivated account back in
+docker exec kaicalc-admin kaicalc delete-staff alice          # deactivated accounts only
+docker exec kaicalc-admin kaicalc unblock 203.0.113.5         # locked yourself out of /admin
+docker exec kaicalc-admin kaicalc rotate-key --old <k> --new <k>
+docker exec kaicalc-admin kaicalc bootstrap                   # administrators, if none exist
+docker exec kaicalc-admin kaicalc seed-taxonomy               # taxonomy, into an empty database
+docker exec kaicalc-admin kaicalc --help
+```
+
+The stack itself:
+
+```bash
+docker compose -f docker/compose.yaml ps -a           # every container, including the exited ones
+docker compose -f docker/compose.yaml logs -f web     # follow one service
+docker compose -f docker/compose.yaml restart admin   # also clears every login lockout
+docker compose ls -a                                  # which stacks exist on this host
+```
+
+`ps -a`, not `ps`: a container that **started and then died** is one `docker ps` hides,
+and that is the case worth seeing. `restart admin` clearing lockouts is a real property —
+the counters live in process memory, not the database.
+
 ### Three things that stop the command above
 
 **1. Your user has to be able to talk to the Docker daemon.** On Linux, being in `sudo`
@@ -250,51 +402,28 @@ HTTP request.
 ### The first administrator
 
 The stack creates two administrator accounts on first start and prints their one-time
-passwords:
-
-```bash
-docker compose -f docker/compose.yaml logs migrate
-```
-
-```
-Created initial administrator accounts.
-  admin: nEzVAJpKqCLvB1UPOFdP
-  admin2: wWJv6nKE206RFhYbjkrK
-```
+passwords into the migrate job's log — [§6](#6-read-the-initial-administrator-passwords)
+is the command, and its caveat about `down` is worth reading before you need it.
 
 Sign in at <http://localhost:18080/admin/login>. Each account is walked through a forced
 password change and then two-factor enrolment before it reaches the panel; scan the QR
-code with any authenticator app and save the recovery codes it shows you.
+code with any authenticator app and **save the recovery codes it shows you** — they are
+displayed once.
 
-If a password is lost before that account has changed it, the **other** administrator can
-read it back from `/admin/staff/list`. If both are lost, nobody can log in, and the way
-back is a command on the container:
+Losing a password is survivable at three depths, in this order:
 
-```bash
-docker exec kaicalc-admin kaicalc issue-password admin
-```
+1. **One password lost, before that account changed it.** The **other** administrator
+   reads it back from `/admin/staff/list`. Nothing on the host is needed.
+2. **Both lost, or the account has already changed its password.** Mint a new one from
+   the host with [§7](#7-reset-an-administrator-password). Note the `kaicalc` versus
+   `kaicalc-admin` trap documented there — it is the one thing about this command that
+   reliably wastes an afternoon.
+3. **Locked out of `/admin` entirely** because an administrator blocked the address they
+   were sitting behind — the case the protection layer is designed around not causing,
+   with no page left to click. `docker exec kaicalc-admin kaicalc unblock <address>` is
+   the way back, and `.env.example` documents three routes in, in the order to try them.
 
-`kaicalc`, **not** `kaicalc-admin`. The second is the console script and it fails under
-`docker exec` with `MissingSettingError: SECRET_KEY is not set`, because `docker exec`
-does not run the image's entrypoint and inherits none of the environment it builds.
-`kaicalc` is a wrapper that resolves the secret first and then calls the same command.
-`kaicalc-admin --help` does work, which is exactly what makes the wrong form look correct
-until the moment it is needed.
-
-Everything after `kaicalc` is a subcommand:
-
-```bash
-docker exec kaicalc-admin kaicalc create-staff bob "Bob Smith" --admin
-docker exec kaicalc-admin kaicalc issue-password alice     # mint a new password
-docker exec kaicalc-admin kaicalc reset-mfa alice          # clear a lost authenticator
-docker exec kaicalc-admin kaicalc unblock 203.0.113.5      # locked yourself out of /admin
-docker exec kaicalc-admin kaicalc rotate-key --old <k> --new <k>
-docker exec kaicalc-admin kaicalc --help
-```
-
-`unblock` exists for the case the protection layer is designed around not causing: an
-administrator blocks the address they are sitting behind, and there is then no page left
-to click. `.env.example` documents three routes back in, in the order to try them.
+The full command list is in [§8](#8-everything-else).
 
 ### What to set in the environment
 
@@ -557,15 +686,6 @@ The same three steps work for `KAICALC_NEWS_ORIGIN` and `KAICALC_API_ORIGIN`; th
 re-renders `web/js/config.js` alongside the CSP, so the front end and the header stay in
 step even mid-experiment.
 
-### Stopping it
-
-```bash
-docker compose -f docker/compose.yaml down       # keeps the data and the secret
-docker compose -f docker/compose.yaml down -v    # destroys both — new secret,
-                                                 # new administrator passwords,
-                                                 # empty database
-```
-
 ### Released images and the wheel
 
 - **Releases** are cut by the `Release` workflow (`.github/workflows/release.yaml`),
@@ -573,10 +693,15 @@ docker compose -f docker/compose.yaml down -v    # destroys both — new secret,
   the default branch, tags that commit, runs the full test suite against MySQL 8, builds
   three multi-architecture images tagged `X.Y.Z` and `latest`, and attaches a wheel and an
   sdist to a GitHub Release.
-- **CI** (`.github/workflows/ci.yaml`) runs the same test suite on every push and pull
-  request, and on `main` publishes alpha images tagged `alpha` and by short commit SHA.
-  Alpha versions are `<base>.dev0+<sha>`, which sorts *below* every release and can never
-  be mistaken for one.
+- **CI** (`.github/workflows/ci.yaml`) runs the same test suite on every push to `main`
+  and to `build/**`, and on `main` publishes alpha images tagged `alpha` and by short
+  commit SHA. Alpha versions are `<base>.dev0+<sha>`, which sorts *below* every release
+  and can never be mistaken for one. **There is deliberately no `pull_request` trigger** —
+  a pull request publishes nothing, so every one of them cost eighteen minutes of the
+  allowance for a run whose only output was a verdict. `workflow_dispatch` is the
+  mitigation and works on any branch; run it by hand before merging anything you want
+  verified first. The trade is stated plainly: a change that breaks the suite now turns
+  `main` red rather than the pull request.
 - Images are `ghcr.io/uoa-compsci399-s2-2026-anna/team-16-project/kaicalc-{api,admin,web}`.
   Deployers should pin the version tag rather than `latest`.
 
@@ -603,8 +728,7 @@ docker compose -f docker/compose.deploy.yaml up -d
 | `<short-sha>` | CI, on every push to `main`, immutable | yes, for a specific build |
 | `alpha` | CI, moves to the head of `main` | no |
 
-`pull` before `up` is not decoration: Compose's default pull policy is `missing`, so a
-moving tag already in your local image store is reused and the registry is never asked.
+[§1](#1-get-the-images) says why `pull` has to come before `up`.
 
 The two compose files are **the same stack** — same project name, same container names —
 so run one or the other, not both. `tests/test_compose.py` asserts that every key except

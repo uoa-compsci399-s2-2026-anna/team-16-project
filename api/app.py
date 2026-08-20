@@ -342,6 +342,20 @@ def create_app(
                     db.rollback()
                 return response
             except Exception:
+                # Logged BEFORE the rollback, deliberately. If the rollback
+                # itself raises, that exception replaces this one and the
+                # original — the thing actually worth knowing — is gone. One
+                # line of ordering buys the diagnosis back.
+                #
+                # This is the only place an unanticipated exception is seen.
+                # `add_exception_handler(Exception, internal_error_handler)`
+                # below registers with Starlette's OUTERMOST middleware and this
+                # one sits inside it, so that handler does not run for anything
+                # raised in a route. Removing this `except` does not fall back
+                # to it; it falls back to nothing.
+                logger.exception(
+                    "Unhandled exception in %s %s", request.method, request.url.path
+                )
                 db.rollback()
                 return problem_response(
                     ApiProblem(500, "INTERNAL_ERROR", "An internal error occurred")

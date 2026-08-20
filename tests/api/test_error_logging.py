@@ -85,3 +85,63 @@ async def test_a_four_hundred_is_not_an_operator_incident(app, caplog):
 
     assert raised.status_code == 400 and malformed.status_code == 400
     assert errors_from(caplog) == []
+
+
+async def test_an_unhandled_exception_is_written_down_before_it_becomes_a_500(
+    app, caplog
+):
+    """The case nothing in the codebase anticipated — a bug, not a condition.
+    The response is deliberately identical to every other `INTERNAL_ERROR`: the
+    caller learns nothing, and that is right. The operator learns everything."""
+
+    @app.get("/api/v1/__unhandled_probe__")
+    def _probe():
+        raise RuntimeError("marker-4b82")
+
+    with caplog.at_level(logging.DEBUG):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            response = await client.get("/api/v1/__unhandled_probe__")
+
+    assert response.status_code == 500
+    assert response.json()["error"] == {
+        "code": "INTERNAL_ERROR",
+        "message": "An internal error occurred",
+        "details": [],
+    }
+
+    records = errors_from(caplog)
+    assert len(records) == 1, f"expected one error record, got {len(records)}"
+    text = rendered(records[0])
+    assert "RuntimeError" in text, text
+    assert "marker-4b82" in text, text
+    assert "Traceback" in text, text
+    assert "/api/v1/__unhandled_probe__" in text, text
+
+
+async def test_the_middleware_is_what_catches_it_not_the_registered_handler(
+    app, caplog
+):
+    """`create_app` registers `internal_error_handler` for `Exception`, which
+    goes to Starlette's OUTERMOST `ServerErrorMiddleware`. `database_session` is
+    inside it and catches first, so that handler never runs for anything raised
+    in a route.
+
+    This is pinned because the arrangement is invisible from either file alone.
+    Someone tidying up will one day delete the middleware's `except Exception`
+    on the reasonable-sounding grounds that a handler is registered for exactly
+    that — and the logging added here would go with it, silently."""
+
+    @app.get("/api/v1/__origin_probe__")
+    def _probe():
+        raise RuntimeError("marker-1d55")
+
+    with caplog.at_level(logging.DEBUG):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            await client.get("/api/v1/__origin_probe__")
+
+    names = [record.name for record in errors_from(caplog)]
+    assert names == ["api.app"], (
+        f"the unhandled path logged from {names}, not the middleware in api.app"
+    )

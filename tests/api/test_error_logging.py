@@ -147,35 +147,57 @@ async def test_the_middleware_is_what_catches_it_not_the_registered_handler(
     )
 
 
-async def test_the_record_carries_nothing_section_2_3_forbids(app, caplog):
+async def test_the_record_carries_nothing_section_2_3_forbids(app, caplog, monkeypatch):
     """§2.3: no IP address, no user agent, no browser fingerprint is ever
     stored — and a log line is storage.
 
     The nginx access log was found writing four forbidden fields three weeks
-    ago, so this is checked rather than reasoned about. Both messages are built
-    from the method and the path on purpose: `request.headers` and the body are
-    each one convenient f-string away, and neither may be in here."""
+    ago, so this is checked rather than reasoned about. Both log sites are
+    driven here, each carrying the same three forbidden headers: the
+    unhandled-exception path through `database_session` in `api/app.py`
+    (`marker-9e07`), and the deliberate-5xx path through `api_problem_handler`
+    in `api/errors.py` (`marker-5a2c`, via the same monkeypatched
+    `get_taxonomy` the first test in this file uses). Both messages are built
+    from the method and the path on purpose: `request.headers` and the body
+    are each one convenient f-string away, and neither may be in here. Two
+    distinct markers, one per site, because a pooled marker would still pass
+    if one site silently stopped logging."""
 
     @app.get("/api/v1/__privacy_probe__")
     def _probe():
         raise RuntimeError("marker-9e07")
 
+    class TaxonomyExploded(RuntimeError):
+        pass
+
+    def boom(_db):
+        raise TaxonomyExploded("marker-5a2c")
+
+    monkeypatch.setattr("api.router.get_taxonomy", boom)
+
+    headers = {
+        "User-Agent": "ua-marker-3f9d",
+        "X-Forwarded-For": "203.0.113.9",
+        "X-Real-IP": "203.0.113.9",
+    }
+
     with caplog.at_level(logging.DEBUG):
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://t") as client:
-            await client.get(
-                "/api/v1/__privacy_probe__",
-                headers={
-                    "User-Agent": "ua-marker-3f9d",
-                    "X-Forwarded-For": "203.0.113.9",
-                    "X-Real-IP": "203.0.113.9",
-                },
-            )
+            await client.get("/api/v1/__privacy_probe__", headers=headers)
+            await client.get("/api/v1/taxonomy", headers=headers)
 
-    text = "\n".join(rendered(record) for record in caplog.records)
+    records = errors_from(caplog)
+    text = "\n".join(rendered(record) for record in records)
     assert "ua-marker-3f9d" not in text, "a user agent reached the log"
     assert "203.0.113.9" not in text, "a client address reached the log"
 
-    # The affirmative half: the probe has to have actually run, or two absent
-    # strings prove nothing at all.
+    # The affirmative half, one marker per site: each has to have actually
+    # logged, or an absent string proves nothing about that site at all.
     assert "marker-9e07" in text
+    assert "marker-5a2c" in text
+
+    # And both sites, not just one of them carrying both markers by accident -
+    # this is what makes the pair above non-vacuous.
+    names = {record.name for record in records}
+    assert names == {"api.app", "api.errors"}, f"expected both log sites, got {names}"

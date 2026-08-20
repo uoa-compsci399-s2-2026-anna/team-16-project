@@ -539,3 +539,47 @@ def test_the_step_position_moved_into_the_bar_and_left_no_band_behind(page_at):
     assert measured["label"] == "Step 3 of 6", measured
     assert measured["name"] == "Waste amount", measured
     assert measured["bands"] == 0, f"a progress band is still costing height at the top: {measured}"
+
+
+def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number(page_at):
+    """A negative share of a destination is not a thing, so the minus is refused
+    outright — unlike a destination amount, which permits a leading minus
+    precisely so that `validateCurrentStep`'s refusal has something to point at.
+
+    The second half is the affirmative one and it is the reason this test is not
+    just `assert "-" not in value`. A clamp would also produce a field with no
+    minus in it, while destroying the number the visitor typed — that is exactly
+    what `updateImprovementInput`'s `Math.min(100, Math.max(0, …))` did before
+    PR #27 removed it, turning a typed `0.05` into `5`. The guard must block the
+    minus and touch nothing else.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page.click('[data-action="explore-improvements"]')
+    number = page.locator('.percentage-input input[type="number"]').first
+
+    number.press("ControlOrMeta+A")
+    number.press("Backspace")
+    number.press_sequentially("--1")
+    assert number.input_value() == "1"
+
+    number.press("ControlOrMeta+A")
+    number.press("Backspace")
+    number.press_sequentially("205")
+    assert number.input_value() == "205", (
+        "the guard rewrote the visitor's number; it may only refuse the minus"
+    )
+
+    # Driving the slider needs a value away from its ceiling, and the reason is
+    # itself worth stating: typing `205` above mirrored straight into this
+    # sibling `input[type=range]`, whose `max="100"` made the browser clamp it —
+    # which is how we know `updateImprovementInput`'s mirroring is live. From
+    # 100 an ArrowUp has nowhere to go, so the field is reset first.
+    number.press("ControlOrMeta+A")
+    number.press("Backspace")
+    number.press_sequentially("10")
+
+    slider = page.locator('input[type="range"][data-improvement-code]').first
+    before = slider.input_value()
+    slider.press("ArrowUp")
+    assert slider.input_value() != before, "the slider stopped responding"
+    assert number.input_value() == slider.input_value()

@@ -533,6 +533,32 @@ facts about the deployment that this code cannot establish for itself.
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
+**Note (2026-08-20), on what a 5xx log line may contain.** Both log sites build
+their **message** from the request method and path only, and a test in
+`tests/api/test_error_logging.py` fails if a header or an address reaches a
+record from either of them. The **traceback** is not filtered, and two things
+can ride in on it.
+
+A database error's traceback carries the failing statement and its bound
+parameters. `upsert_submission` binds `submission.token`, and the blocklist
+check that runs inside the same middleware binds `ip_fingerprint(...)` — an
+HMAC of the client address, and the one §2.3 field this system computes at
+all. Neither is a new disclosure on its own: both are already stored, in
+`submission.token` and `ip_block.ip_hmac`, and `docker logs` is the same
+operator-only audience as the database.
+
+**The token's case is weaker than that, and saying so is the point of this
+note.** `expire_tokens` nulls the column after an hour precisely to sever the
+link between a submission and the session that made it. A log line is not
+covered by that job and outlives the severance. The exposure is bounded — it
+takes a database failure during a write, and the log is operator-only — but
+"already stored" is not the whole answer for a value the design deliberately
+deletes.
+
+If log shipping to a third party is ever added, this is the paragraph to
+revisit first, and `hide_parameters=True` on the engine in `db/session.py` is
+the lever.
+
 ### O-2 is O-7 again, in the constant dimension — read this before setting `FOOD_VALUE_PER_KG`
 
 The shipped `cost` formula is `qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)`. The two factor terms are now offset for a prevented line — `prevention` has an upstream row at zero (O-7) and downstream rows at zero. **The constant term is not, and structurally cannot be.** A constant is bound once per formula from the factor set; it has no destination to vary by, so a `prevention` line carries `qty_kg × FOOD_VALUE_PER_KG` exactly as the wasted line it replaced does, and `net_benefit.cost` nets it to **zero**.

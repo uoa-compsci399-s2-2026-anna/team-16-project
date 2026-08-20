@@ -843,7 +843,23 @@ export function bindCalculator(main, retryTaxonomy) {
   main.addEventListener('beforeinput', event => {
     const target = event.target
     if (!event.data?.includes('-')) return
-    if (target.id === 'total-waste' || target.id === 'unit-count') {
+    // Three fields refuse a minus outright; a destination amount below does not.
+    // The difference is what a refusal has to point at. `validateCurrentStep`
+    // rejects a negative destination amount and marks the summary invalid, so
+    // that field must let the minus be typed or the refusal it triggers would
+    // have nothing on screen to explain it. A negative share of a destination
+    // is not a quantity anyone can mean, and the improvement panel has no
+    // equivalent per-field refusal to make visible.
+    //
+    // The space in the selector is load-bearing: `improvement.js` renders the
+    // number input INSIDE `div.percentage-input` with the range input as its
+    // sibling outside, so the descendant combinator takes the typed field and
+    // leaves the slider alone. Written without the space it matches nothing.
+    if (
+      target.id === 'total-waste' ||
+      target.id === 'unit-count' ||
+      target.matches('.percentage-input [data-improvement-code]')
+    ) {
       event.preventDefault()
       return
     }

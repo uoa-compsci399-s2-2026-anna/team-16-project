@@ -145,3 +145,37 @@ async def test_the_middleware_is_what_catches_it_not_the_registered_handler(
     assert names == ["api.app"], (
         f"the unhandled path logged from {names}, not the middleware in api.app"
     )
+
+
+async def test_the_record_carries_nothing_section_2_3_forbids(app, caplog):
+    """§2.3: no IP address, no user agent, no browser fingerprint is ever
+    stored — and a log line is storage.
+
+    The nginx access log was found writing four forbidden fields three weeks
+    ago, so this is checked rather than reasoned about. Both messages are built
+    from the method and the path on purpose: `request.headers` and the body are
+    each one convenient f-string away, and neither may be in here."""
+
+    @app.get("/api/v1/__privacy_probe__")
+    def _probe():
+        raise RuntimeError("marker-9e07")
+
+    with caplog.at_level(logging.DEBUG):
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://t") as client:
+            await client.get(
+                "/api/v1/__privacy_probe__",
+                headers={
+                    "User-Agent": "ua-marker-3f9d",
+                    "X-Forwarded-For": "203.0.113.9",
+                    "X-Real-IP": "203.0.113.9",
+                },
+            )
+
+    text = "\n".join(rendered(record) for record in caplog.records)
+    assert "ua-marker-3f9d" not in text, "a user agent reached the log"
+    assert "203.0.113.9" not in text, "a client address reached the log"
+
+    # The affirmative half: the probe has to have actually run, or two absent
+    # strings prove nothing at all.
+    assert "marker-9e07" in text

@@ -533,6 +533,16 @@ facts about the deployment that this code cannot establish for itself.
 
 If O-2 remains unresolved, the first version implements waste levy plus disposal cost only, leaving the value of the food itself as an optional constant defaulting to zero.
 
+**Note (2026-08-20), on what a 5xx log line may contain.** Both log sites build
+their message from the request method and path only; a test in
+`tests/api/test_error_logging.py` fails if a header or an address reaches a
+record. The traceback itself is not filtered, and a database error's traceback
+can carry bound parameters including a `submission.token`. That is deliberate:
+the token is already stored in plain text in the row the statement was writing,
+`docker logs` is the same operator-only audience as the database, and no §2.3
+field — address, user agent, fingerprint — appears in either. If log shipping to
+a third party is ever added, this is the sentence to revisit first.
+
 ### O-2 is O-7 again, in the constant dimension — read this before setting `FOOD_VALUE_PER_KG`
 
 The shipped `cost` formula is `qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)`. The two factor terms are now offset for a prevented line — `prevention` has an upstream row at zero (O-7) and downstream rows at zero. **The constant term is not, and structurally cannot be.** A constant is bound once per formula from the factor set; it has no destination to vary by, so a `prevention` line carries `qty_kg × FOOD_VALUE_PER_KG` exactly as the wasted line it replaced does, and `net_benefit.cost` nets it to **zero**.

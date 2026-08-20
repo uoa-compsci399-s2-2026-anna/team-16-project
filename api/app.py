@@ -344,8 +344,8 @@ def create_app(
             except Exception:
                 # Logged BEFORE the rollback, deliberately. If the rollback
                 # itself raises, that exception replaces this one and the
-                # original — the thing actually worth knowing — is gone. One
-                # line of ordering buys the diagnosis back.
+                # original — the thing actually worth knowing — is lost from
+                # this log line. One line of ordering buys the diagnosis back.
                 #
                 # This is the only place an unanticipated exception is seen.
                 # `add_exception_handler(Exception, internal_error_handler)`

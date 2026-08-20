@@ -141,9 +141,17 @@ async def test_the_middleware_is_what_catches_it_not_the_registered_handler(
         async with AsyncClient(transport=transport, base_url="http://t") as client:
             await client.get("/api/v1/__origin_probe__")
 
-    names = [record.name for record in errors_from(caplog)]
+    records = errors_from(caplog)
+    names = [record.name for record in records]
     assert names == ["api.app"], (
         f"the unhandled path logged from {names}, not the middleware in api.app"
+    )
+    # The name alone is coupled to a module path; pinning the function too
+    # means this still fails if the call migrates to a different function in
+    # the same module, and still passes if the module is renamed or moved.
+    func_names = [record.funcName for record in records]
+    assert func_names == ["database_session"], (
+        f"the unhandled path logged from {func_names}, not database_session"
     )
 
 
@@ -188,7 +196,13 @@ async def test_the_record_carries_nothing_section_2_3_forbids(app, caplog, monke
             await client.get("/api/v1/taxonomy", headers=headers)
 
     records = errors_from(caplog)
-    text = "\n".join(rendered(record) for record in records)
+    # Deliberately scans ALL of caplog.records, not the filtered `records`
+    # above: §2.3 is level-agnostic, so the forbidden-string scan has to be the
+    # broad net that would also catch a future `logger.info("request from
+    # %s", ...)` that never rises to ERROR. The affirmative and logger-name
+    # assertions below are about the ERROR records specifically and keep using
+    # the filtered list.
+    text = "\n".join(rendered(record) for record in caplog.records)
     assert "ua-marker-3f9d" not in text, "a user agent reached the log"
     assert "203.0.113.9" not in text, "a client address reached the log"
 

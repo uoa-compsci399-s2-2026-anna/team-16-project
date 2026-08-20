@@ -199,17 +199,17 @@ async def test_the_record_carries_nothing_section_2_3_forbids(app, caplog, monke
     # Deliberately scans ALL of caplog.records, not the filtered `records`
     # above: §2.3 is level-agnostic, so the forbidden-string scan has to be the
     # broad net that would also catch a future `logger.info("request from
-    # %s", ...)` that never rises to ERROR. The affirmative and logger-name
-    # assertions below are about the ERROR records specifically and keep using
-    # the filtered list.
+    # %s", ...)` that never rises to ERROR.
     text = "\n".join(rendered(record) for record in caplog.records)
     assert "ua-marker-3f9d" not in text, "a user agent reached the log"
     assert "203.0.113.9" not in text, "a client address reached the log"
 
-    # The affirmative half, one marker per site: each has to have actually
-    # logged, or an absent string proves nothing about that site at all.
-    assert "marker-9e07" in text
-    assert "marker-5a2c" in text
+    # The affirmative half, and it must stay ERROR-only: each marker proves its
+    # own log site actually fired at ERROR, and checking against the
+    # unfiltered text above would let a record at any level satisfy it.
+    text_errors = "\n".join(rendered(record) for record in records)
+    assert "marker-9e07" in text_errors
+    assert "marker-5a2c" in text_errors
 
     # And both sites, not just one of them carrying both markers by accident -
     # this is what makes the pair above non-vacuous.

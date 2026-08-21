@@ -1427,3 +1427,133 @@ async def test_an_unknown_value_is_ignored_rather_than_matching_nothing(
 
     assert response.status_code == 200
     assert _stage_rows(response.text) == {"5,001.000 kg"}
+
+
+# --- the All box ------------------------------------------------------------
+
+
+def _all_box_checked(form: str, name: str) -> bool:
+    """Whether the All row of `name`'s dropdown is ticked.
+
+    Matched on `value=""` - the same marker the server keys on and the script
+    finds by - rather than on the `kc-all` class, which is presentational and
+    could be renamed without changing a thing about the behaviour."""
+    match = re.search(
+        rf'<input type="checkbox" name="{name}" value=""\s*\n?\s*(checked)?>', form
+    )
+    assert match, f"the {name} dropdown has no All row"
+    return match.group(1) is not None
+
+
+@pytest.mark.asyncio
+async def test_every_multi_select_offers_an_all_row_at_the_top(admin_client, seeded):
+    """**A panel of entirely unticked boxes reads as "nothing selected, so
+    nothing will show" - which is the opposite of what it means.**
+
+    The table is unfiltered in that state, and the summary does say "Any
+    stage", but the summary is behind the click that opened the panel. The All
+    row makes the everything-state something a reader can see rather than
+    infer.
+
+    It comes first: a reader scanning down the list has to meet it before the
+    specific values, or it is just another value near the top.
+    """
+    response = await admin_client.get("/admin/submissions/list")
+    assert response.status_code == 200
+    form = _filter_form(response.text)
+
+    for name in ("stage", "mass"):
+        assert _all_box_checked(form, name), (
+            f"{name} has an All row but it is not ticked on an unfiltered table"
+        )
+        panel = re.search(
+            rf'<input type="checkbox" name="{name}".*?</div>', form, re.S
+        ).group(0)
+        first = re.search(r'value="([^"]*)"', panel).group(1)
+        assert first == "", f"{name}'s All row is not the first thing in the panel"
+
+
+@pytest.mark.asyncio
+async def test_the_all_row_unticks_once_something_specific_is_chosen(
+    admin_client, seeded
+):
+    """The affirmative half. An All box that were always ticked would satisfy
+    the test above while telling the reader nothing."""
+    form = _filter_form(
+        (await admin_client.get("/admin/submissions/list?stage=subview_retail")).text
+    )
+
+    assert not _all_box_checked(form, "stage")
+    #: And the other dropdown, untouched, still says All - so this is about the
+    #: control the reader used rather than about the page.
+    assert _all_box_checked(form, "mass")
+
+
+@pytest.mark.asyncio
+async def test_ticking_all_shows_everything_even_beside_a_specific_value(
+    admin_client, three_stages
+):
+    """**The state scripting-off can produce, and the reason All wins.**
+
+    `filter-bar.js` unticks the specific boxes when All is ticked, but nothing
+    enforces that without it - a reader can submit both, and a bookmarked URL
+    can carry both. Letting All win makes that request mean what the closed
+    control says it means. Filtering the empty string out and honouring Retail
+    instead would make the same click give two different answers depending on
+    whether a script happened to load.
+    """
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=&stage=subview_retail"
+    )
+
+    assert response.status_code == 200
+    assert _stage_rows(response.text) == {
+        "5,001.000 kg",
+        "5,002.000 kg",
+        "5,003.000 kg",
+    }, "All did not win over the specific value ticked beside it"
+
+
+@pytest.mark.asyncio
+async def test_the_bar_still_reads_as_unfiltered_when_all_wins(
+    admin_client, three_stages
+):
+    """The controls have to agree with the table they sit above. If All wins in
+    the query it has to win on the page: drawing Retail as ticked over a table
+    showing every stage is the contradiction this pair of assertions exists to
+    prevent."""
+    form = _filter_form(
+        (
+            await admin_client.get("/admin/submissions/list?stage=&stage=subview_retail")
+        ).text
+    )
+
+    assert _all_box_checked(form, "stage")
+    ticked = re.findall(
+        r'<input type="checkbox" name="stage" value="([^"]+)"\s*\n?\s*checked', form
+    )
+    assert ticked == [], f"a specific stage is still drawn as ticked: {ticked}"
+
+
+@pytest.mark.asyncio
+async def test_the_filter_script_is_served(admin_client):
+    """A `<script src>` pointing at a 404 leaves the boxes contradicting each
+    other after a click, which is the thing it exists to prevent."""
+    response = await admin_client.get("/admin/static/filter-bar.js")
+
+    assert response.status_code == 200
+    assert 'value=""' in response.text, (
+        "the script no longer finds the All box the way the server marks it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_all_row_is_translated(admin_client, seeded):
+    """It reuses each control's empty label - "Any stage", "Any amount" - so
+    the row and the closed summary say the same words. Those keys are already
+    in the catalogue; this fails if the All row is given prose of its own and
+    that prose is not."""
+    form = _filter_form((await admin_client.get("/admin/submissions/list?lang=zh")).text)
+
+    assert form.count("全部环节") >= 2, "the All row and the summary disagree in Chinese"
+    assert form.count("不限数量") >= 2

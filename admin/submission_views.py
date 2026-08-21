@@ -258,6 +258,26 @@ EXCLUSION_CHOICES: list[tuple[str, str]] = [
 HORIZON_CHOICES: list[tuple[str, str]] = [("20", "20 years"), ("100", "100 years")]
 
 
+def _ticked(values: list[str]) -> list[str]:
+    """The specific values chosen, or nothing at all if "All" is among them.
+
+    **The empty string is the "All" box, and it wins.** Each multi-select
+    renders an All row as a checkbox with `value=""`, checked when nothing
+    specific is - so that a panel of unticked boxes does not read as "nothing
+    selected, nothing will show" when it in fact means the opposite.
+
+    Somebody can tick All *and* Retail, and with scripting off nothing stops
+    them. Letting All win makes that state mean what the summary above it says
+    - "Any stage" - rather than quietly narrowing to Retail while the closed
+    control claims to be showing everything. The alternative, filtering the
+    empty string out and honouring Retail, is the same click producing two
+    different answers depending on whether a script happened to load.
+    """
+    if "" in values:
+        return []
+    return [value for value in values if value]
+
+
 def _stage_clause(codes: list[str]):
     """Submissions with an entry at **any** of the named stages.
 
@@ -436,7 +456,15 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 select(Sector.code, Sector.name).order_by(Sector.sort_order, Sector.name)
             ).all()
 
-        selected = lambda name: request.query_params.getlist(name)  # noqa: E731
+        def picked(name: str) -> list[str]:
+            """What this control should render as ticked.
+
+            `_ticked` is the same function `list_query` applies, so the boxes
+            and the rows cannot disagree: if All wins in the query it wins on
+            the page too. Reading the raw parameter here instead would draw
+            Retail as ticked on a table showing every stage.
+            """
+            return _ticked(request.query_params.getlist(name))
         return [
             {
                 "name": "window",
@@ -444,7 +472,8 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 "multiple": False,
                 "empty_label": "Any time",
                 "options": [(value, label) for value, (label, _) in WINDOWS.items()],
-                "selected": selected("window"),
+                "selected": request.query_params.getlist("window"),
+                "chosen": picked("window"),
             },
             {
                 "name": "stage",
@@ -452,7 +481,7 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 "multiple": True,
                 "empty_label": "Any stage",
                 "options": [(code, name) for code, name in sectors],
-                "selected": selected("stage"),
+                "chosen": picked("stage"),
             },
             {
                 "name": "mass",
@@ -460,7 +489,7 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 "multiple": True,
                 "empty_label": "Any amount",
                 "options": [(value, label) for value, (label, _, _) in BANDS.items()],
-                "selected": selected("mass"),
+                "chosen": picked("mass"),
             },
             {
                 "name": "excluded",
@@ -468,7 +497,8 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 "multiple": False,
                 "empty_label": "Included and excluded",
                 "options": EXCLUSION_CHOICES,
-                "selected": selected("excluded"),
+                "selected": request.query_params.getlist("excluded"),
+                "chosen": picked("excluded"),
             },
             {
                 "name": "horizon",
@@ -476,7 +506,8 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 "multiple": False,
                 "empty_label": "Either horizon",
                 "options": HORIZON_CHOICES,
-                "selected": selected("horizon"),
+                "selected": request.query_params.getlist("horizon"),
+                "chosen": picked("horizon"),
             },
         ]
 
@@ -528,11 +559,11 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 Submission.created_at < _local_day_to_utc(end + timedelta(days=1), offset)
             )
 
-        stages = [code for code in params.getlist("stage") if code]
+        stages = _ticked(params.getlist("stage"))
         if stages:
             query = query.where(_stage_clause(stages))
 
-        mass = _mass_clause([value for value in params.getlist("mass") if value])
+        mass = _mass_clause(_ticked(params.getlist("mass")))
         if mass is not None:
             query = query.where(mass)
 

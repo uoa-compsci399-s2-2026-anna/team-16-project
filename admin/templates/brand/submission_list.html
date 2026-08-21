@@ -94,6 +94,8 @@
     cursor: pointer;
   }
   .kc-multi-panel label:hover { background: #DFF8ED; }
+  .kc-multi-panel .kc-all { font-weight: 600; }
+  .kc-multi-rule { margin: .25rem 0; border: 0; border-block-start: 1px solid #dfe6e3; }
   .kc-filters .kc-actions { display: flex; gap: .5rem; align-items: center; }
   .kc-hint { flex: 1 1 100%; margin: 0; font-size: .8125rem; color: #5b6f68; }
 
@@ -131,24 +133,45 @@
     {% if control.multiple %}
       <div class="kc-filter">
         <span class="kc-label" id="kc-label-{{ control.name }}">{{ _(control.title) }}</span>
-        <details class="kc-multi"{% if control.selected %} open{% endif %}>
+        <details class="kc-multi"{% if control.chosen %} open{% endif %}>
           {# Open on load when something is ticked. A closed box whose summary
              reads "2 selected" is honest, but a reader arriving at a filtered
              table should be able to see WHICH two without a click. #}
+          {# `control.chosen` is `selected` with the All box resolved: empty when
+             All is ticked, whatever was ticked otherwise. The summary reads off
+             it so that the closed control and the table always agree. #}
           <summary aria-labelledby="kc-label-{{ control.name }}">
-            {% if control.selected | length == 0 %}
+            {% if control.chosen | length == 0 %}
               {{ _(control.empty_label) }}
-            {% elif control.selected | length == 1 %}
-              {% for value, label in control.options %}{% if value == control.selected[0] %}{{ _(label) }}{% endif %}{% endfor %}
+            {% elif control.chosen | length == 1 %}
+              {% for value, label in control.options %}{% if value == control.chosen[0] %}{{ _(label) }}{% endif %}{% endfor %}
             {% else %}
-              {{ _("%(count)s selected", count=control.selected | length) }}
+              {{ _("%(count)s selected", count=control.chosen | length) }}
             {% endif %}
           </summary>
           <div class="kc-multi-panel">
+            {# The All row, and it is a real checkbox rather than a link or a
+               caption. A panel of entirely unticked boxes reads as "nothing is
+               selected, so nothing will be shown" — which is the opposite of
+               what it means — and the summary that says otherwise is hidden
+               behind the click that opened the panel. Ticked whenever nothing
+               specific is, so the "everything" state is something the reader
+               can see rather than infer.
+
+               `value=""`: `_ticked` treats the empty string as "do not narrow",
+               so All wins over anything else ticked alongside it. That is what
+               makes this correct with scripting off, where nothing stops both
+               being ticked at once. #}
+            <label class="kc-all">
+              <input type="checkbox" name="{{ control.name }}" value=""
+                     {% if control.chosen | length == 0 %}checked{% endif %}>
+              <span>{{ _(control.empty_label) }}</span>
+            </label>
+            <hr class="kc-multi-rule">
             {% for value, label in control.options %}
               <label>
                 <input type="checkbox" name="{{ control.name }}" value="{{ value }}"
-                       {% if value in control.selected %}checked{% endif %}>
+                       {% if value in control.chosen %}checked{% endif %}>
                 <span>{{ _(label) }}</span>
               </label>
             {% endfor %}
@@ -208,4 +231,5 @@
 {% block tail_js %}
   {{ super() }}
   <script type="module" src="/admin/static/localtime.js" defer></script>
+  <script type="module" src="/admin/static/filter-bar.js" defer></script>
 {% endblock %}

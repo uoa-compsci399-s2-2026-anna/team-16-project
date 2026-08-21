@@ -345,7 +345,7 @@ def _choose(page, value):
     )
 
 
-def test_the_chooser_is_present_usable_and_at_the_top_inline_start(browser):
+def test_the_chooser_is_present_usable_and_at_the_top_inline_end(browser):
     """Present is not usable, and this project has shipped that six times.
 
     So: in the viewport without scrolling, big enough to touch, actually
@@ -369,21 +369,21 @@ def test_the_chooser_is_present_usable_and_at_the_top_inline_start(browser):
         page.locator("#language-chooser").focus()
         assert page.evaluate("document.activeElement.id") == "language-chooser"
 
-        # **First item in the header's own row, and it must cost no height.**
+        # **Last item in the header's own row, and it must cost no height.**
         # A strip of its own above the header cost 57px on every page, which
         # this calculator cannot afford - it deleted an 87px step-indicator band
-        # to stop short steps scrolling. So the chooser joins the row that is
-        # already there, ahead of the brand, and the row must not have grown.
+        # to stop short steps scrolling. So the chooser joins the row after the
+        # brand, and the row must not have grown.
         assert page.evaluate(
             """() => {
               const bar = document.querySelector('.language-bar');
               const row = document.querySelector('.header-inner');
               const brand = document.querySelector('.brand');
               return bar.parentElement === row &&
-                (bar.compareDocumentPosition(brand) &
+                (brand.compareDocumentPosition(bar) &
                  Node.DOCUMENT_POSITION_FOLLOWING) !== 0;
             }"""
-        ), "the chooser is not the first thing in the header row"
+        ), "the chooser is not after the brand in the header row"
         assert page.evaluate(
             "() => Math.round("
             "document.querySelector('.header-inner').getBoundingClientRect().height)"
@@ -1492,13 +1492,13 @@ def test_the_chooser_is_usable_at_every_width(browser, width):
 
 @pytest.mark.parametrize("width", [390, 1280])
 def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
-    """"Top left" is physical, and Arabic renders right-to-left.
+    """The chooser remains at reading-end when Arabic mirrors the header.
 
     **Measured, not trusted.** `dir="rtl"` on its own proves nothing - the
     whole point of the logical-property conversion is that the bar moves. So
     the chooser's distance from each edge is measured in both directions and
-    the two must swap: inline-start in English is the left edge, and in Arabic
-    it is the right one.
+    the two must swap: inline-end in English is the right edge, and in Arabic
+    it is the left one.
     """
     def measure(languages):
         context = browser.new_context(
@@ -1516,7 +1516,7 @@ def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
             # Measured against the BAR's own edges rather than the viewport's.
             # The bar is full width, so a viewport measurement says the same
             # thing, but only by coincidence - the claim being tested is that
-            # the content sits at the bar's reading-start edge.
+            # the content sits at the row's reading-end edge.
             return page.evaluate(
                 """() => {
                   // The ROW, not the bar. The bar now hugs its own contents
@@ -1549,12 +1549,12 @@ def test_the_chooser_mirrors_in_a_right_to_left_page(browser, width):
     ltr = measure(["en-NZ"])
 
     assert ltr["dir"] == "ltr" and rtl["dir"] == "rtl"
-    # The content hugs the reading-start edge, which is the left in English and
-    # the right in Arabic. Asserted as a swap rather than against a constant, so
+    # The content hugs the reading-end edge, which is the right in English and
+    # the left in Arabic. Asserted as a swap rather than against a constant, so
     # that changing the bar's padding does not require editing this test.
-    assert ltr["gapLeft"] < ltr["gapRight"], f"{width}px: not at the start in ltr"
-    assert rtl["gapRight"] < rtl["gapLeft"], f"{width}px: not mirrored in rtl"
-    assert ltr["gapLeft"] == rtl["gapRight"], (
+    assert ltr["gapRight"] < ltr["gapLeft"], f"{width}px: not at the end in ltr"
+    assert rtl["gapLeft"] < rtl["gapRight"], f"{width}px: not mirrored in rtl"
+    assert ltr["gapRight"] == rtl["gapLeft"], (
         f"{width}px: the two directions are not mirror images: {ltr} vs {rtl}"
     )
     # The label leads the control in reading order in both directions, which is

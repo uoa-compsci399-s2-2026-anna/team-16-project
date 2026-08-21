@@ -73,3 +73,27 @@ function localise(root) {
 }
 
 localise(document);
+
+/* The other half: tell the server which zone the reader typed their dates in.
+ *
+ * `/admin/submissions` has a from/to date range, and a calendar date is a
+ * question about a zone. Left to itself the server reads those dates as UTC
+ * dates, which for a New Zealand reader shifts the window by twelve hours in
+ * the direction that quietly drops the most recent half-day — the half they
+ * were most likely looking for.
+ *
+ * `getTimezoneOffset()` is UTC-minus-local in minutes and so is POSITIVE west
+ * of UTC: Auckland in NZST is -720. `_tz_offset_minutes` in
+ * admin/submission_views.py carries the same note, because the sign is the
+ * opposite of the one people say out loud and each side has to get it right
+ * independently.
+ *
+ * The field is filled on load rather than on submit: it has to be right for
+ * the bookmarked URL a staff member shares as much as for the click that made
+ * it. With this file absent the field stays empty and the server reads UTC,
+ * which the form's own hint states.
+ */
+const offsetField = document.getElementById("kc-tzoffset");
+if (offsetField && !offsetField.value) {
+  offsetField.value = String(new Date().getTimezoneOffset());
+}

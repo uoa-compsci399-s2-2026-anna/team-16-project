@@ -23,7 +23,7 @@ question is what renders, and only a request can answer it.
 from __future__ import annotations
 
 import re
-from datetime import timedelta
+from datetime import datetime, timedelta
 from decimal import Decimal
 
 import pytest
@@ -919,3 +919,248 @@ async def test_the_bar_needs_no_javascript(admin_client, seeded):
     assert 'method="get"' in form
     assert 'type="submit"' in form
     assert "onclick" not in form and "addEventListener" not in form
+
+
+# --- the explicit date range ------------------------------------------------
+
+
+@pytest.fixture
+def dated_rows(admin_app, seeded):
+    """Three submissions stamped at known UTC instants, and their masses are
+    what identifies them on the page.
+
+    The instants are chosen around a UTC midnight on purpose: 2026-03-10 at
+    23:30 UTC is already the 11th in Auckland (UTC+13 in March), and 2026-03-11
+    at 00:30 UTC is the 11th in both. A range filter that ignored the reader's
+    zone would put those two in different days; one that got the sign backwards
+    would put them in the wrong days.
+    """
+    stamps = {
+        "1111.000": datetime(2026, 3, 10, 12, 0),
+        "2222.000": datetime(2026, 3, 10, 23, 30),
+        "3333.000": datetime(2026, 3, 11, 0, 30),
+    }
+    made = []
+    with admin_app.state.session_factory() as session:
+        processing = session.scalar(
+            select(Sector).where(Sector.code == "subview_processing")
+        )
+        landfill = session.scalar(
+            select(Destination).where(Destination.code == "subview_landfill")
+        )
+        for mass, moment in stamps.items():
+            row = Submission(
+                token=None,
+                created_at=moment,
+                updated_at=moment,
+                factor_set_id=seeded["factor_set_id"],
+                gwp_horizon=100,
+            )
+            session.add(row)
+            session.flush()
+            entry = SubmissionEntry(
+                submission_id=row.id,
+                sector_id=processing.id,
+                food_category_id=None,
+                sort_order=0,
+            )
+            session.add(entry)
+            session.flush()
+            session.add(
+                SubmissionLine(
+                    submission_entry_id=entry.id,
+                    scenario=Scenario.current,
+                    destination_id=landfill.id,
+                    qty_kg=Decimal(mass),
+                )
+            )
+            made.append(row.id)
+        session.commit()
+
+    yield {"ids": made}
+
+    with admin_app.state.session_factory() as session:
+        session.execute(Submission.__table__.delete().where(Submission.id.in_(made)))
+        session.commit()
+
+
+def _shown(body: str) -> set[str]:
+    """Which of the dated rows the page drew, by their masses."""
+    return {
+        mass for mass in ("1,111.000 kg", "2,222.000 kg", "3,333.000 kg")
+        if mass in body
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_single_day_range_includes_the_whole_of_that_day(
+    admin_client, dated_rows
+):
+    """`from == to` is the commonest range anybody types, and taking the end
+    date at face value would make it return nothing at all - which reads as
+    "there were no calculations that day" rather than as a bad query."""
+    response = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-10&to=2026-03-10&tzoffset=0"
+    )
+
+    assert response.status_code == 200
+    assert _shown(response.text) == {"1,111.000 kg", "2,222.000 kg"}, (
+        "a same-day range did not cover that whole day in UTC"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_range_is_read_in_the_readers_zone_not_in_utc(
+    admin_client, dated_rows
+):
+    """**The sign of `getTimezoneOffset()` is the thing being tested here.**
+
+    It is UTC-minus-local, so Auckland is `-720`, which is the opposite of the
+    "+12" people say out loud. Get it backwards and every window shifts by
+    twice the offset - a day out in New Zealand - in a direction that still
+    returns *some* rows, so the screen looks like it is working.
+
+    2026-03-10 23:30 UTC is 2026-03-11 12:30 in Auckland. Asking for the 11th
+    in local terms must therefore return it, and must not return 2026-03-10
+    12:00 UTC, which is still the 11th at 01:00 local... and so is also in
+    range. So the discriminating row is the first one at 12:00 UTC on the 10th,
+    which in Auckland is 01:00 on the 11th.
+    """
+    utc = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-11&to=2026-03-11&tzoffset=0"
+    )
+    assert _shown(utc.text) == {"3,333.000 kg"}, (
+        "with no offset the range should be plain UTC days"
+    )
+
+    #: Auckland, UTC+13 in March (daylight saving). `getTimezoneOffset()`
+    #: reports -780.
+    auckland = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-11&to=2026-03-11&tzoffset=-780"
+    )
+    assert _shown(auckland.text) == {"1,111.000 kg", "2,222.000 kg", "3,333.000 kg"}, (
+        "the local-day window is not where the offset puts it"
+    )
+
+    #: And the day before, in Auckland, holds none of them - which is what
+    #: fails if the sign is inverted.
+    day_before = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-10&to=2026-03-10&tzoffset=-780"
+    )
+    assert _shown(day_before.text) == set(), (
+        "the sign of the offset is inverted: the window landed a day early"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_open_ended_range_bounds_only_the_end_it_names(
+    admin_client, dated_rows
+):
+    """One box filled and the other empty is a normal thing to type."""
+    from_only = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-11&tzoffset=0"
+    )
+    assert _shown(from_only.text) == {"3,333.000 kg"}
+
+    to_only = await admin_client.get("/admin/submissions/list?to=2026-03-10&tzoffset=0")
+    assert _shown(to_only.text) == {"1,111.000 kg", "2,222.000 kg"}
+
+
+@pytest.mark.asyncio
+async def test_a_nonsense_date_leaves_the_table_unfiltered(admin_client, dated_rows):
+    """Only a hand-edited query string can put this here - `<input type="date">`
+    submits `YYYY-MM-DD` or nothing. The useful answer is the unfiltered table,
+    not a stack trace at somebody who cannot act on it."""
+    response = await admin_client.get(
+        "/admin/submissions/list?from=not-a-date&to=13/14/2026&tzoffset=banana"
+    )
+
+    assert response.status_code == 200
+    assert _shown(response.text) == {"1,111.000 kg", "2,222.000 kg", "3,333.000 kg"}
+
+
+@pytest.mark.asyncio
+async def test_the_range_and_a_preset_narrow_together(admin_client, dated_rows):
+    """They compose rather than one overriding the other, which is what
+    "filter" means everywhere else on the page - and the form's hint says so.
+    The dated rows are from March, so any recent-window preset excludes them
+    however wide the range."""
+    response = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-01&to=2026-03-31&window=24h&tzoffset=0"
+    )
+
+    assert response.status_code == 200
+    assert _shown(response.text) == set()
+
+
+@pytest.mark.asyncio
+async def test_the_range_is_counted_as_well_as_rendered(admin_client, dated_rows):
+    """The range is applied in `list_query` rather than through sqladmin's
+    filter protocol, so this is the assertion that it is still counted:
+    sqladmin builds its total from `select(count()).select_from(
+    stmt.subquery())` over whatever `list_query` returns."""
+    response = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-10&to=2026-03-10&tzoffset=0"
+    )
+
+    assert response.status_code == 200
+    assert _reported_count(response.text) == 2
+
+
+@pytest.mark.asyncio
+async def test_the_bar_offers_the_range_and_keeps_what_was_typed(
+    admin_client, seeded
+):
+    """Two `type="date"` inputs and a hidden offset field, and a submitted
+    range comes back filled in - a form that cleared itself on submit would
+    make a second, narrower query mean retyping both dates."""
+    response = await admin_client.get(
+        "/admin/submissions/list?from=2026-03-10&to=2026-03-11"
+    )
+    assert response.status_code == 200
+
+    form = _filter_form(response.text)
+    assert 'name="from"' in form and 'name="to"' in form
+    assert 'type="date"' in form
+    assert 'value="2026-03-10"' in form and 'value="2026-03-11"' in form
+    assert 'name="tzoffset"' in form, "nothing tells the server which zone was meant"
+
+
+# --- the bar in Chinese -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_the_filter_bar_renders_in_chinese(admin_client, seeded):
+    """**`tests/admin/test_i18n.py` cannot see these strings.**
+
+    It walks view classes for `name`, `name_plural`, `category` and every
+    `form_args` description. Filter titles and option labels are attributes of
+    filter *objects*, and this screen has no form, so nothing in that file
+    touches either - a catalogue miss here would be invisible until somebody
+    opened the page in Chinese and found an English bar over a Chinese table.
+    """
+    response = await admin_client.get("/admin/submissions/list?lang=zh")
+    assert response.status_code == 200
+
+    form = _filter_form(response.text)
+    for expected in (
+        "计算时间",        # the window filter's title
+        "最近 24 小时",    # one of its options
+        "供应链环节",      # the stage filter
+        "全部环节",
+        "记录的食物浪费量",  # the mass filter
+        "10 吨及以上",
+        "起始日期",        # the range
+        "查询",            # the submit button
+    ):
+        assert expected in form, f"{expected!r} is not translated on the bar"
+
+
+@pytest.mark.asyncio
+async def test_the_english_bar_is_unchanged(admin_client, seeded):
+    """The affirmative half. Every assertion above is satisfied by a bar that
+    renders Chinese unconditionally, which would be a different defect."""
+    form = _filter_form((await admin_client.get("/admin/submissions/list")).text)
+
+    assert "Last 24 hours" in form and "Any stage" in form
+    assert "计算时间" not in form

@@ -54,7 +54,7 @@ than on never having read it.
 
 from __future__ import annotations
 
-from datetime import timedelta
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 
 from markupsafe import Markup, escape
@@ -149,6 +149,63 @@ def _recorded_mass_subquery():
         .correlate(Submission)
         .scalar_subquery()
     )
+
+
+#: The largest real UTC offset is +14:00 (Kiritimati) and the smallest -12:00,
+#: so anything outside this is either a typo or someone editing the query
+#: string. Clamped rather than refused: the cost of a silly offset is a window
+#: shifted by hours, and the cost of refusing is a staff member staring at an
+#: error they cannot act on.
+_MAX_TZ_OFFSET_MINUTES = 14 * 60
+
+
+def _parse_iso_date(value: str | None) -> date | None:
+    """`YYYY-MM-DD` from an `<input type="date">`, or None.
+
+    Anything unparseable is None rather than an error. The input element only
+    ever submits that form, so a bad value means a hand-edited query string,
+    and the useful response to that is the unfiltered table rather than a
+    stack trace.
+    """
+    if not value:
+        return None
+    try:
+        return date.fromisoformat(value.strip())
+    except ValueError:
+        return None
+
+
+def _tz_offset_minutes(value: str | None) -> int:
+    """`Date.prototype.getTimezoneOffset()` as the browser reports it.
+
+    **Positive west of UTC.** JavaScript returns UTC-minus-local in minutes, so
+    Auckland in NZST is `-720` and Shanghai is `-480`. That sign convention is
+    the opposite of the one people say out loud ("UTC+12"), which is exactly
+    why it is converted in one place with the rule written down rather than
+    inline at the two call sites.
+
+    Absent or unparseable means zero, which makes the typed dates UTC dates —
+    the honest fallback when the page has no script running to tell us
+    otherwise, and what the form's own hint says will happen.
+    """
+    try:
+        minutes = int(value)
+    except (TypeError, ValueError):
+        return 0
+    return max(-_MAX_TZ_OFFSET_MINUTES, min(_MAX_TZ_OFFSET_MINUTES, minutes))
+
+
+def _local_day_to_utc(day: date, offset_minutes: int) -> datetime:
+    """Midnight at the start of `day`, in the reader's zone, as naive UTC.
+
+    local = UTC - offset  =>  UTC = local + offset. Auckland's `-720` turns
+    local 2026-08-21 00:00 into 2026-08-20 12:00 UTC, which is right: New
+    Zealand midnight is noon UTC the day before.
+
+    Naive on the way out, because `submission.created_at` is naive UTC
+    (contract §1.3) and SQLAlchemy will not compare an aware value against it.
+    """
+    return datetime(day.year, day.month, day.day) + timedelta(minutes=offset_minutes)
 
 
 class RecentWindowFilter:
@@ -403,17 +460,48 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     details_template = "brand/submission_details.html"
 
     def list_query(self, request):
-        """Eager-load what the two derived columns walk.
+        """Eager-load what the two derived columns walk, and apply the date
+        range if one was given.
 
-        Without this the list page is N+1 twice over: once for `entries` and
-        again for each entry's `lines` and `sector`. Fifty rows is 151 queries,
-        and the page still renders — slowly, and only on a database small
-        enough not to notice.
+        **The eager loading.** Without it the list page is N+1 twice over: once
+        for `entries` and again for each entry's `lines` and `sector`. Fifty
+        rows is 151 queries, and the page still renders — slowly, and only on a
+        database small enough not to notice.
+
+        **The date range is here rather than in a `column_filters` entry**
+        because sqladmin's filter protocol is one parameter with a list of
+        lookups: it renders a chooser, and a from/to pair is two free inputs.
+        Putting it in `list_query` is not a way around the count, either —
+        sqladmin builds its total from `select(count()).select_from(
+        stmt.subquery())` over whatever this returns, so the range is counted
+        exactly like the three filters that follow it.
+
+        It composes with the preset window rather than overriding it: two
+        controls both narrowing the same column intersect, which is what
+        "filter" means everywhere else on this page. The form's hint says so.
         """
-        return super().list_query(request).options(
+        query = super().list_query(request).options(
             selectinload(Submission.entries).selectinload(SubmissionEntry.lines),
             selectinload(Submission.entries).selectinload(SubmissionEntry.sector),
         )
+
+        offset = _tz_offset_minutes(request.query_params.get("tzoffset"))
+        start = _parse_iso_date(request.query_params.get("from"))
+        end = _parse_iso_date(request.query_params.get("to"))
+
+        if start is not None:
+            query = query.where(Submission.created_at >= _local_day_to_utc(start, offset))
+        if end is not None:
+            #: The *end* of the chosen day, not its start. A staff member
+            #: picking 21 August to 21 August means that whole day; taking the
+            #: date at face value would make `from == to` return nothing at
+            #: all, which reads as "there were no calculations" rather than as
+            #: a bad query.
+            query = query.where(
+                Submission.created_at
+                < _local_day_to_utc(end + timedelta(days=1), offset)
+            )
+        return query
 
     def details_query(self, request):
         """The drill-down walks one level deeper than the list: every line's

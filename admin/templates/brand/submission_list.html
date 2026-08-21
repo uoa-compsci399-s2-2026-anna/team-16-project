@@ -14,19 +14,27 @@
    submits every select at once, and `page` is dropped on submit — staying on
    page 4 of a result set that no longer has one is how a filter looks broken.
 
-   NO JAVASCRIPT. The selects are inside a form with a submit button, so this
-   works with scripting off, which is the same standard `brand/block_ip.html`
-   and the drawer on the public site hold to. `localtime.js` below is the one
-   script here and it is an enhancement over a page that is already correct —
-   see admin/static/localtime.js. #}
+   TRANSLATION. Filter titles and option labels are English strings on the
+   Python objects, so they go through `_()` here and their keys live in
+   `admin/locales/zh.json`. `tests/admin/test_i18n.py` does not walk filter
+   objects, so `test_submission_views.py` asserts the Chinese renders — a
+   catalogue miss on this bar would otherwise be invisible until somebody
+   opened the page in Chinese.
+
+   NO JAVASCRIPT REQUIRED. The selects and the two date inputs are inside a
+   form with a submit button, so this works with scripting off, which is the
+   standard `brand/block_ip.html` and the public site's drawer hold to. One
+   script runs here: `localtime.js`, which converts the displayed timestamps
+   and fills the hidden `tzoffset` below. Without it the typed dates are read
+   as UTC dates, and the hint under them says so. #}
 {% extends "brand/model_list.html" %}
 
 {% block list_page_intro %}
 <style>
-  /* sqladmin's sidebar column, emptied by this template's `filters` override
-     but still holding a third of the width. Hidden rather than deleted: the
-     override is in `content`, and `filter-sidebar-col` is written into
-     sqladmin's own list.html, which this file has no other seam into. */
+  /* sqladmin's sidebar column, emptied by this template but still holding a
+     third of the width. Hidden rather than deleted: `filter-sidebar-col` is
+     written into sqladmin's own list.html, which this file has no other seam
+     into. */
   .filter-sidebar-col { display: none !important; }
   .filter-sidebar-col + * , .col-md-9 { width: 100%; max-width: 100%; flex: 0 0 100%; }
 
@@ -44,61 +52,97 @@
     color: #003223;              /* Kale */
     white-space: nowrap;
   }
-  /* `min-width` rather than a fixed width: "10 tonnes and over" and its German
-     equivalent are not the same length, and a fixed width clips the longer of
-     them silently — a `<select>` truncates without any sign that it has. */
+  /* `min-width` rather than a fixed width: "10 tonnes and over" and 「10 吨及以上」
+     are not the same length, and a fixed width clips the longer of them
+     silently — a `<select>` truncates with no sign that it has. */
   .kc-filter select { min-width: 11rem; }
+  .kc-filter input[type="date"] { min-width: 9.5rem; }
+  .kc-range { display: flex; align-items: flex-end; gap: .4rem; }
+  .kc-range .kc-arrow { padding-block-end: .45rem; color: #5b6f68; }
   .kc-filters .kc-actions { display: flex; gap: .5rem; align-items: center; }
+  .kc-hint {
+    flex: 1 1 100%;
+    margin: 0;
+    font-size: .8125rem;
+    color: #5b6f68;
+  }
   @media (max-width: 640px) {
-    /* One per line rather than two half-width ones: a select whose value is
-       clipped is worse than a taller bar. */
-    .kc-filter { flex: 1 1 100%; }
-    .kc-filter select { width: 100%; }
+    /* One control per line rather than two half-width ones: a select whose
+       value is clipped is worse than a taller bar. */
+    .kc-filter, .kc-range { flex: 1 1 100%; }
+    .kc-filter select, .kc-filter input[type="date"] { width: 100%; }
   }
 </style>
 
 <form method="get" class="kc-filters" role="search">
   {# Every query parameter that is NOT one of ours is carried through as a
      hidden field. `search`, `sortBy` and `pageSize` all live in the URL, and a
-     form that posts only its own selects would silently discard the sort a
-     staff member had just chosen. `page` is deliberately NOT carried: a new
+     form that submitted only its own controls would silently discard the sort
+     a staff member had just chosen. `page` is deliberately NOT carried: a new
      filter means a new result set, and landing on page 4 of a set with two
      pages shows an empty table that reads as "no matches". #}
   {% set filter_names = model_view.get_filters() | map(attribute="parameter_name") | list %}
+  {% set own_names = filter_names + ["from", "to", "tzoffset", "page"] %}
   {% for key, value in request.query_params.items() %}
-    {% if key not in filter_names and key != "page" %}
+    {% if key not in own_names %}
       <input type="hidden" name="{{ key }}" value="{{ value }}">
     {% endif %}
   {% endfor %}
 
+  {# Filled by localtime.js with `Date.prototype.getTimezoneOffset()`, so the
+     dates typed above are read in the same zone the timestamps are displayed
+     in. Empty means UTC — see `_tz_offset_minutes`. #}
+  <input type="hidden" name="tzoffset" id="kc-tzoffset"
+         value="{{ request.query_params.get('tzoffset', '') }}">
+
   {% for filter in model_view.get_filters() %}
     {% set current = request.query_params.get(filter.parameter_name) %}
     <div class="kc-filter">
-      <label for="kc-filter-{{ filter.parameter_name }}">{{ filter.title }}</label>
+      <label for="kc-filter-{{ filter.parameter_name }}">{{ _(filter.title) }}</label>
       <select class="form-select" id="kc-filter-{{ filter.parameter_name }}"
               name="{{ filter.parameter_name }}">
         {% for lookup in filter.lookups(request, model_view.model, model_view._run_arbitrary_query) %}
           <option value="{{ lookup[0] }}"{% if current == lookup[0] %} selected{% endif %}>
-            {{ lookup[1] }}
+            {{ _(lookup[1]) }}
           </option>
         {% endfor %}
       </select>
     </div>
   {% endfor %}
 
+  {# The explicit range, for the question the presets cannot answer: "what came
+     in during the client demonstration on the 14th". Two `type="date"` inputs
+     rather than a text box, so the format is the browser's problem and the
+     reader gets their own locale's calendar. #}
+  <div class="kc-range">
+    <div class="kc-filter">
+      <label for="kc-filter-from">{{ _("From") }}</label>
+      <input type="date" class="form-control" id="kc-filter-from" name="from"
+             value="{{ request.query_params.get('from', '') }}">
+    </div>
+    <span class="kc-arrow" aria-hidden="true">→</span>
+    <div class="kc-filter">
+      <label for="kc-filter-to">{{ _("To") }}</label>
+      <input type="date" class="form-control" id="kc-filter-to" name="to"
+             value="{{ request.query_params.get('to', '') }}">
+    </div>
+  </div>
+
   <div class="kc-actions">
     <button type="submit" class="btn btn-primary">{{ _("Apply") }}</button>
     {# Shown only when something is actually filtered. A permanently visible
        "Clear" on an unfiltered table invites a click that does nothing and
        teaches the reader the bar is inert. #}
-    {% set active = filter_names | select("in", request.query_params) | list %}
+    {% set active = own_names | select("in", request.query_params) | list %}
     {% if active %}
       <a class="btn btn-link"
-         href="{{ request.url.remove_query_params(filter_names).remove_query_params(['page']) }}">
-        {{ _("Clear") }}
-      </a>
+         href="{{ request.url.remove_query_params(own_names) }}">{{ _("Clear") }}</a>
     {% endif %}
   </div>
+
+  <p class="kc-hint">
+    {{ _("Both dates are inclusive, and are read in your own time zone. Every filter applies at once, so a preset and a range narrow the list together.") }}
+  </p>
 </form>
 {% endblock %}
 

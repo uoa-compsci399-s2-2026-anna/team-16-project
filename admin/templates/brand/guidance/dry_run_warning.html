@@ -1,0 +1,17 @@
+{# The one paragraph of brand/guidance/dry_run_purpose.html that may not be
+   folded away, split out so that it cannot be.
+
+   Contract §8.2's reason for `X-Dry-Run: true` in the words a staff member
+   needs before they act, not after. It is rendered outside every `<details>`
+   on brand/dry_run.html, and `tests/admin/test_guidance.py` asserts that -
+   asserting the substring is present, which the closed-disclosure version also
+   satisfied, is exactly how this went missing. #}
+<p class="guidance-warning">
+  <strong>Do not test on the public calculator instead.</strong> Every
+  calculation a visitor runs is counted, and those counts are what the public
+  statistics page reports on the client's behalf. Twenty runs while you tune a
+  formula are twenty calculations that never happened, sitting inside a figure
+  that may be quoted in public — and nobody can take them out again afterwards,
+  because the calculator deliberately stores nothing that would say which were
+  yours.
+</p>

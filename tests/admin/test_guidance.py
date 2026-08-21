@@ -58,6 +58,10 @@ DRY_RUN = "twenty calculations that never happened"
 #: `guidance_blocks`.
 HAND_INCLUDED = {
     "dry_run_purpose.html": "brand/dry_run.html",
+    #: Split out of `dry_run_purpose.html` so it could be rendered where a
+    #: `<details>` cannot swallow it - see `test_the_public_calculator_warning_
+    #: is_not_behind_a_disclosure` below for what went wrong when it could.
+    "dry_run_warning.html": "brand/dry_run.html",
     # The first-run walkthrough (tests/admin/test_getting_started.py covers
     # what it says and that the index links it; this file's orphan test is
     # what notices if its page stops including it at all).
@@ -342,3 +346,49 @@ async def test_the_list_page_still_has_its_table_and_filters(admin_client):
     assert "<table" in body, "the list page lost its table"
     assert "Filter" in body, "the list page lost sqladmin's filter panel"
     assert "Actions" in body, "the list page lost the bulk-action dropdown"
+
+
+def test_the_public_calculator_warning_is_not_behind_a_disclosure():
+    """**Present in the markup is not the same as readable, and this file had
+    been asserting the first while meaning the second.**
+
+    `test_the_dry_run_screen_explains_what_it_is_for` checks that the §8.2
+    warning's text appears on the page. A redesign moved the whole guidance
+    block inside a closed `<details>`; the substring was still there, the test
+    stayed green, and the paragraph the page exists for - *"twenty calculations
+    that never happened, sitting inside a figure that may be quoted in public"*
+    - went behind a click.
+
+    So this asserts the structure rather than the text: the warning is included
+    at a point in `brand/dry_run.html` that no `<details>` has opened.
+
+    Read from the template rather than driven over HTTP on purpose. A rendered
+    page would need the disclosure's state inferred from CSS or from a browser,
+    and the question here is about where the include sits, which the source
+    answers exactly.
+    """
+    page = (GUIDANCE_DIR.parent / "dry_run.html").read_text(encoding="utf-8")
+
+    #: Jinja comments stripped FIRST. The comment above the include explains
+    #: what went wrong by naming `<details>`, and counting raw occurrences read
+    #: that as an open disclosure - this assertion failed on a template that was
+    #: correct. Sixth unanchored-match defect in this repository; the previous
+    #: ones are noted beside `_reported_count` in test_submission_views.py and
+    #: `_ADMIN_PATH` in test_operator_guidance.py.
+    markup = re.sub(r"\{#.*?#\}", "", page, flags=re.S)
+
+    include = markup.index("guidance/dry_run_warning.html")
+    before = markup[:include]
+    #: Every `<details>` opened before the include must also have been closed
+    #: before it. Counting tags is enough - these templates never nest one
+    #: disclosure inside another, and a future one that did would make this
+    #: over-strict rather than blind, which is the right way round.
+    assert before.count("<details") == before.count("</details>"), (
+        "the public-calculator warning is inside a <details> - it has to be "
+        "readable without a click, which is the whole of contract 8.2's reason "
+        "for this page"
+    )
+
+    #: And it is still on the page at all. Without this the assertion above
+    #: passes trivially for a page that stopped including it.
+    assert "guidance/dry_run_warning.html" in page

@@ -1,0 +1,15 @@
+{# /admin/submissions/list — brand/model_list.html plus the local-time script.
+
+   A separate template rather than putting the script in brand/model_list.html:
+   that file is the base for all eighteen list screens, and only this one renders
+   a `<time>` element. Loading a script on seventeen pages that have nothing for
+   it to do is the kind of thing nobody removes later.
+
+   See admin/static/localtime.js for why the conversion happens in the browser
+   at all, and for the trap the server-side `Z` exists to close. #}
+{% extends "brand/model_list.html" %}
+
+{% block tail_js %}
+  {{ super() }}
+  <script type="module" src="/admin/static/localtime.js" defer></script>
+{% endblock %}

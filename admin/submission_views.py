@@ -54,11 +54,13 @@ than on never having read it.
 
 from __future__ import annotations
 
+from datetime import timedelta
 from decimal import Decimal
 
+from markupsafe import Markup, escape
 from sqladmin import action, expose
 from sqladmin.filters import BooleanFilter, StaticValuesFilter
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.orm import selectinload
 from starlette.responses import RedirectResponse
 from starlette.responses import Response as StarletteResponse
@@ -66,7 +68,7 @@ from starlette.responses import Response as StarletteResponse
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY
 from admin.modelviews import AuditedModelView
-from db.models import Scenario, Submission, SubmissionEntry, SubmissionLine
+from db.models import Scenario, Sector, Submission, SubmissionEntry, SubmissionLine, utcnow
 
 #: The panel's own grouping. Submissions are neither taxonomy nor factors: they
 #: are the record of what the public did with both.
@@ -123,6 +125,194 @@ def _current_total_kg(submission: Submission) -> Decimal:
     return total
 
 
+#: The scalar subquery behind both the "food waste recorded" column's filter
+#: and nothing else. Written once, here, because a second copy of a correlated
+#: subquery is a second chance to forget `scenario == current` — which would
+#: silently double every figure it filters on, in the same way adding the two
+#: scenarios would (see `_current_total_kg`).
+#:
+#: A scalar subquery rather than a join with GROUP BY/HAVING, deliberately: a
+#: grouped statement changes the shape of what sqladmin then wraps in
+#: `select(count()).select_from(stmt.subquery())` for the pagination count, and
+#: a filter that quietly disagreed with its own row count is the failure this
+#: screen can least afford — a moderator would be told there are 40 rows and
+#: shown 12.
+def _recorded_mass_subquery():
+    return (
+        select(func.coalesce(func.sum(SubmissionLine.qty_kg), 0))
+        .select_from(SubmissionLine)
+        .join(SubmissionEntry, SubmissionLine.submission_entry_id == SubmissionEntry.id)
+        .where(
+            SubmissionEntry.submission_id == Submission.id,
+            SubmissionLine.scenario == Scenario.current,
+        )
+        .correlate(Submission)
+        .scalar_subquery()
+    )
+
+
+class RecentWindowFilter:
+    """"Calculated in the last ..." — rolling windows, not calendar days.
+
+    **Calendar days would be wrong and would look right.** "Today" is a
+    question about the reader's own time zone, and this filter runs on a server
+    that stores naive UTC. A staff member in Auckland opening the panel at 9am
+    on the 21st is at 21:00 UTC on the *20th*; a UTC "today" would show them an
+    empty screen and they would conclude the calculator had had no visitors.
+
+    A rolling window has no such ambiguity — "the last 24 hours" is the same
+    24 hours everywhere — which is why the options below are durations rather
+    than dates. It is also the question a moderator actually has: not "what
+    happened on Tuesday" but "what has arrived since I last looked".
+    """
+
+    has_operator = False
+    template = "sqladmin/filters/lookup_filter.html"
+
+    #: value -> (label, timedelta). Ordered shortest first, because the short
+    #: windows are the ones used repeatedly.
+    WINDOWS = {
+        "24h": ("Last 24 hours", timedelta(hours=24)),
+        "7d": ("Last 7 days", timedelta(days=7)),
+        "30d": ("Last 30 days", timedelta(days=30)),
+        "12mo": ("Last 12 months", timedelta(days=365)),
+    }
+
+    def __init__(self, title="Calculated in the", parameter_name="window"):
+        self.title = title
+        self.parameter_name = parameter_name
+
+    async def lookups(self, request, model, run_query):
+        return [("__all", "Any time")] + [
+            (value, label) for value, (label, _) in self.WINDOWS.items()
+        ]
+
+    async def get_filtered_query(self, query, value, model):
+        window = self.WINDOWS.get(value)
+        if window is None:
+            return query
+        #: `utcnow()` is naive UTC and so is `created_at` (contract §1.3), so
+        #: these compare directly. Mixing an aware value in here would raise
+        #: at query build time rather than quietly comparing wrong, which is
+        #: the one mercy of naive datetimes.
+        return query.where(Submission.created_at >= utcnow() - window[1])
+
+
+class SupplyChainStageFilter:
+    """Submissions with **any** entry at the named stage.
+
+    `EXISTS`, not a join. A submission has one entry per supply-chain stage,
+    so a business reporting waste at three stages joins to three rows — and a
+    join would return that submission three times, which sqladmin would then
+    render as three identical lines and count as three. `EXISTS` asks the
+    question the filter is actually asking: does this calculation touch that
+    stage at all.
+
+    The options come from the `sector` table rather than from a literal list,
+    because §2.1's taxonomy is data: a sector staff add through the panel has
+    to appear here without anyone editing this file.
+    """
+
+    has_operator = False
+    template = "sqladmin/filters/lookup_filter.html"
+
+    def __init__(self, title="Supply-chain stage", parameter_name="stage"):
+        self.title = title
+        self.parameter_name = parameter_name
+
+    async def lookups(self, request, model, run_query):
+        rows = await run_query(
+            select(Sector.code, Sector.name).order_by(Sector.sort_order, Sector.name)
+        )
+        return [("__all", "Any stage")] + [(row[0], row[1]) for row in rows]
+
+    async def get_filtered_query(self, query, value, model):
+        if value in ("", "__all", None):
+            return query
+        return query.where(
+            select(1)
+            .select_from(SubmissionEntry)
+            .join(Sector, SubmissionEntry.sector_id == Sector.id)
+            .where(
+                SubmissionEntry.submission_id == Submission.id,
+                Sector.code == value,
+            )
+            .correlate(Submission)
+            .exists()
+        )
+
+
+class RecordedMassFilter:
+    """Bands of recorded food waste, over the same total the column shows.
+
+    **Bands rather than a free numeric range**, and the reason is that this
+    filter exists to find implausible rows. The question is "show me the very
+    large ones" rather than "show me between 1,240 and 1,260 kg", and a pair of
+    free number boxes would need validating, would need a unit stated beside
+    each, and would let a mistyped bound return an empty screen that looks like
+    an empty database.
+    """
+
+    has_operator = False
+    template = "sqladmin/filters/lookup_filter.html"
+
+    #: value -> (label, lower inclusive, upper exclusive). `None` is unbounded.
+    #: The boundaries are decimal orders of magnitude and the top band starts
+    #: at ten tonnes, which on a real business is a year rather than a week —
+    #: it is the band a moderator opens first.
+    BANDS = {
+        "lt100": ("Under 100 kg", None, Decimal("100")),
+        "100-1k": ("100 kg – 1 tonne", Decimal("100"), Decimal("1000")),
+        "1k-10k": ("1 – 10 tonnes", Decimal("1000"), Decimal("10000")),
+        "gte10k": ("10 tonnes and over", Decimal("10000"), None),
+    }
+
+    def __init__(self, title="Food waste recorded", parameter_name="mass"):
+        self.title = title
+        self.parameter_name = parameter_name
+
+    async def lookups(self, request, model, run_query):
+        return [("__all", "Any amount")] + [
+            (value, label) for value, (label, _, _) in self.BANDS.items()
+        ]
+
+    async def get_filtered_query(self, query, value, model):
+        band = self.BANDS.get(value)
+        if band is None:
+            return query
+        _, lower, upper = band
+        total = _recorded_mass_subquery()
+        if lower is not None:
+            query = query.where(total >= lower)
+        if upper is not None:
+            #: Exclusive upper bound, so the bands tile without overlapping.
+            #: `<=` on both sides would put exactly 1,000 kg in two bands and
+            #: make the four counts sum to more than the table holds.
+            query = query.where(total < upper)
+        return query
+
+
+def _utc_time_element(moment, pattern: str) -> Markup:
+    """A `<time>` whose text is UTC and whose `datetime` says so.
+
+    **The `Z` is the whole point of this function.** `created_at` is stored
+    naive (`admin/models.py::utcnow` strips the tzinfo, contract §1.3), so
+    `isoformat()` yields `2026-08-16T05:28:18` with no offset — and ECMA-262
+    parses a date-time form without one as LOCAL time. `new Date()` in Auckland
+    would then read a UTC instant as if it were already local and display it
+    thirteen hours out, in a direction that looks entirely plausible. Appending
+    `Z` here, once, is what makes `admin/static/localtime.js` correct rather
+    than confidently wrong.
+
+    The visible text stays UTC and says so, because that is what the reader
+    sees if the script does not run — and it is what `audit_log` will quote
+    back at them.
+    """
+    return Markup('<time datetime="{}">{} UTC</time>').format(
+        moment.isoformat(timespec="seconds") + "Z", moment.strftime(pattern)
+    )
+
+
 def _list_created_at(submission: Submission, _name) -> str:
     """The timestamp, carrying the excluded state with it.
 
@@ -133,10 +323,10 @@ def _list_created_at(submission: Submission, _name) -> str:
     `formatter(model, name)`, so a method here would bind `self` to the row and
     the row to the column name.
     """
-    stamp = submission.created_at.strftime("%Y-%m-%d %H:%M") if submission.created_at else "—"
-    if submission.excluded_from_public:
-        return f"{stamp} · excluded"
-    return stamp
+    if submission.created_at is None:
+        return "—"
+    marker = " · excluded" if submission.excluded_from_public else ""
+    return Markup("{}{}").format(_utc_time_element(submission.created_at, "%Y-%m-%d %H:%M"), marker)
 
 
 class SubmissionAdmin(AuditedModelView, model=Submission):
@@ -196,12 +386,20 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     #: filters are the two questions a moderator actually has: what have I
     #: already dealt with, and which methane horizon was this run at.
     column_filters = [
-        BooleanFilter(Submission.excluded_from_public),
-        StaticValuesFilter(Submission.gwp_horizon, [("20", "20 years"), ("100", "100 years")]),
+        RecentWindowFilter(),
+        SupplyChainStageFilter(),
+        RecordedMassFilter(),
+        BooleanFilter(Submission.excluded_from_public, title="Excluded"),
+        StaticValuesFilter(
+            Submission.gwp_horizon,
+            [("20", "20 years"), ("100", "100 years")],
+            title="Methane horizon",
+        ),
     ]
 
     column_default_sort = ("created_at", True)
 
+    list_template = "brand/submission_list.html"
     details_template = "brand/submission_details.html"
 
     def list_query(self, request):
@@ -235,7 +433,9 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     }
     column_formatters_detail = {
         "created_at": lambda model, _name: (
-            model.created_at.strftime("%Y-%m-%d %H:%M:%S UTC") if model.created_at else "—"
+            _utc_time_element(model.created_at, "%Y-%m-%d %H:%M:%S")
+            if model.created_at
+            else "—"
         ),
         "sector_summary": lambda model, _name: _sector_summary(model),
         "current_total_kg": lambda model, _name: f"{_current_total_kg(model):,.3f} kg",

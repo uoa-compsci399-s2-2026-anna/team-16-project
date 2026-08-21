@@ -168,13 +168,8 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
   padding-inline: clamp(20px, 2.7vw, 56px);
 }
 
-/* `margin-inline-end: auto` rather than relying on `space-between`. Once the
-   language chooser joined this row there were three items in it, and
-   `space-between` puts the middle one in the middle — which stranded the
-   wordmark in the centre of the header with white space either side. The auto
-   margin keeps the brand hard against the chooser at the reading-start edge and
-   leaves the single flexible gap before "Clear all data" at the far end, which
-   is the two-item arrangement this header was drawn as. */
+/* The brand occupies the header's reading-start edge, matching the Kai Commitment
+   public site. The language control is explicitly placed at reading-end below. */
 /* `max-width: 100%` is D's, and it is kept: without it the brand is a flex item
    whose min-content width is the wordmark's, so at 320px it widened the header
    rather than wrapping. */
@@ -1235,11 +1230,9 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 /* ------------------------------------------------------------------------------------
    THE LANGUAGE BAR.
 
-   "Top left" is what was asked for, and it is written here as **top inline-start**,
-   which is top-left in English and top-right in Arabic and Urdu. A control pinned
-   physically left in a mirrored page lands at the reading-END of the header, opposite
-   the logo it is meant to sit beside - and the whole stylesheet was converted to logical
-   properties so that the mirroring happens from `dir` alone.
+   The language control is at **top inline-end**: top-right in left-to-right pages and
+   top-left when Arabic or Urdu mirrors the header. The brand occupies inline-start,
+   matching the Kai Commitment public-site header relationship.
 
    The bar sits below the machine-translation notice, never above it: the notice is a
    statement about the whole page and its own test pins it as `body.firstElementChild`.
@@ -1585,44 +1578,31 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    151 -> 143, 390px 196 -> 184, 320px 242 -> 230. It costs nothing at the desktop width
    the 93px budget is measured at - `test_a_short_step_is_not_floored_by_a_stale_min_height`
    is untouched - and it SAVES height at every width where the row has to fold. */
-/* **EVERY ITEM IS PLACED EXPLICITLY, AND THAT IS THE FIX FOR A COUPLING THAT BIT ONCE.**
-   The grid arrived relying on auto-placement, which means the order of the three areas
-   was decided by DOM order - and the language chooser's DOM position is written in
-   JavaScript, in `installLanguageChooser`'s `row.prepend(bar)`. The two were changed
-   together (`prepend` -> `append`) in one word, with the 24-line note above that line
-   still saying "top inline-start", and the result put the chooser at the reading END:
-   measured on `/methodology.html`, its distance from the reading-start edge went from
-   20px to 589px at 938, 130px at 390 and 75px at 320, and `justify-self: end` on the
-   bar did the same thing again in CSS at all three breakpoints. In Arabic that is the
-   physical left, off at the far side of a mirrored page, which is what §7.7.4 rule 7's
-   RTL argument is about.
-
-   So `grid-column`/`grid-row` are stated for all three items at all three widths. The
-   chooser is first in the reading direction because that is what "top inline-start"
-   means and what `prepend` puts there; the navigation is last. Moving the chooser to
-   the reading end may well be the better design - it is a proposal for §7.7.4 with the
-   RTL argument attached, and it is one line here once it is agreed, rather than an
-   emergent property of which method a JS module happens to call. */
+/* Every item is placed explicitly. The logo owns reading-start, the language chooser
+   owns reading-end, and navigation or the calculator's clear action uses the flexible
+   middle area. DOM order therefore cannot silently move either branded edge. */
 @media (min-width: 1000px) {
   .public-header-inner {
     max-width: 1240px;
     display: grid;
-    grid-template-columns: auto auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     column-gap: 24px;
   }
-  .public-header-inner .language-bar { grid-column: 1; grid-row: 1; justify-self: start; }
-  .public-header-inner .brand { grid-column: 2; grid-row: 1; justify-self: start; margin-inline-end: 0; }
-  .public-header-inner .public-nav { grid-column: 3; grid-row: 1; justify-self: end; }
+  .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-inline-end: 0; }
+  .public-header-inner .public-nav,
+  .public-header-inner #clear-button { grid-column: 2; grid-row: 1; justify-self: end; }
+  .public-header-inner .language-bar { grid-column: 3; grid-row: 1; justify-self: end; }
 }
 
 @media (max-width: 999px) {
   .public-header-inner {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr);
+    grid-template-columns: auto minmax(0, 1fr) auto;
     gap: 8px 18px;
   }
-  .public-header-inner .language-bar { grid-column: 1; grid-row: 1; justify-self: start; }
-  .public-header-inner .brand { grid-column: 2; grid-row: 1; justify-self: start; margin-inline-end: 0; }
+  .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-inline-end: 0; }
+  .public-header-inner #clear-button { grid-column: 2; grid-row: 1; justify-self: end; }
+  .public-header-inner .language-bar { grid-column: 3; grid-row: 1; justify-self: end; }
   .public-header-inner .public-nav {
     grid-column: 1 / -1;
     grid-row: 2;
@@ -1633,8 +1613,9 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 @media (max-width: 560px) {
   .public-header-inner { grid-template-columns: 1fr; gap: 8px; padding-block: 14px; }
-  .public-header-inner .language-bar { grid-column: 1; grid-row: 1; justify-self: start; max-width: 100%; }
+  .public-header-inner .language-bar { grid-column: 1; grid-row: 1; justify-self: end; max-width: 100%; }
   .public-header-inner .brand { grid-column: 1; grid-row: 2; justify-self: start; }
+  .public-header-inner #clear-button { grid-column: 1; grid-row: 2; justify-self: end; }
   .public-header-inner .public-nav {
     grid-column: 1;
     grid-row: 3;

@@ -603,15 +603,11 @@ function globeIcon() {
 }
 
 /**
- * Build the chooser and put it at the top inline-start of the page.
+ * Build the chooser and put it at the top inline-end of the page.
  *
- * **"Top left" is a physical direction and two of these languages render
- * right-to-left.** It is implemented as the *inline-start* of a bar above the
- * header, so it is top-left in English and top-right in Arabic and Urdu. The
- * whole layout was converted to logical properties for this reason and a test
- * refuses a physical direction property in the stylesheet; a control pinned
- * physically left in a mirrored page would land at the reading-end of the
- * header, opposite the logo it is meant to sit beside.
+ * It is placed at the header row's *inline-end*: top-right in left-to-right
+ * languages and top-left when Arabic or Urdu mirrors the page. The brand stays
+ * at inline-start, matching the Kai Commitment public-site header relationship.
  *
  * The bar goes **between the machine-translation notice and the header**, not
  * above the notice: the notice is a statement about the whole page and its own
@@ -674,13 +670,13 @@ export function installLanguageChooser(afterChange) {
   //
   // The header is already 93px tall and holds a 67px logo, so a 44px control
   // fits in the space that is there. The bar therefore joins the existing row
-  // and costs nothing, and "top inline-start" still describes where it is: it
-  // is the first thing in the first row of the page.
+  // and costs nothing. Appending it keeps the brand first and places the
+  // language control at the opposite edge of the row.
   //
   // It is placed *beside* the brand lockup, never inside it - the logo keeps
   // its own element, its own size and its own spacing, and nothing is drawn
   // over or through it.
   const row = header.querySelector('.header-inner') || header
-  row.prepend(bar)
+  row.append(bar)
   return select
 }

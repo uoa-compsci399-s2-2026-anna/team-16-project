@@ -1557,3 +1557,40 @@ async def test_the_all_row_is_translated(admin_client, seeded):
 
     assert form.count("全部环节") >= 2, "the All row and the summary disagree in Chinese"
     assert form.count("不限数量") >= 2
+
+
+@pytest.mark.parametrize("language", ["zh"])
+def test_every_string_the_bar_can_render_has_a_translation(language):
+    """**Neither i18n coverage test can see these strings, and five shipped
+    untranslated before this one existed.**
+
+    `test_i18n.py::test_our_own_templates_are_translated` scans templates for
+    `_("literal")`; these arrive as `_(control.title)` and as
+    `_("%(count)s selected", count=...)`, and its regex matches neither - the
+    first has no literal, the second has a second argument after the closing
+    quote. `test_every_view_name_and_menu_category_is_translated` reads `name`,
+    `name_plural`, `category` and `form_args`, none of which a filter spec has.
+
+    So the check is derived from `CONTROL_SPECS` rather than from a hand-kept
+    list: a filter added later is covered without anyone remembering to add it
+    here, which is the property the two tests above lack. The stage options are
+    excluded because they are taxonomy rows - staff-authored names out of the
+    database, not interface copy, and translating them is what §8's
+    "never translate data" rule forbids.
+    """
+    from admin import i18n
+    from admin.submission_views import CONTROL_SPECS
+
+    strings = i18n.catalogue(language).strings
+    expected = {"From", "To", "Apply", "Clear", "%(count)s selected"}
+    for spec in CONTROL_SPECS:
+        expected.add(spec["title"])
+        expected.add(spec["empty_label"])
+        for _value, label in spec["options"] or []:
+            expected.add(label)
+
+    missing = sorted(key for key in expected if key not in strings)
+    assert not missing, (
+        f"{len(missing)} filter-bar string(s) have no {language} translation, and "
+        f"neither i18n coverage test can see them: {missing}"
+    )

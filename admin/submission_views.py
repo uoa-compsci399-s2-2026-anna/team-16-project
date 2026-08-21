@@ -258,6 +258,58 @@ EXCLUSION_CHOICES: list[tuple[str, str]] = [
 HORIZON_CHOICES: list[tuple[str, str]] = [("20", "20 years"), ("100", "100 years")]
 
 
+#: The bar, declared once so that nothing has to be listed by hand twice.
+#:
+#: **`filter_controls` fills these in per request; `list_query` matches them
+#: clause for clause; and `tests/admin/test_submission_views.py` walks this
+#: same structure to check every string it can render has a translation.**
+#: That last one matters more than it looks. Neither i18n coverage test can see
+#: these strings: `test_i18n.py`'s template scanner matches `_("literal")` and
+#: these arrive as `_(control.title)`, and its view scanner reads `name`,
+#: `name_plural`, `category` and `form_args`, none of which a filter object
+#: has. Five labels shipped untranslated before this list existed, and both
+#: coverage tests stayed green through it.
+#:
+#: `options` is None where they come from the database.
+CONTROL_SPECS: list[dict] = [
+    {
+        "name": "window",
+        "title": "Calculated in the",
+        "multiple": False,
+        "empty_label": "Any time",
+        "options": [(value, label) for value, (label, _) in WINDOWS.items()],
+    },
+    {
+        "name": "stage",
+        "title": "Supply-chain stage",
+        "multiple": True,
+        "empty_label": "Any stage",
+        "options": None,
+    },
+    {
+        "name": "mass",
+        "title": "Food waste recorded",
+        "multiple": True,
+        "empty_label": "Any amount",
+        "options": [(value, label) for value, (label, _, _) in BANDS.items()],
+    },
+    {
+        "name": "excluded",
+        "title": "Excluded",
+        "multiple": False,
+        "empty_label": "Included and excluded",
+        "options": EXCLUSION_CHOICES,
+    },
+    {
+        "name": "horizon",
+        "title": "Methane horizon",
+        "multiple": False,
+        "empty_label": "Either horizon",
+        "options": HORIZON_CHOICES,
+    },
+]
+
+
 def _ticked(values: list[str]) -> list[str]:
     """The specific values chosen, or nothing at all if "All" is among them.
 
@@ -438,11 +490,8 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     details_template = "brand/submission_details.html"
 
     async def filter_controls(self, request):
-        """What the bar renders, in the order it renders it.
-
-        One structure, read by the template and matched by `list_query` below,
-        so a control cannot appear on the page without a clause behind it or a
-        clause exist with no way to reach it.
+        """`CONTROL_SPECS`, with the database-backed options filled in and the
+        current selection resolved.
 
         The stage options come from the `sector` table rather than a literal
         list, because §2.1's taxonomy is data: a sector staff add through the
@@ -456,60 +505,27 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
                 select(Sector.code, Sector.name).order_by(Sector.sort_order, Sector.name)
             ).all()
 
-        def picked(name: str) -> list[str]:
-            """What this control should render as ticked.
-
-            `_ticked` is the same function `list_query` applies, so the boxes
-            and the rows cannot disagree: if All wins in the query it wins on
-            the page too. Reading the raw parameter here instead would draw
-            Retail as ticked on a table showing every stage.
-            """
-            return _ticked(request.query_params.getlist(name))
-        return [
-            {
-                "name": "window",
-                "title": "Calculated in the",
-                "multiple": False,
-                "empty_label": "Any time",
-                "options": [(value, label) for value, (label, _) in WINDOWS.items()],
-                "selected": request.query_params.getlist("window"),
-                "chosen": picked("window"),
-            },
-            {
-                "name": "stage",
-                "title": "Supply-chain stage",
-                "multiple": True,
-                "empty_label": "Any stage",
-                "options": [(code, name) for code, name in sectors],
-                "chosen": picked("stage"),
-            },
-            {
-                "name": "mass",
-                "title": "Food waste recorded",
-                "multiple": True,
-                "empty_label": "Any amount",
-                "options": [(value, label) for value, (label, _, _) in BANDS.items()],
-                "chosen": picked("mass"),
-            },
-            {
-                "name": "excluded",
-                "title": "Excluded",
-                "multiple": False,
-                "empty_label": "Included and excluded",
-                "options": EXCLUSION_CHOICES,
-                "selected": request.query_params.getlist("excluded"),
-                "chosen": picked("excluded"),
-            },
-            {
-                "name": "horizon",
-                "title": "Methane horizon",
-                "multiple": False,
-                "empty_label": "Either horizon",
-                "options": HORIZON_CHOICES,
-                "selected": request.query_params.getlist("horizon"),
-                "chosen": picked("horizon"),
-            },
-        ]
+        controls = []
+        for spec in CONTROL_SPECS:
+            options = spec["options"]
+            if options is None:
+                options = [(code, name) for code, name in sectors]
+            controls.append(
+                {
+                    **spec,
+                    "options": options,
+                    #: The raw parameter, for the single-choice `<select>`s -
+                    #: their empty option carries `value=""` and has to be able
+                    #: to render as chosen.
+                    "selected": request.query_params.getlist(spec["name"]),
+                    #: What `list_query` will actually apply. The boxes render
+                    #: from this so the controls cannot contradict the table
+                    #: above them: drawing Retail as ticked over a list showing
+                    #: every stage is the state this closes.
+                    "chosen": _ticked(request.query_params.getlist(spec["name"])),
+                }
+            )
+        return controls
 
     def list_query(self, request):
         """Eager-load what the derived columns walk, then apply the bar.

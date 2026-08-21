@@ -409,7 +409,20 @@ p { line-height: 1.65; }
   margin-top: 34px;
   padding: 12px 16px;
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr) auto;
+  /* THE BRAND'S TRACK IS THE FLEXIBLE ONE, and that is not a detail.
+     Written `auto minmax(0, 1fr) auto` the brand sits in an `auto` track and
+     cannot be squeezed: at 768px in German on a wizard step its natural width
+     is 406px and the chooser's is 299px, which together push the chooser's
+     right edge to 761 against a 753px content box - 8px of sideways scroll on
+     four pages, caught by tests/web/test_horizontal_overflow.py.
+
+     The arrangement this replaced had the brand in the flexible track for the
+     same reason, and it shrank to 396px there and fitted. So the flexible track
+     moves with the brand rather than staying where it was: `minmax(0, 1fr)`
+     first, the middle item and the chooser `auto` after it. The chooser must
+     never be the one that shrinks - a clipped `<select>` value gives no sign
+     that it has been clipped. */
+  grid-template-columns: minmax(0, 1fr) auto auto;
   align-items: center;
   gap: 8px 16px;
   border: 1px solid var(--border);
@@ -1279,7 +1292,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   background: var(--kai-white);
   /* **THE HAIRLINE IS AN INSET SHADOW, NOT A `border`, AND THAT IS ARITHMETIC RATHER
      THAN TASTE.** The `<select>` inside is 44px because 44px is the touch target and
-     `test_the_chooser_is_present_usable_and_at_the_top_inline_start` measures it. A 1px
+     `test_the_chooser_is_present_usable_and_at_the_top_inline_end` measures it. A 1px
      border would make the capsule 46px and the wrapped header row at 390px 2px taller
      than it was measured at. An inset shadow draws the same 1px line and occupies no
      layout, so the treatment costs exactly nothing: 92px header at 1278x983 and at
@@ -1578,14 +1591,46 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    151 -> 143, 390px 196 -> 184, 320px 242 -> 230. It costs nothing at the desktop width
    the 93px budget is measured at - `test_a_short_step_is_not_floored_by_a_stale_min_height`
    is untouched - and it SAVES height at every width where the row has to fold. */
-/* Every item is placed explicitly. The logo owns reading-start, the language chooser
-   owns reading-end, and navigation or the calculator's clear action uses the flexible
-   middle area. DOM order therefore cannot silently move either branded edge. */
+/* **EVERY ITEM IS PLACED EXPLICITLY, AND THAT IS THE FIX FOR A COUPLING THAT BIT ONCE.**
+   The grid once relied on auto-placement, which means the order of the three areas was
+   decided by DOM order - and the chooser's DOM position is written in JavaScript, in
+   `installLanguageChooser`. The two were changed together in one word and the header
+   moved with no stylesheet having been touched. `grid-column`/`grid-row` for each item
+   at each breakpoint is what makes this a decision here rather than an emergent property
+   of a JS module.
+
+   THE ARRANGEMENT (v1.47, contract §7.7.4). The logo owns reading-start, matching the
+   Kai Commitment public site; the chooser owns reading-end; navigation or the
+   calculator's clear action takes the middle.
+
+   MEASURED, because the comment this replaced carried numbers and deleting them would
+   have left the height argument resting on nothing. Header row height, en/ar, after the
+   change - and these are the SAME figures the previous arrangement produced:
+
+       calculator    1280  92px    938  92px    390 122px    320 122px
+       methodology   1280  92px    938 143px    390 184px    320 230px
+
+   So moving the chooser along the row costs no height, which is what keeps contract
+   v1.27 item 9 satisfied: that argument was about a 57px STRIP, not about an end of a
+   row, and `test_a_short_step_is_not_floored_by_a_stale_min_height` still holds.
+
+   AND THE COST, stated rather than left to be discovered. The chooser's distance from
+   the reading-start edge, which is what v1.29 objected to when this move arrived
+   smuggled inside an unrelated commit:
+
+       1280: 20 -> 932 (en) / 993 (ar)      938: 20 -> 599 (en) / 660 (ar)
+        390: 20 -> 145                       320: 20 ->  75
+
+   Accepted here, with the argument attached this time: the header is a single row, the
+   chooser stays in it and above the fold at every width, and the brand relationship
+   matching the client's own site is what the change buys. The brand sits 20-35px from
+   the reading edge in BOTH directions, so the mirroring is real and not a fixed corner -
+   `test_the_brand_sits_at_the_reading_start_edge` drives en and ar and fails on either. */
 @media (min-width: 1000px) {
   .public-header-inner {
     max-width: 1240px;
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     column-gap: 24px;
   }
   .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-inline-end: 0; }
@@ -1597,7 +1642,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 @media (max-width: 999px) {
   .public-header-inner {
     display: grid;
-    grid-template-columns: auto minmax(0, 1fr) auto;
+    grid-template-columns: minmax(0, 1fr) auto auto;
     gap: 8px 18px;
   }
   .public-header-inner .brand { grid-column: 1; grid-row: 1; justify-self: start; margin-inline-end: 0; }
@@ -1615,7 +1660,20 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .public-header-inner { grid-template-columns: 1fr; gap: 8px; padding-block: 14px; }
   .public-header-inner .language-bar { grid-column: 1; grid-row: 1; justify-self: end; max-width: 100%; }
   .public-header-inner .brand { grid-column: 1; grid-row: 2; justify-self: start; }
-  .public-header-inner #clear-button { grid-column: 1; grid-row: 2; justify-self: end; }
+  /* Row 3, not row 2 beside the brand. This grid is a single column here
+     (`grid-template-columns: 1fr` above), so two items naming the same cell are
+     STACKED by grid, not reflowed side by side - and `justify-self: start` and
+     `end` then slide them toward each other until they overlap. At 320px the
+     track is 280px, the wordmark is 174px, and Spanish's "Borrar todos los
+     datos" is around 165px: they meet, and the button is later in the DOM so it
+     wins the hit test. Tapping the right-hand end of the logo would open
+     "clear all data?".
+
+     Row 3 costs nothing. `#clear-button` is only ever on index.html and
+     `.public-nav` is only ever on stats.html and methodology.html, so the two
+     never share a page and never contend for this row - and row 3 is where
+     auto-placement already put the button before any of these rules existed. */
+  .public-header-inner #clear-button { grid-column: 1; grid-row: 3; justify-self: end; }
   .public-header-inner .public-nav {
     grid-column: 1;
     grid-row: 3;

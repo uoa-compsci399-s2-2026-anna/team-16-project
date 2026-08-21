@@ -395,7 +395,7 @@ def test_the_chooser_is_present_usable_and_at_the_top_inline_end(browser):
 # ---------------------------------------------------------------------------
 # The chooser as an object somebody can see: the capsule, the globe, the ring
 #
-# `test_the_chooser_is_present_usable_and_at_the_top_inline_start` above proves
+# `test_the_chooser_is_present_usable_and_at_the_top_inline_end` above proves
 # the control is there, big enough and reachable. None of that says it is
 # LEGIBLE as a control, and the whole of this section is about a defect class
 # this repository keeps shipping: an element that every geometry assertion
@@ -1462,7 +1462,12 @@ def test_the_machine_translated_options_are_marked_before_anyone_picks(browser):
         context.close()
 
 
-@pytest.mark.parametrize("width", [390, 1280])
+#: 938 is the owner's own laptop and sits inside the 561-999px band, where
+#: the header row carries THREE items since v1.47 - brand, clear action or
+#: navigation, and chooser - having carried two before it. That band had no
+#: width under test at all, so the row going one item wider was measured
+#: nowhere.
+@pytest.mark.parametrize("width", [390, 938, 1280])
 def test_the_chooser_is_usable_at_every_width(browser, width):
     """390px is a phone. A control that overflows there is not a control.
 
@@ -2132,9 +2137,11 @@ def test_choosing_a_right_to_left_language_survives_and_reverts(browser, width):
         assert page.get_attribute("html", "dir") == "rtl"
         assert page.eval_on_selector("#language-chooser", "el => el.value") == "ar"
 
-        # The control is still reachable and still at the reading-start edge,
-        # which is the RIGHT here - a mirrored page that puts its own language
-        # control off screen is the trap this whole parametrisation is for.
+        # The control is still reachable and still at the reading-END edge
+        # (v1.47), which in a mirrored page is the physical LEFT - a mirrored
+        # page that puts its own language control off screen is the trap this
+        # whole parametrisation is for, and `onScreen` below is what guards it
+        # whichever edge the control sits at.
         geometry = page.evaluate(
             """(w) => {
               const el = document.getElementById('language-chooser');
@@ -2148,8 +2155,8 @@ def test_choosing_a_right_to_left_language_survives_and_reverts(browser, width):
         )
         assert geometry["onScreen"], f"{width}px: off screen in rtl: {geometry}"
         assert geometry["height"] >= 44, geometry
-        assert geometry["fromRight"] < geometry["fromLeft"], (
-            f"{width}px: not at the reading-start edge in rtl: {geometry}"
+        assert geometry["fromLeft"] < geometry["fromRight"], (
+            f"{width}px: not at the reading-end edge in rtl: {geometry}"
         )
         # STILL not asserted here, and now for the opposite reason. The
         # sideways scroll this used to record is fixed - see
@@ -2656,6 +2663,136 @@ def test_a_home_page_with_no_news_section_still_translates(browser, language):
         assert chooser.count() == 1 and chooser.is_visible(), (
             "a home page with no news section has no language chooser, so a reader "
             "who cannot read it has no way out"
+        )
+    finally:
+        context.close()
+
+
+# ---------------------------------------------------------------------------
+# The header's own arrangement, which is what this change is for
+#
+# Everything above measures the CHOOSER. Nothing measured the brand, and the
+# brand moving to the reading-start edge is the whole point of the header
+# change - so a rewrite that put the logo anywhere at all would have passed
+# every geometry test in this file.
+
+
+def _sized_page(browser, languages, width, height=700):
+    """A page at a fixed viewport, claiming `languages`.
+
+    `open_page` above takes no size, and these two measurements are about what
+    happens when the header runs out of room - which is a question that only
+    exists at a width.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": height},
+        extra_http_headers={"Accept-Language": ",".join(languages)},
+    )
+    page = context.new_page()
+    page.add_init_script(
+        _LANGUAGES_SHIM.format(
+            languages=json.dumps(languages), first=json.dumps(languages[0])
+        )
+    )
+    page.goto(f"{BASE}/index.html", wait_until="networkidle")
+    return context, page
+
+
+def _boxes(page, *selectors):
+    return [page.locator(selector).first.bounding_box() for selector in selectors]
+
+
+def test_the_brand_sits_at_the_reading_start_edge(browser):
+    """**The assertion this change exists to make, and the one nothing made.**
+
+    Every other geometry test in this file is about the chooser: where it sits,
+    how tall it is, whether it mirrors. The brand was never measured, so a
+    header rewrite could have left the logo anywhere - centred, at the reading
+    end, stacked under the chooser - with the whole file still green.
+
+    Measured against the row's own edges rather than the viewport's, the same
+    way the mirroring test does it, so that changing the header's padding does
+    not require editing this.
+    """
+    for languages, direction in ((["en-NZ"], "ltr"), (["ar"], "rtl")):
+        context, page = _sized_page(browser, languages, 1280)
+        try:
+            seen = page.evaluate(
+                """() => {
+                  const row = document.querySelector('.public-header-inner');
+                  const brand = document.querySelector('.brand');
+                  const r = row.getBoundingClientRect();
+                  const b = brand.getBoundingClientRect();
+                  return {
+                    dir: document.documentElement.dir,
+                    gapLeft: Math.round(b.left - r.left),
+                    gapRight: Math.round(r.right - b.right),
+                  };
+                }"""
+            )
+            assert seen["dir"] == direction
+            if direction == "ltr":
+                assert seen["gapLeft"] < seen["gapRight"], (
+                    f"the brand is not at the reading-start edge in {direction}: {seen}"
+                )
+            else:
+                #: Arabic mirrors, so reading-start is the physical right. A
+                #: rule written with `left` rather than `inset-inline-start`
+                #: passes the English case and fails here, which is the whole
+                #: reason both directions are driven.
+                assert seen["gapRight"] < seen["gapLeft"], (
+                    f"the brand did not mirror in {direction}: {seen}"
+                )
+        finally:
+            context.close()
+
+
+def test_the_clear_action_never_lands_on_top_of_the_logo(browser):
+    """**Two grid items naming one cell are stacked, not reflowed.**
+
+    At 560px and below `.public-header-inner` is a single column, so
+    `grid-column: 1; grid-row: 2` on both the brand and the clear action puts
+    them in the same cell - and `justify-self: start` and `end` then slide them
+    toward each other until they meet. At 320px the track is about 280px, the
+    wordmark is 174px and Spanish's "Borrar todos los datos" is around 165px:
+    they overlap, and the button is later in the DOM so it wins the hit test.
+    Tapping the right-hand end of the logo opens "clear all data?".
+
+    Spanish because it is the longest of the labels the fixture languages
+    carry; the defect is proportional to that width, and English alone leaves
+    enough room to hide it.
+
+    **Driven on a wizard step with data, which is the part that makes this a
+    real test.** `calculator.js` sets `clearButton.hidden = !hasData()`, so on
+    the intro screen the button is `display: none` and not a grid item at all -
+    every existing browser test in this file stays on that screen, which is why
+    a defect in three placement rules could ship with the suite green.
+    """
+    context, page = _sized_page(browser, ["es"], 320)
+    try:
+        page.click('[data-action="start"]')
+        page.wait_for_selector('input[name="sector"]')
+        page.evaluate("document.querySelector('input[name=sector]').click()")
+        page.wait_for_timeout(80)
+
+        clear = page.locator("#clear-button")
+        assert clear.is_visible(), (
+            "the clear action is still hidden - `hasData()` did not become true, "
+            "so this test would measure nothing"
+        )
+
+        brand, button = _boxes(page, ".brand", "#clear-button")
+        assert brand and button
+
+        overlap_x = min(brand["x"] + brand["width"], button["x"] + button["width"]) - max(
+            brand["x"], button["x"]
+        )
+        overlap_y = min(brand["y"] + brand["height"], button["y"] + button["height"]) - max(
+            brand["y"], button["y"]
+        )
+        assert overlap_x <= 0 or overlap_y <= 0, (
+            f"the clear action overlaps the logo by {overlap_x:.0f}x{overlap_y:.0f}px "
+            f"- brand {brand}, button {button}"
         )
     finally:
         context.close()

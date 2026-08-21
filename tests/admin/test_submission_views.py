@@ -810,3 +810,112 @@ async def test_a_filtered_page_renders_the_rows_its_filter_selected(admin_client
     above = await admin_client.get("/admin/submissions/list?mass=gte10k")
     assert above.status_code == 200
     assert "3,001.500 kg" not in above.text
+
+
+# --- the filter bar ---------------------------------------------------------
+
+
+def _filter_form(body: str) -> str:
+    """The bar's own markup, and nothing else on the page.
+
+    Sliced out before anything is asserted about it. The list page carries
+    sqladmin's own `<select>`s (the page-size menu) and its own hidden inputs
+    (the delete modal's), so a `<select` count or a `name="sortBy"` search over
+    the whole document answers a question about the page rather than about this
+    form."""
+    match = re.search(r'<form method="get" class="kc-filters".*?</form>', body, re.S)
+    assert match, "the filter bar did not render"
+    return match.group(0)
+
+
+@pytest.mark.asyncio
+async def test_the_filters_are_one_row_of_selects_above_the_table(admin_client, seeded):
+    """The owner's ask: a bar across the top, not sqladmin's right-hand sidebar
+    of link lists.
+
+    Asserted as "a form with one select per filter", plus the rule that hides
+    the sidebar — leaving that visible would give the page two filter UIs
+    disagreeing with each other, which is worse than either alone."""
+    response = await admin_client.get("/admin/submissions/list")
+    assert response.status_code == 200
+    body = response.text
+
+    form = _filter_form(body)
+    for name in ("window", "stage", "mass", "excluded_from_public", "gwp_horizon"):
+        assert f'name="{name}"' in form, f"the {name} filter is not in the bar"
+
+    assert ".filter-sidebar-col { display: none" in body, (
+        "sqladmin's own filter sidebar is still on the page beside this bar"
+    )
+
+    #: The bar is above the table, not below it. Position in the document is
+    #: the only thing that makes it a bar "across the top" rather than a form
+    #: somebody has to scroll past the results to find.
+    assert body.index(form) < body.index("<table"), "the bar renders below the table"
+
+
+@pytest.mark.asyncio
+async def test_the_bar_shows_which_filter_is_active(admin_client, seeded):
+    """A filtered table whose controls all read "Any" is a page that tells the
+    reader they are seeing everything while showing them a subset."""
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=subview_retail&mass=1k-10k"
+    )
+    assert response.status_code == 200
+
+    form = _filter_form(response.text)
+    selected = re.findall(r'<option value="([^"]+)" selected', form)
+    assert sorted(selected) == ["1k-10k", "subview_retail"], (
+        f"the bar does not reflect the active filters: {selected}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_bar_carries_the_sort_but_not_the_page(admin_client, seeded):
+    """**Two opposite decisions, and each is a defect if made the other way.**
+
+    `sortBy` has to survive: a form that submitted only its own selects would
+    silently discard the sort order the staff member just chose, and the table
+    would reorder itself for no visible reason.
+
+    `page` must not: a new filter is a new result set, and page 4 of a set with
+    two pages renders an empty table that reads as "no matches".
+    """
+    response = await admin_client.get(
+        "/admin/submissions/list?sortBy=created_at&sort=desc&page=1"
+    )
+    assert response.status_code == 200
+
+    form = _filter_form(response.text)
+    hidden = dict(re.findall(r'<input type="hidden" name="([^"]+)" value="([^"]*)"', form))
+    assert hidden.get("sortBy") == "created_at", f"sortBy was dropped: {hidden}"
+    assert hidden.get("sort") == "desc", f"sort direction was dropped: {hidden}"
+    assert "page" not in hidden, "the page number would survive a filter change"
+
+
+@pytest.mark.asyncio
+async def test_the_clear_link_appears_only_when_something_is_filtered(
+    admin_client, seeded
+):
+    """A permanently visible Clear on an unfiltered table invites a click that
+    does nothing, and teaches the reader that the bar is inert."""
+    unfiltered = _filter_form((await admin_client.get("/admin/submissions/list")).text)
+    assert ">\n        Clear\n      </a>" not in unfiltered and "Clear" not in unfiltered
+
+    filtered = _filter_form(
+        (await admin_client.get("/admin/submissions/list?mass=1k-10k")).text
+    )
+    assert "Clear" in filtered, "no way back to the unfiltered table"
+
+
+@pytest.mark.asyncio
+async def test_the_bar_needs_no_javascript(admin_client, seeded):
+    """A `<form method="get">` with a submit button, so the bar works with
+    scripting off — the same standard `brand/block_ip.html` and the public
+    site's drawer hold to. The one script on this page converts timestamps and
+    is an enhancement over a page that already reads correctly."""
+    form = _filter_form((await admin_client.get("/admin/submissions/list")).text)
+
+    assert 'method="get"' in form
+    assert 'type="submit"' in form
+    assert "onclick" not in form and "addEventListener" not in form

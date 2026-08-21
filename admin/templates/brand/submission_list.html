@@ -1,13 +1,106 @@
-{# /admin/submissions/list — brand/model_list.html plus the local-time script.
+{# /admin/submissions/list — the filters as one row above the table, and the
+   local-time script.
 
-   A separate template rather than putting the script in brand/model_list.html:
-   that file is the base for all eighteen list screens, and only this one renders
-   a `<time>` element. Loading a script on seventeen pages that have nothing for
-   it to do is the kind of thing nobody removes later.
+   WHY NOT SQLADMIN'S OWN FILTER UI. It renders a sidebar card down the right
+   of the page, each filter a vertical list of links, one navigation per value.
+   Three filters that way is a column of eleven links beside a three-column
+   table — the table gets `col-md-9` and the reading order goes table, then
+   sidebar, so on a narrow window the filters land underneath the thing they
+   filter. The owner asked for a bar across the top and that is also the shape
+   the rest of this panel uses.
 
-   See admin/static/localtime.js for why the conversion happens in the browser
-   at all, and for the trap the server-side `Z` exists to close. #}
+   ONE FORM, ONE NAVIGATION. sqladmin's links each set a single parameter, so
+   narrowing by stage *and* by amount is two page loads. A `<form method="get">`
+   submits every select at once, and `page` is dropped on submit — staying on
+   page 4 of a result set that no longer has one is how a filter looks broken.
+
+   NO JAVASCRIPT. The selects are inside a form with a submit button, so this
+   works with scripting off, which is the same standard `brand/block_ip.html`
+   and the drawer on the public site hold to. `localtime.js` below is the one
+   script here and it is an enhancement over a page that is already correct —
+   see admin/static/localtime.js. #}
 {% extends "brand/model_list.html" %}
+
+{% block list_page_intro %}
+<style>
+  /* sqladmin's sidebar column, emptied by this template's `filters` override
+     but still holding a third of the width. Hidden rather than deleted: the
+     override is in `content`, and `filter-sidebar-col` is written into
+     sqladmin's own list.html, which this file has no other seam into. */
+  .filter-sidebar-col { display: none !important; }
+  .filter-sidebar-col + * , .col-md-9 { width: 100%; max-width: 100%; flex: 0 0 100%; }
+
+  .kc-filters {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: flex-end;
+    gap: .75rem;
+    margin-block-end: 1rem;
+  }
+  .kc-filter { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
+  .kc-filter label {
+    font-size: .8125rem;
+    font-weight: 600;
+    color: #003223;              /* Kale */
+    white-space: nowrap;
+  }
+  /* `min-width` rather than a fixed width: "10 tonnes and over" and its German
+     equivalent are not the same length, and a fixed width clips the longer of
+     them silently — a `<select>` truncates without any sign that it has. */
+  .kc-filter select { min-width: 11rem; }
+  .kc-filters .kc-actions { display: flex; gap: .5rem; align-items: center; }
+  @media (max-width: 640px) {
+    /* One per line rather than two half-width ones: a select whose value is
+       clipped is worse than a taller bar. */
+    .kc-filter { flex: 1 1 100%; }
+    .kc-filter select { width: 100%; }
+  }
+</style>
+
+<form method="get" class="kc-filters" role="search">
+  {# Every query parameter that is NOT one of ours is carried through as a
+     hidden field. `search`, `sortBy` and `pageSize` all live in the URL, and a
+     form that posts only its own selects would silently discard the sort a
+     staff member had just chosen. `page` is deliberately NOT carried: a new
+     filter means a new result set, and landing on page 4 of a set with two
+     pages shows an empty table that reads as "no matches". #}
+  {% set filter_names = model_view.get_filters() | map(attribute="parameter_name") | list %}
+  {% for key, value in request.query_params.items() %}
+    {% if key not in filter_names and key != "page" %}
+      <input type="hidden" name="{{ key }}" value="{{ value }}">
+    {% endif %}
+  {% endfor %}
+
+  {% for filter in model_view.get_filters() %}
+    {% set current = request.query_params.get(filter.parameter_name) %}
+    <div class="kc-filter">
+      <label for="kc-filter-{{ filter.parameter_name }}">{{ filter.title }}</label>
+      <select class="form-select" id="kc-filter-{{ filter.parameter_name }}"
+              name="{{ filter.parameter_name }}">
+        {% for lookup in filter.lookups(request, model_view.model, model_view._run_arbitrary_query) %}
+          <option value="{{ lookup[0] }}"{% if current == lookup[0] %} selected{% endif %}>
+            {{ lookup[1] }}
+          </option>
+        {% endfor %}
+      </select>
+    </div>
+  {% endfor %}
+
+  <div class="kc-actions">
+    <button type="submit" class="btn btn-primary">{{ _("Apply") }}</button>
+    {# Shown only when something is actually filtered. A permanently visible
+       "Clear" on an unfiltered table invites a click that does nothing and
+       teaches the reader the bar is inert. #}
+    {% set active = filter_names | select("in", request.query_params) | list %}
+    {% if active %}
+      <a class="btn btn-link"
+         href="{{ request.url.remove_query_params(filter_names).remove_query_params(['page']) }}">
+        {{ _("Clear") }}
+      </a>
+    {% endif %}
+  </div>
+</form>
+{% endblock %}
 
 {% block tail_js %}
   {{ super() }}

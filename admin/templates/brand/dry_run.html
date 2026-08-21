@@ -1,18 +1,28 @@
 {% extends "brand/base.html" %}
-{% block title %}Staff Testing{% endblock %}
+{#- The heading matches `DryRunView.name` in admin/dryrun_views.py, which is
+    what the sidebar shows and what brand/compare.html links to as "Try a single
+    scenario" - pinned by tests/admin/test_compare_view.py. A page whose title
+    disagrees with the menu entry that reached it is a page somebody thinks they
+    navigated to by mistake. -#}
+{% block title %}{{ _("Try a scenario") }}{% endblock %}
 {% block shell %}
 <main class="dry-run-page">
   <header class="dry-run-head">
     <div>
-      <span class="dry-run-eyebrow">Internal calculator tools</span>
-      <h1>Staff Testing</h1>
-      <p>Run a controlled calculator scenario against published or draft factors without adding it to public statistics.</p>
+      <span class="dry-run-eyebrow">{{ _("Internal calculator tools") }}</span>
+      <h1>{{ _("Try a scenario") }}</h1>
+      <p>{{ _("Run a controlled calculator scenario against published or draft factors without adding it to public statistics.") }}</p>
     </div>
-    <span class="status-pill status-pill--pending"><span aria-hidden="true"></span>Ready to test</span>
   </header>
 
+  {#- OUTSIDE THE DISCLOSURE, AND THAT IS THE POINT. This is contract §8.2's
+      reason for the whole page. The redesign folded it into the `<details>`
+      below, where `tests/admin/test_guidance.py` still found the substring and
+      stayed green while nobody could read it without a click. -#}
+  {% include "brand/guidance/dry_run_warning.html" %}
+
   <details class="dry-run-guidance">
-    <summary>About dry runs and public statistics</summary>
+    <summary>{{ _("About dry runs and public statistics") }}</summary>
     {% include "brand/guidance/dry_run_purpose.html" %}
   </details>
 

@@ -573,15 +573,32 @@ input.sr-only {
   font-weight: 700;
 }
 .status-pill > span { width: 0.55rem; height: 0.55rem; border-radius: 50%; background: currentColor; }
-.status-pill--pass { color: #08764a; background: #e8f8f0; }
-.status-pill--warning, .status-pill--pending { color: #735600; background: #fff8df; }
-.status-pill--error { color: #9d2d1d; background: #fff0ed; }
+/* FOUR STATES, FOUR APPEARANCES. `--warning` and `--pending` shared one
+   declaration, so of the four the redesign promised only three were ever
+   distinguishable - and the two that collided are the two whose meanings are
+   furthest apart: "nothing has run yet" against "something is wrong with what
+   came back".
+
+   The tints are mixed from the brand palette rather than hand-picked, so there
+   is one source for the colours and a palette change reaches these. The
+   guidelines' light-ground rule holds: every ground here is a pale tint and
+   every text colour on it is Kale-dark. */
+.status-pill--pass    { color: #003223; background: color-mix(in srgb, var(--pea) 22%, var(--white)); }
+.status-pill--warning { color: #003223; background: color-mix(in srgb, var(--banana) 42%, var(--white)); }
+.status-pill--error   { color: #003223; background: color-mix(in srgb, var(--orange) 18%, var(--white)); }
+/* No `--pending`. The redesign gave one class two opposite meanings - "nothing
+   has run yet" on the form and "the service is unavailable" on the result -
+   and styled it identically to `--warning`, so of four promised states three
+   were distinguishable and one of those three was wrong. The form no longer
+   claims a status before anything has happened, and an outage is an error. A
+   fourth state can come back when something needs it; a rule with no user is
+   a rule that gets reused for the wrong thing. */
 
 .dry-run-guidance {
   margin-bottom: 1.25rem;
   border: 1px solid rgba(0, 50, 35, 0.16);
   border-radius: 12px;
-  background: #f6faf8;
+  background: rgba(0, 50, 35, 0.04);
 }
 .dry-run-guidance summary { padding: 0.9rem 1rem; cursor: pointer; font-family: 'Geologica', Helvetica, Arial, sans-serif; }
 .dry-run-guidance[open] summary { border-bottom: 1px solid rgba(0, 50, 35, 0.12); }
@@ -600,10 +617,19 @@ input.sr-only {
 .dry-run-card__head p, .dry-run-action p { margin: 0; color: rgba(0, 50, 35, 0.68); }
 .dry-run-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .dry-run-field { min-width: 0; padding: 1.25rem 1.5rem; border-bottom: 1px solid rgba(0, 50, 35, 0.1); }
-.dry-run-field:nth-child(odd):not(.dry-run-field--wide) { border-right: 1px solid rgba(0, 50, 35, 0.1); }
+/* THE DIVIDER GOES ON THE LEFT-HAND CELLS, WHICH ARE THE EVEN CHILDREN.
+   `--wide` is child 1 and spans both columns, so auto-placement puts children
+   2/4/6 in column 1 and 3/5 in column 2. `:nth-child(odd)` therefore selected
+   the RIGHT-hand cells and painted a hairline down the grid's outer edge,
+   leaving no rule between the columns at all - the one line it was for.
+
+   Written as an inline-end border rather than `border-right` so it follows
+   `dir`: this panel renders in Chinese today and is built to take a
+   right-to-left catalogue, where the divider belongs on the other side. */
+.dry-run-field:nth-child(even):not(.dry-run-field--wide) { border-inline-end: 1px solid rgba(0, 50, 35, 0.1); }
 .dry-run-field--wide { grid-column: 1 / -1; }
 .dry-run-field label { display: flex; align-items: center; justify-content: space-between; margin-bottom: 0.45rem; }
-.label-unit { padding: 0.15rem 0.45rem; border-radius: 999px; background: #e8f8f0; color: #08764a; font-size: 0.75rem; }
+.label-unit { padding: 0.15rem 0.45rem; border-radius: 999px; background: color-mix(in srgb, var(--pea) 22%, var(--white)); color: #003223; font-size: 0.75rem; }
 .dry-run-field select, .dry-run-field input[type="text"] {
   width: 100%;
   min-height: 3rem;
@@ -641,16 +667,27 @@ input.sr-only {
 .result-state h2 { margin: 0.15rem 0 0.35rem; }
 .result-state p { margin: 0; }
 .result-state__icon { flex: 0 0 auto; display: grid; place-items: center; width: 2.5rem; height: 2.5rem; border-radius: 50%; color: var(--white); font-family: 'Geologica', Helvetica, Arial, sans-serif; font-size: 1.25rem; }
-.result-state--pass { border-color: #9edabb; background: #eefaf4; }
-.result-state--pass .result-state__icon { background: #08764a; }
-.result-state--warning { border-color: #e5c458; background: #fff8df; }
-.result-state--warning .result-state__icon { background: #9a7200; }
-.result-state--error { border-color: #efad9f; background: #fff0ed; }
-.result-state--error .result-state__icon { background: #b53a25; }
-.result-source { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 12px; background: #f3f6f5; }
+/* MIXED FROM THE PALETTE, not hand-picked. Twelve hex literals stood here for
+   three states the panel already had names for - `.notice--ok` is Pea,
+   `--warning` is Banana, `--error` is Orange - and a palette that lives in two
+   places is a palette that drifts. The icon discs take the brand colour at full
+   strength; the grounds and borders are the same hue diluted.
+
+   Every ground is a light tint and every glyph on it is white on a saturated
+   disc, which is the guidelines' rule in both directions. And no state is
+   signalled by colour alone: each banner carries its own eyebrow word and its
+   own `✓ ! ×`, with the glyph `aria-hidden` so a screen reader gets the word
+   rather than the character. */
+.result-state--pass { border-color: color-mix(in srgb, var(--pea) 55%, var(--white)); background: color-mix(in srgb, var(--pea) 14%, var(--white)); }
+.result-state--pass .result-state__icon { background: var(--pea); color: #003223; }
+.result-state--warning { border-color: color-mix(in srgb, var(--banana) 70%, var(--white)); background: color-mix(in srgb, var(--banana) 30%, var(--white)); }
+.result-state--warning .result-state__icon { background: var(--banana); color: #003223; }
+.result-state--error { border-color: color-mix(in srgb, var(--orange) 45%, var(--white)); background: color-mix(in srgb, var(--orange) 12%, var(--white)); }
+.result-state--error .result-state__icon { background: var(--orange); color: var(--white); }
+.result-source { display: grid; grid-template-columns: auto minmax(0, 1fr); gap: 1rem; margin-bottom: 1.25rem; padding: 1rem 1.25rem; border-radius: 12px; background: rgba(0, 50, 35, 0.04); }
 .result-source span { color: rgba(0, 50, 35, 0.68); }
 .metric-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; padding: 1.5rem; }
-.metric-card { min-width: 0; padding: 1.1rem; border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 12px; background: #f8fbfa; }
+.metric-card { min-width: 0; padding: 1.1rem; border: 1px solid rgba(0, 50, 35, 0.12); border-radius: 12px; background: rgba(0, 50, 35, 0.04); }
 .metric-card > span { display: block; overflow: hidden; color: rgba(0, 50, 35, 0.68); font-size: 0.78rem; text-overflow: ellipsis; text-transform: uppercase; white-space: nowrap; }
 .metric-card strong { display: block; margin: 0.3rem 0 0.15rem; overflow-wrap: anywhere; font-family: 'Geologica', Helvetica, Arial, sans-serif; font-size: clamp(1.35rem, 3vw, 2rem); }
 .metric-card small { color: rgba(0, 50, 35, 0.68); }
@@ -658,8 +695,8 @@ input.sr-only {
 .validation-panel ul { margin: 0.75rem 0 0; padding: 0; list-style: none; }
 .validation-panel li { display: grid; grid-template-columns: minmax(8rem, auto) 1fr; gap: 1rem; padding: 0.75rem 0; border-top: 1px solid rgba(0, 50, 35, 0.1); }
 .debug-panel summary { cursor: pointer; font-family: 'Geologica', Helvetica, Arial, sans-serif; }
-.debug-panel pre { overflow-x: auto; margin: 1rem 0 0; padding: 1rem; border-radius: 8px; background: #f3f6f5; white-space: pre-wrap; }
-.dry-run-notice { border: 1px solid #e5c458; }
+.debug-panel pre { overflow-x: auto; margin: 1rem 0 0; padding: 1rem; border-radius: 8px; background: rgba(0, 50, 35, 0.04); white-space: pre-wrap; }
+.dry-run-notice { border: 1px solid color-mix(in srgb, var(--banana) 70%, var(--white)); }
 .result-actions { justify-content: flex-end; margin-top: 1.5rem; }
 
 @media (max-width: 700px) {
@@ -668,7 +705,9 @@ input.sr-only {
   .status-pill { align-self: flex-start; }
   .dry-run-grid, .metric-grid { grid-template-columns: 1fr; }
   .dry-run-field--wide { grid-column: auto; }
-  .dry-run-field:nth-child(odd):not(.dry-run-field--wide) { border-right: 0; }
+  /* Single column below this width, so there is no column to divide. Must
+     match the selector above or the rule it cancels is a different one. */
+  .dry-run-field:nth-child(even):not(.dry-run-field--wide) { border-inline-end: 0; }
   .dry-run-action { position: static; }
   .dry-run-action__buttons, .result-actions { align-items: stretch; flex-direction: column-reverse; }
   .dry-run-action__buttons > *, .result-actions > * { width: 100%; text-align: center; }

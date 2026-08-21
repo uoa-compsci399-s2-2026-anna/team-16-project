@@ -360,3 +360,139 @@ async def test_no_audit_row_is_written(
 
     _resync(session)
     assert session.scalar(select(func.count()).select_from(AuditLog)) == before
+
+
+# ---------------------------------------------------------------------------
+# What the result page CLAIMS about the run
+#
+# The page grew status states in the redesign - a pill and a banner - and
+# nothing here tested any of them. Two mutations survived the whole file: the
+# state read straight off `outcome`, and an outage shown as a warning. Both are
+# claims a staff member acts on.
+
+
+def _scenario():
+    return {
+        "factor_set": None,          # filled in by the caller
+        "sector": "e6_processing",
+        "food_category": "e6_dairy",
+        "gwp_horizon": "100",
+        "destination": "e6_landfill",
+        "qty_kg": "1200.000",
+    }
+
+
+async def _run(admin_client, version_label):
+    data = _scenario()
+    data["factor_set"] = version_label
+    return await admin_client.post("/admin/try", data=data)
+
+
+async def test_a_response_with_no_metrics_is_not_reported_as_a_pass(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """**`outcome == "ok"` means the client did not raise. It does not mean the
+    calculator returned anything.**
+
+    The same malformed shape `test_a_malformed_metrics_shape_does_not_500`
+    drives - B's endpoint is not deployed and its response shape is unconfirmed,
+    so this is a real case and not a contrived one. Read straight off `outcome`,
+    the page draws a green tick and "Calculation completed successfully"
+    directly above "No calculated metrics were returned", which is the page
+    telling a staff member their formula works when it has no idea.
+    """
+    fake_calc_client.result = {
+        "factor_set": {"version_label": "e6-only-draft", "is_mock": False},
+        "totals": {"current": {"metrics": "not-a-mapping"}}, "net_benefit": {},
+        "entries": [],
+    }
+    session.commit()
+
+    response = await _run(admin_client, one_draft.version_label)
+    body = response.text
+
+    assert response.status_code == 200
+    assert "No calculated metrics were returned" in body
+    assert "status-pill--pass" not in body, (
+        "a response carrying no metrics is being reported as a pass"
+    )
+    assert "returned no metrics" in body
+
+
+async def test_a_mock_factor_set_is_not_reported_as_a_clean_pass(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """The mock banner is mandatory (§2.2) and it was already rendering. What
+    it sat under was a full-width green PASS, which is the louder of the two
+    and says the opposite thing: the numbers are arithmetically correct and
+    substantively meaningless."""
+    fake_calc_client.result = {
+        "factor_set": {"version_label": "e6-only-draft", "is_mock": True},
+        "totals": {"current": {"metrics": {"co2e": {"total": "1.000", "unit": "kg"}}}},
+        "net_benefit": {}, "entries": [],
+    }
+    session.commit()
+
+    response = await _run(admin_client, one_draft.version_label)
+    body = response.text
+
+    assert response.status_code == 200
+    #: The banner itself, unchanged and unconditional.
+    assert "Placeholder data" in body
+    #: And the state above it agrees with it rather than contradicting it.
+    assert "status-pill--pass" not in body, (
+        "a run against placeholder factors is being reported as a clean pass"
+    )
+    assert "placeholder factors" in body
+
+
+async def test_a_real_result_is_reported_as_returned_not_as_passed(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """**The affirmative half**, without which the two tests above are
+    satisfied by a page that never shows a pass at all.
+
+    And the wording is asserted, not just the class: nothing in this flow
+    compares against an expected value, so "Test passed" claims a verdict the
+    page has no basis for. It reports what came back and leaves the judgement
+    to the person who knows what they expected.
+    """
+    fake_calc_client.result = {
+        "factor_set": {"version_label": "e6-only-draft", "is_mock": False},
+        "totals": {"current": {"metrics": {"co2e": {"total": "1234.500", "unit": "kg"}}}},
+        "net_benefit": {}, "entries": [],
+    }
+    session.commit()
+
+    response = await _run(admin_client, one_draft.version_label)
+    body = response.text
+
+    assert response.status_code == 200
+    assert "status-pill--pass" in body
+    assert "1234.500" in body, "the metric it is reporting on is not on the page"
+    assert "passed" not in body.lower(), (
+        "the page claims a verdict it has no expected value to compare against"
+    )
+
+
+async def test_an_unreachable_service_is_an_error_not_a_warning(
+    admin_client, fake_calc_client, one_draft, taxonomy_for_factors, session
+):
+    """The template this redesign replaced used `notice--error` for an outage.
+
+    `admin/dryrun_views.py`'s docstring is emphatic that an outage and a
+    refusal must never read as the same thing, and they do not - but a yellow
+    "Warning" under-states an outage in the other direction, and a staff member
+    who reads it as "something was wrong with my scenario" goes looking at
+    their own figures for a fault that is not there.
+    """
+    fake_calc_client.unavailable = True
+    session.commit()
+
+    response = await _run(admin_client, one_draft.version_label)
+    body = response.text
+
+    assert response.status_code == 200
+    assert "not reachable" in body
+    assert "result-state--error" in body, "an outage is being shown as a warning"
+    assert "result-state--warning" not in body

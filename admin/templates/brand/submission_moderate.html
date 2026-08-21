@@ -1,0 +1,96 @@
+{# /admin/submissions/moderate - contract §8.2's "with a reason".
+
+   WHY THIS IS A PAGE AND NOT A CONFIRMATION DIALOG. sqladmin's `@action`
+   confirmation is a yes/no prompt with nowhere to type. An action alone could
+   set `excluded_from_public` but could not record WHY, and the reason is the
+   whole value of the audit entry: six months on, "excluded_from_public went
+   true" tells the next person nothing, while "obvious test data, 5,000,000 kg
+   from a household" tells them everything.
+
+   THE ROWS ARE LISTED BEFORE THE BOX. Exclusion is reached from a bulk
+   selection on the list page, and a page that said "3 submissions selected"
+   would ask somebody to act on a number. Each row shows what it is - when, what
+   stage, how much - so the decision is made against the same evidence the list
+   page showed. #}
+{% extends "brand/base.html" %}
+{% block title %}{% if excluding %}Exclude from public statistics{% else %}Return to public statistics{% endif %}{% endblock %}
+{% block content %}
+  <h1>{% if excluding %}Exclude from public statistics{% else %}Return to public statistics{% endif %}</h1>
+
+  {% if excluding %}
+    <p class="muted">
+      The submission stays exactly as it was recorded. What changes is that the
+      published statistics stop counting it — the aggregate is rebuilt without
+      it from the next request onwards. Nothing is deleted and nothing is
+      edited, so this is reversible from this same screen.
+    </p>
+  {% else %}
+    <p class="muted">
+      These submissions start counting towards the published statistics again.
+      Give a reason for this too: an exclusion that was reversed without one
+      leaves an audit trail in which somebody excluded a row for a stated
+      reason and somebody else undid it for none.
+    </p>
+  {% endif %}
+
+  {% if error %}<div class="notice notice--error">{{ error }}</div>{% endif %}
+
+  {% if rows %}
+    <table class="kc-table">
+      <thead>
+        <tr>
+          <th>Calculated at</th>
+          <th>Supply-chain stage</th>
+          <th>Food waste recorded</th>
+          <th>State</th>
+        </tr>
+      </thead>
+      <tbody>
+        {% for row in rows %}
+          <tr>
+            <td>{{ row.created_at }}</td>
+            <td>{{ row.sectors }}</td>
+            <td>{{ row.total }}</td>
+            <td>
+              {# Named per row rather than filtered out. A selection that
+                 already contains excluded rows is not an error - it is what
+                 happens when somebody selects a page - and silently dropping
+                 them would leave the operator unsure which of their ticks
+                 took effect. These are skipped on submit and no audit entry
+                 is written for them. #}
+              {% if row.already == excluding %}
+                <span class="muted">already {{ "excluded" if excluding else "included" }} — no change</span>
+              {% else %}
+                {{ "included" if excluding else "excluded" }}
+              {% endif %}
+            </td>
+          </tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  {% else %}
+    <div class="notice notice--error">
+      No submissions were selected. Go back, tick one or more rows, and choose
+      the action again.
+    </div>
+  {% endif %}
+
+  {% if rows %}
+    <form method="post" autocomplete="off">
+      <label for="reason">Reason</label>
+      <textarea id="reason" name="reason" required rows="3" autofocus></textarea>
+      <p class="muted">
+        Written into the audit log against every row this changes. Say what made
+        the submission implausible — the figure, the combination, how you
+        recognised it — not just that it was wrong. This is the only record of
+        why the public statistics differ from the raw data.
+      </p>
+      <button type="submit" class="button">
+        {% if excluding %}Exclude{% else %}Return to statistics{% endif %}
+      </button>
+      <a class="button button--secondary" href="{{ list_url }}">Cancel</a>
+    </form>
+  {% else %}
+    <a class="button" href="{{ list_url }}">Back to submissions</a>
+  {% endif %}
+{% endblock %}

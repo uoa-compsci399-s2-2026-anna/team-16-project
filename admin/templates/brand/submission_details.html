@@ -1,0 +1,146 @@
+{# /admin/submissions/details/{id} - the drill-down.
+
+   THE POINT OF THIS FILE. sqladmin's own details table renders a relationship
+   as a list of `__str__` values, so `entries` would print as a row of
+   "processing / bread and bakery" links and the LINES - the destinations and
+   the kilograms, which is the whole of what a calculation actually says -
+   would not appear at all. `SubmissionLine` is not a registered view either,
+   so there is nothing to click through to. Hence: sqladmin's table above via
+   `{{ super() }}` for the submission's own fields, and the tree below for the
+   two levels underneath it.
+
+   WHAT IS NOT HERE, AND WHY. No token, no address, no user agent, no
+   fingerprint - none of the last three was ever collected (contract §2.3), and
+   `token` is deliberately absent from `column_details_list` so that a live
+   de-duplication token never renders on a page one click from every row. See
+   admin/submission_views.py's module docstring.
+
+   PREVENTION IS LABELLED RATHER THAN LEFT TO READ AS A DESTINATION. §4.1's
+   `prevention` is a destination whose factors are all zero - it is how "we
+   would waste less" is expressed while keeping both scenarios mass-conserving.
+   On this page it is the difference between "they said they would send 300 kg
+   to compost" and "they said 300 kg would not be waste at all", which a reader
+   should not have to know the taxonomy to see.
+
+   Both scenarios are shown, side by side per entry, because the alternative is
+   half of what was submitted (§4.1) and a page that showed only the current
+   scenario would be describing a comparison by one of its two sides. An entry
+   with no alternative is the ordinary case - the main calculator flow sends
+   `alternative: null` - and says so rather than rendering an empty column. #}
+{% extends "sqladmin/details.html" %}
+
+{% block details_table %}
+{{ super() }}
+
+<style>
+  /* Scoped to this page. No physical `left`/`right` anywhere - the panel's
+     stylesheet test refuses them, and the panel renders in Arabic. */
+  .kc-entry {
+    border-inline-start: 6px solid #003223;   /* Kale, the primary */
+    background: #FFFFFF;
+    padding: .75rem 1rem;
+    margin-block: 1rem;
+  }
+  .kc-entry h4 { margin-block: 0 .25rem; font-size: 1rem; }
+  .kc-entry-meta { color: #5b6f68; font-size: .875rem; margin-block-end: .75rem; }
+  .kc-scenarios { display: flex; flex-wrap: wrap; gap: 1.5rem; }
+  .kc-scenario { flex: 1 1 22rem; min-width: 0; }
+  .kc-scenario h5 { font-size: .875rem; text-transform: uppercase; letter-spacing: .04em; }
+  .kc-scenario table { width: 100%; table-layout: fixed; }
+  .kc-scenario td { overflow-wrap: anywhere; vertical-align: top; }
+  .kc-qty { text-align: end; white-space: nowrap; }
+  .kc-prevention { color: #005AE6; }           /* Blueberry: not a disposal route */
+  .kc-empty { color: #5b6f68; font-style: italic; }
+  .kc-total td { border-block-start: 2px solid #003223; font-weight: 600; }
+</style>
+
+<h3 class="mt-4">What was submitted</h3>
+<p class="text-muted">
+  One block per supply-chain stage, in the order the visitor entered them. Every
+  calculation is a pair of scenarios and the two move the same mass, so the
+  alternative is not extra waste — it is the same waste sent somewhere else.
+</p>
+
+{% for entry in model.entries %}
+  {% set current_lines = entry.lines | selectattr("scenario.value", "equalto", "current") | list %}
+  {% set alternative_lines = entry.lines | selectattr("scenario.value", "equalto", "alternative") | list %}
+  <div class="kc-entry">
+    <h4>{{ entry.sector.name if entry.sector else entry.sector_id }}</h4>
+    <div class="kc-entry-meta">
+      {% if entry.food_category %}
+        {{ entry.food_category.name }}
+      {% else %}
+        {# §2.1's standard mix: the visitor did not break their waste down by
+           food type. "No food category" reads as missing data; this is a
+           deliberate answer, and the engine prices it with the standard-mix
+           factors. #}
+        <span class="kc-empty">Standard mix — not broken down by food type</span>
+      {% endif %}
+    </div>
+
+    <div class="kc-scenarios">
+      <div class="kc-scenario">
+        <h5>Current</h5>
+        {% if current_lines %}
+          <table>
+            <tbody>
+              {% for line in current_lines %}
+                <tr>
+                  <td{% if line.destination and line.destination.is_prevention %} class="kc-prevention"{% endif %}>
+                    {{ line.destination.name if line.destination else line.destination_id }}
+                    {%- if line.destination and line.destination.is_prevention %}
+                      <span class="kc-empty">(not wasted)</span>
+                    {%- endif %}
+                  </td>
+                  <td class="kc-qty">{{ "{:,.3f}".format(line.qty_kg) }} kg</td>
+                </tr>
+              {% endfor %}
+              <tr class="kc-total">
+                <td>Total</td>
+                <td class="kc-qty">
+                  {{ "{:,.3f}".format(current_lines | sum(attribute="qty_kg")) }} kg
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        {% else %}
+          <p class="kc-empty">No lines recorded.</p>
+        {% endif %}
+      </div>
+
+      <div class="kc-scenario">
+        <h5>Alternative</h5>
+        {% if alternative_lines %}
+          <table>
+            <tbody>
+              {% for line in alternative_lines %}
+                <tr>
+                  <td{% if line.destination and line.destination.is_prevention %} class="kc-prevention"{% endif %}>
+                    {{ line.destination.name if line.destination else line.destination_id }}
+                    {%- if line.destination and line.destination.is_prevention %}
+                      <span class="kc-empty">(not wasted)</span>
+                    {%- endif %}
+                  </td>
+                  <td class="kc-qty">{{ "{:,.3f}".format(line.qty_kg) }} kg</td>
+                </tr>
+              {% endfor %}
+              <tr class="kc-total">
+                <td>Total</td>
+                <td class="kc-qty">
+                  {{ "{:,.3f}".format(alternative_lines | sum(attribute="qty_kg")) }} kg
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        {% else %}
+          {# The ordinary case, not a fault: the main calculator flow submits
+             `alternative: null`, and only the improvement panel sends one. #}
+          <p class="kc-empty">None submitted — this visitor did not model an alternative.</p>
+        {% endif %}
+      </div>
+    </div>
+  </div>
+{% else %}
+  <p class="kc-empty">This submission has no entries.</p>
+{% endfor %}
+{% endblock %}

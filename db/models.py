@@ -169,6 +169,17 @@ class Submission(Base):
         back_populates="submission", cascade="all, delete-orphan",
         order_by="SubmissionEntry.sort_order",
     )
+    #: Added for `/admin/submissions` (§8.2), which shows which numbers a
+    #: calculation was run against — the whole point of stamping `factor_set_id`
+    #: on every submission is that a historical result stays reproducible after
+    #: staff revise the factors, and an integer id does not tell a staff member
+    #: which revision that was.
+    #:
+    #: **No `back_populates`**, for the reason `SubmissionLine.destination`
+    #: gives: the reverse is every submission ever calculated against a factor
+    #: set, which is a collection that grows without bound and that
+    #: `FactorSetAdmin` would try to render on its details page.
+    factor_set: Mapped["FactorSet"] = relationship()
 
     def __str__(self) -> str:
         #: Required of every mapped model by tests/admin/test_model_str.py.
@@ -287,11 +298,27 @@ class SubmissionLine(Base):
     qty_kg: Mapped[Decimal] = mapped_column(DECIMAL(16, 3), nullable=False)
 
     entry: Mapped[SubmissionEntry] = relationship(back_populates="lines")
+    #: Added for `/admin/submissions` (§8.2), and the comment it replaces said
+    #: this table is "written in bulk by `upsert_submission` and never read one
+    #: row at a time". That was true until a screen existed to read it: the
+    #: drill-down renders every line of a calculation, and a line whose
+    #: destination is an integer id tells a staff member nothing.
+    #:
+    #: **No `back_populates`, deliberately.** The reverse — every submission
+    #: line ever recorded, hanging off a taxonomy row — is a collection nothing
+    #: wants and that `DestinationAdmin` would try to render on its own details
+    #: page. This direction is a lookup; the other would be a liability that
+    #: grows with every calculation the public runs.
+    destination: Mapped["Destination"] = relationship()
 
     def __str__(self) -> str:
         #: Required of every mapped model by tests/admin/test_model_str.py.
-        #: No `destination` relationship is declared on this table — it is
-        #: written in bulk by `upsert_submission` and never read one row at a
-        #: time — so the scenario and the quantity are what identify the row.
+        #:
+        #: **Still not the destination, now that the relationship exists.**
+        #: `__str__` is called by sqladmin wherever a row is rendered, including
+        #: on objects that have left their session, and touching a lazy
+        #: relationship there raises `DetachedInstanceError` from inside a
+        #: template — a 500 on a page that was only trying to print a label.
+        #: The drill-down loads `destination` eagerly and renders it itself.
         scenario = self.scenario.value if isinstance(self.scenario, Scenario) else self.scenario
         return f"{scenario} {self.qty_kg} kg"

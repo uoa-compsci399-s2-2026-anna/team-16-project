@@ -191,6 +191,13 @@
     "Follow the system": "跟随系统",
     "Set language": "设置语言",
     "machine translated": "机器翻译",
-    "%(language)s is not available in the admin panel, so it is shown in English. Your choice is unchanged and the calculator still uses it.": "管理面板暂无 %(language)s 版本，因此以英文显示。您的选择未被更改，计算器仍会使用它。"
+    "%(language)s is not available in the admin panel, so it is shown in English. Your choice is unchanged and the calculator still uses it.": "管理面板暂无 %(language)s 版本，因此以英文显示。您的选择未被更改，计算器仍会使用它。",
+    "Submission": "提交记录",
+    "Submissions": "提交记录",
+    "Calculated at": "计算时间",
+    "Supply-chain stage": "供应链环节",
+    "Food waste recorded": "记录的食物浪费量",
+    "Methane time horizon": "甲烷时间尺度",
+    "Excluded from public statistics": "已排除出公开统计"
   }
 }

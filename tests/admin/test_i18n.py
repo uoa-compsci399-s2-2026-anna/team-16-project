@@ -28,6 +28,7 @@ import admin.blocklist_views  # noqa: F401
 import admin.comparison_views  # noqa: F401
 import admin.factor_views  # noqa: F401
 import admin.modelviews  # noqa: F401
+import admin.submission_views  # noqa: F401
 import admin.taxonomy_views  # noqa: F401
 from admin import i18n
 

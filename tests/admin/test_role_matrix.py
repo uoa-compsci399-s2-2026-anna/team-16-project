@@ -159,6 +159,20 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     # The two comparison-scenario screens.
     ("GET", "/admin/comparison-scenario/list", "the standard scenarios are staff-editable"),
     ("GET", "/admin/comparison-scenario-line/list", "the standard scenarios are staff-editable"),
+    # Submissions, §8.2. The role matrix gives both roles "dry run, view
+    # submissions" AND "set `excluded_from_public`", so the moderation routes
+    # are both-roles too rather than administrator-only. That is a deliberate
+    # asymmetry with the audit log, which is administrator-only: reading who a
+    # calculation belonged to is not possible here in the first place, because
+    # nothing identifying was ever collected (§2.3), so there is nothing on
+    # these screens for the tighter gate to protect.
+    ("GET", "/admin/submissions/list", "record-level moderation, §8.2"),
+    ("GET", "/admin/submissions/action/exclude",
+     "setting excluded_from_public is both roles, §8.2 role matrix"),
+    ("GET", "/admin/submissions/action/include",
+     "the reverse of the above, and both roles for the same reason"),
+    ("GET", "/admin/submissions/moderate",
+     "the reason form both actions redirect to, §8.2's \"with a reason\""),
 ]
 
 
@@ -336,7 +350,7 @@ def _concrete_admin_routes(app) -> set[str]:
     The parameterised ones are sqladmin's own generic CRUD templates -
     `/admin/{identity}/list`, `/admin/{identity}/details/{pk:path}`,
     `/admin/{identity}/export/{export_type}` and six more - which serve all
-    seventeen model views through one route each and are covered by
+    eighteen model views through one route each and are covered by
     `test_every_registered_model_view_has_a_decided_role` below, per view
     rather than per template. What is left is exactly the set of hand-written
     `@expose` and `@action` routes, which is the set that needs naming one at
@@ -402,7 +416,7 @@ async def test_every_custom_admin_route_has_a_decided_role(admin_app):
 
 
 async def test_every_registered_model_view_has_a_decided_role(admin_app):
-    """The per-view half: seventeen `ModelView`s, one decision each.
+    """The per-view half: eighteen `ModelView`s, one decision each.
 
     `ModelView.is_accessible` defaults to "allow access for everyone", so a
     view registered with no override is open to `staff` silently. Reaching the
@@ -417,8 +431,8 @@ async def test_every_registered_model_view_has_a_decided_role(admin_app):
     identities = {
         view.identity for view in admin._views if hasattr(view, "model")
     }
-    assert len(identities) == 17, (
-        f"expected seventeen model views, found {len(identities)}: "
+    assert len(identities) == 18, (
+        f"expected eighteen model views, found {len(identities)}: "
         f"{sorted(identities)}"
     )
 

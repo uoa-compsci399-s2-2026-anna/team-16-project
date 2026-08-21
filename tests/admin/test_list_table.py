@@ -16,7 +16,7 @@ not reachable.
 So the reachability itself was measured in a browser, not here. Chromium via
 Playwright against the running stack on :18080 with the ReFED comparison set
 loaded (764 upstream rows, 1728 downstream), at 1920x1080, 1440x900,
-1280x900, 1024x768, 768x800 and 390x700, on all seventeen list pages:
+1280x900, 1024x768, 768x800 and 390x700, on all eighteen list pages:
 
 * before, /admin/factor-upstream at 1280x900 - scrollport 682x4656, the last
   column (`data_quality`) laid out at x=2314..2452 against a port ending at
@@ -137,12 +137,12 @@ def test_the_sweep_covers_every_list_screen(list_identities):
 
     ``test_every_list_page_carries_the_scrollport_rules`` asserts that a list
     of failures is empty, and the cheapest way for that to be true is for the
-    fixture to have found no screens at all. Seventeen is the same count
+    fixture to have found no screens at all. Eighteen is the same count
     ``tests/admin/test_role_matrix.py`` holds the panel to, and this asserts
     it independently so that a view lost from the registry fails both.
     """
-    assert len(list_identities) == 17, (
-        f"expected seventeen list screens, found {len(list_identities)}: "
+    assert len(list_identities) == 18, (
+        f"expected eighteen list screens, found {len(list_identities)}: "
         f"{list_identities}"
     )
     assert "audit-log" in list_identities, (
@@ -155,7 +155,7 @@ def test_the_sweep_covers_every_list_screen(list_identities):
 async def test_every_list_page_carries_the_scrollport_rules(
     admin_client, list_identities
 ):
-    """All seventeen, not the three that were reported.
+    """All eighteen, not the three that were reported.
 
     The report named upstream, downstream and constants because those are the
     three the owner happened to open. The clipping is a property of the one

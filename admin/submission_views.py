@@ -59,8 +59,7 @@ from decimal import Decimal
 
 from markupsafe import Markup, escape
 from sqladmin import action, expose
-from sqladmin.filters import BooleanFilter, StaticValuesFilter
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.orm import selectinload
 from starlette.responses import RedirectResponse
 from starlette.responses import Response as StarletteResponse
@@ -208,145 +207,109 @@ def _local_day_to_utc(day: date, offset_minutes: int) -> datetime:
     return datetime(day.year, day.month, day.day) + timedelta(minutes=offset_minutes)
 
 
-class RecentWindowFilter:
-    """"Calculated in the last ..." — rolling windows, not calendar days.
+#: **The bar is built here rather than through sqladmin's filter protocol, and
+#: multi-select is why.** That protocol hands `get_filtered_query` a single
+#: value read with `query_params.get(name)`; it cannot see a second one. Two of
+#: these filters take several values at once, so all of them moved here rather
+#: than leaving the screen with two filtering mechanisms that render
+#: differently and fail differently.
+#:
+#: What that also bought: `column_filters` is now empty, so sqladmin renders no
+#: sidebar at all, and the CSS that used to hide one is gone. A hack removed by
+#: making it unnecessary is better than a hack with a comment.
 
-    **Calendar days would be wrong and would look right.** "Today" is a
-    question about the reader's own time zone, and this filter runs on a server
-    that stores naive UTC. A staff member in Auckland opening the panel at 9am
-    on the 21st is at 21:00 UTC on the *20th*; a UTC "today" would show them an
-    empty screen and they would conclude the calculator had had no visitors.
+#: Rolling windows, not calendar days. "Today" is a question about the reader's
+#: zone against a server that stores naive UTC: a staff member in Auckland
+#: opening the panel at 9am is at 21:00 UTC *yesterday*, so a UTC "today" shows
+#: them an empty screen, and the reasonable conclusion from an empty screen is
+#: that nobody used the calculator. A rolling window is the same everywhere,
+#: and it is the question a moderator actually has - not "what happened on
+#: Tuesday" but "what has arrived since I last looked".
+#:
+#: The explicit from/to range below answers the calendar question, and pays the
+#: time-zone cost with `tzoffset`.
+WINDOWS: dict[str, tuple[str, timedelta]] = {
+    "24h": ("Last 24 hours", timedelta(hours=24)),
+    "7d": ("Last 7 days", timedelta(days=7)),
+    "30d": ("Last 30 days", timedelta(days=30)),
+    "12mo": ("Last 12 months", timedelta(days=365)),
+}
 
-    A rolling window has no such ambiguity — "the last 24 hours" is the same
-    24 hours everywhere — which is why the options below are durations rather
-    than dates. It is also the question a moderator actually has: not "what
-    happened on Tuesday" but "what has arrived since I last looked".
+#: value -> (label, lower inclusive, upper exclusive); `None` is unbounded.
+#:
+#: **Half-open, and that is what makes ticking two of them mean what it looks
+#: like it means.** Written `<=` on both sides, a row of exactly 1,000 kg is in
+#: two bands at once - so the counts sum to more than the table holds, and
+#: ticking "100 kg - 1 tonne" and "1 - 10 tonnes" returns that row twice over
+#: in the arithmetic even though it is drawn once. In a tool where people type
+#: `1000`, that is a lot of rows.
+BANDS: dict[str, tuple[str, Decimal | None, Decimal | None]] = {
+    "lt100": ("Under 100 kg", None, Decimal("100")),
+    "100-1k": ("100 kg \u2013 1 tonne", Decimal("100"), Decimal("1000")),
+    "1k-10k": ("1 \u2013 10 tonnes", Decimal("1000"), Decimal("10000")),
+    "gte10k": ("10 tonnes and over", Decimal("10000"), None),
+}
+
+EXCLUSION_CHOICES: list[tuple[str, str]] = [
+    ("true", "Excluded only"),
+    ("false", "Included only"),
+]
+
+HORIZON_CHOICES: list[tuple[str, str]] = [("20", "20 years"), ("100", "100 years")]
+
+
+def _stage_clause(codes: list[str]):
+    """Submissions with an entry at **any** of the named stages.
+
+    `EXISTS`, not a join, and one `EXISTS` rather than one per code. A join on
+    `submission_entry` returns a submission once per matching entry -
+    `uq_submission_entry` is UNIQUE on (submission, sector, food_category), so
+    one business reporting bakery and dairy waste at Processing is two rows
+    with one sector. sqladmin calls `.scalars().unique()` and would draw that
+    submission once, but the pagination count is built from
+    `select(count()).select_from(stmt.subquery())` and counts the duplicate:
+    the page then reports three submissions and renders two, with nothing on
+    screen to say which number is wrong.
+
+    `IN` inside the one `EXISTS` gives OR across the ticked stages while still
+    asking a yes/no question per submission.
     """
-
-    has_operator = False
-    template = "sqladmin/filters/lookup_filter.html"
-
-    #: value -> (label, timedelta). Ordered shortest first, because the short
-    #: windows are the ones used repeatedly.
-    WINDOWS = {
-        "24h": ("Last 24 hours", timedelta(hours=24)),
-        "7d": ("Last 7 days", timedelta(days=7)),
-        "30d": ("Last 30 days", timedelta(days=30)),
-        "12mo": ("Last 12 months", timedelta(days=365)),
-    }
-
-    def __init__(self, title="Calculated in the", parameter_name="window"):
-        self.title = title
-        self.parameter_name = parameter_name
-
-    async def lookups(self, request, model, run_query):
-        return [("__all", "Any time")] + [
-            (value, label) for value, (label, _) in self.WINDOWS.items()
-        ]
-
-    async def get_filtered_query(self, query, value, model):
-        window = self.WINDOWS.get(value)
-        if window is None:
-            return query
-        #: `utcnow()` is naive UTC and so is `created_at` (contract §1.3), so
-        #: these compare directly. Mixing an aware value in here would raise
-        #: at query build time rather than quietly comparing wrong, which is
-        #: the one mercy of naive datetimes.
-        return query.where(Submission.created_at >= utcnow() - window[1])
-
-
-class SupplyChainStageFilter:
-    """Submissions with **any** entry at the named stage.
-
-    `EXISTS`, not a join. A submission has one entry per supply-chain stage,
-    so a business reporting waste at three stages joins to three rows — and a
-    join would return that submission three times, which sqladmin would then
-    render as three identical lines and count as three. `EXISTS` asks the
-    question the filter is actually asking: does this calculation touch that
-    stage at all.
-
-    The options come from the `sector` table rather than from a literal list,
-    because §2.1's taxonomy is data: a sector staff add through the panel has
-    to appear here without anyone editing this file.
-    """
-
-    has_operator = False
-    template = "sqladmin/filters/lookup_filter.html"
-
-    def __init__(self, title="Supply-chain stage", parameter_name="stage"):
-        self.title = title
-        self.parameter_name = parameter_name
-
-    async def lookups(self, request, model, run_query):
-        rows = await run_query(
-            select(Sector.code, Sector.name).order_by(Sector.sort_order, Sector.name)
+    return (
+        select(1)
+        .select_from(SubmissionEntry)
+        .join(Sector, SubmissionEntry.sector_id == Sector.id)
+        .where(
+            SubmissionEntry.submission_id == Submission.id,
+            Sector.code.in_(codes),
         )
-        return [("__all", "Any stage")] + [(row[0], row[1]) for row in rows]
-
-    async def get_filtered_query(self, query, value, model):
-        if value in ("", "__all", None):
-            return query
-        return query.where(
-            select(1)
-            .select_from(SubmissionEntry)
-            .join(Sector, SubmissionEntry.sector_id == Sector.id)
-            .where(
-                SubmissionEntry.submission_id == Submission.id,
-                Sector.code == value,
-            )
-            .correlate(Submission)
-            .exists()
-        )
+        .correlate(Submission)
+        .exists()
+    )
 
 
-class RecordedMassFilter:
-    """Bands of recorded food waste, over the same total the column shows.
+def _mass_clause(band_values: list[str]):
+    """The recorded total falling in **any** of the ticked bands.
 
-    **Bands rather than a free numeric range**, and the reason is that this
-    filter exists to find implausible rows. The question is "show me the very
-    large ones" rather than "show me between 1,240 and 1,260 kg", and a pair of
-    free number boxes would need validating, would need a unit stated beside
-    each, and would let a mistyped bound return an empty screen that looks like
-    an empty database.
+    Returns None when nothing recognisable was ticked, so the caller can tell
+    "no filter" from "a filter that matches nothing" - the difference between
+    showing every row and showing none, on a hand-edited query string.
     """
-
-    has_operator = False
-    template = "sqladmin/filters/lookup_filter.html"
-
-    #: value -> (label, lower inclusive, upper exclusive). `None` is unbounded.
-    #: The boundaries are decimal orders of magnitude and the top band starts
-    #: at ten tonnes, which on a real business is a year rather than a week —
-    #: it is the band a moderator opens first.
-    BANDS = {
-        "lt100": ("Under 100 kg", None, Decimal("100")),
-        "100-1k": ("100 kg – 1 tonne", Decimal("100"), Decimal("1000")),
-        "1k-10k": ("1 – 10 tonnes", Decimal("1000"), Decimal("10000")),
-        "gte10k": ("10 tonnes and over", Decimal("10000"), None),
-    }
-
-    def __init__(self, title="Food waste recorded", parameter_name="mass"):
-        self.title = title
-        self.parameter_name = parameter_name
-
-    async def lookups(self, request, model, run_query):
-        return [("__all", "Any amount")] + [
-            (value, label) for value, (label, _, _) in self.BANDS.items()
-        ]
-
-    async def get_filtered_query(self, query, value, model):
-        band = self.BANDS.get(value)
+    total = _recorded_mass_subquery()
+    clauses = []
+    for value in band_values:
+        band = BANDS.get(value)
         if band is None:
-            return query
+            continue
         _, lower, upper = band
-        total = _recorded_mass_subquery()
+        bounds = []
         if lower is not None:
-            query = query.where(total >= lower)
+            bounds.append(total >= lower)
         if upper is not None:
-            #: Exclusive upper bound, so the bands tile without overlapping.
-            #: `<=` on both sides would put exactly 1,000 kg in two bands and
-            #: make the four counts sum to more than the table holds.
-            query = query.where(total < upper)
-        return query
+            bounds.append(total < upper)
+        clauses.append(and_(*bounds) if len(bounds) > 1 else bounds[0])
+    if not clauses:
+        return None
+    return or_(*clauses) if len(clauses) > 1 else clauses[0]
 
 
 def _utc_time_element(moment, pattern: str) -> Markup:
@@ -436,71 +399,151 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     #: from two child tables and are not sortable at any price worth paying.
     column_sortable_list = ["created_at", "gwp_horizon", "excluded_from_public"]
 
-    #: §8.2's "search and filtering". There is no free text on this model — no
-    #: name, no note, nothing a person typed — so search would have nothing to
-    #: match and is left off rather than shipped as an empty box that finds
-    #: nothing. Filtering is what this screen can honestly offer, and the two
-    #: filters are the two questions a moderator actually has: what have I
-    #: already dealt with, and which methane horizon was this run at.
-    column_filters = [
-        RecentWindowFilter(),
-        SupplyChainStageFilter(),
-        RecordedMassFilter(),
-        BooleanFilter(Submission.excluded_from_public, title="Excluded"),
-        StaticValuesFilter(
-            Submission.gwp_horizon,
-            [("20", "20 years"), ("100", "100 years")],
-            title="Methane horizon",
-        ),
-    ]
+    #: **Empty, and deliberately.** Every control on this screen is built by
+    #: `filter_controls` and applied in `list_query`, because two of them take
+    #: several values at once and sqladmin's protocol reads one
+    #: (`query_params.get`). Leaving one or two here would give the page two
+    #: filtering mechanisms with different markup and different failure modes,
+    #: and would put sqladmin's sidebar back on the right of the table.
+    #:
+    #: §8.2 also asks for "search". There is no free text on this model - no
+    #: name, no note, nothing a person typed - so a search box would have
+    #: nothing to match, and is left off rather than shipped as an input that
+    #: silently finds nothing.
+    column_filters = []
 
     column_default_sort = ("created_at", True)
 
     list_template = "brand/submission_list.html"
     details_template = "brand/submission_details.html"
 
+    async def filter_controls(self, request):
+        """What the bar renders, in the order it renders it.
+
+        One structure, read by the template and matched by `list_query` below,
+        so a control cannot appear on the page without a clause behind it or a
+        clause exist with no way to reach it.
+
+        The stage options come from the `sector` table rather than a literal
+        list, because §2.1's taxonomy is data: a sector staff add through the
+        panel has to appear here without anyone editing this file. Inactive
+        sectors are included on purpose - a submission recorded against one is
+        still in the table, and a filter that could not name it would leave
+        those rows unreachable.
+        """
+        with self.session_maker() as session:
+            sectors = session.execute(
+                select(Sector.code, Sector.name).order_by(Sector.sort_order, Sector.name)
+            ).all()
+
+        selected = lambda name: request.query_params.getlist(name)  # noqa: E731
+        return [
+            {
+                "name": "window",
+                "title": "Calculated in the",
+                "multiple": False,
+                "empty_label": "Any time",
+                "options": [(value, label) for value, (label, _) in WINDOWS.items()],
+                "selected": selected("window"),
+            },
+            {
+                "name": "stage",
+                "title": "Supply-chain stage",
+                "multiple": True,
+                "empty_label": "Any stage",
+                "options": [(code, name) for code, name in sectors],
+                "selected": selected("stage"),
+            },
+            {
+                "name": "mass",
+                "title": "Food waste recorded",
+                "multiple": True,
+                "empty_label": "Any amount",
+                "options": [(value, label) for value, (label, _, _) in BANDS.items()],
+                "selected": selected("mass"),
+            },
+            {
+                "name": "excluded",
+                "title": "Excluded",
+                "multiple": False,
+                "empty_label": "Included and excluded",
+                "options": EXCLUSION_CHOICES,
+                "selected": selected("excluded"),
+            },
+            {
+                "name": "horizon",
+                "title": "Methane horizon",
+                "multiple": False,
+                "empty_label": "Either horizon",
+                "options": HORIZON_CHOICES,
+                "selected": selected("horizon"),
+            },
+        ]
+
     def list_query(self, request):
-        """Eager-load what the two derived columns walk, and apply the date
-        range if one was given.
+        """Eager-load what the derived columns walk, then apply the bar.
 
         **The eager loading.** Without it the list page is N+1 twice over: once
         for `entries` and again for each entry's `lines` and `sector`. Fifty
-        rows is 151 queries, and the page still renders — slowly, and only on a
+        rows is 151 queries, and the page still renders - slowly, and only on a
         database small enough not to notice.
 
-        **The date range is here rather than in a `column_filters` entry**
-        because sqladmin's filter protocol is one parameter with a list of
-        lookups: it renders a chooser, and a from/to pair is two free inputs.
-        Putting it in `list_query` is not a way around the count, either —
-        sqladmin builds its total from `select(count()).select_from(
-        stmt.subquery())` over whatever this returns, so the range is counted
-        exactly like the three filters that follow it.
+        **Every filter is applied here, and that is what keeps the count
+        honest.** sqladmin builds its total from
+        `select(count()).select_from(stmt.subquery())` over whatever this
+        returns, so a clause added here is counted exactly as it is rendered.
+        The alternative - a join with GROUP BY - changes the statement's shape
+        and can report a number the page does not draw.
 
-        It composes with the preset window rather than overriding it: two
-        controls both narrowing the same column intersect, which is what
-        "filter" means everywhere else on this page. The form's hint says so.
+        Filters intersect: several controls narrow together, and several values
+        inside one control widen it. That is what a filter bar means everywhere
+        else, and the form's hint says so rather than leaving it to be
+        discovered.
         """
+        params = request.query_params
         query = super().list_query(request).options(
             selectinload(Submission.entries).selectinload(SubmissionEntry.lines),
             selectinload(Submission.entries).selectinload(SubmissionEntry.sector),
         )
 
-        offset = _tz_offset_minutes(request.query_params.get("tzoffset"))
-        start = _parse_iso_date(request.query_params.get("from"))
-        end = _parse_iso_date(request.query_params.get("to"))
+        window = WINDOWS.get(params.get("window", ""))
+        if window is not None:
+            #: `utcnow()` is naive UTC and so is `created_at` (§1.3), so these
+            #: compare directly. An aware value here would raise at query build
+            #: time rather than compare wrong, which is the one mercy of naive
+            #: datetimes.
+            query = query.where(Submission.created_at >= utcnow() - window[1])
 
+        offset = _tz_offset_minutes(params.get("tzoffset"))
+        start = _parse_iso_date(params.get("from"))
+        end = _parse_iso_date(params.get("to"))
         if start is not None:
             query = query.where(Submission.created_at >= _local_day_to_utc(start, offset))
         if end is not None:
-            #: The *end* of the chosen day, not its start. A staff member
-            #: picking 21 August to 21 August means that whole day; taking the
-            #: date at face value would make `from == to` return nothing at
-            #: all, which reads as "there were no calculations" rather than as
-            #: a bad query.
+            #: The *end* of the chosen day. A staff member picking 21 August to
+            #: 21 August means that whole day; taking the date at face value
+            #: makes `from == to` return nothing at all, which reads as "there
+            #: were no calculations" rather than as a bad query.
             query = query.where(
-                Submission.created_at
-                < _local_day_to_utc(end + timedelta(days=1), offset)
+                Submission.created_at < _local_day_to_utc(end + timedelta(days=1), offset)
             )
+
+        stages = [code for code in params.getlist("stage") if code]
+        if stages:
+            query = query.where(_stage_clause(stages))
+
+        mass = _mass_clause([value for value in params.getlist("mass") if value])
+        if mass is not None:
+            query = query.where(mass)
+
+        excluded = params.get("excluded")
+        if excluded in ("true", "false"):
+            query = query.where(Submission.excluded_from_public.is_(excluded == "true"))
+
+        horizon = params.get("horizon")
+        if horizon in ("20", "100"):
+            query = query.where(Submission.gwp_horizon == int(horizon))
+
         return query
 
     def details_query(self, request):

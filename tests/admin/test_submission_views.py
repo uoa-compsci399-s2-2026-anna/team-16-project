@@ -137,6 +137,33 @@ def _submission(session, taxonomy, *, sectors, current, alternative=None, token=
     return row
 
 
+def _clear_fixture_rows(admin_app):
+    """Every row this file creates, in foreign-key order.
+
+    Submissions first (their entries and lines cascade), then the audit entries
+    they attracted, then the factor set they pointed at, then the taxonomy.
+    Reversing that order fails on a constraint rather than on anything to do
+    with the test.
+    """
+    with admin_app.state.session_factory() as session:
+        stale = session.scalars(
+            select(FactorSet.id).where(FactorSet.version_label == "SUBVIEW-TEST")
+        ).all()
+        if stale:
+            session.execute(
+                Submission.__table__.delete().where(Submission.factor_set_id.in_(stale))
+            )
+        session.execute(
+            AuditLog.__table__.delete().where(AuditLog.table_name == "submission")
+        )
+        session.execute(
+            FactorSet.__table__.delete().where(FactorSet.version_label == "SUBVIEW-TEST")
+        )
+        for model in (Destination, DestinationGroup, Sector, FoodCategory):
+            session.execute(model.__table__.delete().where(model.code.like("subview_%")))
+        session.commit()
+
+
 @pytest.fixture
 def seeded(admin_app):
     """One submission with two entries, committed, and torn down afterwards.
@@ -145,6 +172,13 @@ def seeded(admin_app):
     arrive over HTTP, through the application's own session — a row that exists
     only inside this test's transaction is invisible to the request.
     """
+    #: Cleared BEFORE the fixture builds anything, not only after. A run
+    #: interrupted mid-test - a failing assertion under `-x`, a killed process -
+    #: leaves `SUBVIEW-TEST` behind, and the next run then dies in setup on a
+    #: duplicate `version_label` with an error about the database rather than
+    #: about the test. `tests/admin/conftest.py` gives the same reason for
+    #: running its staff teardown in both directions.
+    _clear_fixture_rows(admin_app)
     with admin_app.state.session_factory() as session:
         taxonomy = _taxonomy(session)
         session.commit()
@@ -158,22 +192,7 @@ def seeded(admin_app):
         submission_id = row.id
         factor_set_id = taxonomy["factor_set"].id
     yield {"id": submission_id, "factor_set_id": factor_set_id}
-    with admin_app.state.session_factory() as session:
-        session.execute(
-            AuditLog.__table__.delete().where(AuditLog.table_name == "submission")
-        )
-        session.execute(
-            Submission.__table__.delete().where(Submission.id == submission_id)
-        )
-        session.execute(FactorSet.__table__.delete().where(FactorSet.id == factor_set_id))
-        for model, prefix in (
-            (Destination, "subview_"),
-            (DestinationGroup, "subview_"),
-            (Sector, "subview_"),
-            (FoodCategory, "subview_"),
-        ):
-            session.execute(model.__table__.delete().where(model.code.like(f"{prefix}%")))
-        session.commit()
+    _clear_fixture_rows(admin_app)
 
 
 # --- the list ---------------------------------------------------------------
@@ -829,44 +848,89 @@ def _filter_form(body: str) -> str:
 
 
 @pytest.mark.asyncio
-async def test_the_filters_are_one_row_of_selects_above_the_table(admin_client, seeded):
-    """The owner's ask: a bar across the top, not sqladmin's right-hand sidebar
-    of link lists.
+async def test_every_control_is_in_one_bar_above_the_table(admin_client, seeded):
+    """The owner's ask: a bar across the top, not sqladmin's right-hand
+    sidebar of link lists.
 
-    Asserted as "a form with one select per filter", plus the rule that hides
-    the sidebar — leaving that visible would give the page two filter UIs
-    disagreeing with each other, which is worse than either alone."""
+    **And sqladmin now renders no sidebar at all**, because `column_filters` is
+    empty - so this asserts its absence rather than a CSS rule hiding it. A
+    rule that hides an element is one stylesheet edit away from stopping;
+    an element that was never rendered cannot come back without this failing.
+    """
     response = await admin_client.get("/admin/submissions/list")
     assert response.status_code == 200
     body = response.text
 
     form = _filter_form(body)
-    for name in ("window", "stage", "mass", "excluded_from_public", "gwp_horizon"):
-        assert f'name="{name}"' in form, f"the {name} filter is not in the bar"
+    for name in ("window", "stage", "mass", "excluded", "horizon", "from", "to"):
+        assert f'name="{name}"' in form, f"the {name} control is not in the bar"
 
-    assert ".filter-sidebar-col { display: none" in body, (
-        "sqladmin's own filter sidebar is still on the page beside this bar"
+    #: The ELEMENT, not the string. `.filter-sidebar-col` is a rule in
+    #: sqladmin's own stylesheet and is on every page whether or not a sidebar
+    #: renders - asserting on the bare name matches the CSS and passes for a
+    #: page that does render one. Fifth unanchored-match defect in this
+    #: repository; the previous four are noted beside `_reported_count` and
+    #: `_ADMIN_PATH`.
+    assert 'id="filter-sidebar"' not in body, (
+        "sqladmin is still rendering its own filter sidebar beside this bar"
     )
 
-    #: The bar is above the table, not below it. Position in the document is
-    #: the only thing that makes it a bar "across the top" rather than a form
-    #: somebody has to scroll past the results to find.
+    #: Position in the document is the only thing that makes it a bar "across
+    #: the top" rather than a form somebody scrolls past the results to find.
     assert body.index(form) < body.index("<table"), "the bar renders below the table"
 
 
 @pytest.mark.asyncio
-async def test_the_bar_shows_which_filter_is_active(admin_client, seeded):
-    """A filtered table whose controls all read "Any" is a page that tells the
-    reader they are seeing everything while showing them a subset."""
+async def test_the_bar_shows_which_single_choice_filters_are_active(admin_client, seeded):
+    """A filtered table whose controls all read "Any" tells the reader they are
+    seeing everything while showing them a subset."""
     response = await admin_client.get(
-        "/admin/submissions/list?stage=subview_retail&mass=1k-10k"
+        "/admin/submissions/list?window=7d&horizon=100&excluded=false"
     )
     assert response.status_code == 200
 
     form = _filter_form(response.text)
     selected = re.findall(r'<option value="([^"]+)" selected', form)
-    assert sorted(selected) == ["1k-10k", "subview_retail"], (
+    assert sorted(selected) == ["100", "7d", "false"], (
         f"the bar does not reflect the active filters: {selected}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_the_bar_shows_which_boxes_are_ticked(admin_client, seeded):
+    """The multi-select half of the same claim. Checkboxes, not options, so a
+    separate assertion - and the two that are ticked have to be exactly the two
+    in the query string."""
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=subview_retail&stage=subview_hosp&mass=1k-10k"
+    )
+    assert response.status_code == 200
+
+    form = _filter_form(response.text)
+    ticked = set(
+        re.findall(
+            r'<input type="checkbox" name="\w+" value="([^"]+)"\s*\n?\s*checked', form
+        )
+    )
+    assert ticked == {"subview_retail", "subview_hosp", "1k-10k"}, (
+        f"the ticked boxes do not match the query string: {ticked}"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_multi_select_opens_when_something_is_ticked(admin_client, seeded):
+    """`<details open>` when a filter is active. A closed box whose summary
+    reads "2 selected" is honest, but a reader arriving at a filtered table -
+    from a bookmark, or a link a colleague sent - should be able to see WHICH
+    two without a click."""
+    filtered = _filter_form(
+        (await admin_client.get("/admin/submissions/list?stage=subview_retail")).text
+    )
+    assert "<details class=\"kc-multi\" open>" in filtered
+
+    unfiltered = _filter_form((await admin_client.get("/admin/submissions/list")).text)
+    assert "<details class=\"kc-multi\" open>" not in unfiltered, (
+        "an unfiltered bar opens its dropdowns for no reason"
     )
 
 
@@ -919,6 +983,12 @@ async def test_the_bar_needs_no_javascript(admin_client, seeded):
     assert 'method="get"' in form
     assert 'type="submit"' in form
     assert "onclick" not in form and "addEventListener" not in form
+
+    #: The multi-selects are `<details>`, which opens and closes natively -
+    #: the same primitive the public site's drawer uses. A dropdown built from
+    #: a button and a hidden div would need script to open at all, and this bar
+    #: would stop working with scripting off.
+    assert "<details" in form, "the multi-selects need JavaScript to open"
 
 
 # --- the explicit date range ------------------------------------------------
@@ -1164,3 +1234,196 @@ async def test_the_english_bar_is_unchanged(admin_client, seeded):
 
     assert "Last 24 hours" in form and "Any stage" in form
     assert "计算时间" not in form
+
+
+# --- several values inside one filter ---------------------------------------
+
+
+@pytest.fixture
+def three_stages(admin_app, seeded):
+    """One submission per stage, each with a distinct mass, so which rows came
+    back can be read off the page."""
+    masses = {
+        "subview_processing": "5001.000",
+        "subview_retail": "5002.000",
+        "subview_hosp": "5003.000",
+    }
+    made = []
+    with admin_app.state.session_factory() as session:
+        landfill = session.scalar(
+            select(Destination).where(Destination.code == "subview_landfill")
+        )
+        for code, mass in masses.items():
+            sector = session.scalar(select(Sector).where(Sector.code == code))
+            now = utcnow()
+            row = Submission(
+                token=None,
+                created_at=now,
+                updated_at=now,
+                factor_set_id=seeded["factor_set_id"],
+                gwp_horizon=100,
+            )
+            session.add(row)
+            session.flush()
+            entry = SubmissionEntry(
+                submission_id=row.id,
+                sector_id=sector.id,
+                food_category_id=None,
+                sort_order=0,
+            )
+            session.add(entry)
+            session.flush()
+            session.add(
+                SubmissionLine(
+                    submission_entry_id=entry.id,
+                    scenario=Scenario.current,
+                    destination_id=landfill.id,
+                    qty_kg=Decimal(mass),
+                )
+            )
+            made.append(row.id)
+        session.commit()
+
+    yield {f"{float(m):,.3f} kg": c for c, m in masses.items()}
+
+    with admin_app.state.session_factory() as session:
+        session.execute(Submission.__table__.delete().where(Submission.id.in_(made)))
+        session.commit()
+
+
+def _stage_rows(body: str) -> set[str]:
+    return {
+        mass for mass in ("5,001.000 kg", "5,002.000 kg", "5,003.000 kg")
+        if mass in body
+    }
+
+
+@pytest.mark.asyncio
+async def test_ticking_two_stages_returns_both(admin_client, three_stages):
+    """OR inside the control. Both halves are asserted: the two ticked stages
+    come back, and the third does not - a filter that ignored its values
+    entirely would satisfy the first half on its own."""
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=subview_processing&stage=subview_hosp"
+    )
+
+    assert response.status_code == 200
+    assert _stage_rows(response.text) == {"5,001.000 kg", "5,003.000 kg"}
+
+
+@pytest.mark.asyncio
+async def test_ticking_two_stages_counts_each_submission_once(
+    admin_client, three_stages, two_entries_one_stage
+):
+    """**The `IN`-inside-one-`EXISTS` shape, tested through the count.**
+
+    `two_entries_one_stage` has two entries at Processing. With one `EXISTS`
+    per ticked code, or with a join, it matches twice and the count says one
+    more than the page draws - and sqladmin's `.scalars().unique()` means the
+    duplicate never shows on screen to give it away.
+    """
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=subview_processing&stage=subview_retail"
+    )
+    assert response.status_code == 200
+    body = response.text
+
+    assert body.count("8,642.000 kg") == 1
+    #: The seeded two-entry submission (processing + retail), the two-entries-
+    #: at-one-stage one, and the single-stage processing and retail rows.
+    assert _reported_count(body) == 4, (
+        "the count disagrees with the rows for a multi-stage submission"
+    )
+
+
+@pytest.mark.asyncio
+async def test_ticking_two_mass_bands_is_their_union(admin_client, admin_app, seeded):
+    """Adjacent bands tile, so ticking both is one continuous range - and a row
+    on the shared boundary belongs to exactly one of them, so it appears once
+    rather than being counted twice."""
+    with admin_app.state.session_factory() as session:
+        processing = session.scalar(
+            select(Sector).where(Sector.code == "subview_processing")
+        )
+        landfill = session.scalar(
+            select(Destination).where(Destination.code == "subview_landfill")
+        )
+        made = []
+        for mass in ("50.000", "1000.000", "20000.000"):
+            now = utcnow()
+            row = Submission(
+                token=None,
+                created_at=now,
+                updated_at=now,
+                factor_set_id=seeded["factor_set_id"],
+                gwp_horizon=100,
+            )
+            session.add(row)
+            session.flush()
+            entry = SubmissionEntry(
+                submission_id=row.id,
+                sector_id=processing.id,
+                food_category_id=None,
+                sort_order=0,
+            )
+            session.add(entry)
+            session.flush()
+            session.add(
+                SubmissionLine(
+                    submission_entry_id=entry.id,
+                    scenario=Scenario.current,
+                    destination_id=landfill.id,
+                    qty_kg=Decimal(mass),
+                )
+            )
+            made.append(row.id)
+        session.commit()
+
+    try:
+        response = await admin_client.get(
+            "/admin/submissions/list?mass=100-1k&mass=1k-10k"
+        )
+        assert response.status_code == 200
+        body = response.text
+
+        #: 1,000.000 kg is on the boundary and belongs to the upper band; the
+        #: seeded 3,001.500 kg is in the upper band too.
+        assert "1,000.000 kg" in body and body.count("1,000.000 kg") == 1
+        assert "3,001.500 kg" in body
+        #: Outside both.
+        assert "50.000 kg" not in body and "20,000.000 kg" not in body
+    finally:
+        with admin_app.state.session_factory() as session:
+            session.execute(Submission.__table__.delete().where(Submission.id.in_(made)))
+            session.commit()
+
+
+@pytest.mark.asyncio
+async def test_two_different_filters_narrow_together(admin_client, three_stages):
+    """AND across controls, OR within one. Two stages ticked and a mass band
+    that only one of them falls in returns that one."""
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=subview_processing&stage=subview_hosp&mass=1k-10k"
+    )
+
+    assert response.status_code == 200
+    #: All three stage rows are in the 1k-10k band, so the band alone does not
+    #: narrow this - the stages do. Asserted against the third row, which the
+    #: stage filter excludes.
+    assert _stage_rows(response.text) == {"5,001.000 kg", "5,003.000 kg"}
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_value_is_ignored_rather_than_matching_nothing(
+    admin_client, three_stages
+):
+    """A hand-edited query string, or a sector deleted since the link was
+    bookmarked. Ignoring the unknown code and honouring the known one is what
+    keeps a stale bookmark useful; matching nothing would show an empty table
+    that reads as "there are no submissions"."""
+    response = await admin_client.get(
+        "/admin/submissions/list?stage=subview_processing&stage=no-such-sector"
+    )
+
+    assert response.status_code == 200
+    assert _stage_rows(response.text) == {"5,001.000 kg"}

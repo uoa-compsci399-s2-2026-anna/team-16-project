@@ -1,43 +1,33 @@
-{# /admin/submissions/list — the filters as one row above the table, and the
-   local-time script.
+{# /admin/submissions/list — the filter bar, and the local-time script.
 
-   WHY NOT SQLADMIN'S OWN FILTER UI. It renders a sidebar card down the right
-   of the page, each filter a vertical list of links, one navigation per value.
-   Three filters that way is a column of eleven links beside a three-column
-   table — the table gets `col-md-9` and the reading order goes table, then
-   sidebar, so on a narrow window the filters land underneath the thing they
-   filter. The owner asked for a bar across the top and that is also the shape
-   the rest of this panel uses.
+   WHY THE BAR IS BUILT HERE. sqladmin renders filters as a card down the right
+   of the page, each one a vertical list of links, one navigation per value.
+   The owner asked for a bar across the top, which is also the shape the rest
+   of this panel uses — and two of these filters take several values at once,
+   which sqladmin's protocol cannot express (`query_params.get` reads one).
+   `column_filters` is therefore empty, sqladmin renders no sidebar at all, and
+   the CSS that used to hide one is gone.
 
-   ONE FORM, ONE NAVIGATION. sqladmin's links each set a single parameter, so
-   narrowing by stage *and* by amount is two page loads. A `<form method="get">`
-   submits every select at once, and `page` is dropped on submit — staying on
-   page 4 of a result set that no longer has one is how a filter looks broken.
+   `SubmissionAdmin.filter_controls` is the single source for what appears
+   here; `list_query` matches it clause for clause. A control cannot show up
+   with nothing behind it, and a clause cannot exist with no way to reach it.
 
-   TRANSLATION. Filter titles and option labels are English strings on the
-   Python objects, so they go through `_()` here and their keys live in
-   `admin/locales/zh.json`. `tests/admin/test_i18n.py` does not walk filter
-   objects, so `test_submission_views.py` asserts the Chinese renders — a
-   catalogue miss on this bar would otherwise be invisible until somebody
-   opened the page in Chinese.
+   MULTI-SELECT WITHOUT JAVASCRIPT. `<details>`/`<summary>` opens and closes
+   natively — the same primitive the public site's drawer uses, for the same
+   reason. A `<select multiple>` would also work without script, but selecting
+   two of its options means ctrl-clicking, which people do not discover and
+   cannot do on a phone. Checkboxes inside a disclosure are the shape the owner
+   asked for and the shape that survives scripting being off.
 
-   NO JAVASCRIPT REQUIRED. The selects and the two date inputs are inside a
-   form with a submit button, so this works with scripting off, which is the
-   standard `brand/block_ip.html` and the public site's drawer hold to. One
-   script runs here: `localtime.js`, which converts the displayed timestamps
-   and fills the hidden `tzoffset` below. Without it the typed dates are read
-   as UTC dates, and the hint under them says so. #}
+   TRANSLATION. Titles and labels are English strings from the Python spec, so
+   they go through `_()` here and their keys live in `admin/locales/zh.json`.
+   `tests/admin/test_i18n.py` walks view classes, not this — it cannot see any
+   of these strings — so `test_submission_views.py` asserts the Chinese renders
+   and that English is unchanged without it. #}
 {% extends "brand/model_list.html" %}
 
 {% block list_page_intro %}
 <style>
-  /* sqladmin's sidebar column, emptied by this template but still holding a
-     third of the width. Hidden rather than deleted: `filter-sidebar-col` is
-     written into sqladmin's own list.html, which this file has no other seam
-     into. */
-  .filter-sidebar-col { display: none !important; }
-  .filter-sidebar-col + * , .col-md-9 { width: 100%; max-width: 100%; flex: 0 0 100%; }
-
   .kc-filters {
     display: flex;
     flex-wrap: wrap;
@@ -46,10 +36,10 @@
     margin-block-end: 1rem;
   }
   .kc-filter { display: flex; flex-direction: column; gap: .25rem; min-width: 0; }
-  .kc-filter label {
+  .kc-filter > label, .kc-filter .kc-label {
     font-size: .8125rem;
     font-weight: 600;
-    color: #003223;              /* Kale */
+    color: #003223;                     /* Kale */
     white-space: nowrap;
   }
   /* `min-width` rather than a fixed width: "10 tonnes and over" and 「10 吨及以上」
@@ -59,59 +49,129 @@
   .kc-filter input[type="date"] { min-width: 9.5rem; }
   .kc-range { display: flex; align-items: flex-end; gap: .4rem; }
   .kc-range .kc-arrow { padding-block-end: .45rem; color: #5b6f68; }
-  .kc-filters .kc-actions { display: flex; gap: .5rem; align-items: center; }
-  .kc-hint {
-    flex: 1 1 100%;
-    margin: 0;
-    font-size: .8125rem;
-    color: #5b6f68;
+
+  /* The disclosure. `position: relative` on the wrapper and `absolute` on the
+     panel so that opening one does not reflow the bar and shove the buttons
+     down the page. `z-index` above the table's sticky header. */
+  .kc-multi { position: relative; }
+  .kc-multi > summary {
+    list-style: none;
+    cursor: pointer;
+    min-width: 11rem;
+    padding: .375rem .75rem;
+    border: 1px solid #ced4da;
+    border-radius: .25rem;
+    background: #FFFFFF;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: .5rem;
   }
+  .kc-multi > summary::-webkit-details-marker { display: none; }
+  .kc-multi > summary::after { content: '▾'; color: #5b6f68; }
+  .kc-multi[open] > summary { border-color: #003223; }
+  .kc-multi-panel {
+    position: absolute;
+    inset-inline-start: 0;              /* logical: mirrors in Arabic on its own */
+    inset-block-start: calc(100% + .25rem);
+    z-index: 30;
+    min-width: 100%;
+    max-height: 16rem;
+    overflow-y: auto;
+    padding: .5rem;
+    background: #FFFFFF;
+    border: 1px solid #003223;
+    border-radius: .25rem;
+    box-shadow: 0 .5rem 1rem rgba(0, 50, 35, .15);
+  }
+  .kc-multi-panel label {
+    display: flex;
+    align-items: center;
+    gap: .5rem;
+    padding: .25rem .25rem;
+    white-space: nowrap;
+    font-size: .875rem;
+    cursor: pointer;
+  }
+  .kc-multi-panel label:hover { background: #DFF8ED; }
+  .kc-filters .kc-actions { display: flex; gap: .5rem; align-items: center; }
+  .kc-hint { flex: 1 1 100%; margin: 0; font-size: .8125rem; color: #5b6f68; }
+
   @media (max-width: 640px) {
-    /* One control per line rather than two half-width ones: a select whose
+    /* One control per line rather than two half-width ones: a control whose
        value is clipped is worse than a taller bar. */
     .kc-filter, .kc-range { flex: 1 1 100%; }
-    .kc-filter select, .kc-filter input[type="date"] { width: 100%; }
+    .kc-filter select, .kc-filter input[type="date"], .kc-multi > summary { width: 100%; }
   }
 </style>
 
+{% set controls = model_view.filter_controls(request) %}
+{% set own_names = (controls | map(attribute="name") | list) + ["from", "to", "tzoffset", "page"] %}
+
 <form method="get" class="kc-filters" role="search">
-  {# Every query parameter that is NOT one of ours is carried through as a
-     hidden field. `search`, `sortBy` and `pageSize` all live in the URL, and a
-     form that submitted only its own controls would silently discard the sort
-     a staff member had just chosen. `page` is deliberately NOT carried: a new
-     filter means a new result set, and landing on page 4 of a set with two
-     pages shows an empty table that reads as "no matches". #}
-  {% set filter_names = model_view.get_filters() | map(attribute="parameter_name") | list %}
-  {% set own_names = filter_names + ["from", "to", "tzoffset", "page"] %}
-  {% for key, value in request.query_params.items() %}
+  {# Every query parameter that is NOT one of ours is carried through. `search`,
+     `sortBy` and `pageSize` all live in the URL, and a form that submitted only
+     its own controls would silently discard the sort a staff member had just
+     chosen. `page` is deliberately NOT carried: a new filter is a new result
+     set, and landing on page 4 of a set with two pages shows an empty table
+     that reads as "no matches". #}
+  {% for key, value in request.query_params.multi_items() %}
     {% if key not in own_names %}
       <input type="hidden" name="{{ key }}" value="{{ value }}">
     {% endif %}
   {% endfor %}
 
-  {# Filled by localtime.js with `Date.prototype.getTimezoneOffset()`, so the
-     dates typed above are read in the same zone the timestamps are displayed
-     in. Empty means UTC — see `_tz_offset_minutes`. #}
+  {# Filled by localtime.js from `getTimezoneOffset()`, so the dates below are
+     read in the same zone the timestamps are displayed in. Empty means UTC,
+     which the hint states. #}
   <input type="hidden" name="tzoffset" id="kc-tzoffset"
          value="{{ request.query_params.get('tzoffset', '') }}">
 
-  {% for filter in model_view.get_filters() %}
-    {% set current = request.query_params.get(filter.parameter_name) %}
-    <div class="kc-filter">
-      <label for="kc-filter-{{ filter.parameter_name }}">{{ _(filter.title) }}</label>
-      <select class="form-select" id="kc-filter-{{ filter.parameter_name }}"
-              name="{{ filter.parameter_name }}">
-        {% for lookup in filter.lookups(request, model_view.model, model_view._run_arbitrary_query) %}
-          <option value="{{ lookup[0] }}"{% if current == lookup[0] %} selected{% endif %}>
-            {{ _(lookup[1]) }}
-          </option>
-        {% endfor %}
-      </select>
-    </div>
+  {% for control in controls %}
+    {% if control.multiple %}
+      <div class="kc-filter">
+        <span class="kc-label" id="kc-label-{{ control.name }}">{{ _(control.title) }}</span>
+        <details class="kc-multi"{% if control.selected %} open{% endif %}>
+          {# Open on load when something is ticked. A closed box whose summary
+             reads "2 selected" is honest, but a reader arriving at a filtered
+             table should be able to see WHICH two without a click. #}
+          <summary aria-labelledby="kc-label-{{ control.name }}">
+            {% if control.selected | length == 0 %}
+              {{ _(control.empty_label) }}
+            {% elif control.selected | length == 1 %}
+              {% for value, label in control.options %}{% if value == control.selected[0] %}{{ _(label) }}{% endif %}{% endfor %}
+            {% else %}
+              {{ _("%(count)s selected", count=control.selected | length) }}
+            {% endif %}
+          </summary>
+          <div class="kc-multi-panel">
+            {% for value, label in control.options %}
+              <label>
+                <input type="checkbox" name="{{ control.name }}" value="{{ value }}"
+                       {% if value in control.selected %}checked{% endif %}>
+                <span>{{ _(label) }}</span>
+              </label>
+            {% endfor %}
+          </div>
+        </details>
+      </div>
+    {% else %}
+      <div class="kc-filter">
+        <label for="kc-filter-{{ control.name }}">{{ _(control.title) }}</label>
+        <select class="form-select" id="kc-filter-{{ control.name }}" name="{{ control.name }}">
+          <option value="">{{ _(control.empty_label) }}</option>
+          {% for value, label in control.options %}
+            <option value="{{ value }}"{% if value in control.selected %} selected{% endif %}>
+              {{ _(label) }}
+            </option>
+          {% endfor %}
+        </select>
+      </div>
+    {% endif %}
   {% endfor %}
 
-  {# The explicit range, for the question the presets cannot answer: "what came
-     in during the client demonstration on the 14th". Two `type="date"` inputs
+  {# The explicit range, for the question a preset cannot answer: "what came in
+     during the client demonstration on the 14th". Two `type="date"` inputs
      rather than a text box, so the format is the browser's problem and the
      reader gets their own locale's calendar. #}
   <div class="kc-range">
@@ -133,15 +193,14 @@
     {# Shown only when something is actually filtered. A permanently visible
        "Clear" on an unfiltered table invites a click that does nothing and
        teaches the reader the bar is inert. #}
-    {% set active = own_names | select("in", request.query_params) | list %}
-    {% if active %}
+    {% if own_names | select("in", request.query_params) | list %}
       <a class="btn btn-link"
          href="{{ request.url.remove_query_params(own_names) }}">{{ _("Clear") }}</a>
     {% endif %}
   </div>
 
   <p class="kc-hint">
-    {{ _("Both dates are inclusive, and are read in your own time zone. Every filter applies at once, so a preset and a range narrow the list together.") }}
+    {{ _("Ticking several values inside one filter widens it; every filter then narrows the list together. Both dates are inclusive and are read in your own time zone.") }}
   </p>
 </form>
 {% endblock %}

@@ -1,52 +1,28 @@
 {% extends "brand/base.html" %}
-{% block title %}Dry run result{% endblock %}
-{% block content %}
-  <h1>Dry run result</h1>
+{% block title %}Staff Testing Result{% endblock %}
+{% block shell %}
+<main class="dry-run-page dry-run-result-page">
+  <header class="dry-run-head">
+    <div><span class="dry-run-eyebrow">Internal calculator tools</span><h1>Test result</h1><p>Review the calculator response, factor source and diagnostic details.</p></div>
+    {% if outcome == "ok" %}<span class="status-pill status-pill--pass"><span aria-hidden="true"></span>Test passed</span>{% elif outcome == "unavailable" %}<span class="status-pill status-pill--pending"><span aria-hidden="true"></span>Service unavailable</span>{% else %}<span class="status-pill status-pill--error"><span aria-hidden="true"></span>Test failed</span>{% endif %}
+  </header>
 
   {% if outcome == "unavailable" %}
-    <div class="notice notice--error">
-      <strong>The calculation service is not reachable.</strong> This is not
-      a problem with the formula being tuned — the endpoint is absent or
-      broken. Try again once it is back.
-    </div>
-    <p class="muted">{{ message }}</p>
+    <section class="result-state result-state--warning"><span class="result-state__icon" aria-hidden="true">!</span><div><span class="dry-run-eyebrow">Warning</span><h2>The calculation service is not reachable</h2><p>This is not a problem with the formula being tuned — the endpoint is absent or broken. Try again once it is back.</p></div></section>
+    <details class="debug-panel" open><summary>Technical details</summary><pre>{{ message }}</pre></details>
   {% elif outcome == "refused" %}
-    <div class="notice notice--error">
-      <strong>{{ code }}</strong>: {{ message }}
-    </div>
-    {% if details %}
-      <ul>
-        {% for detail in details %}
-          <li>{{ detail.field }} — {{ detail.issue }}</li>
-        {% endfor %}
-      </ul>
-    {% endif %}
+    <section class="result-state result-state--error"><span class="result-state__icon" aria-hidden="true">×</span><div><span class="dry-run-eyebrow">Error</span><h2>{{ code }}</h2><p>{{ message }}</p></div></section>
+    {% if details %}<section class="validation-panel" aria-labelledby="validation-title"><h2 id="validation-title">Validation issues</h2><ul>{% for detail in details %}<li><code>{{ detail.field }}</code><span>{{ detail.issue }}</span></li>{% endfor %}</ul></section>{% endif %}
   {% else %}
-    {% if result.factor_set and result.factor_set.is_mock %}
-      <div class="notice notice--warning">
-        Placeholder data — this factor set is marked mock.
-      </div>
-    {% endif %}
-    <p class="muted">Factor source: {{ result.factor_source }}</p>
-
-    {% set current_metrics = result.totals.current.metrics
-       if result and result.totals and result.totals.current
-       and result.totals.current.metrics is mapping else {} %}
-    <table>
-      <thead>
-        <tr><th>Metric</th><th>Unit</th><th>Total</th></tr>
-      </thead>
-      <tbody>
-        {% for metric_code, metric in current_metrics.items() %}
-          <tr>
-            <td>{{ metric_code }}</td>
-            <td>{{ metric.unit }}</td>
-            <td>{{ metric.total }}</td>
-          </tr>
-        {% endfor %}
-      </tbody>
-    </table>
+    {% if result.factor_set and result.factor_set.is_mock %}<div class="notice notice--warning dry-run-notice"><strong>Warning:</strong> Placeholder data — this factor set is marked mock.</div>{% endif %}
+    <section class="result-state result-state--pass"><span class="result-state__icon" aria-hidden="true">✓</span><div><span class="dry-run-eyebrow">Pass</span><h2>Calculation completed successfully</h2><p>The calculator accepted the scenario and returned the metrics below.</p></div></section>
+    <section class="result-source"><span>Factor source</span><strong>{{ result.factor_source }}</strong></section>
+    {% set current_metrics = result.totals.current.metrics if result and result.totals and result.totals.current and result.totals.current.metrics is mapping else {} %}
+    <section class="dry-run-card" aria-labelledby="metrics-title">
+      <div class="dry-run-card__head"><div><span class="dry-run-step">Result</span><h2 id="metrics-title">Calculated metrics</h2><p>Totals returned for the current scenario.</p></div></div>
+      <div class="metric-grid">{% for metric_code, metric in current_metrics.items() %}<article class="metric-card"><span>{{ metric_code }}</span><strong>{{ metric.total }}</strong><small>{{ metric.unit }}</small></article>{% else %}<p class="muted">No calculated metrics were returned.</p>{% endfor %}</div>
+    </section>
   {% endif %}
-
-  <p><a href="/admin/try">Try another</a></p>
+  <div class="result-actions"><a class="button button--quiet" href="/admin/try">← Change configuration</a><a class="button dry-run-primary" href="/admin/try">Run another test</a></div>
+</main>
 {% endblock %}

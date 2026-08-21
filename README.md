@@ -152,6 +152,29 @@ docker compose -f docker/compose.yaml up -d     # after `down` — recreates the
 bootstrap step creates administrators **only if none exist** — so a second start prints no
 passwords and does not disturb the accounts you already have. That is why §7 exists.
 
+**To restart a running stack, use `up -d` — not `docker compose restart`.** The obvious
+command is the wrong one, and it fails in a way that looks worse than it is:
+
+```
+kaicalc-migrate  | sqlalchemy.exc.OperationalError: (pymysql.err.OperationalError)
+kaicalc-migrate  |   (2003, "Can't connect to MySQL server on 'db'
+kaicalc-migrate  |   ([Errno 111] Connection refused)")
+
+kaicalc-migrate   exited   Exited (1)
+```
+
+**`restart` does not honour `depends_on`.** It restarts every container at once, so the
+migrate job runs `alembic upgrade head` while MySQL is still coming up, and `set -e` stops
+it at step 1 of 4. `up -d` waits for the database's health check first — you can watch it
+print `Waiting` and then `Healthy` — and migrate exits 0.
+
+Nothing is damaged when this happens. The database is already migrated, and `api`, `admin`
+and `web` stay healthy throughout; what you are left with is a red container in `ps -a` and
+no idea whether the stack is broken. Running `up -d` afterwards clears it.
+
+**One service at a time is fine:** `docker compose -f docker/compose.yaml restart admin`
+restarts the panel alone and involves no dependency ordering. That form is in §8.
+
 #### 5. Erase everything and start over
 
 ```bash

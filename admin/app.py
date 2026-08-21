@@ -295,11 +295,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(IpBlockAdmin)
 
+    from admin.submission_views import SubmissionAdmin
+
+    admin.add_view(SubmissionAdmin)
+
     # The six taxonomy views of contract §8.1 landed in E-4 (this block). All
     # six of E-5's factor views - factor_set, factor_upstream,
     # factor_downstream, constant, formula, equivalence - are registered just
-    # below; a read-only submission view is still to come. All inherit
-    # AuditedModelView, so each arrives already audited.
+    # below. The submission view this comment used to call "still to come" is
+    # the line above. All inherit AuditedModelView, so each arrives already
+    # audited.
     from admin.taxonomy_views import (
         DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
         SectorAdmin, UnitPresetAdmin,

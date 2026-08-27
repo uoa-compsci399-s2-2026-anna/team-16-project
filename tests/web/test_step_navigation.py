@@ -814,3 +814,68 @@ def test_the_period_is_optional_and_calculate_still_works(page_at):
 
     assert page.locator("#time-frame").input_value() == ""
     assert page.locator('.step-nav [data-action="calculate"]').is_enabled()
+
+
+def test_the_four_new_values_reach_the_request_body(page_at):
+    """**The assertion that the fields are wired to something.**
+
+    Every test in Tasks 1-3 proves a control exists and holds a value. None
+    of them proves the value leaves the browser, and a field bound to state
+    that `submitCalculation` never reads is the most likely way this ships
+    half-done - it looks right on every screen.
+
+    The POST is intercepted rather than allowed through, so this measures
+    what the front end sends rather than what the API tolerates.
+    """
+    page = page_at(1278, 983, 1.25)
+    sent = {}
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: (sent.update(route.request.post_data_json), route.abort()),
+    )
+
+    #: `#total-input`, `#total-value` and `#wasted-value` live on the amount step
+    #: (`walk()`'s `2`), not the review step (`4`) where `#time-frame` and the
+    #: Calculate button are - so `walk()` is driven directly, rather than through
+    #: `advance_to`, to fill each set of fields on the screen that actually carries it.
+    for arrived in walk(page):
+        if arrived == 2:
+            page.fill("#total-input", "50000")
+            page.fill("#total-value", "120000")
+            page.fill("#wasted-value", "4500")
+        elif arrived == 4:
+            page.select_option("#time-frame", "one_month")
+            page.click('.step-nav [data-action="calculate"]')
+            page.wait_for_timeout(400)
+            break
+
+    assert sent, "no request was made"
+    assert sent["time_frame"] == "one_month"
+    entry = sent["entries"][0]
+    #: Strings, not numbers. §1.2: decimals travel as strings because
+    #: JavaScript's Number is a double.
+    assert entry["total_input_kg"] == "50000.000"
+    assert entry["total_value_nzd"] == "120000.00"
+    assert entry["wasted_value_nzd"] == "4500.00"
+
+
+def test_an_untouched_field_is_sent_as_null_rather_than_zero(page_at):
+    """`None` and `0` are different claims, and stage one's schema keeps them
+    apart. A front end that sent `"0"` for an empty box would make every
+    visitor claim they produced nothing and wasted nothing."""
+    page = page_at(1278, 983, 1.25)
+    sent = {}
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: (sent.update(route.request.post_data_json), route.abort()),
+    )
+
+    page = advance_to(page, 4)
+    page.click('.step-nav [data-action="calculate"]')
+    page.wait_for_timeout(400)
+
+    entry = sent["entries"][0]
+    assert entry["total_input_kg"] is None
+    assert entry["total_value_nzd"] is None
+    assert entry["wasted_value_nzd"] is None
+    assert sent["time_frame"] is None

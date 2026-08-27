@@ -605,6 +605,18 @@ function buildLines(entry) {
   return normaliseEntryLines(entry).filter(line => Number(line.qtyKg) > 0).map(line => ({ destination: line.destination, qty_kg: line.qtyKg }))
 }
 
+// Items ④/⑤/⑦: `''` means the visitor left the field untouched, and that has to reach
+// the API as `null`, never as `"0.000"` or `"0.00"` — a zero is the claim that production,
+// value or waste was actually nil. `kgString` alone does not make that distinction (it
+// answers "0.000" for `''`, same as it would for a typed zero), so the blank check happens
+// here, the same way `lineKgString` guards it before ever calling `kgString`.
+const optionalKgString = (value, unit) => (value === '' ? null : kgString(value, unit))
+
+// The two money fields carry no unit — always NZD — so they have no tonnes branch to
+// share with `kgString`, but they keep the same absent-is-null shape rather than a third
+// inline `.toFixed(2)`.
+const optionalMoneyString = value => (value === '' ? null : Number(value).toFixed(2))
+
 let reloadTaxonomy = null
 
 // §9.2: a `BLOCKED` caller will never be served, so every retry affordance has to go —
@@ -681,11 +693,19 @@ async function submitCalculation() {
     const response = await calculate({
       token: state.token || null,
       gwp_horizon: state.gwpHorizon,
+      // Item ⑦: one period for the whole submission, never per entry — asked once on
+      // the review step and left off the engine's request entirely, which is why it
+      // sits beside `gwp_horizon` here rather than inside the `entries.map` below.
+      time_frame: state.timeFrame || null,
       entries: entries.map(entry => ({
         sector: entry.sector,
         food_category: entry.foodCategory || null,
         current: buildLines(entry),
         alternative: null,
+        // Items ④/⑤: optional, statistics-only, and never zero for an untouched field.
+        total_input_kg: optionalKgString(entry.totalInputKg, entry.totalUnit),
+        total_value_nzd: optionalMoneyString(entry.totalValueNzd),
+        wasted_value_nzd: optionalMoneyString(entry.wastedValueNzd),
       })),
     })
     const token = response.token || state.token

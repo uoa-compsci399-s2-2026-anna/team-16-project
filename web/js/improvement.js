@@ -381,7 +381,19 @@ function DestinationAllocationRow({ destination, current, improved, max, mode, t
   // silently rounded to `400`. `updateImprovementInput` applies that same coarseness
   // itself, only to a drag on the range, so the two controls never show a different number
   // for the same allocation.
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="0.01" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>${unitLabel}</span></div></div></div>`
+  //
+  // **The two `aria-label`s are the accessible name a screen reader gets for these
+  // controls, and they name the unit the same way the visible label beside the box
+  // does.** An `aria-label` fixed to "percentage" in kilogram mode told a screen-reader
+  // visitor the field wanted a percentage when it did not - the same defect as the
+  // validation message above, on a surface a sighted visitor never sees at all.
+  const rangeLabel = kilograms
+    ? t('Improved %(destination)s kilograms', { destination: destination.name })
+    : t('Improved %(destination)s percentage', { destination: destination.name })
+  const boxLabel = kilograms
+    ? t('Improved %(destination)s kilograms value', { destination: destination.name })
+    : t('Improved %(destination)s percentage value', { destination: destination.name })
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="0.01" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(boxLabel)}"><span>${unitLabel}</span></div></div></div>`
 }
 
 export function ImprovementScenario(state) {

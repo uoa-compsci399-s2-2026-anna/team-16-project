@@ -1179,6 +1179,35 @@ def test_the_improvement_panel_can_be_driven_in_kilograms(page_at):
     assert "kg" in unit.lower(), f"the unit beside the box did not change: {unit!r}"
 
 
+def test_the_accessible_names_switch_to_kilograms_too(page_at):
+    """The follow-up the coordinator raised on fix round 1.
+
+    An `aria-label` is the only message a screen-reader visitor gets for a
+    control - there is no visible text to fall back on. The range and the
+    number box both carried `aria-label="Improved <destination> percentage"`
+    / `"... percentage value"` unconditionally, so a visitor typing kilograms
+    was told, on the one channel they could hear it, that the field wanted a
+    percentage. Same defect as the validation message fixed alongside it,
+    one layer further from what a sighted visitor notices.
+    """
+    page = _improvement_panel(page_at)
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    range_label = page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("aria-label")
+    box_label = page.locator('.percentage-input input[type="number"]').nth(0).get_attribute("aria-label")
+
+    for label, name in ((range_label, "range"), (box_label, "number box")):
+        assert label is not None, f"the {name} lost its accessible name entirely"
+        assert "percentage" not in label.lower(), (
+            f"the {name}'s accessible name still says percentage in kilogram mode: {label!r}"
+        )
+        assert "kilogram" in label.lower(), (
+            f"the {name}'s accessible name does not name kilograms in kilogram mode: {label!r}"
+        )
+
+
 def test_switching_mode_preserves_the_allocation(page_at):
     """**The assertion that makes this a view and not a reset.**
 

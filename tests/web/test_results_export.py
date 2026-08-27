@@ -919,11 +919,26 @@ def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
 # test in this file already drives.
 
 
-def _results_page(page_at):
+def _results_page(page_at, *, contribute_calls=None):
     """The results page, reached with `calculate_response.json` - the fixture that
     carries a real `token` (§6.2), which is what the control this section tests
-    actually sends."""
+    actually sends.
+
+    `contribute_calls`, when given, is a list this appends every `/contribute`
+    request body to, and the route is installed before the wizard is driven at
+    all - so it catches a call made on page load or at any other point before a
+    test installs its own, later route. Playwright runs the most-recently-added
+    matching route first and only falls through to an earlier one if that
+    handler calls `route.fallback()`, which this one never does - so a route a
+    test adds afterwards, to capture the on-press request specifically, takes
+    over cleanly without this counter also swallowing it.
+    """
     page = page_at(_fixture("calculate_response.json"))
+    if contribute_calls is not None:
+        page.route(
+            "**/api/v1/contribute",
+            lambda route: (contribute_calls.append(route.request.post_data_json), route.fulfill(status=204)),
+        )
     _submit_two_entries(page)
     return page
 
@@ -953,9 +968,16 @@ def test_the_results_page_offers_to_contribute_and_does_not_assume(page_at):
 
 @pytest.mark.browser
 def test_ticking_it_posts_the_token(page_at):
-    """The request the button exists to make. Intercepted rather than allowed
-    through, so this measures what the page sends."""
-    page = _results_page(page_at)
+    """The request the button exists to make - and, first, the half that is easy
+    to lose: that nothing is sent before the box is pressed. A control that
+    calls `contribute()` on page load would still make this request eventually
+    and could still pass a version of this test that only checked the request's
+    shape once it arrived; the count below is what actually distinguishes "sent
+    on the press" from "sent regardless, and the press did nothing new"."""
+    early = []
+    page = _results_page(page_at, contribute_calls=early)
+    assert not early, "a request to /contribute was made before the box was ever pressed"
+
     sent = {}
     page.route(
         "**/api/v1/contribute",

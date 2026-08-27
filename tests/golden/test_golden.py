@@ -231,6 +231,26 @@ def _benefit(benefit) -> dict | None:
     return {code: _decimal(value) for code, value in benefit.items()}
 
 
+def _optional_decimal(value: Decimal | None) -> str | None:
+    """Unlike `_decimal`, this may legitimately receive `None` -- every
+    `MoneyResult` field is optional (§4.5), and `None` there means "nobody
+    supplied it", not zero."""
+    return None if value is None else _decimal(value)
+
+
+def _money(money) -> dict | None:
+    """§4.5, v1.48. `None` when no entry supplied a money figure at all; not
+    a metric, so it carries none of `_scenario`'s shape."""
+    if money is None:
+        return None
+    return {
+        "total_value_nzd": _optional_decimal(money.total_value_nzd),
+        "wasted_value_nzd": _optional_decimal(money.wasted_value_nzd),
+        "wasted_share_percent": _optional_decimal(money.wasted_share_percent),
+        "saving_nzd": _optional_decimal(money.saving_nzd),
+    }
+
+
 def render(result: CalculationResult) -> dict:
     """§3's `CalculationResult` as `expected.json`'s shape. Field for field —
     this function performs no arithmetic and drops nothing."""
@@ -242,6 +262,7 @@ def render(result: CalculationResult) -> dict:
             "current": _scenario(result.totals.current),
             "alternative": _scenario(result.totals.alternative),
             "net_benefit": _benefit(result.totals.net_benefit),
+            "money": _money(result.totals.money),
         },
         "entries": [
             {

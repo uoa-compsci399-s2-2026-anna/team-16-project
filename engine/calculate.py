@@ -51,9 +51,11 @@ from engine.types import (
     CalculationRequest,
     CalculationResult,
     CalculationTotals,
+    EntryInput,
     EntryResult,
     EquivalenceResult,
     MetricResult,
+    MoneyResult,
     ScenarioLine,
     ScenarioResult,
 )
@@ -71,6 +73,12 @@ METRIC_SCALE = Decimal("0.0000000001")
 #: places as every other rate rather than rendering as the bare "0" a
 #: scale-zero Decimal would produce.
 ZERO_RATE = Decimal("0").quantize(METRIC_SCALE)
+
+#: §4.5, v1.48. NZD figures carry two places on the wire (`api/schemas.py`'s
+#: `total_value_nzd`/`wasted_value_nzd` fields, `DECIMAL(14, 2)` in
+#: `db/models.py`), unlike the metric figures above, which carry ten. This is
+#: the money block's own scale, applied here rather than at the wire edge.
+MONEY_SCALE = Decimal("0.01")
 
 #: §4.3's special binding. A formula names `const_GWP_CH4` and never a
 #: horizon, so switching the request between 20 and 100 years rebinds one
@@ -137,7 +145,7 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
         factor_set_version=bundle.version_label,
         is_mock=bundle.is_mock,
         gwp_horizon=request.gwp_horizon,
-        totals=_totals(tuple(entries), bundle),
+        totals=_totals(request.entries, tuple(entries), bundle),
         entries=tuple(entries),
     )
 
@@ -290,7 +298,9 @@ def _constant_bindings(bundle: FactorBundle, gwp_horizon: int) -> dict[str, Deci
 
 
 def _totals(
-    entries: tuple[EntryResult, ...], bundle: FactorBundle
+    request_entries: tuple[EntryInput, ...],
+    entries: tuple[EntryResult, ...],
+    bundle: FactorBundle,
 ) -> CalculationTotals:
     """§4.2's roll-up table, computed here and never in `api/`.
 
@@ -300,6 +310,12 @@ def _totals(
     make the alternative lighter than the current scenario and inflate the
     headline benefit -- the precise failure the dual-scenario design exists
     to prevent.
+
+    `request_entries` -- the original `EntryInput`s -- is threaded through
+    only for `_money()` (§4.5): it is the one figure here derived from what a
+    visitor typed rather than from a metric, so it reads the request's own
+    money fields and raw scenario lines instead of the computed `EntryResult`s
+    (which carry `MetricResult` breakdowns, not the entry-level NZD figures).
     """
     has_alternative = any(entry.alternative is not None for entry in entries)
 
@@ -321,7 +337,80 @@ def _totals(
         # Computed on the rolled-up scenarios, not summed from the per-entry
         # net_benefit maps -- one computation is one rounding.
         net_benefit=net_benefit(current, alternative) if alternative else None,
+        money=_money(request_entries, bundle),
     )
+
+
+def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult | None:
+    """§4.5, v1.48. Derived from what the visitor typed, never from a factor
+    or a formula -- see `MoneyResult`'s own docstring for why this is not a
+    metric.
+
+    **Absent stays absent.** Every field is `None` unless every value it is
+    derived from was supplied; a computed zero would read as "this food was
+    worth nothing" rather than "nobody said" (§4.5).
+    """
+    total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
+    wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
+
+    if total_value_nzd is None and wasted_value_nzd is None:
+        return None
+
+    wasted_share_percent = None
+    if (
+        total_value_nzd is not None
+        and wasted_value_nzd is not None
+        and total_value_nzd != 0
+    ):
+        wasted_share_percent = (wasted_value_nzd / total_value_nzd * 100).quantize(
+            MONEY_SCALE, rounding=ROUND_HALF_UP
+        )
+
+    saving_nzd = None
+    has_alternative = any(entry.alternative is not None for entry in entries)
+    current_total_kg = sum(
+        (line.qty_kg for entry in entries for line in entry.current), Decimal("0")
+    )
+    if wasted_value_nzd is not None and has_alternative and current_total_kg != 0:
+        value_per_kg = wasted_value_nzd / current_total_kg
+        # §3 rule 3's substitution, on the same terms as `_totals()` above: an
+        # entry with no alternative contributes its *current* lines, so it
+        # cannot manufacture a saving out of a scenario nobody supplied.
+        alternative_non_prevention_kg = sum(
+            (
+                line.qty_kg
+                for entry in entries
+                for line in (
+                    entry.alternative if entry.alternative is not None else entry.current
+                )
+                # The prevention predicate, not a literal `"prevention"`
+                # string (§4.5) -- the ReFED vocabulary's own prevention row
+                # is spelled `refed_prevention`.
+                if not bundle.is_prevention_destination(line.destination_code)
+            ),
+            Decimal("0"),
+        )
+        diverted_kg = current_total_kg - alternative_non_prevention_kg
+        saving_nzd = (value_per_kg * diverted_kg).quantize(
+            MONEY_SCALE, rounding=ROUND_HALF_UP
+        )
+
+    return MoneyResult(
+        total_value_nzd=total_value_nzd,
+        wasted_value_nzd=wasted_value_nzd,
+        wasted_share_percent=wasted_share_percent,
+        saving_nzd=saving_nzd,
+    )
+
+
+def _sum_present(values) -> Decimal | None:
+    """`None` when every value is `None`; otherwise the sum of the ones that
+    are not. The "nobody said" case and the "the answer is zero" case are
+    different claims, and only a value actually seen can tell them apart."""
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return sum(present, Decimal("0"))
 
 
 def _roll_up(

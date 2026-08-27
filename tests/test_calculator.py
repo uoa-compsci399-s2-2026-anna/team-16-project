@@ -911,14 +911,22 @@ def _bundle_with_two_sectors_sharing_a_destination() -> FactorBundle:
     to look right. `downstream` at `landfill` is the same for both sectors,
     so a defect that mixed the two rates together is visible in `upstream`
     alone rather than smeared across both.
+
+    Also carries a `prevention` destination, flagged `is_prevention` rather
+    than recognised by its literal code, for the money block's saving figure
+    (§4.5) -- it has no factor rows of its own, since none of the tests that
+    use it read a metric total.
     """
     document = {
         "version_label": "TEST-v0-shared-destination",
         "is_mock": True,
         "sectors": [{"code": "farm"}, {"code": "retail"}],
         "food_categories": [{"code": "standard_mix", "is_standard_mix": True}],
-        "destination_groups": [{"code": "disposal"}],
-        "destinations": [{"code": "landfill", "group": "disposal"}],
+        "destination_groups": [{"code": "disposal"}, {"code": "reuse"}],
+        "destinations": [
+            {"code": "landfill", "group": "disposal"},
+            {"code": "prevention", "group": "reuse", "is_prevention": True},
+        ],
         "metrics": [
             {"code": "co2e", "unit": "kg CO2e", "display_precision": 1, "sort_order": 10},
             {"code": "mass", "unit": "kg", "display_precision": 1, "sort_order": 20},
@@ -1077,3 +1085,105 @@ def test_a_single_entry_rolls_up_to_the_same_rows_it_already_had():
     assert {r.destination_code for r in total_rows} == {
         r.destination_code for r in entry_rows}
     assert sum((r.qty_kg for r in total_rows), Decimal("0")) == Decimal("100.000")
+
+
+# ------------------------------------------------------------------ the money
+
+
+def test_the_money_block_states_the_share_of_value_wasted():
+    """The client's ask: "浪费的金额占总金额的多少百分比".
+
+    Computed HERE and not in the browser, because §7.6.1 gives the front end
+    exactly one calculation - unit conversion in `units.js` - and every other
+    number on the page comes from the API.
+
+    It is NOT a metric. `metric` rows are evaluated by the formula engine,
+    whose language is per-LINE and takes (qty_kg, upstream, downstream,
+    const_*); an entry-level figure a visitor typed cannot be expressed in it,
+    and inventing a per-kilogram money factor is exactly the modelling the
+    client's O-2 ruling avoided.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   total_value_nzd=Decimal("120000.00"),
+                   wasted_value_nzd=Decimal("4500.00"),
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.total_value_nzd == Decimal("120000.00")
+    assert money.wasted_value_nzd == Decimal("4500.00")
+    assert money.wasted_share_percent == Decimal("3.75")
+
+
+def test_the_saving_is_value_per_kilogram_times_the_mass_diverted():
+    """The client's ruling: "节省额按每公斤均匀价值计算".
+
+    1,000 kg wasted at $4,500 is $4.50/kg. An alternative that sends 300 kg
+    to a prevention destination diverts 300 kg, so the saving is $1,350.
+
+    **Uniform value per kilogram is an assumption, and it is the client's.**
+    Milk and mixed waste are not worth the same per kilogram; this figure is
+    only as good as that. The contract note in v1.48 says so, because this is
+    the number most likely to be screenshotted.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(
+            sector_code="farm", food_category_code=None,
+            total_value_nzd=Decimal("120000.00"),
+            wasted_value_nzd=Decimal("4500.00"),
+            current=(ScenarioLine(destination_code="landfill",
+                                  qty_kg=Decimal("1000.000")),),
+            alternative=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+        ),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.saving_nzd == Decimal("1350.00")
+
+
+def test_the_money_block_is_absent_when_nobody_typed_a_value():
+    """The common case. Every field is optional, and absent must stay absent
+    rather than becoming zero - "$0 wasted" is a claim, and "0% of value
+    wasted" is a different and much stronger one."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    assert calculate(request, bundle).totals.money is None
+
+
+def test_a_share_needs_a_total_and_a_saving_needs_an_alternative():
+    """Each figure appears only when what it is derived from is there.
+
+    A visitor who typed the wasted value but not the total gets the wasted
+    value and no share - dividing by an absent total is not zero and not
+    infinity, it is a question nobody answered.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   wasted_value_nzd=Decimal("4500.00"),
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.wasted_value_nzd == Decimal("4500.00")
+    assert money.wasted_share_percent is None
+    assert money.saving_nzd is None, "no alternative scenario, so nothing is saved"

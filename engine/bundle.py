@@ -99,6 +99,15 @@ class FactorBundle:
     #: dictionaries above have already dropped the loser; this is the only
     #: record that it existed. See `validate()`.
     duplicate_rows: tuple[str, ...] = ()
+    #: Every destination flagged `is_prevention` -- the DB column of the same
+    #: name (§2.1, contract v1.22). Optional in `bundle.json`, on the same
+    #: terms as `food_categories[].is_standard_mix`: a `destinations[]` row
+    #: that omits the key defaults to `False`, so no existing bundle needs
+    #: rewriting. `engine/calculate.py`'s money block (§4.5) reads
+    #: `is_prevention_destination()` rather than testing a literal
+    #: `"prevention"` string -- the ReFED vocabulary's own prevention row is
+    #: spelled `refed_prevention`, and a literal missed it once already.
+    prevention_destination_codes: frozenset[str] = frozenset()
 
     # ---------- Lookup (§4.1) ----------
 
@@ -187,6 +196,9 @@ class FactorBundle:
     def standard_mix_code(self) -> str:
         return self.standard_mix
 
+    def is_prevention_destination(self, code: str) -> bool:
+        return code in self.prevention_destination_codes
+
     def equivalences(self) -> tuple[EquivalenceSpec, ...]:
         return self.equivalence_specs
 
@@ -254,10 +266,13 @@ class FactorBundle:
 
         destinations: set[str] = set()
         destination_group_of: dict[str, str] = {}
+        prevention_destination_codes: set[str] = set()
         for row, where in _rows(data, "destinations"):
             code = _code(row, "code", where)
             destinations.add(code)
             destination_group_of[code] = _code(row, "group", where)
+            if _flag(row, "is_prevention", where):
+                prevention_destination_codes.add(code)
 
         metric_rows = []
         for row, where in _rows(data, "metrics"):
@@ -361,6 +376,7 @@ class FactorBundle:
             destination_groups=destination_groups,
             standard_mix_codes=tuple(standard_mix_codes),
             duplicate_rows=tuple(duplicates),
+            prevention_destination_codes=frozenset(prevention_destination_codes),
         )
 
     def validate(self) -> list[str]:

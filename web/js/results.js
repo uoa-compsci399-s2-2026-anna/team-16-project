@@ -2,6 +2,8 @@ import { escapeHtml, formatNumber, stepNav } from './view.js'
 import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
 import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
+import { contribute } from './api.js'
+import { setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -591,6 +593,70 @@ export function downloadResults(state) {
   URL.revokeObjectURL(url)
 }
 
+/**
+ * §6.2.2, and the control this whole task exists to write.
+ *
+ * **Unticked by construction.** `state.contributed` starts `false` and nothing here
+ * sets it before a press — a pre-checked box would make stage one's `is_public_
+ * contributed` default of FALSE decorative, which is exactly what item ⑬ reverses
+ * §2.3's "no consent checkbox" decision to prevent.
+ *
+ * **One-way, and said so before the click, not after.** The route only ever sets the
+ * flag (§6.2.2's own table has no path that clears it), so unticking this box would be
+ * a control that lies about its own affordance. Rather than allow that gesture, the
+ * checkbox is disabled the moment it is ticked (and while the request is in flight) —
+ * it cannot be unticked because there is no path back through it — and the sentence
+ * beside it says so before the click reaches it at all.
+ *
+ * **Consent survives a recalculation, on purpose.** `state.contributed` is not reset
+ * by `submitCalculation` or `compareImprovement` on a return trip through the wizard,
+ * matching `upsert_submission`'s own behaviour: the row is the same submission,
+ * revised, and the flag this control set is not touched by an update either. Resetting
+ * the box here would show an unticked control over a row that is, in the database,
+ * still contributed — a front end telling a visitor "you haven't" about a choice the
+ * server has already recorded. The sentence below says plainly that a recalculation's
+ * *figures* replace the earlier ones under the same choice, which is the true state of
+ * affairs rather than a fresh question with a false "no" already implied.
+ */
+function contributeBlock(state) {
+  const pending = state.contributing
+  const done = state.contributed
+  return `<div class="contribute-block">
+    <p class="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
+    <div class="contribute-control">
+      <input type="checkbox" id="contribute" ${done ? 'checked' : ''} ${pending || done ? 'disabled' : ''}>
+      <label for="contribute">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</label>
+    </div>
+    ${done ? `<p class="contribute-status" role="status">${escapeHtml(t('Thank you — your calculation has been added to the public statistics.'))}</p>` : ''}
+    ${state.contributeError ? `<p class="field-error" role="alert">${escapeHtml(state.contributeError)}</p>` : ''}
+  </div>`
+}
+
+/**
+ * Runs on the checkbox's `change` and stores the result, or its message, on the state.
+ *
+ * `toPublicMessage` is `calculator.js`'s `publicError`, passed in rather than imported
+ * for the same reason `compareImprovement` (`improvement.js`) takes it as a parameter:
+ * that module already imports this one, and the import back would be a cycle. §6.2.2
+ * answers 204 always, so there is nothing here to read as a domain-level failure — only
+ * the network call itself can fail, and `ApiError`'s message is already the calculator's
+ * own network-unreachable copy.
+ *
+ * A failed call leaves `contributed` false, which re-enables the checkbox and leaves it
+ * unticked — the "pre-press state" the brief asks for — rather than reporting a success
+ * that did not happen.
+ */
+export async function contributeCalculation(state, toPublicMessage = error => error.message || t('The calculator service could not be reached. Check your connection and try again.')) {
+  if (state.contributing || state.contributed || !state.token) return
+  setState({ contributing: true, contributeError: null })
+  try {
+    await contribute(state.token)
+    setState({ contributing: false, contributed: true })
+  } catch (error) {
+    setState({ contributing: false, contributed: false, contributeError: toPublicMessage(error) })
+  }
+}
+
 export function renderResults(state) {
   const result = state.result
   const entryResults = result?.entry_results || []
@@ -621,6 +687,7 @@ export function renderResults(state) {
     <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button></div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
+    ${contributeBlock(state)}
     ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), label: t('Download results'), action: 'download-results' })}
   </section>`
 }

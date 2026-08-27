@@ -173,6 +173,9 @@ async function mockRequest(path, options) {
   if (path.startsWith('/factors')) return readFixture('factors.json')
   if (path === '/stats') return readFixture('stats.json')
   if (path === '/calculate' && options.method === 'POST') return mockCalculate(options)
+  // §6.2.2 answers 204 with no body always, whether or not a row moved — mock mode
+  // reproduces that rather than a shape a real caller would never see.
+  if (path === '/contribute' && options.method === 'POST') return null
   throw new ApiError('MOCK_FIXTURE_ERROR', `No mock fixture is mapped for ${path}.`)
 }
 
@@ -190,6 +193,20 @@ export function calculate(payload, opts = {}) {
 
 export function getStats() {
   return request('/stats')
+}
+
+/**
+ * §6.2.2's opt-in. `token` is the only field the request carries — the same session
+ * token `/calculate` already minted and the front end already holds in `sessionStorage`
+ * — and the response is 204 with no body, always: the route gives nothing away about
+ * whether the token still names a live submission, so this call cannot be read as a
+ * success/failure signal about anything but the request having been made.
+ */
+export function contribute(token) {
+  return request('/contribute', {
+    method: 'POST',
+    body: JSON.stringify({ token }),
+  })
 }
 
 export function getFactors(opts = {}) {

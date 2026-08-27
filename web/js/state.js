@@ -83,6 +83,13 @@ export const state = {
   improvementResult: null,
   improvementLoading: false,
   improvementError: null,
+  // §6.2.2's opt-in. `contributed` is the visitor's own choice and starts false on
+  // every fresh calculation — `resetCalculator` below returns here — and deliberately
+  // is NOT reset by a recalculation on the same token: see the note over
+  // `contributeBlock` in `results.js` for why that is correct rather than an oversight.
+  contributing: false,
+  contributed: false,
+  contributeError: null,
 }
 
 /**
@@ -183,5 +190,11 @@ export function resetCalculator() {
     improvementResult: null,
     improvementLoading: false,
     improvementError: null,
+    // A genuinely new calculation, on a token that does not exist yet — unlike a
+    // recalculation on the same token, there is no earlier consent for this one to
+    // carry forward, so it is the one place `contributed` is cleared.
+    contributing: false,
+    contributed: false,
+    contributeError: null,
   })
 }

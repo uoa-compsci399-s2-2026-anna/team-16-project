@@ -4,7 +4,7 @@ import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgTo
 import { requestLines, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
-import { downloadResults, renderResults } from './results.js'
+import { contributeCalculation, downloadResults, renderResults } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
@@ -904,6 +904,10 @@ export function bindCalculator(main, retryTaxonomy) {
         error: null,
       })
     }
+    // §6.2.2: fires only on the tick, never on the untick — the route only ever sets
+    // the flag, and the box is disabled the moment it is checked, so there is nothing
+    // an untick could mean here anyway.
+    if (target.id === 'contribute' && target.checked) contributeCalculation(state, publicError)
   })
 
   /**

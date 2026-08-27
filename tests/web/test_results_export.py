@@ -909,3 +909,72 @@ def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
     state["result"]["totals"]["money"] = None
     report = report_for(tmp_path, state)
     assert not re.search(r"^The money$", report, re.M)
+
+
+# ------------------------------------------------------------- the contribute control
+#
+# Task 3. §6.2.2's opt-in, reached through the ordinary wizard so the token exercised
+# is the one the results page actually holds - `_results_page` below is `_submit_two_
+# entries` against the default fixture response, the same walk every other browser
+# test in this file already drives.
+
+
+def _results_page(page_at):
+    """The results page, reached with `calculate_response.json` - the fixture that
+    carries a real `token` (§6.2), which is what the control this section tests
+    actually sends."""
+    page = page_at(_fixture("calculate_response.json"))
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.mark.browser
+def test_the_results_page_offers_to_contribute_and_does_not_assume(page_at):
+    """**Item ⑬ reverses a decision §2.3 wrote down deliberately**: "one
+    calculation is one submission... there is no consent checkbox and no
+    separate contribute button". The client asked for exactly the thing that
+    sentence excluded.
+
+    So the control starts UNCHECKED. A pre-ticked box is not consent, and a
+    default of opted-in would make stage one's `is_public_contributed`
+    decorative.
+    """
+    page = _results_page(page_at)
+
+    control = page.locator("#contribute")
+    assert control.count() == 1, "the results page does not offer to contribute"
+    assert control.is_checked() is False, (
+        "the contribution control is pre-ticked, which is not a choice"
+    )
+
+    label = page.locator('label[for="contribute"]').inner_text()
+    assert label.strip(), "the control has no label"
+
+
+@pytest.mark.browser
+def test_ticking_it_posts_the_token(page_at):
+    """The request the button exists to make. Intercepted rather than allowed
+    through, so this measures what the page sends."""
+    page = _results_page(page_at)
+    sent = {}
+    page.route(
+        "**/api/v1/contribute",
+        lambda route: (sent.update(route.request.post_data_json), route.fulfill(status=204)),
+    )
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(400)
+
+    assert sent.get("token"), "no token was sent, so no row can be found to update"
+
+
+@pytest.mark.browser
+def test_the_page_says_what_contributing_means_before_it_is_clicked(page_at):
+    """The public statistics are the client's own page, and what goes into
+    them is a decision a visitor should be able to make informed. The sentence
+    beside the control says what is contributed - an anonymous calculation -
+    and what is not."""
+    page = _results_page(page_at)
+
+    text = page.locator(".contribute-block").inner_text().lower()
+    assert "anonymous" in text or "no personal" in text or "nothing that identifies" in text

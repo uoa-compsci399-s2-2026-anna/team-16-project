@@ -838,6 +838,20 @@ thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
 tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
 .result-actions .button-primary { margin-inline-start: auto; }
+.contribute-block {
+  margin: 28px 0 12px;
+  padding: 20px 24px;
+  border: 1px solid rgba(40, 200, 130, 0.4);
+  border-inline-start: 4px solid var(--green);
+  border-radius: 14px;
+  background: var(--mint);
+}
+.contribute-sentence { margin: 0 0 14px; color: var(--ink); }
+.contribute-control { display: flex; align-items: flex-start; gap: 10px; }
+.contribute-control input[type="checkbox"] { margin-block-start: 3px; width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--green-dark); }
+.contribute-control label { font-weight: 700; color: var(--green-dark); }
+.contribute-status { margin: 12px 0 0; color: var(--green-dark); font-weight: 700; }
+.contribute-block .field-error { margin: 12px 0 0; }
 .methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-inline-start: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }
 .methodology-compact h2 { margin-bottom: 8px; font-size: 1.25rem; }
 .methodology-compact > p { margin: 4px 0; color: var(--muted); }

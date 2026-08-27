@@ -1272,3 +1272,92 @@ def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
     classes = page.locator(".improvement-total").get_attribute("class")
     assert "invalid" not in classes, f"a valid allocation was flagged invalid: {classes!r}"
     assert page.locator('[data-action="compare-improvement"]').is_enabled()
+
+
+#: Item 11: the client's report was "the gap between cards differs between
+#: steps 1 and 2" - the sector step and the food-type step, the only two
+#: screens shaped alike enough to compare side by side (a `<p class="section-intro">`,
+#: then one fieldset, then the step bar, with nothing else on the screen). Measuring
+#: `.content-section` itself found it identical on every step already - 0 margin, 0
+#: padding, every screen - so the divergence the client saw was never in the section
+#: the two `.content-section wide` steps share with the four plain ones; it was in
+#: the first thing inside it. `.stage-fieldset` opened with `margin: 34px 0 0`;
+#: `.choice-fieldset` opened with `margin: 30px 0 18px` - the same role, 4px apart,
+#: on the one pair of steps where a visitor can see both in a row.
+CONTENT_SECTION_BOX = """
+() => {
+  const section = document.querySelector('.content-section');
+  if (!section) return null;
+  const cs = getComputedStyle(section);
+  return {
+    marginBlockStart: cs.marginBlockStart,
+    marginBlockEnd: cs.marginBlockEnd,
+    paddingBlockStart: cs.paddingBlockStart,
+    paddingBlockEnd: cs.paddingBlockEnd,
+    rowGap: cs.rowGap,
+  };
+}
+"""
+
+FIRST_PANEL_MARGIN_BLOCK_START = """
+(selector) => {
+  const el = document.querySelector(selector);
+  return el ? getComputedStyle(el).marginBlockStart : null;
+}
+"""
+
+
+@pytest.mark.parametrize("width,height,dpr", [VIEWPORTS[0], VIEWPORTS[2]])
+def test_content_section_outer_spacing_is_equal_on_every_step(page_at, width, height, dpr):
+    """`.content-section`'s own margin-block, padding-block and row-gap, walked across
+    all seven screens at 1278 and 390 - the two widths the item 11 measurement pass
+    used - and asserted identical.
+
+    This already reads the same box on every screen (0 margin, 0 padding, `normal`
+    gap): the outer container was never the divergence. It is asserted here anyway,
+    so a future change that gives one step its own `.content-section` padding - the
+    obvious place to reach for a "quick" per-step spacing fix - fails a test instead
+    of surfacing in the next demonstration.
+    """
+    page = page_at(width, height, dpr)
+    boxes = {}
+    for step in walk(page):
+        page.wait_for_timeout(60)
+        box = page.evaluate(CONTENT_SECTION_BOX)
+        if box is not None:
+            boxes[step] = box
+    assert len(boxes) >= 5, f"too few steps rendered a .content-section to compare: {boxes}"
+    first_step, first_box = next(iter(boxes.items()))
+    mismatched = {step: box for step, box in boxes.items() if box != first_box}
+    assert not mismatched, (
+        f".content-section's own spacing is not equal across steps: step {first_step} "
+        f"measured {first_box}, but {mismatched} differ from it"
+    )
+
+
+@pytest.mark.parametrize("width,height,dpr", [VIEWPORTS[0], VIEWPORTS[2]])
+def test_the_gap_above_the_first_panel_matches_between_the_sector_and_food_type_steps(page_at, width, height, dpr):
+    """The actual item 11 defect, measured directly: the sector step's `.stage-fieldset`
+    and the food-type step's `.choice-fieldset` sit in the identical position - directly
+    after the intro paragraph, directly before the step bar - and are the only two panels
+    in the wizard alike enough for a visitor to notice one sitting closer than the other.
+
+    Before the fix this failed at both viewports with `34px` against `30px`. The fix
+    changed `.choice-fieldset`'s `margin-top` to match `.stage-fieldset`'s rather than
+    giving either one a new override; `.choice-fieldset`'s bottom margin is untouched,
+    because it alone clears an optional "Clear optional selection" button `.stage-fieldset`
+    never renders.
+    """
+    page = page_at(width, height, dpr)
+    margins = {}
+    for step in walk(page):
+        if step == 0:
+            margins[0] = page.evaluate(FIRST_PANEL_MARGIN_BLOCK_START, ".stage-fieldset")
+        elif step == 1:
+            margins[1] = page.evaluate(FIRST_PANEL_MARGIN_BLOCK_START, ".choice-fieldset")
+            break
+    assert margins.get(0) and margins.get(1), f"could not measure both panels: {margins}"
+    assert margins[0] == margins[1], (
+        f"the gap above the first panel differs between the sector step ({margins[0]}) "
+        f"and the food-type step ({margins[1]})"
+    )

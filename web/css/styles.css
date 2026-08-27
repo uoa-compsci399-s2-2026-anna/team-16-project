@@ -577,7 +577,16 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .stage-fieldset > .field-error { margin-top: 12px; }
 .stage-fieldset.has-error .stage-card-list { padding: 5px; border-inline-start: 4px solid var(--error); }
 
-.choice-fieldset { min-width: 0; margin: 30px 0 18px; padding: 0; border: 0; }
+/* `margin-top` matches `.stage-fieldset` deliberately: both fieldsets sit in the same
+   position - directly after `.section-intro`, directly before `.step-nav` - on the two
+   steps (supply-chain stage, food type) that are structurally identical enough to be
+   compared side by side. A 30px/34px split there is a Step-1-to-Step-2 layout shift with
+   no design reason behind it; `tests/web/test_step_navigation.py`'s
+   `test_the_gap_above_the_first_panel_is_the_same_on_every_comparable_step` is what
+   catches it coming back. The bottom margin stays its own value - it clears the optional
+   "Clear optional selection" button this step alone can render below the list, which
+   `.stage-fieldset` has no equivalent of. */
+.choice-fieldset { min-width: 0; margin: 34px 0 18px; padding: 0; border: 0; }
 .simple-choice-list { display: grid; gap: 12px; }
 .simple-choice {
   min-height: 70px;

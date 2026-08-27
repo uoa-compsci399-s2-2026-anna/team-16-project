@@ -342,19 +342,43 @@ def _totals(
 
 
 def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult | None:
-    """§4.5, v1.48. Derived from what the visitor typed, never from a factor
-    or a formula -- see `MoneyResult`'s own docstring for why this is not a
-    metric.
+    """§4.5, v1.48. Derived from what the visitor typed, never from a
+    factor or a formula -- see MoneyResult's own docstring for why this is
+    not a metric.
 
-    **Absent stays absent.** Every field is `None` unless every value it is
+    Absent stays absent. Every field is None unless every value it is
     derived from was supplied; a computed zero would read as "this food was
     worth nothing" rather than "nobody said" (§4.5).
+
+    The share is left unclamped. A visitor who types a wasted value greater
+    than the total value sees a figure over 100%, not one silently reshaped
+    here -- that is stage two's input validation to own.
+
+    The rate is derived per entry, not blended across the whole form. This
+    is a decision, not the brief's original one-blended-rate design: a
+    single sum(wasted) / sum(current) rate lets an entry nobody priced
+    borrow another entry's price for its own diverted mass, and silently
+    reprices the priced entry's own kilograms in the process. "A uniform
+    per-kilogram value" is the client's ruling and it reads at least as
+    naturally as one rate per entry as it does one rate for the whole form;
+    an entry the visitor did not price contributes nothing rather than
+    borrowing a neighbour's price.
     """
     total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
     wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
 
     if total_value_nzd is None and wasted_value_nzd is None:
         return None
+
+    # The two passthrough sums are quantised here, in the engine, rather
+    # than left to the wire: api/schemas.py's decimal_places=2 is an upper
+    # bound, not an exact scale, so a request carrying "120000" arrives as
+    # Decimal('120000') and wire() would emit '120000' while SCALES requires
+    # two places -- the identical defect Task 4 shipped, in a new field.
+    if total_value_nzd is not None:
+        total_value_nzd = total_value_nzd.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
+    if wasted_value_nzd is not None:
+        wasted_value_nzd = wasted_value_nzd.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
 
     wasted_share_percent = None
     if (
@@ -368,32 +392,61 @@ def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult
 
     saving_nzd = None
     has_alternative = any(entry.alternative is not None for entry in entries)
-    current_total_kg = sum(
-        (line.qty_kg for entry in entries for line in entry.current), Decimal("0")
-    )
-    if wasted_value_nzd is not None and has_alternative and current_total_kg != 0:
-        value_per_kg = wasted_value_nzd / current_total_kg
-        # §3 rule 3's substitution, on the same terms as `_totals()` above: an
-        # entry with no alternative contributes its *current* lines, so it
-        # cannot manufacture a saving out of a scenario nobody supplied.
-        alternative_non_prevention_kg = sum(
-            (
-                line.qty_kg
-                for entry in entries
-                for line in (
-                    entry.alternative if entry.alternative is not None else entry.current
-                )
-                # The prevention predicate, not a literal `"prevention"`
-                # string (§4.5) -- the ReFED vocabulary's own prevention row
-                # is spelled `refed_prevention`.
-                if not bundle.is_prevention_destination(line.destination_code)
-            ),
-            Decimal("0"),
-        )
-        diverted_kg = current_total_kg - alternative_non_prevention_kg
-        saving_nzd = (value_per_kg * diverted_kg).quantize(
-            MONEY_SCALE, rounding=ROUND_HALF_UP
-        )
+    if has_alternative:
+        saving_total = Decimal("0")
+        any_entry_priced = False
+        for entry in entries:
+            if entry.wasted_value_nzd is None:
+                continue
+            entry_current_kg = sum(
+                (line.qty_kg for line in entry.current), Decimal("0")
+            )
+            if entry_current_kg == 0:
+                continue
+            value_per_kg = entry.wasted_value_nzd / entry_current_kg
+            # §3 rule 3's substitution, on the same terms as
+            # _totals() above: an entry with no alternative contributes its
+            # *current* lines, so it cannot manufacture a saving out of a
+            # scenario nobody supplied -- its own diverted mass comes out at
+            # zero.
+            alternative_lines = (
+                entry.alternative if entry.alternative is not None else entry.current
+            )
+            # Both sides of the subtraction exclude prevention -- not only
+            # the alternative side. entry_current_kg above (the rate's
+            # denominator) may still legitimately include a prevention line:
+            # the API refuses one in a *current* scenario (§6.2), but
+            # the engine is a pure function reachable from a golden case or
+            # the dry-run view without that guard, and relying on a
+            # validator one layer up is how a wrong number survives a
+            # refactor. Comparing "current minus alternative" over the
+            # *same* excluded set on both sides is what keeps two identical
+            # scenarios at zero diverted kilograms regardless of what
+            # either side contains.
+            current_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in entry.current
+                    # The prevention predicate, not a literal "prevention"
+                    # string (§4.5) -- the ReFED vocabulary's own
+                    # prevention row is spelled refed_prevention.
+                    if not bundle.is_prevention_destination(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            alternative_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in alternative_lines
+                    if not bundle.is_prevention_destination(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            diverted_kg = current_non_prevention_kg - alternative_non_prevention_kg
+            saving_total += value_per_kg * diverted_kg
+            any_entry_priced = True
+        if any_entry_priced:
+            saving_nzd = saving_total.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
 
     return MoneyResult(
         total_value_nzd=total_value_nzd,

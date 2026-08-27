@@ -1187,3 +1187,103 @@ def test_a_share_needs_a_total_and_a_saving_needs_an_alternative():
     assert money.wasted_value_nzd == Decimal("4500.00")
     assert money.wasted_share_percent is None
     assert money.saving_nzd is None, "no alternative scenario, so nothing is saved"
+
+
+def test_the_rate_is_per_entry_not_blended_across_the_whole_form():
+    """The coordinator's ruling (change 4), against the brief's original
+    step 4: two entries priced differently, only one of them diverting -
+    the case a single-entry test cannot tell apart from a blended rate.
+
+    farm: priced at $4.50/kg (4500.00 / 1000 kg), no alternative, so it
+    diverts nothing and must contribute $0.00 regardless of its own price.
+    retail: priced at $1.00/kg (1000.00 / 1000 kg), and diverts 300 kg to
+    prevention, so it must contribute exactly 1.00 x 300 = $300.00.
+
+    A blended whole-form rate would instead compute
+    (4500.00 + 1000.00) / (1000.000 + 1000.000) = $2.75/kg and apply it to
+    the same 300 kg diverted, landing on $825.00 - a different number, and
+    the one this test exists to rule out.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(
+            sector_code="farm", food_category_code=None,
+            wasted_value_nzd=Decimal("4500.00"),
+            current=(ScenarioLine(destination_code="landfill",
+                                  qty_kg=Decimal("1000.000")),),
+            alternative=None,
+        ),
+        EntryInput(
+            sector_code="retail", food_category_code=None,
+            wasted_value_nzd=Decimal("1000.00"),
+            current=(ScenarioLine(destination_code="landfill",
+                                  qty_kg=Decimal("1000.000")),),
+            alternative=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+        ),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.saving_nzd == Decimal("300.00")
+
+
+def test_two_identical_scenarios_save_nothing_even_with_prevention_in_both():
+    """Defect 5: `diverted_kg` must compare like with like.
+
+    The current scenario carries a `prevention` line here on purpose - the
+    API refuses that over HTTP (§6.2), but the engine is a pure function
+    reachable from a golden case or the dry-run view without that guard, and
+    a saving figure that trusted a validator one layer up to make this
+    unreachable would be wrong the moment something reached it anyway.
+
+    Current and alternative are byte-for-byte the same: 700 kg landfill and
+    300 kg already-prevented. Nothing changed, so nothing was saved - a
+    diverted-mass calculation that counted the current scenario's own
+    prevention line as "still wasted" would instead answer $1,350.00 for a
+    scenario that is a no-op.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(
+            sector_code="farm", food_category_code=None,
+            wasted_value_nzd=Decimal("4500.00"),
+            current=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+            alternative=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+        ),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.saving_nzd == Decimal("0.00")
+
+
+def test_the_passthrough_totals_are_quantised_to_two_places():
+    """Defect 1: `decimal_places=2` on the wire schema is an *upper* bound,
+    not an exact scale, so a whole-number request value such as `"120000"`
+    arrives at the engine as `Decimal('120000')` - zero places, not two.
+    Left unquantised, `total_value_nzd` would leave the engine at the wrong
+    scale for `tests/api/test_fixture_consistency.py`'s `SCALES` to catch,
+    the same defect Task 4 shipped for a rolled-up rate two commits ago.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   total_value_nzd=Decimal("120000"),
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.total_value_nzd == Decimal("120000.00")
+    assert str(money.total_value_nzd) == "120000.00"

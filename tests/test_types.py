@@ -117,6 +117,10 @@ totals = CalculationTotals(
     ),
     alternative=alternative_result,
     net_benefit={"co2e": Decimal("456.0000000000")},
+    # §4.5, v1.48. The canonical fixture this file's figures are drawn from
+    # supplies no money figure on its one entry, so the block itself is
+    # absent -- not a computed zero.
+    money=None,
 )
 calculation_result = CalculationResult(
     factor_set_version="MOCK-v0",
@@ -286,7 +290,9 @@ def test_calculation_totals():
 
 def test_totals_are_null_when_no_entry_carries_an_alternative():
     """§3 rule 4."""
-    bare = CalculationTotals(current=current_result, alternative=None, net_benefit=None)
+    bare = CalculationTotals(
+        current=current_result, alternative=None, net_benefit=None, money=None
+    )
     assert bare.alternative is None
     assert bare.net_benefit is None
 

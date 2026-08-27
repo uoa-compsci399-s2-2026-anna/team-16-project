@@ -277,21 +277,47 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
 
 
 def test_the_bar_is_sticky_and_not_fixed(page_at):
-    """A short step must leave the bar where the content ends. `fixed` would
-    park it at the bottom of every screen including this one, which reads like
-    a cookie banner; `sticky` only pins when the section would push it off."""
+    """`position` alone does not prove `sticky` over `fixed` - both report a
+    `position` string, and a single gap measurement at one scroll offset is
+    only ever one sample of a number this test has no business treating as a
+    constant. What actually tells the two apart is motion: a `fixed` bar's
+    distance from the fold cannot change, because `position: fixed` takes it
+    out of the document being scrolled entirely, however tall that document
+    grows. A `sticky`, in-flow bar's distance from the fold *grows* as the
+    page scrolls, because the bar rides up with the content beneath it like
+    any other in-flow element, right up until it is asked to pin.
+
+    This step had zero scroll at all the day this test was written, which is
+    why the old version read a single number at the top and called it a day.
+    Task 2 gave the step two more required fields and, with them, its first
+    real scroll - which is exactly the condition this test needs to say
+    anything about `fixed` versus `sticky` at all, and exactly the condition
+    the single-sample version could not survive.
+    """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    measured = page.evaluate(
-        """() => {
-          window.scrollTo(0, 0);
-          const el = document.querySelector('.step-nav');
-          const rect = el.getBoundingClientRect();
-          return {position: getComputedStyle(el).position,
-                  gap: Math.round(window.innerHeight - rect.bottom)};
-        }"""
+    scrollable = page.evaluate("document.documentElement.scrollHeight - window.innerHeight")
+    assert scrollable > 40, (
+        f"this step does not scroll enough to tell sticky from fixed apart: {scrollable}px"
     )
-    assert measured["position"] == "sticky", measured
-    assert measured["gap"] > 100, f"the bar is parked at the bottom of a short step: {measured}"
+
+    def gap_at(scroll_top):
+        return page.evaluate(
+            """(top) => {
+              window.scrollTo(0, top);
+              const el = document.querySelector('.step-nav');
+              const rect = el.getBoundingClientRect();
+              return {position: getComputedStyle(el).position,
+                      gap: Math.round(window.innerHeight - rect.bottom)};
+            }""",
+            scroll_top,
+        )
+
+    samples = [gap_at(round(scrollable * fraction)) for fraction in (0, 0.4, 0.85)]
+    assert all(sample["position"] == "sticky" for sample in samples), samples
+    gaps = [sample["gap"] for sample in samples]
+    assert gaps[0] < gaps[1] < gaps[2], (
+        f"the gap did not grow while scrolling - a fixed bar reads this way too: {gaps}"
+    )
 
 
 def test_the_bar_unpins_above_the_footer_at_full_scroll(page_at):
@@ -508,18 +534,68 @@ def test_the_longest_primary_label_does_not_overflow_the_narrowest_viewport(page
 
 
 def test_a_short_step_is_not_floored_by_a_stale_min_height(page_at):
-    """`.main-content` carried `min-height: calc(100vh - 220px)`, arithmetic
-    over a header, a step-indicator band and a footer. The band moved into the
-    bar; left alone, the constant would have floored every short step 87px
-    taller than its content and gone on producing a scrollbar with nothing
-    below the fold to scroll to. A previous pass found short steps at 1920
-    measuring exactly the floor, so shrinking their content changed nothing."""
+    """`.main-content` once carried `min-height: calc(100vh - 220px)`,
+    arithmetic over a header, a step-indicator band and a footer. That
+    constant floored every step to the same height regardless of how much it
+    actually rendered - so a step 87px shorter than the floor still produced
+    a scrollbar with nothing below the fold to scroll to.
+
+    **A document height that happens to equal the viewport, on the one step
+    that happened to be this short, is not proof the floor is gone** - it is
+    one coincidental sample, on one step, at one viewport, and it is exactly
+    what broke the moment that step legitimately grew (Task 2's two money
+    fields). Two things are asserted instead, neither of them that constant:
+
+    1. the document shrinks at all when content is removed - a stale floor
+       pinned to a fixed value would not move;
+    2. once essentially everything the step rendered is gone, the document
+       settles *exactly* at the viewport, not a few pixels above it. That is
+       `body { min-height: 100vh }` - the one floor this project still
+       promises, and the direction it guarantees is the opposite one: the
+       document is never *shorter* than the viewport, never that it is
+       floored *above* its own content. A few pixels of drift on an
+       otherwise-empty step is this defect's own signature, at this
+       viewport's own scale.
+    """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    measured = page.evaluate(
-        "() => ({doc: Math.round(document.documentElement.scrollHeight), viewport: window.innerHeight})"
+    viewport = page.evaluate("window.innerHeight")
+
+    # First: the document tracks content at all. `.section-intro` is small
+    # enough that what remains is still comfortably taller than the viewport,
+    # so `body { min-height: 100vh }`'s own, legitimate floor cannot be the
+    # thing making this pass.
+    before = page.evaluate("document.documentElement.scrollHeight")
+    removed = page.evaluate(
+        """() => {
+          const el = document.querySelector('.section-intro');
+          const height = Math.round(el.getBoundingClientRect().height);
+          el.remove();
+          return height;
+        }"""
     )
-    assert measured["doc"] <= measured["viewport"], (
-        f"a short step still scrolls: document {measured['doc']}px in a {measured['viewport']}px viewport"
+    after_one_block = page.evaluate("document.documentElement.scrollHeight")
+    assert after_one_block < before, (
+        f"removing a {removed}px block left the document unchanged - {before} -> {after_one_block} - a stale floor"
+    )
+
+    # Second, and this is the part that actually distinguishes the two
+    # floors: strip essentially everything the step rendered and see where
+    # the document settles. Without a stale floor it settles exactly at the
+    # viewport - the legitimate one. With the historical
+    # `calc(100vh - 220px)` constant back on `.main-content` it settles a few
+    # pixels above it instead, because that arithmetic no longer matches the
+    # header/footer chrome it was written against once the step-indicator
+    # band moved into the bar - the same drift that produced the original
+    # 87px defect, just measured at this viewport's own scale.
+    stripped = page.evaluate(
+        """() => {
+          document.querySelector('.amount-grid')?.remove();
+          return document.documentElement.scrollHeight;
+        }"""
+    )
+    assert stripped <= viewport + 5, (
+        f"stripping the step's own content still leaves a {stripped}px document in a {viewport}px viewport - "
+        "a stale floor is holding it up above its own content"
     )
 
 
@@ -649,7 +725,20 @@ def test_step_three_asks_for_the_two_money_figures(page_at):
     page = advance_to(page_at(1278, 983, 1.25), 2)
 
     for field_id in ("total-value", "wasted-value"):
-        assert page.locator(f"#{field_id}").count() == 1, f"no #{field_id}"
+        field = page.locator(f"#{field_id}")
+        assert field.count() == 1, f"no #{field_id}"
+        # `count() == 1` is satisfied by a field that is `display: none` or
+        # `disabled` just as readily as by one a visitor can actually use -
+        # Task 1's own reviewer flagged exactly this gap. A hidden or
+        # non-editable field never reaches `beforeinput`, never reaches
+        # `state`, and never reaches the wire; the field has to be usable,
+        # not merely present, and typing into it and reading the value back
+        # is the only check that tells the difference.
+        assert field.is_visible(), f"{field_id} exists but is not visible"
+        assert field.is_editable(), f"{field_id} exists but cannot be typed into"
+        field.fill("42")
+        assert field.input_value() == "42", f"{field_id} did not keep a typed value"
+
         label = page.locator(f'label[for="{field_id}"]').inner_text()
         assert "optional" in label.lower(), f"{field_id} is not marked optional"
         assert "NZ$" in label or "NZD" in label, (

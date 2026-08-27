@@ -20,6 +20,12 @@ export const state = {
   measureMode: 'mass',
   unitPreset: null,
   unitCount: '',
+  // Item ④: the site's production total for the period, in `totalUnit` - the
+  // same unit the waste amount above it is in, never a second unit of its
+  // own. Optional and carried raw, like `totalAmount`; §6.2's engine never
+  // reads it, it travels only so the results page can state waste as a share
+  // of production.
+  totalInputKg: '',
   // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
   // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
@@ -98,6 +104,7 @@ export function resetCalculator() {
     measureMode: 'mass',
     unitPreset: null,
     unitCount: '',
+    totalInputKg: '',
     current: [],
     entries: [],
     result: null,

@@ -192,8 +192,9 @@ const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: line.qtyInp
 const allocatedAmount = lines => lines.reduce((sum, line) => sum + (Number(line.qtyInput) || 0), 0)
 // `unitPreset` and `unitCount` are here for the same reason `totalAmount` is: they are
 // something the visitor entered, so the Clear button has to appear once either exists.
-const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.current.some(line => line.qtyInput !== '') || state.result)
-const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, current: state.current.map(line => ({ ...line })) })
+// `totalInputKg` joins them for the same reason.
+const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.totalInputKg || state.current.some(line => line.qtyInput !== '') || state.result)
+const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, totalInputKg: state.totalInputKg, current: state.current.map(line => ({ ...line })) })
 
 /**
  * The introduction screen: `state.step === -1`, and the first thing a visitor meets.
@@ -323,7 +324,7 @@ function amountStep() {
     // consequence of that rule.
     const value = PRESET_OPTION + preset.code
     return `<option value="${escapeHtml(value)}" ${unitSelectValue() === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
-  }).join('')}</optgroup>` : ''}</select></div></div>${stepNav({ step: 2, back: 1 })}</section>`
+  }).join('')}</optgroup>` : ''}</select></div><div class="form-field"><label for="total-input">${escapeHtml(t('Total amount produced'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalInputKg)}"></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**
@@ -678,11 +679,11 @@ function updateLine(control) {
 }
 
 function loadEntry(entry) {
-  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
+  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', totalInputKg: entry.totalInputKg || '', current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
 }
 
 function clearDraft() {
-  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', totalInputKg: '', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
 export function render(main) {
@@ -858,6 +859,7 @@ export function bindCalculator(main, retryTaxonomy) {
     if (
       target.id === 'total-waste' ||
       target.id === 'unit-count' ||
+      target.id === 'total-input' ||
       target.matches('.percentage-input [data-improvement-code]')
     ) {
       event.preventDefault()
@@ -876,6 +878,7 @@ export function bindCalculator(main, retryTaxonomy) {
       state.totalAmount = target.value
       state.error = null
     }
+    if (target.id === 'total-input') state.totalInputKg = target.value
     if (target.id === 'unit-count') updateContainerCount(target)
     if (target.matches('[data-line-field="amount"]')) {
       // `beforeinput` cannot always be the whole story. A lone "-" leaves

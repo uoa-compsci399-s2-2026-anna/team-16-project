@@ -583,3 +583,51 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
     slider.press("ArrowUp")
     assert slider.input_value() != before, "the slider stopped responding"
     assert number.input_value() == slider.input_value()
+
+
+def test_step_three_asks_what_the_stage_put_through(page_at):
+    """Item ④. Without it the results page can never state waste as a share
+    of production, which is the figure the client asked for - and the reason
+    the old percentage was removed rather than fixed: `results.js` carries a
+    note saying it was "a number the engine never produced".
+
+    Optional, and the label says so. A visitor who does not know their
+    production total still gets every other figure, so this must not become a
+    fourth required field on a step that already has two.
+    """
+    #: `walk()`'s numeric yields are the screen sequence (0 sector, 1 food, 2
+    #: amount, 3 destination, ...), one behind the UI's own 1-based "Step 3"
+    #: label on the amount screen this field lives on - `2` is the amount
+    #: screen; `3` is the destination-allocation screen one step later, whose
+    #: `#total-waste` this file's other tests fill, never re-fill.
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    field = page.locator("#total-input")
+    assert field.count() == 1, "step 3 has no production-total field"
+    label = page.locator('label[for="total-input"]').inner_text()
+    assert "optional" in label.lower(), (
+        f"the field does not say it is optional: {label!r}"
+    )
+
+    #: Above the fold on the smallest viewport this project supports. Step 3
+    #: already carries an amount, a unit and a container hint; a fourth
+    #: control that pushes Continue off the screen is the defect
+    #: `test_the_primary_action_of_every_step_is_reachable_without_scrolling`
+    #: exists for.
+    box = field.bounding_box()
+    assert box["y"] < page.evaluate("window.innerHeight")
+
+
+def test_the_production_total_is_optional_and_continue_still_works(page_at):
+    """The affirmative half. A test that only checks the field exists is
+    satisfied by a field that blocks the form."""
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1200")
+    #: #total-input deliberately left empty
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+
+    assert page.locator(".destination-row").count() > 0, (
+        "an empty production total blocked the step it is optional on"
+    )

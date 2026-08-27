@@ -62,6 +62,7 @@
     "Edit": "編輯",
     "Edit your data": "編輯您填寫的資料",
     "Enter a percentage from 0 to 100 for every destination.": "請為每個去向輸入 0 到 100 之間的百分比。",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "請為每個去向輸入 0 到總重量之間的公斤數。",
     "Enter an amount for at least one waste destination.": "請至少為一個浪費去向輸入數量。",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "請為每個適用的去向輸入數量。合計不能超過您的浪費總量。",
     "Enter destination amounts to no more than two decimal places.": "各去向的數量最多保留兩位小數。",

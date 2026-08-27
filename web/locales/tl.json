@@ -60,6 +60,7 @@
     "Edit": "Baguhin",
     "Edit your data": "Baguhin ang iyong datos",
     "Enter a percentage from 0 to 100 for every destination.": "Maglagay ng porsyento mula 0 hanggang 100 para sa bawat patutunguhan.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Maglagay ng dami sa kilogramo mula 0 hanggang sa kabuuang bigat para sa bawat patutunguhan.",
     "Enter an amount for at least one waste destination.": "Maglagay ng dami para sa kahit isang patutunguhan ng basura.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Maglagay ng dami para sa bawat naaangkop na patutunguhan. Hindi maaaring lumampas ang pinagsamang dami sa kabuuan ng iyong basura.",
     "Enter destination amounts to no more than two decimal places.": "Maglagay ng dami sa bawat patutunguhan na hindi lalampas sa dalawang decimal.",

@@ -59,6 +59,7 @@
     "Edit": "संपादित करें",
     "Edit your data": "अपना डेटा संपादित करें",
     "Enter a percentage from 0 to 100 for every destination.": "हर गंतव्य के लिए 0 से 100 के बीच प्रतिशत दर्ज करें।",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "हर गंतव्य के लिए 0 से कुल वज़न तक किलोग्राम में मात्रा दर्ज करें।",
     "Enter an amount for at least one waste destination.": "कम से कम एक अपशिष्ट गंतव्य के लिए मात्रा दर्ज करें।",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "हर लागू गंतव्य के लिए मात्रा दर्ज करें। कुल मिलाकर यह मात्रा आपके कुल अपशिष्ट से अधिक नहीं हो सकती।",
     "Enter destination amounts to no more than two decimal places.": "गंतव्य की मात्राएँ दशमलव के बाद अधिकतम दो अंकों तक दर्ज करें।",

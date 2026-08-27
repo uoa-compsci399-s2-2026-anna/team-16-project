@@ -60,6 +60,7 @@
     "Edit": "تعديل",
     "Edit your data": "تعديل بياناتك",
     "Enter a percentage from 0 to 100 for every destination.": "أدخل نسبة مئوية من 0 إلى 100 لكل مصير.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "أدخل كمية بالكيلوغرامات، من 0 حتى الإجمالي، لكل مصير.",
     "Enter an amount for at least one waste destination.": "أدخل كمية لمصير هدر واحد على الأقل.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "أدخل كمية لكل مصير منطبق. لا يمكن أن يتجاوز المجموع إجمالي الهدر لديك.",
     "Enter destination amounts to no more than two decimal places.": "أدخل كميات المصائر بما لا يزيد عن منزلتين عشريتين.",

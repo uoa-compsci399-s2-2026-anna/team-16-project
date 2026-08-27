@@ -146,6 +146,20 @@ function sliderMax(value, headroom) {
   return Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)
 }
 
+// The pointer-drag granularity: half a percentage point of the mass being redistributed,
+// restated in kilograms when that is the display unit. `step="0.01"` gave the earlier
+// percentage slider ten thousand stops and was "too sensitive" to land on with a pointer,
+// so a drag is still rounded to this coarseness — but the rounding happens here, in
+// `updateImprovementInput`, rather than through the range's own `step` attribute (see the
+// row template): a native `step` snaps *any* value assigned to the control, including an
+// exact figure mirrored in from the number box, which is what made a box reading `399.55`
+// sit beside a range the browser had silently rounded to `400`. Doing it ourselves, only
+// on the control the drag actually fired on, is what lets the box's exact value reach the
+// range unrounded while a drag still lands on a nameable number.
+function rangeStep(mode, totalKg) {
+  return mode === 'kilograms' ? Math.max(0.01, Number((totalKg * 0.005).toFixed(2)) || 0.5) : 0.5
+}
+
 /**
  * Reads one control's keystroke and patches the DOM directly, the same bypass of
  * `setState` the module docstring above explains — a full re-render on every keystroke
@@ -160,21 +174,50 @@ function sliderMax(value, headroom) {
  * `control.value` itself in percentage mode — and everything downstream of that line
  * (the total, the validation, the mirrored inputs' *raw displayed value*) is unchanged
  * by which mode produced it.
+ *
+ * **A cleared box stays cleared, in both modes.** `kgToPercentage('', totalKg)` reads
+ * `Number('')` as `0`, which is finite — so a kilogram box the visitor had emptied was
+ * silently stored as an allocation of zero rather than as "not answered yet", and
+ * `improvementValidation` had nothing to catch, only the mismatch it produces once the
+ * other destinations no longer sum to 100%. Percentage mode never had this: `control.value`
+ * passes straight through, so `''` reaches the state as `''` and the blank check below
+ * fires on it directly. The empty string is now checked before either conversion, in
+ * both modes, so it is what reaches the state either way.
+ *
+ * **The range carries `step="any"`, not a fixed step (see the row template).** A `step`
+ * on `<input type="range">` snaps *anything* assigned to `.value` — an exact figure
+ * mirrored in from the number box included — which is what put a box reading `399.55`
+ * beside a range the browser had silently rounded to a multiple of five. With no native
+ * step, an exact mirror lands exactly; a drag, which still has to land on a nameable
+ * number, is rounded here instead, to `rangeStep`'s own coarseness, only when `control`
+ * is the range itself.
  */
 export function updateImprovementInput(control, state) {
   const code = control.dataset.improvementCode
   const mode = state.improvementMode || 'percentage'
   const presets = state.taxonomy?.unit_presets || []
   const totalKg = totalAllocatableKg(state, presets)
-  const percentage = mode === 'kilograms' ? kgToPercentage(control.value, totalKg) : control.value
+  let raw = control.value
+  if (control.type === 'range' && raw !== '') {
+    const step = rangeStep(mode, totalKg)
+    const numeric = Number(raw)
+    if (Number.isFinite(numeric)) {
+      const snapped = Math.round(numeric / step) * step
+      raw = mode === 'kilograms' ? snapped.toFixed(2) : String(Math.round(snapped * 100) / 100)
+      control.value = raw
+    }
+  }
+  const percentage = raw === '' ? '' : (mode === 'kilograms' ? kgToPercentage(raw, totalKg) : raw)
   state.improvedAllocations = { ...state.improvedAllocations, [code]: percentage }
   state.improvementResult = null
   state.improvementError = null
   // Mirrors the *raw* value, not the percentage just computed: every control sharing this
   // code is rendered in the same mode (§ `ImprovementScenario`), so the slider and the
   // number box always agree on which unit `.value` is in and a straight copy is correct.
+  // `raw` rather than `control.value` so a range's own drag mirrors its *rounded* figure,
+  // not the pointer position that produced it.
   document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
-    if (input !== control) input.value = control.value
+    if (input !== control) input.value = raw
   })
   const total = allocationTotal(state.improvedAllocations)
   const headroom = 100 - total
@@ -208,10 +251,20 @@ export function allocationTotal(allocations) {
  * points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's limit, so the panel enabled
  * Compare on a submission the server then refused with a 400 — after the user had left the
  * screen where the numbers are.
+ *
+ * **The blank/range message names the unit on screen, not the one stored.** The state
+ * this checks is always a percentage (see `updateImprovementInput`), but a visitor working
+ * in kilogram mode never typed a percentage and telling them to "enter a percentage" names
+ * a unit their own screen does not show them. `state.improvementMode` decides which of the
+ * two catalogue strings is returned; nothing about what is being checked changes.
  */
 export function improvementValidation(state) {
+  const mode = state.improvementMode || 'percentage'
   const values = Object.values(state.improvedAllocations || {})
-  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return t('Enter a percentage from 0 to 100 for every destination.')
+  const rangeMessage = mode === 'kilograms'
+    ? t('Enter a mass in kilograms, from 0 up to the total, for every destination.')
+    : t('Enter a percentage from 0 to 100 for every destination.')
+  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return rangeMessage
   const total = allocationTotal(state.improvedAllocations)
   const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
   if (Math.abs(total - 100) > 0.01) return mismatch
@@ -308,21 +361,27 @@ function DestinationAllocationRow({ destination, current, improved, max, mode, t
   // sliders' own `.value` and requires the literal `"0"`; rounding every percentage to two
   // places for symmetry with the new kilogram branch would have turned that into `"0.00"`
   // for a reason with nothing to do with kilograms at all.
-  const value = kilograms ? displayKg(improved, totalKg).toFixed(2) : improved
+  // A genuinely blank allocation stays blank through a full re-render (a mode toggle, a
+  // reopen) in both units — `displayKg('', totalKg)` reads `Number('')` as `0`, which is
+  // finite, so the kilogram branch alone would turn "not answered yet" into "0.00" the
+  // moment the panel redrew, even though nothing was typed.
+  const value = improved === '' ? '' : (kilograms ? displayKg(improved, totalKg).toFixed(2) : improved)
   const ceiling = kilograms ? displayKg(max, totalKg).toFixed(2) : max
-  // `step="0.5"` gives the percentage slider two hundred stops rather than ten thousand —
-  // `0.01` was "too sensitive" to land on with a pointer. In kilogram mode the same
-  // coarseness is restated in kilograms: half a percentage point of the mass being
-  // redistributed, so dragging the slider one notch always moves the same *share*
-  // regardless of which unit it is being read in.
-  const rangeStep = kilograms ? Math.max(0.01, Number((totalKg * 0.005).toFixed(2)) || 0.5) : 0.5
   const numberMax = kilograms ? (Number.isFinite(totalKg) && totalKg > 0 ? totalKg.toFixed(2) : '') : 100
   const unitLabel = kilograms ? 'kg' : '%'
   // The number box stays the exact-entry control and the slider the coarse one in both
   // modes: `step="0.01"` here is the same two-decimal ceiling `MASS_TOLERANCE_KG` checks
   // in kilograms, so a visitor typing to that precision is typing to the precision the
   // mass check actually honours.
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="${rangeStep}" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="0.01" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>${unitLabel}</span></div></div></div>`
+  //
+  // **The range's own `step` is `"any"`, not the coarse figure it drags in steps of.**
+  // `<input type="range">` snaps *any* value assigned to `.value` to the nearest multiple
+  // of its `step` attribute — including an exact figure mirrored in from the number box —
+  // so a fixed `step` here made a box reading `399.55` sit beside a range the browser had
+  // silently rounded to `400`. `updateImprovementInput` applies that same coarseness
+  // itself, only to a drag on the range, so the two controls never show a different number
+  // for the same allocation.
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="0.01" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>${unitLabel}</span></div></div></div>`
 }
 
 export function ImprovementScenario(state) {

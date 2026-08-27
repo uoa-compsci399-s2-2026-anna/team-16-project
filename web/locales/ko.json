@@ -59,6 +59,7 @@
     "Edit": "수정",
     "Edit your data": "입력한 데이터 수정",
     "Enter a percentage from 0 to 100 for every destination.": "모든 처리 경로에 0에서 100 사이의 비율을 입력하세요.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "모든 처리 경로에 0에서 총 무게까지의 킬로그램 단위 양을 입력하세요.",
     "Enter an amount for at least one waste destination.": "적어도 한 개의 처리 경로에 양을 입력하세요.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "해당하는 모든 처리 경로에 양을 입력하세요. 합계는 총 폐기량을 넘을 수 없습니다.",
     "Enter destination amounts to no more than two decimal places.": "처리 경로별 양은 소수점 두 자리까지 입력하세요.",

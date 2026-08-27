@@ -59,6 +59,7 @@
     "Edit": "Sửa",
     "Edit your data": "Sửa dữ liệu của bạn",
     "Enter a percentage from 0 to 100 for every destination.": "Nhập tỷ lệ phần trăm từ 0 đến 100 cho mọi điểm đến.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Nhập khối lượng theo kilôgam từ 0 đến tổng khối lượng cho mọi điểm đến.",
     "Enter an amount for at least one waste destination.": "Nhập lượng cho ít nhất một điểm đến của thực phẩm bỏ đi.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Nhập lượng cho mọi điểm đến phù hợp. Tổng các lượng này không được vượt quá tổng lượng bỏ đi của bạn.",
     "Enter destination amounts to no more than two decimal places.": "Nhập lượng tại mỗi điểm đến với tối đa hai chữ số thập phân.",

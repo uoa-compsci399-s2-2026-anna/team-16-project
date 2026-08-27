@@ -59,6 +59,7 @@
     "Edit": "Modifier",
     "Edit your data": "Modifier vos données",
     "Enter a percentage from 0 to 100 for every destination.": "Saisissez un pourcentage de 0 à 100 pour chaque destination.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Saisissez une quantité en kilogrammes, de 0 jusqu'au total, pour chaque destination.",
     "Enter an amount for at least one waste destination.": "Saisissez une quantité pour au moins une destination des déchets.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Saisissez une quantité pour chaque destination concernée. Le total cumulé ne peut pas dépasser votre gaspillage total.",
     "Enter destination amounts to no more than two decimal places.": "Saisissez les quantités par destination avec au maximum deux décimales.",

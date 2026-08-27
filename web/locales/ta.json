@@ -59,6 +59,7 @@
     "Edit": "திருத்து",
     "Edit your data": "உங்கள் தரவைத் திருத்து",
     "Enter a percentage from 0 to 100 for every destination.": "ஒவ்வொரு சேருமிடத்திற்கும் 0 முதல் 100 வரையிலான சதவீதத்தை உள்ளிடவும்.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "ஒவ்வொரு சேருமிடத்திற்கும் 0 முதல் மொத்த எடை வரையிலான கிலோகிராம் அளவை உள்ளிடவும்.",
     "Enter an amount for at least one waste destination.": "குறைந்தது ஒரு கழிவு சேருமிடத்திற்காவது ஓர் அளவை உள்ளிடவும்.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "பொருந்தும் ஒவ்வொரு சேருமிடத்திற்கும் அளவை உள்ளிடவும். மொத்த அளவு உங்கள் மொத்தக் கழிவை விட அதிகமாக இருக்கக் கூடாது.",
     "Enter destination amounts to no more than two decimal places.": "சேருமிட அளவுகளை தசமப் புள்ளிக்குப் பிறகு இரண்டு இலக்கங்களுக்கு மேல் இல்லாமல் உள்ளிடவும்.",

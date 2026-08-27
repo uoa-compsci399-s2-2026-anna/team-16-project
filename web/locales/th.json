@@ -59,6 +59,7 @@
     "Edit": "แก้ไข",
     "Edit your data": "แก้ไขข้อมูลของคุณ",
     "Enter a percentage from 0 to 100 for every destination.": "กรอกเปอร์เซ็นต์ตั้งแต่ 0 ถึง 100 สำหรับทุกปลายทาง",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "กรอกปริมาณเป็นกิโลกรัมตั้งแต่ 0 ถึงน้ำหนักรวมสำหรับทุกปลายทาง",
     "Enter an amount for at least one waste destination.": "กรอกปริมาณอย่างน้อยหนึ่งปลายทางของขยะ",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "กรอกปริมาณสำหรับทุกปลายทางที่เกี่ยวข้อง ผลรวมต้องไม่เกินปริมาณขยะทั้งหมดของคุณ",
     "Enter destination amounts to no more than two decimal places.": "กรอกปริมาณของแต่ละปลายทางไม่เกินทศนิยมสองตำแหน่ง",

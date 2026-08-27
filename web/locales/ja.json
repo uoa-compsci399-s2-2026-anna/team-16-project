@@ -59,6 +59,7 @@
     "Edit": "編集",
     "Edit your data": "入力データを編集",
     "Enter a percentage from 0 to 100 for every destination.": "すべての廃棄先に 0 から 100 までの割合を入力してください。",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "すべての廃棄先に、0 から総重量までのキログラムの量を入力してください。",
     "Enter an amount for at least one waste destination.": "少なくとも一つの廃棄先に量を入力してください。",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "該当するすべての廃棄先に量を入力してください。合計は総廃棄量を超えられません。",
     "Enter destination amounts to no more than two decimal places.": "廃棄先ごとの量は小数点以下二桁までで入力してください。",

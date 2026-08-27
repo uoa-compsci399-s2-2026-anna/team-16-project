@@ -204,7 +204,6 @@
     "%(count)s destination entries": "%(count)s 筆去向記錄",
     "%(count)s supply-chain points": "%(count)s 筆供應鏈記錄",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s（原始時間戳記 %(iso)s，UTC）",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s，本工具累計輸入的數量",
     "%(share)s share": "佔比 %(share)s",
     "%(title)s data": "%(title)s 資料",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s，圖表依 API 提供的各個已發布分組的佔比繪製。完整數值請見下方的文字清單。",
@@ -215,7 +214,6 @@
     "All food categories": "所有食物類別",
     "All sectors": "所有產業環節",
     "Background reading": "延伸閱讀",
-    "Breakdowns of entries made in this tool": "本工具中所填記錄的細分情形",
     "Calculator": "計算機",
     "Calculator activity": "計算機使用情形",
     "Code": "代碼",
@@ -345,6 +343,8 @@
     "Share of destination entries across calculations contributed to this tool.": "貢獻給本工具的各次計算中，所填去向記錄的佔比。",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "貢獻給本工具的計算中，依所選產業環節劃分的供應鏈記錄佔比。",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "貢獻給本工具的計算中，依所填食物類別劃分的供應鏈記錄佔比。",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "這些數字描述的是貢獻給本工具的計算所構成的自選樣本，既不是一項調查，也不代表紐西蘭全國的食物浪費狀況。"
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "這些數字描述的是貢獻給本工具的計算所構成的自選樣本，既不是一項調查，也不代表紐西蘭全國的食物浪費狀況。",
+    "Breakdowns of entries contributed to this tool": "本工具中所貢獻記錄的細分情形",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s，本工具累計貢獻的數量"
   }
 }

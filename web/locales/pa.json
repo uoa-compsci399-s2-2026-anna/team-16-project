@@ -203,7 +203,6 @@
     "%(count)s destination entries": "%(count)s ਮੰਜ਼ਿਲ ਐਂਟਰੀਆਂ",
     "%(count)s supply-chain points": "%(count)s ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂ",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (ਸਰੋਤ ਸਮਾਂ-ਮੋਹਰ %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "ਇਸ ਸੰਦ ਵਿੱਚ ਦਰਜ ਕੀਤੀ ਕੁੱਲ ਜਮ੍ਹਾਂ ਮਾਤਰਾ %(mass)s",
     "%(share)s share": "%(share)s ਹਿੱਸਾ",
     "%(title)s data": "%(title)s ਡਾਟਾ",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, ਹਰ ਪ੍ਰਕਾਸ਼ਿਤ ਵਰਗ ਲਈ API ਵੱਲੋਂ ਦਿੱਤੇ ਹਿੱਸੇ ਨਾਲ ਚਾਰਟ ਵਿੱਚ ਵਿਖਾਇਆ ਗਿਆ। ਪੂਰੇ ਮੁੱਲ ਹੇਠਾਂ ਲਿਖਤੀ ਸੂਚੀ ਵਿੱਚ ਹਨ।",
@@ -214,7 +213,6 @@
     "All food categories": "ਸਾਰੀਆਂ ਭੋਜਨ ਸ਼੍ਰੇਣੀਆਂ",
     "All sectors": "ਸਾਰੇ ਖੇਤਰ",
     "Background reading": "ਪਿਛੋਕੜ ਪੜ੍ਹਨ ਸਮੱਗਰੀ",
-    "Breakdowns of entries made in this tool": "ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ ਐਂਟਰੀਆਂ ਦੇ ਵੇਰਵੇ",
     "Calculator": "ਕੈਲਕੁਲੇਟਰ",
     "Calculator activity": "ਕੈਲਕੁਲੇਟਰ ਦੀ ਸਰਗਰਮੀ",
     "Code": "ਕੋਡ",
@@ -344,6 +342,8 @@
     "Share of destination entries across calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਮੰਜ਼ਿਲ ਐਂਟਰੀਆਂ ਦਾ ਹਿੱਸਾ।",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਚੁਣੇ ਖੇਤਰ ਅਨੁਸਾਰ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂਆਂ ਦਾ ਹਿੱਸਾ।",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਦਰਜ ਕੀਤੀ ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਅਨੁਸਾਰ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂਆਂ ਦਾ ਹਿੱਸਾ।",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ਇਹ ਅੰਕੜੇ ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਦੇ ਸਵੈ-ਚੁਣੇ ਨਮੂਨੇ ਨੂੰ ਦਰਸਾਉਂਦੇ ਹਨ। ਇਹ ਨਾ ਕੋਈ ਸਰਵੇਖਣ ਹਨ ਅਤੇ ਨਾ ਹੀ ਪੂਰੇ ਨਿਊਜ਼ੀਲੈਂਡ ਦੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੀ ਤਸਵੀਰ।"
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ਇਹ ਅੰਕੜੇ ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਦੇ ਸਵੈ-ਚੁਣੇ ਨਮੂਨੇ ਨੂੰ ਦਰਸਾਉਂਦੇ ਹਨ। ਇਹ ਨਾ ਕੋਈ ਸਰਵੇਖਣ ਹਨ ਅਤੇ ਨਾ ਹੀ ਪੂਰੇ ਨਿਊਜ਼ੀਲੈਂਡ ਦੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੀ ਤਸਵੀਰ।",
+    "Breakdowns of entries contributed to this tool": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਐਂਟਰੀਆਂ ਦੇ ਵੇਰਵੇ",
+    "%(mass)s cumulative quantity contributed to this tool": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀ ਕੁੱਲ ਜਮ੍ਹਾਂ ਮਾਤਰਾ %(mass)s"
   }
 }

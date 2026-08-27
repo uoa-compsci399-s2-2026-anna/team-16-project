@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s mục điểm đến",
     "%(count)s supply-chain points": "%(count)s điểm chuỗi cung ứng",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (dấu thời gian gốc %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s là tổng lượng đã nhập vào công cụ này",
     "%(share)s share": "tỷ lệ %(share)s",
     "%(title)s data": "Dữ liệu %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, được vẽ theo tỷ lệ do API cung cấp cho từng nhóm đã công bố. Các giá trị đầy đủ được liệt kê bên dưới.",
@@ -212,7 +211,6 @@
     "All food categories": "Tất cả nhóm thực phẩm",
     "All sectors": "Tất cả lĩnh vực",
     "Background reading": "Tài liệu tham khảo",
-    "Breakdowns of entries made in this tool": "Phân tích các mục đã nhập trong công cụ này",
     "Calculator": "Công cụ tính",
     "Calculator activity": "Hoạt động của công cụ tính",
     "Code": "Mã",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "Tỷ lệ các mục điểm đến trong số các phép tính đã được đóng góp cho công cụ này.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Tỷ lệ điểm chuỗi cung ứng theo lĩnh vực đã chọn, trong số các phép tính đã được đóng góp cho công cụ này.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Tỷ lệ điểm chuỗi cung ứng theo nhóm thực phẩm đã nhập, trong số các phép tính đã được đóng góp cho công cụ này.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Các con số này mô tả một mẫu tự chọn gồm các phép tính đã được đóng góp cho công cụ này. Đây không phải một cuộc khảo sát hay bức tranh về thực phẩm bỏ đi trên toàn New Zealand."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Các con số này mô tả một mẫu tự chọn gồm các phép tính đã được đóng góp cho công cụ này. Đây không phải một cuộc khảo sát hay bức tranh về thực phẩm bỏ đi trên toàn New Zealand.",
+    "Breakdowns of entries contributed to this tool": "Phân tích các mục đã được đóng góp cho công cụ này",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s là tổng lượng đã được đóng góp cho công cụ này"
   }
 }

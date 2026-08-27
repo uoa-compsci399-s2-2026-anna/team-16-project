@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s bestemmingsinskrywings",
     "%(count)s supply-chain points": "%(count)s voorsieningskettingpunte",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (bronstempel %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s kumulatiewe hoeveelheid wat in hierdie hulpmiddel ingevoer is",
     "%(share)s share": "%(share)s aandeel",
     "%(title)s data": "%(title)s-gegewens",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, gekarteer met die aandeel wat die API vir elke gepubliseerde groep verskaf. Die volledige waardes volg in 'n tekslys.",
@@ -212,7 +211,6 @@
     "All food categories": "Alle voedselkategorieë",
     "All sectors": "Alle sektore",
     "Background reading": "Agtergrondleesstof",
-    "Breakdowns of entries made in this tool": "Uiteensettings van inskrywings wat in hierdie hulpmiddel gemaak is",
     "Calculator": "Berekener",
     "Calculator activity": "Berekeneraktiwiteit",
     "Code": "Kode",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "Aandeel van bestemmingsinskrywings oor die berekenings wat tot hierdie hulpmiddel bygedra is.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Aandeel van voorsieningskettingpunte volgens die sektor gekies, oor die berekenings wat tot hierdie hulpmiddel bygedra is.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Aandeel van voorsieningskettingpunte volgens die voedselkategorie ingevoer, oor die berekenings wat tot hierdie hulpmiddel bygedra is.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Hierdie syfers beskryf 'n selfgekose steekproef van berekenings wat tot hierdie hulpmiddel bygedra is. Dit is nie 'n opname of 'n beeld van voedselafval oor Nieu-Seeland heen nie."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Hierdie syfers beskryf 'n selfgekose steekproef van berekenings wat tot hierdie hulpmiddel bygedra is. Dit is nie 'n opname of 'n beeld van voedselafval oor Nieu-Seeland heen nie.",
+    "Breakdowns of entries contributed to this tool": "Uiteensettings van inskrywings wat tot hierdie hulpmiddel bygedra is",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s kumulatiewe hoeveelheid wat tot hierdie hulpmiddel bygedra is"
   }
 }

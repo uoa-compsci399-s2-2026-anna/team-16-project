@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s Einträge zu Entsorgungswegen",
     "%(count)s supply-chain points": "%(count)s Einträge zur Lieferkette",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (Zeitstempel der Quelle %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s Gesamtmenge, die in diesem Rechner eingegeben wurde",
     "%(share)s share": "%(share)s Anteil",
     "%(title)s data": "Daten: %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, dargestellt mit dem von der API gelieferten Anteil für jede veröffentlichte Gruppe. Die vollständigen Werte folgen in einer Textliste.",
@@ -212,7 +211,6 @@
     "All food categories": "Alle Lebensmittelkategorien",
     "All sectors": "Alle Sektoren",
     "Background reading": "Hintergrundlektüre",
-    "Breakdowns of entries made in this tool": "Aufschlüsselungen der in diesem Rechner gemachten Eingaben",
     "Calculator": "Rechner",
     "Calculator activity": "Nutzung des Rechners",
     "Code": "Code",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "Anteil der Einträge zu Entsorgungswegen über alle zu diesem Rechner beigetragenen Berechnungen.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Anteil der Einträge zur Lieferkette nach dem ausgewählten Sektor, über alle zu diesem Rechner beigetragenen Berechnungen.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Anteil der Einträge zur Lieferkette nach der eingegebenen Lebensmittelkategorie, über alle zu diesem Rechner beigetragenen Berechnungen.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Diese Zahlen beschreiben eine selbst ausgewählte Stichprobe von Berechnungen, die zu diesem Rechner beigetragen wurden. Sie sind keine Erhebung und kein Abbild der Lebensmittelabfälle in ganz Neuseeland."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Diese Zahlen beschreiben eine selbst ausgewählte Stichprobe von Berechnungen, die zu diesem Rechner beigetragen wurden. Sie sind keine Erhebung und kein Abbild der Lebensmittelabfälle in ganz Neuseeland.",
+    "Breakdowns of entries contributed to this tool": "Aufschlüsselungen der zu diesem Rechner beigetragenen Eingaben",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s Gesamtmenge, die zu diesem Rechner beigetragen wurde"
   }
 }

@@ -201,7 +201,6 @@
     "%(count)s destination entries": "Записей по способам утилизации: %(count)s",
     "%(count)s supply-chain points": "Точек цепочки поставок: %(count)s",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (исходная метка времени %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s — суммарное количество, введённое в этот инструмент",
     "%(share)s share": "доля %(share)s",
     "%(title)s data": "Данные: %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s: диаграмма построена по доле, полученной от API для каждой опубликованной группы. Полные значения приведены ниже списком.",
@@ -212,7 +211,6 @@
     "All food categories": "Все категории продуктов",
     "All sectors": "Все отрасли",
     "Background reading": "Дополнительные материалы",
-    "Breakdowns of entries made in this tool": "Разбивки записей, сделанных в этом инструменте",
     "Calculator": "Калькулятор",
     "Calculator activity": "Активность калькулятора",
     "Code": "Код",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "Доля записей по способам утилизации среди расчётов, переданных в этот инструмент.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Доля точек цепочки поставок по выбранной отрасли, среди расчётов, переданных в этот инструмент.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Доля точек цепочки поставок по указанной категории продуктов, среди расчётов, переданных в этот инструмент.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Эти цифры описывают самоотобранную выборку расчётов, переданных в этот инструмент. Это не опрос и не картина пищевых отходов по всей Новой Зеландии."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Эти цифры описывают самоотобранную выборку расчётов, переданных в этот инструмент. Это не опрос и не картина пищевых отходов по всей Новой Зеландии.",
+    "Breakdowns of entries contributed to this tool": "Разбивки записей, переданных в этот инструмент",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s — суммарное количество, переданное в этот инструмент"
   }
 }

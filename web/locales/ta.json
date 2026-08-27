@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s சேருமிடப் பதிவுகள்",
     "%(count)s supply-chain points": "%(count)s விநியோகச் சங்கிலிப் புள்ளிகள்",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (மூல நேர முத்திரை %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "இந்தக் கருவியில் உள்ளிடப்பட்ட ஒட்டுமொத்த அளவு %(mass)s",
     "%(share)s share": "%(share)s பங்கு",
     "%(title)s data": "%(title)s தரவு",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s — வெளியிடப்பட்ட ஒவ்வொரு பிரிவுக்கும் API அளித்த பங்கைப் பயன்படுத்தி வரையப்பட்டது. முழு மதிப்புகள் கீழே உரைப் பட்டியலாக உள்ளன.",
@@ -212,7 +211,6 @@
     "All food categories": "எல்லா உணவு வகைப்பாடுகளும்",
     "All sectors": "எல்லா துறைகளும்",
     "Background reading": "பின்னணி வாசிப்பு",
-    "Breakdowns of entries made in this tool": "இந்தக் கருவியில் செய்யப்பட்ட பதிவுகளின் விவரங்கள்",
     "Calculator": "கால்குலேட்டர்",
     "Calculator activity": "கால்குலேட்டர் பயன்பாடு",
     "Code": "குறியீடு",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளில் சேருமிடப் பதிவுகளின் பங்கு.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளில் தேர்ந்தெடுக்கப்பட்ட துறை வாரியாக விநியோகச் சங்கிலிப் புள்ளிகளின் பங்கு.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளில் உள்ளிடப்பட்ட உணவு வகைப்பாடு வாரியாக விநியோகச் சங்கிலிப் புள்ளிகளின் பங்கு.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "இந்த எண்கள், இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளின் தாமாக-தேர்ந்தெடுக்கப்பட்ட மாதிரியை மட்டுமே விவரிக்கின்றன. இவை ஒரு கணக்கெடுப்பு அல்ல; நியூசிலாந்து முழுவதிலுமான உணவுக் கழிவின் சித்திரமும் அல்ல."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "இந்த எண்கள், இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளின் தாமாக-தேர்ந்தெடுக்கப்பட்ட மாதிரியை மட்டுமே விவரிக்கின்றன. இவை ஒரு கணக்கெடுப்பு அல்ல; நியூசிலாந்து முழுவதிலுமான உணவுக் கழிவின் சித்திரமும் அல்ல.",
+    "Breakdowns of entries contributed to this tool": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட பதிவுகளின் விவரங்கள்",
+    "%(mass)s cumulative quantity contributed to this tool": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட ஒட்டுமொத்த அளவு %(mass)s"
   }
 }

@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s 件の廃棄先入力",
     "%(count)s supply-chain points": "%(count)s 件のサプライチェーン入力",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s（元のタイムスタンプ %(iso)s、UTC）",
-    "%(mass)s cumulative quantity entered into this tool": "このツールに入力された累計数量 %(mass)s",
     "%(share)s share": "割合 %(share)s",
     "%(title)s data": "%(title)s のデータ",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s。公開されている各区分について、API が提供した割合でグラフ化しています。すべての値は下のテキスト一覧に示します。",
@@ -212,7 +211,6 @@
     "All food categories": "すべての食品カテゴリー",
     "All sectors": "すべての業種",
     "Background reading": "参考資料",
-    "Breakdowns of entries made in this tool": "このツールでの入力の内訳",
     "Calculator": "計算ツール",
     "Calculator activity": "計算ツールの利用状況",
     "Code": "コード",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "このツールに提供された計算全体における、廃棄先入力の割合です。",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "このツールに提供された計算のうち、選択された業種別のサプライチェーン入力の割合です。",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "このツールに提供された計算のうち、入力された食品カテゴリー別のサプライチェーン入力の割合です。",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "これらの数値は、このツールに提供された計算という、利用者が自ら選んだサンプルを示すものです。調査結果でも、ニュージーランド全体の食品廃棄の実態でもありません。"
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "これらの数値は、このツールに提供された計算という、利用者が自ら選んだサンプルを示すものです。調査結果でも、ニュージーランド全体の食品廃棄の実態でもありません。",
+    "Breakdowns of entries contributed to this tool": "このツールに提供された入力の内訳",
+    "%(mass)s cumulative quantity contributed to this tool": "このツールに提供された累計数量 %(mass)s"
   }
 }

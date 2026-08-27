@@ -201,7 +201,6 @@
     "%(count)s destination entries": "รายการปลายทาง %(count)s รายการ",
     "%(count)s supply-chain points": "จุดในห่วงโซ่อุปทาน %(count)s จุด",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (เวลาต้นทาง %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "ปริมาณสะสม %(mass)s ที่กรอกเข้ามาในเครื่องมือนี้",
     "%(share)s share": "สัดส่วน %(share)s",
     "%(title)s data": "ข้อมูล %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s แสดงเป็นแผนภูมิโดยใช้สัดส่วนที่ API ส่งมาสำหรับทุกกลุ่มที่เผยแพร่ ค่าทั้งหมดแสดงเป็นรายการข้อความถัดไป",
@@ -212,7 +211,6 @@
     "All food categories": "หมวดหมู่อาหารทั้งหมด",
     "All sectors": "ทุกภาคธุรกิจ",
     "Background reading": "เอกสารอ่านประกอบ",
-    "Breakdowns of entries made in this tool": "รายละเอียดแยกตามรายการที่กรอกในเครื่องมือนี้",
     "Calculator": "เครื่องคำนวณ",
     "Calculator activity": "การใช้งานเครื่องคำนวณ",
     "Code": "รหัส",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "สัดส่วนของรายการปลายทางจากการคำนวณทั้งหมดที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "สัดส่วนของจุดในห่วงโซ่อุปทาน แยกตามภาคธุรกิจที่เลือก จากการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "สัดส่วนของจุดในห่วงโซ่อุปทาน แยกตามหมวดหมู่อาหารที่กรอก จากการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ตัวเลขเหล่านี้อธิบายกลุ่มตัวอย่างของการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้ ไม่ใช่ผลสำรวจ และไม่ใช่ภาพรวมของขยะอาหารทั่วนิวซีแลนด์"
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ตัวเลขเหล่านี้อธิบายกลุ่มตัวอย่างของการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้ ไม่ใช่ผลสำรวจ และไม่ใช่ภาพรวมของขยะอาหารทั่วนิวซีแลนด์",
+    "Breakdowns of entries contributed to this tool": "รายละเอียดแยกตามรายการที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
+    "%(mass)s cumulative quantity contributed to this tool": "ปริมาณสะสม %(mass)s ที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้"
   }
 }

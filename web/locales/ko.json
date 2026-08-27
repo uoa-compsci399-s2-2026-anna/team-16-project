@@ -201,7 +201,6 @@
     "%(count)s destination entries": "처리 경로 항목 %(count)s개",
     "%(count)s supply-chain points": "공급망 항목 %(count)s개",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s(원본 타임스탬프 %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "이 도구에 입력된 누적 수량 %(mass)s",
     "%(share)s share": "비율 %(share)s",
     "%(title)s data": "%(title)s 데이터",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s. 공개된 각 구분에 대해 API가 제공한 비율로 그래프를 그렸습니다. 전체 값은 아래 텍스트 목록에 있습니다.",
@@ -212,7 +211,6 @@
     "All food categories": "모든 음식 분류",
     "All sectors": "모든 업종",
     "Background reading": "참고 자료",
-    "Breakdowns of entries made in this tool": "이 도구에 입력된 내용의 내역",
     "Calculator": "계산기",
     "Calculator activity": "계산기 이용 현황",
     "Code": "코드",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "이 도구에 기여된 계산 전체에서 처리 경로 항목이 차지하는 비율입니다.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "이 도구에 기여된 계산에서 선택된 업종별 공급망 항목의 비율입니다.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "이 도구에 기여된 계산에서 입력된 음식 분류별 공급망 항목의 비율입니다.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "이 수치는 이 도구에 기여된 계산이라는, 이용자가 스스로 선택한 표본을 나타냅니다. 조사 결과도 아니고 뉴질랜드 전체의 음식물 폐기물 실태도 아닙니다."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "이 수치는 이 도구에 기여된 계산이라는, 이용자가 스스로 선택한 표본을 나타냅니다. 조사 결과도 아니고 뉴질랜드 전체의 음식물 폐기물 실태도 아닙니다.",
+    "Breakdowns of entries contributed to this tool": "이 도구에 기여된 내용의 내역",
+    "%(mass)s cumulative quantity contributed to this tool": "이 도구에 기여된 누적 수량 %(mass)s"
   }
 }

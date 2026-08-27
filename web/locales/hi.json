@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s गंतव्य प्रविष्टियाँ",
     "%(count)s supply-chain points": "%(count)s आपूर्ति-शृंखला बिंदु",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (स्रोत समयांक %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s — इस टूल में दर्ज की गई कुल संचयी मात्रा",
     "%(share)s share": "%(share)s हिस्सा",
     "%(title)s data": "%(title)s डेटा",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, हर प्रकाशित वर्ग के लिए API द्वारा दिए गए हिस्से से चित्रित। पूरे मान नीचे पाठ सूची में दिए गए हैं।",
@@ -212,7 +211,6 @@
     "All food categories": "सभी खाद्य श्रेणियाँ",
     "All sectors": "सभी क्षेत्र",
     "Background reading": "पृष्ठभूमि पठन",
-    "Breakdowns of entries made in this tool": "इस टूल में की गई प्रविष्टियों का विवरण",
     "Calculator": "कैलकुलेटर",
     "Calculator activity": "कैलकुलेटर की गतिविधि",
     "Code": "कोड",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "इस टूल में योगदान दी गई गणनाओं में गंतव्य प्रविष्टियों का हिस्सा।",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "इस टूल में योगदान दी गई गणनाओं में चुने गए क्षेत्र के अनुसार आपूर्ति-शृंखला बिंदुओं का हिस्सा।",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "इस टूल में योगदान दी गई गणनाओं में दर्ज खाद्य श्रेणी के अनुसार आपूर्ति-शृंखला बिंदुओं का हिस्सा।",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ये आँकड़े इस टूल में योगदान दी गई गणनाओं के एक स्वयं-चयनित नमूने का वर्णन करते हैं। ये न कोई सर्वेक्षण हैं और न पूरे न्यूज़ीलैंड में खाद्य अपशिष्ट की तस्वीर।"
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ये आँकड़े इस टूल में योगदान दी गई गणनाओं के एक स्वयं-चयनित नमूने का वर्णन करते हैं। ये न कोई सर्वेक्षण हैं और न पूरे न्यूज़ीलैंड में खाद्य अपशिष्ट की तस्वीर।",
+    "Breakdowns of entries contributed to this tool": "इस टूल में योगदान दी गई प्रविष्टियों का विवरण",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s — इस टूल में योगदान दी गई कुल संचयी मात्रा"
   }
 }

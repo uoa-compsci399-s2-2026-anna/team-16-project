@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s ગંતવ્ય નોંધો",
     "%(count)s supply-chain points": "%(count)s પુરવઠા-શૃંખલા બિંદુઓ",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (સ્રોત સમયાંક %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s — આ ટૂલમાં દાખલ થયેલો કુલ સંચિત જથ્થો",
     "%(share)s share": "%(share)s હિસ્સો",
     "%(title)s data": "%(title)s ડેટા",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, દરેક પ્રકાશિત વર્ગ માટે API એ આપેલા હિસ્સાથી આલેખિત. પૂરાં મૂલ્યો નીચે લખાણ યાદીમાં આપ્યાં છે.",
@@ -212,7 +211,6 @@
     "All food categories": "બધી ખોરાક શ્રેણીઓ",
     "All sectors": "બધા ક્ષેત્રો",
     "Background reading": "પૂર્વભૂમિકા વાચન",
-    "Breakdowns of entries made in this tool": "આ ટૂલમાં કરેલી નોંધોની વિગતો",
     "Calculator": "કેલ્ક્યુલેટર",
     "Calculator activity": "કેલ્ક્યુલેટરની પ્રવૃત્તિ",
     "Code": "કોડ",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી ગણતરીઓમાં ગંતવ્ય નોંધોનો હિસ્સો.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી ગણતરીઓમાં પસંદ કરેલા ક્ષેત્ર પ્રમાણે પુરવઠા-શૃંખલા બિંદુઓનો હિસ્સો.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી ગણતરીઓમાં દાખલ કરેલી ખોરાકની શ્રેણી પ્રમાણે પુરવઠા-શૃંખલા બિંદુઓનો હિસ્સો.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "આ આંકડા આ ટૂલમાં યોગદાન આપેલી ગણતરીઓના સ્વયં-પસંદ થયેલા નમૂનાનું વર્ણન કરે છે. તે કોઈ સર્વેક્ષણ નથી કે સમગ્ર ન્યૂઝીલેન્ડના ખોરાકના કચરાનું ચિત્ર પણ નથી."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "આ આંકડા આ ટૂલમાં યોગદાન આપેલી ગણતરીઓના સ્વયં-પસંદ થયેલા નમૂનાનું વર્ણન કરે છે. તે કોઈ સર્વેક્ષણ નથી કે સમગ્ર ન્યૂઝીલેન્ડના ખોરાકના કચરાનું ચિત્ર પણ નથી.",
+    "Breakdowns of entries contributed to this tool": "આ ટૂલમાં યોગદાન આપેલી નોંધોની વિગતો",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s — આ ટૂલમાં યોગદાન અપાયેલો કુલ સંચિત જથ્થો"
   }
 }

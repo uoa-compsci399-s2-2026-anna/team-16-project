@@ -232,7 +232,7 @@ function renderEquivalentList(rows, definition) {
       element('span', { text: t('%(share)s share', { share: sharePercent(row?.share) }) }),
       element('span', { text: definition.count(integer(row?.count)) }),
       element('span', {
-        text: t('%(mass)s cumulative quantity entered into this tool', {
+        text: t('%(mass)s cumulative quantity contributed to this tool', {
           mass: kilograms(row?.total_kg),
         }),
       }),

@@ -201,7 +201,6 @@
     "%(count)s destination entries": "%(count)s entrées de destination",
     "%(count)s supply-chain points": "%(count)s points de chaîne d'approvisionnement",
     "%(local)s (source timestamp %(iso)s, UTC)": "%(local)s (horodatage source %(iso)s, UTC)",
-    "%(mass)s cumulative quantity entered into this tool": "%(mass)s de quantité cumulée saisie dans cet outil",
     "%(share)s share": "part de %(share)s",
     "%(title)s data": "Données : %(title)s",
     "%(title)s, charted using the API-provided share for every published bucket. The full values follow in a text list.": "%(title)s, représenté graphiquement à partir de la part fournie par l'API pour chaque catégorie publiée. Les valeurs complètes suivent sous forme de liste textuelle.",
@@ -212,7 +211,6 @@
     "All food categories": "Toutes les catégories d'aliments",
     "All sectors": "Tous les secteurs",
     "Background reading": "Lectures complémentaires",
-    "Breakdowns of entries made in this tool": "Répartitions des saisies effectuées dans cet outil",
     "Calculator": "Calculateur",
     "Calculator activity": "Activité du calculateur",
     "Code": "Code",
@@ -342,6 +340,8 @@
     "Share of destination entries across calculations contributed to this tool.": "Part des entrées de destination sur l'ensemble des calculs partagés avec cet outil.",
     "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Part des points de chaîne d'approvisionnement selon le secteur sélectionné, parmi les calculs partagés avec cet outil.",
     "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Part des points de chaîne d'approvisionnement selon la catégorie d'aliment saisie, parmi les calculs partagés avec cet outil.",
-    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Ces chiffres décrivent un échantillon auto-sélectionné de calculs partagés avec cet outil. Il ne s'agit ni d'une enquête ni d'un portrait du gaspillage alimentaire en Nouvelle-Zélande."
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Ces chiffres décrivent un échantillon auto-sélectionné de calculs partagés avec cet outil. Il ne s'agit ni d'une enquête ni d'un portrait du gaspillage alimentaire en Nouvelle-Zélande.",
+    "Breakdowns of entries contributed to this tool": "Répartitions des saisies partagées avec cet outil",
+    "%(mass)s cumulative quantity contributed to this tool": "%(mass)s de quantité cumulée partagée avec cet outil"
   }
 }

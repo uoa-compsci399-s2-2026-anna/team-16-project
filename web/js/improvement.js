@@ -102,13 +102,31 @@ function submissionEntries(state) {
   return [...state.entries, draftEntry()]
 }
 
+// Every destination at 0, not the current share. A visitor modelling an improvement is
+// choosing a new allocation, and seeding the sliders from the old one hides which numbers
+// they have actually decided — the client asked for every slider to start at 0.
+function zeroAllocations(state) {
+  return Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
+}
+
 export function openImprovement(state) {
-  const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : currentAllocationPercentages(state)
+  const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : zeroAllocations(state)
   setState({ improvementOpen: true, improvedAllocations: allocations, improvementError: null })
 }
 
+// No longer an undo — the panel does not open on the current allocation any more, so
+// there is nothing here to return *to*. It is kept as a shortcut to the current shares,
+// and the button says so: `t('Match the current allocation')`, not `t('Reset to Current')`.
 export function resetImprovement(state) {
   setState({ improvedAllocations: currentAllocationPercentages(state), improvementResult: null, improvementError: null })
+}
+
+// Each slider's own ceiling is its current value plus whatever is unallocated —
+// `headroom = 100 - allocationTotal(...)` — so dragging one destination to its own limit
+// leaves every other destination's slider unable to move at all. Recomputed after every
+// change, here and in the row template's first render, from the same two numbers.
+function sliderMax(value, headroom) {
+  return Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)
 }
 
 export function updateImprovementInput(control, state) {
@@ -120,6 +138,10 @@ export function updateImprovementInput(control, state) {
     if (input !== control) input.value = control.value
   })
   const total = allocationTotal(state.improvedAllocations)
+  const headroom = 100 - total
+  document.querySelectorAll('input[type="range"][data-improvement-code]').forEach(slider => {
+    slider.max = String(sliderMax(state.improvedAllocations[slider.dataset.improvementCode], headroom))
+  })
   const error = improvementValidation(state)
   const totalPanel = document.querySelector('.improvement-total')
   totalPanel?.classList.toggle('invalid', Boolean(error))
@@ -218,7 +240,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
   }
 }
 
-function DestinationAllocationRow(destination, current, improved) {
+function DestinationAllocationRow(destination, current, improved, max) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -230,15 +252,25 @@ function DestinationAllocationRow(destination, current, improved) {
   // keystroke path reads — so two codes that slug alike share a label association but never
   // a value.)
   const id = `improved-${slug(destination.code)}`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="100" step="0.01" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>%</span></div></div></div>`
+  // `max` is this row's `improved` value plus whatever headroom the whole allocation has
+  // left (§ `updateImprovementInput`), not the fixed `100` a slider starts and ends at
+  // regardless of its neighbours. `step="0.5"` gives the slider two hundred stops rather
+  // than ten thousand — `0.01` was "too sensitive" to land on with a pointer. The number
+  // box stays at `min="0" max="100" step="0.01"`: it is the exact-entry control, the
+  // slider is the coarse one, and a visitor typing 33.33% still needs the finer step.
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${max}" step="0.5" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>%</span></div></div></div>`
 }
 
 export function ImprovementScenario(state) {
   if (!state.improvementOpen) return `<section class="explore-improvements"><h2>${escapeHtml(t('Want to explore potential improvements?'))}</h2><p>${escapeHtml(t('Adjust how your food waste is managed to see how the environmental and economic impacts could change.'))}</p><button class="button button-primary" type="button" data-action="explore-improvements">${escapeHtml(t('Explore Improvements'))}</button></section>`
   const current = currentAllocationPercentages(state)
   const total = allocationTotal(state.improvedAllocations)
+  const headroom = 100 - total
   const error = improvementValidation(state)
-  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div></section>`
+  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => {
+    const improved = state.improvedAllocations[destination.code] ?? 0
+    return DestinationAllocationRow(destination, current[destination.code] || 0, improved, sliderMax(improved, headroom))
+  }).join('')}</div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div></section>`
 }
 
 /**

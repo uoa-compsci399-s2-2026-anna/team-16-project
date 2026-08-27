@@ -619,6 +619,18 @@ def test_the_step_position_moved_into_the_bar_and_left_no_band_behind(page_at):
     assert measured["bands"] == 0, f"a progress band is still costing height at the top: {measured}"
 
 
+def _improvement_panel(page_at):
+    """A page at step 5 (results) with the improvement panel open.
+
+    Shared by every test in this module that needs the destination-allocation
+    sliders — factored out rather than repeated so the wizard walk that reaches
+    them is written once.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page.click('[data-action="explore-improvements"]')
+    return page
+
+
 def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number(page_at):
     """A negative share of a destination is not a thing, so the minus is refused
     outright — unlike a destination amount, which permits a leading minus
@@ -631,8 +643,7 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
     PR #27 removed it, turning a typed `0.05` into `5`. The guard must block the
     minus and touch nothing else.
     """
-    page = advance_to(page_at(1278, 983, 1.25), 5)
-    page.click('[data-action="explore-improvements"]')
+    page = _improvement_panel(page_at)
     number = page.locator('.percentage-input input[type="number"]').first
 
     number.press("ControlOrMeta+A")
@@ -1080,3 +1091,69 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
     #: so nothing is rounded here either, and the result is inside §6.2's three.
     assert tonnes["entries"][0]["total_input_kg"] == "1234.5"
     CalculatePayload.model_validate(tonnes)
+
+
+def test_a_slider_cannot_be_dragged_past_what_is_left(page_at):
+    """**Item ⑨, and the rule it works within does not change.**
+
+    `improvementValidation` requires the allocation to total exactly 100% -
+    that is what keeps both scenarios moving the same mass, so net benefit
+    cannot be inflated by assuming less waste in the alternative. The client
+    confirmed it stands. What is wrong is only that a slider will happily go
+    past the remaining headroom and leave the visitor to notice.
+
+    So each slider's own `max` is its current value plus whatever is
+    unallocated. Pulling the first to 100 leaves the second unable to move
+    above 0.
+    """
+    page = _improvement_panel(page_at)
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    assert sliders.count() >= 2, "need two destinations to test headroom"
+
+    #: Everything to the first destination.
+    sliders.nth(0).evaluate("el => { el.value = '100'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert sliders.nth(1).get_attribute("max") == "0", (
+        "the second slider still offers headroom that does not exist"
+    )
+
+
+def test_the_sliders_start_at_zero_and_the_total_says_so(page_at):
+    """The client asked for "所有滑块默认都是 0".
+
+    The panel currently seeds each destination with its CURRENT share, which
+    is a reasonable starting point and is not what was asked for: a visitor
+    modelling an improvement is choosing a new allocation, and starting from
+    the old one hides which numbers they have actually decided.
+    """
+    page = _improvement_panel(page_at)
+
+    values = page.locator('input[type="range"][data-improvement-code]').evaluate_all(
+        "els => els.map(el => el.value)"
+    )
+    assert set(values) == {"0"}, f"sliders did not start at zero: {values}"
+    assert "0.00" in page.locator("#improvement-total-value").inner_text()
+
+
+def test_the_compare_button_is_still_gated_on_exactly_one_hundred(page_at):
+    """**The affirmative half, and the rule this task must not break.**
+
+    A slider that cannot overshoot could be built by clamping the total to
+    100 and enabling the button - which would let 99.99% through and quietly
+    change what the alternative scenario means. The gate stays.
+    """
+    page = _improvement_panel(page_at)
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert page.locator('[data-action="compare-improvement"]').is_disabled(), (
+        "Compare is enabled at 60% - the exactly-100 rule has been weakened"
+    )
+
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert page.locator('[data-action="compare-improvement"]').is_enabled()

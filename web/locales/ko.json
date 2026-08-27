@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "현재 폐기량을 다른 처리 경로로 다시 나눠 보세요. 폐기물 총량은 그대로 유지해야 합니다.",
     "Remaining": "남은 양",
     "Remove": "삭제",
-    "Reset to Current": "현재 값으로 되돌리기",
+    "Match the current allocation": "현재 배분에 맞추기",
     "Results": "결과",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "결과는 Kai Commitment에서 제공하고 승인한 계산 계수로 산출한 추정치입니다.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "결과는 추정치입니다. 영향 계산은 계산 API가 수행하며, 프런트엔드는 단위 변환만 처리합니다.",

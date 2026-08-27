@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "વર્તમાન કચરાના જથ્થાને જુદા જુદા ગંતવ્યોમાં ફરીથી વહેંચો. કચરાનો કુલ જથ્થો એટલો જ રહેવો જોઈએ.",
     "Remaining": "બાકી",
     "Remove": "દૂર કરો",
-    "Reset to Current": "વર્તમાન પર પાછું સેટ કરો",
+    "Match the current allocation": "વર્તમાન ફાળવણી પ્રમાણે સેટ કરો",
     "Results": "પરિણામો",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "પરિણામો અંદાજ છે, જે Kai Commitment દ્વારા આપવામાં અને મંજૂર કરવામાં આવેલાં ગણતરી પરિબળોમાંથી કાઢવામાં આવ્યાં છે.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "પરિણામો અંદાજ છે. અસરની ગણતરીઓ ગણતરી API દ્વારા આપવામાં આવે છે; આ ઇન્ટરફેસ ફક્ત એકમનું રૂપાંતર કરે છે.",

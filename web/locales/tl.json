@@ -125,7 +125,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Ipamahagi muli ang kasalukuyang dami ng basura sa iba't ibang patutunguhan. Dapat manatiling pareho ang kabuuang dami ng basura.",
     "Remaining": "Natitira",
     "Remove": "Alisin",
-    "Reset to Current": "Ibalik sa Kasalukuyan",
+    "Match the current allocation": "Itugma sa kasalukuyang paglalaan",
     "Results": "Mga Resulta",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Ang mga resulta ay tantiya lamang, mula sa mga saligang bilang na ibinigay at inaprubahan ng Kai Commitment.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Ang mga resulta ay tantiya lamang. Ang pagtuos ng epekto ay ibinibigay ng API ng pagtuos; ang harapang bahagi ay nagsasagawa lamang ng pagpapalit ng yunit.",

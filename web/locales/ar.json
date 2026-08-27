@@ -125,7 +125,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "أعد توزيع كمية الهدر الحالية على مصائر مختلفة. يجب أن تبقى الكمية الإجمالية للهدر دون تغيير.",
     "Remaining": "المتبقي",
     "Remove": "إزالة",
-    "Reset to Current": "إعادة التعيين إلى الحالي",
+    "Match the current allocation": "مطابقة التوزيع الحالي",
     "Results": "النتائج",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "النتائج تقديرية، ومستخرجة من معاملات الحساب التي تقدّمها وتعتمدها Kai Commitment.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "النتائج تقديرية. تُنفَّذ حسابات الأثر عبر واجهة الحساب البرمجية؛ أما الواجهة الأمامية فتقوم بتحويل الوحدات فقط.",

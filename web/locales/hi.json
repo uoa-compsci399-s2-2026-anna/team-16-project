@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "वर्तमान अपशिष्ट मात्रा को अलग-अलग गंतव्यों में फिर से बाँटें। अपशिष्ट की कुल मात्रा वही रहनी चाहिए।",
     "Remaining": "शेष",
     "Remove": "हटाएँ",
-    "Reset to Current": "वर्तमान पर लौटाएँ",
+    "Match the current allocation": "वर्तमान आवंटन से मिलाएं",
     "Results": "परिणाम",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "परिणाम अनुमान हैं, जो Kai Commitment द्वारा उपलब्ध कराए और स्वीकृत किए गए गणना कारकों से निकाले गए हैं।",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "परिणाम अनुमान हैं। प्रभाव की गणनाएँ गणना API से आती हैं; यह इंटरफ़ेस केवल इकाई रूपांतरण करता है।",

@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "จัดสรรปริมาณขยะปัจจุบันใหม่ไปยังปลายทางต่าง ๆ โดยปริมาณขยะรวมต้องเท่าเดิม",
     "Remaining": "คงเหลือ",
     "Remove": "ลบออก",
-    "Reset to Current": "ตั้งค่ากลับเป็นปัจจุบัน",
+    "Match the current allocation": "จับคู่กับการจัดสรรปัจจุบัน",
     "Results": "ผลลัพธ์",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "ผลลัพธ์เป็นเพียงค่าประมาณ คำนวณจากค่าตัวคูณที่ Kai Commitment ให้มาและอนุมัติ",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "ผลลัพธ์เป็นเพียงค่าประมาณ การคำนวณผลกระทบมาจาก API การคำนวณ ส่วนหน้าเว็บทำเพียงการแปลงหน่วยเท่านั้น",

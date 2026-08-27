@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Herverdeel die huidige afvalhoeveelheid oor verskillende bestemmings. Die totale hoeveelheid afval moet dieselfde bly.",
     "Remaining": "Oorblywend",
     "Remove": "Verwyder",
-    "Reset to Current": "Stel terug na Huidig",
+    "Match the current allocation": "Stem ooreen met die huidige toekenning",
     "Results": "Resultate",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Resultate is beramings wat bereken word met die faktore wat deur Kai Commitment verskaf en goedgekeur is.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Resultate is beramings. Impakberekenings word deur die berekenings-API verskaf; die voorkant doen slegs eenheidsomskakeling.",

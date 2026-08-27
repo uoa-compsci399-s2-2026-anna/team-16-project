@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "தற்போதைய கழிவு அளவை வெவ்வேறு சேருமிடங்களுக்கு மீண்டும் பிரித்து ஒதுக்குங்கள். மொத்தக் கழிவின் அளவு மாறாமல் இருக்க வேண்டும்.",
     "Remaining": "மீதம்",
     "Remove": "நீக்கு",
-    "Reset to Current": "தற்போதையதற்கு மீட்டமை",
+    "Match the current allocation": "தற்போதைய ஒதுக்கீட்டுடன் பொருத்து",
     "Results": "முடிவுகள்",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "முடிவுகள் மதிப்பீடுகளே; Kai Commitment வழங்கி அங்கீகரித்த கணக்கீட்டுக் காரணிகளிலிருந்து இவை உருவாக்கப்படுகின்றன.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "முடிவுகள் மதிப்பீடுகளே. தாக்கக் கணக்கீடுகள் கணக்கீட்டு API மூலம் வழங்கப்படுகின்றன; இந்த இடைமுகம் அலகு மாற்றத்தை மட்டுமே செய்கிறது.",

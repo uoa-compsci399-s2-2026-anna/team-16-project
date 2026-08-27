@@ -125,7 +125,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "موجودہ ضیاع کی مقدار کو مختلف منزلوں میں دوبارہ تقسیم کریں۔ ضیاع کی کل مقدار میں تبدیلی نہیں ہونی چاہیے۔",
     "Remaining": "باقی",
     "Remove": "ہٹائیں",
-    "Reset to Current": "موجودہ پر واپس لائیں",
+    "Match the current allocation": "موجودہ تقسیم سے ملائیں",
     "Results": "نتائج",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "نتائج تخمینی ہیں، جو Kai Commitment کے فراہم کردہ اور منظور شدہ حساب کے عوامل سے نکالے گئے ہیں۔",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "نتائج تخمینی ہیں۔ اثر کے حسابات حساب کی API فراہم کرتی ہے؛ فرنٹ اینڈ صرف یونٹ کی تبدیلی کرتا ہے۔",

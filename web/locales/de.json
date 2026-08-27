@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Verteilen Sie die aktuelle Abfallmenge neu auf andere Entsorgungswege. Die Gesamtmenge des Abfalls sollte unverändert bleiben.",
     "Remaining": "Verbleibend",
     "Remove": "Entfernen",
-    "Reset to Current": "Auf aktuell zurücksetzen",
+    "Match the current allocation": "Der aktuellen Verteilung entsprechen",
     "Results": "Ergebnisse",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Die Ergebnisse sind Schätzungen und beruhen auf den von Kai Commitment bereitgestellten und freigegebenen Berechnungsfaktoren.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Die Ergebnisse sind Schätzungen. Die Wirkungsberechnungen liefert die Berechnungs-API; die Oberfläche nimmt nur die Einheitenumrechnung vor.",

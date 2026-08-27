@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Phân bổ lại lượng bỏ đi hiện tại cho các điểm đến khác nhau. Tổng lượng bỏ đi phải giữ nguyên.",
     "Remaining": "Còn lại",
     "Remove": "Xóa",
-    "Reset to Current": "Đặt lại về Hiện tại",
+    "Match the current allocation": "Khớp với phân bổ hiện tại",
     "Results": "Kết quả",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Kết quả chỉ là ước tính, được tính từ các hệ số do Kai Commitment cung cấp và phê duyệt.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Kết quả chỉ là ước tính. Phần tính tác động do API tính toán cung cấp; giao diện chỉ thực hiện việc quy đổi đơn vị.",

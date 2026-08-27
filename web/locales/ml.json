@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "നിലവിലെ മാലിന്യ അളവ് വ്യത്യസ്ത ലക്ഷ്യസ്ഥാനങ്ങളിലേക്ക് വീണ്ടും വിഭജിക്കുക. ആകെ മാലിന്യത്തിന്റെ അളവ് മാറാതെ നിൽക്കണം.",
     "Remaining": "ബാക്കി",
     "Remove": "നീക്കം ചെയ്യുക",
-    "Reset to Current": "നിലവിലേതിലേക്ക് പുനഃസജ്ജമാക്കുക",
+    "Match the current allocation": "നിലവിലെ വിഹിതം ഉപയോഗിക്കുക",
     "Results": "ഫലങ്ങൾ",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "ഫലങ്ങൾ കണക്കാക്കിയവയാണ്; Kai Commitment നൽകി അംഗീകരിച്ച കണക്കുകൂട്ടൽ ഘടകങ്ങളിൽനിന്നാണ് ഇവ ഉണ്ടാക്കിയത്.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "ഫലങ്ങൾ കണക്കാക്കിയവയാണ്. ആഘാത കണക്കുകൂട്ടലുകൾ കണക്കുകൂട്ടൽ API നൽകുന്നു; ഈ ഇന്റർഫേസ് യൂണിറ്റ് പരിവർത്തനം മാത്രമേ ചെയ്യുന്നുള്ളൂ.",

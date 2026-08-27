@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "現在の廃棄量を別の廃棄先に振り分け直します。廃棄の総量は変えないでください。",
     "Remaining": "残り",
     "Remove": "削除",
-    "Reset to Current": "現状に戻す",
+    "Match the current allocation": "現在の割り当てに合わせる",
     "Results": "結果",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "結果は推計値であり、Kai Commitment が提供し承認した計算係数に基づいています。",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "結果は推計値です。影響の計算は計算 API が行い、フロントエンドは単位換算のみを行います。",

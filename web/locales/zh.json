@@ -128,7 +128,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "把当前的浪费量重新分配到不同的去向。浪费总量应保持不变。",
     "Remaining": "剩余",
     "Remove": "删除",
-    "Reset to Current": "恢复为当前值",
+    "Match the current allocation": "与当前分配一致",
     "Results": "结果",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "结果为估算值，依据 Kai Commitment 提供并审核的计算因子得出。",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "结果为估算值。影响计算由计算 API 完成；前端只负责单位换算。",

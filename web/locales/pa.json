@@ -126,7 +126,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "ਮੌਜੂਦਾ ਬਰਬਾਦੀ ਦੀ ਮਾਤਰਾ ਨੂੰ ਵੱਖ-ਵੱਖ ਮੰਜ਼ਿਲਾਂ ਵਿੱਚ ਦੁਬਾਰਾ ਵੰਡੋ। ਬਰਬਾਦੀ ਦੀ ਕੁੱਲ ਮਾਤਰਾ ਉਹੀ ਰਹਿਣੀ ਚਾਹੀਦੀ ਹੈ।",
     "Remaining": "ਬਾਕੀ",
     "Remove": "ਹਟਾਓ",
-    "Reset to Current": "ਮੌਜੂਦਾ ਉੱਤੇ ਮੁੜ ਸੈੱਟ ਕਰੋ",
+    "Match the current allocation": "ਮੌਜੂਦਾ ਵੰਡ ਨਾਲ ਮੇਲ ਕਰੋ",
     "Results": "ਨਤੀਜੇ",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "ਨਤੀਜੇ ਅਨੁਮਾਨ ਹਨ, ਜੋ Kai Commitment ਵੱਲੋਂ ਦਿੱਤੇ ਅਤੇ ਪ੍ਰਵਾਨ ਕੀਤੇ ਗਣਨਾ ਕਾਰਕਾਂ ਤੋਂ ਤਿਆਰ ਕੀਤੇ ਗਏ ਹਨ।",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "ਨਤੀਜੇ ਅਨੁਮਾਨ ਹਨ। ਪ੍ਰਭਾਵ ਦੀ ਗਣਨਾ ਗਣਨਾ API ਕਰਦੀ ਹੈ; ਫਰੰਟ ਐਂਡ ਸਿਰਫ਼ ਇਕਾਈ ਬਦਲਦਾ ਹੈ।",

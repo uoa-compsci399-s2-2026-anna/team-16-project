@@ -124,7 +124,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Перераспределите текущий объём отходов между другими способами утилизации. Общий объём отходов должен остаться прежним.",
     "Remaining": "Осталось",
     "Remove": "Удалить",
-    "Reset to Current": "Вернуть к текущему",
+    "Match the current allocation": "Совместить с текущим распределением",
     "Results": "Результаты",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Результаты являются оценкой и получены на основе коэффициентов расчёта, предоставленных и утверждённых Kai Commitment.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Результаты являются оценкой. Расчёты воздействия выполняются через API расчёта; интерфейс выполняет только пересчёт единиц измерения.",

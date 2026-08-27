@@ -100,10 +100,18 @@ const hasValue = value => value !== null && value !== undefined
  * (§4.5): a figure over 100% is a visitor's own typo showing through, not a rendering
  * fault, and nothing here is a bar or a width that a figure over 100% could overflow.
  *
- * The saving carries its own caveat sentence beneath it rather than a tooltip a
- * screenshot would crop away: it is a nominal per-entry rate against mass moved to a
- * *prevention* destination specifically (§4.5), not a market valuation, and not what a
- * blended rate across the whole form would give.
+ * **Three figures, not four: `saving_nzd` is not one of them, and that is the fix
+ * rather than a deletion.** The three above are properties of the *current* scenario
+ * alone — what the visitor said their food was worth — and this block is fed by the
+ * Calculate button, which sends `alternative: null` for every entry
+ * (`submission.js`). §4.5 makes `saving_nzd` `None` "when no entry carries an
+ * alternative", so the row this block used to carry could not be reached by any
+ * visitor: the response that does hold a saving is Compare Impact's, and it lands on
+ * `state.improvementResult`. The saving is now rendered by `ComparisonResults`
+ * (`improvement.js`), beside the comparison that produced it, and written to the
+ * export by `comparisonLines` below, under the same heading as that comparison.
+ * Teaching this block to read a second response would have put a figure about the
+ * improved scenario inside a section describing the current one.
  */
 function moneySummary(totals) {
   const money = totals.money
@@ -118,18 +126,16 @@ function moneySummary(totals) {
   if (hasValue(money.wasted_share_percent)) {
     rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${formatNumber(number(money.wasted_share_percent), 2)}%</span></div>`)
   }
-  let saving = ''
-  if (hasValue(money.saving_nzd)) {
-    saving = `<div class="money-row money-saving"><span class="money-label">${escapeHtml(t('Value of food not wasted at all'))}</span><span class="money-value">${nzd(money.saving_nzd)}</span></div><p class="money-caveat">${escapeHtml(t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.'))}</p>`
-  }
-  if (!rows.length && !saving) return ''
-  return `<div class="money-summary"><h3>${escapeHtml(t('The money'))}</h3><p class="result-note">${escapeHtml(t("Figures the calculator did not derive: what you typed for value, summed by the calculation service."))}</p><div class="money-rows">${rows.join('')}${saving}</div></div>`
+  if (!rows.length) return ''
+  return `<div class="money-summary"><h3>${escapeHtml(t('The money'))}</h3><p class="result-note">${escapeHtml(t("Figures the calculator did not derive: what you typed for value, summed by the calculation service."))}</p><div class="money-rows">${rows.join('')}</div></div>`
 }
 
 // `moneySummary`'s figures, in text, worded to match the rows on screen rather than
-// re-deriving them: same fields, same `null`-means-absent rule, same caveat beside the
-// saving. Returns `[]` (no heading printed) when the block is `null` or carries nothing
-// - a heading over an empty list is the "—" this module exists to avoid.
+// re-deriving them: same three fields, same `null`-means-absent rule. Returns `[]` (no
+// heading printed) when the block is `null` or carries nothing - a heading over an empty
+// list is the "—" this module exists to avoid. The saving is not here for the reason it
+// is not on screen here either: it belongs to the comparison, and `savingLines` below
+// writes it under that comparison's own heading.
 function moneyLines(totals) {
   const money = totals.money
   if (!money) return []
@@ -137,10 +143,6 @@ function moneyLines(totals) {
   if (hasValue(money.total_value_nzd)) lines.push(`  - ${t('Total value of food handled')}: ${nzd(money.total_value_nzd)}`)
   if (hasValue(money.wasted_value_nzd)) lines.push(`  - ${t('Value of food wasted')}: ${nzd(money.wasted_value_nzd)}`)
   if (hasValue(money.wasted_share_percent)) lines.push(`  - ${t('Share of value wasted')}: ${formatNumber(number(money.wasted_share_percent), 2)}%`)
-  if (hasValue(money.saving_nzd)) {
-    lines.push(`  - ${t('Value of food not wasted at all')}: ${nzd(money.saving_nzd)}`)
-    lines.push(`    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`)
-  }
   if (!lines.length) return []
   return ['', t('The money'), ...lines]
 }
@@ -258,10 +260,17 @@ function breakdowns(entryResults, totals, taxonomy) {
   }
   const totalsRows = destinationRows(totals.current || {}, taxonomy)
   const groups = destinationGroups(entryResults, totalsRows, taxonomy)
+  // The note explains a relationship between two levels of figures, so it is printed
+  // only where that relationship exists: a group fed by one entry now prints its
+  // figures once (see `destinationTree`), and with one entry — the commonest journey
+  // by far — *every* group is such a group. Printing the sentence there had the page
+  // saying the rows "add up to the total rather than repeat it" directly beneath rows
+  // that repeated it exactly.
+  const anySplit = groups.some(group => group.stages.length > 1)
   return {
     stage: { sections: [{ rows: stage }] },
     destination: groups.length
-      ? { groups, note: t("The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.") }
+      ? { groups, note: anySplit ? t("The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.") : '' }
       : { unavailable: t('Waste-destination breakdown is not available because no destination data was provided.') },
     food: food.length ? { sections: [{ rows: food }] } : { unavailable: t('Food-type breakdown is not available because no food category data was provided.') },
   }
@@ -344,7 +353,16 @@ function destinationRowFigures(row, taxonomy) {
 // which destination, which stage of the supply chain sent it there, what food it was.
 function destinationTree(groups, taxonomy) {
   return groups.map(group => {
-    const stages = group.stages.map(stage => `<li class="destination-group__stage"><div class="destination-group__stage-row"><strong>${escapeHtml(stage.label)}</strong><span>${formatNumber(stage.row.kilograms, 3)} kg</span></div><div class="destination-group__stage-figures">${destinationRowFigures(stage.row, taxonomy)}</div><ul class="destination-group__foods"><li class="destination-group__food">${escapeHtml(stage.foodLabel)}</li></ul></li>`).join('')
+    // **One contributing entry means one set of figures.** §3 rule 2 builds the
+    // group's total by rolling the entries' own `by_destination` rows up, so when
+    // exactly one entry used this destination the roll-up *is* that entry's row —
+    // identical by construction, at every metric. Printing both put the same
+    // numbers on screen twice under a note saying they were different, in the
+    // default single-entry journey. The stage and its food category still render:
+    // "which stage sent it there, what food it was" are two of the three questions
+    // this tree exists to answer, and neither is a repeated figure.
+    const repeated = group.stages.length === 1
+    const stages = group.stages.map(stage => `<li class="destination-group__stage"><div class="destination-group__stage-row"><strong>${escapeHtml(stage.label)}</strong>${repeated ? '' : `<span>${formatNumber(stage.row.kilograms, 3)} kg</span>`}</div>${repeated ? '' : `<div class="destination-group__stage-figures">${destinationRowFigures(stage.row, taxonomy)}</div>`}<ul class="destination-group__foods"><li class="destination-group__food">${escapeHtml(stage.foodLabel)}</li></ul></li>`).join('')
     return `<article class="destination-group" data-destination="${escapeHtml(group.code)}"><div class="destination-group__header"><h3 class="destination-group__name">${escapeHtml(group.label)}</h3><p class="destination-group__total">${formatNumber(group.totalsRow.kilograms, 3)} kg</p></div><div class="destination-group__figures">${destinationRowFigures(group.totalsRow, taxonomy)}</div><ol class="destination-group__stages">${stages}</ol></article>`
   }).join('')
 }
@@ -400,6 +418,23 @@ const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario,
 // response — §6.2 computes `current − alternative` per metric and the browser must not
 // subtract the two itself (§7.6.1), which is the defect `improvement.js` already had removed
 // from the screen and which this file must not reintroduce on its way to a file.
+/**
+ * §4.5's saving, in text, in the two lines the comparison screen shows it in.
+ *
+ * Same fields and the same `null`-means-absent rule as `moneyLines`, and the caveat
+ * travels with the figure here exactly as it does on screen: the rate is nominal —
+ * `wasted_value_nzd ÷ that entry's current mass` — so a sentence saying so has to be
+ * as hard to crop away in a text file as it is in a screenshot.
+ */
+function savingLines(totals) {
+  const saving = totals?.money?.saving_nzd
+  if (!hasValue(saving)) return []
+  return [
+    `  - ${t('Value of food not wasted at all')}: ${nzd(saving)}`,
+    `    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`,
+  ]
+}
+
 function comparisonLines(state) {
   const totals = state.improvementResult?.totals
   if (!totals?.alternative) return []
@@ -422,8 +457,14 @@ function comparisonLines(state) {
     const figure = value => `${formatNumber(number(value), precision)} ${unit}`.trimEnd()
     lines.push(`  - ${definition?.name || code}: ${figure(cell.total)} → ${figure(improved.total)} (${change})`)
   }
-  if (!lines.length) return []
-  return ['', t('Improved scenario (Current → Improved)'), ...lines]
+  // §4.5's saving is a figure about *this* comparison — `rate x diverted mass`, and
+  // `diverted` is `current − alternative` — so it is written here rather than beside the
+  // three current-scenario money figures `moneyLines` prints. It is also why the heading
+  // is printed when `lines` is empty but a saving is present: a response can carry a
+  // saving and no comparable metric, and dropping the heading would strand the figure.
+  const saving = savingLines(totals)
+  if (!lines.length && !saving.length) return []
+  return ['', t('Improved scenario (Current → Improved)'), ...lines, ...saving]
 }
 
 /**

@@ -15,6 +15,20 @@ const number = value => (value === null || value === undefined || value === '' ?
 // zero here, and that is the only reason a `|| 0` is correct anywhere in this module.
 const typed = value => Number(value) || 0
 
+// §4.5's two-decimal NZD string, displayed. A local copy rather than an import, for the
+// reason `number`, `typed` and `MASS_METRIC` above are local copies: `results.js` already
+// imports this module and the import back would close a cycle.
+//
+// **`hasValue` is not `Boolean(value)` and must never be relaxed into it.** §4.5 makes
+// every money field `null` unless everything it derives from was supplied, and `null` has
+// to render as *nothing* — a computed zero would read as "you saved nothing" when what
+// happened is that nobody priced the food. `nzd(null)` prints `NZ$Not available`, because
+// `formatNumber` answers a non-finite input that way, so a guard that lets `null` through
+// puts that string on a client-facing page. `tests/web/test_improvement_saving_browser.py`
+// drives the unpriced journey against the real API for exactly this.
+const nzd = value => `NZ$${formatNumber(number(value), 2)}`
+const hasValue = value => value !== null && value !== undefined
+
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
 
 // §7.3: `units.js` holds the front end's only arithmetic, and this reads it rather than
@@ -353,10 +367,34 @@ function equivalentComparison(rows) {
   return `<p class="comparison-equivalent-note">${escapeHtml(t('Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.'))}</p><ul class="comparison-equivalents">${rows.map(row => `<li><div class="comparison-values">${side(t('Current'), row.current)}<span class="comparison-arrow" aria-hidden="true">→</span>${side(t('Improved'), row.improved)}</div></li>`).join('')}</ul>`
 }
 
+/**
+ * §4.5's saving, rendered where the scenario that produced it is.
+ *
+ * **It used to live in `results.js`'s money block and could not be reached.** That block
+ * reads `state.result`, and the Calculate button sends `alternative: null` for every
+ * entry, so §4.5's "`None` when no entry carries an alternative" made `saving_nzd` null
+ * on every response a visitor could produce. The saving is a property of the comparison —
+ * `Σ (entry's own value per kilogram × that entry's diverted mass)`, and `diverted` is
+ * `current − alternative` — so it belongs beside the comparison, not beside three figures
+ * describing the current scenario alone.
+ *
+ * The caveat rides directly beneath it rather than in a tooltip a screenshot would crop
+ * away: the rate is nominal, derived from two totals the visitor typed for that entry, and
+ * copy presenting it as a measured valuation claims a precision the input does not carry.
+ *
+ * The classes are `results.js`'s own `.money-row` / `.money-saving` / `.money-caveat`, so
+ * the figure reads as the same kind of thing in both places rather than as a new widget.
+ */
+function comparisonSaving(result) {
+  const saving = result.totals?.money?.saving_nzd
+  if (!hasValue(saving)) return ''
+  return `<div class="comparison-saving"><div class="money-row money-saving"><span class="money-label">${escapeHtml(t('Value of food not wasted at all'))}</span><span class="money-value">${nzd(saving)}</span></div><p class="money-caveat">${escapeHtml(t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.'))}</p></div>`
+}
+
 export function ComparisonResults(state) {
   const result = state.improvementResult
   if (!result?.totals?.alternative) return ''
   const data = comparisonData(result)
   const mock = result.factor_set?.is_mock
-  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">${escapeHtml(t('Current Results → Improved Scenario'))}</p><h2 id="comparison-results-title">${escapeHtml(t('Compare Results'))}</h2>${mock ? `<p class="comparison-estimate-note">${escapeHtml(t('Demonstration only — this comparison uses mock factors and is not a verified impact result.'))}</p>` : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>${escapeHtml(t('Tangible equivalents'))}</h2>${equivalentComparison(data.equivalences)}</section></section>`
+  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">${escapeHtml(t('Current Results → Improved Scenario'))}</p><h2 id="comparison-results-title">${escapeHtml(t('Compare Results'))}</h2>${mock ? `<p class="comparison-estimate-note">${escapeHtml(t('Demonstration only — this comparison uses mock factors and is not a verified impact result.'))}</p>` : ''}${ComparisonSummary(data, state.taxonomy)}${comparisonSaving(result)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>${escapeHtml(t('Tangible equivalents'))}</h2>${equivalentComparison(data.equivalences)}</section></section>`
 }

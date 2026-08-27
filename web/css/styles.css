@@ -880,6 +880,14 @@ tbody th { font-weight: 700; }
 .comparison-results { background: #fff; }
 .comparison-estimate-note { padding: 14px 16px; border-radius: 10px; color: var(--kai-kale); background: rgba(255, 215, 110, 0.28); font-weight: 700; }
 .comparison-summary { margin: 24px 0; padding: 22px; border-radius: 14px; background: rgba(40, 200, 130, 0.12); }
+/* §4.5's saving, beside the comparison that produced it rather than in the money block
+   above - see `comparisonSaving` in `improvement.js`. It borrows `.money-row` and
+   `.money-caveat` from that block so the figure reads as the same kind of thing in both
+   places; what it does not borrow is `.money-summary`'s top rule, because here it sits
+   directly under `.comparison-summary` and a second horizontal line between the two
+   would read as a section break where there is none. */
+.comparison-saving { margin: -8px 0 24px; padding-inline: 22px; }
+.comparison-saving .money-saving { margin-top: 0; border-top: 0; }
 .comparison-summary ul { margin-bottom: 0; padding-inline-start: 22px; }
 .comparison-summary li { margin: 8px 0; }
 .impact-comparison-grid { display: grid; gap: 16px; }

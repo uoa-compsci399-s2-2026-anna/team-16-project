@@ -1,6 +1,6 @@
 import { escapeHtml, formatNumber, stepNav } from './view.js'
 import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
-import { entryTotal, kgToTonnes } from './units.js'
+import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
@@ -280,6 +280,37 @@ function comparisonLines(state) {
  * container, and appends the kilograms `entryTotal` derives — never the kilograms alone,
  * because the number a reader can check against their own bins is the count.
  */
+/**
+ * One destination row of one entry, in the unit **that row** was measured in.
+ *
+ * `${qtyInput} ${entry.totalUnit}` stood here, and since a row carries its own unit that
+ * was a figure labelled with somebody else's: 500 kg entered against an entry measured in
+ * tonnes exported as `500.00 tonnes`, and half a tonne against an entry measured in
+ * kilograms exported as `0.50 kilograms`. This file's own note says the report exists to
+ * be attached to an email and believed, which is why a wrong label on it is not a cosmetic
+ * defect — it is a thousandfold error in a document written to be trusted.
+ *
+ * A row measured in anything but kilograms carries the kilograms too, the way
+ * `wasteAmountLine` does for a container: `0.50 tonnes` is what the visitor said and
+ * `(500.000 kg)` is what was calculated from it, and a reader holding only this file needs
+ * both to check one against the other. `kg` is not translated — §7.7.7, metric units are
+ * international notation — and a container's `label` is staff-typed and published as
+ * written.
+ */
+function destinationLine(line, entry, taxonomy) {
+  const unit = line.unit || entry.totalUnit
+  const destination = findByCode(taxonomy.destinations, line.destination)?.name || line.destination
+  const amount = typed(line.qtyInput).toFixed(2)
+  const presets = taxonomy.unit_presets || []
+  const kilograms = rowKgString(line.qtyInput, unit, presets)
+  if (isPresetUnit(unit)) {
+    const preset = findByCode(presets, presetUnitCode(unit))
+    return `  - ${destination}: ${amount} × ${preset?.label || presetUnitCode(unit)}${kilograms ? ` (${kilograms} kg)` : ''}`
+  }
+  if (unit === 'tonnes') return `  - ${destination}: ${amount} ${t('tonnes')} (${kilograms} kg)`
+  return `  - ${destination}: ${amount} ${t('kilograms')}`
+}
+
 function wasteAmountLine(entry, taxonomy) {
   if (entry.measureMode !== 'container') {
     return `${t('Waste amount')}: ${typed(entry.totalAmount).toFixed(2)} ${t(entry.totalUnit === 'tonnes' ? 'tonnes' : 'kilograms')}`
@@ -301,7 +332,7 @@ export function buildResultsReport(state) {
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
     const sector = findByCode(state.taxonomy.sectors, entry.sector)
     const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)
-    const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => `  - ${findByCode(state.taxonomy.destinations, line.destination)?.name || line.destination}: ${typed(line.qtyInput).toFixed(2)} ${entry.totalUnit}`)
+    const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => destinationLine(line, entry, state.taxonomy))
     const scenario = response?.current || {}
     const impact = metricLines(scenario, state.taxonomy, '  - ')
     const byDestination = destinationImpactLines(scenario, state.taxonomy)

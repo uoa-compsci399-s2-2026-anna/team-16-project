@@ -26,6 +26,14 @@ export const state = {
   // reads it, it travels only so the results page can state waste as a share
   // of production.
   totalInputKg: '',
+  // Item ⑤: what the stage's production was worth, and what the wasted portion
+  // was worth, both in New Zealand dollars. Statistics only - §6.2's engine
+  // never reads either, and cost price versus retail price is the client's own
+  // question, not this calculator's. Optional and carried raw, like
+  // `totalInputKg` above; an empty string must reach the API as absent, never
+  // as zero, so nothing here ever defaults to `'0'`.
+  totalValueNzd: '',
+  wastedValueNzd: '',
   // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
   // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
@@ -105,6 +113,8 @@ export function resetCalculator() {
     unitPreset: null,
     unitCount: '',
     totalInputKg: '',
+    totalValueNzd: '',
+    wastedValueNzd: '',
     current: [],
     entries: [],
     result: null,

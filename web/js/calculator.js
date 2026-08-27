@@ -193,8 +193,8 @@ const allocatedAmount = lines => lines.reduce((sum, line) => sum + (Number(line.
 // `unitPreset` and `unitCount` are here for the same reason `totalAmount` is: they are
 // something the visitor entered, so the Clear button has to appear once either exists.
 // `totalInputKg` joins them for the same reason.
-const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.totalInputKg || state.current.some(line => line.qtyInput !== '') || state.result)
-const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, totalInputKg: state.totalInputKg, current: state.current.map(line => ({ ...line })) })
+const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.totalInputKg || state.totalValueNzd || state.wastedValueNzd || state.current.some(line => line.qtyInput !== '') || state.result)
+const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, totalInputKg: state.totalInputKg, totalValueNzd: state.totalValueNzd, wastedValueNzd: state.wastedValueNzd, current: state.current.map(line => ({ ...line })) })
 
 /**
  * The introduction screen: `state.step === -1`, and the first thing a visitor meets.
@@ -305,6 +305,15 @@ function containerTotalText() {
  * by the element that is always on screen. Under the input it is beside the number it
  * describes at every width, and it is the field's own last child so nothing separates
  * "2" from "about 139.200 kg".
+ *
+ * **The two money fields are wrapped in their own `.money-fields` group, not
+ * dropped into the three-column grid as two more items.** Five fields in three
+ * columns would leave the second row two-of-three full — a gap where the third
+ * column used to be, on a row holding the one pair here that is not three
+ * independent questions: the wasted figure is a part of the produced one. The
+ * group is a single item in `.amount-grid`'s row, spanning the full row width
+ * at `min-width: 650px`, and lays its own two children out 1fr/1fr inside
+ * itself — full-width and paired, instead of ragged and scattered.
  */
 function amountStep() {
   const container = state.measureMode === 'container'
@@ -324,7 +333,7 @@ function amountStep() {
     // consequence of that rule.
     const value = PRESET_OPTION + preset.code
     return `<option value="${escapeHtml(value)}" ${unitSelectValue() === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
-  }).join('')}</optgroup>` : ''}</select></div><div class="form-field"><label for="total-input">${escapeHtml(t('Total amount produced'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalInputKg)}"></div></div>${stepNav({ step: 2, back: 1 })}</section>`
+  }).join('')}</optgroup>` : ''}</select></div><div class="form-field"><label for="total-input">${escapeHtml(t('Total amount produced'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalInputKg)}"></div><div class="form-field-group money-fields"><div class="form-field"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Statistics only — never used in your results.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}"></div><div class="form-field"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Statistics only — never used in your results.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}"></div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**
@@ -679,11 +688,11 @@ function updateLine(control) {
 }
 
 function loadEntry(entry) {
-  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', totalInputKg: entry.totalInputKg || '', current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
+  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', totalInputKg: entry.totalInputKg || '', totalValueNzd: entry.totalValueNzd || '', wastedValueNzd: entry.wastedValueNzd || '', current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
 }
 
 function clearDraft() {
-  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', totalInputKg: '', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', totalInputKg: '', totalValueNzd: '', wastedValueNzd: '', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
 export function render(main) {
@@ -860,6 +869,8 @@ export function bindCalculator(main, retryTaxonomy) {
       target.id === 'total-waste' ||
       target.id === 'unit-count' ||
       target.id === 'total-input' ||
+      target.id === 'total-value' ||
+      target.id === 'wasted-value' ||
       target.matches('.percentage-input [data-improvement-code]')
     ) {
       event.preventDefault()
@@ -879,6 +890,8 @@ export function bindCalculator(main, retryTaxonomy) {
       state.error = null
     }
     if (target.id === 'total-input') state.totalInputKg = target.value
+    if (target.id === 'total-value') state.totalValueNzd = target.value
+    if (target.id === 'wasted-value') state.wastedValueNzd = target.value
     if (target.id === 'unit-count') updateContainerCount(target)
     if (target.matches('[data-line-field="amount"]')) {
       // `beforeinput` cannot always be the whole story. A lone "-" leaves

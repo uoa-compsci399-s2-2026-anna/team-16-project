@@ -631,3 +631,45 @@ def test_the_production_total_is_optional_and_continue_still_works(page_at):
     assert page.locator(".destination-row").count() > 0, (
         "an empty production total blocked the step it is optional on"
     )
+
+
+def test_step_three_asks_for_the_two_money_figures(page_at):
+    """Item ⑤. Both optional, both in New Zealand dollars, and both
+    STATISTICS ONLY - the client's ruling on open item O-2 is that the value
+    of the food does not enter the main formula and that cost price versus
+    retail price is their own client's question.
+
+    The currency is in the label rather than in a symbol beside the box: a
+    bare `$` is ambiguous across the twenty languages this ships in, and the
+    figure is only ever NZD.
+    """
+    #: `2`, not the UI's own "Step 3" label - see the comment on
+    #: `test_step_three_asks_what_the_stage_put_through` above, which is the
+    #: same amount screen these two fields join.
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    for field_id in ("total-value", "wasted-value"):
+        assert page.locator(f"#{field_id}").count() == 1, f"no #{field_id}"
+        label = page.locator(f'label[for="{field_id}"]').inner_text()
+        assert "optional" in label.lower(), f"{field_id} is not marked optional"
+        assert "NZ$" in label or "NZD" in label, (
+            f"{field_id} does not say which currency: {label!r}"
+        )
+
+
+def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at):
+    """The same guard `#total-waste` and `#unit-count` already have.
+
+    A negative value would reach stage one's `ge=0` and come back a 400 for
+    the whole submission, after the visitor had left the screen the figure was
+    on. The minus is refused at `beforeinput`, which is where the other two
+    refuse it.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator("#wasted-value")
+
+    field.press_sequentially("-500")
+
+    assert field.input_value() == "500", (
+        f"a minus reached the money field: {field.input_value()!r}"
+    )

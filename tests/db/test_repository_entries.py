@@ -46,6 +46,11 @@ def _entry(sector="processing", food_category="dairy", current=(("landfill", "10
         current=tuple(_line(*pair) for pair in current),
         alternative=None if alternative is None
         else tuple(_line(*pair) for pair in alternative),
+        #: v1.48. `EntryInput` defaults all three to `None`; a hand-built
+        #: stand-in has to state that default explicitly.
+        total_input_kg=None,
+        total_value_nzd=None,
+        wasted_value_nzd=None,
     )
 
 

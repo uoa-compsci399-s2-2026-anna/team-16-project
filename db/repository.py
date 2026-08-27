@@ -6,7 +6,7 @@ import copy
 import enum
 import threading
 import uuid
-from collections.abc import Callable, Sequence
+from collections.abc import Callable
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -989,27 +989,23 @@ def upsert_submission(
     factor_set_id: int,
     *,
     time_frame: str | None = None,
-    entry_payloads: Sequence[Any] | None = None,
 ) -> tuple[int, str]:
     """Contract §5.3. One call, one submission, N entries.
 
     `req` is a §3 `CalculationRequest` and carries `req.entries`, each one an
-    `EntryInput` with its own `sector_code`, `food_category_code` and its own
-    `current` / `alternative` tuples of `ScenarioLine`. There is no
+    `EntryInput` with its own `sector_code`, `food_category_code`, its own
+    `current` / `alternative` tuples of `ScenarioLine`, and (v1.48) its own
+    `total_input_kg`, `total_value_nzd` and `wasted_value_nzd`. There is no
     `req.current`: `ScenarioInput` was deleted in v1.2 precisely because an
     integration that keeps reading `req.current.sector_code` persists one row
     for a five-entry calculation and nothing raises.
 
-    `time_frame` and `entry_payloads` are v1.48's addition and are kept off
-    `req` deliberately: `req` is `§3`'s `CalculationRequest`, which the engine
-    also consumes, and the period and the two money figures are not engine
-    inputs (a later task teaches `EntryInput` the three per-entry numbers, but
-    never `time_frame` -- the engine must never be handed a value it is
-    required not to use). `entry_payloads`, when given, is the wire request's
-    own `entries` in the same order as `req.entries` -- the caller's
-    `EntryPayload` objects, read here only for `total_input_kg`,
-    `total_value_nzd` and `wasted_value_nzd`. Both default to `None` so every
-    existing caller that builds `req` by hand keeps working unchanged.
+    `time_frame` is kept off `req` deliberately: `req` is §3's
+    `CalculationRequest`, which the engine also consumes, and the period is
+    not an engine input -- the engine must never be handed a value it is
+    required not to use. The three per-entry numbers, by contrast, are read
+    straight off `req.entries[i]`: `EntryInput` carries them (v1.48), so there
+    is no second, wire-shaped object to pair up by position any more.
 
     Does **not** set `is_public_contributed`: it defaults false at the schema
     and only the opt-in route Task 6 owns may change it.
@@ -1067,15 +1063,6 @@ def upsert_submission(
             if entry.food_category_code
             else None
         )
-        # `entry_payloads` is the wire request's own `entries`, in the same
-        # order as `req.entries` -- both are built from the one payload in
-        # request order (§2.3), so pairing by position is exact. `req` itself
-        # does not carry these three numbers yet: they are not engine inputs.
-        entry_payload = (
-            entry_payloads[sort_order]
-            if entry_payloads is not None and sort_order < len(entry_payloads)
-            else None
-        )
         lines = [
             SubmissionLine(
                 scenario=scenario_name,
@@ -1101,19 +1088,13 @@ def upsert_submission(
                 #: the rows on the user's screen; id order cannot be relied on
                 #: because the rebuild above reassigns ids.
                 sort_order=sort_order,
-                #: v1.48. `None` is not zero (see `EntryPayload`): a caller
-                #: that supplies no `entry_payloads` -- the existing
-                #: hand-built `req` callers -- gets `None` for all three,
-                #: which is the same "not stated" the schema already means.
-                total_input_kg=(
-                    entry_payload.total_input_kg if entry_payload is not None else None
-                ),
-                total_value_nzd=(
-                    entry_payload.total_value_nzd if entry_payload is not None else None
-                ),
-                wasted_value_nzd=(
-                    entry_payload.wasted_value_nzd if entry_payload is not None else None
-                ),
+                #: v1.48. `None` is not zero (see `EntryInput`): a caller that
+                #: builds `req` by hand and leaves these unset gets `None` for
+                #: all three, which is the same "not stated" the schema
+                #: already means.
+                total_input_kg=entry.total_input_kg,
+                total_value_nzd=entry.total_value_nzd,
+                wasted_value_nzd=entry.wasted_value_nzd,
                 lines=lines,
             )
         )

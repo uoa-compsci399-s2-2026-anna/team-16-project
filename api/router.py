@@ -241,7 +241,6 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                 engine_request,
                 factor_set_id,
                 time_frame=payload.time_frame,
-                entry_payloads=payload.entries,
             )
         except FactorSetNotFoundError as exc:
             raise _repository_problem(exc) from exc

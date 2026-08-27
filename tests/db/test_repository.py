@@ -53,6 +53,11 @@ def _request(current="10", alternative="999", food_category="dairy"):
         food_category_code=food_category,
         current=(line(current),),
         alternative=(line(alternative),) if alternative is not None else None,
+        #: v1.48. `EntryInput` defaults all three to `None`; a hand-built
+        #: stand-in has to state that default explicitly.
+        total_input_kg=None,
+        total_value_nzd=None,
+        wasted_value_nzd=None,
     )
     return SimpleNamespace(entries=(entry,), gwp_horizon=100)
 

@@ -319,6 +319,19 @@
     "Food Waste Impact Calculator": "کھانے کے ضیاع کے اثر کا کیلکولیٹر",
     "For New Zealand food businesses": "نیوزی لینڈ کے کھانے پینے کے کاروباروں کے لیے",
     "Start calculator": "کیلکولیٹر شروع کریں",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "اپنے کھانے کے ضیاع کی پیمائشوں کو اُن کے ممکنہ ماحولیاتی اور مالی اثر کی واضح تصویر میں بدلیں۔"
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "اپنے کھانے کے ضیاع کی پیمائشوں کو اُن کے ممکنہ ماحولیاتی اور مالی اثر کی واضح تصویر میں بدلیں۔",
+    "(optional)": "(اختیاری)",
+    "Total amount produced": "پیدا کی گئی کل مقدار",
+    "So results can show waste as a share of production.": "تاکہ نتائج ضیاع کو پیداوار کے ایک حصے کے طور پر ظاہر کر سکیں۔",
+    "Value of production (NZ$)": "پیداوار کی قدر (NZ$)",
+    "Value of the waste (NZ$)": "ضیاع کی قدر (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "صرف اعداد و شمار کے لیے — یہ کبھی بھی اخراج کے حساب میں شامل نہیں ہوتا۔",
+    "What period do these figures cover?": "یہ اعداد و شمار کس مدت کا احاطہ کرتے ہیں؟",
+    "Not stated": "غیر مذکور",
+    "One week": "ایک ہفتہ",
+    "One month": "ایک مہینہ",
+    "One quarter": "ایک سہ ماہی",
+    "One year": "ایک سال",
+    "Optional — it only labels your figures, it never changes a result.": "اختیاری — یہ صرف آپ کے اعداد و شمار پر لیبل لگاتا ہے، یہ کبھی نتیجہ نہیں بدلتا۔"
   }
 }

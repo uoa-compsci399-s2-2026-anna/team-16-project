@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "Voedselafval-impakberekener",
     "For New Zealand food businesses": "Vir Nieu-Seelandse voedselondernemings",
     "Start calculator": "Begin die berekener",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Verander jou voedselafvalmetings in 'n duideliker beeld van hul moontlike omgewings- en finansiële impak."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Verander jou voedselafvalmetings in 'n duideliker beeld van hul moontlike omgewings- en finansiële impak.",
+    "(optional)": "(opsioneel)",
+    "Total amount produced": "Totale hoeveelheid geproduseer",
+    "So results can show waste as a share of production.": "Sodat resultate vermorsing as 'n aandeel van produksie kan wys.",
+    "Value of production (NZ$)": "Waarde van produksie (NZ$)",
+    "Value of the waste (NZ$)": "Waarde van die vermorsing (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "Slegs vir statistiek — dit kom nooit in die emissieberekening nie.",
+    "What period do these figures cover?": "Watter tydperk dek hierdie syfers?",
+    "Not stated": "Nie aangedui nie",
+    "One week": "Een week",
+    "One month": "Een maand",
+    "One quarter": "Een kwartaal",
+    "One year": "Een jaar",
+    "Optional — it only labels your figures, it never changes a result.": "Opsioneel — dit dui net jou syfers aan; dit verander nooit 'n resultaat nie."
   }
 }

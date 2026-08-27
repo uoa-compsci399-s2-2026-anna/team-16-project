@@ -319,6 +319,19 @@
     "Food Waste Impact Calculator": "حاسبة أثر هدر الطعام",
     "For New Zealand food businesses": "لشركات الأغذية في نيوزيلندا",
     "Start calculator": "ابدأ الحاسبة",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "حوِّل قياسات هدر الطعام لديك إلى صورة أوضح لأثرها البيئي والمالي المحتمل."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "حوِّل قياسات هدر الطعام لديك إلى صورة أوضح لأثرها البيئي والمالي المحتمل.",
+    "(optional)": "(اختياري)",
+    "Total amount produced": "إجمالي الكمية المنتجة",
+    "So results can show waste as a share of production.": "حتى تتمكن النتائج من عرض الهدر كنسبة من الإنتاج.",
+    "Value of production (NZ$)": "قيمة الإنتاج (NZ$)",
+    "Value of the waste (NZ$)": "قيمة الهدر (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "للإحصاء فقط — لا يدخل أبدًا في حساب الانبعاثات.",
+    "What period do these figures cover?": "ما هي الفترة التي تغطيها هذه الأرقام؟",
+    "Not stated": "غير محدد",
+    "One week": "أسبوع واحد",
+    "One month": "شهر واحد",
+    "One quarter": "ربع سنة واحد",
+    "One year": "سنة واحدة",
+    "Optional — it only labels your figures, it never changes a result.": "اختياري — يقوم فقط بوسم أرقامك، ولا يغيّر أي نتيجة أبدًا."
   }
 }

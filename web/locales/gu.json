@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "ખોરાક કચરો અસર કેલ્ક્યુલેટર",
     "For New Zealand food businesses": "ન્યૂઝીલેન્ડના ખાદ્ય વ્યવસાયો માટે",
     "Start calculator": "કેલ્ક્યુલેટર શરૂ કરો",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "તમારા ખોરાકના કચરાનાં માપને તેની સંભવિત પર્યાવરણીય અને આર્થિક અસરના વધુ સ્પષ્ટ ચિત્રમાં ફેરવો."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "તમારા ખોરાકના કચરાનાં માપને તેની સંભવિત પર્યાવરણીય અને આર્થિક અસરના વધુ સ્પષ્ટ ચિત્રમાં ફેરવો.",
+    "(optional)": "(વૈકલ્પિક)",
+    "Total amount produced": "કુલ ઉત્પાદિત જથ્થો",
+    "So results can show waste as a share of production.": "જેથી પરિણામો ઉત્પાદનના હિસ્સા તરીકે બગાડ બતાવી શકે.",
+    "Value of production (NZ$)": "ઉત્પાદનનું મૂલ્ય (NZ$)",
+    "Value of the waste (NZ$)": "બગાડનું મૂલ્ય (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "ફક્ત આંકડા માટે — તે ક્યારેય ઉત્સર્જન ગણતરીમાં દાખલ થતું નથી.",
+    "What period do these figures cover?": "આ આંકડા કયા સમયગાળાને આવરી લે છે?",
+    "Not stated": "જણાવેલ નથી",
+    "One week": "એક અઠવાડિયું",
+    "One month": "એક મહિનો",
+    "One quarter": "એક ત્રિમાસિક",
+    "One year": "એક વર્ષ",
+    "Optional — it only labels your figures, it never changes a result.": "વૈકલ્પિક — તે ફક્ત તમારા આંકડાઓને લેબલ કરે છે, તે ક્યારેય પરિણામ બદલતું નથી."
   }
 }

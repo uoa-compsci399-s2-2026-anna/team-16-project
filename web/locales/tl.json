@@ -319,6 +319,19 @@
     "Food Waste Impact Calculator": "Pantuos ng Epekto ng Basurang Pagkain",
     "For New Zealand food businesses": "Para sa mga negosyong pagkain sa New Zealand",
     "Start calculator": "Simulan ang pantuos",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Gawing mas malinaw na larawan ng posibleng epekto sa kalikasan at pananalapi ang iyong mga sukat ng basurang pagkain."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Gawing mas malinaw na larawan ng posibleng epekto sa kalikasan at pananalapi ang iyong mga sukat ng basurang pagkain.",
+    "(optional)": "(opsyonal)",
+    "Total amount produced": "Kabuuang dami na nagawa",
+    "So results can show waste as a share of production.": "Upang maipakita ng mga resulta ang basura bilang bahagi ng produksyon.",
+    "Value of production (NZ$)": "Halaga ng produksyon (NZ$)",
+    "Value of the waste (NZ$)": "Halaga ng basura (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "Para sa istatistika lamang — hindi ito kailanman kasama sa pagkalkula ng emisyon.",
+    "What period do these figures cover?": "Anong panahon ang saklaw ng mga bilang na ito?",
+    "Not stated": "Hindi nakasaad",
+    "One week": "Isang linggo",
+    "One month": "Isang buwan",
+    "One quarter": "Isang kwarter",
+    "One year": "Isang taon",
+    "Optional — it only labels your figures, it never changes a result.": "Opsyonal — nagla-label lang ito ng iyong mga bilang, hindi ito nagbabago ng resulta."
   }
 }

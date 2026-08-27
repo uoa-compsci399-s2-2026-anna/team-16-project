@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്റർ",
     "For New Zealand food businesses": "ന്യൂസിലൻഡിലെ ഭക്ഷ്യ സ്ഥാപനങ്ങൾക്കായി",
     "Start calculator": "കാൽക്കുലേറ്റർ തുടങ്ങുക",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "നിങ്ങളുടെ ഭക്ഷ്യമാലിന്യ അളവുകളെ, അവയുടെ സാധ്യമായ പാരിസ്ഥിതികവും സാമ്പത്തികവുമായ ആഘാതത്തിന്റെ കൂടുതൽ വ്യക്തമായ ചിത്രമാക്കി മാറ്റുക."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "നിങ്ങളുടെ ഭക്ഷ്യമാലിന്യ അളവുകളെ, അവയുടെ സാധ്യമായ പാരിസ്ഥിതികവും സാമ്പത്തികവുമായ ആഘാതത്തിന്റെ കൂടുതൽ വ്യക്തമായ ചിത്രമാക്കി മാറ്റുക.",
+    "(optional)": "(ഐച്ഛികം)",
+    "Total amount produced": "ഉൽപ്പാദിപ്പിച്ച ആകെ അളവ്",
+    "So results can show waste as a share of production.": "ഉൽപ്പാദനത്തിന്റെ ഒരു പങ്കായി പാഴാക്കൽ ഫലങ്ങളിൽ കാണിക്കാൻ കഴിയുന്നതിന്.",
+    "Value of production (NZ$)": "ഉൽപ്പാദനത്തിന്റെ മൂല്യം (NZ$)",
+    "Value of the waste (NZ$)": "പാഴാക്കലിന്റെ മൂല്യം (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "സ്ഥിതിവിവരക്കണക്കുകൾക്ക് മാത്രം — ഇത് ഒരിക്കലും ഉദ്‌വമന കണക്കുകൂട്ടലിൽ ഉൾപ്പെടുന്നില്ല.",
+    "What period do these figures cover?": "ഈ കണക്കുകൾ ഏത് കാലയളവിനെ ഉൾക്കൊള്ളുന്നു?",
+    "Not stated": "വ്യക്തമാക്കിയിട്ടില്ല",
+    "One week": "ഒരു ആഴ്ച",
+    "One month": "ഒരു മാസം",
+    "One quarter": "ഒരു പാദം",
+    "One year": "ഒരു വർഷം",
+    "Optional — it only labels your figures, it never changes a result.": "ഐച്ഛികം — ഇത് നിങ്ങളുടെ കണക്കുകൾക്ക് ലേബൽ നൽകുക മാത്രമേ ചെയ്യൂ, ഒരിക്കലും ഫലം മാറ്റില്ല."
   }
 }

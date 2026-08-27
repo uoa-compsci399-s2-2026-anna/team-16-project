@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "Calculadora del impacto de los residuos de alimentos",
     "For New Zealand food businesses": "Para empresas alimentarias de Nueva Zelanda",
     "Start calculator": "Abrir la calculadora",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Convierte tus mediciones de residuos de alimentos en una visión más clara de su posible impacto ambiental y económico."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Convierte tus mediciones de residuos de alimentos en una visión más clara de su posible impacto ambiental y económico.",
+    "(optional)": "(opcional)",
+    "Total amount produced": "Cantidad total producida",
+    "So results can show waste as a share of production.": "Para que los resultados puedan mostrar el desperdicio como una proporción de la producción.",
+    "Value of production (NZ$)": "Valor de la producción (NZ$)",
+    "Value of the waste (NZ$)": "Valor del desperdicio (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "Solo para estadísticas — nunca entra en el cálculo de emisiones.",
+    "What period do these figures cover?": "¿Qué período abarcan estas cifras?",
+    "Not stated": "No indicado",
+    "One week": "Una semana",
+    "One month": "Un mes",
+    "One quarter": "Un trimestre",
+    "One year": "Un año",
+    "Optional — it only labels your figures, it never changes a result.": "Opcional — solo etiqueta tus cifras, nunca cambia un resultado."
   }
 }

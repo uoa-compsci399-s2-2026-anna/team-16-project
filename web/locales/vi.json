@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "Công cụ tính tác động của thực phẩm bỏ đi",
     "For New Zealand food businesses": "Dành cho các doanh nghiệp thực phẩm ở New Zealand",
     "Start calculator": "Mở công cụ tính",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Biến các số liệu đo lường thực phẩm bỏ đi của bạn thành bức tranh rõ hơn về tác động môi trường và tài chính có thể xảy ra."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Biến các số liệu đo lường thực phẩm bỏ đi của bạn thành bức tranh rõ hơn về tác động môi trường và tài chính có thể xảy ra.",
+    "(optional)": "(tùy chọn)",
+    "Total amount produced": "Tổng lượng sản xuất",
+    "So results can show waste as a share of production.": "Để kết quả có thể hiển thị lượng lãng phí theo tỷ lệ so với sản lượng.",
+    "Value of production (NZ$)": "Giá trị sản xuất (NZ$)",
+    "Value of the waste (NZ$)": "Giá trị lượng lãng phí (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "Chỉ dùng cho thống kê — không bao giờ được đưa vào tính toán phát thải.",
+    "What period do these figures cover?": "Các số liệu này áp dụng cho khoảng thời gian nào?",
+    "Not stated": "Không nêu rõ",
+    "One week": "Một tuần",
+    "One month": "Một tháng",
+    "One quarter": "Một quý",
+    "One year": "Một năm",
+    "Optional — it only labels your figures, it never changes a result.": "Không bắt buộc — chỉ để gắn nhãn cho số liệu của bạn, không bao giờ làm thay đổi kết quả."
   }
 }

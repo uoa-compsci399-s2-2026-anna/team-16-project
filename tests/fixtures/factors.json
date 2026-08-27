@@ -22,7 +22,7 @@
       "code": "FOOD_VALUE_PER_KG",
       "value": "0.0000000000",
       "unit": "NZD / kg",
-      "note": "The value of the wasted food itself. Open item O-2 has not settled whether this is included, and at cost or at retail price, so it defaults to zero and the cost metric reports disposal cost and the waste levy only."
+      "note": "The value of the wasted food itself. Open item O-2 closed at contract v1.48: it does not enter this formula at all -- the client rules that the value of the food is a figure the business states about its own operation (interfaces.md 4.5), and whether they mean cost or retail is theirs to mean. This constant therefore stays at zero, and the cost metric reports disposal cost and the waste levy only."
     }
   ],
   "formulas": [
@@ -44,7 +44,7 @@
     {
       "metric": "cost",
       "expression": "qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)",
-      "notes": "Disposal cost and the waste levy, plus the value of the food itself once O-2 is settled and FOOD_VALUE_PER_KG stops being zero."
+      "notes": "Disposal cost and the waste levy. The value of the food itself is deliberately not here: O-2 closed at contract v1.48 in favour of keeping it out of the formula, so FOOD_VALUE_PER_KG stays at zero. See interfaces.md 4.5."
     },
     {
       "metric": "mass",

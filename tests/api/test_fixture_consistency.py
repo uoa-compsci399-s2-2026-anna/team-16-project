@@ -55,6 +55,7 @@ SCALES = {
     #: §4.5, v1.48. NZD figures, not metric ones -- two places, matching
     #: `api/schemas.py`'s `decimal_places=2` and `DECIMAL(14, 2)` in
     #: `db/models.py`, not the ten every metric value above carries.
+    "total_input_kg": 3,
     "total_value_nzd": 2,
     "wasted_value_nzd": 2,
     "wasted_share_percent": 2,

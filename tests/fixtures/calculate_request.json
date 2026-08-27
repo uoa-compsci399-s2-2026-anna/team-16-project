@@ -1,10 +1,12 @@
 {
   "token": null,
   "gwp_horizon": 100,
+  "time_frame": "one_year",
   "entries": [
     {
       "sector": "processing",
       "food_category": "dairy",
+      "total_input_kg": "10000.000",
       "total_value_nzd": "45000.00",
       "wasted_value_nzd": "6750.00",
       "current": [

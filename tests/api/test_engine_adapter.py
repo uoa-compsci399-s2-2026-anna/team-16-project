@@ -12,6 +12,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from api.engine_adapter import DefaultEngineAdapter
+from api.schemas import CalculatePayload, EntryPayload, ScenarioLinePayload
 from api.serialization import wire
 
 
@@ -232,4 +233,41 @@ def test_every_decimal_leaves_as_a_string_once_wired():
             "downstream"
         ]
         == "0.9900000000"
+    )
+
+
+def test_the_adapter_carries_the_new_entry_numbers_into_the_engine():
+    """The three per-entry numbers reach `EntryInput`.
+
+    **`time_frame` deliberately does not.** The engine is a pure function of
+    a request and a bundle, and the client ruled that the period computes
+    nothing - so putting it on `CalculationRequest` would be handing the
+    engine a value it must promise never to use. It is stored by the
+    repository and rendered by the front end, and the engine never sees it.
+    """
+    payload = CalculatePayload(
+        gwp_horizon=100,
+        time_frame="one_month",
+        entries=[
+            EntryPayload(
+                sector="processing",
+                food_category="bread_bakery",
+                total_input_kg=Decimal("50000.000"),
+                total_value_nzd=Decimal("120000.00"),
+                wasted_value_nzd=Decimal("4500.00"),
+                current=[
+                    ScenarioLinePayload(destination="landfill", qty_kg="1200.500")
+                ],
+            )
+        ],
+    )
+
+    request = DefaultEngineAdapter().make_request(payload)
+
+    entry = request.entries[0]
+    assert entry.total_input_kg == Decimal("50000.000")
+    assert entry.total_value_nzd == Decimal("120000.00")
+    assert entry.wasted_value_nzd == Decimal("4500.00")
+    assert not hasattr(request, "time_frame"), (
+        "the engine must not be handed a value it is required never to use"
     )

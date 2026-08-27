@@ -46,6 +46,19 @@ class EntryInput:
     food_category_code: str | None  # None -> use standard_mix
     current: tuple[ScenarioLine, ...]
     alternative: tuple[ScenarioLine, ...] | None
+    #: v1.48. All three optional, all three carried rather than computed
+    #: with here: `calculate` derives the money block from them (§4.5) and
+    #: nothing else in the engine reads them.
+    #:
+    #: `total_input_kg` is what this stage put through in the period, so that
+    #: waste can be stated as a share of production. The two money figures
+    #: are statistics only - the client's ruling on O-2 - and are deliberately
+    #: not a metric: the formula language is per LINE and takes
+    #: `(qty_kg, upstream, downstream, const_*)`, which an entry-level figure
+    #: a person typed cannot be expressed in.
+    total_input_kg: Decimal | None = None
+    total_value_nzd: Decimal | None = None
+    wasted_value_nzd: Decimal | None = None
 
 
 @dataclass(frozen=True)

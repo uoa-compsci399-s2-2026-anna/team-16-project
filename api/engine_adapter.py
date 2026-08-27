@@ -101,6 +101,9 @@ class DefaultEngineAdapter:
                     food_category_code=entry.food_category,
                     current=lines(entry.current),
                     alternative=lines(entry.alternative),
+                    total_input_kg=entry.total_input_kg,
+                    total_value_nzd=entry.total_value_nzd,
+                    wasted_value_nzd=entry.wasted_value_nzd,
                 )
                 for entry in payload.entries
             ),

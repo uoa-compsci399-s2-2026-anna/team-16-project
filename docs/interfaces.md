@@ -2394,7 +2394,7 @@ Called once on page load to build every dropdown and input row.
 | `entries` | array | Yes | At least one entry |
 | `entries[].sector` | string | Yes | Must exist in the taxonomy |
 | `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
-| `entries[].total_input_kg` | decimal-string \| null | No | **v1.48.** What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. Stored (§2.3); **no response field is derived from it yet** — see §4.5 |
+| `entries[].total_input_kg` | decimal-string \| null | No | **v1.48.** What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. *At most*, not exactly: `"50000"` and `"50000.000"` are the same figure and both are accepted, so trailing zeros are not required — `calculate_request.json` shows the padded spelling because it is one valid example, not the mandated one. Stored (§2.3); **no response field is derived from it yet** — see §4.5 |
 | `entries[].total_value_nzd` | decimal-string \| null | No | **v1.48.** `>= 0`, at most 2 decimal places, `<= 14` digits. Feeds §4.5's money block and nothing else |
 | `entries[].wasted_value_nzd` | decimal-string \| null | No | **v1.48.** Same bounds. Feeds §4.5's money block and nothing else |
 | `entries[].current` | array | Yes | At least one line |
@@ -2837,6 +2837,24 @@ export function subscribe(fn);
 export function resetCalculator();
 
 /**
+ * The entry being typed, as a saved entry: every key the visitor filled in and
+ * nothing derived — `sector`, `foodCategory`, `totalAmount`, `totalUnit`,
+ * `measureMode`, `unitPreset`, `unitCount`, `totalInputKg`, `totalValueNzd`,
+ * `wastedValueNzd`, and `current` copied row by row so a later edit of the draft
+ * cannot reach into an entry already committed to `state.entries`.
+ *
+ * **It lives here rather than in `calculator.js` because two modules build
+ * submissions.** It was private to `calculator.js`, and `improvement.js` carried
+ * its own five-key copy of the same shape; when v1.48 added four keys, the copy
+ * named none of them, so Compare Impact re-sent the submission with them absent
+ * and §5.3's token upsert wrote the absence over the visitor's figures. A copy of
+ * a shape is where the next field goes missing too. §7.3b.
+ *
+ * @returns {object}  one entry, in the shape §7.3b sends
+ */
+export function draftEntry();
+
+/**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
  * preserve request order. Each paired `response` is one entry's `current` /
  * `alternative` / `net_benefit` plus the submission-level `factor_set`,
@@ -2998,6 +3016,67 @@ export function countLimit(presetCode, presets, maxKg);
  *  a row the user has not filled is not a row holding zero, so the two
  *  callers that render blank rows keep their own '' check. */
 export function kgString(amount, unit);
+
+/**
+ * `kgString` without the rounding: the same conversion, and never a rewrite of
+ * the figure the visitor typed.
+ *
+ * `kgString` ends in `.toFixed(3)`, and `toFixed` rounds — a typed `1.2345` left
+ * as `"1.234"`, which is a figure nobody wrote down and a **calculation**, the
+ * second one §7.6.1 does not permit. So kilograms are sent verbatim and tonnes
+ * are shifted three places in the same `BigInt` decimal arithmetic `toKg` uses,
+ * never through a double. The conversion *gains* three places, so nothing an
+ * `<input type="number">` can hold is rounded on the tonnes path either; §6.2's
+ * three-decimal ceiling is enforced where the money fields' two-decimal ceiling
+ * is, at the keystroke in `calculator.js`.
+ *
+ * Anything that is not a plain non-negative decimal literal (`1e5`, `.5`) falls
+ * back to `kgString`, so the `null` contract below is unchanged.
+ *
+ * @param {string|number} amount
+ * @param {'kilograms'|'tonnes'} unit
+ * @returns {string|null}
+ */
+export function exactKgString(amount, unit);
+
+/**
+ * One destination row's kilograms, converted with **the row's own unit** —
+ * `massToKg` for a weight, `toKg` for a container.
+ *
+ * A row's `unit` is `'kilograms'`, `'tonnes'` or `preset:<unit_preset.code>`
+ * (§7.2), and three modules read it: `calculator.js` converts it for the wire,
+ * `improvement.js` converts it again for the comparison request, and `results.js`
+ * names it in the downloaded report. While this was private to `calculator.js`
+ * the other two each had their own idea of what a row's unit meant and both were
+ * wrong — one re-sent the row in the *entry's* unit under the same token, the
+ * other printed the entry's unit beside a figure measured in another.
+ *
+ * A row that predates per-row units has no `unit`, and every caller falls back to
+ * the entry's own `totalUnit` — the unit those figures were actually typed
+ * against — so an older entry is never silently reinterpreted.
+ *
+ * @param {string|number} qtyInput  the row's amount, as the visitor typed it
+ * @param {string} unit             the row's unit, or the entry's for an older row
+ * @param {Array} presets           taxonomy.unit_presets
+ * @returns {string|null}  kilograms at 3 dp; `''` for a row the visitor has not
+ *                         filled (not a row holding zero); `null` for a preset the
+ *                         taxonomy no longer carries — §6.1 says a consumer must
+ *                         not assume the taxonomy survives a publish, and both
+ *                         callers run this inside a render, where a throw blanks
+ *                         the screen
+ */
+export function rowKgString(qtyInput, unit, presets);
+
+/** The prefix that distinguishes a container from a mass unit in the value space
+ *  `#total-unit` and a row's own `<select>` share, and the two readers of it.
+ *  The prefix is not decoration: `kilograms` and `tonnes` share that space with
+ *  every staff-editable `unit_preset.code`, and a preset coded `tonnes` — which
+ *  nothing forbids (§8.1) — would otherwise silently become the tonnes option and
+ *  convert nothing. Here rather than in `calculator.js` because the prefix and the
+ *  conversion behind it are one rule. */
+export const PRESET_UNIT;                 // 'preset:'
+export function isPresetUnit(unit);       // boolean
+export function presetUnitCode(unit);     // the unit_preset code, prefix removed
 
 /**
  * Kilograms to tonnes, for display. The only arithmetic §7.6.1 permits on a
@@ -3190,6 +3269,88 @@ No exports. Wires `subscribe(→ renderChrome + render)`, calls `bindCalculator`
 No exports. Uses top-level `await` to call `getFactors()`, then writes the factor-set metadata and the published-formula table into `#factor-content`, prefixed by the placeholder-data banner when `factor_set.is_mock`. Renders an escaped error block on failure. `formula.expression` is staff-authored content reaching a public page and is escaped inside `<code>`.
 
 > **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
+
+## 7.3b `submission.js` — the one builder of the calculate request (written by C)
+
+**`POST /api/v1/calculate` has two callers, and this module is the only thing that builds
+what either of them sends.** The Calculate button on the review step is one; Compare Impact
+on the results screen is the other. Both send a whole submission and both send it under the
+same `state.token`, so §5.3's upsert does not add a row — the second call **replaces** the
+row the first one wrote.
+
+That is why one builder is a requirement rather than tidiness. While there were two, they
+drifted, and the drift was silent in both directions on the deployed stack:
+
+- the comparison request carried no `time_frame`, no `total_input_kg`, no `total_value_nzd`
+  and no `wasted_value_nzd`, so a submission holding `one_year / 50000.000 / 120000.00 /
+  4500.00` held four `NULL`s a moment after the visitor pressed a button on the next
+  screen — every figure v1.48 added, discarded by one click;
+- it converted every destination row with the entry's unit rather than the row's own, so
+  half a tonne sent as `500.000` by Calculate was rewritten to `0.500` by Compare, and a
+  `preset:` row was not converted at all.
+
+Neither is visible from the outgoing body of the first call, which is correct; the second is
+only wrong *relative* to it. **A new field on the request goes here, once**, and a caller
+that assembles its own entry object is the defect above returning.
+
+```js
+/**
+ * The `current` scenario's lines. Each row converts with its own `unit` through
+ * `rowKgString` (§7.3), falling back to the entry's `totalUnit` for a row saved
+ * before rows carried one. A blank row and a row whose preset has left the
+ * taxonomy both read as zero and are dropped; §6.2 has no use for a zero line.
+ * @param {object} entry
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {Array<{destination: string, qty_kg: string}>}
+ */
+export function requestLines(entry, presets);
+
+/** A mass field the visitor may have left alone. `''` is "not answered" and
+ *  reaches the API as null, never as "0.000" — a zero is the claim that
+ *  production was actually nil (§6.2). Converts with exactKgString (§7.3), so
+ *  what the visitor typed is what is sent. */
+export const optionalKgString;   // (value, unit) => string | null
+
+/** The same, for a New Zealand dollar figure, which carries no unit and is
+ *  therefore passed through untouched. NOT Number(value).toFixed(2): rounding a
+ *  figure the visitor typed is a calculation, and §7.6.1 permits one. The
+ *  two-decimal ceiling is enforced at the keystroke in `calculator.js`. */
+export const optionalMoneyString;   // value => string | null
+
+/**
+ * One entry of the request body: `sector`, `food_category`, `current`,
+ * `alternative`, and v1.48's three per-entry figures.
+ * @param {object} entry
+ * @param {Array} presets            taxonomy.unit_presets
+ * @param {Array|null} alternative   the improved scenario's lines, or null
+ */
+export function entryPayload(entry, presets, alternative);
+
+/**
+ * The whole §6.2 request body. `time_frame` sits beside `gwp_horizon` rather than
+ * inside the entries because it is one period for the whole submission, asked once
+ * on the review step.
+ *
+ * @param {object} state
+ * @param {Array<object>} entries  every entry, in submission order — the order §6.2
+ *                                 preserves in `entries[]` of the response
+ * @param {(entry: object) => Array|null} [alternativeFor]  the improved scenario for
+ *   an entry. The default is no alternative, which is what Calculate sends;
+ *   `improvement.js` passes its allocation of the entry's own current mass.
+ */
+export function submissionPayload(state, entries, alternativeFor);
+```
+
+> **Nothing in this module calculates (§7.6.1).** Its only arithmetic is the unit conversion,
+> and that is `units.js`'s, called rather than re-typed — §7.3's rule that a `*`, `/` or
+> `.toFixed()` on a mass anywhere else in `web/` is a defect on sight applies here like
+> anywhere else.
+
+> **`submissionEntries(state)` in `improvement.js` mixes its argument with the module
+> singleton**: it returns `[...state.entries, draftEntry()]`, and `draftEntry` reads
+> `state.js`'s own object rather than the parameter. Equivalent today, because every caller
+> passes that same singleton. It is recorded because the parameter no longer fully determines
+> the result, and a future caller with a constructed state would get the singleton's draft.
 
 ## 7.4 `charts.js` (written by D)
 

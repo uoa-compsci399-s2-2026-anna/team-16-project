@@ -256,6 +256,7 @@ web/js/
   api.js         fetch wrapper and unified error handling     built
   state.js       single state object with subscribe/setState  built
   units.js       volume-to-kilogram conversion                built
+  submission.js  the one builder of the /calculate request    built
   calculator.js  calculator page                              built
   results.js     results rendering                            built
   view.js        escaping and formatting primitives           built

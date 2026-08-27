@@ -261,26 +261,6 @@ function comparisonLines(state) {
 }
 
 /**
- * The plain-text report, built and returned rather than downloaded.
- *
- * Split out of `downloadResults` because it is the half worth asserting on: the export was
- * shipping the total mass, the entries and the factor version and **not one output figure**
- * — no greenhouse gas, no methane, no water, no cost — under the file name
- * `food-waste-impact-results.txt`. A results export with no results is the file somebody
- * attaches to an email, and every number in it now comes from `state.result`, which is the
- * engine's, never from arithmetic performed here (§7.6.1).
- *
- * @param {object} state
- * @returns {string}
- */
-/**
- * One entry's waste amount, as the visitor gave it.
- *
- * Mass mode reads the field the visitor typed in. Container mode reads the count and the
- * container, and appends the kilograms `entryTotal` derives — never the kilograms alone,
- * because the number a reader can check against their own bins is the count.
- */
-/**
  * One destination row of one entry, in the unit **that row** was measured in.
  *
  * `${qtyInput} ${entry.totalUnit}` stood here, and since a row carries its own unit that
@@ -311,6 +291,13 @@ function destinationLine(line, entry, taxonomy) {
   return `  - ${destination}: ${amount} ${t('kilograms')}`
 }
 
+/**
+ * One entry's waste amount, as the visitor gave it.
+ *
+ * Mass mode reads the field the visitor typed in. Container mode reads the count and the
+ * container, and appends the kilograms `entryTotal` derives — never the kilograms alone,
+ * because the number a reader can check against their own bins is the count.
+ */
 function wasteAmountLine(entry, taxonomy) {
   if (entry.measureMode !== 'container') {
     return `${t('Waste amount')}: ${typed(entry.totalAmount).toFixed(2)} ${t(entry.totalUnit === 'tonnes' ? 'tonnes' : 'kilograms')}`
@@ -321,6 +308,19 @@ function wasteAmountLine(entry, taxonomy) {
   return `${t('Waste amount')}: ${typed(entry.unitCount).toFixed(2)} × ${container} (${kilograms} kg)`
 }
 
+/**
+ * The plain-text report, built and returned rather than downloaded.
+ *
+ * Split out of `downloadResults` because it is the half worth asserting on: the export was
+ * shipping the total mass, the entries and the factor version and **not one output figure**
+ * — no greenhouse gas, no methane, no water, no cost — under the file name
+ * `food-waste-impact-results.txt`. A results export with no results is the file somebody
+ * attaches to an email, and every number in it now comes from `state.result`, which is the
+ * engine's, never from arithmetic performed here (§7.6.1).
+ *
+ * @param {object} state
+ * @returns {string}
+ */
 export function buildResultsReport(state) {
   const totals = state.result?.totals || {}
   const totalKg = number(totals.total_kg)

@@ -440,6 +440,20 @@ def test_changing_one_row_s_unit_does_not_change_the_others(page_at):
         "changing one row's unit changed another's - the state is still shared"
     )
 
+    #: The native `<select>`'s own value above is unbinding-blind: Playwright's
+    #: `select_option` sets it whether or not any `change` handler ever runs, and
+    #: nothing re-renders to contradict it. `rowUnitLabel(rowUnit)` only reaches the
+    #: page through `state.current[i].unit` and `destinationRows()`'s own read of it,
+    #: so the amount input's `aria-label` is a state-derived witness a DOM-only
+    #: mutation cannot fake.
+    amounts = page.locator('.destination-row input[data-line-field="amount"]')
+    assert "kilograms" in (amounts.nth(0).get_attribute("aria-label") or ""), (
+        "row 0's aria-label still names the old unit - the change did not reach state"
+    )
+    assert "tonnes" in (amounts.nth(1).get_attribute("aria-label") or ""), (
+        "row 1's aria-label changed too - the state is still shared"
+    )
+
 
 def test_the_review_step_shows_each_row_in_the_unit_it_was_typed_in(page_at):
     """And the kilograms beside it, which is what actually goes on the wire.
@@ -459,8 +473,13 @@ def test_the_review_step_shows_each_row_in_the_unit_it_was_typed_in(page_at):
     page.click('.step-nav [data-action="continue"]')
     page.wait_for_selector(".review-destinations")
 
-    text = page.locator(".review-destinations").inner_text()
-    assert "250" in text and "kg" in text
+    #: An exact pair in one `dd`, not a substring scan of the whole section. `"250" in
+    #: text` matches `"250000.000 kg"` just as happily as `"250.000 kg"` - it is the
+    #: assertion that let the pure-conversion mutation (`line.unit` replaced by
+    #: `state.totalUnit`) through in review: 250 *tonnes* misreported as "250.00
+    #: kilograms" beside a correct-looking but wrong "(250000.000 kg)".
+    dds = page.locator(".review-destinations dd").all_inner_texts()
+    assert any("250.00 kilograms" in text and "(250.000 kg)" in text for text in dds), dds
 
 
 def test_two_rows_in_different_units_convert_to_different_kilograms(page_at):
@@ -494,3 +513,28 @@ def test_two_rows_in_different_units_convert_to_different_kilograms(page_at):
     #: German and Arabic. The two rows must disagree, not merely both be present.
     assert any("(5.000 kg)" in text for text in lines), lines
     assert any("5,000.000 kg" in text for text in lines), lines
+
+
+@pytest.mark.parametrize("width", [390, 700])
+def test_the_amount_input_stays_usable_beside_the_unit_select(page_at, width):
+    """Item ⑥'s `<select>` sits in the same two-column row `.amount-with-unit` always
+    had, and a track that lets the select claim the whole row leaves the amount input
+    a number field nobody can type into.
+
+    **`count() == 1` and a value assertion both pass at 28px.** Neither measures a
+    dimension, and 28px is worse than merely cramped - `test_amount_limits_browser.py`
+    and this file's other assertions never fail on it, because nothing here reads a
+    box. `.destination-row`'s narrower single-column layout applies at 480px and
+    below, so 390 and 700 are the two widths that exercise, respectively, the stacked
+    and the side-by-side `.amount-with-unit` template.
+    """
+    page = to_amount_step(page_at(width, 800))
+    page.fill("#total-waste", "1000")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('.destination-row input[data-line-field="amount"]')
+
+    box = page.locator('.destination-row input[data-line-field="amount"]').first.bounding_box()
+    assert box is not None and box["width"] >= 80, (
+        f"the amount input is {box['width'] if box else None}px wide at {width}px - "
+        "too narrow to type an amount into"
+    )

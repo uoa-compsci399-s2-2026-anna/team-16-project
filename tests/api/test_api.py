@@ -968,3 +968,41 @@ async def test_a_negative_money_figure_is_refused(app):
         response = await client.post("/api/v1/calculate", json=body)
 
     assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_the_money_block_carries_the_right_numbers_over_http(app):
+    """Defect 3: value, not merely shape.
+
+    `test_contract_fixtures_have_the_same_top_level_shapes` (and every other
+    shape check in this file) asserts `type(actual) is type(expected)` for a
+    scalar and stops there - it would pass unchanged if every figure below
+    came back as some other string of the same type. This is the one test in
+    the suite that reads the actual numbers.
+
+    Same two entries as `tests/fixtures/calculate_request.json` /
+    `calculate_response.json`, so this doubles as the live call those two
+    fixtures are checked against elsewhere, hand-verified independently here:
+
+    entry 1 (processing/dairy) prices its waste at $6750.00 / 1500 kg =
+    $4.50/kg and diverts nothing to `prevention` - its alternative only moves
+    mass between two non-prevention destinations - so it contributes $0.00.
+    entry 2 (primary_production/vegetables) prices its waste at
+    $4000.00 / 800 kg = $5.00/kg and diverts its whole 800 kg to
+    `prevention`, contributing 5.00 x 800 = $4,000.00. A single blended rate
+    over the whole form would instead answer (6750+4000)/(1500+800) x 800 =
+    3739.13, not 4000.00 - the number this test would read back if the two
+    entries' rates were blended instead of kept separate.
+    """
+    body = _fixture("calculate_request.json")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["totals"]["money"] == {
+        "total_value_nzd": "50000.00",
+        "wasted_value_nzd": "10750.00",
+        "wasted_share_percent": "21.50",
+        "saving_nzd": "4000.00",
+    }

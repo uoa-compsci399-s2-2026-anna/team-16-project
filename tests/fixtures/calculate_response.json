@@ -317,7 +317,12 @@
       "cost": "18.0000000000",
       "mass": "0.0000000000"
     },
-    "money": null
+    "money": {
+      "total_value_nzd": "50000.00",
+      "wasted_value_nzd": "10750.00",
+      "wasted_share_percent": "21.50",
+      "saving_nzd": "4000.00"
+    }
   },
   "entries": [
     {

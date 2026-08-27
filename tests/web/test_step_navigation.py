@@ -619,6 +619,18 @@ def test_the_step_position_moved_into_the_bar_and_left_no_band_behind(page_at):
     assert measured["bands"] == 0, f"a progress band is still costing height at the top: {measured}"
 
 
+def _improvement_panel(page_at):
+    """A page at step 5 (results) with the improvement panel open.
+
+    Shared by every test in this module that needs the destination-allocation
+    sliders — factored out rather than repeated so the wizard walk that reaches
+    them is written once.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page.click('[data-action="explore-improvements"]')
+    return page
+
+
 def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number(page_at):
     """A negative share of a destination is not a thing, so the minus is refused
     outright — unlike a destination amount, which permits a leading minus
@@ -631,8 +643,7 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
     PR #27 removed it, turning a typed `0.05` into `5`. The guard must block the
     minus and touch nothing else.
     """
-    page = advance_to(page_at(1278, 983, 1.25), 5)
-    page.click('[data-action="explore-improvements"]')
+    page = _improvement_panel(page_at)
     number = page.locator('.percentage-input input[type="number"]').first
 
     number.press("ControlOrMeta+A")
@@ -1080,3 +1091,315 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
     #: so nothing is rounded here either, and the result is inside §6.2's three.
     assert tonnes["entries"][0]["total_input_kg"] == "1234.5"
     CalculatePayload.model_validate(tonnes)
+
+
+def test_a_slider_cannot_be_dragged_past_what_is_left(page_at):
+    """**Item ⑨, and the rule it works within does not change.**
+
+    `improvementValidation` requires the allocation to total exactly 100% -
+    that is what keeps both scenarios moving the same mass, so net benefit
+    cannot be inflated by assuming less waste in the alternative. The client
+    confirmed it stands. What is wrong is only that a slider will happily go
+    past the remaining headroom and leave the visitor to notice.
+
+    So each slider's own `max` is its current value plus whatever is
+    unallocated. Pulling the first to 100 leaves the second unable to move
+    above 0.
+    """
+    page = _improvement_panel(page_at)
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    assert sliders.count() >= 2, "need two destinations to test headroom"
+
+    #: Everything to the first destination.
+    sliders.nth(0).evaluate("el => { el.value = '100'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert sliders.nth(1).get_attribute("max") == "0", (
+        "the second slider still offers headroom that does not exist"
+    )
+
+
+def test_the_sliders_start_at_zero_and_the_total_says_so(page_at):
+    """The client asked for "所有滑块默认都是 0".
+
+    The panel currently seeds each destination with its CURRENT share, which
+    is a reasonable starting point and is not what was asked for: a visitor
+    modelling an improvement is choosing a new allocation, and starting from
+    the old one hides which numbers they have actually decided.
+    """
+    page = _improvement_panel(page_at)
+
+    values = page.locator('input[type="range"][data-improvement-code]').evaluate_all(
+        "els => els.map(el => el.value)"
+    )
+    assert set(values) == {"0"}, f"sliders did not start at zero: {values}"
+    assert "0.00" in page.locator("#improvement-total-value").inner_text()
+
+
+def test_the_compare_button_is_still_gated_on_exactly_one_hundred(page_at):
+    """**The affirmative half, and the rule this task must not break.**
+
+    A slider that cannot overshoot could be built by clamping the total to
+    100 and enabling the button - which would let 99.99% through and quietly
+    change what the alternative scenario means. The gate stays.
+    """
+    page = _improvement_panel(page_at)
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert page.locator('[data-action="compare-improvement"]').is_disabled(), (
+        "Compare is enabled at 60% - the exactly-100 rule has been weakened"
+    )
+
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert page.locator('[data-action="compare-improvement"]').is_enabled()
+
+
+def test_the_improvement_panel_can_be_driven_in_kilograms(page_at):
+    """Item ⑧. A toggle, and kilograms are the quantity the panel already
+    works in underneath: `improvedLines` computes
+    `totalKg * percentage / 100` before it sends anything.
+
+    So this is a display and entry mode, not a second calculation - which is
+    also why the toggle cannot change what is sent.
+    """
+    page = _improvement_panel(page_at)
+
+    toggle = page.locator("#improvement-mode")
+    assert toggle.count() == 1, "no percentage/kilograms toggle"
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    unit = page.locator(".percentage-input span").nth(0).inner_text()
+    assert "kg" in unit.lower(), f"the unit beside the box did not change: {unit!r}"
+
+
+def test_the_accessible_names_switch_to_kilograms_too(page_at):
+    """The follow-up the coordinator raised on fix round 1.
+
+    An `aria-label` is the only message a screen-reader visitor gets for a
+    control - there is no visible text to fall back on. The range and the
+    number box both carried `aria-label="Improved <destination> percentage"`
+    / `"... percentage value"` unconditionally, so a visitor typing kilograms
+    was told, on the one channel they could hear it, that the field wanted a
+    percentage. Same defect as the validation message fixed alongside it,
+    one layer further from what a sighted visitor notices.
+    """
+    page = _improvement_panel(page_at)
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    range_label = page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("aria-label")
+    box_label = page.locator('.percentage-input input[type="number"]').nth(0).get_attribute("aria-label")
+
+    for label, name in ((range_label, "range"), (box_label, "number box")):
+        assert label is not None, f"the {name} lost its accessible name entirely"
+        assert "percentage" not in label.lower(), (
+            f"the {name}'s accessible name still says percentage in kilogram mode: {label!r}"
+        )
+        assert "kilogram" in label.lower(), (
+            f"the {name}'s accessible name does not name kilograms in kilogram mode: {label!r}"
+        )
+
+
+def test_switching_mode_preserves_the_allocation(page_at):
+    """**The assertion that makes this a view and not a reset.**
+
+    A visitor who has allocated 60/40 and switches to kilograms must see the
+    same allocation expressed differently - not two empty boxes. Rebuilding
+    the panel on toggle is the obvious implementation and it silently throws
+    away their work.
+    """
+    page = _improvement_panel(page_at)
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    total_kg = float(page.locator("#improvement-total-kg").inner_text().replace(",", ""))
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    boxes = page.locator('.percentage-input input[type="number"]').evaluate_all(
+        "els => els.map(el => Number(el.value))"
+    )
+    assert abs(boxes[0] - total_kg * 0.6) < 0.01, (
+        f"60% did not become 60% of the mass: {boxes[0]} against {total_kg}"
+    )
+
+
+def test_the_request_is_unchanged_by_the_mode(page_at):
+    """The mode is a way of typing, and the wire never learns which was used.
+
+    Asserted by driving the same allocation twice and comparing the bodies:
+    a mode that changed what is sent would be a second calculation path, and
+    the two would drift.
+    """
+    page = _improvement_panel(page_at)
+    bodies = []
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: (bodies.append(route.request.post_data_json), route.abort()),
+    )
+
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+    page.click('[data-action="compare-improvement"]')
+    page.wait_for_timeout(400)
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+    page.click('[data-action="compare-improvement"]')
+    page.wait_for_timeout(400)
+
+    assert len(bodies) == 2
+    assert bodies[0]["entries"][0]["alternative"] == bodies[1]["entries"][0]["alternative"]
+
+
+def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
+    """**The case the 60/40 split above cannot exercise.**
+
+    60% and 40% of the 1,000 kg fixture entry are `600.000` and `400.000` -
+    already exact at two decimal places, so a percentage that is rounded
+    before it is stored survives that split by luck rather than by
+    correctness. This uses four destinations whose kilogram figures were
+    chosen so each one's *own* percentage share lands past the second decimal
+    place - `10.005`, `20.015`, `30.025`, `39.955` of a 1,000 kg total - while
+    the four kilogram figures themselves (`100.05 + 200.15 + 300.25 +
+    399.55`) still sum to exactly `1000.00`.
+
+    A conversion that rounds each destination's percentage to two places
+    *before* storing it - rather than keeping the exact value and rounding
+    only where it is displayed - drifts the total by two hundredths of a
+    percentage point in the same direction on every one of the four, which
+    is comfortably past `improvementValidation`'s own 0.01 tolerance.
+    """
+    page = _improvement_panel(page_at)
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    boxes = page.locator('.percentage-input input[type="number"]')
+    assert boxes.count() >= 4, "need four destinations to test this split"
+    for index, kilograms in enumerate(["100.05", "200.15", "300.25", "399.55"]):
+        boxes.nth(index).fill(kilograms)
+        page.wait_for_timeout(40)
+
+    total = page.locator("#improvement-total-value").inner_text().strip()
+    assert total == "100.00%", (
+        f"a kilogram split that sums exactly to the entry's mass read back as {total!r}"
+    )
+    classes = page.locator(".improvement-total").get_attribute("class")
+    assert "invalid" not in classes, f"a valid allocation was flagged invalid: {classes!r}"
+    assert page.locator('[data-action="compare-improvement"]').is_enabled()
+
+    # **The seam with the kilogram/percentage toggle itself.** `sliderMax` returns a
+    # PERCENTAGE ceiling (`maxPercent`, at most 100 on any entry); `updateImprovementInput`
+    # has to convert that through `displayKg` before it lands on a kilogram slider's `max`
+    # attribute, or every kilogram slider is capped at a number sized for percentage points
+    # - `100` kg on this 1,000 kg entry - long before its real headroom. The first
+    # destination's own share here is ~100.05 kg, comfortably past that percentage-sized
+    # ceiling, so a `max` at or below 100 proves the conversion was skipped.
+    first_max = float(page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("max"))
+    assert first_max > 100, (
+        f"the kilogram slider's ceiling is percentage-sized ({first_max!r}); "
+        "updateImprovementInput must read it back through displayKg"
+    )
+
+
+#: Item 11: the client's report was "the gap between cards differs between
+#: steps 1 and 2" - the sector step and the food-type step, the only two
+#: screens shaped alike enough to compare side by side (a `<p class="section-intro">`,
+#: then one fieldset, then the step bar, with nothing else on the screen). Measuring
+#: `.content-section` itself found it identical on every step already - 0 margin, 0
+#: padding, every screen - so the divergence the client saw was never in the section
+#: the two `.content-section wide` steps share with the four plain ones; it was in
+#: the first thing inside it. `.stage-fieldset` opened with `margin: 34px 0 0`;
+#: `.choice-fieldset` opened with `margin: 30px 0 18px` - the same role, 4px apart,
+#: on the one pair of steps where a visitor can see both in a row.
+CONTENT_SECTION_BOX = """
+() => {
+  const section = document.querySelector('.content-section');
+  if (!section) return null;
+  const cs = getComputedStyle(section);
+  return {
+    marginBlockStart: cs.marginBlockStart,
+    marginBlockEnd: cs.marginBlockEnd,
+    paddingBlockStart: cs.paddingBlockStart,
+    paddingBlockEnd: cs.paddingBlockEnd,
+    rowGap: cs.rowGap,
+  };
+}
+"""
+
+FIRST_PANEL_MARGIN_BLOCK_START = """
+(selector) => {
+  const el = document.querySelector(selector);
+  return el ? getComputedStyle(el).marginBlockStart : null;
+}
+"""
+
+
+@pytest.mark.parametrize("width,height,dpr", [VIEWPORTS[0], VIEWPORTS[2]])
+def test_content_section_outer_spacing_is_equal_on_every_step(page_at, width, height, dpr):
+    """`.content-section`'s own margin-block, padding-block and row-gap, walked across
+    all seven screens at 1278 and 390 - the two widths the item 11 measurement pass
+    used - and asserted identical.
+
+    This already reads the same box on every screen (0 margin, 0 padding, `normal`
+    gap): the outer container was never the divergence. It is asserted here anyway,
+    so a future change that gives one step its own `.content-section` padding - the
+    obvious place to reach for a "quick" per-step spacing fix - fails a test instead
+    of surfacing in the next demonstration.
+    """
+    page = page_at(width, height, dpr)
+    boxes = {}
+    for step in walk(page):
+        page.wait_for_timeout(60)
+        box = page.evaluate(CONTENT_SECTION_BOX)
+        if box is not None:
+            boxes[step] = box
+    assert len(boxes) >= 5, f"too few steps rendered a .content-section to compare: {boxes}"
+    first_step, first_box = next(iter(boxes.items()))
+    mismatched = {step: box for step, box in boxes.items() if box != first_box}
+    assert not mismatched, (
+        f".content-section's own spacing is not equal across steps: step {first_step} "
+        f"measured {first_box}, but {mismatched} differ from it"
+    )
+
+
+@pytest.mark.parametrize("width,height,dpr", [VIEWPORTS[0], VIEWPORTS[2]])
+def test_the_gap_above_the_first_panel_matches_between_the_sector_and_food_type_steps(page_at, width, height, dpr):
+    """The actual item 11 defect, measured directly: the sector step's `.stage-fieldset`
+    and the food-type step's `.choice-fieldset` sit in the identical position - directly
+    after the intro paragraph, directly before the step bar - and are the only two panels
+    in the wizard alike enough for a visitor to notice one sitting closer than the other.
+
+    Before the fix this failed at both viewports with `34px` against `30px`. The fix
+    changed `.choice-fieldset`'s `margin-top` to match `.stage-fieldset`'s rather than
+    giving either one a new override; `.choice-fieldset`'s bottom margin is untouched,
+    because it alone clears an optional "Clear optional selection" button `.stage-fieldset`
+    never renders.
+    """
+    page = page_at(width, height, dpr)
+    margins = {}
+    for step in walk(page):
+        if step == 0:
+            margins[0] = page.evaluate(FIRST_PANEL_MARGIN_BLOCK_START, ".stage-fieldset")
+        elif step == 1:
+            margins[1] = page.evaluate(FIRST_PANEL_MARGIN_BLOCK_START, ".choice-fieldset")
+            break
+    assert margins.get(0) and margins.get(1), f"could not measure both panels: {margins}"
+    assert margins[0] == margins[1], (
+        f"the gap above the first panel differs between the sector step ({margins[0]}) "
+        f"and the food-type step ({margins[1]})"
+    )

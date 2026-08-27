@@ -60,6 +60,7 @@
     "Edit": "تعديل",
     "Edit your data": "تعديل بياناتك",
     "Enter a percentage from 0 to 100 for every destination.": "أدخل نسبة مئوية من 0 إلى 100 لكل مصير.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "أدخل كمية بالكيلوغرامات، من 0 حتى الإجمالي، لكل مصير.",
     "Enter an amount for at least one waste destination.": "أدخل كمية لمصير هدر واحد على الأقل.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "أدخل كمية لكل مصير منطبق. لا يمكن أن يتجاوز المجموع إجمالي الهدر لديك.",
     "Enter destination amounts to no more than two decimal places.": "أدخل كميات المصائر بما لا يزيد عن منزلتين عشريتين.",
@@ -91,7 +92,9 @@
     "Important information": "معلومات مهمة",
     "Improved": "المحسَّن",
     "Improved %(destination)s percentage": "نسبة %(destination)s في السيناريو المحسَّن",
+    "Improved %(destination)s kilograms": "كمية %(destination)s بالكيلوغرامات في السيناريو المحسَّن",
     "Improved %(destination)s percentage value": "قيمة نسبة %(destination)s في السيناريو المحسَّن",
+    "Improved %(destination)s kilograms value": "قيمة كمية %(destination)s بالكيلوغرامات في السيناريو المحسَّن",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "يجب أن يبلغ مجموع توزيعات المصائر في السيناريو المحسَّن 100%، حتى يصف السيناريو المحسَّن الكمية نفسها من الهدر كما في السيناريو الحالي. المجموع الحالي: %(total)s%.",
     "Improved scenario (Current → Improved)": "السيناريو المحسَّن (الحالي → المحسَّن)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - قيادة العمل في مواجهة هدر الطعام",
@@ -125,7 +128,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "أعد توزيع كمية الهدر الحالية على مصائر مختلفة. يجب أن تبقى الكمية الإجمالية للهدر دون تغيير.",
     "Remaining": "المتبقي",
     "Remove": "إزالة",
-    "Reset to Current": "إعادة التعيين إلى الحالي",
+    "Match the current allocation": "مطابقة التوزيع الحالي",
     "Results": "النتائج",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "النتائج تقديرية، ومستخرجة من معاملات الحساب التي تقدّمها وتعتمدها Kai Commitment.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "النتائج تقديرية. تُنفَّذ حسابات الأثر عبر واجهة الحساب البرمجية؛ أما الواجهة الأمامية فتقوم بتحويل الوحدات فقط.",
@@ -341,6 +344,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "تُسجَّل إدخالاتك بشكل مجهول، ولا تدخل الإحصاءات العامة إلا إذا اخترت تقديمها.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "يُسجَّل القطاع وفئة الطعام والكميات المُدخلة في الحاسبة بشكل مجهول. ولا تدخل الإحصاءات العامة المحمية للخصوصية إلا إذا اخترت تقديمها. ولا نسجّل أي معلومات تحدد هويتك أو هوية عملك.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "تحفظ هذه الحاسبة القطاع وفئة الطعام والكميات المُدخلة. ولا تدخل الإحصاءات العامة إلا إذا اخترت تقديمها، ولا يُحفظ أي شيء يحدد هويتك أو هوية عملك.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "استكشف إحصاءات مجمّعة ومجهولة الهوية من العمليات الحسابية التي قُدِّمت إلى حاسبة أثر هدر الطعام من Kai Commitment."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "استكشف إحصاءات مجمّعة ومجهولة الهوية من العمليات الحسابية التي قُدِّمت إلى حاسبة أثر هدر الطعام من Kai Commitment.",
+    "Percentage": "النسبة المئوية",
+    "Total mass": "الكتلة الإجمالية"
   }
 }

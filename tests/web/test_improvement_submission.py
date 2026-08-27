@@ -198,14 +198,43 @@ def calculate(page) -> str:
     return token
 
 
-def compare(page) -> None:
-    """Open the improvement panel and press Compare Impact, as a visitor does."""
+def allocate(page) -> None:
+    """Open the improvement panel and put a valid allocation into it.
+
+    **Why this is a step at all now.** Stage four starts every slider at zero on
+    purpose, so the panel opens on a total of 0% and `improvementValidation`
+    correctly refuses it - the two scenarios would not describe the same mass.
+    A visitor therefore has to allocate before Compare Impact is anything but
+    disabled, and so does this file.
+
+    `[data-action="reset-improvement"]` ("Match the current allocation") is the
+    visitor-facing shortcut to exactly the allocation these tests used to be
+    handed for free, so pressing it reaches the button under test without
+    inventing state the interface has no way to produce. It is also the only
+    route here that is indifferent to the kilogram/percentage toggle: it sets
+    `state.improvedAllocations` - always percentages, in either mode - rather
+    than typing into a box whose unit depends on the mode.
+
+    Nothing about the 100%-exactly rule is relaxed to get here. The allocation
+    pressed below is one `improvementValidation` accepts on its own terms; if it
+    ever stops totalling 100%, the assertion in `compare` fails rather than
+    routing around it.
+    """
     page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector('[data-action="reset-improvement"]')
+    page.click('[data-action="reset-improvement"]')
     page.wait_for_selector('[data-action="compare-improvement"]')
+    page.wait_for_timeout(120)
+
+
+def compare(page) -> None:
+    """Allocate, then press Compare Impact, as a visitor does."""
+    allocate(page)
     button = page.locator('[data-action="compare-improvement"]')
     assert button.is_enabled(), (
-        "Compare Impact opened disabled - the seeded allocation does not describe "
-        "the same mass as the current scenario, which is defect 2 by another route"
+        "Compare Impact stayed disabled after matching the current allocation - "
+        "that allocation does not describe the same mass as the current scenario, "
+        "which is defect 2 by another route"
     )
     button.click()
     page.wait_for_selector("#comparison-results", timeout=20000)
@@ -261,23 +290,99 @@ def test_compare_impact_does_not_rewrite_the_rows_into_the_entrys_unit(page):
     )
 
 
-def test_the_improvement_panel_seeds_equal_rows_at_equal_shares(page):
+def test_matching_the_current_allocation_puts_equal_rows_at_equal_shares(page):
     """The same defect where the visitor can see it, before any request is sent.
 
-    `currentAllocationPercentages` converted with the entry's unit too, so two
-    rows of identical mass seeded the sliders at 99.88% and 0.12%. This asserts
-    the seeding, not the storage, so it fails one screen earlier than the two
-    tests above and names the cause rather than the consequence.
+    **What this used to assert, and why it cannot any more.** The panel seeded
+    every slider from `currentAllocationPercentages` the moment it opened, and
+    this test read that seeding: two rows of identical mass in different units
+    landed at 99.88% and 0.12% instead of 50/50, because the conversion used the
+    entry's unit for both rows. Stage four made every slider open at zero
+    deliberately - a visitor modelling an improvement is choosing a new
+    allocation, and starting from the old one hid which numbers they had
+    actually decided - so "opens at equal shares" is not a property this panel
+    has any more, for any input, and asserting it would be asserting the absence
+    of a change the client asked for.
+
+    **What still has to be true, and is asserted here instead.**
+    `currentAllocationPercentages` is unchanged and still live: it is the
+    function behind `[data-action="reset-improvement"]` ("Match the current
+    allocation"), and it is still the only place the 99.88/0.12 conversion
+    defect can return. So this presses that button - the visitor action that now
+    reaches the conversion, where merely opening the panel used to - and makes
+    the same equal-shares assertion, on the same two-rows-in-two-units fixture,
+    against the same controls.
+
+    The per-row "Current: 50.00%" caption is checked as well. It is the same
+    function read through a surface that renders in percentage points in *both*
+    modes, so it pins the conversion independently of which unit the boxes below
+    it happen to be displaying.
     """
     calculate(page)
     page.click('[data-action="explore-improvements"]')
-    page.wait_for_selector('[data-action="compare-improvement"]')
+    page.wait_for_selector('[data-action="reset-improvement"]')
+
+    captions = page.evaluate(
+        """() => [...document.querySelectorAll('.improvement-allocation-row')]
+              .map(row => Number((row.querySelector('span')?.textContent || '')
+                                 .replace(/[^0-9.]/g, '')))
+              .filter(value => value > 0)"""
+    )
+    assert len(captions) == 2, (
+        f"two rows were entered and {len(captions)} carry a current share: {captions}"
+    )
+    assert all(abs(value - 50) < 0.01 for value in captions), (
+        f"two rows of equal mass do not report equal current shares: {captions}"
+    )
+
+    page.click('[data-action="reset-improvement"]')
+    page.wait_for_timeout(120)
     seeded = page.evaluate(
         """() => [...document.querySelectorAll('.percentage-input [data-improvement-code]')]
               .map(input => ({code: input.dataset.improvementCode, value: Number(input.value)}))
               .filter(row => row.value > 0)"""
     )
-    assert len(seeded) == 2, f"two rows were entered and {len(seeded)} were seeded: {seeded}"
+    assert len(seeded) == 2, f"two rows were entered and {len(seeded)} were matched: {seeded}"
     assert all(abs(row["value"] - 50) < 0.01 for row in seeded), (
-        f"two rows of equal mass were not seeded at equal shares: {json.dumps(seeded)}"
+        f"two rows of equal mass were not matched at equal shares: {json.dumps(seeded)}"
+    )
+
+
+def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_kilograms(page):
+    """The repair above, in the other mode of the kilogram/percentage toggle.
+
+    `state.improvedAllocations` holds percentages whichever mode is showing, and
+    kilograms are a display conversion only. That is what lets "Match the current
+    allocation" enable Compare Impact in either mode - and it is worth an
+    assertion, because storing kilograms instead would turn the exactly-100 rule
+    in `improvementValidation` into a floating-point comparison against a mass
+    and start refusing allocations that are correct.
+
+    1,000 kg is allocated across the two rows, so equal shares are 500 kg each -
+    the boxes read 500, not 50, and that difference is the evidence the mode
+    really did change rather than the label alone.
+    """
+    calculate(page)
+    page.click('[data-action="explore-improvements"]')
+    page.wait_for_selector("#improvement-mode")
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(120)
+
+    page.click('[data-action="reset-improvement"]')
+    page.wait_for_timeout(120)
+
+    shown = page.evaluate(
+        """() => [...document.querySelectorAll('.percentage-input [data-improvement-code]')]
+              .map(input => Number(input.value))
+              .filter(value => value > 0)"""
+    )
+    assert len(shown) == 2 and all(abs(value - 500) < 0.01 for value in shown), (
+        f"kilogram mode should show the two equal rows as 500 kg each: {shown}"
+    )
+
+    button = page.locator('[data-action="compare-improvement"]')
+    assert button.is_enabled(), (
+        "Compare Impact stayed disabled in kilogram mode on an allocation that is "
+        "valid in percentage mode - the stored allocation is unit-dependent, which "
+        "it must not be"
     )

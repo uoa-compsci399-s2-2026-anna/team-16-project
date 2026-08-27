@@ -2891,11 +2891,13 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | Multi-entry | `entries: []` — committed entries, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
 | Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
-| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementResult`, `improvementLoading`, `improvementError` |
+| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementMode` (`'percentage'` \| `'kilograms'`), `improvementResult`, `improvementLoading`, `improvementError` |
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
-> **The table above is exhaustive as of 2026-08-09.** `alternative: []` and `compareAlternative: false` were also on the object — initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, and **read by nothing.** The alternative scenario is built from `improvedAllocations` by `improvement.js`, which never looks at either. Both are removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one.
+> **The table above was exhaustive as of 2026-08-09** — `alternative: []` and `compareAlternative: false` were also on the object — initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, and **read by nothing.** The alternative scenario is built from `improvedAllocations` by `improvement.js`, which never looks at either. Both are removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one.
+>
+> **Exhaustive again as of 2026-08-28.** `improvementMode` was missing above: item ⑧'s kilogram/percentage toggle reads it in `improvement.js` — `state.improvementMode || 'percentage'` — to decide only what the sliders and the number boxes *display*. `state.improvedAllocations` stays a percentage in every mode regardless of which one this holds, which is what keeps `improvementValidation`'s exactly-100 rule a percentage comparison at every tonnage; see §7.3a.
 
 **Still requirements, and still unmet:**
 
@@ -2912,7 +2914,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 
 ## 7.3 `units.js` (written by C)
 
-**All front-end mass arithmetic belongs in this module, and as of 2026-08-09 all of it is here.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It was not — `tonnes ? 1000 : 1` and `.toFixed(3)` were spelled out at six sites across `results.js`, `improvement.js` and `calculator.js` while `calculator.js` also called this module for the same conversion, so the front end held two copies of its only arithmetic rule and either could be changed without the other. The last of them moved here in the same revision that added `kgToTonnes`. **A `*`, `/` or `.toFixed()` on a mass anywhere else in `web/` is now a defect on sight.**
+**All front-end mass arithmetic belongs in this module, and as of 2026-08-28 all of it is here.** That is the whole point of §7.6 rule 1: the front end's arithmetic can be audited in one file. It was not — `tonnes ? 1000 : 1` and `.toFixed(3)` were spelled out at six sites across `results.js`, `improvement.js` and `calculator.js` while `calculator.js` also called this module for the same conversion, so the front end held two copies of its only arithmetic rule and either could be changed without the other. The last of them moved here in the same revision that added `kgToTonnes`. **A `*`, `/` or `.toFixed()` on a mass anywhere else in `web/` is now a defect on sight.** (`percentageToKg` and `kgToPercentage`, below, were missing from this list between item ⑧ landing and 2026-08-28 — the same claim, made false by the same kind of omission the surrounding note already warns against.)
 
 ```js
 /**
@@ -3096,9 +3098,40 @@ export function presetUnitCode(unit);     // the unit_preset code, prefix remove
  *                    reaches formatNumber() as absent rather than as zero
  */
 export function kgToTonnes(kilograms);
+
+/**
+ * A percentage share of a total mass, as kilograms — **display only**. Item
+ * ⑧'s kilogram mode shows this instead of the percentage `improvement.js`
+ * actually stores in `state.improvedAllocations`; nothing this returns
+ * reaches the wire, and `improvedLines` (§7.3a) still derives every
+ * `qty_kg` it sends from the stored percentage.
+ * @param {number|string} percentage
+ * @param {number} totalKg
+ * @returns {number}  NaN when either operand is not finite, so a caller
+ *                    that forgets to guard prints "Not available" rather
+ *                    than "NaN%"
+ */
+export function percentageToKg(percentage, totalKg);
+
+/**
+ * The inverse of `percentageToKg`: the kilogram figure a visitor typed, as
+ * a percentage of `totalKg`. What a keystroke in kilogram mode stores —
+ * `state.improvedAllocations` stays a percentage in every mode (§7.2), so
+ * a kilogram entry is converted once, here, on the way in, and
+ * `improvementValidation`'s exactly-100 rule is never asked to compare a
+ * mass against a tolerance sized for a percentage point.
+ * @param {number|string} kg
+ * @param {number} totalKg
+ * @returns {number}  0 when there is no positive total to divide by — an
+ *                    entry with nothing in it yet allocates nothing,
+ *                    rather than dividing by zero into Infinity
+ */
+export function kgToPercentage(kg, totalKg);
 ```
 
 > `kgToTonnes` was added on 2026-08-09 for `results.js`, which printed `totals.total_kg / 1000` inline at two sites — the summary card's "2.300 tonnes" note and the same line in the downloaded report. §7.6.1's exception is stated in terms of *this module*, and neither site was in it. It is a one-line function and it exists so the rule reads the same everywhere: **outside `units.js`, nothing divides, multiplies or adds a number the API supplied.** Bar and chart widths scaled against a local maximum are not figures and are not covered by this.
+>
+> `percentageToKg` and `kgToPercentage` were added for item ⑧'s kilogram/percentage toggle and are exactly the pair `improvement.js` needs to keep one stored allocation and two displayed units: the first turns the stored percentage into a number a slider or a box can show in kilograms, and the second turns a kilogram keystroke back into the percentage that is actually kept. Neither is a second calculation in the §7.6.1 sense — the number that reaches the API is still built from `state.improvedAllocations` by `improvedLines`, in kilograms, once.
 
 ## 7.3a Calculator Modules (written by C)
 
@@ -3227,7 +3260,18 @@ export function downloadResults(state);
 
 ```js
 export function currentAllocationPercentages(state);  // {destinationCode: number}
-export function openImprovement(state);               // seeds from current allocation
+/** Opens the panel with every destination at 0, not the current share. The
+ *  client asked for every slider to start at 0: a visitor modelling an
+ *  improvement is choosing a new allocation, and seeding from the old one
+ *  hides which numbers they have actually decided. (This function used to
+ *  seed from the current allocation, and this line said so — the seeding
+ *  was deliberately removed and the line was not updated with it.) */
+export function openImprovement(state);
+/** No longer an undo. The panel does not open on the current allocation any
+ *  more, so there is nothing here to return *to* — it is kept as a shortcut
+ *  to the current shares, via `currentAllocationPercentages`, and the button
+ *  is labelled to match: "Match the current allocation", not "Reset to
+ *  Current". */
 export function resetImprovement(state);
 /** Keystroke fast path: mirrors slider and number input, updates the running
  *  total and inline error, enables/disables Compare — all without setState. */

@@ -59,6 +59,7 @@
     "Edit": "સંપાદિત કરો",
     "Edit your data": "તમારો ડેટા સંપાદિત કરો",
     "Enter a percentage from 0 to 100 for every destination.": "દરેક ગંતવ્ય માટે 0 થી 100 વચ્ચેની ટકાવારી દાખલ કરો.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "દરેક ગંતવ્ય માટે 0 થી કુલ વજન સુધીનો કિલોગ્રામમાં જથ્થો દાખલ કરો.",
     "Enter an amount for at least one waste destination.": "ઓછામાં ઓછા એક કચરાના ગંતવ્ય માટે જથ્થો દાખલ કરો.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "લાગુ પડતા દરેક ગંતવ્ય માટે જથ્થો દાખલ કરો. કુલ મળીને આ જથ્થો તમારા કુલ કચરા કરતાં વધારે ન હોઈ શકે.",
     "Enter destination amounts to no more than two decimal places.": "ગંતવ્યના જથ્થા દશાંશ પછી વધુમાં વધુ બે અંક સુધી દાખલ કરો.",
@@ -90,7 +91,9 @@
     "Important information": "મહત્વની માહિતી",
     "Improved": "સુધારેલું",
     "Improved %(destination)s percentage": "સુધારેલા દૃશ્યમાં %(destination)s ની ટકાવારી",
+    "Improved %(destination)s kilograms": "સુધારેલા દૃશ્યમાં %(destination)s નું કિલોગ્રામમાં પ્રમાણ",
     "Improved %(destination)s percentage value": "સુધારેલા દૃશ્યમાં %(destination)s ની ટકાવારીનું મૂલ્ય",
+    "Improved %(destination)s kilograms value": "સુધારેલા દૃશ્યમાં %(destination)s ના કિલોગ્રામ પ્રમાણનું મૂલ્ય",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "સુધારેલા દૃશ્યની ગંતવ્ય ફાળવણીઓનો સરવાળો 100% થવો જોઈએ, જેથી એ દૃશ્ય વર્તમાન જેટલા જ કચરાનું વર્ણન કરે. અત્યારનો સરવાળો: %(total)s%.",
     "Improved scenario (Current → Improved)": "સુધારેલું દૃશ્ય (વર્તમાન → સુધારેલું)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ખોરાકના કચરા સામે અગ્રણી પગલાં",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "વર્તમાન કચરાના જથ્થાને જુદા જુદા ગંતવ્યોમાં ફરીથી વહેંચો. કચરાનો કુલ જથ્થો એટલો જ રહેવો જોઈએ.",
     "Remaining": "બાકી",
     "Remove": "દૂર કરો",
-    "Reset to Current": "વર્તમાન પર પાછું સેટ કરો",
+    "Match the current allocation": "વર્તમાન ફાળવણી પ્રમાણે સેટ કરો",
     "Results": "પરિણામો",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "પરિણામો અંદાજ છે, જે Kai Commitment દ્વારા આપવામાં અને મંજૂર કરવામાં આવેલાં ગણતરી પરિબળોમાંથી કાઢવામાં આવ્યાં છે.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "પરિણામો અંદાજ છે. અસરની ગણતરીઓ ગણતરી API દ્વારા આપવામાં આવે છે; આ ઇન્ટરફેસ ફક્ત એકમનું રૂપાંતર કરે છે.",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "તમારી નોંધો નામ વગર સાચવવામાં આવે છે, અને તમે આપવાનું પસંદ કરો તો જ તે જાહેર આંકડામાં ઉમેરાય છે.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "કેલ્ક્યુલેટરમાં દાખલ કરેલું ક્ષેત્ર, ખોરાકની શ્રેણી અને જથ્થા નામ વગર નોંધાય છે. તમે આપવાનું પસંદ કરો તો જ તે ગોપનીયતા-સુરક્ષિત જાહેર આંકડામાં ઉમેરાય છે. તમારી કે તમારા વ્યવસાયની ઓળખ થાય એવી માહિતી અમે નોંધતા નથી.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "આ કેલ્ક્યુલેટર દાખલ કરેલું ક્ષેત્ર, ખોરાકની શ્રેણી અને જથ્થા સંગ્રહે છે. તમે આપવાનું પસંદ કરો તો જ તે જાહેર આંકડામાં ઉમેરાય છે, અને તમારી કે તમારા વ્યવસાયની ઓળખ થાય એવું કંઈ સંગ્રહાતું નથી.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ખોરાક કચરો અસર કેલ્ક્યુલેટરમાં આપવામાં આવેલી ગણતરીઓના નામ વગરના, સામૂહિક આંકડા જુઓ."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ખોરાક કચરો અસર કેલ્ક્યુલેટરમાં આપવામાં આવેલી ગણતરીઓના નામ વગરના, સામૂહિક આંકડા જુઓ.",
+    "Percentage": "ટકાવારી",
+    "Total mass": "કુલ વજન"
   }
 }

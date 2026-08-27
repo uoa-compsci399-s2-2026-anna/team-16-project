@@ -62,6 +62,7 @@
     "Edit": "編輯",
     "Edit your data": "編輯您填寫的資料",
     "Enter a percentage from 0 to 100 for every destination.": "請為每個去向輸入 0 到 100 之間的百分比。",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "請為每個去向輸入 0 到總重量之間的公斤數。",
     "Enter an amount for at least one waste destination.": "請至少為一個浪費去向輸入數量。",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "請為每個適用的去向輸入數量。合計不能超過您的浪費總量。",
     "Enter destination amounts to no more than two decimal places.": "各去向的數量最多保留兩位小數。",
@@ -93,7 +94,9 @@
     "Important information": "重要資訊",
     "Improved": "改善後",
     "Improved %(destination)s percentage": "改善後 %(destination)s 的百分比",
+    "Improved %(destination)s kilograms": "改善後 %(destination)s 的公斤數",
     "Improved %(destination)s percentage value": "改善後 %(destination)s 的百分比數值",
+    "Improved %(destination)s kilograms value": "改善後 %(destination)s 的公斤數值",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "改善方案中各去向的分配合計必須為 100%，這樣改善方案描述的才是與目前方案相同的浪費量。目前合計：%(total)s%。",
     "Improved scenario (Current → Improved)": "改善方案（目前 → 改善後）",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 引領食物浪費的行動",
@@ -127,7 +130,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "把目前的浪費量重新分配到不同的去向。浪費總量應維持不變。",
     "Remaining": "剩餘",
     "Remove": "移除",
-    "Reset to Current": "還原為目前數值",
+    "Match the current allocation": "與目前分配相符",
     "Results": "結果",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "結果為估算值，依據 Kai Commitment 提供並核可的計算因子得出。",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "結果為估算值。影響計算由計算 API 完成；前端只負責單位換算。",
@@ -343,6 +346,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "您填寫的記錄會以匿名方式保存，只有在您選擇提供時才會納入公開統計。",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "您在計算機中填寫的產業環節、食物類別與數量會以匿名方式記錄。只有在您選擇提供時，才會納入具備隱私保護的公開統計。我們不會記錄任何足以辨識您本人或您公司的資訊。",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "本計算機會保存您填寫的產業環節、食物類別與數量。只有在您選擇提供時才會納入公開統計，且不會保存任何足以辨識您本人或您公司的資訊。",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "瀏覽提供給 Kai Commitment 食物浪費影響計算機的各次計算的匿名彙總統計。"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "瀏覽提供給 Kai Commitment 食物浪費影響計算機的各次計算的匿名彙總統計。",
+    "Percentage": "百分比",
+    "Total mass": "總重量"
   }
 }

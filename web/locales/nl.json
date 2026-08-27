@@ -59,6 +59,7 @@
     "Edit": "Bewerken",
     "Edit your data": "Uw gegevens bewerken",
     "Enter a percentage from 0 to 100 for every destination.": "Voer voor elke bestemming een percentage van 0 tot 100 in.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Voer voor elke bestemming een hoeveelheid in kilogram in, van 0 tot de totale massa.",
     "Enter an amount for at least one waste destination.": "Voer een hoeveelheid in voor ten minste één afvalbestemming.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Voer een hoeveelheid in voor elke bestemming die van toepassing is. De som mag uw totale afval niet overschrijden.",
     "Enter destination amounts to no more than two decimal places.": "Voer hoeveelheden per bestemming in met maximaal twee decimalen.",
@@ -90,7 +91,9 @@
     "Important information": "Belangrijke informatie",
     "Improved": "Verbeterd",
     "Improved %(destination)s percentage": "Verbeterd percentage voor %(destination)s",
+    "Improved %(destination)s kilograms": "Verbeterde hoeveelheid in kilogram voor %(destination)s",
     "Improved %(destination)s percentage value": "Waarde van het verbeterde percentage voor %(destination)s",
+    "Improved %(destination)s kilograms value": "Waarde van de verbeterde hoeveelheid in kilogram voor %(destination)s",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "De verbeterde verdeling over de bestemmingen moet samen 100 % zijn, zodat het verbeterde scenario hetzelfde afval beschrijft als het huidige. Huidig totaal: %(total)s %.",
     "Improved scenario (Current → Improved)": "Verbeterd scenario (Huidig → Verbeterd)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Voorop in de aanpak van voedselverspilling",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Verdeel de huidige hoeveelheid afval over andere bestemmingen. De totale hoeveelheid afval moet gelijk blijven.",
     "Remaining": "Resterend",
     "Remove": "Verwijderen",
-    "Reset to Current": "Terugzetten naar huidig",
+    "Match the current allocation": "Aansluiten bij de huidige verdeling",
     "Results": "Resultaten",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "De resultaten zijn schattingen, gemaakt met de rekenfactoren die Kai Commitment aanlevert en goedkeurt.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "De resultaten zijn schattingen. De effectberekeningen komen van de reken-API; de website voert alleen de omrekening van eenheden uit.",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Uw invoer wordt anoniem vastgelegd en komt alleen in de openbare statistieken als u ervoor kiest die aan te bieden.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "De sector, de voedselcategorie en de hoeveelheden die in de rekentool worden ingevoerd, worden anoniem vastgelegd. Ze komen alleen in de privacybeschermde openbare statistieken als u ervoor kiest die aan te bieden. Wij leggen geen gegevens vast waarmee u of uw bedrijf kan worden geïdentificeerd.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Deze rekentool bewaart de sector, de voedselcategorie en de ingevoerde hoeveelheden. Ze komen alleen in de openbare statistieken als u ervoor kiest die aan te bieden, en er wordt niets bewaard waarmee u of uw bedrijf kan worden geïdentificeerd.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Verken geanonimiseerde, geaggregeerde statistieken uit berekeningen die zijn bijgedragen aan de Kai Commitment rekentool voor het effect van voedselafval."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Verken geanonimiseerde, geaggregeerde statistieken uit berekeningen die zijn bijgedragen aan de Kai Commitment rekentool voor het effect van voedselafval.",
+    "Percentage": "Procenten",
+    "Total mass": "Totale massa"
   }
 }

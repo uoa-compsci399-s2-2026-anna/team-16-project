@@ -51,6 +51,19 @@ let latestRequestGeneration = 0
 /**
  * The three breakdowns §6.4 publishes.
  *
+ * **All three are drawn as doughnuts, and that is only honest because of what
+ * they count.** Every value a breakdown here charts is `share`, derived in
+ * `db/repository.py::_bucketise` from `func.count()` — destination entries,
+ * supply-chain points, food categories selected. A count cannot be negative,
+ * and any bucket the suppression threshold would otherwise expose is merged
+ * into `other` before a share is computed, so the shares that remain still
+ * sum to 1: the slices are the whole. **A doughnut cannot draw a negative
+ * slice** — there is no such thing as a negative share of a whole — which is
+ * exactly why `renderBar`'s `allowNegative` exists at all: `factor_downstream`
+ * may be negative (an offset, such as the waste levy), so a future breakdown
+ * of impact *values* rather than counts needs a bar, not a doughnut. Do not
+ * switch that one on the strength of this comment; recheck what it sums.
+ *
  * **Every string is a function, not a value**, the same shape
  * `methodology.js::METADATA_FIELDS` uses. A constant would be read once at module
  * evaluation and would still be in the first language after a change; a call
@@ -77,7 +90,7 @@ const BREAKDOWNS = [
     key: 'by_sector',
     title: () => t('Sectors selected'),
     description: () => t('Share of supply-chain points by the sector selected across calculations contributed to this tool.'),
-    chart: 'bar',
+    chart: 'donut',
     chartTitle: () => t('Sectors selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
   },
@@ -85,7 +98,7 @@ const BREAKDOWNS = [
     key: 'by_food_category',
     title: () => t('Food categories selected'),
     description: () => t('Share of supply-chain points by the food category entered across calculations contributed to this tool.'),
-    chart: 'bar',
+    chart: 'donut',
     chartTitle: () => t('Food categories selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
   },

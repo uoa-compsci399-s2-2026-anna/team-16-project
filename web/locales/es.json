@@ -59,6 +59,7 @@
     "Edit": "Editar",
     "Edit your data": "Editar tus datos",
     "Enter a percentage from 0 to 100 for every destination.": "Introduce un porcentaje de 0 a 100 para cada destino.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Introduce una cantidad en kilogramos, de 0 hasta el total, para cada destino.",
     "Enter an amount for at least one waste destination.": "Introduce una cantidad para al menos un destino de residuos.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Introduce una cantidad para cada destino aplicable. La suma no puede superar el total de tus residuos.",
     "Enter destination amounts to no more than two decimal places.": "Introduce las cantidades por destino con un máximo de dos decimales.",
@@ -90,7 +91,9 @@
     "Important information": "Información importante",
     "Improved": "Mejorado",
     "Improved %(destination)s percentage": "Porcentaje mejorado de %(destination)s",
+    "Improved %(destination)s kilograms": "Cantidad mejorada en kilogramos de %(destination)s",
     "Improved %(destination)s percentage value": "Valor del porcentaje mejorado de %(destination)s",
+    "Improved %(destination)s kilograms value": "Valor de la cantidad mejorada en kilogramos de %(destination)s",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "El reparto mejorado entre destinos debe sumar 100 %, para que el escenario mejorado describa los mismos residuos que el actual. Total actual: %(total)s %.",
     "Improved scenario (Current → Improved)": "Escenario mejorado (Actual → Mejorado)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Liderando la acción frente al desperdicio de alimentos",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Reparte la cantidad actual de residuos entre destinos distintos. La cantidad total de residuos debe mantenerse igual.",
     "Remaining": "Pendiente",
     "Remove": "Eliminar",
-    "Reset to Current": "Restablecer al actual",
+    "Match the current allocation": "Coincidir con el reparto actual",
     "Results": "Resultados",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Los resultados son estimaciones, obtenidas a partir de los factores de cálculo facilitados y aprobados por Kai Commitment.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Los resultados son estimaciones. Los cálculos de impacto los facilita la API de cálculo; la interfaz solo realiza la conversión de unidades.",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Tus registros se guardan de forma anónima y solo pasan a las estadísticas públicas si eliges ofrecerlos.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "El sector, la categoría de alimento y las cantidades introducidas en la calculadora se registran de forma anónima. Solo pasan a las estadísticas públicas con protección de la privacidad si eliges ofrecerlos. No registramos información que te identifique a ti ni a tu empresa.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Esta calculadora guarda el sector, la categoría de alimento y las cantidades introducidas. Solo pasan a las estadísticas públicas si eliges ofrecerlos, y no se guarda nada que te identifique a ti ni a tu empresa.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Explora las estadísticas agregadas y anonimizadas de los cálculos aportados a la calculadora del impacto de los residuos de alimentos de Kai Commitment."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Explora las estadísticas agregadas y anonimizadas de los cálculos aportados a la calculadora del impacto de los residuos de alimentos de Kai Commitment.",
+    "Percentage": "Porcentaje",
+    "Total mass": "Masa total"
   }
 }

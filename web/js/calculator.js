@@ -971,6 +971,12 @@ export function bindCalculator(main, retryTaxonomy) {
     // the flag, and the box is disabled the moment it is checked, so there is nothing
     // an untick could mean here anyway.
     if (target.id === 'contribute' && target.checked) contributeCalculation(state, publicError)
+    // Item ⑧'s percentage/kilogram toggle. A discrete choice like every other `<select>`
+    // on this page, so it goes through `setState` and a full re-render rather than the
+    // keystroke-preserving patch `updateImprovementInput` uses — there is no caret in a
+    // `<select>` to lose. `improvement.js` reads `state.improvementMode` to decide what
+    // each row displays; the allocation itself, in `improvedAllocations`, is untouched.
+    if (target.id === 'improvement-mode') setState({ improvementMode: target.value })
   })
 
   /**

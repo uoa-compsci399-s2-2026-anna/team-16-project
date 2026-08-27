@@ -59,6 +59,7 @@
     "Edit": "എഡിറ്റ് ചെയ്യുക",
     "Edit your data": "നിങ്ങളുടെ ഡാറ്റ എഡിറ്റ് ചെയ്യുക",
     "Enter a percentage from 0 to 100 for every destination.": "ഓരോ ലക്ഷ്യസ്ഥാനത്തിനും 0 മുതൽ 100 വരെയുള്ള ശതമാനം നൽകുക.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "ഓരോ ലക്ഷ്യസ്ഥാനത്തിനും 0 മുതൽ മൊത്തം ഭാരം വരെയുള്ള കിലോഗ്രാമിലെ അളവ് നൽകുക.",
     "Enter an amount for at least one waste destination.": "കുറഞ്ഞത് ഒരു മാലിന്യ ലക്ഷ്യസ്ഥാനത്തിനെങ്കിലും ഒരു അളവ് നൽകുക.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "ബാധകമായ ഓരോ ലക്ഷ്യസ്ഥാനത്തിനും അളവ് നൽകുക. ആകെ അളവ് നിങ്ങളുടെ മൊത്തം മാലിന്യത്തെക്കാൾ കൂടരുത്.",
     "Enter destination amounts to no more than two decimal places.": "ലക്ഷ്യസ്ഥാന അളവുകൾ ദശാംശത്തിന് ശേഷം രണ്ട് അക്കത്തിൽ കൂടാതെ നൽകുക.",
@@ -90,7 +91,9 @@
     "Important information": "പ്രധാന വിവരം",
     "Improved": "മെച്ചപ്പെട്ടത്",
     "Improved %(destination)s percentage": "മെച്ചപ്പെട്ട സാഹചര്യത്തിലെ %(destination)s ശതമാനം",
+    "Improved %(destination)s kilograms": "മെച്ചപ്പെട്ട സാഹചര്യത്തിലെ %(destination)s കിലോഗ്രാം അളവ്",
     "Improved %(destination)s percentage value": "മെച്ചപ്പെട്ട സാഹചര്യത്തിലെ %(destination)s ശതമാന മൂല്യം",
+    "Improved %(destination)s kilograms value": "മെച്ചപ്പെട്ട സാഹചര്യത്തിലെ %(destination)s കിലോഗ്രാം അളവിന്റെ മൂല്യം",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "മെച്ചപ്പെട്ട സാഹചര്യത്തിലെ ലക്ഷ്യസ്ഥാന വിഹിതങ്ങളുടെ ആകെത്തുക 100% ആയിരിക്കണം; അപ്പോൾ മാത്രമേ ആ സാഹചര്യം നിലവിലേതിന് തുല്യമായ മാലിന്യത്തെ വിവരിക്കൂ. ഇപ്പോഴത്തെ ആകെത്തുക: %(total)s%.",
     "Improved scenario (Current → Improved)": "മെച്ചപ്പെട്ട സാഹചര്യം (നിലവിലെ → മെച്ചപ്പെട്ടത്)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ഭക്ഷ്യമാലിന്യത്തിനെതിരെ മുൻനിര പ്രവർത്തനം",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "നിലവിലെ മാലിന്യ അളവ് വ്യത്യസ്ത ലക്ഷ്യസ്ഥാനങ്ങളിലേക്ക് വീണ്ടും വിഭജിക്കുക. ആകെ മാലിന്യത്തിന്റെ അളവ് മാറാതെ നിൽക്കണം.",
     "Remaining": "ബാക്കി",
     "Remove": "നീക്കം ചെയ്യുക",
-    "Reset to Current": "നിലവിലേതിലേക്ക് പുനഃസജ്ജമാക്കുക",
+    "Match the current allocation": "നിലവിലെ വിഹിതം ഉപയോഗിക്കുക",
     "Results": "ഫലങ്ങൾ",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "ഫലങ്ങൾ കണക്കാക്കിയവയാണ്; Kai Commitment നൽകി അംഗീകരിച്ച കണക്കുകൂട്ടൽ ഘടകങ്ങളിൽനിന്നാണ് ഇവ ഉണ്ടാക്കിയത്.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "ഫലങ്ങൾ കണക്കാക്കിയവയാണ്. ആഘാത കണക്കുകൂട്ടലുകൾ കണക്കുകൂട്ടൽ API നൽകുന്നു; ഈ ഇന്റർഫേസ് യൂണിറ്റ് പരിവർത്തനം മാത്രമേ ചെയ്യുന്നുള്ളൂ.",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "നിങ്ങളുടെ എൻട്രികൾ പേരില്ലാതെ രേഖപ്പെടുത്തുന്നു; നിങ്ങൾ നൽകാൻ തിരഞ്ഞെടുത്താൽ മാത്രമേ അവ പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുകയുള്ളൂ.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "കാൽക്കുലേറ്ററിൽ നൽകിയ മേഖല, ഭക്ഷ്യ വിഭാഗം, അളവുകൾ എന്നിവ പേരില്ലാതെ രേഖപ്പെടുത്തുന്നു. നിങ്ങൾ നൽകാൻ തിരഞ്ഞെടുത്താൽ മാത്രമേ അവ സ്വകാര്യത സംരക്ഷിക്കുന്ന പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുകയുള്ളൂ. നിങ്ങളെയോ നിങ്ങളുടെ സ്ഥാപനത്തെയോ തിരിച്ചറിയുന്ന വിവരങ്ങൾ ഞങ്ങൾ രേഖപ്പെടുത്തുന്നില്ല.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "ഈ കാൽക്കുലേറ്റർ നൽകിയ മേഖല, ഭക്ഷ്യ വിഭാഗം, അളവുകൾ എന്നിവ സൂക്ഷിക്കുന്നു. നിങ്ങൾ നൽകാൻ തിരഞ്ഞെടുത്താൽ മാത്രമേ അവ പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുകയുള്ളൂ; നിങ്ങളെയോ നിങ്ങളുടെ സ്ഥാപനത്തെയോ തിരിച്ചറിയുന്ന ഒന്നും സൂക്ഷിക്കുന്നില്ല.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്ററിലേക്ക് നൽകിയ കണക്കുകൂട്ടലുകളുടെ പേരില്ലാത്ത, സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ പരിശോധിക്കുക."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്ററിലേക്ക് നൽകിയ കണക്കുകൂട്ടലുകളുടെ പേരില്ലാത്ത, സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ പരിശോധിക്കുക.",
+    "Percentage": "ശതമാനം",
+    "Total mass": "മൊത്തം ഭാരം"
   }
 }

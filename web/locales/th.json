@@ -59,6 +59,7 @@
     "Edit": "แก้ไข",
     "Edit your data": "แก้ไขข้อมูลของคุณ",
     "Enter a percentage from 0 to 100 for every destination.": "กรอกเปอร์เซ็นต์ตั้งแต่ 0 ถึง 100 สำหรับทุกปลายทาง",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "กรอกปริมาณเป็นกิโลกรัมตั้งแต่ 0 ถึงน้ำหนักรวมสำหรับทุกปลายทาง",
     "Enter an amount for at least one waste destination.": "กรอกปริมาณอย่างน้อยหนึ่งปลายทางของขยะ",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "กรอกปริมาณสำหรับทุกปลายทางที่เกี่ยวข้อง ผลรวมต้องไม่เกินปริมาณขยะทั้งหมดของคุณ",
     "Enter destination amounts to no more than two decimal places.": "กรอกปริมาณของแต่ละปลายทางไม่เกินทศนิยมสองตำแหน่ง",
@@ -90,7 +91,9 @@
     "Important information": "ข้อมูลสำคัญ",
     "Improved": "หลังปรับปรุง",
     "Improved %(destination)s percentage": "เปอร์เซ็นต์ %(destination)s หลังปรับปรุง",
+    "Improved %(destination)s kilograms": "ปริมาณกิโลกรัม %(destination)s หลังปรับปรุง",
     "Improved %(destination)s percentage value": "ค่าเปอร์เซ็นต์ %(destination)s หลังปรับปรุง",
+    "Improved %(destination)s kilograms value": "ค่าปริมาณกิโลกรัม %(destination)s หลังปรับปรุง",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "การจัดสรรปลายทางหลังปรับปรุงต้องรวมกันได้ 100% เพื่อให้แผนที่ปรับปรุงแล้วอธิบายขยะปริมาณเดียวกับปัจจุบัน ยอดรวมปัจจุบัน: %(total)s%",
     "Improved scenario (Current → Improved)": "แผนที่ปรับปรุงแล้ว (ปัจจุบัน → หลังปรับปรุง)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ผู้นำการลงมือแก้ปัญหาขยะอาหาร",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "จัดสรรปริมาณขยะปัจจุบันใหม่ไปยังปลายทางต่าง ๆ โดยปริมาณขยะรวมต้องเท่าเดิม",
     "Remaining": "คงเหลือ",
     "Remove": "ลบออก",
-    "Reset to Current": "ตั้งค่ากลับเป็นปัจจุบัน",
+    "Match the current allocation": "จับคู่กับการจัดสรรปัจจุบัน",
     "Results": "ผลลัพธ์",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "ผลลัพธ์เป็นเพียงค่าประมาณ คำนวณจากค่าตัวคูณที่ Kai Commitment ให้มาและอนุมัติ",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "ผลลัพธ์เป็นเพียงค่าประมาณ การคำนวณผลกระทบมาจาก API การคำนวณ ส่วนหน้าเว็บทำเพียงการแปลงหน่วยเท่านั้น",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "รายการที่คุณกรอกจะถูกบันทึกแบบไม่ระบุตัวตน และจะรวมอยู่ในสถิติสาธารณะก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "ภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอกในเครื่องคำนวณจะถูกบันทึกแบบไม่ระบุตัวตน และจะรวมอยู่ในสถิติสาธารณะที่คุ้มครองความเป็นส่วนตัวก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น เราไม่บันทึกข้อมูลที่ระบุตัวคุณหรือธุรกิจของคุณ",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "เครื่องคำนวณนี้จะเก็บข้อมูลภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอก ข้อมูลเหล่านี้จะรวมอยู่ในสถิติสาธารณะก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น และไม่มีการเก็บสิ่งใดที่ระบุตัวคุณหรือธุรกิจของคุณ",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "สำรวจสถิติรวมแบบไม่ระบุตัวตนจากการคำนวณที่มอบให้แก่เครื่องคำนวณผลกระทบจากขยะอาหารของ Kai Commitment"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "สำรวจสถิติรวมแบบไม่ระบุตัวตนจากการคำนวณที่มอบให้แก่เครื่องคำนวณผลกระทบจากขยะอาหารของ Kai Commitment",
+    "Percentage": "เปอร์เซ็นต์",
+    "Total mass": "น้ำหนักรวม"
   }
 }

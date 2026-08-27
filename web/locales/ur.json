@@ -60,6 +60,7 @@
     "Edit": "ترمیم",
     "Edit your data": "اپنے ڈیٹا میں ترمیم کریں",
     "Enter a percentage from 0 to 100 for every destination.": "ہر منزل کے لیے 0 سے 100 تک فیصد درج کریں۔",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "ہر منزل کے لیے 0 سے کل وزن تک کلوگرام میں مقدار درج کریں۔",
     "Enter an amount for at least one waste destination.": "کم از کم ایک ضیاع کی منزل کے لیے مقدار درج کریں۔",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "ہر قابلِ اطلاق منزل کے لیے مقدار درج کریں۔ مجموعی مقدار آپ کے کل ضیاع سے زیادہ نہیں ہو سکتی۔",
     "Enter destination amounts to no more than two decimal places.": "منزل کی مقدار زیادہ سے زیادہ دو اعشاریہ مقامات تک درج کریں۔",
@@ -91,7 +92,9 @@
     "Important information": "اہم معلومات",
     "Improved": "بہتر",
     "Improved %(destination)s percentage": "بہتر منظرنامے میں %(destination)s کا فیصد",
+    "Improved %(destination)s kilograms": "بہتر منظرنامے میں %(destination)s کی کلوگرام مقدار",
     "Improved %(destination)s percentage value": "بہتر منظرنامے میں %(destination)s کے فیصد کی قدر",
+    "Improved %(destination)s kilograms value": "بہتر منظرنامے میں %(destination)s کی کلوگرام مقدار کی قدر",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "بہتر منظرنامے میں منزلوں کی تقسیم کا مجموعہ 100% ہونا چاہیے، تاکہ بہتر منظرنامہ اتنے ہی ضیاع کو بیان کرے جتنا موجودہ۔ موجودہ مجموعہ: %(total)s%۔",
     "Improved scenario (Current → Improved)": "بہتر منظرنامہ (موجودہ → بہتر)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - کھانے کے ضیاع کے خلاف قیادت",
@@ -125,7 +128,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "موجودہ ضیاع کی مقدار کو مختلف منزلوں میں دوبارہ تقسیم کریں۔ ضیاع کی کل مقدار میں تبدیلی نہیں ہونی چاہیے۔",
     "Remaining": "باقی",
     "Remove": "ہٹائیں",
-    "Reset to Current": "موجودہ پر واپس لائیں",
+    "Match the current allocation": "موجودہ تقسیم سے ملائیں",
     "Results": "نتائج",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "نتائج تخمینی ہیں، جو Kai Commitment کے فراہم کردہ اور منظور شدہ حساب کے عوامل سے نکالے گئے ہیں۔",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "نتائج تخمینی ہیں۔ اثر کے حسابات حساب کی API فراہم کرتی ہے؛ فرنٹ اینڈ صرف یونٹ کی تبدیلی کرتا ہے۔",
@@ -341,6 +344,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "آپ کے اندراجات گمنام طور پر محفوظ کیے جاتے ہیں، اور وہ عوامی اعداد و شمار میں تبھی شامل ہوتے ہیں جب آپ انہیں دینے کا انتخاب کریں۔",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "کیلکولیٹر میں درج کیا گیا شعبہ، کھانے کا زمرہ اور مقداریں گمنام طور پر ریکارڈ کی جاتی ہیں۔ وہ رازداری سے محفوظ عوامی اعداد و شمار میں تبھی شامل ہوتی ہیں جب آپ انہیں دینے کا انتخاب کریں۔ ہم ایسی معلومات ریکارڈ نہیں کرتے جو آپ کی یا آپ کے کاروبار کی شناخت ظاہر کریں۔",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "یہ کیلکولیٹر درج کیا گیا شعبہ، کھانے کا زمرہ اور مقداریں محفوظ کرتا ہے۔ وہ عوامی اعداد و شمار میں تبھی شامل ہوتی ہیں جب آپ انہیں دینے کا انتخاب کریں، اور ایسی کوئی چیز محفوظ نہیں کی جاتی جو آپ کی یا آپ کے کاروبار کی شناخت ظاہر کرے۔",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment کے کھانے کے ضیاع کے اثر کے کیلکولیٹر کو دیے گئے حسابات کے گمنام، مجموعی اعداد و شمار دیکھیں۔"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment کے کھانے کے ضیاع کے اثر کے کیلکولیٹر کو دیے گئے حسابات کے گمنام، مجموعی اعداد و شمار دیکھیں۔",
+    "Percentage": "فیصد",
+    "Total mass": "کل وزن"
   }
 }

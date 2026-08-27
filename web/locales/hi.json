@@ -59,6 +59,7 @@
     "Edit": "संपादित करें",
     "Edit your data": "अपना डेटा संपादित करें",
     "Enter a percentage from 0 to 100 for every destination.": "हर गंतव्य के लिए 0 से 100 के बीच प्रतिशत दर्ज करें।",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "हर गंतव्य के लिए 0 से कुल वज़न तक किलोग्राम में मात्रा दर्ज करें।",
     "Enter an amount for at least one waste destination.": "कम से कम एक अपशिष्ट गंतव्य के लिए मात्रा दर्ज करें।",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "हर लागू गंतव्य के लिए मात्रा दर्ज करें। कुल मिलाकर यह मात्रा आपके कुल अपशिष्ट से अधिक नहीं हो सकती।",
     "Enter destination amounts to no more than two decimal places.": "गंतव्य की मात्राएँ दशमलव के बाद अधिकतम दो अंकों तक दर्ज करें।",
@@ -90,7 +91,9 @@
     "Important information": "महत्वपूर्ण जानकारी",
     "Improved": "बेहतर",
     "Improved %(destination)s percentage": "बेहतर परिदृश्य में %(destination)s का प्रतिशत",
+    "Improved %(destination)s kilograms": "बेहतर परिदृश्य में %(destination)s की किलोग्राम मात्रा",
     "Improved %(destination)s percentage value": "बेहतर परिदृश्य में %(destination)s का प्रतिशत मान",
+    "Improved %(destination)s kilograms value": "बेहतर परिदृश्य में %(destination)s की किलोग्राम मात्रा का मान",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "बेहतर परिदृश्य के गंतव्य आवंटनों का योग 100% होना चाहिए, ताकि यह परिदृश्य वर्तमान जितने ही अपशिष्ट को दर्शाए। अभी का योग: %(total)s%.",
     "Improved scenario (Current → Improved)": "बेहतर परिदृश्य (वर्तमान → बेहतर)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - खाद्य अपशिष्ट पर अग्रणी कार्रवाई",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "वर्तमान अपशिष्ट मात्रा को अलग-अलग गंतव्यों में फिर से बाँटें। अपशिष्ट की कुल मात्रा वही रहनी चाहिए।",
     "Remaining": "शेष",
     "Remove": "हटाएँ",
-    "Reset to Current": "वर्तमान पर लौटाएँ",
+    "Match the current allocation": "वर्तमान आवंटन से मिलाएं",
     "Results": "परिणाम",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "परिणाम अनुमान हैं, जो Kai Commitment द्वारा उपलब्ध कराए और स्वीकृत किए गए गणना कारकों से निकाले गए हैं।",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "परिणाम अनुमान हैं। प्रभाव की गणनाएँ गणना API से आती हैं; यह इंटरफ़ेस केवल इकाई रूपांतरण करता है।",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "आपकी प्रविष्टियाँ गुमनाम रूप से दर्ज की जाती हैं, और वे सार्वजनिक आँकड़ों में तभी शामिल होती हैं जब आप उन्हें देना चुनते हैं।",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "कैलकुलेटर में दर्ज किया गया क्षेत्र, खाद्य श्रेणी और मात्राएँ गुमनाम रूप से दर्ज की जाती हैं। वे निजता-संरक्षित सार्वजनिक आँकड़ों में तभी शामिल होती हैं जब आप उन्हें देना चुनते हैं। हम ऐसी कोई जानकारी दर्ज नहीं करते जिससे आपकी या आपके व्यवसाय की पहचान हो सके।",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "यह कैलकुलेटर दर्ज किया गया क्षेत्र, खाद्य श्रेणी और मात्राएँ संग्रहीत करता है। वे सार्वजनिक आँकड़ों में तभी शामिल होती हैं जब आप उन्हें देना चुनते हैं, और ऐसा कुछ भी संग्रहीत नहीं किया जाता जिससे आपकी या आपके व्यवसाय की पहचान हो सके।",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment खाद्य अपशिष्ट प्रभाव कैलकुलेटर में दी गई गणनाओं के गुमनाम, सामूहिक आँकड़े देखें।"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment खाद्य अपशिष्ट प्रभाव कैलकुलेटर में दी गई गणनाओं के गुमनाम, सामूहिक आँकड़े देखें।",
+    "Percentage": "प्रतिशत",
+    "Total mass": "कुल वज़न"
   }
 }

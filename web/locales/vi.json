@@ -59,6 +59,7 @@
     "Edit": "Sửa",
     "Edit your data": "Sửa dữ liệu của bạn",
     "Enter a percentage from 0 to 100 for every destination.": "Nhập tỷ lệ phần trăm từ 0 đến 100 cho mọi điểm đến.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Nhập khối lượng theo kilôgam từ 0 đến tổng khối lượng cho mọi điểm đến.",
     "Enter an amount for at least one waste destination.": "Nhập lượng cho ít nhất một điểm đến của thực phẩm bỏ đi.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Nhập lượng cho mọi điểm đến phù hợp. Tổng các lượng này không được vượt quá tổng lượng bỏ đi của bạn.",
     "Enter destination amounts to no more than two decimal places.": "Nhập lượng tại mỗi điểm đến với tối đa hai chữ số thập phân.",
@@ -90,7 +91,9 @@
     "Important information": "Thông tin quan trọng",
     "Improved": "Cải thiện",
     "Improved %(destination)s percentage": "Tỷ lệ %(destination)s sau cải thiện",
+    "Improved %(destination)s kilograms": "Khối lượng theo kilôgam của %(destination)s sau cải thiện",
     "Improved %(destination)s percentage value": "Giá trị tỷ lệ %(destination)s sau cải thiện",
+    "Improved %(destination)s kilograms value": "Giá trị khối lượng theo kilôgam của %(destination)s sau cải thiện",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Phân bổ cho các điểm đến sau cải thiện phải cộng lại thành 100%, để kịch bản cải thiện mô tả đúng lượng bỏ đi như hiện tại. Tổng hiện tại: %(total)s%.",
     "Improved scenario (Current → Improved)": "Kịch bản cải thiện (Hiện tại → Cải thiện)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Dẫn đầu hành động về thực phẩm bỏ đi",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Phân bổ lại lượng bỏ đi hiện tại cho các điểm đến khác nhau. Tổng lượng bỏ đi phải giữ nguyên.",
     "Remaining": "Còn lại",
     "Remove": "Xóa",
-    "Reset to Current": "Đặt lại về Hiện tại",
+    "Match the current allocation": "Khớp với phân bổ hiện tại",
     "Results": "Kết quả",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Kết quả chỉ là ước tính, được tính từ các hệ số do Kai Commitment cung cấp và phê duyệt.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Kết quả chỉ là ước tính. Phần tính tác động do API tính toán cung cấp; giao diện chỉ thực hiện việc quy đổi đơn vị.",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Các mục bạn nhập được ghi lại ẩn danh, và chỉ tham gia thống kê công khai nếu bạn chọn đóng góp chúng.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "Lĩnh vực, nhóm thực phẩm và các số lượng nhập vào công cụ tính được ghi lại ẩn danh. Chúng chỉ tham gia thống kê công khai có bảo vệ quyền riêng tư nếu bạn chọn đóng góp chúng. Chúng tôi không ghi lại thông tin nhận dạng bạn hay doanh nghiệp của bạn.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Công cụ này lưu lại lĩnh vực, nhóm thực phẩm và các số lượng bạn nhập. Chúng chỉ tham gia thống kê công khai nếu bạn chọn đóng góp chúng, và không có thông tin nào nhận dạng bạn hay doanh nghiệp của bạn được lưu.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Khám phá thống kê tổng hợp, ẩn danh từ các phép tính đã đóng góp cho công cụ tính tác động của thực phẩm bỏ đi Kai Commitment."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Khám phá thống kê tổng hợp, ẩn danh từ các phép tính đã đóng góp cho công cụ tính tác động của thực phẩm bỏ đi Kai Commitment.",
+    "Percentage": "Phần trăm",
+    "Total mass": "Tổng khối lượng"
   }
 }

@@ -80,6 +80,10 @@ export const state = {
   lastChangedDestination: null,
   improvementOpen: false,
   improvedAllocations: {},
+  // Item ⑧'s toggle. `improvedAllocations` stays percentages in every mode — see the note
+  // on `updateImprovementInput` in `improvement.js` — so this only ever decides which unit
+  // the sliders and boxes *display*, never what they store.
+  improvementMode: 'percentage',
   improvementResult: null,
   improvementLoading: false,
   improvementError: null,
@@ -187,6 +191,7 @@ export function resetCalculator() {
     lastChangedDestination: null,
     improvementOpen: false,
     improvedAllocations: {},
+    improvementMode: 'percentage',
     improvementResult: null,
     improvementLoading: false,
     improvementError: null,

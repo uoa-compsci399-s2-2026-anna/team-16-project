@@ -160,6 +160,68 @@ function formatter(opts) {
 }
 
 /**
+ * Shrink one legend label to fit beside its swatch, never past the canvas
+ * itself. Chart.js lays out legend rows to the container's width, but it does
+ * not wrap or truncate the text *inside* one entry: a single label wider than
+ * the whole legend row (`db/repository.py`'s `standard_mix` bucket,
+ * "Mixed food waste (composition unknown)", is 39 characters and reliably
+ * wider than a 320px-viewport canvas) is still centred on that row, which
+ * pushes it past both edges rather than one. Measured at 320x700: the doughnut
+ * legend for the food-category breakdown drew that entry's right edge at
+ * 244px on a 222px canvas.
+ *
+ * The full label is never lost: it is still the tooltip (`context.label`
+ * below reads the untouched `data.labels`) and every row of
+ * `renderEquivalentList` in `stats.js`, which is the real always-available
+ * text alternative here -- the canvas `aria-label` `stats.js` builds is one
+ * generic sentence per chart, not a per-bucket label, so it is not what
+ * satisfies this requirement. Only the on-canvas swatch text is shortened,
+ * the same trade-off any dashboard legend makes for a name too long to sit
+ * next to its colour.
+ */
+function truncateForLegend(ctx, text, maxWidth) {
+  if (maxWidth <= 0 || ctx.measureText(text).width <= maxWidth) return text
+  const ellipsis = '…'
+  let low = 0
+  let high = text.length
+  while (low < high) {
+    const mid = Math.ceil((low + high) / 2)
+    const candidate = `${text.slice(0, mid).trimEnd()}${ellipsis}`
+    if (ctx.measureText(candidate).width <= maxWidth) low = mid
+    else high = mid - 1
+  }
+  return low > 0 ? `${text.slice(0, low).trimEnd()}${ellipsis}` : ellipsis
+}
+
+/**
+ * A legend's `generateLabels`, built rather than borrowed from Chart.js's own
+ * arc default: that default has no width to measure against and no reason to
+ * truncate anything. `chart.width` is the canvas's own CSS width, the same
+ * figure `fitLegend` reads off `getBoundingClientRect` -- so the bound this
+ * enforces is the canvas actually on screen, at whatever viewport it is.
+ */
+function donutLegendLabels(chart) {
+  const dataset = chart.data.datasets[0]
+  if (!dataset) return []
+  const ctx = chart.ctx
+  const font = Chart.helpers.toFont(chart.legend?.options?.labels?.font || {})
+  const swatchAndGapWidth = 50
+  const maxWidth = Math.max(0, chart.width - swatchAndGapWidth)
+  ctx.save()
+  ctx.font = font.string
+  const labels = chart.data.labels.map((label, index) => ({
+    text: truncateForLegend(ctx, String(label ?? ''), maxWidth),
+    fillStyle: dataset.backgroundColor[index],
+    strokeStyle: dataset.borderColor,
+    lineWidth: dataset.borderWidth,
+    hidden: !chart.getDataVisibility(index),
+    index,
+  }))
+  ctx.restore()
+  return labels
+}
+
+/**
  * Render every API bucket as a segment in a doughnut chart.
  *
  * @param {HTMLCanvasElement} el
@@ -193,7 +255,7 @@ export function renderDonut(el, buckets, opts = {}) {
       maintainAspectRatio: false,
       cutout: '58%',
       plugins: {
-        legend: { position: 'bottom', labels: { color: KALE } },
+        legend: { position: 'bottom', labels: { color: KALE, generateLabels: donutLegendLabels } },
         title: titlePlugin(opts.title),
         // Painted on the hovered segment's own fill, with that segment's ink.
         // This is where the brand's dark-ground/light-ground text rule is

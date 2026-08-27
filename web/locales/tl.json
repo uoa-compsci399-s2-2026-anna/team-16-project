@@ -60,6 +60,7 @@
     "Edit": "Baguhin",
     "Edit your data": "Baguhin ang iyong datos",
     "Enter a percentage from 0 to 100 for every destination.": "Maglagay ng porsyento mula 0 hanggang 100 para sa bawat patutunguhan.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "Maglagay ng dami sa kilogramo mula 0 hanggang sa kabuuang bigat para sa bawat patutunguhan.",
     "Enter an amount for at least one waste destination.": "Maglagay ng dami para sa kahit isang patutunguhan ng basura.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "Maglagay ng dami para sa bawat naaangkop na patutunguhan. Hindi maaaring lumampas ang pinagsamang dami sa kabuuan ng iyong basura.",
     "Enter destination amounts to no more than two decimal places.": "Maglagay ng dami sa bawat patutunguhan na hindi lalampas sa dalawang decimal.",
@@ -91,7 +92,9 @@
     "Important information": "Mahalagang impormasyon",
     "Improved": "Pinabuti",
     "Improved %(destination)s percentage": "Pinabuting porsyento ng %(destination)s",
+    "Improved %(destination)s kilograms": "Pinabuting dami sa kilogramo ng %(destination)s",
     "Improved %(destination)s percentage value": "Halaga ng pinabuting porsyento ng %(destination)s",
+    "Improved %(destination)s kilograms value": "Halaga ng pinabuting dami sa kilogramo ng %(destination)s",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Ang pinabuting paglalaan sa mga patutunguhan ay dapat umabot sa 100%, upang ilarawan ng pinabuting senaryo ang kaparehong dami ng basura tulad ng kasalukuyan. Kasalukuyang kabuuan: %(total)s%.",
     "Improved scenario (Current → Improved)": "Pinabuting senaryo (Kasalukuyan → Pinabuti)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - Nangunguna sa pagkilos laban sa basurang pagkain",
@@ -125,7 +128,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "Ipamahagi muli ang kasalukuyang dami ng basura sa iba't ibang patutunguhan. Dapat manatiling pareho ang kabuuang dami ng basura.",
     "Remaining": "Natitira",
     "Remove": "Alisin",
-    "Reset to Current": "Ibalik sa Kasalukuyan",
+    "Match the current allocation": "Itugma sa kasalukuyang paglalaan",
     "Results": "Mga Resulta",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "Ang mga resulta ay tantiya lamang, mula sa mga saligang bilang na ibinigay at inaprubahan ng Kai Commitment.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "Ang mga resulta ay tantiya lamang. Ang pagtuos ng epekto ay ibinibigay ng API ng pagtuos; ang harapang bahagi ay nagsasagawa lamang ng pagpapalit ng yunit.",
@@ -341,6 +344,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Ang iyong mga tala ay itinatala nang walang pangalan, at napapasama lamang sa pampublikong estadistika kung piliin mong ialok ang mga ito.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "Ang sektor, kategorya ng pagkain at mga daming inilagay sa pantuos ay itinatala nang walang pangalan. Napapasama lamang ang mga ito sa pampublikong estadistikang nangangalaga sa pagkapribado kung piliin mong ialok ang mga ito. Wala kaming itinatalang impormasyong makakakilala sa iyo o sa iyong negosyo.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Iniimbak ng pantuos na ito ang sektor, kategorya ng pagkain at mga daming inilagay. Napapasama lamang ang mga ito sa pampublikong estadistika kung piliin mong ialok ang mga ito, at walang iniimbak na makakakilala sa iyo o sa iyong negosyo.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Tuklasin ang walang pangalan at pinagsamang estadistika mula sa mga pagtuos na iniambag sa pantuos ng epekto ng basurang pagkain ng Kai Commitment."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Tuklasin ang walang pangalan at pinagsamang estadistika mula sa mga pagtuos na iniambag sa pantuos ng epekto ng basurang pagkain ng Kai Commitment.",
+    "Percentage": "Porsyento",
+    "Total mass": "Kabuuang bigat"
   }
 }

@@ -174,15 +174,23 @@ def test_every_legend_entry_is_drawn_inside_its_canvas(stats_page, width, height
     legended = [chart for chart in charts if chart["legendShown"]]
     assert legended, "no chart on this page draws a legend, so this measures nothing"
 
+    # One assertion over the whole set, not one per chart: since all three
+    # breakdowns became doughnuts, all three are legended, and the fixture only
+    # gives one of them (`by_destination`) ten buckets - `by_sector` and
+    # `by_food_category` are five and seven. Requiring *every* legended chart
+    # to individually reach ten would fail on a fixture shape that has nothing
+    # to do with the defect this test guards against. What must not regress is
+    # that the ten-bucket case is exercised *somewhere* in the page.
+    assert any(chart["buckets"] >= 10 for chart in legended), (
+        f"no legended chart reached ten buckets ({[c['buckets'] for c in legended]}), so "
+        "the ten-bucket case that produced the defect is not being exercised"
+    )
+
     for chart in legended:
         assert chart["entries"] == chart["buckets"], (
             f"{chart['type']}: {chart['entries']} legend entries for {chart['buckets']} "
             "buckets - a legend that is not drawing every bucket cannot be checked for "
             "one drawn outside the canvas"
-        )
-        assert chart["buckets"] >= 10, (
-            f"{chart['type']}: only {chart['buckets']} buckets, so the ten-bucket case "
-            "that produced the defect is not being exercised"
         )
         for index, bottom in enumerate(chart["bottoms"]):
             assert bottom <= chart["canvasHeight"], (
@@ -257,10 +265,16 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
     """Defect 4. The bar chart's y axis read `0`, `0.05` … `0.40` immediately
     above a text list reading `37.9% share`: one number, two units, one card.
 
-    Both the ticks and the tooltip are asserted, because formatting one and not
-    the other only moves the contradiction into the hover. And the tick labels
-    are read off the rendered scale rather than off the formatter, so a
-    callback that is configured but never reached fails here.
+    All three breakdowns are doughnuts as of the shares-as-shares change, so no
+    bar chart is rendered on this page any more and a y axis - the surface
+    defect 4 was found on - does not exist here to regress. The bar branch is
+    kept and asserted in case a future breakdown (of impact *values*, which can
+    be negative - see the note above `BREAKDOWNS`) puts one back.
+
+    What still applies to every chart on this page, bar or doughnut, is the
+    half of defect 4 that is not about axes at all: the tooltip and the text
+    list must state the same figure in the same unit. Formatting one and not
+    the other only moves the contradiction into the hover.
     """
     page = stats_page(1278, 983, 1.25)
     axes = page.evaluate(
@@ -273,7 +287,6 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
                }),
              }))"""
     )
-    assert axes, "no bar chart was rendered, so the axis cannot be checked"
     for axis in axes:
         assert axis["ticks"], "the y axis drew no ticks"
         assert all("%" in str(label) for label in axis["ticks"]), (
@@ -281,6 +294,19 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
         )
         assert "%" in axis["tooltip"], (
             f"the axis is a percentage and the tooltip is not: {axis['tooltip']!r}"
+        )
+
+    donuts = page.evaluate(
+        """() => Object.values(Chart.instances)
+             .filter((chart) => chart.config.type === 'doughnut')
+             .map((chart) => chart.options.plugins.tooltip.callbacks.label({
+               label: 'Example', parsed: 0.379,
+             }))"""
+    )
+    assert donuts, "no doughnut was rendered, so the tooltip cannot be checked"
+    for tooltip in donuts:
+        assert "%" in tooltip, (
+            f"the text list states a percentage share and a doughnut's tooltip is not: {tooltip!r}"
         )
 
     listed = page.inner_text("#stats-breakdown-content")
@@ -390,3 +416,133 @@ def test_the_statistics_page_no_longer_claims_every_calculation(browser):
         )
     finally:
         context.close()
+
+
+def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
+    """**Item ⑫, and it is two words in a config - but the reason it is safe
+    is worth writing down.**
+
+    A doughnut can only express a part of a whole. This project's charts must
+    render negative values, because `factor_downstream` may be negative (an
+    offset) - which is why `renderBar` carries `allowNegative`. A negative
+    slice does not exist.
+
+    These three buckets are safe because they are COUNTS of what visitors
+    selected - destination entries, supply-chain points, food categories -
+    and a count cannot go below zero. The server also merges any bucket below
+    the suppression threshold into `other`, so the parts do sum to the whole.
+
+    That reasoning does not extend to a future chart of impact VALUES, and
+    the note in `stats.js` says so.
+    """
+    context, page = open_page(browser, ["en-NZ"], path="/stats.html",
+                              stats_fixture=True)
+    try:
+        charted = page.evaluate(
+            """() => Object.values(Chart.instances || {}).map(c => ({
+                type: c.config.type,
+                title: c.options?.plugins?.title?.text,
+                data: c.data.datasets[0].data,
+            }))"""
+        )
+        assert charted, "no charts were drawn"
+        kinds = [chart["type"] for chart in charted]
+        assert set(kinds) == {"doughnut"}, (
+            f"not every breakdown is a share chart: {kinds}"
+        )
+
+        # The chart *type* alone does not prove the right field was drawn: a
+        # donut of counts and a donut of shares are the same slices in the
+        # same proportions on screen, so a `valueKey: 'share'` silently swapped
+        # for `'count'` would still pass everything above and would not be
+        # caught by looking at the page either. Compare what Chart.js was
+        # actually handed against the fixture's own `share`, per breakdown.
+        title_to_key = {
+            'Destinations entered (share)': 'by_destination',
+            'Sectors selected (share)': 'by_sector',
+            'Food categories selected (share)': 'by_food_category',
+        }
+        titles = {chart['title'] for chart in charted}
+        assert titles == set(title_to_key), (
+            f"expected one chart per breakdown ({sorted(title_to_key)}), drew: {sorted(titles)}"
+        )
+        for chart in charted:
+            key = title_to_key[chart['title']]
+            expected_shares = [float(row['share']) for row in STATS[key]]
+            assert chart['data'] == pytest.approx(expected_shares), (
+                f"{chart['title']}: chart.data.datasets[0].data is {chart['data']}, "
+                f"the fixture's own `share` is {expected_shares} - the chart is not "
+                "drawing the share field"
+            )
+    finally:
+        context.close()
+
+
+def test_render_bar_draws_a_negative_value_below_the_axis(browser):
+    """`renderBar`'s `allowNegative` has no caller on this page today - item ⑫
+    put every statistics breakdown on `renderDonut` instead, and a donut cannot
+    express a negative slice - so nothing in `stats.js` reaches the branch this
+    exercises. It is retained capability rather than dead code: §7.3a's "charts
+    must render negative values" still stands, because `factor_downstream` may
+    be negative (an offset) - `animal_feed` is `-0.15` in
+    `tests/fixtures/factors.json` - and this is D's own library for whatever
+    chart draws that figure next.
+
+    So the coverage has to be a direct unit test on `renderBar` itself, called
+    the way a future caller would, rather than anything read off `stats.html`.
+    A mutation replacing `allowNegative ? Math.min(0, ...finiteValues) : 0`
+    with a bare `0` left every one of the 142 tests in this file's siblings
+    green; this is the test that must fail against it.
+    """
+    context = browser.new_context(bypass_csp=True)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/stats.html", wait_until="domcontentloaded")
+        measured = page.evaluate(
+            """async () => {
+              const { renderBar } = await import('/js/charts.js')
+              const rows = [
+                { label: 'Landfill', value: 12 },
+                { label: 'Animal feed', value: -5 },
+              ]
+              const canvas = document.createElement('canvas')
+              canvas.width = 400
+              canvas.height = 300
+              document.body.appendChild(canvas)
+
+              const defaulted = renderBar(canvas, rows)
+              const withNegative = {
+                data: [...defaulted.data.datasets[0].data],
+                suggestedMin: defaulted.options.scales.y.suggestedMin,
+              }
+              defaulted.destroy()
+
+              const suppressed = renderBar(canvas, rows, { allowNegative: false })
+              const withoutNegative = suppressed.options.scales.y.suggestedMin
+              suppressed.destroy()
+
+              return { withNegative, withoutNegative }
+            }"""
+        )
+    finally:
+        context.close()
+
+    # The value itself is drawn verbatim - never clipped, never made positive -
+    # which is `renderBar`'s own documented contract and not merely this
+    # option's concern, but a mutation that broke it would land here too.
+    assert measured["withNegative"]["data"] == [12, -5], (
+        f"a negative row was not drawn as negative: {measured['withNegative']['data']}"
+    )
+    # The mutation under test: `allowNegative` (true by default - `opts.allowNegative
+    # !== false`) must lower the axis floor below the data's own minimum, not leave
+    # it pinned at zero.
+    assert measured["withNegative"]["suggestedMin"] < 0, (
+        "a negative value did not lower the y-axis floor below zero: "
+        f"{measured['withNegative']['suggestedMin']!r}"
+    )
+    # The opt-out this option exists to provide: explicitly `false` must still pin
+    # the floor at zero even though the data is negative, or `allowNegative` does
+    # nothing in either direction.
+    assert measured["withoutNegative"] == 0, (
+        f"allowNegative: false did not hold the axis floor at zero: {measured['withoutNegative']!r}"
+    )

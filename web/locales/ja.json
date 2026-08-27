@@ -59,6 +59,7 @@
     "Edit": "編集",
     "Edit your data": "入力データを編集",
     "Enter a percentage from 0 to 100 for every destination.": "すべての廃棄先に 0 から 100 までの割合を入力してください。",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "すべての廃棄先に、0 から総重量までのキログラムの量を入力してください。",
     "Enter an amount for at least one waste destination.": "少なくとも一つの廃棄先に量を入力してください。",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "該当するすべての廃棄先に量を入力してください。合計は総廃棄量を超えられません。",
     "Enter destination amounts to no more than two decimal places.": "廃棄先ごとの量は小数点以下二桁までで入力してください。",
@@ -90,7 +91,9 @@
     "Important information": "重要なお知らせ",
     "Improved": "改善後",
     "Improved %(destination)s percentage": "改善後の %(destination)s の割合",
+    "Improved %(destination)s kilograms": "改善後の %(destination)s のキログラム量",
     "Improved %(destination)s percentage value": "改善後の %(destination)s の割合の値",
+    "Improved %(destination)s kilograms value": "改善後の %(destination)s のキログラム量の値",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "改善後の廃棄先の割り当ては合計 100% にする必要があります。そうすることで、改善シナリオが現状と同じ廃棄量を表します。現在の合計：%(total)s%。",
     "Improved scenario (Current → Improved)": "改善シナリオ（現状 → 改善後）",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 食品廃棄への取り組みを牽引",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "現在の廃棄量を別の廃棄先に振り分け直します。廃棄の総量は変えないでください。",
     "Remaining": "残り",
     "Remove": "削除",
-    "Reset to Current": "現状に戻す",
+    "Match the current allocation": "現在の割り当てに合わせる",
     "Results": "結果",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "結果は推計値であり、Kai Commitment が提供し承認した計算係数に基づいています。",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "結果は推計値です。影響の計算は計算 API が行い、フロントエンドは単位換算のみを行います。",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "入力内容は匿名で記録され、あなたが提供を選んだ場合にのみ公開統計に加わります。",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "計算ツールに入力された業種、食品カテゴリー、数量は匿名で記録されます。あなたが提供を選んだ場合にのみ、プライバシーを保護した公開統計に加わります。あなたや事業者を特定できる情報は記録しません。",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "この計算ツールは、入力された業種、食品カテゴリー、数量を保存します。あなたが提供を選んだ場合にのみ公開統計に加わり、あなたや事業者を特定できる情報は一切保存しません。",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment の食品廃棄インパクト計算ツールに提供された計算の、匿名化された集計統計をご覧いただけます。"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment の食品廃棄インパクト計算ツールに提供された計算の、匿名化された集計統計をご覧いただけます。",
+    "Percentage": "パーセンテージ",
+    "Total mass": "総重量"
   }
 }

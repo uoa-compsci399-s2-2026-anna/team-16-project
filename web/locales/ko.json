@@ -59,6 +59,7 @@
     "Edit": "수정",
     "Edit your data": "입력한 데이터 수정",
     "Enter a percentage from 0 to 100 for every destination.": "모든 처리 경로에 0에서 100 사이의 비율을 입력하세요.",
+    "Enter a mass in kilograms, from 0 up to the total, for every destination.": "모든 처리 경로에 0에서 총 무게까지의 킬로그램 단위 양을 입력하세요.",
     "Enter an amount for at least one waste destination.": "적어도 한 개의 처리 경로에 양을 입력하세요.",
     "Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.": "해당하는 모든 처리 경로에 양을 입력하세요. 합계는 총 폐기량을 넘을 수 없습니다.",
     "Enter destination amounts to no more than two decimal places.": "처리 경로별 양은 소수점 두 자리까지 입력하세요.",
@@ -90,7 +91,9 @@
     "Important information": "중요 안내",
     "Improved": "개선 후",
     "Improved %(destination)s percentage": "개선 후 %(destination)s 비율",
+    "Improved %(destination)s kilograms": "개선 후 %(destination)s 킬로그램 양",
     "Improved %(destination)s percentage value": "개선 후 %(destination)s 비율 값",
+    "Improved %(destination)s kilograms value": "개선 후 %(destination)s 킬로그램 양 값",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "개선 시나리오의 처리 경로 배분은 합계가 100%여야 하며, 그래야 현재와 같은 양의 폐기물을 설명하게 됩니다. 현재 합계: %(total)s%.",
     "Improved scenario (Current → Improved)": "개선 시나리오(현재 → 개선 후)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 음식물 폐기물 대응을 이끄는 활동",
@@ -124,7 +127,7 @@
     "Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.": "현재 폐기량을 다른 처리 경로로 다시 나눠 보세요. 폐기물 총량은 그대로 유지해야 합니다.",
     "Remaining": "남은 양",
     "Remove": "삭제",
-    "Reset to Current": "현재 값으로 되돌리기",
+    "Match the current allocation": "현재 배분에 맞추기",
     "Results": "결과",
     "Results are estimates, produced from the calculation factors supplied and approved by Kai Commitment.": "결과는 Kai Commitment에서 제공하고 승인한 계산 계수로 산출한 추정치입니다.",
     "Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.": "결과는 추정치입니다. 영향 계산은 계산 API가 수행하며, 프런트엔드는 단위 변환만 처리합니다.",
@@ -340,6 +343,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "입력한 내용은 익명으로 기록되며, 제공하기를 선택한 경우에만 공개 통계에 포함됩니다.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "계산기에 입력한 업종, 음식 분류, 수량은 익명으로 기록됩니다. 제공하기를 선택한 경우에만 개인정보를 보호한 공개 통계에 포함됩니다. 이용자나 사업장을 식별할 수 있는 정보는 기록하지 않습니다.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "이 계산기는 입력한 업종, 음식 분류, 수량을 저장합니다. 제공하기를 선택한 경우에만 공개 통계에 포함되며, 이용자나 사업장을 식별할 수 있는 정보는 저장하지 않습니다.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment 음식물 폐기물 영향 계산기에 제공된 계산의 익명 집계 통계를 살펴보세요."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment 음식물 폐기물 영향 계산기에 제공된 계산의 익명 집계 통계를 살펴보세요.",
+    "Percentage": "백분율",
+    "Total mass": "총 무게"
   }
 }

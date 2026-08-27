@@ -394,7 +394,24 @@ function amountStep() {
     ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
     : t('Use up to two decimal places.')
   const amountValue = container ? state.unitCount : state.totalAmount
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field"><label for="total-input">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(state.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(state.totalInputKg)}"></div><div class="money-fields"><div class="form-field"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}"></div><div class="form-field"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}"></div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
+  // `state.error` is reused for two different things on this step, and only one of them
+  // belongs beside `amountId`. `validateCurrentStep`'s own message about `amountId` never
+  // sets `errorCode` — that check never touches the network — while a rejected
+  // `total_input_kg`/`total_value_nzd`/`wasted_value_nzd` is a server VALIDATION_ERROR that
+  // now lands on this step (see `detailStep` below) with `errorCode` set. Painting the
+  // second one next to `amountId` would mislabel somebody else's field as this one's — the
+  // exact defect this step exists to fix, one field over.
+  const isApiError = state.errorCode === 'VALIDATION_ERROR'
+  const amountFieldError = isApiError ? null : state.error
+  const bannerError = isApiError ? state.error : null
+  // The three round-two scalar fields' own per-field errors, keyed the same way
+  // `destinationRows` keys a line's — `state.fieldErrors`, by the exact path the server
+  // named (`entries[N].<key>`, always the draft entry's: see `ENTRY_SCALAR_FIELD_STEP`).
+  const scalarError = key => state.fieldErrors[`entries[${state.entries.length}].${key}`]
+  const totalInputError = scalarError('total_input_kg')
+  const totalValueError = scalarError('total_value_nzd')
+  const wastedValueError = scalarError('wasted_value_nzd')
+  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="form-panel amount-grid"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${amountFieldError ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="total-input">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(state.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(state.totalInputKg)}" ${totalInputError ? 'aria-invalid="true" aria-describedby="total-input-error"' : ''}>${totalInputError ? `<p class="field-error" id="total-input-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div><div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}" ${totalValueError ? 'aria-invalid="true" aria-describedby="total-value-error"' : ''}>${totalValueError ? `<p class="field-error" id="total-value-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}" ${wastedValueError ? 'aria-invalid="true" aria-describedby="wasted-value-error"' : ''}>${wastedValueError ? `<p class="field-error" id="wasted-value-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**
@@ -628,16 +645,51 @@ function publicError(error) {
   }
 }
 
+// **The three round-two scalar fields, and the step whose markup owns each.** `entries[N].
+// total_input_kg` (and its two money neighbours) are answered on step 2 (`amountStep`) —
+// a fact about that function's HTML, not something derivable from the field name itself.
+// One map, in one place, rather than a per-call-site guess; `entryDestinations`'s and
+// `draftFieldPaths`'s own paths cover the one other kind of field this form has a box
+// for, `entries[N].current[M].qty_kg`, and that one is derived from `state.current`
+// because there is one row per destination and the row is what the path counts.
+const ENTRY_SCALAR_FIELD_STEP = {
+  total_input_kg: 2,
+  total_value_nzd: 2,
+  wasted_value_nzd: 2,
+}
+
+// The exact `entries[N].<key>` paths the map above answers to — always the *draft*
+// entry's, because a saved entry's fields sit on a read-only `entryCard` with no box to
+// highlight. Shared by `detailStep`, which routes a rejected visitor, and
+// `validationMessage`, which must not also describe in the banner a field already
+// highlighted at its own input.
+const scalarFieldPaths = () => Object.keys(ENTRY_SCALAR_FIELD_STEP).map(key => `entries[${state.entries.length}].${key}`)
+
+/**
+ * The step that owns one API validation detail, or `undefined` when this form has no
+ * field to point at — a saved entry, `alternative`, anything §9 might name that never
+ * reaches an `<input>` on this page. `submitCalculation` uses this to send a rejected
+ * visitor to the screen that can actually show them what was wrong, instead of always
+ * landing on step 3 regardless of which field the API named.
+ */
+function detailStep(detail) {
+  const field = detail.field || ''
+  const scalarKey = new RegExp(`^entries\\[${state.entries.length}\\]\\.(\\w+)$`).exec(field)?.[1]
+  if (scalarKey && ENTRY_SCALAR_FIELD_STEP[scalarKey] !== undefined) return ENTRY_SCALAR_FIELD_STEP[scalarKey]
+  return draftFieldPaths().includes(field) ? 3 : undefined
+}
+
 /**
  * The banner text for a 400.
  *
  * `destinationRows` shows every detail that names a row of the entry on screen against
- * that row, so the banner only has to point at them. A detail that names anything else —
- * a saved entry, an `alternative`, a field this form has no input for — has no box to
- * attach to and would otherwise vanish entirely, so it is spelled out here instead.
+ * that row, and `amountStep` now does the same for the three scalar fields above, so the
+ * banner only has to point at what is left. A detail that names anything else — a saved
+ * entry, an `alternative`, a field this form has no input for — has no box to attach to
+ * and would otherwise vanish entirely, so it is spelled out here instead.
  */
 function validationMessage(error) {
-  const bound = new Set(draftFieldPaths().filter(Boolean))
+  const bound = new Set([...draftFieldPaths().filter(Boolean), ...scalarFieldPaths()])
   const unbound = (error.details || []).filter(detail => !bound.has(detail.field))
   if (!unbound.length) return t('Check the highlighted fields and try again.')
   return [error.message || t('The calculation could not be completed.'), ...unbound.map(describeDetail)].join(' ')
@@ -682,7 +734,14 @@ async function submitCalculation() {
   } catch (error) {
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
-    const errorStep = error.code === 'VALIDATION_ERROR' ? 3 : error.code === 'UNKNOWN_CODE' ? 0 : state.step
+    // A VALIDATION_ERROR names a field, and the field is what says which step it belongs
+    // on — `detailStep` derives that from where each field is actually rendered. The first
+    // detail with a locatable step wins; falling back to step 3 keeps this the form's own
+    // long-standing default for a rejection that names no field any screen owns.
+    const namedStep = error.code === 'VALIDATION_ERROR'
+      ? (error.details || []).map(detailStep).find(step => step !== undefined)
+      : undefined
+    const errorStep = namedStep !== undefined ? namedStep : error.code === 'VALIDATION_ERROR' ? 3 : error.code === 'UNKNOWN_CODE' ? 0 : state.step
     setState({ loading: false, error: publicError(error), errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep })
     // Clearing the deadline without clearing the banner re-enabled Calculate underneath a
     // paragraph still telling the user to wait 60 seconds — the button and the copy saying
@@ -821,7 +880,11 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'clear-food') setState({ foodCategory: null, ...presetPatch(null) })
     if (action === 'continue') {
       const error = validateCurrentStep()
-      if (error) setState({ error })
+      // `errorCode` is cleared with it: `amountStep` tells a client-side message about
+      // `amountId` apart from a server VALIDATION_ERROR naming a different field by
+      // whether `errorCode` is still set from that response, and a leftover code from an
+      // earlier submit must not survive to mislabel this one.
+      if (error) setState({ error, errorCode: null })
       else if (state.step === 2) setState({ step: 3, error: null, current: state.current.length ? normaliseLines(state.current) : entryDestinations().map(destination => createLine(destination.code)) })
       else setState({ step: state.step + 1, error: null })
     }

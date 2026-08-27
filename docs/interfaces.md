@@ -2800,6 +2800,15 @@ export async function calculate(payload, opts = {});
 /** GET /api/v1/stats   @returns {Promise<PublicStats>} @throws {ApiError} */
 export async function getStats();
 
+/**
+ * POST /api/v1/contribute — §6.2.2's opt-in. `token` is the only field the request
+ * carries, and the response is 204 with no body, always: the route gives nothing away
+ * about whether the token still names a live submission.
+ * @param {string} token
+ * @returns {Promise<null>} @throws {ApiError}
+ */
+export async function contribute(token);
+
 /** GET /api/v1/factors[?version=…]   @returns {Promise<Factors>} */
 export async function getFactors(opts = {});
 ```

@@ -755,14 +755,21 @@ def _results_page_with_time_frame(page_at, time_frame):
 def test_the_money_figures_appear_when_the_visitor_supplied_them(page_at):
     """Item ⑤'s display half. Every figure is read from `totals.money`, which
     the engine derived - the share is not computed here, and neither is the
-    saving."""
+    saving.
+
+    The share given (`61.11`) is deliberately **not** what `wasted / total *
+    100` would produce from the totals below (that division is `3.75`) - a
+    page that recomputed the share in JavaScript instead of reading
+    `wasted_share_percent` would show `3.75` here and fail this assertion,
+    the same strengthening Task 1's mutation step applies to its own figures.
+    """
     page = _results_page_with_money(page_at, total="120000.00",
-                                     wasted="4500.00", share="3.75")
+                                     wasted="4500.00", share="61.11")
 
     section = page.locator(".money-summary")
     assert section.count() == 1, "no money section on a result that has money"
     text = section.inner_text()
-    assert "3.75" in text, "the share of value wasted is not shown"
+    assert "61.11" in text, "the share of value wasted is not the response's own figure"
     assert "4,500" in text
     assert "NZ$" in text or "NZD" in text, "the currency is not named"
 
@@ -878,16 +885,19 @@ def test_the_export_carries_the_money_and_the_period(tmp_path):
     download's platform-specific blob/`<a download>` handling, which this
     project's browser tests do not exercise anywhere else either.
     """
+    #: `wasted_share_percent` (`61.11`) deliberately disagrees with what
+    #: `4500 / 120000 * 100` would give (`3.75`), for the reason the browser
+    #: test above gives: the export must print the response's own figure.
     state = build_state()
     state["timeFrame"] = "one_month"
     state["result"]["totals"]["money"] = {
         "total_value_nzd": "120000.00",
         "wasted_value_nzd": "4500.00",
-        "wasted_share_percent": "3.75",
+        "wasted_share_percent": "61.11",
         "saving_nzd": "1350.00",
     }
     report = report_for(tmp_path, state)
-    assert "3.75" in report and "1,350" in report and "month" in report.lower()
+    assert "61.11" in report and "1,350" in report and "month" in report.lower()
 
 
 @node

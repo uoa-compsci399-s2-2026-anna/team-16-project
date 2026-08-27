@@ -271,9 +271,6 @@
     "Sector": "ਖੇਤਰ",
     "Sectors selected": "ਚੁਣੇ ਖੇਤਰ",
     "Sectors selected (share)": "ਚੁਣੇ ਖੇਤਰ (ਹਿੱਸਾ)",
-    "Share of destination entries across calculations run in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਮੰਜ਼ਿਲ ਐਂਟਰੀਆਂ ਦਾ ਹਿੱਸਾ।",
-    "Share of supply-chain points by the food category entered in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਦਰਜ ਕੀਤੀ ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਅਨੁਸਾਰ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂਆਂ ਦਾ ਹਿੱਸਾ।",
-    "Share of supply-chain points by the sector selected in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਚੁਣੇ ਖੇਤਰ ਅਨੁਸਾਰ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂਆਂ ਦਾ ਹਿੱਸਾ।",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "ਹਿੱਸੇ ਨਿੱਜਤਾ-ਸੁਰੱਖਿਅਤ ਅੰਕੜਾ ਸੇਵਾ ਤੋਂ ਆਉਂਦੇ ਹਨ। ਇੱਕ ਗਣਨਾ ਵਿੱਚ ਕਈ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂ ਅਤੇ ਕਈ ਮੰਜ਼ਿਲਾਂ ਹੋ ਸਕਦੀਆਂ ਹਨ, ਇਸ ਲਈ ਵਰਗਾਂ ਦੀ ਗਿਣਤੀ ਐਂਟਰੀਆਂ ਦੀ ਹੈ, ਗਣਨਾਵਾਂ ਦੀ ਨਹੀਂ।",
     "Skip to main content": "ਸਿੱਧਾ ਮੁੱਖ ਸਮੱਗਰੀ ਉੱਤੇ ਜਾਓ",
     "Skip to statistics": "ਸਿੱਧਾ ਅੰਕੜਿਆਂ ਉੱਤੇ ਜਾਓ",
@@ -287,7 +284,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "ਅੰਕੜੇ | Kai Commitment ਭੋਜਨ ਬਰਬਾਦੀ ਪ੍ਰਭਾਵ ਕੈਲਕੁਲੇਟਰ",
     "The breakdowns are temporarily unavailable.": "ਵੇਰਵੇ ਕੁਝ ਸਮੇਂ ਲਈ ਉਪਲਬਧ ਨਹੀਂ ਹਨ।",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "ਕੈਲਕੁਲੇਟਰ ਵਿੱਚ ਦਰਜ ਕੀਤਾ ਖੇਤਰ, ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਅਤੇ ਮਾਤਰਾਵਾਂ ਸਿਰਫ਼ ਨਿੱਜਤਾ-ਸੁਰੱਖਿਅਤ ਸਮੁੱਚੇ ਅੰਕੜੇ ਤਿਆਰ ਕਰਨ ਲਈ ਸੰਭਾਲੇ ਜਾਂਦੇ ਹਨ। ਅਸੀਂ ਅਜਿਹੀ ਕੋਈ ਜਾਣਕਾਰੀ ਦਰਜ ਨਹੀਂ ਕਰਦੇ ਜੋ ਤੁਹਾਡੀ ਜਾਂ ਤੁਹਾਡੇ ਕਾਰੋਬਾਰ ਦੀ ਪਛਾਣ ਦੱਸੇ।",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "ਇਹ ਅੰਕੜੇ ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਦੇ ਸਵੈ-ਚੁਣੇ ਨਮੂਨੇ ਨੂੰ ਦਰਸਾਉਂਦੇ ਹਨ। ਇਹ ਨਾ ਕੋਈ ਸਰਵੇਖਣ ਹਨ ਅਤੇ ਨਾ ਹੀ ਪੂਰੇ ਨਿਊਜ਼ੀਲੈਂਡ ਦੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੀ ਤਸਵੀਰ।",
     "Turn food waste information into action": "ਭੋਜਨ ਬਰਬਾਦੀ ਦੀ ਜਾਣਕਾਰੀ ਨੂੰ ਕਾਰਵਾਈ ਵਿੱਚ ਬਦਲੋ",
     "Unlabelled bucket": "ਬਿਨਾਂ ਨਾਂ ਵਾਲਾ ਵਰਗ",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment ਵੈੱਬਸਾਈਟ ਤੋਂ ਤਾਜ਼ਾ ਜਾਣਕਾਰੀ ਅਤੇ ਕੰਮ ਆਉਣ ਵਾਲੀ ਸੂਝ।",
@@ -344,6 +340,10 @@
     "Total value of food handled": "ਸੰਭਾਲੇ ਗਏ ਭੋਜਨ ਦਾ ਕੁੱਲ ਮੁੱਲ",
     "Value of food not wasted at all": "ਬਿਲਕੁਲ ਵੀ ਬਰਬਾਦ ਨਾ ਹੋਏ ਭੋਜਨ ਦਾ ਮੁੱਲ",
     "Value of food wasted": "ਬਰਬਾਦ ਹੋਏ ਭੋਜਨ ਦਾ ਮੁੱਲ",
-    "Your latest figures are in this calculator's public statistics.": "ਤੁਹਾਡੇ ਨਵੀਨਤਮ ਅੰਕੜੇ ਇਸ ਕੈਲਕੁਲੇਟਰ ਦੇ ਜਨਤਕ ਅੰਕੜਿਆਂ ਵਿੱਚ ਸ਼ਾਮਲ ਹਨ।"
+    "Your latest figures are in this calculator's public statistics.": "ਤੁਹਾਡੇ ਨਵੀਨਤਮ ਅੰਕੜੇ ਇਸ ਕੈਲਕੁਲੇਟਰ ਦੇ ਜਨਤਕ ਅੰਕੜਿਆਂ ਵਿੱਚ ਸ਼ਾਮਲ ਹਨ।",
+    "Share of destination entries across calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਮੰਜ਼ਿਲ ਐਂਟਰੀਆਂ ਦਾ ਹਿੱਸਾ।",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਚੁਣੇ ਖੇਤਰ ਅਨੁਸਾਰ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂਆਂ ਦਾ ਹਿੱਸਾ।",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਵਿੱਚ ਦਰਜ ਕੀਤੀ ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਅਨੁਸਾਰ ਸਪਲਾਈ-ਚੇਨ ਬਿੰਦੂਆਂ ਦਾ ਹਿੱਸਾ।",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ਇਹ ਅੰਕੜੇ ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ ਗਣਨਾਵਾਂ ਦੇ ਸਵੈ-ਚੁਣੇ ਨਮੂਨੇ ਨੂੰ ਦਰਸਾਉਂਦੇ ਹਨ। ਇਹ ਨਾ ਕੋਈ ਸਰਵੇਖਣ ਹਨ ਅਤੇ ਨਾ ਹੀ ਪੂਰੇ ਨਿਊਜ਼ੀਲੈਂਡ ਦੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੀ ਤਸਵੀਰ।"
   }
 }

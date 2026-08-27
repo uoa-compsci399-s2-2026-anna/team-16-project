@@ -269,9 +269,6 @@
     "Sector": "Sektor",
     "Sectors selected": "Sektore gekies",
     "Sectors selected (share)": "Sektore gekies (aandeel)",
-    "Share of destination entries across calculations run in this tool.": "Aandeel van bestemmingsinskrywings oor die berekenings wat in hierdie hulpmiddel uitgevoer is.",
-    "Share of supply-chain points by the food category entered in this tool.": "Aandeel van voorsieningskettingpunte volgens die voedselkategorie wat in hierdie hulpmiddel ingevoer is.",
-    "Share of supply-chain points by the sector selected in this tool.": "Aandeel van voorsieningskettingpunte volgens die sektor wat in hierdie hulpmiddel gekies is.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "Aandele kom van die privaatheidsbeskermde statistiekdiens. 'n Berekening kan verskeie voorsieningskettingpunte en verskeie bestemmings insluit, en groeptellings is dus inskrywings, nie berekenings nie.",
     "Skip to main content": "Spring na die hoofinhoud",
     "Skip to statistics": "Spring na die statistiek",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "Statistiek | Kai Commitment se Voedselafval-impakberekener",
     "The breakdowns are temporarily unavailable.": "Die uiteensettings is tydelik nie beskikbaar nie.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "Die sektor, voedselkategorie en hoeveelhede wat in die berekener ingevoer word, word slegs gestoor om privaatheidsbeskermde saamgevoegde statistiek te lewer. Ons teken geen inligting aan wat jou of jou onderneming identifiseer nie.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "Hierdie syfers beskryf 'n selfgekose steekproef van berekenings wat in hierdie hulpmiddel uitgevoer is. Dit is nie 'n opname of 'n beeld van voedselafval oor Nieu-Seeland heen nie.",
     "Turn food waste information into action": "Verander voedselafvalinligting in optrede",
     "Unlabelled bucket": "Ongemerkte groep",
     "Updates and practical insights from the Kai Commitment website.": "Opdaterings en praktiese insigte van die Kai Commitment-webwerf.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "Totale waarde van voedsel hanteer",
     "Value of food not wasted at all": "Waarde van voedsel wat glad nie vermors is nie",
     "Value of food wasted": "Waarde van voedsel vermors",
-    "Your latest figures are in this calculator's public statistics.": "U jongste syfers is in hierdie berekener se openbare statistieke."
+    "Your latest figures are in this calculator's public statistics.": "U jongste syfers is in hierdie berekener se openbare statistieke.",
+    "Share of destination entries across calculations contributed to this tool.": "Aandeel van bestemmingsinskrywings oor die berekenings wat tot hierdie hulpmiddel bygedra is.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Aandeel van voorsieningskettingpunte volgens die sektor gekies, oor die berekenings wat tot hierdie hulpmiddel bygedra is.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Aandeel van voorsieningskettingpunte volgens die voedselkategorie ingevoer, oor die berekenings wat tot hierdie hulpmiddel bygedra is.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Hierdie syfers beskryf 'n selfgekose steekproef van berekenings wat tot hierdie hulpmiddel bygedra is. Dit is nie 'n opname of 'n beeld van voedselafval oor Nieu-Seeland heen nie."
   }
 }

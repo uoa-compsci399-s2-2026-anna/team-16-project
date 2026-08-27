@@ -269,9 +269,6 @@
     "Sector": "Lĩnh vực",
     "Sectors selected": "Lĩnh vực đã chọn",
     "Sectors selected (share)": "Lĩnh vực đã chọn (tỷ lệ)",
-    "Share of destination entries across calculations run in this tool.": "Tỷ lệ các mục điểm đến trong số các phép tính đã chạy trong công cụ này.",
-    "Share of supply-chain points by the food category entered in this tool.": "Tỷ lệ điểm chuỗi cung ứng theo nhóm thực phẩm đã nhập trong công cụ này.",
-    "Share of supply-chain points by the sector selected in this tool.": "Tỷ lệ điểm chuỗi cung ứng theo lĩnh vực đã chọn trong công cụ này.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "Các tỷ lệ đến từ dịch vụ thống kê có bảo vệ quyền riêng tư. Một phép tính có thể gồm nhiều điểm chuỗi cung ứng và nhiều điểm đến, nên số đếm của mỗi nhóm là số mục, không phải số phép tính.",
     "Skip to main content": "Chuyển tới nội dung chính",
     "Skip to statistics": "Chuyển tới phần thống kê",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "Thống kê | Công cụ tính tác động của thực phẩm bỏ đi Kai Commitment",
     "The breakdowns are temporarily unavailable.": "Tạm thời không xem được các phần phân tích.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "Lĩnh vực, nhóm thực phẩm và các số lượng nhập vào công cụ tính chỉ được lưu để tạo thống kê tổng hợp có bảo vệ quyền riêng tư. Chúng tôi không ghi lại thông tin nhận dạng bạn hay doanh nghiệp của bạn.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "Các con số này mô tả một mẫu tự chọn gồm các phép tính đã chạy trong công cụ này. Đây không phải một cuộc khảo sát hay bức tranh về thực phẩm bỏ đi trên toàn New Zealand.",
     "Turn food waste information into action": "Biến thông tin về thực phẩm bỏ đi thành hành động",
     "Unlabelled bucket": "Nhóm không có nhãn",
     "Updates and practical insights from the Kai Commitment website.": "Tin cập nhật và kinh nghiệm thực tiễn từ trang web Kai Commitment.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "Tổng giá trị thực phẩm đã xử lý",
     "Value of food not wasted at all": "Giá trị thực phẩm hoàn toàn không bị lãng phí",
     "Value of food wasted": "Giá trị thực phẩm bị lãng phí",
-    "Your latest figures are in this calculator's public statistics.": "Số liệu mới nhất của bạn đã có trong thống kê công khai của công cụ tính này."
+    "Your latest figures are in this calculator's public statistics.": "Số liệu mới nhất của bạn đã có trong thống kê công khai của công cụ tính này.",
+    "Share of destination entries across calculations contributed to this tool.": "Tỷ lệ các mục điểm đến trong số các phép tính đã được đóng góp cho công cụ này.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Tỷ lệ điểm chuỗi cung ứng theo lĩnh vực đã chọn, trong số các phép tính đã được đóng góp cho công cụ này.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Tỷ lệ điểm chuỗi cung ứng theo nhóm thực phẩm đã nhập, trong số các phép tính đã được đóng góp cho công cụ này.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Các con số này mô tả một mẫu tự chọn gồm các phép tính đã được đóng góp cho công cụ này. Đây không phải một cuộc khảo sát hay bức tranh về thực phẩm bỏ đi trên toàn New Zealand."
   }
 }

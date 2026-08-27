@@ -272,9 +272,6 @@
     "Sector": "產業環節",
     "Sectors selected": "已選擇的產業環節",
     "Sectors selected (share)": "已選擇的產業環節（佔比）",
-    "Share of destination entries across calculations run in this tool.": "本工具中各次計算所填去向記錄的佔比。",
-    "Share of supply-chain points by the food category entered in this tool.": "本工具中依所填食物類別劃分的供應鏈記錄佔比。",
-    "Share of supply-chain points by the sector selected in this tool.": "本工具中依所選產業環節劃分的供應鏈記錄佔比。",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "各項佔比來自具備隱私保護的統計服務。一次計算可能包含多筆供應鏈記錄與多個去向，因此分組中的計數是記錄筆數，而不是計算次數。",
     "Skip to main content": "跳至主要內容",
     "Skip to statistics": "跳至統計資料",
@@ -288,7 +285,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "統計 | Kai Commitment 食物浪費影響計算機",
     "The breakdowns are temporarily unavailable.": "各項細分暫時無法顯示。",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "您在計算機中填寫的產業環節、食物類別與數量，僅用於產生具備隱私保護的彙總統計。我們不會記錄任何足以辨識您本人或您公司的資訊。",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "這些數字描述的是在本工具中執行的計算所構成的自選樣本，既不是一項調查，也不代表紐西蘭全國的食物浪費狀況。",
     "Turn food waste information into action": "把食物浪費的資訊化為行動",
     "Unlabelled bucket": "未命名的分組",
     "Updates and practical insights from the Kai Commitment website.": "來自 Kai Commitment 網站的最新動態與實用見解。",
@@ -345,6 +341,10 @@
     "Total value of food handled": "處理食物的總價值",
     "Value of food not wasted at all": "完全未浪費食物的價值",
     "Value of food wasted": "浪費食物的價值",
-    "Your latest figures are in this calculator's public statistics.": "您最新的數字已納入本計算機的公開統計資料。"
+    "Your latest figures are in this calculator's public statistics.": "您最新的數字已納入本計算機的公開統計資料。",
+    "Share of destination entries across calculations contributed to this tool.": "貢獻給本工具的各次計算中，所填去向記錄的佔比。",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "貢獻給本工具的計算中，依所選產業環節劃分的供應鏈記錄佔比。",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "貢獻給本工具的計算中，依所填食物類別劃分的供應鏈記錄佔比。",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "這些數字描述的是貢獻給本工具的計算所構成的自選樣本，既不是一項調查，也不代表紐西蘭全國的食物浪費狀況。"
   }
 }

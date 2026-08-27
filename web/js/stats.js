@@ -68,7 +68,7 @@ const BREAKDOWNS = [
   {
     key: 'by_destination',
     title: () => t('Destinations entered'),
-    description: () => t('Share of destination entries across calculations run in this tool.'),
+    description: () => t('Share of destination entries across calculations contributed to this tool.'),
     chart: 'donut',
     chartTitle: () => t('Destinations entered (share)'),
     count: (count) => t('%(count)s destination entries', { count }),
@@ -76,7 +76,7 @@ const BREAKDOWNS = [
   {
     key: 'by_sector',
     title: () => t('Sectors selected'),
-    description: () => t('Share of supply-chain points by the sector selected in this tool.'),
+    description: () => t('Share of supply-chain points by the sector selected across calculations contributed to this tool.'),
     chart: 'bar',
     chartTitle: () => t('Sectors selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
@@ -84,7 +84,7 @@ const BREAKDOWNS = [
   {
     key: 'by_food_category',
     title: () => t('Food categories selected'),
-    description: () => t('Share of supply-chain points by the food category entered in this tool.'),
+    description: () => t('Share of supply-chain points by the food category entered across calculations contributed to this tool.'),
     chart: 'bar',
     chartTitle: () => t('Food categories selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),

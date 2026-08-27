@@ -269,9 +269,6 @@
     "Sector": "ภาคธุรกิจ",
     "Sectors selected": "ภาคธุรกิจที่เลือก",
     "Sectors selected (share)": "ภาคธุรกิจที่เลือก (สัดส่วน)",
-    "Share of destination entries across calculations run in this tool.": "สัดส่วนของรายการปลายทางจากการคำนวณทั้งหมดที่ทำในเครื่องมือนี้",
-    "Share of supply-chain points by the food category entered in this tool.": "สัดส่วนของจุดในห่วงโซ่อุปทาน แยกตามหมวดหมู่อาหารที่กรอกในเครื่องมือนี้",
-    "Share of supply-chain points by the sector selected in this tool.": "สัดส่วนของจุดในห่วงโซ่อุปทาน แยกตามภาคธุรกิจที่เลือกในเครื่องมือนี้",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "สัดส่วนมาจากบริการสถิติที่คุ้มครองความเป็นส่วนตัว การคำนวณหนึ่งครั้งอาจมีหลายจุดในห่วงโซ่อุปทานและหลายปลายทาง จำนวนในแต่ละกลุ่มจึงนับเป็นรายการ ไม่ใช่จำนวนการคำนวณ",
     "Skip to main content": "ข้ามไปที่เนื้อหาหลัก",
     "Skip to statistics": "ข้ามไปที่สถิติ",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "สถิติ | เครื่องคำนวณผลกระทบจากขยะอาหาร Kai Commitment",
     "The breakdowns are temporarily unavailable.": "ขณะนี้ยังแสดงรายละเอียดแยกย่อยไม่ได้ชั่วคราว",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "ภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอกในเครื่องคำนวณ จะถูกเก็บไว้เพื่อจัดทำสถิติรวมที่คุ้มครองความเป็นส่วนตัวเท่านั้น เราไม่บันทึกข้อมูลที่ระบุตัวคุณหรือธุรกิจของคุณ",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "ตัวเลขเหล่านี้อธิบายกลุ่มตัวอย่างที่ผู้ใช้เลือกเข้ามาคำนวณเองในเครื่องมือนี้ ไม่ใช่ผลสำรวจ และไม่ใช่ภาพรวมของขยะอาหารทั่วนิวซีแลนด์",
     "Turn food waste information into action": "เปลี่ยนข้อมูลขยะอาหารให้เป็นการลงมือทำ",
     "Unlabelled bucket": "กลุ่มที่ไม่มีป้ายกำกับ",
     "Updates and practical insights from the Kai Commitment website.": "ข่าวอัปเดตและข้อคิดที่นำไปใช้ได้จริงจากเว็บไซต์ Kai Commitment",
@@ -342,6 +338,10 @@
     "Total value of food handled": "มูลค่ารวมของอาหารที่จัดการ",
     "Value of food not wasted at all": "มูลค่าของอาหารที่ไม่ได้สูญเสียเลย",
     "Value of food wasted": "มูลค่าของอาหารที่สูญเสีย",
-    "Your latest figures are in this calculator's public statistics.": "ตัวเลขล่าสุดของคุณอยู่ในสถิติสาธารณะของเครื่องคำนวณนี้"
+    "Your latest figures are in this calculator's public statistics.": "ตัวเลขล่าสุดของคุณอยู่ในสถิติสาธารณะของเครื่องคำนวณนี้",
+    "Share of destination entries across calculations contributed to this tool.": "สัดส่วนของรายการปลายทางจากการคำนวณทั้งหมดที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "สัดส่วนของจุดในห่วงโซ่อุปทาน แยกตามภาคธุรกิจที่เลือก จากการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "สัดส่วนของจุดในห่วงโซ่อุปทาน แยกตามหมวดหมู่อาหารที่กรอก จากการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ตัวเลขเหล่านี้อธิบายกลุ่มตัวอย่างของการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้ ไม่ใช่ผลสำรวจ และไม่ใช่ภาพรวมของขยะอาหารทั่วนิวซีแลนด์"
   }
 }

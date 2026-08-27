@@ -269,9 +269,6 @@
     "Sector": "Secteur",
     "Sectors selected": "Secteurs sélectionnés",
     "Sectors selected (share)": "Secteurs sélectionnés (part)",
-    "Share of destination entries across calculations run in this tool.": "Part des entrées de destination sur l'ensemble des calculs effectués dans cet outil.",
-    "Share of supply-chain points by the food category entered in this tool.": "Part des points de chaîne d'approvisionnement selon la catégorie d'aliment saisie dans cet outil.",
-    "Share of supply-chain points by the sector selected in this tool.": "Part des points de chaîne d'approvisionnement selon le secteur sélectionné dans cet outil.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "Les parts proviennent du service de statistiques protégeant la confidentialité. Un calcul peut comporter plusieurs points de chaîne d'approvisionnement et plusieurs destinations : les effectifs par catégorie comptent donc des entrées, et non des calculs.",
     "Skip to main content": "Aller au contenu principal",
     "Skip to statistics": "Aller directement aux statistiques",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "Statistiques | Calculateur d'impact du gaspillage alimentaire Kai Commitment",
     "The breakdowns are temporarily unavailable.": "Les répartitions sont temporairement indisponibles.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "Le secteur, la catégorie d'aliment et les quantités saisis dans le calculateur ne sont conservés que pour produire des statistiques agrégées respectueuses de la confidentialité. Nous n'enregistrons aucune information permettant de vous identifier, vous ou votre entreprise.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "Ces chiffres décrivent un échantillon auto-sélectionné de calculs effectués dans cet outil. Il ne s'agit ni d'une enquête ni d'un portrait du gaspillage alimentaire en Nouvelle-Zélande.",
     "Turn food waste information into action": "Transformez les données sur le gaspillage alimentaire en actions",
     "Unlabelled bucket": "Catégorie sans libellé",
     "Updates and practical insights from the Kai Commitment website.": "Actualités et conseils pratiques issus du site Kai Commitment.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "Valeur totale des aliments traités",
     "Value of food not wasted at all": "Valeur des aliments qui n'ont pas du tout été gaspillés",
     "Value of food wasted": "Valeur des aliments gaspillés",
-    "Your latest figures are in this calculator's public statistics.": "Vos derniers chiffres figurent dans les statistiques publiques de ce calculateur."
+    "Your latest figures are in this calculator's public statistics.": "Vos derniers chiffres figurent dans les statistiques publiques de ce calculateur.",
+    "Share of destination entries across calculations contributed to this tool.": "Part des entrées de destination sur l'ensemble des calculs partagés avec cet outil.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Part des points de chaîne d'approvisionnement selon le secteur sélectionné, parmi les calculs partagés avec cet outil.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Part des points de chaîne d'approvisionnement selon la catégorie d'aliment saisie, parmi les calculs partagés avec cet outil.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Ces chiffres décrivent un échantillon auto-sélectionné de calculs partagés avec cet outil. Il ne s'agit ni d'une enquête ni d'un portrait du gaspillage alimentaire en Nouvelle-Zélande."
   }
 }

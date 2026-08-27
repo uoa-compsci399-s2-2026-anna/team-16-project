@@ -2294,7 +2294,7 @@ def test_the_statistics_summary_is_translated_around_its_figure(browser, languag
         # The two sentences under it, which are ordinary `t()` calls and would
         # not have caught the defect above on their own.
         assert page.inner_text(".stats-breakdown-note >> nth=0") == strings[
-            "Share of destination entries across calculations run in this tool."
+            "Share of destination entries across calculations contributed to this tool."
         ]
     finally:
         context.close()

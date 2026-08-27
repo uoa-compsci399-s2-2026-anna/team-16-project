@@ -269,9 +269,6 @@
     "Sector": "업종",
     "Sectors selected": "선택된 업종",
     "Sectors selected (share)": "선택된 업종(비율)",
-    "Share of destination entries across calculations run in this tool.": "이 도구에서 실행된 계산 전체에서 처리 경로 항목이 차지하는 비율입니다.",
-    "Share of supply-chain points by the food category entered in this tool.": "이 도구에 입력된 음식 분류별 공급망 항목의 비율입니다.",
-    "Share of supply-chain points by the sector selected in this tool.": "이 도구에서 선택된 업종별 공급망 항목의 비율입니다.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "비율은 개인정보가 보호된 통계 서비스에서 가져옵니다. 계산 한 건에 여러 공급망 항목과 여러 처리 경로가 포함될 수 있으므로, 구분별 건수는 계산 횟수가 아니라 항목 수입니다.",
     "Skip to main content": "본문으로 건너뛰기",
     "Skip to statistics": "통계로 건너뛰기",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "통계 | Kai Commitment 음식물 폐기물 영향 계산기",
     "The breakdowns are temporarily unavailable.": "내역을 일시적으로 표시할 수 없습니다.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "계산기에 입력한 업종, 음식 분류, 수량은 개인정보를 보호한 집계 통계를 만드는 데에만 저장됩니다. 이용자나 사업장을 식별할 수 있는 정보는 기록하지 않습니다.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "이 수치는 이 도구에서 실행된 계산이라는, 이용자가 스스로 선택한 표본을 나타냅니다. 조사 결과도 아니고 뉴질랜드 전체의 음식물 폐기물 실태도 아닙니다.",
     "Turn food waste information into action": "음식물 폐기물 정보를 행동으로",
     "Unlabelled bucket": "이름 없는 구분",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment 웹사이트의 소식과 실무에 도움이 되는 정보입니다.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "처리된 식품의 총 가치",
     "Value of food not wasted at all": "전혀 낭비되지 않은 식품의 가치",
     "Value of food wasted": "낭비된 식품의 가치",
-    "Your latest figures are in this calculator's public statistics.": "귀하의 최신 수치가 이 계산기의 공개 통계에 반영되어 있습니다."
+    "Your latest figures are in this calculator's public statistics.": "귀하의 최신 수치가 이 계산기의 공개 통계에 반영되어 있습니다.",
+    "Share of destination entries across calculations contributed to this tool.": "이 도구에 기여된 계산 전체에서 처리 경로 항목이 차지하는 비율입니다.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "이 도구에 기여된 계산에서 선택된 업종별 공급망 항목의 비율입니다.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "이 도구에 기여된 계산에서 입력된 음식 분류별 공급망 항목의 비율입니다.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "이 수치는 이 도구에 기여된 계산이라는, 이용자가 스스로 선택한 표본을 나타냅니다. 조사 결과도 아니고 뉴질랜드 전체의 음식물 폐기물 실태도 아닙니다."
   }
 }

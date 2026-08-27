@@ -269,9 +269,6 @@
     "Sector": "業種",
     "Sectors selected": "選択された業種",
     "Sectors selected (share)": "選択された業種（割合）",
-    "Share of destination entries across calculations run in this tool.": "このツールで行われた計算全体における、廃棄先入力の割合です。",
-    "Share of supply-chain points by the food category entered in this tool.": "このツールで入力された食品カテゴリー別の、サプライチェーン入力の割合です。",
-    "Share of supply-chain points by the sector selected in this tool.": "このツールで選択された業種別の、サプライチェーン入力の割合です。",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "割合はプライバシーを保護した統計サービスから取得しています。一回の計算に複数のサプライチェーン入力と複数の廃棄先が含まれることがあるため、区分の件数は計算回数ではなく入力の件数です。",
     "Skip to main content": "メインコンテンツへスキップ",
     "Skip to statistics": "統計へスキップ",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "統計 | Kai Commitment 食品廃棄インパクト計算ツール",
     "The breakdowns are temporarily unavailable.": "内訳は一時的に表示できません。",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "計算ツールに入力された業種、食品カテゴリー、数量は、プライバシーを保護した集計統計を作成するためだけに保存されます。あなたや事業者を特定できる情報は記録しません。",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "これらの数値は、このツールで行われた計算という、利用者が自ら選んだサンプルを示すものです。調査結果でも、ニュージーランド全体の食品廃棄の実態でもありません。",
     "Turn food waste information into action": "食品廃棄の情報を行動につなげる",
     "Unlabelled bucket": "名称のない区分",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment のウェブサイトからのお知らせと実践的なヒントです。",
@@ -342,6 +338,10 @@
     "Total value of food handled": "取り扱われた食品の総価値",
     "Value of food not wasted at all": "まったく廃棄されなかった食品の価値",
     "Value of food wasted": "廃棄された食品の価値",
-    "Your latest figures are in this calculator's public statistics.": "最新の数値はこの計算ツールの公開統計に反映されています。"
+    "Your latest figures are in this calculator's public statistics.": "最新の数値はこの計算ツールの公開統計に反映されています。",
+    "Share of destination entries across calculations contributed to this tool.": "このツールに提供された計算全体における、廃棄先入力の割合です。",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "このツールに提供された計算のうち、選択された業種別のサプライチェーン入力の割合です。",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "このツールに提供された計算のうち、入力された食品カテゴリー別のサプライチェーン入力の割合です。",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "これらの数値は、このツールに提供された計算という、利用者が自ら選んだサンプルを示すものです。調査結果でも、ニュージーランド全体の食品廃棄の実態でもありません。"
   }
 }

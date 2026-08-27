@@ -269,9 +269,6 @@
     "Sector": "Отрасль",
     "Sectors selected": "Выбранные отрасли",
     "Sectors selected (share)": "Выбранные отрасли (доля)",
-    "Share of destination entries across calculations run in this tool.": "Доля записей по способам утилизации среди расчётов, выполненных в этом инструменте.",
-    "Share of supply-chain points by the food category entered in this tool.": "Доля точек цепочки поставок по категории продуктов, указанной в этом инструменте.",
-    "Share of supply-chain points by the sector selected in this tool.": "Доля точек цепочки поставок по отрасли, выбранной в этом инструменте.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "Доли поступают из сервиса статистики с защитой конфиденциальности. Один расчёт может включать несколько точек цепочки поставок и несколько способов утилизации, поэтому в группах считаются записи, а не расчёты.",
     "Skip to main content": "Перейти к основному содержимому",
     "Skip to statistics": "Перейти к статистике",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "Статистика | Калькулятор воздействия пищевых отходов Kai Commitment",
     "The breakdowns are temporarily unavailable.": "Разбивки временно недоступны.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "Отрасль, категория продуктов и количества, введённые в калькулятор, сохраняются только для формирования сводной статистики с защитой конфиденциальности. Мы не записываем сведения, позволяющие установить вас или ваш бизнес.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "Эти цифры описывают самоотобранную выборку расчётов, выполненных в этом инструменте. Это не опрос и не картина пищевых отходов по всей Новой Зеландии.",
     "Turn food waste information into action": "Превратите данные о пищевых отходах в действия",
     "Unlabelled bucket": "Группа без названия",
     "Updates and practical insights from the Kai Commitment website.": "Новости и практические материалы с сайта Kai Commitment.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "Общая стоимость обработанной еды",
     "Value of food not wasted at all": "Стоимость еды, которая вообще не была потрачена впустую",
     "Value of food wasted": "Стоимость еды, потраченной впустую",
-    "Your latest figures are in this calculator's public statistics.": "Ваши последние данные включены в открытую статистику этого калькулятора."
+    "Your latest figures are in this calculator's public statistics.": "Ваши последние данные включены в открытую статистику этого калькулятора.",
+    "Share of destination entries across calculations contributed to this tool.": "Доля записей по способам утилизации среди расчётов, переданных в этот инструмент.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Доля точек цепочки поставок по выбранной отрасли, среди расчётов, переданных в этот инструмент.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Доля точек цепочки поставок по указанной категории продуктов, среди расчётов, переданных в этот инструмент.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Эти цифры описывают самоотобранную выборку расчётов, переданных в этот инструмент. Это не опрос и не картина пищевых отходов по всей Новой Зеландии."
   }
 }

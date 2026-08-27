@@ -269,9 +269,6 @@
     "Sector": "Sektor",
     "Sectors selected": "Ausgewählte Sektoren",
     "Sectors selected (share)": "Ausgewählte Sektoren (Anteil)",
-    "Share of destination entries across calculations run in this tool.": "Anteil der Einträge zu Entsorgungswegen über alle in diesem Rechner durchgeführten Berechnungen.",
-    "Share of supply-chain points by the food category entered in this tool.": "Anteil der Einträge zur Lieferkette nach der in diesem Rechner eingegebenen Lebensmittelkategorie.",
-    "Share of supply-chain points by the sector selected in this tool.": "Anteil der Einträge zur Lieferkette nach dem in diesem Rechner ausgewählten Sektor.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "Die Anteile stammen aus dem datenschutzgeschützten Statistikdienst. Eine Berechnung kann mehrere Einträge zur Lieferkette und mehrere Entsorgungswege umfassen; die Zählungen je Gruppe beziehen sich daher auf Einträge, nicht auf Berechnungen.",
     "Skip to main content": "Direkt zum Hauptinhalt",
     "Skip to statistics": "Direkt zur Statistik",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "Statistik | Kai Commitment Rechner für die Auswirkungen von Lebensmittelabfällen",
     "The breakdowns are temporarily unavailable.": "Die Aufschlüsselungen sind vorübergehend nicht verfügbar.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "Der Sektor, die Lebensmittelkategorie und die im Rechner eingegebenen Mengen werden ausschließlich gespeichert, um datenschutzgeschützte zusammengefasste Statistiken zu erstellen. Wir erfassen keine Angaben, die Sie oder Ihren Betrieb identifizieren.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "Diese Zahlen beschreiben eine selbst ausgewählte Stichprobe von Berechnungen, die in diesem Rechner durchgeführt wurden. Sie sind keine Erhebung und kein Abbild der Lebensmittelabfälle in ganz Neuseeland.",
     "Turn food waste information into action": "Wissen über Lebensmittelabfälle in Handeln umsetzen",
     "Unlabelled bucket": "Gruppe ohne Bezeichnung",
     "Updates and practical insights from the Kai Commitment website.": "Neuigkeiten und praktische Erkenntnisse von der Website von Kai Commitment.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "Gesamtwert der verarbeiteten Lebensmittel",
     "Value of food not wasted at all": "Wert der überhaupt nicht verschwendeten Lebensmittel",
     "Value of food wasted": "Wert der verschwendeten Lebensmittel",
-    "Your latest figures are in this calculator's public statistics.": "Ihre neuesten Zahlen sind in der öffentlichen Statistik dieses Rechners enthalten."
+    "Your latest figures are in this calculator's public statistics.": "Ihre neuesten Zahlen sind in der öffentlichen Statistik dieses Rechners enthalten.",
+    "Share of destination entries across calculations contributed to this tool.": "Anteil der Einträge zu Entsorgungswegen über alle zu diesem Rechner beigetragenen Berechnungen.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "Anteil der Einträge zur Lieferkette nach dem ausgewählten Sektor, über alle zu diesem Rechner beigetragenen Berechnungen.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "Anteil der Einträge zur Lieferkette nach der eingegebenen Lebensmittelkategorie, über alle zu diesem Rechner beigetragenen Berechnungen.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Diese Zahlen beschreiben eine selbst ausgewählte Stichprobe von Berechnungen, die zu diesem Rechner beigetragen wurden. Sie sind keine Erhebung und kein Abbild der Lebensmittelabfälle in ganz Neuseeland."
   }
 }

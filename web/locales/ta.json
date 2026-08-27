@@ -269,9 +269,6 @@
     "Sector": "துறை",
     "Sectors selected": "தேர்ந்தெடுக்கப்பட்ட துறைகள்",
     "Sectors selected (share)": "தேர்ந்தெடுக்கப்பட்ட துறைகள் (பங்கு)",
-    "Share of destination entries across calculations run in this tool.": "இந்தக் கருவியில் செய்யப்பட்ட கணக்கீடுகளில் சேருமிடப் பதிவுகளின் பங்கு.",
-    "Share of supply-chain points by the food category entered in this tool.": "இந்தக் கருவியில் உள்ளிடப்பட்ட உணவு வகைப்பாடு வாரியாக விநியோகச் சங்கிலிப் புள்ளிகளின் பங்கு.",
-    "Share of supply-chain points by the sector selected in this tool.": "இந்தக் கருவியில் தேர்ந்தெடுக்கப்பட்ட துறை வாரியாக விநியோகச் சங்கிலிப் புள்ளிகளின் பங்கு.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "பங்குகள் தனியுரிமை பாதுகாக்கப்பட்ட புள்ளிவிவரச் சேவையிலிருந்து வருகின்றன. ஒரு கணக்கீட்டில் பல விநியோகச் சங்கிலிப் புள்ளிகளும் பல சேருமிடங்களும் இருக்கலாம்; எனவே பிரிவுகளின் எண்ணிக்கை பதிவுகளைக் குறிக்கிறது, கணக்கீடுகளை அல்ல.",
     "Skip to main content": "நேரடியாக முதன்மை உள்ளடக்கத்திற்குச் செல்",
     "Skip to statistics": "நேரடியாக புள்ளிவிவரங்களுக்குச் செல்",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "புள்ளிவிவரங்கள் | Kai Commitment உணவுக் கழிவு தாக்கக் கால்குலேட்டர்",
     "The breakdowns are temporarily unavailable.": "விவரங்கள் தற்காலிகமாகக் கிடைக்கவில்லை.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "கால்குலேட்டரில் உள்ளிடப்பட்ட துறை, உணவு வகைப்பாடு மற்றும் அளவுகள், தனியுரிமை பாதுகாக்கப்பட்ட ஒட்டுமொத்தப் புள்ளிவிவரங்களை உருவாக்குவதற்காக மட்டுமே சேமிக்கப்படுகின்றன. உங்களையோ உங்கள் நிறுவனத்தையோ அடையாளம் காட்டும் தகவலை நாங்கள் பதிவு செய்வதில்லை.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "இந்த எண்கள், இந்தக் கருவியில் தாமாக முன்வந்து செய்யப்பட்ட கணக்கீடுகளின் மாதிரியை மட்டுமே விவரிக்கின்றன. இவை ஒரு கணக்கெடுப்பு அல்ல; நியூசிலாந்து முழுவதிலுமான உணவுக் கழிவின் சித்திரமும் அல்ல.",
     "Turn food waste information into action": "உணவுக் கழிவுத் தகவலை நடவடிக்கையாக மாற்றுங்கள்",
     "Unlabelled bucket": "பெயரிடப்படாத பிரிவு",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment இணையதளத்திலிருந்து புதுப்பிப்புகளும் நடைமுறைக் கருத்துகளும்.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "கையாளப்பட்ட உணவின் மொத்த மதிப்பு",
     "Value of food not wasted at all": "முற்றிலும் வீணாகாத உணவின் மதிப்பு",
     "Value of food wasted": "வீணான உணவின் மதிப்பு",
-    "Your latest figures are in this calculator's public statistics.": "உங்கள் சமீபத்திய எண்கள் இந்தக் கால்குலேட்டரின் பொது புள்ளிவிவரங்களில் உள்ளன."
+    "Your latest figures are in this calculator's public statistics.": "உங்கள் சமீபத்திய எண்கள் இந்தக் கால்குலேட்டரின் பொது புள்ளிவிவரங்களில் உள்ளன.",
+    "Share of destination entries across calculations contributed to this tool.": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளில் சேருமிடப் பதிவுகளின் பங்கு.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளில் தேர்ந்தெடுக்கப்பட்ட துறை வாரியாக விநியோகச் சங்கிலிப் புள்ளிகளின் பங்கு.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளில் உள்ளிடப்பட்ட உணவு வகைப்பாடு வாரியாக விநியோகச் சங்கிலிப் புள்ளிகளின் பங்கு.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "இந்த எண்கள், இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளின் தாமாக-தேர்ந்தெடுக்கப்பட்ட மாதிரியை மட்டுமே விவரிக்கின்றன. இவை ஒரு கணக்கெடுப்பு அல்ல; நியூசிலாந்து முழுவதிலுமான உணவுக் கழிவின் சித்திரமும் அல்ல."
   }
 }

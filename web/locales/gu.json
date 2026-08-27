@@ -269,9 +269,6 @@
     "Sector": "ક્ષેત્ર",
     "Sectors selected": "પસંદ કરેલાં ક્ષેત્રો",
     "Sectors selected (share)": "પસંદ કરેલાં ક્ષેત્રો (હિસ્સો)",
-    "Share of destination entries across calculations run in this tool.": "આ ટૂલમાં કરેલી ગણતરીઓમાં ગંતવ્ય નોંધોનો હિસ્સો.",
-    "Share of supply-chain points by the food category entered in this tool.": "આ ટૂલમાં દાખલ કરેલી ખોરાકની શ્રેણી પ્રમાણે પુરવઠા-શૃંખલા બિંદુઓનો હિસ્સો.",
-    "Share of supply-chain points by the sector selected in this tool.": "આ ટૂલમાં પસંદ કરેલા ક્ષેત્ર પ્રમાણે પુરવઠા-શૃંખલા બિંદુઓનો હિસ્સો.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "હિસ્સા ગોપનીયતા-સુરક્ષિત આંકડા સેવામાંથી આવે છે. એક ગણતરીમાં ઘણા પુરવઠા-શૃંખલા બિંદુઓ અને ઘણાં ગંતવ્યો હોઈ શકે, તેથી વર્ગોની ગણતરી નોંધોની છે, ગણતરીઓની નહીં.",
     "Skip to main content": "મુખ્ય સામગ્રી પર જાઓ",
     "Skip to statistics": "સીધા આંકડા પર જાઓ",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "આંકડા | Kai Commitment ખોરાક કચરો અસર કેલ્ક્યુલેટર",
     "The breakdowns are temporarily unavailable.": "વિગતો થોડા સમય માટે ઉપલબ્ધ નથી.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "કેલ્ક્યુલેટરમાં દાખલ કરેલું ક્ષેત્ર, ખોરાકની શ્રેણી અને જથ્થા ફક્ત ગોપનીયતા-સુરક્ષિત સામૂહિક આંકડા તૈયાર કરવા માટે જ સંગ્રહાય છે. તમારી કે તમારા વ્યવસાયની ઓળખ થાય એવી માહિતી અમે નોંધતા નથી.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "આ આંકડા આ ટૂલમાં કરેલી ગણતરીઓના સ્વયં-પસંદ થયેલા નમૂનાનું વર્ણન કરે છે. તે કોઈ સર્વેક્ષણ નથી કે સમગ્ર ન્યૂઝીલેન્ડના ખોરાકના કચરાનું ચિત્ર પણ નથી.",
     "Turn food waste information into action": "ખોરાકના કચરાની માહિતીને પગલાંમાં ફેરવો",
     "Unlabelled bucket": "લેબલ વગરનો વર્ગ",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment ની વેબસાઇટ પરથી અપડેટ અને વ્યવહારુ માહિતી.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "સંભાળવામાં આવેલા ખોરાકનું કુલ મૂલ્ય",
     "Value of food not wasted at all": "બિલકુલ બગડ્યો ન હોય તેવા ખોરાકનું મૂલ્ય",
     "Value of food wasted": "બગડેલા ખોરાકનું મૂલ્ય",
-    "Your latest figures are in this calculator's public statistics.": "તમારા તાજેતરના આંકડા આ કેલ્ક્યુલેટરના જાહેર આંકડાઓમાં સામેલ છે."
+    "Your latest figures are in this calculator's public statistics.": "તમારા તાજેતરના આંકડા આ કેલ્ક્યુલેટરના જાહેર આંકડાઓમાં સામેલ છે.",
+    "Share of destination entries across calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી ગણતરીઓમાં ગંતવ્ય નોંધોનો હિસ્સો.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી ગણતરીઓમાં પસંદ કરેલા ક્ષેત્ર પ્રમાણે પુરવઠા-શૃંખલા બિંદુઓનો હિસ્સો.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી ગણતરીઓમાં દાખલ કરેલી ખોરાકની શ્રેણી પ્રમાણે પુરવઠા-શૃંખલા બિંદુઓનો હિસ્સો.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "આ આંકડા આ ટૂલમાં યોગદાન આપેલી ગણતરીઓના સ્વયં-પસંદ થયેલા નમૂનાનું વર્ણન કરે છે. તે કોઈ સર્વેક્ષણ નથી કે સમગ્ર ન્યૂઝીલેન્ડના ખોરાકના કચરાનું ચિત્ર પણ નથી."
   }
 }

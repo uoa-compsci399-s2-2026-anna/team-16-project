@@ -270,9 +270,6 @@
     "Sector": "شعبہ",
     "Sectors selected": "منتخب شعبے",
     "Sectors selected (share)": "منتخب شعبے (حصہ)",
-    "Share of destination entries across calculations run in this tool.": "اس ٹول میں کیے گئے حسابات میں منزل اندراجات کا حصہ۔",
-    "Share of supply-chain points by the food category entered in this tool.": "اس ٹول میں درج کیے گئے کھانے کے زمرے کے لحاظ سے سپلائی چین نکات کا حصہ۔",
-    "Share of supply-chain points by the sector selected in this tool.": "اس ٹول میں منتخب کیے گئے شعبے کے لحاظ سے سپلائی چین نکات کا حصہ۔",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "حصے رازداری سے محفوظ اعداد و شمار کی سروس سے آتے ہیں۔ ایک حساب میں کئی سپلائی چین نکات اور کئی منزلیں شامل ہو سکتی ہیں، اس لیے گروپوں کی گنتی اندراجات کی ہے، حسابات کی نہیں۔",
     "Skip to main content": "براہِ راست بنیادی مواد پر جائیں",
     "Skip to statistics": "براہِ راست اعداد و شمار پر جائیں",
@@ -286,7 +283,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "اعداد و شمار | Kai Commitment کھانے کے ضیاع کے اثر کا کیلکولیٹر",
     "The breakdowns are temporarily unavailable.": "تفصیلات عارضی طور پر دستیاب نہیں۔",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "کیلکولیٹر میں درج کیا گیا شعبہ، کھانے کا زمرہ اور مقداریں صرف رازداری سے محفوظ مجموعی اعداد و شمار تیار کرنے کے لیے محفوظ کی جاتی ہیں۔ ہم ایسی معلومات ریکارڈ نہیں کرتے جو آپ کی یا آپ کے کاروبار کی شناخت ظاہر کریں۔",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "یہ اعداد اس ٹول میں کیے گئے حسابات کے ایک خود منتخب نمونے کو بیان کرتے ہیں۔ یہ کوئی سروے یا پورے نیوزی لینڈ میں کھانے کے ضیاع کی تصویر نہیں ہیں۔",
     "Turn food waste information into action": "کھانے کے ضیاع کی معلومات کو عمل میں بدلیں",
     "Unlabelled bucket": "بغیر عنوان گروپ",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment کی ویب سائٹ سے تازہ خبریں اور عملی بصیرتیں۔",
@@ -343,6 +339,10 @@
     "Total value of food handled": "نمٹائے گئے کھانے کی کل قدر",
     "Value of food not wasted at all": "بالکل ضائع نہ ہونے والے کھانے کی قدر",
     "Value of food wasted": "ضائع شدہ کھانے کی قدر",
-    "Your latest figures are in this calculator's public statistics.": "آپ کے تازہ ترین اعداد اس کیلکولیٹر کے عوامی اعداد و شمار میں شامل ہیں۔"
+    "Your latest figures are in this calculator's public statistics.": "آپ کے تازہ ترین اعداد اس کیلکولیٹر کے عوامی اعداد و شمار میں شامل ہیں۔",
+    "Share of destination entries across calculations contributed to this tool.": "اس ٹول میں تعاون کی گئی حسابات میں منزل اندراجات کا حصہ۔",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "اس ٹول میں تعاون کی گئی حسابات میں منتخب کیے گئے شعبے کے لحاظ سے سپلائی چین نکات کا حصہ۔",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "اس ٹول میں تعاون کی گئی حسابات میں درج کیے گئے کھانے کے زمرے کے لحاظ سے سپلائی چین نکات کا حصہ۔",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "یہ اعداد اس ٹول میں تعاون کی گئی حسابات کے ایک خود منتخب نمونے کو بیان کرتے ہیں۔ یہ کوئی سروے یا پورے نیوزی لینڈ میں کھانے کے ضیاع کی تصویر نہیں ہیں۔"
   }
 }

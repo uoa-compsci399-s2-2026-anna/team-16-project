@@ -269,9 +269,6 @@
     "Sector": "മേഖല",
     "Sectors selected": "തിരഞ്ഞെടുത്ത മേഖലകൾ",
     "Sectors selected (share)": "തിരഞ്ഞെടുത്ത മേഖലകൾ (വിഹിതം)",
-    "Share of destination entries across calculations run in this tool.": "ഈ ഉപകരണത്തിൽ നടത്തിയ കണക്കുകൂട്ടലുകളിലെ ലക്ഷ്യസ്ഥാന എൻട്രികളുടെ വിഹിതം.",
-    "Share of supply-chain points by the food category entered in this tool.": "ഈ ഉപകരണത്തിൽ നൽകിയ ഭക്ഷ്യ വിഭാഗം അനുസരിച്ച് വിതരണ ശൃംഖല ബിന്ദുക്കളുടെ വിഹിതം.",
-    "Share of supply-chain points by the sector selected in this tool.": "ഈ ഉപകരണത്തിൽ തിരഞ്ഞെടുത്ത മേഖല അനുസരിച്ച് വിതരണ ശൃംഖല ബിന്ദുക്കളുടെ വിഹിതം.",
     "Shares come from the privacy-protected statistics service. A calculation may include several supply-chain points and several destinations, so bucket counts are entries, not calculations.": "സ്വകാര്യത സംരക്ഷിക്കുന്ന സ്ഥിതിവിവര സേവനത്തിൽനിന്നാണ് വിഹിതങ്ങൾ വരുന്നത്. ഒരു കണക്കുകൂട്ടലിൽ പല വിതരണ ശൃംഖല ബിന്ദുക്കളും പല ലക്ഷ്യസ്ഥാനങ്ങളും ഉൾപ്പെടാം; അതിനാൽ ഗണങ്ങളുടെ എണ്ണം എൻട്രികളുടേതാണ്, കണക്കുകൂട്ടലുകളുടേതല്ല.",
     "Skip to main content": "നേരിട്ട് പ്രധാന ഉള്ളടക്കത്തിലേക്ക് പോകുക",
     "Skip to statistics": "നേരിട്ട് സ്ഥിതിവിവരക്കണക്കുകളിലേക്ക് പോകുക",
@@ -285,7 +282,6 @@
     "Statistics | Kai Commitment Food Waste Impact Calculator": "സ്ഥിതിവിവരക്കണക്കുകൾ | Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്റർ",
     "The breakdowns are temporarily unavailable.": "വിശദാംശങ്ങൾ താൽക്കാലികമായി ലഭ്യമല്ല.",
     "The sector, food category and quantities entered into the calculator are stored only to produce privacy-protected aggregate statistics. We do not record information that identifies you or your business.": "കാൽക്കുലേറ്ററിൽ നൽകിയ മേഖല, ഭക്ഷ്യ വിഭാഗം, അളവുകൾ എന്നിവ സ്വകാര്യത സംരക്ഷിക്കുന്ന സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ ഉണ്ടാക്കാൻ മാത്രമാണ് സൂക്ഷിക്കുന്നത്. നിങ്ങളെയോ നിങ്ങളുടെ സ്ഥാപനത്തെയോ തിരിച്ചറിയുന്ന വിവരങ്ങൾ ഞങ്ങൾ രേഖപ്പെടുത്തുന്നില്ല.",
-    "These figures describe a self-selected sample of calculations run in this tool. They are not a survey or a picture of food waste across New Zealand.": "ഈ കണക്കുകൾ ഈ ഉപകരണത്തിൽ നടത്തിയ കണക്കുകൂട്ടലുകളുടെ സ്വയം തിരഞ്ഞെടുക്കപ്പെട്ട ഒരു സാമ്പിളിനെയാണ് വിവരിക്കുന്നത്. ഇവ ഒരു സർവേയോ ന്യൂസിലൻഡിലെ മൊത്തം ഭക്ഷ്യമാലിന്യത്തിന്റെ ചിത്രമോ അല്ല.",
     "Turn food waste information into action": "ഭക്ഷ്യമാലിന്യ വിവരങ്ങളെ പ്രവർത്തനമാക്കി മാറ്റുക",
     "Unlabelled bucket": "പേരില്ലാത്ത ഗണം",
     "Updates and practical insights from the Kai Commitment website.": "Kai Commitment വെബ്‌സൈറ്റിൽനിന്നുള്ള പുതിയ അറിയിപ്പുകളും പ്രായോഗിക ഉൾക്കാഴ്ചകളും.",
@@ -342,6 +338,10 @@
     "Total value of food handled": "കൈകാര്യം ചെയ്ത ഭക്ഷണത്തിന്റെ ആകെ മൂല്യം",
     "Value of food not wasted at all": "ഒട്ടും പാഴാകാത്ത ഭക്ഷണത്തിന്റെ മൂല്യം",
     "Value of food wasted": "പാഴായ ഭക്ഷണത്തിന്റെ മൂല്യം",
-    "Your latest figures are in this calculator's public statistics.": "നിങ്ങളുടെ ഏറ്റവും പുതിയ കണക്കുകൾ ഈ കാൽക്കുലേറ്ററിന്റെ പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ഉണ്ട്."
+    "Your latest figures are in this calculator's public statistics.": "നിങ്ങളുടെ ഏറ്റവും പുതിയ കണക്കുകൾ ഈ കാൽക്കുലേറ്ററിന്റെ പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ഉണ്ട്.",
+    "Share of destination entries across calculations contributed to this tool.": "ഈ ഉപകരണത്തിന് സംഭാവന ചെയ്ത കണക്കുകൂട്ടലുകളിലെ ലക്ഷ്യസ്ഥാന എൻട്രികളുടെ വിഹിതം.",
+    "Share of supply-chain points by the sector selected across calculations contributed to this tool.": "ഈ ഉപകരണത്തിന് സംഭാവന ചെയ്ത കണക്കുകൂട്ടലുകളിൽ തിരഞ്ഞെടുത്ത മേഖല അനുസരിച്ച് വിതരണ ശൃംഖല ബിന്ദുക്കളുടെ വിഹിതം.",
+    "Share of supply-chain points by the food category entered across calculations contributed to this tool.": "ഈ ഉപകരണത്തിന് സംഭാവന ചെയ്ത കണക്കുകൂട്ടലുകളിൽ നൽകിയ ഭക്ഷ്യ വിഭാഗം അനുസരിച്ച് വിതരണ ശൃംഖല ബിന്ദുക്കളുടെ വിഹിതം.",
+    "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ഈ കണക്കുകൾ ഈ ഉപകരണത്തിന് സംഭാവന ചെയ്ത കണക്കുകൂട്ടലുകളുടെ സ്വയം തിരഞ്ഞെടുക്കപ്പെട്ട ഒരു സാമ്പിളിനെയാണ് വിവരിക്കുന്നത്. ഇവ ഒരു സർവേയോ ന്യൂസിലൻഡിലെ മൊത്തം ഭക്ഷ്യമാലിന്യത്തിന്റെ ചിത്രമോ അല്ല."
   }
 }

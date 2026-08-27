@@ -2219,10 +2219,16 @@ _PAGE_TITLE = {
     "/methodology.html": "Documentation | Kai Commitment Food Waste Impact Calculator",
 }
 
+#: The footer notice every public page carries. **Reworded in stage three's fix
+#: round**: it renders in `index.html`'s footer, which is the calculator, so a
+#: visitor met it on the results page a few centimetres above the contribute
+#: control - reading that their calculation was already in the aggregate
+#: statistics and then being asked to opt in to exactly that. `tests/web/
+#: test_consent_copy.py` holds the rule; this constant is the rendered half.
 _TRANSPARENCY = (
-    "This calculator stores the sector, food category and quantities entered "
-    "for aggregate statistics. It stores nothing that identifies you or your "
-    "business."
+    "This calculator stores the sector, food category and quantities entered. "
+    "They join the public statistics only if you choose to offer them, and "
+    "nothing that identifies you or your business is stored."
 )
 
 

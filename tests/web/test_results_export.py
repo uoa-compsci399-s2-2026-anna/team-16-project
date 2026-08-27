@@ -243,6 +243,28 @@ def test_the_input_the_user_typed_survives(report):
     assert re.search(r"^Factor version: MOCK-v0 — PLACEHOLDER$", report, re.M)
 
 
+@node
+def test_the_export_does_not_ask_for_a_figure_the_visitor_already_gave(report):
+    """**Finding 2, in the file this time.**
+
+    `#total-input` is collected on step 2 and persisted as `total_input_kg`, and
+    §4.5 states plainly that **no field of `MoneyResult` reads it**: waste as a
+    share of production has no consumer yet. The export's closing line said the
+    figure was unavailable "because total food handled data is required", a few
+    lines under a money block built from the very value that sentence asks for.
+
+    §4.5 forbids deriving the share in the browser, so the figure stays
+    unavailable. What changes is that the file stops blaming its reader for it.
+    """
+    assert "data is required" not in report, report
+    assert re.search(
+        r"^Percentage waste: Not available\. This calculator does not report waste "
+        r"as a share of food handled yet\.$",
+        report,
+        re.M,
+    ), report
+
+
 # --------------------------------------------------------- the placeholder rule
 
 NOTICE = "Demonstration only — verified calculation factors have not yet been supplied."

@@ -174,15 +174,23 @@ def test_every_legend_entry_is_drawn_inside_its_canvas(stats_page, width, height
     legended = [chart for chart in charts if chart["legendShown"]]
     assert legended, "no chart on this page draws a legend, so this measures nothing"
 
+    # One assertion over the whole set, not one per chart: since all three
+    # breakdowns became doughnuts, all three are legended, and the fixture only
+    # gives one of them (`by_destination`) ten buckets - `by_sector` and
+    # `by_food_category` are five and seven. Requiring *every* legended chart
+    # to individually reach ten would fail on a fixture shape that has nothing
+    # to do with the defect this test guards against. What must not regress is
+    # that the ten-bucket case is exercised *somewhere* in the page.
+    assert any(chart["buckets"] >= 10 for chart in legended), (
+        f"no legended chart reached ten buckets ({[c['buckets'] for c in legended]}), so "
+        "the ten-bucket case that produced the defect is not being exercised"
+    )
+
     for chart in legended:
         assert chart["entries"] == chart["buckets"], (
             f"{chart['type']}: {chart['entries']} legend entries for {chart['buckets']} "
             "buckets - a legend that is not drawing every bucket cannot be checked for "
             "one drawn outside the canvas"
-        )
-        assert chart["buckets"] >= 10, (
-            f"{chart['type']}: only {chart['buckets']} buckets, so the ten-bucket case "
-            "that produced the defect is not being exercised"
         )
         for index, bottom in enumerate(chart["bottoms"]):
             assert bottom <= chart["canvasHeight"], (
@@ -257,10 +265,16 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
     """Defect 4. The bar chart's y axis read `0`, `0.05` … `0.40` immediately
     above a text list reading `37.9% share`: one number, two units, one card.
 
-    Both the ticks and the tooltip are asserted, because formatting one and not
-    the other only moves the contradiction into the hover. And the tick labels
-    are read off the rendered scale rather than off the formatter, so a
-    callback that is configured but never reached fails here.
+    All three breakdowns are doughnuts as of the shares-as-shares change, so no
+    bar chart is rendered on this page any more and a y axis - the surface
+    defect 4 was found on - does not exist here to regress. The bar branch is
+    kept and asserted in case a future breakdown (of impact *values*, which can
+    be negative - see the note above `BREAKDOWNS`) puts one back.
+
+    What still applies to every chart on this page, bar or doughnut, is the
+    half of defect 4 that is not about axes at all: the tooltip and the text
+    list must state the same figure in the same unit. Formatting one and not
+    the other only moves the contradiction into the hover.
     """
     page = stats_page(1278, 983, 1.25)
     axes = page.evaluate(
@@ -273,7 +287,6 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
                }),
              }))"""
     )
-    assert axes, "no bar chart was rendered, so the axis cannot be checked"
     for axis in axes:
         assert axis["ticks"], "the y axis drew no ticks"
         assert all("%" in str(label) for label in axis["ticks"]), (
@@ -281,6 +294,19 @@ def test_the_axis_and_the_list_state_the_same_number_in_the_same_unit(stats_page
         )
         assert "%" in axis["tooltip"], (
             f"the axis is a percentage and the tooltip is not: {axis['tooltip']!r}"
+        )
+
+    donuts = page.evaluate(
+        """() => Object.values(Chart.instances)
+             .filter((chart) => chart.config.type === 'doughnut')
+             .map((chart) => chart.options.plugins.tooltip.callbacks.label({
+               label: 'Example', parsed: 0.379,
+             }))"""
+    )
+    assert donuts, "no doughnut was rendered, so the tooltip cannot be checked"
+    for tooltip in donuts:
+        assert "%" in tooltip, (
+            f"the text list states a percentage share and a doughnut's tooltip is not: {tooltip!r}"
         )
 
     listed = page.inner_text("#stats-breakdown-content")
@@ -387,6 +413,37 @@ def test_the_statistics_page_no_longer_claims_every_calculation(browser):
         text = page.locator("main").inner_text().lower()
         assert "contribut" in text or "chose to share" in text, (
             "the page does not say the figures come from calculations people offered"
+        )
+    finally:
+        context.close()
+
+
+def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
+    """**Item ⑫, and it is two words in a config - but the reason it is safe
+    is worth writing down.**
+
+    A doughnut can only express a part of a whole. This project's charts must
+    render negative values, because `factor_downstream` may be negative (an
+    offset) - which is why `renderBar` carries `allowNegative`. A negative
+    slice does not exist.
+
+    These three buckets are safe because they are COUNTS of what visitors
+    selected - destination entries, supply-chain points, food categories -
+    and a count cannot go below zero. The server also merges any bucket below
+    the suppression threshold into `other`, so the parts do sum to the whole.
+
+    That reasoning does not extend to a future chart of impact VALUES, and
+    the note in `stats.js` says so.
+    """
+    context, page = open_page(browser, ["en-NZ"], path="/stats.html",
+                              stats_fixture=True)
+    try:
+        kinds = page.evaluate(
+            """() => Object.values(Chart.instances || {}).map(c => c.config.type)"""
+        )
+        assert kinds, "no charts were drawn"
+        assert set(kinds) == {"doughnut"}, (
+            f"not every breakdown is a share chart: {kinds}"
         )
     finally:
         context.close()

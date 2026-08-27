@@ -2490,6 +2490,14 @@ def _taxonomy(charts):
     behaviour and teach the next reader to delete the assertion. What carries a
     staff-typed name is the doughnut's visible legend and the bar's x-axis
     ticks.
+
+    **All three breakdowns are doughnuts as of the shares-as-shares change**,
+    so `xTicks` is `[]` for every chart here today - there is no bar on this
+    page to carry one. It stays in the tuple rather than being dropped: a
+    future breakdown of impact *values* (which can be negative, so it would
+    need `renderBar`, not `renderDonut` - see the note above `BREAKDOWNS`)
+    would put a category axis back on this page, and this comparison should
+    hold it to the same rule without anyone having to remember to re-add it.
     """
     return [
         (chart["legend"] if chart["legendShown"] else [], chart["xTicks"])
@@ -2517,9 +2525,10 @@ def test_the_bucket_labels_stay_in_the_language_staff_typed_them(browser):
         assert any(chart["legendShown"] and chart["legend"] for chart in english), (
             "no chart drew a legend, so this measures nothing"
         )
-        assert any(chart["xTicks"] for chart in english), (
-            "no chart drew a category axis, so this measures nothing"
-        )
+        # Not `assert any(chart["xTicks"] ...)`: all three breakdowns are
+        # doughnuts today (see `_taxonomy`'s note), so no chart on this page
+        # has a category axis to draw one, and `_taxonomy` compares `[]` to
+        # `[]` for that half until a bar returns to this page.
         assert listed, "the text list is empty, so this measures nothing"
 
         _choose(page, "zh")
@@ -2561,6 +2570,14 @@ def test_the_figures_take_no_locale_aware_separator(browser):
     The masses are checked the other way round again - against the strings the
     service actually sent, trailing zero included - because those cross the wire
     as decimals and are printed rather than formatted (section 1.2).
+
+    **No bar chart draws a y axis on this page any more** - all three
+    breakdowns are doughnuts as of the shares-as-shares change - so the figure
+    to check for locale-aware formatting is read from a doughnut tooltip
+    instead. Every doughnut on this page shares the one `sharePercent`
+    formatter with the text list (`stats.js::createChart`'s `formatValue`), so
+    a doughnut's tooltip is exactly as good a witness to a mis-localised digit
+    as the old bar's axis tick was.
     """
     en_nz_percent = re.compile(r"[0-9]+(\.[0-9]+)?%")
     context, page = open_page(browser, ["ar"], path="/stats.html", stats_fixture=True)
@@ -2569,16 +2586,19 @@ def test_the_figures_take_no_locale_aware_separator(browser):
         assert page.get_attribute("html", "dir") == "rtl", (
             "this is not the right-to-left rendering, so it measures nothing"
         )
-        ticks = page.evaluate(
+        tooltips = page.evaluate(
             """() => [...document.querySelectorAll('.stats-chart-region canvas')]
                  .map((canvas) => window.Chart.getChart(canvas))
-                 .filter((chart) => chart && chart.scales && chart.scales.y)
-                 .flatMap((chart) => chart.scales.y.ticks.map((tick) => tick.label))"""
+                 .filter((chart) => chart && chart.config.type === 'doughnut')
+                 .map((chart) => chart.options.plugins.tooltip.callbacks.label({
+                   label: 'Example', parsed: 0.379,
+                 }))"""
         )
-        assert ticks, "no bar chart drew a y axis, so this measures nothing"
-        for label in ticks:
-            assert en_nz_percent.fullmatch(label), (
-                "the axis is being formatted for the active locale: %r" % label
+        assert tooltips, "no doughnut drew a tooltip, so this measures nothing"
+        for tooltip in tooltips:
+            match = en_nz_percent.search(tooltip)
+            assert match and match.group(0) == "37.9%", (
+                "the tooltip is being formatted for the active locale: %r" % tooltip
             )
 
         listed = page.inner_text(".stats-breakdown-list")

@@ -1273,6 +1273,19 @@ def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
     assert "invalid" not in classes, f"a valid allocation was flagged invalid: {classes!r}"
     assert page.locator('[data-action="compare-improvement"]').is_enabled()
 
+    # **The seam with the kilogram/percentage toggle itself.** `sliderMax` returns a
+    # PERCENTAGE ceiling (`maxPercent`, at most 100 on any entry); `updateImprovementInput`
+    # has to convert that through `displayKg` before it lands on a kilogram slider's `max`
+    # attribute, or every kilogram slider is capped at a number sized for percentage points
+    # - `100` kg on this 1,000 kg entry - long before its real headroom. The first
+    # destination's own share here is ~100.05 kg, comfortably past that percentage-sized
+    # ceiling, so a `max` at or below 100 proves the conversion was skipped.
+    first_max = float(page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("max"))
+    assert first_max > 100, (
+        f"the kilogram slider's ceiling is percentage-sized ({first_max!r}); "
+        "updateImprovementInput must read it back through displayKg"
+    )
+
 
 #: Item 11: the client's report was "the gap between cards differs between
 #: steps 1 and 2" - the sector step and the food-type step, the only two

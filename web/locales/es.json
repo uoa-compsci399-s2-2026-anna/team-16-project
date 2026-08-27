@@ -340,6 +340,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Tus registros se guardan de forma anónima y solo pasan a las estadísticas públicas si eliges ofrecerlos.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "El sector, la categoría de alimento y las cantidades introducidas en la calculadora se registran de forma anónima. Solo pasan a las estadísticas públicas con protección de la privacidad si eliges ofrecerlos. No registramos información que te identifique a ti ni a tu empresa.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Esta calculadora guarda el sector, la categoría de alimento y las cantidades introducidas. Solo pasan a las estadísticas públicas si eliges ofrecerlos, y no se guarda nada que te identifique a ti ni a tu empresa.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Explora las estadísticas agregadas y anonimizadas de los cálculos aportados a la calculadora del impacto de los residuos de alimentos de Kai Commitment."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Explora las estadísticas agregadas y anonimizadas de los cálculos aportados a la calculadora del impacto de los residuos de alimentos de Kai Commitment.",
+    "Percentage": "Porcentaje",
+    "Total mass": "Masa total"
   }
 }

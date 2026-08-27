@@ -287,6 +287,47 @@ export function rowKgString(qtyInput, unit, presets) {
   return kgString(qtyInput, unit)
 }
 
+/**
+ * A percentage share of a total mass, as kilograms — **display only**.
+ *
+ * The improvement panel's kilogram mode shows this instead of the percentage
+ * `state.improvedAllocations` actually stores; nothing this returns reaches the wire.
+ * `improvement.js`'s `improvedLines` still derives every `qty_kg` it sends from the
+ * stored percentage, the one calculation §7.6.1 permits here, so a rounded kilogram
+ * figure on screen can never be the number the request carries — only the percentage
+ * behind it can be that, and this function does not touch it.
+ *
+ * @param {number|string} percentage
+ * @param {number} totalKg
+ * @returns {number} `NaN` when either operand is not a finite number, so a caller that
+ *   forgets to guard prints "Not available" rather than "NaN%"
+ */
+export function percentageToKg(percentage, totalKg) {
+  const pct = Number(percentage)
+  return Number.isFinite(pct) && Number.isFinite(totalKg) ? (totalKg * pct) / 100 : Number.NaN
+}
+
+/**
+ * The inverse of `percentageToKg`: the kilogram figure a visitor typed, as a percentage
+ * of `totalKg`.
+ *
+ * **This is what a keystroke in kilogram mode stores.** `state.improvedAllocations`
+ * stays a percentage in every mode — see the note on `updateImprovementInput` — so a
+ * kilogram entry is converted once, here, on the way in, and the exactly-100 rule in
+ * `improvementValidation` is never asked to compare a mass against a tolerance sized for
+ * a percentage point.
+ *
+ * @param {number|string} kg
+ * @param {number} totalKg
+ * @returns {number} `0` when there is no positive total to divide by — an entry with
+ *   nothing in it yet allocates nothing, rather than dividing by zero into `Infinity`
+ */
+export function kgToPercentage(kg, totalKg) {
+  const mass = Number(kg)
+  if (!Number.isFinite(mass) || !Number.isFinite(totalKg) || totalKg <= 0) return 0
+  return (mass / totalKg) * 100
+}
+
 // The one arithmetic §7.6.1 permits on a figure the API supplied, and §7.3 requires it to
 // live here: `results.js` printed `totals.total_kg / 1000` inline at two sites, which is a
 // unit conversion outside `units.js` — the exception stated in terms of a module that was

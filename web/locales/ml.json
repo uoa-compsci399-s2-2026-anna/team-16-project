@@ -340,6 +340,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "നിങ്ങളുടെ എൻട്രികൾ പേരില്ലാതെ രേഖപ്പെടുത്തുന്നു; നിങ്ങൾ നൽകാൻ തിരഞ്ഞെടുത്താൽ മാത്രമേ അവ പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുകയുള്ളൂ.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "കാൽക്കുലേറ്ററിൽ നൽകിയ മേഖല, ഭക്ഷ്യ വിഭാഗം, അളവുകൾ എന്നിവ പേരില്ലാതെ രേഖപ്പെടുത്തുന്നു. നിങ്ങൾ നൽകാൻ തിരഞ്ഞെടുത്താൽ മാത്രമേ അവ സ്വകാര്യത സംരക്ഷിക്കുന്ന പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുകയുള്ളൂ. നിങ്ങളെയോ നിങ്ങളുടെ സ്ഥാപനത്തെയോ തിരിച്ചറിയുന്ന വിവരങ്ങൾ ഞങ്ങൾ രേഖപ്പെടുത്തുന്നില്ല.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "ഈ കാൽക്കുലേറ്റർ നൽകിയ മേഖല, ഭക്ഷ്യ വിഭാഗം, അളവുകൾ എന്നിവ സൂക്ഷിക്കുന്നു. നിങ്ങൾ നൽകാൻ തിരഞ്ഞെടുത്താൽ മാത്രമേ അവ പൊതു സ്ഥിതിവിവരക്കണക്കുകളിൽ ചേരുകയുള്ളൂ; നിങ്ങളെയോ നിങ്ങളുടെ സ്ഥാപനത്തെയോ തിരിച്ചറിയുന്ന ഒന്നും സൂക്ഷിക്കുന്നില്ല.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്ററിലേക്ക് നൽകിയ കണക്കുകൂട്ടലുകളുടെ പേരില്ലാത്ത, സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ പരിശോധിക്കുക."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment ഭക്ഷ്യമാലിന്യ ആഘാത കാൽക്കുലേറ്ററിലേക്ക് നൽകിയ കണക്കുകൂട്ടലുകളുടെ പേരില്ലാത്ത, സമഗ്ര സ്ഥിതിവിവരക്കണക്കുകൾ പരിശോധിക്കുക.",
+    "Percentage": "ശതമാനം",
+    "Total mass": "മൊത്തം ഭാരം"
   }
 }

@@ -344,6 +344,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "您填写的记录会以匿名方式保存，只有在您选择提供时才会纳入公开统计。",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "您在计算器中填写的行业环节、食物类别和数量会以匿名方式记录。只有在您选择提供时，才会纳入具备隐私保护的公开统计。我们不会记录任何能识别您本人或您企业的信息。",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "本计算器会保存您填写的行业环节、食物类别和数量。只有在您选择提供时才会纳入公开统计，且不会保存任何能识别您本人或您企业的信息。",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "浏览提供给 Kai Commitment 食物浪费影响计算器的各次计算的匿名汇总统计。"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "浏览提供给 Kai Commitment 食物浪费影响计算器的各次计算的匿名汇总统计。",
+    "Percentage": "百分比",
+    "Total mass": "总重量"
   }
 }

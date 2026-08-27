@@ -340,6 +340,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "入力内容は匿名で記録され、あなたが提供を選んだ場合にのみ公開統計に加わります。",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "計算ツールに入力された業種、食品カテゴリー、数量は匿名で記録されます。あなたが提供を選んだ場合にのみ、プライバシーを保護した公開統計に加わります。あなたや事業者を特定できる情報は記録しません。",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "この計算ツールは、入力された業種、食品カテゴリー、数量を保存します。あなたが提供を選んだ場合にのみ公開統計に加わり、あなたや事業者を特定できる情報は一切保存しません。",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment の食品廃棄インパクト計算ツールに提供された計算の、匿名化された集計統計をご覧いただけます。"
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment の食品廃棄インパクト計算ツールに提供された計算の、匿名化された集計統計をご覧いただけます。",
+    "Percentage": "パーセンテージ",
+    "Total mass": "総重量"
   }
 }

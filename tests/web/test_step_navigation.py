@@ -1157,3 +1157,118 @@ def test_the_compare_button_is_still_gated_on_exactly_one_hundred(page_at):
     page.wait_for_timeout(80)
 
     assert page.locator('[data-action="compare-improvement"]').is_enabled()
+
+
+def test_the_improvement_panel_can_be_driven_in_kilograms(page_at):
+    """Item ⑧. A toggle, and kilograms are the quantity the panel already
+    works in underneath: `improvedLines` computes
+    `totalKg * percentage / 100` before it sends anything.
+
+    So this is a display and entry mode, not a second calculation - which is
+    also why the toggle cannot change what is sent.
+    """
+    page = _improvement_panel(page_at)
+
+    toggle = page.locator("#improvement-mode")
+    assert toggle.count() == 1, "no percentage/kilograms toggle"
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    unit = page.locator(".percentage-input span").nth(0).inner_text()
+    assert "kg" in unit.lower(), f"the unit beside the box did not change: {unit!r}"
+
+
+def test_switching_mode_preserves_the_allocation(page_at):
+    """**The assertion that makes this a view and not a reset.**
+
+    A visitor who has allocated 60/40 and switches to kilograms must see the
+    same allocation expressed differently - not two empty boxes. Rebuilding
+    the panel on toggle is the obvious implementation and it silently throws
+    away their work.
+    """
+    page = _improvement_panel(page_at)
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    total_kg = float(page.locator("#improvement-total-kg").inner_text().replace(",", ""))
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    boxes = page.locator('.percentage-input input[type="number"]').evaluate_all(
+        "els => els.map(el => Number(el.value))"
+    )
+    assert abs(boxes[0] - total_kg * 0.6) < 0.01, (
+        f"60% did not become 60% of the mass: {boxes[0]} against {total_kg}"
+    )
+
+
+def test_the_request_is_unchanged_by_the_mode(page_at):
+    """The mode is a way of typing, and the wire never learns which was used.
+
+    Asserted by driving the same allocation twice and comparing the bodies:
+    a mode that changed what is sent would be a second calculation path, and
+    the two would drift.
+    """
+    page = _improvement_panel(page_at)
+    bodies = []
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: (bodies.append(route.request.post_data_json), route.abort()),
+    )
+
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    sliders.nth(0).evaluate("el => { el.value = '60'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    sliders.nth(1).evaluate("el => { el.value = '40'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+    page.click('[data-action="compare-improvement"]')
+    page.wait_for_timeout(400)
+
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+    page.click('[data-action="compare-improvement"]')
+    page.wait_for_timeout(400)
+
+    assert len(bodies) == 2
+    assert bodies[0]["entries"][0]["alternative"] == bodies[1]["entries"][0]["alternative"]
+
+
+def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
+    """**The case the 60/40 split above cannot exercise.**
+
+    60% and 40% of the 1,000 kg fixture entry are `600.000` and `400.000` -
+    already exact at two decimal places, so a percentage that is rounded
+    before it is stored survives that split by luck rather than by
+    correctness. This uses four destinations whose kilogram figures were
+    chosen so each one's *own* percentage share lands past the second decimal
+    place - `10.005`, `20.015`, `30.025`, `39.955` of a 1,000 kg total - while
+    the four kilogram figures themselves (`100.05 + 200.15 + 300.25 +
+    399.55`) still sum to exactly `1000.00`.
+
+    A conversion that rounds each destination's percentage to two places
+    *before* storing it - rather than keeping the exact value and rounding
+    only where it is displayed - drifts the total by two hundredths of a
+    percentage point in the same direction on every one of the four, which
+    is comfortably past `improvementValidation`'s own 0.01 tolerance.
+    """
+    page = _improvement_panel(page_at)
+    page.select_option("#improvement-mode", "kilograms")
+    page.wait_for_timeout(80)
+
+    boxes = page.locator('.percentage-input input[type="number"]')
+    assert boxes.count() >= 4, "need four destinations to test this split"
+    for index, kilograms in enumerate(["100.05", "200.15", "300.25", "399.55"]):
+        boxes.nth(index).fill(kilograms)
+        page.wait_for_timeout(40)
+
+    total = page.locator("#improvement-total-value").inner_text().strip()
+    assert total == "100.00%", (
+        f"a kilogram split that sums exactly to the entry's mass read back as {total!r}"
+    )
+    classes = page.locator(".improvement-total").get_attribute("class")
+    assert "invalid" not in classes, f"a valid allocation was flagged invalid: {classes!r}"
+    assert page.locator('[data-action="compare-improvement"]').is_enabled()

@@ -340,6 +340,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "உங்கள் பதிவுகள் பெயர் குறிப்பிடாமல் சேமிக்கப்படுகின்றன; நீங்கள் வழங்கத் தேர்ந்தெடுத்தால் மட்டுமே அவை பொதுப் புள்ளிவிவரங்களில் சேர்க்கப்படும்.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "கால்குலேட்டரில் உள்ளிடப்பட்ட துறை, உணவு வகைப்பாடு மற்றும் அளவுகள் பெயர் குறிப்பிடாமல் பதிவு செய்யப்படுகின்றன. நீங்கள் வழங்கத் தேர்ந்தெடுத்தால் மட்டுமே அவை தனியுரிமை பாதுகாக்கப்பட்ட பொதுப் புள்ளிவிவரங்களில் சேர்க்கப்படும். உங்களையோ உங்கள் நிறுவனத்தையோ அடையாளம் காட்டும் தகவலை நாங்கள் பதிவு செய்வதில்லை.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "இந்தக் கால்குலேட்டர் நீங்கள் உள்ளிட்ட துறை, உணவு வகைப்பாடு மற்றும் அளவுகளைச் சேமிக்கிறது. நீங்கள் வழங்கத் தேர்ந்தெடுத்தால் மட்டுமே அவை பொதுப் புள்ளிவிவரங்களில் சேர்க்கப்படும்; உங்களையோ உங்கள் நிறுவனத்தையோ அடையாளம் காட்டும் எதுவும் சேமிக்கப்படுவதில்லை.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment உணவுக் கழிவு தாக்கக் கால்குலேட்டருக்கு வழங்கப்பட்ட கணக்கீடுகளின் அடையாளமற்ற, ஒட்டுமொத்தப் புள்ளிவிவரங்களை ஆராயுங்கள்."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment உணவுக் கழிவு தாக்கக் கால்குலேட்டருக்கு வழங்கப்பட்ட கணக்கீடுகளின் அடையாளமற்ற, ஒட்டுமொத்தப் புள்ளிவிவரங்களை ஆராயுங்கள்.",
+    "Percentage": "சதவீதம்",
+    "Total mass": "மொத்த எடை"
   }
 }

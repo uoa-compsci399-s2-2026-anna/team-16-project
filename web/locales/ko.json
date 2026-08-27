@@ -340,6 +340,8 @@
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "입력한 내용은 익명으로 기록되며, 제공하기를 선택한 경우에만 공개 통계에 포함됩니다.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "계산기에 입력한 업종, 음식 분류, 수량은 익명으로 기록됩니다. 제공하기를 선택한 경우에만 개인정보를 보호한 공개 통계에 포함됩니다. 이용자나 사업장을 식별할 수 있는 정보는 기록하지 않습니다.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "이 계산기는 입력한 업종, 음식 분류, 수량을 저장합니다. 제공하기를 선택한 경우에만 공개 통계에 포함되며, 이용자나 사업장을 식별할 수 있는 정보는 저장하지 않습니다.",
-    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment 음식물 폐기물 영향 계산기에 제공된 계산의 익명 집계 통계를 살펴보세요."
+    "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment 음식물 폐기물 영향 계산기에 제공된 계산의 익명 집계 통계를 살펴보세요.",
+    "Percentage": "백분율",
+    "Total mass": "총 무게"
   }
 }

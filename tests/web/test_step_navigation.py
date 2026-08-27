@@ -1022,6 +1022,14 @@ def test_a_fourth_decimal_in_the_production_total_is_refused_as_it_is_typed(page
     #: And three are still typeable. A guard that refused the third as well would
     #: pass the assertion above while quietly imposing the money ceiling here.
     assert len(field.input_value().split(".")[1]) == 3
+    #: The control has to declare the same granularity the guard enforces. It
+    #: said `step="0.01"` - the money fields' - so the browser called the third
+    #: decimal place invalid on a field whose contract column is DECIMAL(16,3),
+    #: and the spinner stepped in hundredths of a kilogram.
+    assert field.get_attribute("step") == "0.001", (
+        "the production total declares a granularity its own guard does not enforce: "
+        f"{field.get_attribute('step')!r}"
+    )
 
 
 def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):

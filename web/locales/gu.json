@@ -56,7 +56,6 @@
     "Details": "વિગતો",
     "Download results": "પરિણામો ડાઉનલોડ કરો",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "દરેક દૃશ્ય ગણતરી સેવાએ જે શબ્દોમાં આપ્યું તે જ રીતે બતાવાયું છે. બંને વચ્ચેનો તફાવત બતાવાયો નથી, કારણ કે સેવા એવો કોઈ તફાવત આપતી નથી — બંને આંકડા જાતે સરખાવો.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "દરેક પુરવઠા-શૃંખલા નોંધ અલગ બતાવાય છે. બે નોંધોમાં આવતું એક જ ગંતવ્ય બે અલગ અપસ્ટ્રીમ પરિબળો લે છે, તેથી તે ખરેખર બે અલગ પંક્તિઓ છે.",
     "Edit": "સંપાદિત કરો",
     "Edit your data": "તમારો ડેટા સંપાદિત કરો",
     "Enter a percentage from 0 to 100 for every destination.": "દરેક ગંતવ્ય માટે 0 થી 100 વચ્ચેની ટકાવારી દાખલ કરો.",
@@ -298,7 +297,6 @@
     "Value per unit": "એકમ દીઠ મૂલ્ય",
     "What we record": "અમે શું નોંધીએ છીએ",
     "Yes": "હા",
-    "Across %(count)s calculations run in this tool.": "આ ટૂલમાં કરેલી %(count)s ગણતરીઓમાં.",
     "Enter no more than %(limit)s containers.": "%(limit)s થી વધુ પાત્ર દાખલ કરશો નહીં.",
     "Number of containers must be greater than zero.": "પાત્રોની સંખ્યા શૂન્યથી વધુ હોવી જોઈએ.",
     "That container is no longer available. Choose another.": "તે પાત્ર હવે ઉપલબ્ધ નથી. બીજું પસંદ કરો.",
@@ -331,6 +329,19 @@
     "One month": "એક મહિનો",
     "One quarter": "એક ત્રિમાસિક",
     "One year": "એક વર્ષ",
-    "Optional — it only labels your figures, it never changes a result.": "વૈકલ્પિક — તે ફક્ત તમારા આંકડાઓને લેબલ કરે છે, તે ક્યારેય પરિણામ બદલતું નથી."
+    "Optional — it only labels your figures, it never changes a result.": "વૈકલ્પિક — તે ફક્ત તમારા આંકડાઓને લેબલ કરે છે, તે ક્યારેય પરિણામ બદલતું નથી.",
+    "Across %(count)s calculations contributed to this tool.": "આ ટૂલમાં યોગદાન આપેલી %(count)s ગણતરીઓમાં.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "આ આંકડા કેલ્ક્યુલેટરે તારવ્યા નથી: તમે મૂલ્ય માટે લખેલી રકમ, ગણતરી સેવા દ્વારા સરવાળો કરેલી.",
+    "I would like to contribute to the Kai Commitment": "હું Kai Commitment ને યોગદાન આપવા ઈચ્છું છું",
+    "Share of value wasted": "બગડેલા મૂલ્યનો હિસ્સો",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "દરેક ગંતવ્યની બાજુમાં દેખાતો આંકડો એન્જિનનો તમામ નોંધો પરનો પોતાનો કુલ સરવાળો છે. તેની નીચેની હરોળો દરેક નોંધના પોતાના મૂલ્યો છે — તેઓ અલગ અલગ અપસ્ટ્રીમ પરિબળોનો ઉપયોગ કરી શકે છે, તેથી તેઓ ઉપર દર્શાવેલા કુલ સરવાળાનું પુનરાવર્તન કરવાને બદલે તેમાં ઉમેરાય છે.",
+    "The money": "રકમ",
+    "These figures cover: %(period)s": "આ આંકડા આ સમયગાળાને આવરી લે છે: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "આ ધારે છે કે તમે જે નોંધની કિંમત નક્કી કરી છે તેમાં પ્રતિ કિલોગ્રામ મૂલ્ય સમાન છે, જેમ પેદાશનું એક બોક્સ સંપૂર્ણ રીતે કિંમત આપવામાં આવે છે — માપેલી કિંમત નહીં, અને તમામ નોંધો પરથી લેવાયેલી સરેરાશ પણ નહીં.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "આ તમારા પરિણામોની અનામી નકલ આ કેલ્ક્યુલેટરના જાહેર આંકડાઓમાં મોકલે છે — કોઈ નામ નહીં, કોઈ સરનામું નહીં, તમને ઓળખાવે તેવું કંઈ નહીં. એકવાર મોકલ્યા પછી તેને અહીંથી પાછું લઈ શકાતું નથી, અને જો તમે પાછા આવીને ફરીથી ગણતરી કરો, તો તમારા અપડેટ થયેલા આંકડા આ જ પસંદગી હેઠળ તેની જગ્યા લેશે.",
+    "Total value of food handled": "સંભાળવામાં આવેલા ખોરાકનું કુલ મૂલ્ય",
+    "Value of food not wasted at all": "બિલકુલ બગડ્યો ન હોય તેવા ખોરાકનું મૂલ્ય",
+    "Value of food wasted": "બગડેલા ખોરાકનું મૂલ્ય",
+    "Your latest figures are in this calculator's public statistics.": "તમારા તાજેતરના આંકડા આ કેલ્ક્યુલેટરના જાહેર આંકડાઓમાં સામેલ છે."
   }
 }

@@ -57,7 +57,6 @@
     "Details": "تفصیلات",
     "Download results": "نتائج ڈاؤن لوڈ کریں",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "ہر منظرنامہ اسی طرح دکھایا گیا ہے جیسے حساب کی سروس نے بیان کیا۔ دونوں کا فرق نہیں دکھایا جاتا کیونکہ سروس فرق واپس نہیں کرتی — دونوں اعداد کا خود موازنہ کریں۔",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "سپلائی چین کا ہر اندراج الگ الگ دکھایا جاتا ہے۔ دو اندراجات میں ایک ہی منزل دو مختلف اپ اسٹریم عوامل لیتی ہے، اس لیے یہ واقعی دو الگ قطاریں ہیں۔",
     "Edit": "ترمیم",
     "Edit your data": "اپنے ڈیٹا میں ترمیم کریں",
     "Enter a percentage from 0 to 100 for every destination.": "ہر منزل کے لیے 0 سے 100 تک فیصد درج کریں۔",
@@ -299,7 +298,6 @@
     "Value per unit": "فی یونٹ قدر",
     "What we record": "ہم کیا ریکارڈ کرتے ہیں",
     "Yes": "جی ہاں",
-    "Across %(count)s calculations run in this tool.": "اس ٹول میں کیے گئے %(count)s حسابات میں۔",
     "Enter no more than %(limit)s containers.": "%(limit)s سے زیادہ برتن درج نہ کریں۔",
     "Number of containers must be greater than zero.": "برتنوں کی تعداد صفر سے زیادہ ہونی چاہیے۔",
     "That container is no longer available. Choose another.": "وہ برتن اب دستیاب نہیں ہے۔ کوئی دوسرا منتخب کریں۔",
@@ -332,6 +330,19 @@
     "One month": "ایک مہینہ",
     "One quarter": "ایک سہ ماہی",
     "One year": "ایک سال",
-    "Optional — it only labels your figures, it never changes a result.": "اختیاری — یہ صرف آپ کے اعداد و شمار پر لیبل لگاتا ہے، یہ کبھی نتیجہ نہیں بدلتا۔"
+    "Optional — it only labels your figures, it never changes a result.": "اختیاری — یہ صرف آپ کے اعداد و شمار پر لیبل لگاتا ہے، یہ کبھی نتیجہ نہیں بدلتا۔",
+    "Across %(count)s calculations contributed to this tool.": "اس ٹول میں تعاون کی گئی %(count)s حسابات میں۔",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "یہ اعداد کیلکولیٹر نے خود اخذ نہیں کیے۔ یہ وہ رقم ہے جو آپ نے قدر کے لیے درج کی، جسے حساب کی سروس نے جمع کیا۔",
+    "I would like to contribute to the Kai Commitment": "میں Kai Commitment میں تعاون کرنے پر رضامند ہوں",
+    "Share of value wasted": "ضائع شدہ قدر کا حصہ",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "ہر منزل کے ساتھ دکھایا گیا عدد انجن کا اپنا مجموعی حساب ہے، جو تمام اندراجات پر محیط ہے۔ اس کے نیچے کی قطاریں ہر اندراج کی اپنی قدریں ہیں — یہ مختلف اپ اسٹریم عوامل استعمال کر سکتی ہیں، اسی لیے یہ اوپر دکھائے گئے مجموعے کو دہرانے کے بجائے اس تک جمع ہوتی ہیں۔",
+    "The money": "رقم",
+    "These figures cover: %(period)s": "یہ اعداد اس مدت کا احاطہ کرتے ہیں: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "یہ فرض کرتا ہے کہ آپ نے جس اندراج کی قیمت مقرر کی، اس میں فی کلوگرام قدر یکساں ہے، جیسے پیداوار کا ایک ڈبہ مجموعی طور پر قیمت کیا جاتا ہے — نہ کہ ناپی گئی قیمت، اور نہ ہی تمام اندراجات پر لیا گیا اوسط۔",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "یہ آپ کے نتائج کی ایک گمنام نقل اس کیلکولیٹر کے عوامی اعداد و شمار میں بھیجتا ہے — نہ کوئی نام، نہ پتہ، نہ کوئی ایسی چیز جو آپ کی شناخت ظاہر کرے۔ ایک بار بھیجے جانے کے بعد اسے یہاں سے واپس نہیں لیا جا سکتا، اور اگر آپ واپس آ کر دوبارہ حساب لگائیں، تو آپ کے تازہ ترین اعداد اسی انتخاب کے تحت اس کی جگہ لے لیں گے۔",
+    "Total value of food handled": "نمٹائے گئے کھانے کی کل قدر",
+    "Value of food not wasted at all": "بالکل ضائع نہ ہونے والے کھانے کی قدر",
+    "Value of food wasted": "ضائع شدہ کھانے کی قدر",
+    "Your latest figures are in this calculator's public statistics.": "آپ کے تازہ ترین اعداد اس کیلکولیٹر کے عوامی اعداد و شمار میں شامل ہیں۔"
   }
 }

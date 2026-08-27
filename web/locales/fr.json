@@ -56,7 +56,6 @@
     "Details": "Détails",
     "Download results": "Télécharger les résultats",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "Chaque scénario est présenté tel que le service de calcul l'a formulé. L'écart entre les deux n'est pas affiché, car le service n'en fournit pas — comparez les deux chiffres.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "Chaque entrée de chaîne d'approvisionnement est présentée séparément. Une même destination sous deux entrées utilise deux facteurs amont différents ; il s'agit donc bien de deux lignes distinctes.",
     "Edit": "Modifier",
     "Edit your data": "Modifier vos données",
     "Enter a percentage from 0 to 100 for every destination.": "Saisissez un pourcentage de 0 à 100 pour chaque destination.",
@@ -298,7 +297,6 @@
     "Value per unit": "Valeur par unité",
     "What we record": "Ce que nous enregistrons",
     "Yes": "Oui",
-    "Across %(count)s calculations run in this tool.": "Sur l'ensemble des %(count)s calculs effectués dans cet outil.",
     "Enter no more than %(limit)s containers.": "N'indiquez pas plus de %(limit)s contenants.",
     "Number of containers must be greater than zero.": "Le nombre de contenants doit être supérieur à zéro.",
     "That container is no longer available. Choose another.": "Ce contenant n'est plus disponible. Choisissez-en un autre.",
@@ -331,6 +329,19 @@
     "One month": "Un mois",
     "One quarter": "Un trimestre",
     "One year": "Un an",
-    "Optional — it only labels your figures, it never changes a result.": "Facultatif — cela ne fait qu'étiqueter vos chiffres, cela ne change jamais un résultat."
+    "Optional — it only labels your figures, it never changes a result.": "Facultatif — cela ne fait qu'étiqueter vos chiffres, cela ne change jamais un résultat.",
+    "Across %(count)s calculations contributed to this tool.": "Sur les %(count)s calculs partagés avec cet outil.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "Chiffres que le calculateur n'a pas calculés lui-même : la valeur que vous avez saisie, additionnée par le service de calcul.",
+    "I would like to contribute to the Kai Commitment": "Je souhaite contribuer au Kai Commitment",
+    "Share of value wasted": "Part de la valeur gaspillée",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Le chiffre à côté de chaque destination est le total propre du moteur sur l'ensemble des entrées. Les lignes en dessous sont les valeurs propres à chaque entrée — elles peuvent faire appel à des facteurs amont différents, c'est pourquoi elles s'additionnent pour former le total affiché plutôt que de le répéter.",
+    "The money": "Le montant",
+    "These figures cover: %(period)s": "Ces chiffres couvrent : %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "Cela suppose une valeur uniforme par kilogramme au sein de chaque entrée à laquelle vous avez attribué un prix, de la même façon qu'une caisse de produits est valorisée dans son ensemble — ni un prix mesuré, ni une moyenne calculée sur l'ensemble des entrées.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "Ceci envoie une copie anonyme de vos résultats vers les statistiques publiques de ce calculateur — aucun nom, aucune adresse, rien qui permette de vous identifier. Cela ne peut pas être annulé depuis ici une fois envoyé, et si vous revenez recalculer, vos chiffres mis à jour prendront sa place sous ce même choix.",
+    "Total value of food handled": "Valeur totale des aliments traités",
+    "Value of food not wasted at all": "Valeur des aliments qui n'ont pas du tout été gaspillés",
+    "Value of food wasted": "Valeur des aliments gaspillés",
+    "Your latest figures are in this calculator's public statistics.": "Vos derniers chiffres figurent dans les statistiques publiques de ce calculateur."
   }
 }

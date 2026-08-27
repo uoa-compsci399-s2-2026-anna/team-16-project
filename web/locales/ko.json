@@ -56,7 +56,6 @@
     "Details": "세부 정보",
     "Download results": "결과 내려받기",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "각 시나리오는 계산 서비스가 표현한 그대로 표시됩니다. 두 값의 차이는 서비스가 제공하지 않으므로 표시되지 않습니다 — 두 수치를 직접 비교해 보세요.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "공급망 항목은 각각 따로 표시됩니다. 같은 처리 경로라도 항목이 두 개면 서로 다른 업스트림 계수가 적용되므로 실제로 두 줄이 됩니다.",
     "Edit": "수정",
     "Edit your data": "입력한 데이터 수정",
     "Enter a percentage from 0 to 100 for every destination.": "모든 처리 경로에 0에서 100 사이의 비율을 입력하세요.",
@@ -298,7 +297,6 @@
     "Value per unit": "단위당 값",
     "What we record": "기록하는 정보",
     "Yes": "예",
-    "Across %(count)s calculations run in this tool.": "이 도구에서 실행된 계산 %(count)s건 전체입니다.",
     "Enter no more than %(limit)s containers.": "용기는 %(limit)s개 이하로 입력하세요.",
     "Number of containers must be greater than zero.": "용기 수는 0보다 커야 합니다.",
     "That container is no longer available. Choose another.": "그 용기는 더 이상 사용할 수 없습니다. 다른 것을 선택하세요.",
@@ -331,6 +329,19 @@
     "One month": "1개월",
     "One quarter": "1분기",
     "One year": "1년",
-    "Optional — it only labels your figures, it never changes a result.": "선택 사항입니다 — 수치에 라벨만 붙일 뿐, 결과를 바꾸는 일은 없습니다."
+    "Optional — it only labels your figures, it never changes a result.": "선택 사항입니다 — 수치에 라벨만 붙일 뿐, 결과를 바꾸는 일은 없습니다.",
+    "Across %(count)s calculations contributed to this tool.": "이 도구에 기여된 계산 %(count)s건 전체입니다.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "계산기가 도출한 값이 아닙니다: 귀하가 입력한 금액을 계산 서비스가 합산한 값입니다.",
+    "I would like to contribute to the Kai Commitment": "Kai Commitment에 기여하고 싶습니다",
+    "Share of value wasted": "낭비된 가치의 비율",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "각 처리 경로 옆의 수치는 엔진이 모든 항목을 합산한 총계입니다. 그 아래 행들은 각 항목 고유의 값입니다 — 서로 다른 상류 계수를 사용할 수 있으므로, 위에 표시된 총계를 반복하는 대신 합산하여 그 총계를 이룹니다.",
+    "The money": "금액",
+    "These figures cover: %(period)s": "이 수치가 다루는 기간: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "이는 가격을 매긴 각 항목 내에서 킬로그램당 가치가 동일하다고 가정합니다. 마치 농산물 한 상자를 전체로 가격을 매기는 것과 같으며 — 실측된 가격이 아니고, 모든 항목에 걸친 평균도 아닙니다.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "이는 귀하의 결과의 익명 사본을 이 계산기의 공개 통계에 전송합니다 — 이름도, 주소도, 귀하를 식별할 수 있는 어떤 것도 포함되지 않습니다. 전송 후에는 이곳에서 취소할 수 없으며, 나중에 다시 돌아와 재계산하면 갱신된 수치가 동일한 선택 하에 이를 대체합니다.",
+    "Total value of food handled": "처리된 식품의 총 가치",
+    "Value of food not wasted at all": "전혀 낭비되지 않은 식품의 가치",
+    "Value of food wasted": "낭비된 식품의 가치",
+    "Your latest figures are in this calculator's public statistics.": "귀하의 최신 수치가 이 계산기의 공개 통계에 반영되어 있습니다."
   }
 }

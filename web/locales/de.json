@@ -56,7 +56,6 @@
     "Details": "Einzelheiten",
     "Download results": "Ergebnisse herunterladen",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "Jedes Szenario wird so dargestellt, wie der Berechnungsdienst es formuliert hat. Der Unterschied zwischen beiden wird nicht angezeigt, da der Dienst ihn nicht liefert — vergleichen Sie die beiden Zahlen.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "Jeder Eintrag zur Lieferkette wird einzeln dargestellt. Derselbe Entsorgungsweg unter zwei Einträgen greift auf zwei unterschiedliche vorgelagerte Faktoren zurück und ergibt daher tatsächlich zwei Zeilen.",
     "Edit": "Bearbeiten",
     "Edit your data": "Ihre Daten bearbeiten",
     "Enter a percentage from 0 to 100 for every destination.": "Geben Sie für jeden Entsorgungsweg einen Prozentwert von 0 bis 100 ein.",
@@ -298,7 +297,6 @@
     "Value per unit": "Wert je Einheit",
     "What we record": "Was wir speichern",
     "Yes": "Ja",
-    "Across %(count)s calculations run in this tool.": "Aus %(count)s in diesem Rechner durchgeführten Berechnungen.",
     "Enter no more than %(limit)s containers.": "Geben Sie höchstens %(limit)s Behälter an.",
     "Number of containers must be greater than zero.": "Die Anzahl der Behälter muss größer als null sein.",
     "That container is no longer available. Choose another.": "Dieser Behälter ist nicht mehr verfügbar. Wählen Sie einen anderen.",
@@ -331,6 +329,19 @@
     "One month": "Ein Monat",
     "One quarter": "Ein Quartal",
     "One year": "Ein Jahr",
-    "Optional — it only labels your figures, it never changes a result.": "Optional — es kennzeichnet nur Ihre Zahlen und ändert nie ein Ergebnis."
+    "Optional — it only labels your figures, it never changes a result.": "Optional — es kennzeichnet nur Ihre Zahlen und ändert nie ein Ergebnis.",
+    "Across %(count)s calculations contributed to this tool.": "Aus %(count)s zu diesem Rechner beigetragenen Berechnungen.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "Zahlen, die der Rechner nicht selbst ermittelt hat: der von Ihnen eingegebene Wert, aufsummiert vom Berechnungsdienst.",
+    "I would like to contribute to the Kai Commitment": "Ich möchte zum Kai Commitment beitragen",
+    "Share of value wasted": "Anteil des verschwendeten Werts",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Die Zahl neben jedem Zielort ist die eigene Summe der Engine über alle Einträge hinweg. Die Zeilen darunter sind die eigenen Werte jedes Eintrags — sie können unterschiedliche vorgelagerte Faktoren verwenden, weshalb sie sich zur oben gezeigten Summe addieren, statt sie zu wiederholen.",
+    "The money": "Der Betrag",
+    "These figures cover: %(period)s": "Diese Zahlen decken ab: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "Dies setzt voraus, dass der Wert pro Kilogramm innerhalb jedes von Ihnen bepreisten Eintrags einheitlich ist, so wie eine Kiste Erzeugnisse als Ganzes bepreist wird — kein gemessener Preis und auch kein Durchschnitt über alle Einträge hinweg.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "Dies sendet eine anonyme Kopie Ihrer Ergebnisse an die öffentliche Statistik dieses Rechners — kein Name, keine Adresse, nichts, das Sie identifiziert. Es kann von hier aus nicht rückgängig gemacht werden, sobald es gesendet wurde, und wenn Sie zurückkehren und neu berechnen, treten Ihre aktualisierten Zahlen unter derselben Wahl an seine Stelle.",
+    "Total value of food handled": "Gesamtwert der verarbeiteten Lebensmittel",
+    "Value of food not wasted at all": "Wert der überhaupt nicht verschwendeten Lebensmittel",
+    "Value of food wasted": "Wert der verschwendeten Lebensmittel",
+    "Your latest figures are in this calculator's public statistics.": "Ihre neuesten Zahlen sind in der öffentlichen Statistik dieses Rechners enthalten."
   }
 }

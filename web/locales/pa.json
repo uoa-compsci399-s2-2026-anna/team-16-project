@@ -58,7 +58,6 @@
     "Details": "ਵੇਰਵੇ",
     "Download results": "ਨਤੀਜੇ ਡਾਊਨਲੋਡ ਕਰੋ",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "ਹਰ ਦ੍ਰਿਸ਼ ਉਸੇ ਸ਼ਬਦਾਵਲੀ ਵਿੱਚ ਵਿਖਾਇਆ ਗਿਆ ਹੈ ਜਿਵੇਂ ਗਣਨਾ ਸੇਵਾ ਨੇ ਦਿੱਤਾ। ਦੋਹਾਂ ਵਿਚਲਾ ਫ਼ਰਕ ਨਹੀਂ ਵਿਖਾਇਆ ਜਾਂਦਾ, ਕਿਉਂਕਿ ਸੇਵਾ ਫ਼ਰਕ ਨਹੀਂ ਦਿੰਦੀ — ਦੋਵੇਂ ਅੰਕੜੇ ਆਪ ਮਿਲਾ ਕੇ ਵੇਖੋ।",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "ਸਪਲਾਈ-ਚੇਨ ਦੀ ਹਰ ਐਂਟਰੀ ਵੱਖਰੀ ਵਿਖਾਈ ਜਾਂਦੀ ਹੈ। ਦੋ ਐਂਟਰੀਆਂ ਹੇਠ ਇੱਕੋ ਮੰਜ਼ਿਲ ਦੋ ਵੱਖ-ਵੱਖ ਅੱਪਸਟ੍ਰੀਮ ਕਾਰਕ ਲੈਂਦੀ ਹੈ, ਇਸ ਲਈ ਇਹ ਸੱਚਮੁੱਚ ਦੋ ਕਤਾਰਾਂ ਹਨ।",
     "Edit": "ਸੋਧੋ",
     "Edit your data": "ਆਪਣਾ ਡਾਟਾ ਸੋਧੋ",
     "Enter a percentage from 0 to 100 for every destination.": "ਹਰ ਮੰਜ਼ਿਲ ਲਈ 0 ਤੋਂ 100 ਤੱਕ ਪ੍ਰਤੀਸ਼ਤ ਭਰੋ।",
@@ -300,7 +299,6 @@
     "Value per unit": "ਪ੍ਰਤੀ ਇਕਾਈ ਮੁੱਲ",
     "What we record": "ਅਸੀਂ ਕੀ ਦਰਜ ਕਰਦੇ ਹਾਂ",
     "Yes": "ਹਾਂ",
-    "Across %(count)s calculations run in this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਕੀਤੀਆਂ %(count)s ਗਣਨਾਵਾਂ ਵਿੱਚ।",
     "Enter no more than %(limit)s containers.": "%(limit)s ਤੋਂ ਵੱਧ ਭਾਂਡੇ ਦਰਜ ਨਾ ਕਰੋ।",
     "Number of containers must be greater than zero.": "ਭਾਂਡਿਆਂ ਦੀ ਗਿਣਤੀ ਸਿਫ਼ਰ ਤੋਂ ਵੱਧ ਹੋਣੀ ਚਾਹੀਦੀ ਹੈ।",
     "That container is no longer available. Choose another.": "ਉਹ ਭਾਂਡਾ ਹੁਣ ਉਪਲਬਧ ਨਹੀਂ ਹੈ। ਕੋਈ ਹੋਰ ਚੁਣੋ।",
@@ -333,6 +331,19 @@
     "One month": "ਇੱਕ ਮਹੀਨਾ",
     "One quarter": "ਇੱਕ ਤਿਮਾਹੀ",
     "One year": "ਇੱਕ ਸਾਲ",
-    "Optional — it only labels your figures, it never changes a result.": "ਵਿਕਲਪਿਕ — ਇਹ ਸਿਰਫ਼ ਤੁਹਾਡੇ ਅੰਕੜਿਆਂ ਨੂੰ ਲੇਬਲ ਕਰਦਾ ਹੈ, ਇਹ ਕਦੇ ਵੀ ਨਤੀਜਾ ਨਹੀਂ ਬਦਲਦਾ।"
+    "Optional — it only labels your figures, it never changes a result.": "ਵਿਕਲਪਿਕ — ਇਹ ਸਿਰਫ਼ ਤੁਹਾਡੇ ਅੰਕੜਿਆਂ ਨੂੰ ਲੇਬਲ ਕਰਦਾ ਹੈ, ਇਹ ਕਦੇ ਵੀ ਨਤੀਜਾ ਨਹੀਂ ਬਦਲਦਾ।",
+    "Across %(count)s calculations contributed to this tool.": "ਇਸ ਸੰਦ ਵਿੱਚ ਯੋਗਦਾਨ ਕੀਤੀਆਂ %(count)s ਗਣਨਾਵਾਂ ਵਿੱਚ।",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "ਇਹ ਅੰਕੜੇ ਕੈਲਕੁਲੇਟਰ ਦੁਆਰਾ ਨਹੀਂ ਕੱਢੇ ਗਏ: ਇਹ ਉਹ ਮੁੱਲ ਹੈ ਜੋ ਤੁਸੀਂ ਦਰਜ ਕੀਤਾ, ਜਿਸ ਨੂੰ ਗਣਨਾ ਸੇਵਾ ਦੁਆਰਾ ਜੋੜਿਆ ਗਿਆ ਹੈ।",
+    "I would like to contribute to the Kai Commitment": "ਮੈਂ Kai Commitment ਨੂੰ ਯੋਗਦਾਨ ਦੇਣ ਲਈ ਸਹਿਮਤ ਹਾਂ",
+    "Share of value wasted": "ਬਰਬਾਦ ਹੋਏ ਮੁੱਲ ਦਾ ਹਿੱਸਾ",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "ਹਰੇਕ ਮੰਜ਼ਿਲ ਦੇ ਨਾਲ ਦਿਖਾਇਆ ਗਿਆ ਅੰਕੜਾ ਇੰਜਣ ਦੁਆਰਾ ਸਾਰੀਆਂ ਐਂਟਰੀਆਂ ਦਾ ਕੱਢਿਆ ਕੁੱਲ ਜੋੜ ਹੈ। ਇਸ ਦੇ ਹੇਠਾਂ ਦੀਆਂ ਕਤਾਰਾਂ ਹਰੇਕ ਐਂਟਰੀ ਦੇ ਆਪਣੇ ਮੁੱਲ ਹਨ — ਇਹ ਵੱਖ-ਵੱਖ ਅਪਸਟ੍ਰੀਮ ਕਾਰਕ ਵਰਤ ਸਕਦੀਆਂ ਹਨ, ਇਸੇ ਕਰਕੇ ਇਹ ਉੱਪਰ ਦਿਖਾਏ ਕੁੱਲ ਜੋੜ ਨੂੰ ਦੁਹਰਾਉਣ ਦੀ ਬਜਾਏ ਉਸ ਤੱਕ ਜੋੜਦੀਆਂ ਹਨ।",
+    "The money": "ਰਕਮ",
+    "These figures cover: %(period)s": "ਇਹ ਅੰਕੜੇ ਇਸ ਮਿਆਦ ਨੂੰ ਦਰਸਾਉਂਦੇ ਹਨ: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "ਇਹ ਮੰਨ ਕੇ ਚੱਲਦਾ ਹੈ ਕਿ ਤੁਸੀਂ ਜਿਸ ਐਂਟਰੀ ਦੀ ਕੀਮਤ ਤੈਅ ਕੀਤੀ, ਉਸ ਵਿੱਚ ਪ੍ਰਤੀ ਕਿਲੋਗ੍ਰਾਮ ਮੁੱਲ ਇੱਕੋ ਜਿਹਾ ਹੈ, ਜਿਵੇਂ ਉਪਜ ਦਾ ਇੱਕ ਡੱਬਾ ਸਮੁੱਚੇ ਤੌਰ 'ਤੇ ਕੀਮਤ ਕੀਤਾ ਜਾਂਦਾ ਹੈ — ਨਾ ਕਿ ਮਾਪਿਆ ਗਿਆ ਮੁੱਲ, ਅਤੇ ਨਾ ਹੀ ਸਾਰੀਆਂ ਐਂਟਰੀਆਂ ਵਿੱਚੋਂ ਲਿਆ ਗਿਆ ਔਸਤ।",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "ਇਹ ਤੁਹਾਡੇ ਨਤੀਜਿਆਂ ਦੀ ਇੱਕ ਗੁਮਨਾਮ ਕਾਪੀ ਇਸ ਕੈਲਕੁਲੇਟਰ ਦੇ ਜਨਤਕ ਅੰਕੜਿਆਂ ਵਿੱਚ ਭੇਜਦਾ ਹੈ — ਕੋਈ ਨਾਮ ਨਹੀਂ, ਕੋਈ ਪਤਾ ਨਹੀਂ, ਤੁਹਾਡੀ ਪਛਾਣ ਦੱਸਣ ਵਾਲੀ ਕੋਈ ਚੀਜ਼ ਨਹੀਂ। ਇੱਕ ਵਾਰ ਭੇਜੇ ਜਾਣ ਤੋਂ ਬਾਅਦ ਇਸ ਨੂੰ ਇੱਥੋਂ ਵਾਪਸ ਨਹੀਂ ਲਿਆ ਜਾ ਸਕਦਾ, ਅਤੇ ਜੇ ਤੁਸੀਂ ਵਾਪਸ ਆ ਕੇ ਮੁੜ ਗਣਨਾ ਕਰਦੇ ਹੋ, ਤਾਂ ਤੁਹਾਡੇ ਨਵੇਂ ਅੰਕੜੇ ਇਸੇ ਚੋਣ ਤਹਿਤ ਇਸ ਦੀ ਥਾਂ ਲੈ ਲੈਣਗੇ।",
+    "Total value of food handled": "ਸੰਭਾਲੇ ਗਏ ਭੋਜਨ ਦਾ ਕੁੱਲ ਮੁੱਲ",
+    "Value of food not wasted at all": "ਬਿਲਕੁਲ ਵੀ ਬਰਬਾਦ ਨਾ ਹੋਏ ਭੋਜਨ ਦਾ ਮੁੱਲ",
+    "Value of food wasted": "ਬਰਬਾਦ ਹੋਏ ਭੋਜਨ ਦਾ ਮੁੱਲ",
+    "Your latest figures are in this calculator's public statistics.": "ਤੁਹਾਡੇ ਨਵੀਨਤਮ ਅੰਕੜੇ ਇਸ ਕੈਲਕੁਲੇਟਰ ਦੇ ਜਨਤਕ ਅੰਕੜਿਆਂ ਵਿੱਚ ਸ਼ਾਮਲ ਹਨ।"
   }
 }

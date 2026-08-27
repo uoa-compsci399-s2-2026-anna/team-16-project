@@ -56,7 +56,6 @@
     "Details": "Chi tiết",
     "Download results": "Tải kết quả về",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "Mỗi kịch bản được hiển thị đúng theo cách diễn đạt của dịch vụ tính toán. Phần chênh lệch giữa hai kịch bản không được hiển thị vì dịch vụ không trả về giá trị đó — hãy tự so sánh hai con số.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "Mỗi mục chuỗi cung ứng được hiển thị riêng. Cùng một điểm đến ở hai mục khác nhau sẽ dùng hai hệ số đầu nguồn khác nhau, nên đó thực sự là hai dòng riêng biệt.",
     "Edit": "Sửa",
     "Edit your data": "Sửa dữ liệu của bạn",
     "Enter a percentage from 0 to 100 for every destination.": "Nhập tỷ lệ phần trăm từ 0 đến 100 cho mọi điểm đến.",
@@ -298,7 +297,6 @@
     "Value per unit": "Giá trị mỗi đơn vị",
     "What we record": "Chúng tôi ghi lại những gì",
     "Yes": "Có",
-    "Across %(count)s calculations run in this tool.": "Trên tổng số %(count)s phép tính đã chạy trong công cụ này.",
     "Enter no more than %(limit)s containers.": "Không nhập quá %(limit)s thùng chứa.",
     "Number of containers must be greater than zero.": "Số thùng chứa phải lớn hơn không.",
     "That container is no longer available. Choose another.": "Thùng chứa đó không còn khả dụng. Hãy chọn thùng khác.",
@@ -331,6 +329,19 @@
     "One month": "Một tháng",
     "One quarter": "Một quý",
     "One year": "Một năm",
-    "Optional — it only labels your figures, it never changes a result.": "Không bắt buộc — chỉ để gắn nhãn cho số liệu của bạn, không bao giờ làm thay đổi kết quả."
+    "Optional — it only labels your figures, it never changes a result.": "Không bắt buộc — chỉ để gắn nhãn cho số liệu của bạn, không bao giờ làm thay đổi kết quả.",
+    "Across %(count)s calculations contributed to this tool.": "Trên tổng số %(count)s phép tính đã được đóng góp cho công cụ này.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "Các số liệu mà công cụ tính không tự suy ra: giá trị bạn đã nhập, được cộng lại bởi dịch vụ tính toán.",
+    "I would like to contribute to the Kai Commitment": "Tôi muốn đóng góp cho Kai Commitment",
+    "Share of value wasted": "Tỷ lệ giá trị bị lãng phí",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Con số bên cạnh mỗi điểm đến là tổng riêng của bộ máy tính trên tất cả các mục. Các hàng bên dưới là giá trị riêng của từng mục — chúng có thể sử dụng các hệ số thượng nguồn khác nhau, đó là lý do chúng cộng lại thành tổng được hiển thị ở trên thay vì lặp lại tổng đó.",
+    "The money": "Số tiền",
+    "These figures cover: %(period)s": "Các số liệu này áp dụng cho: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "Điều này giả định giá trị trên mỗi ki-lô-gam là đồng đều trong mỗi mục bạn đã định giá, giống như cách một thùng nông sản được định giá như một khối — không phải một mức giá được đo lường, và cũng không phải mức trung bình lấy trên tất cả các mục.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "Việc này gửi một bản sao ẩn danh kết quả của bạn vào thống kê công khai của công cụ tính này — không có tên, không có địa chỉ, không có gì nhận diện được bạn. Việc này không thể hoàn tác từ đây sau khi đã gửi, và nếu bạn quay lại và tính toán lại, số liệu đã cập nhật của bạn sẽ thay thế nó dưới cùng một lựa chọn này.",
+    "Total value of food handled": "Tổng giá trị thực phẩm đã xử lý",
+    "Value of food not wasted at all": "Giá trị thực phẩm hoàn toàn không bị lãng phí",
+    "Value of food wasted": "Giá trị thực phẩm bị lãng phí",
+    "Your latest figures are in this calculator's public statistics.": "Số liệu mới nhất của bạn đã có trong thống kê công khai của công cụ tính này."
   }
 }

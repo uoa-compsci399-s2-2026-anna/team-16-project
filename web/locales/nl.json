@@ -56,7 +56,6 @@
     "Details": "Bijzonderheden",
     "Download results": "Resultaten downloaden",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "Elk scenario wordt weergegeven zoals de rekendienst het heeft geformuleerd. Het verschil tussen de twee wordt niet getoond, omdat de dienst dat niet teruggeeft — vergelijk de twee cijfers.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "Elke invoerregel voor de toeleveringsketen wordt apart weergegeven. Dezelfde bestemming onder twee invoerregels gebruikt twee verschillende factoren uit de voorafgaande keten, dus het gaat werkelijk om twee regels.",
     "Edit": "Bewerken",
     "Edit your data": "Uw gegevens bewerken",
     "Enter a percentage from 0 to 100 for every destination.": "Voer voor elke bestemming een percentage van 0 tot 100 in.",
@@ -298,7 +297,6 @@
     "Value per unit": "Waarde per eenheid",
     "What we record": "Wat wij vastleggen",
     "Yes": "Ja",
-    "Across %(count)s calculations run in this tool.": "Over %(count)s berekeningen die in deze rekentool zijn uitgevoerd.",
     "Enter no more than %(limit)s containers.": "Voer niet meer dan %(limit)s containers in.",
     "Number of containers must be greater than zero.": "Het aantal containers moet groter zijn dan nul.",
     "That container is no longer available. Choose another.": "Die container is niet meer beschikbaar. Kies een andere.",
@@ -331,6 +329,19 @@
     "One month": "Eén maand",
     "One quarter": "Eén kwartaal",
     "One year": "Eén jaar",
-    "Optional — it only labels your figures, it never changes a result.": "Optioneel — het labelt alleen uw cijfers en verandert nooit een resultaat."
+    "Optional — it only labels your figures, it never changes a result.": "Optioneel — het labelt alleen uw cijfers en verandert nooit een resultaat.",
+    "Across %(count)s calculations contributed to this tool.": "Over %(count)s berekeningen die aan deze rekentool zijn bijgedragen.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "Cijfers die de rekentool niet zelf heeft afgeleid: de waarde die u hebt ingevoerd, opgeteld door de rekendienst.",
+    "I would like to contribute to the Kai Commitment": "Ik wil graag bijdragen aan de Kai Commitment",
+    "Share of value wasted": "Aandeel verspilde waarde",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Het cijfer naast elke bestemming is het eigen totaal van de engine over alle invoerregels heen. De regels eronder zijn de eigen waarden van elke invoerregel — deze kunnen verschillende upstreamfactoren gebruiken, waardoor ze optellen tot het hierboven getoonde totaal in plaats van dat te herhalen.",
+    "The money": "Het bedrag",
+    "These figures cover: %(period)s": "Deze cijfers beslaan: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "Dit gaat ervan uit dat de waarde per kilogram binnen elke invoerregel waaraan u een prijs hebt toegekend, gelijk is, zoals een kist producten als geheel wordt geprijsd — geen gemeten prijs, en ook geen gemiddelde over alle invoerregels.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "Dit stuurt een anonieme kopie van uw resultaten naar de openbare statistieken van deze rekentool — geen naam, geen adres, niets dat u identificeert. Dit kan hier niet ongedaan worden gemaakt zodra het is verzonden, en als u terugkomt en opnieuw berekent, vervangen uw bijgewerkte cijfers deze onder dezelfde keuze.",
+    "Total value of food handled": "Totale waarde van verwerkt voedsel",
+    "Value of food not wasted at all": "Waarde van voedsel dat helemaal niet is verspild",
+    "Value of food wasted": "Waarde van verspild voedsel",
+    "Your latest figures are in this calculator's public statistics.": "Uw meest recente cijfers staan in de openbare statistieken van deze rekentool."
   }
 }

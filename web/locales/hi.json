@@ -56,7 +56,6 @@
     "Details": "विवरण",
     "Download results": "परिणाम डाउनलोड करें",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "हर परिदृश्य वैसे ही दिखाया गया है जैसे गणना सेवा ने उसे लिखा था। दोनों के बीच का अंतर नहीं दिखाया जाता, क्योंकि सेवा ऐसा कोई अंतर नहीं देती — दोनों आँकड़ों की आपस में तुलना करें।",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "हर आपूर्ति-शृंखला प्रविष्टि अलग-अलग दिखाई जाती है। दो प्रविष्टियों में आने वाला एक ही गंतव्य दो अलग-अलग अपस्ट्रीम कारक लेता है, इसलिए वे वास्तव में दो अलग पंक्तियाँ हैं।",
     "Edit": "संपादित करें",
     "Edit your data": "अपना डेटा संपादित करें",
     "Enter a percentage from 0 to 100 for every destination.": "हर गंतव्य के लिए 0 से 100 के बीच प्रतिशत दर्ज करें।",
@@ -298,7 +297,6 @@
     "Value per unit": "प्रति इकाई मान",
     "What we record": "हम क्या दर्ज करते हैं",
     "Yes": "हाँ",
-    "Across %(count)s calculations run in this tool.": "इस टूल में की गई %(count)s गणनाओं में।",
     "Enter no more than %(limit)s containers.": "%(limit)s से अधिक पात्र दर्ज न करें।",
     "Number of containers must be greater than zero.": "पात्रों की संख्या शून्य से अधिक होनी चाहिए।",
     "That container is no longer available. Choose another.": "वह पात्र अब उपलब्ध नहीं है। कोई दूसरा चुनें।",
@@ -331,6 +329,19 @@
     "One month": "एक महीना",
     "One quarter": "एक तिमाही",
     "One year": "एक वर्ष",
-    "Optional — it only labels your figures, it never changes a result.": "वैकल्पिक — यह केवल आपके आंकड़ों पर लेबल लगाता है, यह कभी भी परिणाम नहीं बदलता।"
+    "Optional — it only labels your figures, it never changes a result.": "वैकल्पिक — यह केवल आपके आंकड़ों पर लेबल लगाता है, यह कभी भी परिणाम नहीं बदलता।",
+    "Across %(count)s calculations contributed to this tool.": "इस टूल में योगदान दी गई %(count)s गणनाओं में।",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "ये आंकड़े कैलकुलेटर द्वारा निकाले नहीं गए हैं: यह वह मूल्य है जो आपने दर्ज किया, जिसे गणना सेवा द्वारा जोड़ा गया है।",
+    "I would like to contribute to the Kai Commitment": "मैं Kai Commitment को योगदान देने के लिए सहमत हूँ",
+    "Share of value wasted": "बर्बाद हुए मूल्य का हिस्सा",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "प्रत्येक गंतव्य के बगल दिखने वाला आंकड़ा इंजन द्वारा सभी प्रविष्टियों का निकाला गया कुल योग है। इसके नीचे की पंक्तियाँ प्रत्येक प्रविष्टि के अपने मूल्य दर्शाती हैं — वे अलग-अलग अपस्ट्रीम कारकों का उपयोग कर सकती हैं, इसीलिए वे ऊपर दिखाए गए कुल योग को दोहराने के बजाय उसे बनाने के लिए जुड़ती हैं।",
+    "The money": "राशि",
+    "These figures cover: %(period)s": "ये आंकड़े इस अवधि को दर्शाते हैं: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "यह मानता है कि आपने जिस प्रविष्टि की कीमत तय की है, उसमें प्रति किलोग्राम मूल्य समान है, जैसे उपज का एक डिब्बा समग्र रूप से मूल्यांकित किया जाता है - न कि मापा गया मूल्य, और न ही सभी प्रविष्टियों में लिया गया औसत।",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "यह आपके परिणामों की एक अनाम प्रति इस कैलकुलेटर के सार्वजनिक आंकड़ों में भेजता है — कोई नाम नहीं, कोई पता नहीं, आपकी पहचान बताने वाली कोई चीज़ नहीं। एक बार भेजे जाने के बाद इसे यहाँ से वापस नहीं लिया जा सकता, और यदि आप वापस आकर पुनः गणना करते हैं, तो आपके अद्यतन आंकड़े इसी विकल्प के तहत उसकी जगह ले लेंगे।",
+    "Total value of food handled": "संभाले गए भोजन का कुल मूल्य",
+    "Value of food not wasted at all": "बिल्कुल भी बर्बाद न हुए भोजन का मूल्य",
+    "Value of food wasted": "बर्बाद हुए भोजन का मूल्य",
+    "Your latest figures are in this calculator's public statistics.": "आपके नवीनतम आंकड़े इस कैलकुलेटर के सार्वजनिक आंकड़ों में शामिल कर दिए गए हैं।"
   }
 }

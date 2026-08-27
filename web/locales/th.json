@@ -56,7 +56,6 @@
     "Details": "รายละเอียด",
     "Download results": "ดาวน์โหลดผลลัพธ์",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "แต่ละแผนแสดงตามถ้อยคำที่บริการคำนวณส่งกลับมา ส่วนต่างระหว่างสองแผนไม่ได้แสดงไว้ เพราะบริการไม่ได้ส่งค่านั้นมา — กรุณาเปรียบเทียบตัวเลขทั้งสองเอง",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "แต่ละรายการในห่วงโซ่อุปทานจะแสดงแยกกัน ปลายทางเดียวกันภายใต้สองรายการจะใช้ค่าตัวคูณต้นน้ำที่ต่างกัน จึงนับเป็นสองแถวจริง ๆ",
     "Edit": "แก้ไข",
     "Edit your data": "แก้ไขข้อมูลของคุณ",
     "Enter a percentage from 0 to 100 for every destination.": "กรอกเปอร์เซ็นต์ตั้งแต่ 0 ถึง 100 สำหรับทุกปลายทาง",
@@ -298,7 +297,6 @@
     "Value per unit": "ค่าต่อหน่วย",
     "What we record": "ข้อมูลที่เราบันทึก",
     "Yes": "ใช่",
-    "Across %(count)s calculations run in this tool.": "จากการคำนวณ %(count)s ครั้งที่ทำในเครื่องมือนี้",
     "Enter no more than %(limit)s containers.": "กรอกได้ไม่เกิน %(limit)s ใบ",
     "Number of containers must be greater than zero.": "จำนวนภาชนะต้องมากกว่าศูนย์",
     "That container is no longer available. Choose another.": "ภาชนะนั้นไม่พร้อมใช้งานแล้ว โปรดเลือกอย่างอื่น",
@@ -331,6 +329,19 @@
     "One month": "หนึ่งเดือน",
     "One quarter": "หนึ่งไตรมาส",
     "One year": "หนึ่งปี",
-    "Optional — it only labels your figures, it never changes a result.": "ไม่บังคับ — เพียงกำกับตัวเลขของคุณเท่านั้น ไม่มีผลเปลี่ยนแปลงผลลัพธ์แต่อย่างใด"
+    "Optional — it only labels your figures, it never changes a result.": "ไม่บังคับ — เพียงกำกับตัวเลขของคุณเท่านั้น ไม่มีผลเปลี่ยนแปลงผลลัพธ์แต่อย่างใด",
+    "Across %(count)s calculations contributed to this tool.": "จากการคำนวณ %(count)s ครั้งที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "ตัวเลขที่เครื่องคำนวณไม่ได้คำนวณขึ้นเอง คือมูลค่าที่คุณป้อนไว้ ซึ่งรวมโดยบริการคำนวณ",
+    "I would like to contribute to the Kai Commitment": "ฉันต้องการสนับสนุน Kai Commitment",
+    "Share of value wasted": "สัดส่วนมูลค่าที่สูญเสีย",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "ตัวเลขข้างปลายทางแต่ละแห่งคือผลรวมของเอนจินเองจากทุกรายการ แถวด้านล่างคือค่าของแต่ละรายการเอง — ซึ่งอาจใช้ปัจจัยต้นทางที่แตกต่างกัน จึงรวมกันเป็นผลรวมที่แสดงด้านบนแทนที่จะซ้ำกับผลรวมนั้น",
+    "The money": "จำนวนเงิน",
+    "These figures cover: %(period)s": "ตัวเลขเหล่านี้ครอบคลุมช่วงเวลา: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "สมมติฐานนี้ถือว่ามูลค่าต่อกิโลกรัมเท่ากันภายในแต่ละรายการที่คุณกำหนดราคา เช่นเดียวกับกล่องผลผลิตที่ตั้งราคาทั้งกล่อง — ไม่ใช่ราคาที่วัดจริง และไม่ใช่ค่าเฉลี่ยจากทุกรายการ",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "การกระทำนี้จะส่งสำเนาผลลัพธ์ของคุณแบบไม่ระบุตัวตนไปยังสถิติสาธารณะของเครื่องคำนวณนี้ — ไม่มีชื่อ ไม่มีที่อยู่ ไม่มีสิ่งใดที่ระบุตัวคุณได้ เมื่อส่งแล้วจะไม่สามารถยกเลิกได้จากที่นี่ และหากคุณกลับมาคำนวณใหม่ ตัวเลขที่อัปเดตของคุณจะเข้ามาแทนที่ภายใต้ตัวเลือกเดียวกันนี้",
+    "Total value of food handled": "มูลค่ารวมของอาหารที่จัดการ",
+    "Value of food not wasted at all": "มูลค่าของอาหารที่ไม่ได้สูญเสียเลย",
+    "Value of food wasted": "มูลค่าของอาหารที่สูญเสีย",
+    "Your latest figures are in this calculator's public statistics.": "ตัวเลขล่าสุดของคุณอยู่ในสถิติสาธารณะของเครื่องคำนวณนี้"
   }
 }

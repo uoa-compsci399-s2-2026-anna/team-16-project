@@ -57,7 +57,6 @@
     "Details": "Mga detalye",
     "Download results": "I-download ang resulta",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "Ipinapakita ang bawat senaryo ayon sa pananalita ng serbisyo ng pagtuos. Hindi ipinapakita ang pagkakaiba ng dalawa dahil hindi ito ibinabalik ng serbisyo — ihambing mismo ang dalawang bilang.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "Ipinapakita nang hiwalay ang bawat tala sa daloy ng suplay. Ang parehong patutunguhan sa ilalim ng dalawang tala ay gumagamit ng dalawang magkaibang saligang bilang sa itaas na bahagi ng daloy, kaya tunay ngang dalawang hanay ito.",
     "Edit": "Baguhin",
     "Edit your data": "Baguhin ang iyong datos",
     "Enter a percentage from 0 to 100 for every destination.": "Maglagay ng porsyento mula 0 hanggang 100 para sa bawat patutunguhan.",
@@ -299,7 +298,6 @@
     "Value per unit": "Halaga bawat yunit",
     "What we record": "Ano ang itinatala namin",
     "Yes": "Oo",
-    "Across %(count)s calculations run in this tool.": "Sa kabuuan ng %(count)s na pagtuos na isinagawa sa kasangkapang ito.",
     "Enter no more than %(limit)s containers.": "Huwag maglagay ng higit sa %(limit)s lalagyan.",
     "Number of containers must be greater than zero.": "Ang bilang ng lalagyan ay dapat mahigit sa zero.",
     "That container is no longer available. Choose another.": "Hindi na magagamit ang lalagyang iyon. Pumili ng iba.",
@@ -332,6 +330,19 @@
     "One month": "Isang buwan",
     "One quarter": "Isang kwarter",
     "One year": "Isang taon",
-    "Optional — it only labels your figures, it never changes a result.": "Opsyonal — nagla-label lang ito ng iyong mga bilang, hindi ito nagbabago ng resulta."
+    "Optional — it only labels your figures, it never changes a result.": "Opsyonal — nagla-label lang ito ng iyong mga bilang, hindi ito nagbabago ng resulta.",
+    "Across %(count)s calculations contributed to this tool.": "Sa kabuuan ng %(count)s na pagtuos na inambag sa kasangkapang ito.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "Mga bilang na hindi hinango ng pantuos: ang halagang inilagay mo, na tinotal ng serbisyo ng pagtuos.",
+    "I would like to contribute to the Kai Commitment": "Nais kong mag-ambag sa Kai Commitment",
+    "Share of value wasted": "Bahagdan ng halagang nasayang",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Ang bilang sa tabi ng bawat patutunguhan ay ang sariling kabuuan ng makina sa lahat ng tala. Ang mga hanay sa ibaba nito ay ang sarili ng bawat tala — maaaring gumamit ang mga ito ng iba't ibang paktor sa unahan, kaya't nagtutuos sila tungo sa kabuuang ipinapakita sa halip na ulitin ito.",
+    "The money": "Ang Halaga",
+    "These figures cover: %(period)s": "Sinasaklaw ng mga bilang na ito: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "Ipinapalagay nito na pantay ang halaga bawat kilo sa loob ng bawat tala na binigyan mo ng presyo, tulad ng isang kahon ng ani na pinresyuhan bilang isang kabuuan — hindi isang sinukat na presyo, at hindi isang average na kinuha sa lahat ng tala.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "Ipinapadala nito ang isang anonymong kopya ng iyong mga resulta sa pampublikong estadistika ng pantuos na ito — walang pangalan, walang address, walang anumang bagay na makakikilala sa iyo. Hindi na ito maaaring bawiin mula rito kapag naipadala na, at kung babalik ka at muling magtutuos, ang iyong napapanahong bilang ay papalit dito sa ilalim ng parehong pinili.",
+    "Total value of food handled": "Kabuuang halaga ng pagkaing hinawakan",
+    "Value of food not wasted at all": "Halaga ng pagkaing hindi talaga nasayang",
+    "Value of food wasted": "Halaga ng pagkaing nasayang",
+    "Your latest figures are in this calculator's public statistics.": "Nasa pampublikong estadistika ng pantuos na ito na ang iyong pinakabagong bilang."
   }
 }

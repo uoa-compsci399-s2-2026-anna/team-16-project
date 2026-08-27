@@ -59,7 +59,6 @@
     "Details": "詳細資訊",
     "Download results": "下載結果",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "每個方案都依計算服務回傳的措辭顯示。兩者之間的差值不會顯示，因為該服務並不回傳差值 — 請自行比較這兩個數字。",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "每筆供應鏈記錄會單獨顯示。同一個去向出現在兩筆記錄下時，會取用兩個不同的上游因子，因此確實是兩列。",
     "Edit": "編輯",
     "Edit your data": "編輯您填寫的資料",
     "Enter a percentage from 0 to 100 for every destination.": "請為每個去向輸入 0 到 100 之間的百分比。",
@@ -301,7 +300,6 @@
     "Value per unit": "每單位數值",
     "What we record": "我們記錄哪些資訊",
     "Yes": "是",
-    "Across %(count)s calculations run in this tool.": "本工具中已執行的 %(count)s 次計算。",
     "Enter no more than %(limit)s containers.": "填寫的容器數量不得超過 %(limit)s 個。",
     "Number of containers must be greater than zero.": "容器數量必須大於零。",
     "That container is no longer available. Choose another.": "該容器已無法使用，請另選一種。",
@@ -334,6 +332,19 @@
     "One month": "一個月",
     "One quarter": "一季",
     "One year": "一年",
-    "Optional — it only labels your figures, it never changes a result.": "選填——僅為您的數字加上標籤，絕不會改變任何結果。"
+    "Optional — it only labels your figures, it never changes a result.": "選填——僅為您的數字加上標籤，絕不會改變任何結果。",
+    "Across %(count)s calculations contributed to this tool.": "本工具中已貢獻的 %(count)s 次計算。",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "這些數字並非由計算機推算得出：是您為金額輸入的數值，經計算服務加總而成。",
+    "I would like to contribute to the Kai Commitment": "我願意貢獻給 Kai Commitment",
+    "Share of value wasted": "浪費金額佔比",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "每個去向旁邊的數字，是引擎針對各筆記錄加總後得出的總計。下方各列是每筆記錄各自的數值——它們可能採用不同的上游因子，因此加總後等於上方顯示的總計，而非重複該總計。",
+    "The money": "金額",
+    "These figures cover: %(period)s": "這些數字涵蓋：%(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "這假設您為每筆記錄定價時，每公斤的單價一致，就像一箱農產品整體計價一樣——並非逐筆測量的價格，也不是取自所有記錄的平均值。",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "這會將您結果的匿名副本傳送到本計算機的公開統計資料中——不含姓名、地址，也不含任何足以辨識您身分的資訊。一旦傳送即無法在此撤銷；若您之後返回並重新計算，更新後的數字將在同一選擇下取代原有數字。",
+    "Total value of food handled": "處理食物的總價值",
+    "Value of food not wasted at all": "完全未浪費食物的價值",
+    "Value of food wasted": "浪費食物的價值",
+    "Your latest figures are in this calculator's public statistics.": "您最新的數字已納入本計算機的公開統計資料。"
   }
 }

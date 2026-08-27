@@ -56,7 +56,6 @@
     "Details": "விவரங்கள்",
     "Download results": "முடிவுகளைப் பதிவிறக்கு",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "ஒவ்வொரு காட்சியும் கணக்கீட்டு சேவை எழுதிய அதே சொற்களில் காட்டப்படுகிறது. இரண்டுக்கும் இடையிலான வேறுபாடு காட்டப்படவில்லை, ஏனெனில் சேவை அதைத் தருவதில்லை — இரண்டு எண்களையும் நீங்களே ஒப்பிட்டுப் பாருங்கள்.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "ஒவ்வொரு விநியோகச் சங்கிலி பதிவும் தனித்தனியாகக் காட்டப்படுகிறது. இரண்டு பதிவுகளில் வரும் ஒரே சேருமிடம் இரண்டு வெவ்வேறு மேல்நிலைக் காரணிகளை எடுக்கிறது; எனவே அவை உண்மையிலேயே இரண்டு தனி வரிசைகள்.",
     "Edit": "திருத்து",
     "Edit your data": "உங்கள் தரவைத் திருத்து",
     "Enter a percentage from 0 to 100 for every destination.": "ஒவ்வொரு சேருமிடத்திற்கும் 0 முதல் 100 வரையிலான சதவீதத்தை உள்ளிடவும்.",
@@ -298,7 +297,6 @@
     "Value per unit": "அலகுக்கான மதிப்பு",
     "What we record": "நாங்கள் என்ன பதிவு செய்கிறோம்",
     "Yes": "ஆம்",
-    "Across %(count)s calculations run in this tool.": "இந்தக் கருவியில் செய்யப்பட்ட %(count)s கணக்கீடுகள் முழுவதும்.",
     "Enter no more than %(limit)s containers.": "%(limit)s-க்கு மேல் கொள்கலன்களை உள்ளிட வேண்டாம்.",
     "Number of containers must be greater than zero.": "கொள்கலன்களின் எண்ணிக்கை பூஜ்ஜியத்தை விட அதிகமாக இருக்க வேண்டும்.",
     "That container is no longer available. Choose another.": "அந்தக் கொள்கலன் இனி கிடைக்காது. வேறொன்றைத் தேர்ந்தெடுக்கவும்.",
@@ -331,6 +329,19 @@
     "One month": "ஒரு மாதம்",
     "One quarter": "ஒரு காலாண்டு",
     "One year": "ஒரு ஆண்டு",
-    "Optional — it only labels your figures, it never changes a result.": "விருப்பத்தேர்வு — இது உங்கள் புள்ளிவிவரங்களை மட்டுமே குறிக்கும், முடிவை ஒருபோதும் மாற்றாது."
+    "Optional — it only labels your figures, it never changes a result.": "விருப்பத்தேர்வு — இது உங்கள் புள்ளிவிவரங்களை மட்டுமே குறிக்கும், முடிவை ஒருபோதும் மாற்றாது.",
+    "Across %(count)s calculations contributed to this tool.": "இந்தக் கருவிக்கு பங்களிக்கப்பட்ட %(count)s கணக்கீடுகள் முழுவதும்.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "கால்குலேட்டர் கணக்கிடாத எண்கள்: நீங்கள் மதிப்புக்காக உள்ளிட்ட தொகை, கணக்கீட்டு சேவையால் கூட்டப்பட்டது.",
+    "I would like to contribute to the Kai Commitment": "நான் Kai Commitment-க்குப் பங்களிக்க விரும்புகிறேன்",
+    "Share of value wasted": "வீணான மதிப்பின் பங்கு",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "ஒவ்வொரு சேருமிடத்தின் அருகிலும் உள்ள எண், அனைத்து பதிவுகளிலும் இயந்திரத்தின் சொந்த மொத்தமாகும். அதற்குக் கீழே உள்ள வரிசைகள் ஒவ்வொரு பதிவின் சொந்த மதிப்புகள் — அவை வெவ்வேறு மேல்நிலை காரணிகளைப் பயன்படுத்தலாம், அதனால் மேலே காட்டப்பட்ட மொத்தத்தை மீண்டும் கூறாமல் அதனுடன் கூடி அதை உருவாக்குகின்றன.",
+    "The money": "தொகை",
+    "These figures cover: %(period)s": "இந்த எண்கள் உள்ளடக்கும் காலம்: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "நீங்கள் விலை நிர்ணயித்த ஒவ்வொரு பதிவிலும் ஒரு கிலோகிராமுக்கான மதிப்பு சமமாக இருக்கும் என்று இது கருதுகிறது, ஒரு பெட்டி விளைபொருள் முழுவதுமாக விலை நிர்ணயிக்கப்படுவது போல — அளவிடப்பட்ட விலை அல்ல, மேலும் அனைத்து பதிவுகளிலும் எடுக்கப்பட்ட சராசரியும் அல்ல.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "இது உங்கள் முடிவுகளின் அநாமதேயப் பிரதியை இந்தக் கால்குலேட்டரின் பொது புள்ளிவிவரங்களுக்கு அனுப்புகிறது — பெயர் இல்லை, முகவரி இல்லை, உங்களை அடையாளம் காட்டும் எதுவும் இல்லை. அனுப்பியதும் இதை இங்கிருந்து திரும்பப் பெற முடியாது, மேலும் நீங்கள் திரும்பி வந்து மீண்டும் கணக்கிட்டால், உங்கள் புதுப்பிக்கப்பட்ட எண்கள் இதே தேர்வின் கீழ் அதற்குப் பதிலாக வரும்.",
+    "Total value of food handled": "கையாளப்பட்ட உணவின் மொத்த மதிப்பு",
+    "Value of food not wasted at all": "முற்றிலும் வீணாகாத உணவின் மதிப்பு",
+    "Value of food wasted": "வீணான உணவின் மதிப்பு",
+    "Your latest figures are in this calculator's public statistics.": "உங்கள் சமீபத்திய எண்கள் இந்தக் கால்குலேட்டரின் பொது புள்ளிவிவரங்களில் உள்ளன."
   }
 }

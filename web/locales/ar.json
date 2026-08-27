@@ -57,7 +57,6 @@
     "Details": "التفاصيل",
     "Download results": "تنزيل النتائج",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "يُعرض كل سيناريو بالصياغة التي قدّمتها خدمة الحساب. ولا يُعرض الفرق بينهما لأن الخدمة لا تُرجع فرقًا — قارن الرقمين بنفسك.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "يُعرض كل إدخال من سلسلة الإمداد على حدة. المصير نفسه ضمن إدخالين يستخدم معاملين مختلفين للمراحل السابقة، لذا فهو فعليًا صفّان.",
     "Edit": "تعديل",
     "Edit your data": "تعديل بياناتك",
     "Enter a percentage from 0 to 100 for every destination.": "أدخل نسبة مئوية من 0 إلى 100 لكل مصير.",
@@ -299,7 +298,6 @@
     "Value per unit": "القيمة لكل وحدة",
     "What we record": "ما الذي نسجّله",
     "Yes": "نعم",
-    "Across %(count)s calculations run in this tool.": "عبر %(count)s من العمليات الحسابية التي أُجريت في هذه الأداة.",
     "Enter no more than %(limit)s containers.": "لا تُدخل أكثر من %(limit)s حاوية.",
     "Number of containers must be greater than zero.": "يجب أن يكون عدد الحاويات أكبر من صفر.",
     "That container is no longer available. Choose another.": "لم تعد تلك الحاوية متاحة. اختر غيرها.",
@@ -332,6 +330,19 @@
     "One month": "شهر واحد",
     "One quarter": "ربع سنة واحد",
     "One year": "سنة واحدة",
-    "Optional — it only labels your figures, it never changes a result.": "اختياري — يقوم فقط بوسم أرقامك، ولا يغيّر أي نتيجة أبدًا."
+    "Optional — it only labels your figures, it never changes a result.": "اختياري — يقوم فقط بوسم أرقامك، ولا يغيّر أي نتيجة أبدًا.",
+    "Across %(count)s calculations contributed to this tool.": "عبر %(count)s من العمليات الحسابية التي شارك بها الزوار في هذه الأداة.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "أرقام لم تشتقّها الحاسبة: القيمة التي أدخلتها، وجمعتها خدمة الحساب.",
+    "I would like to contribute to the Kai Commitment": "أرغب في المساهمة في Kai Commitment",
+    "Share of value wasted": "حصة القيمة المهدورة",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "الرقم بجانب كل وجهة هو الإجمالي الخاص بالمحرك عبر جميع الإدخالات. الصفوف الموجودة أسفله هي قيم كل إدخال الخاصة به — إذ يمكن أن تعتمد على عوامل تدفق مختلفة، ولهذا فهي تُجمع لتكوّن الإجمالي المعروض أعلاه بدلاً من تكراره.",
+    "The money": "المبلغ",
+    "These figures cover: %(period)s": "تغطي هذه الأرقام: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "يفترض هذا قيمة موحّدة لكل كيلوغرام ضمن كل إدخال قمت بتسعيره، بالطريقة نفسها التي يُسعَّر بها صندوق من المنتجات ككل — وليس سعرًا مقيسًا، وليس متوسطًا مأخوذًا عبر جميع الإدخالات.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "يرسل هذا نسخة مجهولة الهوية من نتائجك إلى الإحصاءات العامة لهذه الحاسبة — بلا اسم، بلا عنوان، ولا أي شيء يحدد هويتك. لا يمكن التراجع عن هذا من هنا بعد إرساله، وإذا عدت وأعدت الحساب، فستحل أرقامك المحدَّثة محله ضمن هذا الاختيار نفسه.",
+    "Total value of food handled": "القيمة الإجمالية للطعام الذي جرى التعامل معه",
+    "Value of food not wasted at all": "قيمة الطعام الذي لم يُهدر إطلاقًا",
+    "Value of food wasted": "قيمة الطعام المهدور",
+    "Your latest figures are in this calculator's public statistics.": "أحدث أرقامك موجودة في الإحصاءات العامة لهذه الحاسبة."
   }
 }

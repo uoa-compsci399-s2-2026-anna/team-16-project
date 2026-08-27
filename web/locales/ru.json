@@ -56,7 +56,6 @@
     "Details": "Подробности",
     "Download results": "Скачать результаты",
     "Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.": "Каждый сценарий показан в той формулировке, которую дал сервис расчёта. Разница между ними не показана, потому что сервис её не возвращает — сравните два числа сами.",
-    "Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.": "Каждая запись цепочки поставок показана отдельно. Один и тот же способ утилизации в двух записях использует два разных коэффициента для предшествующих этапов, поэтому это действительно две строки.",
     "Edit": "Изменить",
     "Edit your data": "Изменить данные",
     "Enter a percentage from 0 to 100 for every destination.": "Введите процент от 0 до 100 для каждого способа утилизации.",
@@ -298,7 +297,6 @@
     "Value per unit": "Значение на единицу",
     "What we record": "Что мы сохраняем",
     "Yes": "Да",
-    "Across %(count)s calculations run in this tool.": "Всего расчётов, выполненных в этом инструменте: %(count)s.",
     "Enter no more than %(limit)s containers.": "Укажите не более %(limit)s контейнеров.",
     "Number of containers must be greater than zero.": "Количество контейнеров должно быть больше нуля.",
     "That container is no longer available. Choose another.": "Этот контейнер больше недоступен. Выберите другой.",
@@ -331,6 +329,19 @@
     "One month": "Один месяц",
     "One quarter": "Один квартал",
     "One year": "Один год",
-    "Optional — it only labels your figures, it never changes a result.": "Необязательно — это лишь помечает ваши данные и никогда не меняет результат."
+    "Optional — it only labels your figures, it never changes a result.": "Необязательно — это лишь помечает ваши данные и никогда не меняет результат.",
+    "Across %(count)s calculations contributed to this tool.": "Всего расчётов, переданных в этот инструмент: %(count)s.",
+    "Figures the calculator did not derive: what you typed for value, summed by the calculation service.": "Цифры, которые калькулятор не вычислял сам: сумма, которую вы указали для стоимости, сложенная сервисом расчётов.",
+    "I would like to contribute to the Kai Commitment": "Я хочу внести свой вклад в Kai Commitment",
+    "Share of value wasted": "Доля утраченной стоимости",
+    "The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.": "Цифра рядом с каждым способом утилизации — это собственный итог движка по всем записям. Строки под ней — собственные значения каждой записи: они могут использовать разные вышестоящие коэффициенты, поэтому в сумме они складываются в показанный выше итог, а не повторяют его.",
+    "The money": "Сумма",
+    "These figures cover: %(period)s": "Эти данные охватывают: %(period)s",
+    "This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.": "Это предполагает одинаковую стоимость за килограмм в пределах каждой записи, для которой вы указали цену, — так же, как ящик продукции оценивается целиком, а не как измеренная цена и не как среднее значение по всем записям.",
+    "This sends an anonymous copy of your results into this calculator's public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.": "Это отправляет анонимную копию ваших результатов в открытую статистику этого калькулятора — без имени, без адреса, без чего-либо, что могло бы вас идентифицировать. Отменить это отсюда после отправки нельзя, и если вы вернётесь и выполните расчёт заново, ваши обновлённые данные займут её место в рамках того же самого выбора.",
+    "Total value of food handled": "Общая стоимость обработанной еды",
+    "Value of food not wasted at all": "Стоимость еды, которая вообще не была потрачена впустую",
+    "Value of food wasted": "Стоимость еды, потраченной впустую",
+    "Your latest figures are in this calculator's public statistics.": "Ваши последние данные включены в открытую статистику этого калькулятора."
   }
 }

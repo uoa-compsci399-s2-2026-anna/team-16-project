@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "Калькулятор воздействия пищевых отходов",
     "For New Zealand food businesses": "Для пищевых предприятий Новой Зеландии",
     "Start calculator": "Открыть калькулятор",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Превратите свои измерения пищевых отходов в более ясную картину их возможного экологического и финансового воздействия."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Превратите свои измерения пищевых отходов в более ясную картину их возможного экологического и финансового воздействия.",
+    "(optional)": "(необязательно)",
+    "Total amount produced (%(unit)s)": "Общее произведённое количество (%(unit)s)",
+    "So results can show waste as a share of production.": "Чтобы результаты могли показать потери как долю от производства.",
+    "Value of production (NZ$)": "Стоимость произведённого (NZ$)",
+    "Value of the waste (NZ$)": "Стоимость отходов (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "Только для статистики — никогда не учитывается в расчёте выбросов.",
+    "What period do these figures cover?": "Какой период охватывают эти данные?",
+    "Not stated": "Не указано",
+    "One week": "Одна неделя",
+    "One month": "Один месяц",
+    "One quarter": "Один квартал",
+    "One year": "Один год",
+    "Optional — it only labels your figures, it never changes a result.": "Необязательно — это лишь помечает ваши данные и никогда не меняет результат."
   }
 }

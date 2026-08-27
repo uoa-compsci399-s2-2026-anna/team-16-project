@@ -45,6 +45,8 @@ from pathlib import Path
 
 import pytest
 
+from api.schemas import CalculatePayload
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to measure where the primary action lands; the bar is unverified without it",
@@ -277,21 +279,47 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
 
 
 def test_the_bar_is_sticky_and_not_fixed(page_at):
-    """A short step must leave the bar where the content ends. `fixed` would
-    park it at the bottom of every screen including this one, which reads like
-    a cookie banner; `sticky` only pins when the section would push it off."""
+    """`position` alone does not prove `sticky` over `fixed` - both report a
+    `position` string, and a single gap measurement at one scroll offset is
+    only ever one sample of a number this test has no business treating as a
+    constant. What actually tells the two apart is motion: a `fixed` bar's
+    distance from the fold cannot change, because `position: fixed` takes it
+    out of the document being scrolled entirely, however tall that document
+    grows. A `sticky`, in-flow bar's distance from the fold *grows* as the
+    page scrolls, because the bar rides up with the content beneath it like
+    any other in-flow element, right up until it is asked to pin.
+
+    This step had zero scroll at all the day this test was written, which is
+    why the old version read a single number at the top and called it a day.
+    Task 2 gave the step two more required fields and, with them, its first
+    real scroll - which is exactly the condition this test needs to say
+    anything about `fixed` versus `sticky` at all, and exactly the condition
+    the single-sample version could not survive.
+    """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    measured = page.evaluate(
-        """() => {
-          window.scrollTo(0, 0);
-          const el = document.querySelector('.step-nav');
-          const rect = el.getBoundingClientRect();
-          return {position: getComputedStyle(el).position,
-                  gap: Math.round(window.innerHeight - rect.bottom)};
-        }"""
+    scrollable = page.evaluate("document.documentElement.scrollHeight - window.innerHeight")
+    assert scrollable > 40, (
+        f"this step does not scroll enough to tell sticky from fixed apart: {scrollable}px"
     )
-    assert measured["position"] == "sticky", measured
-    assert measured["gap"] > 100, f"the bar is parked at the bottom of a short step: {measured}"
+
+    def gap_at(scroll_top):
+        return page.evaluate(
+            """(top) => {
+              window.scrollTo(0, top);
+              const el = document.querySelector('.step-nav');
+              const rect = el.getBoundingClientRect();
+              return {position: getComputedStyle(el).position,
+                      gap: Math.round(window.innerHeight - rect.bottom)};
+            }""",
+            scroll_top,
+        )
+
+    samples = [gap_at(round(scrollable * fraction)) for fraction in (0, 0.4, 0.85)]
+    assert all(sample["position"] == "sticky" for sample in samples), samples
+    gaps = [sample["gap"] for sample in samples]
+    assert gaps[0] < gaps[1] < gaps[2], (
+        f"the gap did not grow while scrolling - a fixed bar reads this way too: {gaps}"
+    )
 
 
 def test_the_bar_unpins_above_the_footer_at_full_scroll(page_at):
@@ -508,18 +536,68 @@ def test_the_longest_primary_label_does_not_overflow_the_narrowest_viewport(page
 
 
 def test_a_short_step_is_not_floored_by_a_stale_min_height(page_at):
-    """`.main-content` carried `min-height: calc(100vh - 220px)`, arithmetic
-    over a header, a step-indicator band and a footer. The band moved into the
-    bar; left alone, the constant would have floored every short step 87px
-    taller than its content and gone on producing a scrollbar with nothing
-    below the fold to scroll to. A previous pass found short steps at 1920
-    measuring exactly the floor, so shrinking their content changed nothing."""
+    """`.main-content` once carried `min-height: calc(100vh - 220px)`,
+    arithmetic over a header, a step-indicator band and a footer. That
+    constant floored every step to the same height regardless of how much it
+    actually rendered - so a step 87px shorter than the floor still produced
+    a scrollbar with nothing below the fold to scroll to.
+
+    **A document height that happens to equal the viewport, on the one step
+    that happened to be this short, is not proof the floor is gone** - it is
+    one coincidental sample, on one step, at one viewport, and it is exactly
+    what broke the moment that step legitimately grew (Task 2's two money
+    fields). Two things are asserted instead, neither of them that constant:
+
+    1. the document shrinks at all when content is removed - a stale floor
+       pinned to a fixed value would not move;
+    2. once essentially everything the step rendered is gone, the document
+       settles *exactly* at the viewport, not a few pixels above it. That is
+       `body { min-height: 100vh }` - the one floor this project still
+       promises, and the direction it guarantees is the opposite one: the
+       document is never *shorter* than the viewport, never that it is
+       floored *above* its own content. A few pixels of drift on an
+       otherwise-empty step is this defect's own signature, at this
+       viewport's own scale.
+    """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    measured = page.evaluate(
-        "() => ({doc: Math.round(document.documentElement.scrollHeight), viewport: window.innerHeight})"
+    viewport = page.evaluate("window.innerHeight")
+
+    # First: the document tracks content at all. `.section-intro` is small
+    # enough that what remains is still comfortably taller than the viewport,
+    # so `body { min-height: 100vh }`'s own, legitimate floor cannot be the
+    # thing making this pass.
+    before = page.evaluate("document.documentElement.scrollHeight")
+    removed = page.evaluate(
+        """() => {
+          const el = document.querySelector('.section-intro');
+          const height = Math.round(el.getBoundingClientRect().height);
+          el.remove();
+          return height;
+        }"""
     )
-    assert measured["doc"] <= measured["viewport"], (
-        f"a short step still scrolls: document {measured['doc']}px in a {measured['viewport']}px viewport"
+    after_one_block = page.evaluate("document.documentElement.scrollHeight")
+    assert after_one_block < before, (
+        f"removing a {removed}px block left the document unchanged - {before} -> {after_one_block} - a stale floor"
+    )
+
+    # Second, and this is the part that actually distinguishes the two
+    # floors: strip essentially everything the step rendered and see where
+    # the document settles. Without a stale floor it settles exactly at the
+    # viewport - the legitimate one. With the historical
+    # `calc(100vh - 220px)` constant back on `.main-content` it settles a few
+    # pixels above it instead, because that arithmetic no longer matches the
+    # header/footer chrome it was written against once the step-indicator
+    # band moved into the bar - the same drift that produced the original
+    # 87px defect, just measured at this viewport's own scale.
+    stripped = page.evaluate(
+        """() => {
+          document.querySelector('.amount-grid')?.remove();
+          return document.documentElement.scrollHeight;
+        }"""
+    )
+    assert stripped <= viewport + 5, (
+        f"stripping the step's own content still leaves a {stripped}px document in a {viewport}px viewport - "
+        "a stale floor is holding it up above its own content"
     )
 
 
@@ -583,3 +661,422 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
     slider.press("ArrowUp")
     assert slider.input_value() != before, "the slider stopped responding"
     assert number.input_value() == slider.input_value()
+
+
+def test_step_three_asks_what_the_stage_put_through(page_at):
+    """Item ④. Without it the results page can never state waste as a share
+    of production, which is the figure the client asked for - and the reason
+    the old percentage was removed rather than fixed: `results.js` carries a
+    note saying it was "a number the engine never produced".
+
+    Optional, and the label says so. A visitor who does not know their
+    production total still gets every other figure, so this must not become a
+    fourth required field on a step that already has two.
+    """
+    #: `walk()`'s numeric yields are the screen sequence (0 sector, 1 food, 2
+    #: amount, 3 destination, ...), one behind the UI's own 1-based "Step 3"
+    #: label on the amount screen this field lives on - `2` is the amount
+    #: screen; `3` is the destination-allocation screen one step later, whose
+    #: `#total-waste` this file's other tests fill, never re-fill.
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    field = page.locator("#total-input")
+    assert field.count() == 1, "step 3 has no production-total field"
+    label = page.locator('label[for="total-input"]').inner_text()
+    assert "optional" in label.lower(), (
+        f"the field does not say it is optional: {label!r}"
+    )
+
+    #: Above the fold on the smallest viewport this project supports. Step 3
+    #: already carries an amount, a unit and a container hint; a fourth
+    #: control that pushes Continue off the screen is the defect
+    #: `test_the_primary_action_of_every_step_is_reachable_without_scrolling`
+    #: exists for.
+    box = field.bounding_box()
+    assert box["y"] < page.evaluate("window.innerHeight")
+
+
+def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_changes(page_at):
+    """`#total-input` is a mass in `state.totalUnit`, and `#total-unit` is the
+    control that says which unit that is - so before this, changing the select
+    silently reinterpreted whatever was already in the box. Both directions were
+    measured on the running stack: 50000 typed against kilograms left as
+    `"50000000.000"` once tonnes was chosen, and 50 typed against tonnes left as
+    `"50.000"` once a container preset pinned `totalUnit` back to kilograms.
+
+    **Two halves, and neither is sufficient alone.** The field is cleared, the
+    same way `state.current` already is and for the same reason - the figure was
+    entered against a unit that is no longer in force. And it *names* its unit,
+    because a box that says only "Total amount produced" gives a visitor nothing
+    to check the number against; `#total-waste` at least sits beside the select
+    the visitor just used and is read back on the review step, and this field
+    appears on neither screen again.
+
+    Clearing rather than converting is deliberate: converting it would be the
+    front end doing arithmetic on the visitor's behalf, on a figure they can no
+    longer see, and the destination rows beside it are cleared rather than
+    converted already.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator("#total-input")
+    label = page.locator('label[for="total-input"]')
+
+    assert "kilograms" in label.inner_text(), (
+        f"the field does not name the unit it is read in: {label.inner_text()!r}"
+    )
+
+    field.fill("50000")
+    page.select_option("#total-unit", "tonnes")
+    page.wait_for_timeout(120)
+    assert page.locator("#total-input").input_value() == "", (
+        "50000 entered against kilograms survived the switch to tonnes, where it "
+        "means a thousand times as much"
+    )
+    assert "tonnes" in page.locator('label[for="total-input"]').inner_text(), (
+        "the label still names the old unit after the select changed"
+    )
+
+    # The other direction, and the one no arithmetic could have rescued: a
+    # container pins `totalUnit` back to kilograms, so a figure entered in tonnes
+    # would have been read as kilograms with nothing on screen having moved.
+    page.fill("#total-input", "50")
+    preset = page.locator("#total-unit option").evaluate_all(
+        "options => options.map(o => o.value).filter(v => v.startsWith('preset:'))"
+    )
+    assert preset, "step 3 offers no container preset, so this half cannot be measured"
+    page.select_option("#total-unit", preset[0])
+    page.wait_for_timeout(120)
+    assert page.locator("#total-input").input_value() == "", (
+        "50 entered against tonnes survived the switch to a container, which pins "
+        "the unit to kilograms"
+    )
+    assert "kilograms" in page.locator('label[for="total-input"]').inner_text()
+
+
+def test_the_production_total_is_optional_and_continue_still_works(page_at):
+    """The affirmative half. A test that only checks the field exists is
+    satisfied by a field that blocks the form."""
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1200")
+    #: #total-input deliberately left empty
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+
+    assert page.locator(".destination-row").count() > 0, (
+        "an empty production total blocked the step it is optional on"
+    )
+
+
+def test_step_three_asks_for_the_two_money_figures(page_at):
+    """Item ⑤. Both optional, both in New Zealand dollars, and both
+    STATISTICS ONLY - the client's ruling on open item O-2 is that the value
+    of the food does not enter the main formula and that cost price versus
+    retail price is their own client's question.
+
+    The currency is in the label rather than in a symbol beside the box: a
+    bare `$` is ambiguous across the twenty languages this ships in, and the
+    figure is only ever NZD.
+    """
+    #: `2`, not the UI's own "Step 3" label - see the comment on
+    #: `test_step_three_asks_what_the_stage_put_through` above, which is the
+    #: same amount screen these two fields join.
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    for field_id in ("total-value", "wasted-value"):
+        field = page.locator(f"#{field_id}")
+        assert field.count() == 1, f"no #{field_id}"
+        # `count() == 1` is satisfied by a field that is `display: none` or
+        # `disabled` just as readily as by one a visitor can actually use -
+        # Task 1's own reviewer flagged exactly this gap. A hidden or
+        # non-editable field never reaches `beforeinput`, never reaches
+        # `state`, and never reaches the wire; the field has to be usable,
+        # not merely present, and typing into it and reading the value back
+        # is the only check that tells the difference.
+        assert field.is_visible(), f"{field_id} exists but is not visible"
+        assert field.is_editable(), f"{field_id} exists but cannot be typed into"
+        field.fill("42")
+        assert field.input_value() == "42", f"{field_id} did not keep a typed value"
+
+        label = page.locator(f'label[for="{field_id}"]').inner_text()
+        assert "optional" in label.lower(), f"{field_id} is not marked optional"
+        assert "NZ$" in label or "NZD" in label, (
+            f"{field_id} does not say which currency: {label!r}"
+        )
+
+
+@pytest.mark.parametrize("field_id", ["total-input", "total-value", "wasted-value"])
+def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at, field_id):
+    """The same guard `#total-waste` and `#unit-count` already have.
+
+    A negative value would reach stage one's `ge=0` and come back a 400 for
+    the whole submission, after the visitor had left the screen the figure was
+    on. The minus is refused at `beforeinput`, which is where the other two
+    refuse it.
+
+    All three of step 3's optional figures, for the reason the decimal test
+    above gives: the guard names them one by one, so a test that asks about one
+    of them says nothing about the others.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator(f"#{field_id}")
+
+    field.press_sequentially("-500")
+
+    assert field.input_value() == "500", (
+        f"a minus reached #{field_id}: {field.input_value()!r}"
+    )
+
+
+def test_the_review_step_asks_what_period_the_figures_cover(page_at):
+    """Item ⑦, and it belongs on step 5 rather than step 3.
+
+    The client asked for it "在计算第六步出结果之前" - before the results. It
+    is a statement about the whole submission, not about one supply-chain
+    stage, so it sits with the review of everything rather than inside the
+    per-entry loop where a visitor with three entries would be asked three
+    times.
+
+    The values are the four §6.2 accepts. A fifth would be refused by the API
+    after the visitor pressed Calculate.
+    """
+    #: `4`, not the UI's own "Step 5" label - `walk()`'s numeric yields are
+    #: one behind the 1-based on-screen label; `4` is the review screen,
+    #: confirmed by what it waits for: `[data-action="calculate"]`.
+    page = advance_to(page_at(1278, 983, 1.25), 4)
+
+    select = page.locator("#time-frame")
+    assert select.count() == 1, "the review step has no period selector"
+    # `count() == 1` alone is satisfied by a hidden or disabled selector just
+    # as readily as by one a visitor can actually use.
+    assert select.is_visible(), "#time-frame exists but is not visible"
+    assert select.is_enabled(), "#time-frame exists but cannot be used"
+
+    values = select.locator("option").evaluate_all(
+        "options => options.map(o => o.value)"
+    )
+    assert values == ["", "one_week", "one_month", "one_quarter", "one_year"], (
+        f"the period vocabulary does not match what the API accepts: {values}"
+    )
+
+    # The field scales nothing - no figure is annualised, divided or multiplied
+    # by it - and a visitor who picks "one week" has no way to know that from
+    # the label alone. The natural assumption runs the other way, so the hint
+    # carries the fact the label cannot.
+    hint = page.locator(".time-frame-field .field-hint")
+    assert hint.count() == 1, "the period selector has no explanatory hint"
+    assert hint.is_visible(), "the period hint exists but is not visible"
+    assert "result" in hint.inner_text().lower(), (
+        "the period hint does not say it leaves the results unchanged"
+    )
+
+
+def test_the_period_is_optional_and_calculate_still_works(page_at):
+    """Optional, like the other three. The empty option is first and
+    selected, and leaving it there must not block the button."""
+    page = advance_to(page_at(1278, 983, 1.25), 4)
+
+    assert page.locator("#time-frame").input_value() == ""
+    assert page.locator('.step-nav [data-action="calculate"]').is_enabled()
+
+
+def test_the_four_new_values_reach_the_request_body(page_at):
+    """**The assertion that the fields are wired to something.**
+
+    Every test in Tasks 1-3 proves a control exists and holds a value. None
+    of them proves the value leaves the browser, and a field bound to state
+    that `submitCalculation` never reads is the most likely way this ships
+    half-done - it looks right on every screen.
+
+    The POST is intercepted rather than allowed through, so this measures
+    what the front end sends rather than what the API tolerates.
+    """
+    page = page_at(1278, 983, 1.25)
+    sent = {}
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: (sent.update(route.request.post_data_json), route.abort()),
+    )
+
+    #: `#total-input`, `#total-value` and `#wasted-value` live on the amount step
+    #: (`walk()`'s `2`), not the review step (`4`) where `#time-frame` and the
+    #: Calculate button are - so `walk()` is driven directly, rather than through
+    #: `advance_to`, to fill each set of fields on the screen that actually carries it.
+    for arrived in walk(page):
+        if arrived == 2:
+            #: **Tonnes, and that is the whole point of this line.** Filled while the
+            #: entry unit was kilograms, the conversion on `total_input_kg` is the
+            #: identity - so deleting it outright left this test green while claiming in
+            #: its own comment to assert the conversion happened. 50 tonnes is 50,000 kg
+            #: and no other reading of the field produces that number. The unit is
+            #: selected before the field is filled because changing it clears the field.
+            page.select_option("#total-unit", "tonnes")
+            page.wait_for_timeout(80)
+            page.fill("#total-waste", "1")
+            page.fill("#total-input", "50")
+            page.fill("#total-value", "120000")
+            page.fill("#wasted-value", "4500")
+        elif arrived == 4:
+            page.select_option("#time-frame", "one_month")
+            page.click('.step-nav [data-action="calculate"]')
+            page.wait_for_timeout(400)
+            break
+
+    assert sent, "no request was made"
+    assert sent["time_frame"] == "one_month"
+    entry = sent["entries"][0]
+    #: 50 tonnes is 50,000 kg. §1.2: decimals travel as strings because
+    #: JavaScript's Number is a double.
+    #:
+    #: **Exactly `"50000"`, with no invented decimal places.** The send path
+    #: ended in `.toFixed(3)`, which also *rounded* - a typed `1.2345` became
+    #: `"1.234"`, the very rewrite the round-one fix refused to perform on the
+    #: money fields two lines below. The two families now apply one rule.
+    assert entry["total_input_kg"] == "50000"
+    #: The two money fields are **not** reformatted - Fix round 1 found
+    #: `Number(value).toFixed(2)` silently padding (and, for a third typed
+    #: decimal, rounding) a figure nobody asked to have rewritten. "120000"
+    #: and "4500" are exactly what was typed, and that is what must arrive.
+    assert entry["total_value_nzd"] == "120000"
+    assert entry["wasted_value_nzd"] == "4500"
+
+    #: The front-end half of the agreement stage one's `test_evaluator.py`
+    #: runs on the engine side: two independent pictures of one contract,
+    #: and nothing but a test stops them drifting. `route.abort()` above
+    #: proves the front end sends *a* shape; running the real Pydantic model
+    #: over the captured body is what proves it sends *the* shape - cheaply,
+    #: in CI, with no container and no network call.
+    CalculatePayload.model_validate(sent)
+
+
+def test_an_untouched_field_is_sent_as_null_rather_than_zero(page_at):
+    """`None` and `0` are different claims, and stage one's schema keeps them
+    apart. A front end that sent `"0"` for an empty box would make every
+    visitor claim they produced nothing and wasted nothing."""
+    page = page_at(1278, 983, 1.25)
+    sent = {}
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: (sent.update(route.request.post_data_json), route.abort()),
+    )
+
+    page = advance_to(page, 4)
+    page.click('.step-nav [data-action="calculate"]')
+    page.wait_for_timeout(400)
+
+    entry = sent["entries"][0]
+    assert entry["total_input_kg"] is None
+    assert entry["total_value_nzd"] is None
+    assert entry["wasted_value_nzd"] is None
+    assert sent["time_frame"] is None
+
+    #: The absent shape agrees with §6.2 too - `null` on all four optional
+    #: fields is what `CalculatePayload` accepts, not merely what this test
+    #: asserts about it.
+    CalculatePayload.model_validate(sent)
+
+
+@pytest.mark.parametrize("field_id", ["total-value", "wasted-value"])
+def test_a_third_decimal_in_a_money_field_is_refused_as_it_is_typed(page_at, field_id):
+    """The same keystroke-level refusal `#wasted-value` already gives a
+    minus sign, aimed at the decimal point instead of the sign.
+
+    Fix round 1: `submitCalculation` used to call `Number(value).toFixed(2)`,
+    so a visitor who typed "12.345" silently sent "12.35" - a figure they
+    never wrote down. Rounding what already arrived is not an option §7.6.1
+    allows (it is a calculation, and the front end's only permitted one is a
+    unit conversion), so the third decimal has to be refused as it is typed,
+    the way the minus already is - and then whatever is left must reach the
+    wire completely unrounded, which `test_the_four_new_values_reach_the_
+    request_body` is what checks.
+
+    **Both money fields, because one was not enough.** Measured only against
+    `#wasted-value`, a mutation narrowing the guard to that single id survived
+    the whole file - and there is nothing about the guard that makes the two
+    fields move together except a test that asks them both.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator(f"#{field_id}")
+
+    field.press_sequentially("12.345")
+
+    assert field.input_value() == "12.34", (
+        f"a third decimal place reached #{field_id}: {field.input_value()!r}"
+    )
+
+
+def test_a_fourth_decimal_in_the_production_total_is_refused_as_it_is_typed(page_at):
+    """`total_input_kg` is `DECIMAL(16,3)` (§6.2), so its ceiling is three rather
+    than the money fields' two - and until now it had no ceiling at all while its
+    send path silently rounded, which is the two families applying opposite rules
+    to the same mistake.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator("#total-input")
+
+    field.press_sequentially("1.2345")
+
+    assert field.input_value() == "1.234", (
+        f"a fourth decimal place reached the production total: {field.input_value()!r}"
+    )
+    #: And three are still typeable. A guard that refused the third as well would
+    #: pass the assertion above while quietly imposing the money ceiling here.
+    assert len(field.input_value().split(".")[1]) == 3
+    #: The control has to declare the same granularity the guard enforces. It
+    #: said `step="0.01"` - the money fields' - so the browser called the third
+    #: decimal place invalid on a field whose contract column is DECIMAL(16,3),
+    #: and the spinner stepped in hundredths of a kilogram.
+    assert field.get_attribute("step") == "0.001", (
+        "the production total declares a granularity its own guard does not enforce: "
+        f"{field.get_attribute('step')!r}"
+    )
+
+
+def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
+    """What the visitor typed is what is sent, in kilograms and in tonnes alike.
+
+    `page.fill` hands the whole string over in one `beforeinput`, which the
+    keystroke guard above deliberately does not count against the ceiling (see
+    the note beside it: counting every digit of a six-digit fill refused an
+    ordinary whole-number entry). That makes `fill` the way to ask what the send
+    path does with a figure the guard never saw - and the answer used to be
+    `.toFixed(3)`, which rounded `1.2345` to `1.234`.
+
+    **`CalculatePayload.model_validate` is deliberately not run on the kilogram
+    body.** `1.2345` kg is four decimal places, so §6.2 refuses it - and that is
+    the honest outcome the round-one money fix chose over rewriting the figure:
+    the ceiling is enforced at the keystroke, and anything that gets past it goes
+    to the server as written rather than being quietly made acceptable. The
+    tonnes body is valid and is checked.
+    """
+
+    def sent_body(unit, typed):
+        page = page_at(1278, 983, 1.25)
+        body = {}
+        page.route(
+            "**/api/v1/calculate",
+            lambda route: (body.update(route.request.post_data_json), route.abort()),
+        )
+        for arrived in walk(page):
+            if arrived == 2:
+                page.select_option("#total-unit", unit)
+                page.wait_for_timeout(80)
+                page.fill("#total-waste", "1000" if unit == "kilograms" else "1")
+                page.fill("#total-input", typed)
+            elif arrived == 4:
+                page.click('.step-nav [data-action="calculate"]')
+                page.wait_for_timeout(400)
+                break
+        assert body, "no request was made"
+        return body
+
+    kilograms = sent_body("kilograms", "1.2345")
+    assert kilograms["entries"][0]["total_input_kg"] == "1.2345", (
+        "the production total was rounded on its way to the wire"
+    )
+
+    tonnes = sent_body("tonnes", "1.2345")
+    #: 1.2345 t is 1234.5 kg exactly - the conversion gains three decimal places,
+    #: so nothing is rounded here either, and the result is inside §6.2's three.
+    assert tonnes["entries"][0]["total_input_kg"] == "1234.5"
+    CalculatePayload.model_validate(tonnes)

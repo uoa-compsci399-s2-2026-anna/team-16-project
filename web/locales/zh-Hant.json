@@ -321,6 +321,19 @@
     "Food Waste Impact Calculator": "食物浪費影響計算機",
     "For New Zealand food businesses": "為紐西蘭食品業者而設",
     "Start calculator": "開始使用計算機",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "把您的食物浪費測量資料，變成對潛在環境與經濟影響的清楚認識。"
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "把您的食物浪費測量資料，變成對潛在環境與經濟影響的清楚認識。",
+    "(optional)": "（選填）",
+    "Total amount produced (%(unit)s)": "生產總量 (%(unit)s)",
+    "So results can show waste as a share of production.": "讓結果能以佔生產量的比例顯示浪費量。",
+    "Value of production (NZ$)": "生產價值（NZ$）",
+    "Value of the waste (NZ$)": "浪費價值（NZ$）",
+    "For statistics only — it never enters the emissions calculation.": "僅供統計使用——絕不會納入排放量計算。",
+    "What period do these figures cover?": "這些數字涵蓋哪個期間？",
+    "Not stated": "未說明",
+    "One week": "一週",
+    "One month": "一個月",
+    "One quarter": "一季",
+    "One year": "一年",
+    "Optional — it only labels your figures, it never changes a result.": "選填——僅為您的數字加上標籤，絕不會改變任何結果。"
   }
 }

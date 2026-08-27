@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "உணவுக் கழிவு தாக்கக் கால்குலேட்டர்",
     "For New Zealand food businesses": "நியூசிலாந்து உணவு நிறுவனங்களுக்காக",
     "Start calculator": "கால்குலேட்டரைத் தொடங்கு",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "உங்கள் உணவுக் கழிவு அளவீடுகளை, அவற்றின் சாத்தியமான சுற்றுச்சூழல் மற்றும் நிதித் தாக்கம் குறித்த தெளிவான பார்வையாக மாற்றுங்கள்."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "உங்கள் உணவுக் கழிவு அளவீடுகளை, அவற்றின் சாத்தியமான சுற்றுச்சூழல் மற்றும் நிதித் தாக்கம் குறித்த தெளிவான பார்வையாக மாற்றுங்கள்.",
+    "(optional)": "(விருப்பத்தேர்வு)",
+    "Total amount produced (%(unit)s)": "உற்பத்தி செய்யப்பட்ட மொத்த அளவு (%(unit)s)",
+    "So results can show waste as a share of production.": "விளைவுகள் விரயத்தை உற்பத்தியின் பங்காகக் காட்ட முடியும் வகையில்.",
+    "Value of production (NZ$)": "உற்பத்தியின் மதிப்பு (NZ$)",
+    "Value of the waste (NZ$)": "விரயத்தின் மதிப்பு (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "புள்ளிவிவரங்களுக்கு மட்டுமே — இது உமிழ்வு கணக்கீட்டில் ஒருபோதும் சேர்க்கப்படாது.",
+    "What period do these figures cover?": "இந்த புள்ளிவிவரங்கள் எந்த காலப்பகுதியை உள்ளடக்கியது?",
+    "Not stated": "குறிப்பிடப்படவில்லை",
+    "One week": "ஒரு வாரம்",
+    "One month": "ஒரு மாதம்",
+    "One quarter": "ஒரு காலாண்டு",
+    "One year": "ஒரு ஆண்டு",
+    "Optional — it only labels your figures, it never changes a result.": "விருப்பத்தேர்வு — இது உங்கள் புள்ளிவிவரங்களை மட்டுமே குறிக்கும், முடிவை ஒருபோதும் மாற்றாது."
   }
 }

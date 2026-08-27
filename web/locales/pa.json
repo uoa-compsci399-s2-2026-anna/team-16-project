@@ -320,6 +320,19 @@
     "Food Waste Impact Calculator": "ਭੋਜਨ ਬਰਬਾਦੀ ਪ੍ਰਭਾਵ ਕੈਲਕੁਲੇਟਰ",
     "For New Zealand food businesses": "ਨਿਊਜ਼ੀਲੈਂਡ ਦੇ ਭੋਜਨ ਕਾਰੋਬਾਰਾਂ ਲਈ",
     "Start calculator": "ਕੈਲਕੁਲੇਟਰ ਸ਼ੁਰੂ ਕਰੋ",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "ਆਪਣੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੇ ਮਾਪਾਂ ਨੂੰ ਉਨ੍ਹਾਂ ਦੇ ਸੰਭਾਵੀ ਵਾਤਾਵਰਣਕ ਅਤੇ ਵਿੱਤੀ ਪ੍ਰਭਾਵ ਦੀ ਸਾਫ਼ ਤਸਵੀਰ ਵਿੱਚ ਬਦਲੋ।"
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "ਆਪਣੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੇ ਮਾਪਾਂ ਨੂੰ ਉਨ੍ਹਾਂ ਦੇ ਸੰਭਾਵੀ ਵਾਤਾਵਰਣਕ ਅਤੇ ਵਿੱਤੀ ਪ੍ਰਭਾਵ ਦੀ ਸਾਫ਼ ਤਸਵੀਰ ਵਿੱਚ ਬਦਲੋ।",
+    "(optional)": "(ਵਿਕਲਪਿਕ)",
+    "Total amount produced (%(unit)s)": "ਪੈਦਾ ਕੀਤੀ ਕੁੱਲ ਮਾਤਰਾ (%(unit)s)",
+    "So results can show waste as a share of production.": "ਤਾਂ ਜੋ ਨਤੀਜੇ ਬਰਬਾਦੀ ਨੂੰ ਉਤਪਾਦਨ ਦੇ ਇੱਕ ਹਿੱਸੇ ਵਜੋਂ ਦਿਖਾ ਸਕਣ।",
+    "Value of production (NZ$)": "ਉਤਪਾਦਨ ਦਾ ਮੁੱਲ (NZ$)",
+    "Value of the waste (NZ$)": "ਬਰਬਾਦੀ ਦਾ ਮੁੱਲ (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "ਸਿਰਫ਼ ਅੰਕੜਿਆਂ ਲਈ — ਇਹ ਕਦੇ ਵੀ ਨਿਕਾਸ ਦੀ ਗਣਨਾ ਵਿੱਚ ਸ਼ਾਮਲ ਨਹੀਂ ਹੁੰਦਾ।",
+    "What period do these figures cover?": "ਇਹ ਅੰਕੜੇ ਕਿਹੜੇ ਸਮੇਂ ਨੂੰ ਦਰਸਾਉਂਦੇ ਹਨ?",
+    "Not stated": "ਦੱਸਿਆ ਨਹੀਂ ਗਿਆ",
+    "One week": "ਇੱਕ ਹਫ਼ਤਾ",
+    "One month": "ਇੱਕ ਮਹੀਨਾ",
+    "One quarter": "ਇੱਕ ਤਿਮਾਹੀ",
+    "One year": "ਇੱਕ ਸਾਲ",
+    "Optional — it only labels your figures, it never changes a result.": "ਵਿਕਲਪਿਕ — ਇਹ ਸਿਰਫ਼ ਤੁਹਾਡੇ ਅੰਕੜਿਆਂ ਨੂੰ ਲੇਬਲ ਕਰਦਾ ਹੈ, ਇਹ ਕਦੇ ਵੀ ਨਤੀਜਾ ਨਹੀਂ ਬਦਲਦਾ।"
   }
 }

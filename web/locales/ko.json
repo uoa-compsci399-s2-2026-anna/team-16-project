@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "음식물 폐기물 영향 계산기",
     "For New Zealand food businesses": "뉴질랜드 식품 사업장을 위한 도구",
     "Start calculator": "계산기 시작",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "측정한 음식물 폐기물 수치를 환경적·경제적 영향이 한눈에 보이는 형태로 바꿔 보세요."
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "측정한 음식물 폐기물 수치를 환경적·경제적 영향이 한눈에 보이는 형태로 바꿔 보세요.",
+    "(optional)": "(선택)",
+    "Total amount produced (%(unit)s)": "생산된 총량 (%(unit)s)",
+    "So results can show waste as a share of production.": "결과에서 폐기물을 생산량 대비 비율로 나타낼 수 있도록 하기 위함입니다.",
+    "Value of production (NZ$)": "생산 가치 (NZ$)",
+    "Value of the waste (NZ$)": "폐기물 가치 (NZ$)",
+    "For statistics only — it never enters the emissions calculation.": "통계 목적으로만 사용되며, 배출량 계산에는 전혀 사용되지 않습니다.",
+    "What period do these figures cover?": "이 수치는 어느 기간을 나타냅니까?",
+    "Not stated": "명시되지 않음",
+    "One week": "1주",
+    "One month": "1개월",
+    "One quarter": "1분기",
+    "One year": "1년",
+    "Optional — it only labels your figures, it never changes a result.": "선택 사항입니다 — 수치에 라벨만 붙일 뿐, 결과를 바꾸는 일은 없습니다."
   }
 }

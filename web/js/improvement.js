@@ -1,6 +1,7 @@
 import { calculate } from './api.js'
-import { setState } from './state.js'
-import { kgString, massToKg } from './units.js'
+import { setState, draftEntry } from './state.js'
+import { rowKgString } from './units.js'
+import { requestLines, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
 import { t } from './i18n.js'
 
@@ -16,12 +17,13 @@ const typed = value => Number(value) || 0
 
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
 
-// §7.3: the last `tonnes ? 1000 : 1` outside `units.js`. It was the same conversion
-// `massToKg` performs and `calculator.js` already called, so the front end had two copies of
-// its only arithmetic rule and one of them could be changed without the other. `?? 0`
-// preserves the `typed()` behaviour it replaces: an unparseable box counts as nothing rather
-// than poisoning the running total with NaN.
-const lineKg = (entry, line) => massToKg(line.qtyInput, entry.totalUnit) ?? 0
+// §7.3: `units.js` holds the front end's only arithmetic, and this reads it rather than
+// re-deriving it. **With the row's own unit, not the entry's** — `massToKg(qtyInput,
+// entry.totalUnit)` stood here, which reinterpreted a tonnes row as kilograms and applied no
+// container preset at all, so two rows of equal mass seeded the sliders at 99.88% and 0.12%.
+// `|| 0` preserves the `typed()` behaviour it replaces: a blank or unusable box counts as
+// nothing rather than poisoning the running total with NaN.
+const lineKg = (entry, line, presets) => Number(rowKgString(line.qtyInput, line.unit || entry.totalUnit, presets)) || 0
 const sumQtyKg = lines => lines.reduce((sum, line) => sum + typed(line.qty_kg), 0)
 
 // §6.2 rejects an entry whose two scenarios differ in mass by more than this, and it
@@ -58,9 +60,10 @@ const signClass = value => {
 const comparableCodes = metrics => Object.keys(metrics).filter(code => code !== MASS_METRIC)
 
 export function currentAllocationPercentages(state) {
+  const presets = state.taxonomy?.unit_presets || []
   const totals = Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
   for (const entry of submissionEntries(state)) {
-    for (const line of entry.current || []) totals[line.destination] = (totals[line.destination] || 0) + lineKg(entry, line)
+    for (const line of entry.current || []) totals[line.destination] = (totals[line.destination] || 0) + lineKg(entry, line, presets)
   }
   const allocated = Object.values(totals).reduce((sum, value) => sum + value, 0)
   if (!allocated) return totals
@@ -75,13 +78,14 @@ export function currentAllocationPercentages(state) {
   return percentages
 }
 
-function currentEntry(state) {
-  return { sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, current: state.current }
-}
-
 // The entries the submission will carry, in the order `submitCalculation` sends them.
+//
+// **`draftEntry` is `state.js`'s, not a local copy.** The copy that stood here named five
+// keys, and round two added four more that it did not name — so this panel re-sent the
+// submission with `total_input_kg`, `total_value_nzd` and `wasted_value_nzd` absent, under
+// the same token, and §5.3's upsert wrote the absence over the visitor's figures.
 function submissionEntries(state) {
-  return [...state.entries, currentEntry(state)]
+  return [...state.entries, draftEntry()]
 }
 
 export function openImprovement(state) {
@@ -135,18 +139,13 @@ export function improvementValidation(state) {
   const total = allocationTotal(state.improvedAllocations)
   const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
   if (Math.abs(total - 100) > 0.01) return mismatch
+  const presets = state.taxonomy?.unit_presets || []
   for (const entry of submissionEntries(state)) {
-    const currentKg = sumQtyKg(currentLines(entry))
-    const improvedKg = sumQtyKg(improvedLines(entry, state.improvedAllocations))
+    const currentKg = sumQtyKg(requestLines(entry, presets))
+    const improvedKg = sumQtyKg(improvedLines(entry, state.improvedAllocations, presets))
     if (Math.abs(improvedKg - currentKg) > MASS_TOLERANCE_KG) return mismatch
   }
   return ''
-}
-
-function currentLines(entry) {
-  // §7.3: `kgString` is the API-ready form of `massToKg`, so the rounding to three decimal
-  // places lives in `units.js` with the conversion rather than beside each caller.
-  return (entry.current || []).filter(line => typed(line.qtyInput) > 0).map(line => ({ destination: line.destination, qty_kg: kgString(line.qtyInput, entry.totalUnit) }))
 }
 
 // The alternative redistributes the mass the entry's *current* scenario describes, not the
@@ -155,8 +154,8 @@ function currentLines(entry) {
 // heavier than its current scenario — which §6.2 rejects, for the whole submission. It also
 // matches `currentAllocationPercentages`, which has always taken its percentages of the
 // allocated mass, so the seeded sliders now round-trip to the mass they were derived from.
-function improvedLines(entry, allocations) {
-  const totalKg = sumQtyKg(currentLines(entry))
+function improvedLines(entry, allocations, presets) {
+  const totalKg = sumQtyKg(requestLines(entry, presets))
   return Object.entries(allocations).filter(([, percentage]) => typed(percentage) > 0).map(([destination, percentage]) => ({ destination, qty_kg: (totalKg * typed(percentage) / 100).toFixed(3) }))
 }
 
@@ -184,17 +183,15 @@ export async function compareImprovement(state, toPublicMessage = error => error
     // §6.2: one call for the whole submission. The per-entry loop this replaced re-sent
     // `current` and `alternative` under the same token, so §5.3's upsert left the stored
     // row holding the last entry's improvement scenario alone.
+    //
+    // **And the same builder `calculator.js` uses**, for the same reason at one remove: this
+    // call lands on the row that call created, so a field this one omits is a field the
+    // visitor loses. It omitted four of them, and every destination row's unit besides.
     const entries = submissionEntries(state)
-    const response = await calculate({
-      token: state.token || null,
-      gwp_horizon: state.gwpHorizon,
-      entries: entries.map(entry => ({
-        sector: entry.sector,
-        food_category: entry.foodCategory || null,
-        current: currentLines(entry),
-        alternative: improvedLines(entry, state.improvedAllocations),
-      })),
-    })
+    const presets = state.taxonomy?.unit_presets || []
+    const response = await calculate(
+      submissionPayload(state, entries, entry => improvedLines(entry, state.improvedAllocations, presets)),
+    )
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
     // The per-entry pairing `comparisons` held was read by exactly one thing — the

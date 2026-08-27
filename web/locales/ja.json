@@ -318,6 +318,19 @@
     "Food Waste Impact Calculator": "食品廃棄インパクト計算ツール",
     "For New Zealand food businesses": "ニュージーランドの食品事業者向け",
     "Start calculator": "計算ツールを開始",
-    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "食品廃棄の測定値を、環境面と経済面の潜在的な影響が見える形に変えます。"
+    "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "食品廃棄の測定値を、環境面と経済面の潜在的な影響が見える形に変えます。",
+    "(optional)": "（任意）",
+    "Total amount produced (%(unit)s)": "生産された総量 (%(unit)s)",
+    "So results can show waste as a share of production.": "結果が廃棄量を生産量に対する割合として示せるようにするためです。",
+    "Value of production (NZ$)": "生産の価値（NZ$）",
+    "Value of the waste (NZ$)": "廃棄物の価値（NZ$）",
+    "For statistics only — it never enters the emissions calculation.": "統計のためだけであり、排出量の計算には一切使用されません。",
+    "What period do these figures cover?": "これらの数値はどの期間を対象としていますか？",
+    "Not stated": "未指定",
+    "One week": "1週間",
+    "One month": "1か月",
+    "One quarter": "四半期",
+    "One year": "1年",
+    "Optional — it only labels your figures, it never changes a result.": "任意項目です。数値にラベルを付けるだけで、結果を変えることは一切ありません。"
   }
 }

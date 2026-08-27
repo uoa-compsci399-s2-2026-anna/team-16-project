@@ -263,6 +263,74 @@ def test_the_placeholder_notice_is_absent_from_a_real_export(tmp_path):
     assert re.search(r"^  - Greenhouse gases: 4,449\.0 kg CO2e$", report, re.M)
 
 
+# ------------------------------------------------- the unit each row was measured in
+
+#: One entry whose three destination rows were each measured differently: the
+#: entry's own tonnes, an explicit kilograms, and a container preset. `qtyInput`
+#: is what the visitor typed and `unit` is what they typed it in - the shape
+#: `state.current` has carried since a row could differ from its neighbour.
+MIXED_UNIT_ENTRY = [
+    {
+        "sector": "processing",
+        "foodCategory": "dairy",
+        "totalAmount": "1.5",
+        "totalUnit": "tonnes",
+        "current": [
+            {"id": "a", "destination": "landfill", "qtyInput": "0.5", "unit": "tonnes"},
+            {"id": "b", "destination": "animal_feed", "qtyInput": "500", "unit": "kilograms"},
+            {"id": "c", "destination": "compost", "qtyInput": "0.25", "unit": "preset:food_scraps_bin_23l"},
+        ],
+    }
+]
+
+
+def mixed_unit_report(tmp_path: Path) -> str:
+    response = _fixture("calculate_response.json")
+    state = {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(MIXED_UNIT_ENTRY, response)},
+        "improvementResult": None,
+    }
+    return report_for(tmp_path, state)
+
+
+@node
+def test_a_row_is_labelled_with_its_own_unit_not_the_entrys(tmp_path):
+    """The export said `${qtyInput} ${entry.totalUnit}`, and a row carries its own
+    unit - so half a tonne, sent to the API as `500.000`, was written into the
+    downloaded file as `0.50 kilograms`.
+
+    `results.js`'s own note says this report exists to be attached to an email
+    and believed. A figure under a label that is not its own is the one kind of
+    error that file cannot afford, and it is a thousandfold one here.
+
+    The kilograms ride along for any row not already in them: `0.50 tonnes` is
+    what the visitor said and `(500.000 kg)` is what was calculated from it, and
+    a reader holding only this file needs both to check one against the other.
+    """
+    report = mixed_unit_report(tmp_path)
+    assert re.search(r"^  - Landfill: 0\.50 tonnes \(500\.000 kg\)$", report, re.M), report
+    assert re.search(r"^  - Animal feed: 500\.00 kilograms$", report, re.M), report
+    #: The row that says it plainest: nothing in the file may call half a tonne
+    #: half a kilogram, in either unit's name.
+    assert not re.search(r"^  - Landfill: 0\.50 kilograms$", report, re.M), report
+
+
+@node
+def test_a_container_row_names_the_container_and_its_kilograms(tmp_path):
+    """A `preset:` row is the case `massToKg` cannot express at all: it applies no
+    preset, so a quarter of a 23 L bin printed as `0.25 kilograms` rather than
+    the 1.668 kg `toKg` sends. The container's `label` is staff-typed and is
+    published exactly as written (§7.7.7), never translated.
+    """
+    report = mixed_unit_report(tmp_path)
+    assert re.search(
+        r"^  - Composting \(aerobic digestion\): 0\.25 × 23 L kerbside food scraps bin \(full\) \(1\.668 kg\)$",
+        report,
+        re.M,
+    ), report
+
+
 # ---------------------------------------------------------------- the comparison
 
 

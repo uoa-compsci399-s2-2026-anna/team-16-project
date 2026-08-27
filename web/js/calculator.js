@@ -1,6 +1,7 @@
 import { calculate } from './api.js'
-import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
-import { containerKg, countLimit, entryTotal, isPlainDecimal, kgString, kgToTonnes, massToKg, toKg } from './units.js'
+import { state, setState, resetCalculator, entryResultsFrom, draftEntry } from './state.js'
+import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgToTonnes, massToKg, PRESET_UNIT, presetUnitCode, rowKgString } from './units.js'
+import { requestLines, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { downloadResults, renderResults } from './results.js'
@@ -188,26 +189,16 @@ const presetPatch = foodCategory => (presetSurvives(foodCategory)
 // Item ⑥: a line's own unit may itself be a container preset — `preset:<code>`, the same
 // value space `#total-unit` uses (see `PRESET_OPTION` and `unitSelectValue` below) — so one
 // row can be measured in crates while its neighbour is measured in tonnes.
-const lineUnitIsPreset = unit => typeof unit === 'string' && unit.startsWith(PRESET_OPTION)
-const lineUnitPresetCode = unit => unit.slice(PRESET_OPTION.length)
-
-// The one place a line's kilograms are derived — `massToKg` for a weight, `toKg` for a
-// container preset — so every reader of a row's total agrees with every other. Returns a
-// **string** at three decimal places, `''` for a blank row, or `null` for a preset the
-// taxonomy no longer carries: this is the figure `buildLines` eventually sends, and `toKg`'s
-// whole reason for existing is that a container conversion must never pass through a double
-// on its way to the wire.
-function lineKgString(qtyInput, unit) {
-  if (qtyInput === '') return ''
-  if (lineUnitIsPreset(unit)) {
-    try {
-      return toKg(qtyInput, lineUnitPresetCode(unit), presetList())
-    } catch {
-      return null
-    }
-  }
-  return kgString(qtyInput, unit)
-}
+//
+// **The prefix and the conversion behind it moved to `units.js`.** They were private here,
+// and while they were, `improvement.js` and `results.js` — which read the very same rows —
+// each had their own idea of what a row's unit meant, and both were wrong: one re-sent the
+// row in the entry's unit under the same token, the other printed the entry's unit beside a
+// figure measured in another. §7.3 puts the front end's only arithmetic in one module for
+// exactly this reason.
+const lineUnitIsPreset = isPresetUnit
+const lineUnitPresetCode = presetUnitCode
+const lineKgString = (qtyInput, unit) => rowKgString(qtyInput, unit, presetList())
 
 // The same conversion as a `Number`, for the sums and ceilings that never reach the wire —
 // the allocation total and `MAX_LINE_KG`. §7.6's `Number()`-for-display-only rule is about
@@ -242,7 +233,8 @@ const allocatedAmount = lines => {
 // something the visitor entered, so the Clear button has to appear once either exists.
 // `totalInputKg` joins them for the same reason.
 const hasData = () => Boolean(state.entries.length || state.sector || state.foodCategory || state.totalAmount || state.unitPreset || state.unitCount || state.totalInputKg || state.totalValueNzd || state.wastedValueNzd || state.current.some(line => line.qtyInput !== '') || state.result)
-const draftEntry = () => ({ sector: state.sector, foodCategory: state.foodCategory, totalAmount: state.totalAmount, totalUnit: state.totalUnit, measureMode: state.measureMode, unitPreset: state.unitPreset, unitCount: state.unitCount, totalInputKg: state.totalInputKg, totalValueNzd: state.totalValueNzd, wastedValueNzd: state.wastedValueNzd, current: state.current.map(line => ({ ...line })) })
+// `draftEntry` now lives in `state.js`: `improvement.js` builds a submission too, and it
+// had its own shorter copy of this shape that was missing every field round two added.
 
 /**
  * The introduction screen: `state.step === -1`, and the first thing a visitor meets.
@@ -302,7 +294,7 @@ function foodStep() {
  * nothing forbids, `code` being staff-editable (§8.1) — would otherwise silently become
  * the tonnes option and convert nothing.
  */
-const PRESET_OPTION = 'preset:'
+const PRESET_OPTION = PRESET_UNIT
 const unitSelectValue = () =>
   (state.measureMode === 'container' ? PRESET_OPTION + (state.unitPreset || '') : state.totalUnit)
 
@@ -601,26 +593,11 @@ function validateCurrentStep() {
   return ''
 }
 
-function buildLines(entry) {
-  return normaliseEntryLines(entry).filter(line => Number(line.qtyKg) > 0).map(line => ({ destination: line.destination, qty_kg: line.qtyKg }))
-}
-
-// Items ④/⑤/⑦: `''` means the visitor left the field untouched, and that has to reach
-// the API as `null`, never as `"0.000"` or `"0.00"` — a zero is the claim that production,
-// value or waste was actually nil. `kgString` alone does not make that distinction (it
-// answers "0.000" for `''`, same as it would for a typed zero), so the blank check happens
-// here, the same way `lineKgString` guards it before ever calling `kgString`.
-const optionalKgString = (value, unit) => (value === '' ? null : kgString(value, unit))
-
-// The two money fields carry no unit — always NZD — so they have no tonnes branch to
-// share with `kgString`. **Not `Number(value).toFixed(2)`, deliberately**: §7.6.1 permits
-// the front end exactly one calculation, unit conversion, and rounding a figure the
-// visitor typed is a second one — it silently turned a typed "12.345" into a sent
-// "12.35", which is not what was typed and not something a 400 would ever have caught.
-// The two-decimal ceiling is enforced earlier, at the keystroke (see the `beforeinput`
-// listener's money-field guard), so what is left here is exactly what the visitor typed —
-// `''` still means absent, never "0.00".
-const optionalMoneyString = value => (value === '' ? null : value)
+// Items ④/⑤/⑦ and every destination row: the request body is built by
+// `submission.js`, because `improvement.js` builds one too and the two disagreed. See the
+// module note there — the disagreement was not theoretical, it wrote `NULL` over four
+// figures the visitor had entered.
+const buildLines = entry => requestLines(entry, presetList())
 
 let reloadTaxonomy = null
 
@@ -695,24 +672,10 @@ async function submitCalculation() {
     // §5.3's token upsert overwrite every entry but the last, cost N× the rate limit,
     // and leave the earlier entries persisted when a later one fails.
     const entries = [...state.entries, draftEntry()]
-    const response = await calculate({
-      token: state.token || null,
-      gwp_horizon: state.gwpHorizon,
-      // Item ⑦: one period for the whole submission, never per entry — asked once on
-      // the review step and left off the engine's request entirely, which is why it
-      // sits beside `gwp_horizon` here rather than inside the `entries.map` below.
-      time_frame: state.timeFrame || null,
-      entries: entries.map(entry => ({
-        sector: entry.sector,
-        food_category: entry.foodCategory || null,
-        current: buildLines(entry),
-        alternative: null,
-        // Items ④/⑤: optional, statistics-only, and never zero for an untouched field.
-        total_input_kg: optionalKgString(entry.totalInputKg, entry.totalUnit),
-        total_value_nzd: optionalMoneyString(entry.totalValueNzd),
-        wasted_value_nzd: optionalMoneyString(entry.wastedValueNzd),
-      })),
-    })
+    // `submissionPayload` is shared with `improvement.js`'s Compare Impact button, which
+    // re-sends the whole submission under this same token. Two builders is how the four
+    // round-two fields came to be silently dropped by the second call.
+    const response = await calculate(submissionPayload(state, entries))
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
     setState({ result: { ...response, entry_results: entryResultsFrom(entries, response) }, token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {} })

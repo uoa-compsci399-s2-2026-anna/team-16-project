@@ -86,6 +86,36 @@ export const state = {
 }
 
 /**
+ * The entry being typed, as a saved entry.
+ *
+ * **One definition, because two modules build submissions.** `calculator.js` held this
+ * privately and `improvement.js` had its own five-field copy of it, and the copy was
+ * missing exactly the fields round two added — so pressing Compare Impact re-sent the
+ * submission with `total_input_kg`, `total_value_nzd` and `wasted_value_nzd` absent, and
+ * §5.3's token upsert wrote the absence over the figures the visitor had entered. A copy
+ * of a shape is where the next field will go missing too, so there is no longer a copy.
+ *
+ * Every key here is something the visitor entered; nothing derived and nothing from the
+ * API. `current` is copied row by row so a later edit of the draft cannot reach into an
+ * entry already added to the list.
+ *
+ * @returns {object}
+ */
+export const draftEntry = () => ({
+  sector: state.sector,
+  foodCategory: state.foodCategory,
+  totalAmount: state.totalAmount,
+  totalUnit: state.totalUnit,
+  measureMode: state.measureMode,
+  unitPreset: state.unitPreset,
+  unitCount: state.unitCount,
+  totalInputKg: state.totalInputKg,
+  totalValueNzd: state.totalValueNzd,
+  wastedValueNzd: state.wastedValueNzd,
+  current: state.current.map(line => ({ ...line })),
+})
+
+/**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
  * preserve request order. Each paired `response` is the shape the rendering modules
  * already consume — one entry's `current` / `alternative` / `net_benefit`, plus the

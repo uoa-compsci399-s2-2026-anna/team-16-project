@@ -208,6 +208,85 @@ export function kgString(amount, unit) {
   return kilograms === null ? null : kilograms.toFixed(3)
 }
 
+/**
+ * The same conversion as `kgString`, but it never rewrites the visitor's figure.
+ *
+ * `kgString` ends in `.toFixed(3)`, and `toFixed` rounds: a typed `1.2345` left as
+ * `"1.234"`, a figure nobody wrote down. §7.6.1 permits the front end exactly one
+ * calculation — a unit conversion — and rounding is a second one, which is the ruling
+ * `optionalMoneyString` already carries for the two money fields. The two field families
+ * were applying opposite rules to the same kind of mistake.
+ *
+ * Kilograms are therefore sent **verbatim**, and tonnes are shifted three decimal places
+ * **exactly**, in the `BigInt` decimal arithmetic `toKg` already uses rather than through a
+ * double. A tonne figure gains three places of headroom by the conversion, so nothing a
+ * `<input type="number">` can hold is rounded on that path either; the three-decimal ceiling
+ * §6.2 states is enforced where the money ceiling is, at the keystroke.
+ *
+ * Anything that is not a plain non-negative decimal literal — `1e5`, `.5`, `-3` — falls back
+ * to `kgString`, which is the behaviour that was here before and is still what the caller's
+ * `null` handling expects.
+ *
+ * @param {string|number} amount
+ * @param {'kilograms'|'tonnes'|string} unit
+ * @returns {string|null}
+ */
+export function exactKgString(amount, unit) {
+  const parts = decimalParts(amount)
+  if (!parts) return kgString(amount, unit)
+  if (unit !== 'tonnes') return String(amount).trim()
+  // ×1000 with the scale untouched is the exact product; printing it at three places
+  // fewer is the shift, and `formatParts` never has a non-zero tail to round away here
+  // because 1000 carries the three places it is asked to drop.
+  return formatParts({ digits: parts.digits * 1000n, scale: parts.scale }, Math.max(0, parts.scale - 3))
+}
+
+/**
+ * The `#total-unit` value space's container prefix, and the two readers of it.
+ *
+ * A destination row's `unit` is `'kilograms'`, `'tonnes'` or `preset:<unit_preset.code>`
+ * (§7.2's note on `state.current`), and **three modules now have to read that value**:
+ * `calculator.js` converts it for the wire, `improvement.js` converts it again for the
+ * comparison request, and `results.js` names it in the downloaded report. It lives here
+ * because the prefix and the conversion behind it are one rule — the whole reason §7.3
+ * puts the front end's only arithmetic in this module.
+ */
+export const PRESET_UNIT = 'preset:'
+export const isPresetUnit = unit => typeof unit === 'string' && unit.startsWith(PRESET_UNIT)
+export const presetUnitCode = unit => String(unit).slice(PRESET_UNIT.length)
+
+/**
+ * One destination row's kilograms, converted with **the row's own unit**.
+ *
+ * `massToKg` for a weight, `toKg` for a container. This was a private helper in
+ * `calculator.js`, and while it was, `improvement.js` converted the same rows with
+ * `entry.totalUnit` instead — so a 0.5 t row that the calculator sent as `500.000` was
+ * re-sent as `0.500` under the same session token, and §5.3's upsert replaced 500 kg with
+ * half a kilogram. A `preset:` row was worse: `massToKg` applies no preset at all, so a
+ * quarter of a 23 L bin went as `0.250` rather than `1.668`.
+ *
+ * `''` for a row the visitor has not filled — a blank row is not a row holding zero — and
+ * `null` for a preset the taxonomy no longer carries (§6.1: a consumer must not assume the
+ * taxonomy survives a publish, and both callers run this inside a render, where a throw
+ * blanks the screen).
+ *
+ * @param {string|number} qtyInput  the row's amount, as the visitor typed it
+ * @param {string} unit             the row's own unit, or the entry's for a row that predates them
+ * @param {Array} presets           taxonomy.unit_presets
+ * @returns {string|null}           kilograms at three decimal places, `''`, or `null`
+ */
+export function rowKgString(qtyInput, unit, presets) {
+  if (qtyInput === '' || qtyInput === null || qtyInput === undefined) return ''
+  if (isPresetUnit(unit)) {
+    try {
+      return toKg(qtyInput, presetUnitCode(unit), presets || [])
+    } catch {
+      return null
+    }
+  }
+  return kgString(qtyInput, unit)
+}
+
 // The one arithmetic §7.6.1 permits on a figure the API supplied, and §7.3 requires it to
 // live here: `results.js` printed `totals.total_kg / 1000` inline at two sites, which is a
 // unit conversion outside `units.js` — the exception stated in terms of a module that was

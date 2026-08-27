@@ -263,6 +263,37 @@ def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     assert all("destination_id" not in row for row in data["upstream"])
 
 
+def test_the_destinations_projection_carries_is_prevention(seeded_session):
+    """Contract v1.22: `destination.is_prevention` has been a real column
+    since migration 0013, and `engine.bundle.FactorBundle.is_prevention_
+    destination()` (§4.5's money block, the first caller) is how code outside
+    `db/` is meant to read it, in place of a literal `"prevention"` string --
+    the second-vocabulary row `refed_prevention` is the reason the literal was
+    retired.
+
+    Until now `get_taxonomy_for_bundle`'s `destinations` projection dropped
+    the column silently, even though the *neighbouring* projection in this
+    same file (`get_taxonomy`, feeding `GET /taxonomy`) already selects it.
+    Every existing test of the predicate built its own bundle by hand and set
+    the key itself, so a deployed bundle answering `False` for every
+    destination -- the exact shape of open item O-9 -- passed unnoticed.
+
+    Goes through the real projection and the real loader, not a hand-built
+    bundle.json: only that proves the database column actually reaches the
+    engine.
+    """
+    from engine.bundle import FactorBundle
+
+    data = build_bundle_data(seeded_session, get_published_factor_set_id(seeded_session))
+    rows = {row["code"]: row for row in data["destinations"]}
+    assert rows["prevention"]["is_prevention"] is True
+    assert rows["landfill"]["is_prevention"] is False
+
+    bundle = FactorBundle.from_json(data)
+    assert bundle.is_prevention_destination("prevention") is True
+    assert bundle.is_prevention_destination("landfill") is False
+
+
 def test_the_bundle_carries_each_downstream_rows_sector(seeded_session):
     """Contract §10.2 (v1.31): every `downstream[]` row publishes a `sector`,
     `null` for the row that applies to every sector.

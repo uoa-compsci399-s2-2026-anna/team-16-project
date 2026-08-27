@@ -584,7 +584,13 @@ def get_taxonomy_for_bundle(session: Session) -> dict[str, list[dict[str, Any]]]
             for x in groups
         ],
         "destinations": [
-            {"code": x.code, "name": x.name, "group": group, "sort_order": x.sort_order}
+            {
+                "code": x.code,
+                "name": x.name,
+                "group": group,
+                "sort_order": x.sort_order,
+                "is_prevention": x.is_prevention,
+            }
             for x, group in destinations
         ],
         "metrics": [

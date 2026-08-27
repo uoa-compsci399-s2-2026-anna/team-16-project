@@ -171,10 +171,13 @@ function formatter(opts) {
  * 244px on a 222px canvas.
  *
  * The full label is never lost: it is still the tooltip (`context.label`
- * below reads the untouched `data.labels`), the `aria-label`, and every row of
- * `renderEquivalentList`. Only the on-canvas swatch text is shortened, the
- * same trade-off any dashboard legend makes for a name too long to sit next
- * to its colour.
+ * below reads the untouched `data.labels`) and every row of
+ * `renderEquivalentList` in `stats.js`, which is the real always-available
+ * text alternative here -- the canvas `aria-label` `stats.js` builds is one
+ * generic sentence per chart, not a per-bucket label, so it is not what
+ * satisfies this requirement. Only the on-canvas swatch text is shortened,
+ * the same trade-off any dashboard legend makes for a name too long to sit
+ * next to its colour.
  */
 function truncateForLegend(ctx, text, maxWidth) {
   if (maxWidth <= 0 || ctx.measureText(text).width <= maxWidth) return text

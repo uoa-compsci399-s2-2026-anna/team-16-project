@@ -438,12 +438,41 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
     context, page = open_page(browser, ["en-NZ"], path="/stats.html",
                               stats_fixture=True)
     try:
-        kinds = page.evaluate(
-            """() => Object.values(Chart.instances || {}).map(c => c.config.type)"""
+        charted = page.evaluate(
+            """() => Object.values(Chart.instances || {}).map(c => ({
+                type: c.config.type,
+                title: c.options?.plugins?.title?.text,
+                data: c.data.datasets[0].data,
+            }))"""
         )
-        assert kinds, "no charts were drawn"
+        assert charted, "no charts were drawn"
+        kinds = [chart["type"] for chart in charted]
         assert set(kinds) == {"doughnut"}, (
             f"not every breakdown is a share chart: {kinds}"
         )
+
+        # The chart *type* alone does not prove the right field was drawn: a
+        # donut of counts and a donut of shares are the same slices in the
+        # same proportions on screen, so a `valueKey: 'share'` silently swapped
+        # for `'count'` would still pass everything above and would not be
+        # caught by looking at the page either. Compare what Chart.js was
+        # actually handed against the fixture's own `share`, per breakdown.
+        title_to_key = {
+            'Destinations entered (share)': 'by_destination',
+            'Sectors selected (share)': 'by_sector',
+            'Food categories selected (share)': 'by_food_category',
+        }
+        titles = {chart['title'] for chart in charted}
+        assert titles == set(title_to_key), (
+            f"expected one chart per breakdown ({sorted(title_to_key)}), drew: {sorted(titles)}"
+        )
+        for chart in charted:
+            key = title_to_key[chart['title']]
+            expected_shares = [float(row['share']) for row in STATS[key]]
+            assert chart['data'] == pytest.approx(expected_shares), (
+                f"{chart['title']}: chart.data.datasets[0].data is {chart['data']}, "
+                f"the fixture's own `share` is {expected_shares} - the chart is not "
+                "drawing the share field"
+            )
     finally:
         context.close()

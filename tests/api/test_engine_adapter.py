@@ -26,6 +26,20 @@ def _breakdown(destination, qty, value):
     )
 
 
+def _rolled_up_breakdown(destination, qty, value):
+    """v1.48, amending §3 rule 2: a totals-level row. Unlike `_breakdown`
+    above, the two rate fields are zero — they are per-kilogram rates that
+    can differ between the entries sharing a destination, so a cross-entry
+    row cannot state one."""
+    return SimpleNamespace(
+        destination_code=destination,
+        qty_kg=Decimal(qty),
+        upstream=Decimal("0.0000000000"),
+        downstream=Decimal("0.0000000000"),
+        value=Decimal(value),
+    )
+
+
 def _metric(total, by_destination=()):
     return SimpleNamespace(
         metric_code="co2e",
@@ -115,10 +129,34 @@ def _result(*, with_alternative=True):
     totals_net = (
         {"co2e": Decimal("2196.0000000000")} if with_alternative else None
     )
+    #: The totals-level rows are a real partition of the two figures above:
+    #: 3468 (landfill) + 456 (not_harvested) = 3924, and on the alternative
+    #: side 1368 (anaerobic_digestion) + 360 (prevention) = 1728 — the same
+    #: totals this stand-in already gave the metric before v1.48.
     totals = SimpleNamespace(
-        current=_scenario("2300.000", _metric("3924.0000000000"), "16406.0800000000"),
+        current=_scenario(
+            "2300.000",
+            _metric(
+                "3924.0000000000",
+                [
+                    _rolled_up_breakdown("landfill", "1200.000", "3468.0000000000"),
+                    _rolled_up_breakdown("not_harvested", "800.000", "456.0000000000"),
+                ],
+            ),
+            "16406.0800000000",
+        ),
         alternative=_scenario(
-            "2300.000", _metric("1728.0000000000"), "7204.8000000000"
+            "2300.000",
+            _metric(
+                "1728.0000000000",
+                [
+                    _rolled_up_breakdown(
+                        "anaerobic_digestion", "1200.000", "1368.0000000000"
+                    ),
+                    _rolled_up_breakdown("prevention", "800.000", "360.0000000000"),
+                ],
+            ),
+            "7204.8000000000",
         )
         if with_alternative
         else None,
@@ -179,11 +217,11 @@ def test_the_hoist_is_the_only_arithmetic_free_reshaping():
     assert body["entries"][1]["net_benefit"] == {"co2e": Decimal("96.0000000000")}
 
 
-def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
-    """§3 rule 2."""
+def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
+    """§3 rule 2, as v1.48 amends it: `by_destination` is real at both
+    levels now. Per entry it carries each line's own rate; at the totals
+    level the rates are zero and only `qty_kg`/`value` are meaningful."""
     body = DefaultEngineAdapter().serialize_result(_result())
-    assert "by_destination" not in body["totals"]["current"]["metrics"]["co2e"]
-    assert "by_destination" not in body["totals"]["alternative"]["metrics"]["co2e"]
     assert body["entries"][0]["current"]["metrics"]["co2e"]["by_destination"] == [
         {
             "destination": "landfill",
@@ -192,6 +230,38 @@ def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
             "downstream": Decimal("0.9900000000"),
             "value": Decimal("3468.0000000000"),
         }
+    ]
+    assert body["totals"]["current"]["metrics"]["co2e"]["by_destination"] == [
+        {
+            "destination": "landfill",
+            "qty_kg": Decimal("1200.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("3468.0000000000"),
+        },
+        {
+            "destination": "not_harvested",
+            "qty_kg": Decimal("800.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("456.0000000000"),
+        },
+    ]
+    assert body["totals"]["alternative"]["metrics"]["co2e"]["by_destination"] == [
+        {
+            "destination": "anaerobic_digestion",
+            "qty_kg": Decimal("1200.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("1368.0000000000"),
+        },
+        {
+            "destination": "prevention",
+            "qty_kg": Decimal("800.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("360.0000000000"),
+        },
     ]
 
 

@@ -15,8 +15,8 @@
             {
               "destination_code": "landfill",
               "qty_kg": "250.000",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "26.2500000000"
             }
           ]

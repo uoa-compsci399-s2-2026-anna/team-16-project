@@ -65,6 +65,13 @@ from engine.types import (
 #: place a metric value is produced, is where the scale is applied.
 METRIC_SCALE = Decimal("0.0000000001")
 
+#: The totals-level roll-up (below) leaves upstream and downstream at
+#: zero because they are per-kilogram rates, not sums -- but zero is
+#: still a metric value on the wire (§1.2), so it carries the same ten
+#: places as every other rate rather than rendering as the bare "0" a
+#: scale-zero Decimal would produce.
+ZERO_RATE = Decimal("0").quantize(METRIC_SCALE)
+
 #: §4.3's special binding. A formula names `const_GWP_CH4` and never a
 #: horizon, so switching the request between 20 and 100 years rebinds one
 #: variable and touches no stored expression.
@@ -357,8 +364,8 @@ def _roll_up(
                     BreakdownRow(
                         destination_code=destination_code,
                         qty_kg=qty,
-                        upstream=Decimal("0"),
-                        downstream=Decimal("0"),
+                        upstream=ZERO_RATE,
+                        downstream=ZERO_RATE,
                         value=value,
                     )
                     for destination_code, (qty, value) in bucket_for_metric.items()

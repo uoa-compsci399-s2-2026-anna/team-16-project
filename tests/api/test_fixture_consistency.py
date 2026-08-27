@@ -472,15 +472,42 @@ def test_the_response_arithmetic_closes(name):
 
     # §3: the wire's `totals.total_kg` is the current scenario's mass.
     assert Decimal(totals["total_kg"]) == mass, f"{name}: totals.total_kg"
+
+    def assert_totals_breakdown_is_a_partition(scenario_name, code, metric):
+        #: v1.48, amending §3 rule 2: `qty_kg` and `value` roll up across
+        #: entries at the totals level too, so this fixture's totals-level
+        #: rows must still partition the metric total exactly, the same
+        #: property already checked per entry above. The two rate fields
+        #: stay at zero here: they are per-kilogram rates that can differ
+        #: between the entries sharing a destination.
+        summed = sum(
+            (Decimal(row["value"]) for row in metric["by_destination"]),
+            Decimal("0"),
+        )
+        assert summed == Decimal(metric["total"]), (
+            f"{name} totals.{scenario_name}.{code}: by_destination sums to "
+            f"{summed}, total says {metric['total']}"
+        )
+        for row in metric["by_destination"]:
+            assert Decimal(row["upstream"]) == Decimal("0"), (
+                f"{name} totals.{scenario_name}.{code}/{row['destination']}: "
+                "upstream must be zero at the totals level"
+            )
+            assert Decimal(row["downstream"]) == Decimal("0"), (
+                f"{name} totals.{scenario_name}.{code}/{row['destination']}: "
+                "downstream must be zero at the totals level"
+            )
+
     for code, metric in totals["current"]["metrics"].items():
         assert Decimal(metric["total"]) == rolled["current"][code], f"{name} totals {code}"
-        assert "by_destination" not in metric, "§3 rule 2: empty at the totals level"
+        assert_totals_breakdown_is_a_partition("current", code, metric)
     if totals["alternative"] is None:
         assert totals["net_benefit"] is None
         assert all(entry["alternative"] is None for entry in fixture["entries"])
         return
     for code, metric in totals["alternative"]["metrics"].items():
         assert Decimal(metric["total"]) == rolled["alternative"][code], f"{name} {code}"
+        assert_totals_breakdown_is_a_partition("alternative", code, metric)
     for code, value in totals["net_benefit"].items():
         assert Decimal(value) == Decimal(
             totals["current"]["metrics"][code]["total"]

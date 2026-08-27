@@ -15,15 +15,15 @@
             {
               "destination_code": "landfill",
               "qty_kg": "250.500",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "826.6500000000"
             },
             {
               "destination_code": "compost",
               "qty_kg": "120.250",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "337.9025000000"
             }
           ]
@@ -37,15 +37,15 @@
             {
               "destination_code": "landfill",
               "qty_kg": "250.500",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "6.7635000000"
             },
             {
               "destination_code": "compost",
               "qty_kg": "120.250",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "0.0240500000"
             }
           ]
@@ -59,15 +59,15 @@
             {
               "destination_code": "landfill",
               "qty_kg": "250.500",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "160320.0000000000"
             },
             {
               "destination_code": "compost",
               "qty_kg": "120.250",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "76960.0000000000"
             }
           ]
@@ -81,15 +81,15 @@
             {
               "destination_code": "landfill",
               "qty_kg": "250.500",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "15.0300000000"
             },
             {
               "destination_code": "compost",
               "qty_kg": "120.250",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "4.2087500000"
             }
           ]
@@ -103,15 +103,15 @@
             {
               "destination_code": "landfill",
               "qty_kg": "250.500",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "250.5000000000"
             },
             {
               "destination_code": "compost",
               "qty_kg": "120.250",
-              "upstream": "0",
-              "downstream": "0",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
               "value": "120.2500000000"
             }
           ]

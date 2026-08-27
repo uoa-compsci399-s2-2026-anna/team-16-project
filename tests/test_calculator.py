@@ -1010,15 +1010,20 @@ def test_the_totals_carry_a_destination_breakdown_across_entries():
         (row.value for row in rows), Decimal("0")
     ) == co2e_total
 
-    #: The same partition, read off a different metric, carries the same
-    #: masses. `qty_kg` does not depend on which metric computed it, so a
-    #: roll-up that keyed a destination's mass to the wrong metric -- or
-    #: mixed the two metrics' accumulators together -- would show up here
-    #: even though checking `co2e` alone could not catch it.
-    mass_rows = result.totals.current.metrics["mass"].by_destination
-    assert {r.destination_code: r.qty_kg for r in mass_rows} == {
-        r.destination_code: r.qty_kg for r in rows
-    }
+    #: The same destination, read off a *different* metric, is a genuinely
+    #: different number -- unlike `qty_kg`, which is identical across every
+    #: metric's rows and so cannot expose a roll-up that built one metric's
+    #: rows from another metric's accumulator. `mass`'s formula is bare
+    #: `qty_kg`, so its own rolled-up value has to equal its own qty_kg
+    #: exactly; a roll-up that keyed `mass`'s destination to `co2e`'s bucket
+    #: (or mixed the two together) would put co2e's value here instead, and
+    #: both assertions below would fail.
+    mass_landfill = next(
+        row for row in result.totals.current.metrics["mass"].by_destination
+        if row.destination_code == "landfill"
+    )
+    assert mass_landfill.value == mass_landfill.qty_kg
+    assert mass_landfill.value != landfill.value
 
 
 def test_the_rolled_up_rows_do_not_claim_a_per_kilogram_rate():

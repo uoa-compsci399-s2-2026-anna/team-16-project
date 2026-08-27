@@ -77,23 +77,48 @@ class FormulaError(Exception):
         self.reason = "division by zero"
 
 
-def _scenario_result(lines, *, with_breakdown):
+def _scenario_result(lines, *, with_breakdown, rolled_up=False):
     """A §3 `ScenarioResult`, with a deliberately trivial `co2e`.
 
     The single metric's total is the scenario's mass, so no factor
     arithmetic is faked here — the numbers in these tests are the ones the
     request carried. What the metric exists for is *shape*: without it the
     §6.2 body has an empty `metrics` object and nothing exercises the
-    `by_destination` mapping, the `metric_code`/`destination_code` renames,
-    or their omission at the totals level.
+    `by_destination` mapping or the `metric_code`/`destination_code` renames.
+
+    `rolled_up` mirrors `engine.calculate._roll_up` (v1.48, amending §3 rule
+    2): at the entry level each line keeps its own row, in request order,
+    because two lines to the same destination in one scenario are two
+    separate contributions; at the totals level, `lines` is the flattened,
+    cross-entry list and rows are merged one per destination, summing
+    `qty_kg` (and, since this fake's `co2e` total *is* the mass, `value`
+    along with it) and leaving the two rate fields at zero — they are
+    per-kilogram rates that can differ between the entries sharing a
+    destination, not sums.
     """
     total = sum((line.qty_kg for line in lines), Decimal("0"))
-    metric = SimpleNamespace(
-        metric_code="co2e",
-        unit="kg CO2e",
-        display_precision=1,
-        total=total,
-        by_destination=tuple(
+    if not with_breakdown:
+        rows: tuple = ()
+    elif rolled_up:
+        merged: dict[str, Decimal] = {}
+        order: list[str] = []
+        for line in lines:
+            if line.destination_code not in merged:
+                merged[line.destination_code] = Decimal("0")
+                order.append(line.destination_code)
+            merged[line.destination_code] += line.qty_kg
+        rows = tuple(
+            SimpleNamespace(
+                destination_code=code,
+                qty_kg=merged[code],
+                upstream=Decimal("0.0000000000"),
+                downstream=Decimal("0.0000000000"),
+                value=merged[code],
+            )
+            for code in order
+        )
+    else:
+        rows = tuple(
             SimpleNamespace(
                 destination_code=line.destination_code,
                 qty_kg=line.qty_kg,
@@ -103,8 +128,12 @@ def _scenario_result(lines, *, with_breakdown):
             )
             for line in lines
         )
-        if with_breakdown
-        else (),
+    metric = SimpleNamespace(
+        metric_code="co2e",
+        unit="kg CO2e",
+        display_precision=1,
+        total=total,
+        by_destination=rows,
     )
     return SimpleNamespace(
         total_kg=total,
@@ -128,7 +157,8 @@ class FakeEngineAdapter:
     own sector, food category and scenario lines — and `calculate` returns
     the §3 `CalculationResult`: `factor_set_version`, `is_mock`,
     `gwp_horizon`, `totals` and `entries`, with `by_destination` populated
-    per entry and empty at the totals level (§3 rule 2).
+    at both levels (v1.48, amending §3 rule 2) — one row per line per
+    entry, merged one row per destination at the totals level.
 
     **`serialize_result` is not faked.** It delegates to the real
     `DefaultEngineAdapter`, so every API test that reads a 200 body is
@@ -202,9 +232,11 @@ class FakeEngineAdapter:
             for entry in request.entries
             for line in (entry.alternative if entry.alternative is not None else entry.current)
         ]
-        totals_current = _scenario_result(current_lines, with_breakdown=False)
+        totals_current = _scenario_result(
+            current_lines, with_breakdown=True, rolled_up=True
+        )
         totals_alternative = (
-            _scenario_result(alternative_lines, with_breakdown=False)
+            _scenario_result(alternative_lines, with_breakdown=True, rolled_up=True)
             if has_alternative
             else None
         )

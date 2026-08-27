@@ -66,12 +66,23 @@ metric_result = MetricResult(
     total=Decimal("456.0000000000"),
     by_destination=(breakdown_row,),
 )
+#: v1.48, amending §3 rule 2: a totals-level row. Same destination and the
+#: same additive `qty_kg`/`value` as `breakdown_row` above, but the two rates
+#: are zero -- they are per-kilogram rates that can differ between the
+#: entries sharing a destination, not sums.
+rolled_up_breakdown_row = BreakdownRow(
+    destination_code="not_harvested",
+    qty_kg=Decimal("800.000"),
+    upstream=Decimal("0.0000000000"),
+    downstream=Decimal("0.0000000000"),
+    value=Decimal("456.0000000000"),
+)
 rolled_up_metric = MetricResult(
     metric_code="co2e",
     unit="kg CO2e",
     display_precision=1,
     total=Decimal("456.0000000000"),
-    by_destination=(),
+    by_destination=(rolled_up_breakdown_row,),
 )
 equivalence_result = EquivalenceResult(
     code="km_driven",
@@ -208,12 +219,19 @@ def test_metric_result():
 
 
 def test_one_metric_result_type_serves_both_levels():
-    """§3 rule 2: `by_destination` is populated per entry and **empty** at the
-    totals level, because the same destination can appear under several
-    entries drawing different upstream factors. One type either way; the
-    serialiser omits the key when the tuple is empty."""
-    assert rolled_up_metric.by_destination == ()
-    assert totals.current.metrics["co2e"].by_destination == ()
+    """§3 rule 2, as v1.48 amends it: `by_destination` is populated at
+    both the entry and the totals level, in the same `MetricResult` type
+    either way. The two differ in what the rows may claim: an entry's own
+    rows carry real `upstream`/`downstream`, since they come from one
+    scenario's own lines; a totals-level row carries only the additive
+    `qty_kg` and `value`, with the two rates at zero, because the same
+    destination can appear under several entries drawing different upstream
+    factors and cannot state a single one. The serialiser still omits the
+    key when the tuple is empty, which is the "one type either way" this
+    test is named for."""
+    assert rolled_up_metric.by_destination == (rolled_up_breakdown_row,)
+    assert totals.current.metrics["co2e"].by_destination == (rolled_up_breakdown_row,)
+    assert all(row.upstream == 0 and row.downstream == 0 for row in rolled_up_metric.by_destination)
     assert entry_result.current.metrics["co2e"].by_destination != ()
 
 

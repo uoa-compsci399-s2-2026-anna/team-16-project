@@ -1000,8 +1000,14 @@ async def test_the_money_block_carries_the_right_numbers_over_http(app):
     the suite that reads the actual numbers.
 
     Same two entries as `tests/fixtures/calculate_request.json` /
-    `calculate_response.json`, so this doubles as the live call those two
-    fixtures are checked against elsewhere, hand-verified independently here:
+    `calculate_response.json`, hand-verified independently here. **This does
+    not call the real engine** - the `app` fixture wires in
+    `tests.support.sqlite.FakeEngineAdapter`, whose own `_money()` is a
+    hand-kept copy of `engine.calculate._money`, not a call to it. What this
+    test certifies is that a correct money figure survives the trip through
+    `api/engine_adapter.py`'s serialisation onto the wire; that the fake's
+    `_money()` agrees with the real one is `tests/support/
+    test_fake_engine_agreement.py`'s job, not this test's:
 
     entry 1 (processing/dairy) prices its waste at $6750.00 / 1500 kg =
     $4.50/kg and diverts nothing to `prevention` - its alternative only moves

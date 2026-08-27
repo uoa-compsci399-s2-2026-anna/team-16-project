@@ -1000,3 +1000,70 @@ def test_the_page_says_what_contributing_means_before_it_is_clicked(page_at):
 
     text = page.locator(".contribute-block").inner_text().lower()
     assert "anonymous" in text or "no personal" in text or "nothing that identifies" in text
+
+
+@pytest.mark.browser
+def test_the_tick_does_not_visibly_undo_itself_while_the_request_is_in_flight(page_at):
+    """**Fix round 1, must-fix 1.** `contributeBlock` keyed `checked` on `done` and
+    `disabled` on `pending || done`, so for the whole time the request was in flight
+    the box read back unchecked *and* disabled - a visitor ticks a consent box and
+    watches it come back empty. The route below is held open rather than fulfilled,
+    so this measures the box mid-flight rather than after an answer has arrived.
+    """
+    page = _results_page(page_at)
+    held = {}
+    page.route("**/api/v1/contribute", lambda route: held.setdefault("route", route))
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(300)
+
+    control = page.locator("#contribute")
+    assert control.is_checked() is True, (
+        "the box is unticked while the request is still in flight"
+    )
+    assert control.is_disabled() is True, (
+        "the box is not yet locked while the request is still in flight"
+    )
+
+    held["route"].fulfill(status=204)
+
+
+@pytest.mark.browser
+def test_the_confirmation_is_present_tense_and_names_no_past_success(page_at):
+    """**Fix round 1, must-fix 2.** §6.2.2 answers `204` identically whether the
+    token named a live submission or was unknown / already expired - "nothing is
+    written and nothing is said" is the contract's own wording. "...has been added"
+    asserts a past event this page cannot actually confirm; the replacement states
+    the present, true-on-every-press fact instead, which is also true again after a
+    recalculation without needing to know whether this was the first press or not.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(400)
+
+    status = page.locator(".contribute-status").inner_text().lower()
+    assert "has been added" not in status, (
+        "the confirmation still claims a past success the front end cannot verify"
+    )
+    assert "are in" in status or "is in" in status or "public statistics" in status
+
+
+@pytest.mark.browser
+def test_the_control_is_described_for_a_visitor_who_cannot_see_the_sentence(page_at):
+    """**Fix round 1, fix 4.** A visitor tabbing to `#contribute` without sight
+    hears its label and nothing else unless the control is described by the
+    sentence that says what contributing means - the whole point of item 13's
+    "read before you click" requirement, for someone who cannot read the page
+    layout to find that sentence unaided."""
+    page = _results_page(page_at)
+
+    control = page.locator("#contribute")
+    described_by = control.get_attribute("aria-describedby")
+    assert described_by, "the control has no aria-describedby at all"
+
+    described_text = page.locator(f"#{described_by}").inner_text().lower()
+    assert "anonymous" in described_text, (
+        "aria-describedby does not point at the sentence explaining the choice"
+    )

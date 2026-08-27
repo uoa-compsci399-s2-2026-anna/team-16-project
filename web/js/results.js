@@ -603,10 +603,13 @@ export function downloadResults(state) {
  *
  * **One-way, and said so before the click, not after.** The route only ever sets the
  * flag (§6.2.2's own table has no path that clears it), so unticking this box would be
- * a control that lies about its own affordance. Rather than allow that gesture, the
- * checkbox is disabled the moment it is ticked (and while the request is in flight) —
- * it cannot be unticked because there is no path back through it — and the sentence
- * beside it says so before the click reaches it at all.
+ * a control that lies about its own affordance. Rather than allow that gesture, both
+ * `checked` and `disabled` are keyed on `pending || done` — ticked and locked the
+ * moment the press happens, not only once the response lands. **Fix round 1:** `checked`
+ * used to read `done` alone, so for the whole of the request the box showed unticked
+ * and disabled — a visitor watching their own tick appear to undo itself, which is the
+ * one message this particular control must never send. The sentence beside it says the
+ * choice is one-way before the click reaches it at all.
  *
  * **Consent survives a recalculation, on purpose.** `state.contributed` is not reset
  * by `submitCalculation` or `compareImprovement` on a return trip through the wizard,
@@ -616,18 +619,23 @@ export function downloadResults(state) {
  * still contributed — a front end telling a visitor "you haven't" about a choice the
  * server has already recorded. The sentence below says plainly that a recalculation's
  * *figures* replace the earlier ones under the same choice, which is the true state of
- * affairs rather than a fresh question with a false "no" already implied.
+ * affairs rather than a fresh question with a false "no" already implied. The status
+ * line after a successful press (**fix round 1**) states the same thing in the present
+ * tense, rather than a past tense the server cannot actually promise — §6.2.2 answers
+ * 204 on an unknown or expired token exactly as it does on a live one, so "has been
+ * added" may be false in a way this page cannot detect; "are in" is true on the first
+ * press and true again after every revision.
  */
 function contributeBlock(state) {
   const pending = state.contributing
   const done = state.contributed
   return `<div class="contribute-block">
-    <p class="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
+    <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
     <div class="contribute-control">
-      <input type="checkbox" id="contribute" ${done ? 'checked' : ''} ${pending || done ? 'disabled' : ''}>
+      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" ${pending || done ? 'checked' : ''} ${pending || done ? 'disabled' : ''}>
       <label for="contribute">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</label>
     </div>
-    ${done ? `<p class="contribute-status" role="status">${escapeHtml(t('Thank you — your calculation has been added to the public statistics.'))}</p>` : ''}
+    ${done ? `<p class="contribute-status" role="status">${escapeHtml(t("Your latest figures are in this calculator's public statistics."))}</p>` : ''}
     ${state.contributeError ? `<p class="field-error" role="alert">${escapeHtml(state.contributeError)}</p>` : ''}
   </div>`
 }

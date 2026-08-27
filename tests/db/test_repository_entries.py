@@ -10,7 +10,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 import pytest
-from sqlalchemy import func, select
+from sqlalchemy import func, select, update
 
 from db.models import (
     Destination,
@@ -263,6 +263,12 @@ def test_bucket_counts_are_entries_while_total_calculations_counts_submissions(
         ),
         factor_set_id,
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
 
     assert stats.total_calculations == 1
@@ -290,6 +296,12 @@ def test_each_entry_carries_its_own_mass_into_its_own_bucket(seeded_session):
         ),
         get_published_factor_set_id(seeded_session),
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
 
     assert _bucket(stats.by_sector, "processing").total_kg == Decimal("10.000")
@@ -311,6 +323,12 @@ def test_the_alternative_scenario_reaches_no_breakdown_at_all(seeded_session):
                         alternative=(("prevention", "1000"),))),
         get_published_factor_set_id(seeded_session),
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
 
     assert _bucket(stats.by_destination, "prevention") is None
@@ -346,6 +364,12 @@ def test_a_staff_excluded_submission_hides_every_one_of_its_entries(seeded_sessi
     )
     seeded_session.flush()
 
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
     assert stats.total_calculations == 1
     assert [bucket.code for bucket in stats.by_sector] == ["processing"]
@@ -375,6 +399,12 @@ def test_a_null_food_category_becomes_the_unspecified_bucket(seeded_session):
         _request(_entry("hospitality", "standard_mix", current=(("landfill", "5"),))),
         factor_set_id,
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
 
     unspecified = _bucket(stats.by_food_category, "unspecified")
@@ -403,6 +433,12 @@ def test_shares_are_computed_within_a_breakdown_and_sum_to_one(seeded_session):
         ),
         factor_set_id,
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
 
     assert stats.total_calculations == 1
@@ -454,6 +490,12 @@ def test_shares_still_sum_to_one_when_the_counts_do_not_divide_cleanly(seeded_se
             _request(_entry(sector, food_category, current=(("landfill", "1"),))),
             factor_set_id,
         )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session)
 
     assert sum(bucket.count for bucket in stats.by_sector) == 22
@@ -505,6 +547,12 @@ def test_suppression_still_merges_small_buckets_into_other(seeded_session):
             _request(_entry("distribution", "meat", current=(("compost", "3"),))),
             factor_set_id,
         )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session)
 
     assert stats.suppression_threshold == 5
@@ -558,6 +606,12 @@ def test_the_unspecified_bucket_is_suppressed_on_the_same_threshold(seeded_sessi
             _request(_entry("distribution", "bakery", current=(("landfill", "1"),))),
             factor_set_id,
         )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session)
 
     assert _bucket(stats.by_food_category, "unspecified") is None
@@ -604,6 +658,12 @@ def test_other_absorbs_the_smallest_visible_bucket_until_it_clears(seeded_sessio
         _request(_entry("retail", "meat", current=(("landfill", "7"),))),
         factor_set_id,
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session)
 
     assert _bucket(stats.by_sector, "retail") is None
@@ -640,6 +700,12 @@ def test_a_breakdown_that_cannot_clear_the_threshold_publishes_nothing(seeded_se
             _request(_entry(sector, "dairy", current=(("landfill", "10"),))),
             factor_set_id,
         )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session)
 
     assert stats.total_calculations == 4
@@ -658,6 +724,12 @@ def test_statistics_are_decimal_not_float(seeded_session):
         _request(_entry(current=(("landfill", "10.125"),))),
         get_published_factor_set_id(seeded_session),
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
     for breakdown in (stats.by_sector, stats.by_food_category, stats.by_destination):
         for bucket in breakdown:
@@ -667,6 +739,12 @@ def test_statistics_are_decimal_not_float(seeded_session):
 
 
 def test_an_empty_database_produces_empty_breakdowns(seeded_session):
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session)
     assert stats.total_calculations == 0
     assert stats.by_sector == ()
@@ -762,6 +840,12 @@ def test_the_three_breakdowns_run_on_mysql(session):
     )
     session.flush()
 
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    session.execute(update(Submission).values(is_public_contributed=True))
+    session.flush()
     stats = get_public_stats(session, threshold=1)
     assert stats.total_calculations == 1
     assert _bucket(stats.by_destination, "ent_prevention") is None
@@ -785,6 +869,12 @@ def test_a_destination_used_by_two_entries_counts_twice(seeded_session, code):
         ),
         get_published_factor_set_id(seeded_session),
     )
+    # v1.48: `upsert_submission` never sets `is_public_contributed` (Task 6
+    # owns that write); this test is about aggregation, not consent, so every
+    # submission built above opts in here, in one statement, rather than at
+    # each call site.
+    seeded_session.execute(update(Submission).values(is_public_contributed=True))
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
     bucket = _bucket(stats.by_destination, code)
     assert bucket.count == 2

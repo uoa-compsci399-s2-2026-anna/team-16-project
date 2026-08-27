@@ -258,6 +258,22 @@ class CalculatePayload(BaseModel):
         return value
 
 
+class ContributePayload(BaseModel):
+    """`POST /contribute` (§5.3, v1.48). The visitor's own opt-in.
+
+    `token` is required here, unlike on `CalculatePayload`: there is no
+    submission to create on this route, only an existing one to find, so an
+    absent token has nothing to resolve. It is typed `str` and not `UUID4`
+    for the same reason as `CalculatePayload.token` -- a stale
+    `sessionStorage` value is not malformed input, it is a lookup that misses,
+    and `set_public_contribution` already treats a miss as silent rather than
+    an error.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+    token: str = Field(min_length=1)
+
+
 def entry_rule_problems(
     payload: CalculatePayload,
     *,

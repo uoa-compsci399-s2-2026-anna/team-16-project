@@ -493,13 +493,21 @@ async def test_stats_only_expose_persisted_public_calculations(app):
     identifies nobody.
     """
     async with await _client(app) as client:
-        await client.post(
+        calculated = await client.post(
             "/api/v1/calculate",
             json=_body(
                 [{"destination": "landfill", "qty_kg": "3.000"}],
                 alternative=[{"destination": "landfill", "qty_kg": "3.000"}],
             ),
         )
+        # v1.48: a calculation is not itself public any more (§5.3) -- this
+        # test is proving the *threshold*, not consent, so the fixture opts
+        # in on the visitor's behalf, the same way the calculator's own
+        # checkbox would.
+        contributed = await client.post(
+            "/api/v1/contribute", json={"token": calculated.json()["token"]}
+        )
+        assert contributed.status_code == 204
         response = await client.get("/api/v1/stats")
     assert response.status_code == 200
     body = response.json()
@@ -804,11 +812,22 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     dual = _fixture("calculate_request.json")
     single = _request_from("calculate_response_single.json")
     async with await _client(app) as client:
+        # v1.48: none of these six is public until its own visitor says so
+        # (§5.3) -- this test is proving the aggregation and the threshold,
+        # not consent, so every submission here opts in.
         for _ in range(5):
             posted = await client.post("/api/v1/calculate", json=dual)
             assert posted.status_code == 200, posted.text
+            contributed = await client.post(
+                "/api/v1/contribute", json={"token": posted.json()["token"]}
+            )
+            assert contributed.status_code == 204
         posted = await client.post("/api/v1/calculate", json=single)
         assert posted.status_code == 200, posted.text
+        contributed = await client.post(
+            "/api/v1/contribute", json={"token": posted.json()["token"]}
+        )
+        assert contributed.status_code == 204
         response = await client.get("/api/v1/stats")
 
     assert response.status_code == 200, response.text
@@ -1006,3 +1025,60 @@ async def test_the_money_block_carries_the_right_numbers_over_http(app):
         "wasted_share_percent": "21.50",
         "saving_nzd": "4000.00",
     }
+
+
+@pytest.mark.asyncio
+async def test_a_calculation_does_not_reach_the_public_statistics_until_asked(app):
+    """**v1.48 reverses §2.3's "there is no consent checkbox".**
+
+    It said so deliberately - one calculation was one submission and nothing
+    asked. The client asked for the opposite, and this is what the reversal
+    has to mean: a submission is recorded, the panel sees it, and the public
+    aggregate does not count it until the visitor says so.
+    """
+    #: `food_category` is `dairy`, not the brief's `bread_bakery`: this app
+    #: fixture's taxonomy (`tests/support/sqlite.py`) seeds the codes
+    #: `calculate_request.json` and the rest of this file already exercise --
+    #: `standard_mix`, `vegetables`, `dairy` -- and `bread_bakery` is not
+    #: among them, so it 400s as UNKNOWN_CODE before a submission ever exists.
+    body = {
+        "gwp_horizon": 100,
+        "entries": [{
+            "sector": "processing", "food_category": "dairy",
+            "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+            "alternative": None,
+        }],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        calculated = await client.post("/api/v1/calculate", json=body)
+        assert calculated.status_code == 200, calculated.text
+        token = calculated.json()["token"]
+
+        before = (await client.get("/api/v1/stats")).json()["total_calculations"]
+
+        contributed = await client.post("/api/v1/contribute", json={"token": token})
+        assert contributed.status_code == 204
+
+        after = (await client.get("/api/v1/stats")).json()["total_calculations"]
+
+    assert after == before + 1, (
+        "contributing did not move the public count, so either the flag is "
+        "not written or the aggregate is not reading it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_token_is_not_an_error(app):
+    """§6.2's rule for `token` everywhere else: a value that resolves to
+    nothing is treated as absent. A stale `sessionStorage` value is not a
+    request the visitor can fix, and a 400 here would surface as a broken
+    button on a page whose calculation succeeded."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post(
+            "/api/v1/contribute",
+            json={"token": "3f2a91c4-77b5-4d1e-9c08-6b5e2a7d4419"},
+        )
+
+    assert response.status_code == 204

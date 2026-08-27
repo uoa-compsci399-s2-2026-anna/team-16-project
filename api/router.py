@@ -277,9 +277,19 @@ def contribute(payload: ContributePayload, request: Request) -> Response:
     only to keep that distinction available to a caller that wants it; the
     route itself does not branch on it, so it also gives nothing away about
     whether the token exists.
+
+    A dry run must persist nothing, exactly as `/calculate`'s own dry run
+    must (§6.2). Today that is true by coincidence rather than by guard:
+    `/calculate` never mints a token under `X-Dry-Run: true`, so a dry-run
+    caller here has no live token to flip a flag with. `_dry_run_header`
+    still reads the header and skips the write when it is `true`, so the
+    guard holds even if a future dry-run path ever does hand out a real
+    token -- this route must not become a live consent write just because
+    nothing exercises that case yet.
     """
     _limit(request, "post-calculate", 120)
-    set_public_contribution(request.state.db, payload.token)
+    if not _dry_run_header(request):
+        set_public_contribution(request.state.db, payload.token)
     return Response(status_code=204)
 
 

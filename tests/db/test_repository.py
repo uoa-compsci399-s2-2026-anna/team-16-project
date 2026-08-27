@@ -113,8 +113,9 @@ def _submission_with_mass(session, factor_set, sector, destination):
     not tell the two apart.
 
     `food_category_id` is left `None` (§5.4's `unspecified` bucket): the test
-    this exists for asserts `total_calculations` only, and does not need a
-    second taxonomy row to do it.
+    this exists for asserts `total_calculations` and the `by_destination`/
+    `by_sector` bucket sums, none of which needs a second taxonomy row to do
+    it.
     """
     now = utcnow()
     submission = Submission(
@@ -1002,10 +1003,25 @@ def test_staff_exclusion_and_visitor_consent_are_both_required(session):
     never_offered = _submission_with_mass(session, factor_set, sector, destination)
     session.commit()
 
-    stats = get_public_stats(session)
+    stats = get_public_stats(session, threshold=1)
 
     assert stats.total_calculations == 1, (
         "only the submission that was offered AND not excluded should count"
+    )
+    # The count above is only half the claim. `get_public_stats` predicates
+    # on both flags at *three* separate query sites (§5.4) -- the
+    # `total_calculations` count, the `entries` subquery behind `by_sector`/
+    # `by_food_category`, and `by_destination` -- and every submission built
+    # above shares one sector and one destination, so a predicate dropped
+    # from either of the other two sites would let `offered_then_excluded`
+    # or `never_offered` leak into a bucket while the headline above still
+    # read 1. `threshold=1` keeps the bucket visible rather than merged into
+    # `other`, where a leaked row would be invisible to a count assertion.
+    assert sum(bucket.count for bucket in stats.by_destination) == 1, (
+        "a bucket counted a row that was excluded or never offered"
+    )
+    assert sum(bucket.count for bucket in stats.by_sector) == 1, (
+        "a bucket counted a row that was excluded or never offered"
     )
 
 

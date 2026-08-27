@@ -102,6 +102,7 @@ async def test_an_address_blocked_through_the_panel_is_refused_at_the_api(
     ("get", "/api/v1/stats"),
     ("get", "/api/v1/factors"),
     ("post", "/api/v1/calculate"),
+    ("post", "/api/v1/contribute"),
 ])
 async def test_every_endpoint_under_api_v1_is_checked_get_included(
     app, sqlite_engine, method, path

@@ -1082,3 +1082,42 @@ async def test_an_unknown_token_is_not_an_error(app):
         )
 
     assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_contribute_does_not_persist(app):
+    """A dry run must persist nothing (§6.2), and this route writes.
+
+    It is safe today only by coincidence: `/calculate` never mints a token
+    under `X-Dry-Run: true`, so nothing has ever exercised a dry run here
+    with a live token to flip. This test uses a real (non-dry-run) token so
+    that a guard which merely happened to work because dry runs see no token
+    cannot pass it -- the token is genuine, live, and would flip the flag on
+    a non-dry-run call.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "entries": [{
+            "sector": "processing", "food_category": "dairy",
+            "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+            "alternative": None,
+        }],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        calculated = await client.post("/api/v1/calculate", json=body)
+        assert calculated.status_code == 200, calculated.text
+        token = calculated.json()["token"]
+
+        response = await client.post(
+            "/api/v1/contribute",
+            json={"token": token},
+            headers={"X-Dry-Run": "true"},
+        )
+        assert response.status_code == 204
+
+    with app.state.session_factory() as db:
+        row = db.scalar(select(Submission).where(Submission.token == token))
+        assert row.is_public_contributed is False, (
+            "a dry run flipped a real consent flag"
+        )

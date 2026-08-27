@@ -199,8 +199,9 @@ def seeded(admin_app):
 
 
 @pytest.mark.asyncio
-async def test_the_list_shows_the_three_columns_it_promises(admin_client, seeded):
-    """Time, stage, mass — and the mass is the *current* scenario only.
+async def test_the_list_shows_the_four_columns_it_promises(admin_client, seeded):
+    """Time, stage, mass, consent — and the mass is the *current* scenario
+    only.
 
     1200.500 + 300.250 = 1500.750 per entry, across two entries = 3001.500. The
     alternative adds another 1500.750 per entry and must not appear in this
@@ -213,6 +214,9 @@ async def test_the_list_shows_the_three_columns_it_promises(admin_client, seeded
     body = response.text
     assert "Processing, Retail" in body, "the sector summary is not rendering"
     assert "3,001.500 kg" in body, "the recorded mass is wrong or absent"
+    assert "Contributed to public statistics" in body, (
+        "the v1.48 consent column is not on the list page"
+    )
     assert "4,502.250" not in body, "the alternative scenario is being counted too"
 
 
@@ -561,6 +565,29 @@ async def test_the_stage_filter_narrows_to_that_stage(admin_client, seeded):
     assert "3,001.500 kg" not in hidden.text, "a non-matching submission was returned"
 
 
+@pytest.mark.asyncio
+async def test_the_contributed_filter_narrows_on_the_visitors_own_flag(
+    admin_client, seeded
+):
+    """Both directions, on the visitor's own opt-in rather than on staff
+    exclusion. `seeded`'s row is built with no consent (v1.48's default is
+    `False`), so it belongs in `contributed=false` and not in
+    `contributed=true` -- the opposite of `excluded`'s own default, which is
+    why this needs its own test rather than reusing that one's row.
+    """
+    not_offered = await admin_client.get("/admin/submissions/list?contributed=false")
+    assert not_offered.status_code == 200
+    assert "3,001.500 kg" in not_offered.text, (
+        "a submission that never opted in was filtered out of contributed=false"
+    )
+
+    offered = await admin_client.get("/admin/submissions/list?contributed=true")
+    assert offered.status_code == 200
+    assert "3,001.500 kg" not in offered.text, (
+        "a submission that never opted in was returned for contributed=true"
+    )
+
+
 @pytest.fixture
 def two_entries_one_stage(admin_app, seeded):
     """A submission with two entries at the SAME stage, which is what
@@ -862,7 +889,7 @@ async def test_every_control_is_in_one_bar_above_the_table(admin_client, seeded)
     body = response.text
 
     form = _filter_form(body)
-    for name in ("window", "stage", "mass", "excluded", "horizon", "from", "to"):
+    for name in ("window", "stage", "mass", "excluded", "contributed", "horizon", "from", "to"):
         assert f'name="{name}"' in form, f"the {name} control is not in the bar"
 
     #: The ELEMENT, not the string. `.filter-sidebar-col` is a rule in

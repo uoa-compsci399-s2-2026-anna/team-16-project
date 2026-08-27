@@ -249,7 +249,7 @@ class FakeEngineAdapter:
             }
             if has_alternative
             else None,
-            money=_money(request.entries),
+            money=_money(request.entries, bundle),
         )
         return SimpleNamespace(
             factor_set_version=bundle.data["version_label"],
@@ -271,18 +271,37 @@ def _net_benefit(current, alternative):
     return {"co2e": mass - other}
 
 
-def _money(entries):
-    """A stand-in for `engine.calculate._money` (§4.5), narrow enough for the
-    API tests that exercise it -- none of which combine an alternative
-    scenario with a money figure, so `"prevention"` as a literal is a
-    simplification safe *here* rather than the pattern the real engine
-    follows; `engine.bundle.FactorBundle.is_prevention_destination` is what
-    production code reads instead, from an explicit flag.
+def _money(entries, bundle):
+    """A stand-in for engine.calculate._money (§4.5), kept in step with it
+    on purpose: fix round 2 found that a fake computing a plausible but
+    different number is invisible to every shape-only test in this suite,
+    so this mirrors the real per-entry rate, the real exclusion of
+    prevention from both sides of diverted_kg, and the real quantisation of
+    the two passthrough sums, rather than a simplified stand-in.
+
+    Reads prevention from `bundle.data["destinations"][*]["is_prevention"]`
+    -- the real flag `build_bundle_data` now selects (fix round 1) -- rather
+    than a literal `"prevention"` string, since a request POSTed through
+    this fake goes through the same projection a live request does.
     """
+    prevention_codes = {
+        row["code"]
+        for row in bundle.data.get("destinations", [])
+        if row.get("is_prevention")
+    }
+
+    def is_prevention(code):
+        return code in prevention_codes
+
     total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
     wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
     if total_value_nzd is None and wasted_value_nzd is None:
         return None
+
+    if total_value_nzd is not None:
+        total_value_nzd = total_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if wasted_value_nzd is not None:
+        wasted_value_nzd = wasted_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     wasted_share_percent = None
     if (
@@ -296,26 +315,40 @@ def _money(entries):
 
     saving_nzd = None
     has_alternative = any(entry.alternative is not None for entry in entries)
-    current_total_kg = sum(
-        (line.qty_kg for entry in entries for line in entry.current), Decimal("0")
-    )
-    if wasted_value_nzd is not None and has_alternative and current_total_kg != 0:
-        value_per_kg = wasted_value_nzd / current_total_kg
-        alternative_non_prevention_kg = sum(
-            (
-                line.qty_kg
-                for entry in entries
-                for line in (
-                    entry.alternative if entry.alternative is not None else entry.current
-                )
-                if line.destination_code != "prevention"
-            ),
-            Decimal("0"),
-        )
-        diverted_kg = current_total_kg - alternative_non_prevention_kg
-        saving_nzd = (value_per_kg * diverted_kg).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+    if has_alternative:
+        saving_total = Decimal("0")
+        any_entry_priced = False
+        for entry in entries:
+            if entry.wasted_value_nzd is None:
+                continue
+            entry_current_kg = sum((line.qty_kg for line in entry.current), Decimal("0"))
+            if entry_current_kg == 0:
+                continue
+            value_per_kg = entry.wasted_value_nzd / entry_current_kg
+            alternative_lines = (
+                entry.alternative if entry.alternative is not None else entry.current
+            )
+            current_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in entry.current
+                    if not is_prevention(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            alternative_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in alternative_lines
+                    if not is_prevention(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            diverted_kg = current_non_prevention_kg - alternative_non_prevention_kg
+            saving_total += value_per_kg * diverted_kg
+            any_entry_priced = True
+        if any_entry_priced:
+            saving_nzd = saving_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
     return SimpleNamespace(
         total_value_nzd=total_value_nzd,

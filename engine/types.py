@@ -111,6 +111,21 @@ class ScenarioResult:
     total_kg: Decimal
     metrics: dict[str, MetricResult]  # key = metric_code
     equivalences: tuple[EquivalenceResult, ...]
+    #: v1.48, amending §3 rule 2. The cross-entry destination breakdown, and
+    #: it carries only what can be added.
+    #:
+    #: `qty_kg` and `value` are additive: a mass is a mass, and `value` is
+    #: this line's contribution to a metric total that the engine itself
+    #: computes by summing. `upstream` and `downstream` are per-kilogram
+    #: RATES drawn from factors that differ between entries, so they are left
+    #: at zero - the original rule stands for them, and a mean of two factors
+    #: would be a number derived from nothing.
+    #:
+    #: Keyed by destination and by nothing else. A consumer wanting the
+    #: (destination, sector, food category) tree the results page draws
+    #: builds it from `entries[]`, each of which carries its own
+    #: `sector_code`, `food_category_code` and per-metric breakdown.
+    by_destination: tuple[BreakdownRow, ...]
 
 
 @dataclass(frozen=True)

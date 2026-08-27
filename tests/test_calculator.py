@@ -879,3 +879,165 @@ def test_the_engine_is_a_pure_function(bundle):
         entries=(dairy_entry((line("landfill", "1000.000"),), (line("compost", "1000.000"),)),)
     )
     assert calculate(request, bundle) == calculate(request, bundle)
+
+
+# --------------------------------------------- the cross-entry roll-up
+
+
+def _bundle_with_two_sectors_sharing_a_destination() -> FactorBundle:
+    """A single-metric bundle, built the same way `one_metric_bundle` is: the
+    only metric is `co2e`, so a test reading `metrics["co2e"].total` is
+    reading the one number the roll-up could plausibly be confused with.
+
+    `farm` and `retail` draw genuinely different upstream factors for
+    `standard_mix` -- 2.0 against 5.0 per kg. That is deliberate: two equal
+    factors, or a 0/1 pair, would let a wrong roll-up (summing or averaging
+    the *rate* instead of leaving it at zero) land on a number that happens
+    to look right. `downstream` at `landfill` is the same for both sectors,
+    so a defect that mixed the two rates together is visible in `upstream`
+    alone rather than smeared across both.
+    """
+    document = {
+        "version_label": "TEST-v0-shared-destination",
+        "is_mock": True,
+        "sectors": [{"code": "farm"}, {"code": "retail"}],
+        "food_categories": [{"code": "standard_mix", "is_standard_mix": True}],
+        "destination_groups": [{"code": "disposal"}],
+        "destinations": [{"code": "landfill", "group": "disposal"}],
+        "metrics": [
+            {"code": "co2e", "unit": "kg CO2e", "display_precision": 1, "sort_order": 10}
+        ],
+        "constants": [],
+        "formulas": [
+            {"metric": "co2e", "expression": "qty_kg * (upstream + downstream)"}
+        ],
+        "upstream": [
+            {
+                "sector": "farm",
+                "food_category": "standard_mix",
+                "destination": None,
+                "metric": "co2e",
+                "value_per_kg": "2.0000000000",
+            },
+            {
+                "sector": "retail",
+                "food_category": "standard_mix",
+                "destination": None,
+                "metric": "co2e",
+                "value_per_kg": "5.0000000000",
+            },
+        ],
+        "downstream": [
+            {
+                "destination": "landfill",
+                "sector": None,
+                "food_category": None,
+                "metric": "co2e",
+                "value_per_kg": "0.5000000000",
+            }
+        ],
+        "equivalences": [],
+    }
+    loaded = FactorBundle.from_json(document)
+    assert loaded.validate() == []
+    return loaded
+
+
+def test_the_totals_carry_a_destination_breakdown_across_entries():
+    """**§3 rule 2 said this could not be done, and it was half right.**
+
+    The engine's own comment: "the same destination can appear under several
+    entries drawing different upstream factors, so a cross-entry destination
+    breakdown has no single correct aggregation rule." That is true of
+    `upstream` and `downstream`, which are per-KILOGRAM rates - averaging two
+    different factors is meaningless.
+
+    It is not true of the other two. `qty_kg` is a mass, and `value` is
+    defined as "this line's contribution to the metric total" - and the
+    metric total is itself `running + metric.total` summed across entries.
+    Summing contributions per destination therefore produces an exact
+    partition of a number the engine already computes by summing.
+
+    So the roll-up carries the two additive fields and leaves the two rates
+    at zero, and v1.48 rewrites the rule to say which is which.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("100.000")),),
+                   alternative=None),
+        EntryInput(sector_code="retail", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("300.000")),),
+                   alternative=None),
+    ))
+
+    result = calculate(request, bundle)
+
+    rows = result.totals.current.by_destination
+    landfill = next(row for row in rows if row.destination_code == "landfill")
+
+    #: The mass is the plain sum.
+    assert landfill.qty_kg == Decimal("400.000")
+
+    #: And the value is a partition of the metric total, exactly - which is
+    #: the assertion that makes this a roll-up rather than a second, parallel
+    #: computation that could drift from it.
+    co2e_total = result.totals.current.metrics["co2e"].total
+    assert sum(
+        (row.value for row in rows), Decimal("0")
+    ) == co2e_total
+
+
+def test_the_rolled_up_rows_do_not_claim_a_per_kilogram_rate():
+    """The half of §3 rule 2 that still stands.
+
+    `upstream` and `downstream` are rates per kilogram. The two entries above
+    draw different upstream factors for the same destination, so there is no
+    figure to report - and reporting either one, or their mean, would be a
+    number that looks authoritative and is not derived from anything.
+
+    Zero, and the contract says why. A consumer that renders these is
+    rendering the wrong thing, which is what the v1.48 note warns about.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("100.000")),),
+                   alternative=None),
+        EntryInput(sector_code="retail", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("300.000")),),
+                   alternative=None),
+    ))
+
+    result = calculate(request, bundle)
+    row = next(r for r in result.totals.current.by_destination
+               if r.destination_code == "landfill")
+
+    assert row.upstream == Decimal("0")
+    assert row.downstream == Decimal("0")
+
+
+def test_a_single_entry_rolls_up_to_the_same_rows_it_already_had():
+    """The affirmative half. With one entry there is nothing to combine, so
+    the roll-up must reproduce that entry's own breakdown - masses and values
+    both. A roll-up that returned an empty tuple would satisfy the sum
+    assertion above whenever the total happened to be zero."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("100.000")),),
+                   alternative=None),
+    ))
+
+    result = calculate(request, bundle)
+    entry_rows = result.entries[0].current.metrics["co2e"].by_destination
+    total_rows = result.totals.current.by_destination
+
+    assert {r.destination_code for r in total_rows} == {
+        r.destination_code for r in entry_rows}
+    assert sum((r.qty_kg for r in total_rows), Decimal("0")) == Decimal("100.000")

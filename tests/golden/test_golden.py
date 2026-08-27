@@ -182,22 +182,26 @@ def _decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
+def _breakdown_rows(rows) -> list[dict]:
+    return [
+        {
+            "destination_code": row.destination_code,
+            "qty_kg": _decimal(row.qty_kg),
+            "upstream": _decimal(row.upstream),
+            "downstream": _decimal(row.downstream),
+            "value": _decimal(row.value),
+        }
+        for row in rows
+    ]
+
+
 def _metric(metric) -> dict:
     return {
         "metric_code": metric.metric_code,
         "unit": metric.unit,
         "display_precision": metric.display_precision,
         "total": _decimal(metric.total),
-        "by_destination": [
-            {
-                "destination_code": row.destination_code,
-                "qty_kg": _decimal(row.qty_kg),
-                "upstream": _decimal(row.upstream),
-                "downstream": _decimal(row.downstream),
-                "value": _decimal(row.value),
-            }
-            for row in metric.by_destination
-        ],
+        "by_destination": _breakdown_rows(metric.by_destination),
     }
 
 
@@ -207,6 +211,10 @@ def _scenario(scenario) -> dict | None:
     return {
         "total_kg": _decimal(scenario.total_kg),
         "metrics": {code: _metric(metric) for code, metric in scenario.metrics.items()},
+        #: v1.48. Empty at the entry level (one entry has nothing to roll up
+        #: across); populated at the totals level with the cross-entry
+        #: partition of `qty_kg` and `value`, rates left at zero.
+        "by_destination": _breakdown_rows(scenario.by_destination),
         "equivalences": [
             {
                 "code": equivalence.code,

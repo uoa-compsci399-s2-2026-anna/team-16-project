@@ -188,6 +188,17 @@ class DryRunPayload(BaseModel):
         return self
 
 
+#: §6.2, v1.48. A closed vocabulary for the same reason `gwp_horizon` is
+#: closed to 20 and 100: the results page renders a phrase per value, and a
+#: value it has no phrase for reaches a visitor as a raw identifier.
+#:
+#: These are periods somebody picks from a list, not a date range. The client
+#: ruled that nothing computes with the period - it is carried to the results
+#: page and into the download and no figure is scaled by it - and a pair of
+#: dates would invite exactly that arithmetic.
+TIME_FRAMES = frozenset({"one_week", "one_month", "one_quarter", "one_year"})
+
+
 class EntryPayload(BaseModel):
     """One `(sector, food_category)` pair and both of its scenarios (§6.2).
 
@@ -199,6 +210,21 @@ class EntryPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
     sector: str = Field(min_length=1, max_length=64)
     food_category: str | None = Field(default=None, min_length=1, max_length=64)
+    #: v1.48. Optional, and `None` is not zero: zero claims this stage put
+    #: nothing through, which would make the waste share infinite rather than
+    #: absent. Three decimal places to match `qty_kg` - a production total is
+    #: compared against a waste mass and two scales for one comparison is how
+    #: a thousandfold error gets in.
+    total_input_kg: Decimal | None = Field(default=None, ge=0, decimal_places=3,
+                                           max_digits=16)
+    #: v1.48, statistics only. The client's ruling on O-2: the value of the
+    #: food does not enter the main formula, and cost versus retail is the
+    #: client's own client's question. Neither is a `metric`, and neither
+    #: reaches a formula.
+    total_value_nzd: Decimal | None = Field(default=None, ge=0, decimal_places=2,
+                                            max_digits=14)
+    wasted_value_nzd: Decimal | None = Field(default=None, ge=0, decimal_places=2,
+                                             max_digits=14)
     current: CurrentScenarioPayload = Field(min_length=1)
     alternative: AlternativeScenarioPayload | None = None
 
@@ -213,6 +239,7 @@ class CalculatePayload(BaseModel):
     #: and `upsert_submission` already treats a lookup miss as absent.
     token: str | None = None
     gwp_horizon: int = 100
+    time_frame: str | None = None
     entries: list[EntryPayload] = Field(min_length=1, max_length=MAX_ENTRIES)
     dry_run: DryRunPayload | None = None
 
@@ -221,6 +248,13 @@ class CalculatePayload(BaseModel):
     def validate_horizon(cls, value: int) -> int:
         if value not in (20, 100):
             raise ValueError("must be 20 or 100")
+        return value
+
+    @field_validator("time_frame")
+    @classmethod
+    def validate_time_frame(cls, value: str | None) -> str | None:
+        if value is not None and value not in TIME_FRAMES:
+            raise ValueError(f"must be one of {sorted(TIME_FRAMES)}")
         return value
 
 

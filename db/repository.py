@@ -6,7 +6,7 @@ import copy
 import enum
 import threading
 import uuid
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from dataclasses import replace
 from datetime import date, datetime, timedelta, timezone
 from decimal import Decimal
@@ -983,7 +983,13 @@ def _resolve_id(session: Session, model: Any, code: str) -> int:
 
 
 def upsert_submission(
-    session: Session, token: str | None, req: Any, factor_set_id: int
+    session: Session,
+    token: str | None,
+    req: Any,
+    factor_set_id: int,
+    *,
+    time_frame: str | None = None,
+    entry_payloads: Sequence[Any] | None = None,
 ) -> tuple[int, str]:
     """Contract §5.3. One call, one submission, N entries.
 
@@ -993,6 +999,20 @@ def upsert_submission(
     `req.current`: `ScenarioInput` was deleted in v1.2 precisely because an
     integration that keeps reading `req.current.sector_code` persists one row
     for a five-entry calculation and nothing raises.
+
+    `time_frame` and `entry_payloads` are v1.48's addition and are kept off
+    `req` deliberately: `req` is `§3`'s `CalculationRequest`, which the engine
+    also consumes, and the period and the two money figures are not engine
+    inputs (a later task teaches `EntryInput` the three per-entry numbers, but
+    never `time_frame` -- the engine must never be handed a value it is
+    required not to use). `entry_payloads`, when given, is the wire request's
+    own `entries` in the same order as `req.entries` -- the caller's
+    `EntryPayload` objects, read here only for `total_input_kg`,
+    `total_value_nzd` and `wasted_value_nzd`. Both default to `None` so every
+    existing caller that builds `req` by hand keeps working unchanged.
+
+    Does **not** set `is_public_contributed`: it defaults false at the schema
+    and only the opt-in route Task 6 owns may change it.
     """
     now = utcnow()
     submission = None
@@ -1014,6 +1034,7 @@ def upsert_submission(
             updated_at=now,
             factor_set_id=factor_set_id,
             gwp_horizon=req.gwp_horizon,
+            time_frame=time_frame,
         )
         session.add(submission)
         session.flush()
@@ -1021,6 +1042,9 @@ def upsert_submission(
         submission.updated_at = now
         submission.factor_set_id = factor_set_id
         submission.gwp_horizon = req.gwp_horizon
+        # Written on the update path too: a second calculation reusing the
+        # same token would otherwise keep the first one's period forever.
+        submission.time_frame = time_frame
         # §5.3: the entry set is rebuilt, not patched -- the entries carry no
         # client-supplied identity to reconcile a removed one against an added
         # one. Cleared through the ORM relationship rather than by a bulk
@@ -1041,6 +1065,15 @@ def upsert_submission(
         food_category_id = (
             _resolve_id(session, FoodCategory, entry.food_category_code)
             if entry.food_category_code
+            else None
+        )
+        # `entry_payloads` is the wire request's own `entries`, in the same
+        # order as `req.entries` -- both are built from the one payload in
+        # request order (§2.3), so pairing by position is exact. `req` itself
+        # does not carry these three numbers yet: they are not engine inputs.
+        entry_payload = (
+            entry_payloads[sort_order]
+            if entry_payloads is not None and sort_order < len(entry_payloads)
             else None
         )
         lines = [
@@ -1068,6 +1101,19 @@ def upsert_submission(
                 #: the rows on the user's screen; id order cannot be relied on
                 #: because the rebuild above reassigns ids.
                 sort_order=sort_order,
+                #: v1.48. `None` is not zero (see `EntryPayload`): a caller
+                #: that supplies no `entry_payloads` -- the existing
+                #: hand-built `req` callers -- gets `None` for all three,
+                #: which is the same "not stated" the schema already means.
+                total_input_kg=(
+                    entry_payload.total_input_kg if entry_payload is not None else None
+                ),
+                total_value_nzd=(
+                    entry_payload.total_value_nzd if entry_payload is not None else None
+                ),
+                wasted_value_nzd=(
+                    entry_payload.wasted_value_nzd if entry_payload is not None else None
+                ),
                 lines=lines,
             )
         )

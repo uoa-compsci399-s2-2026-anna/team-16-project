@@ -839,3 +839,132 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     # a public statistic, because it is by construction waste that did not
     # happen (§5.4).
     assert "prevention" not in {b["code"] for b in body["by_destination"]}
+
+
+@pytest.mark.asyncio
+async def test_the_new_context_fields_are_accepted_and_stored(app):
+    """v1.48's four fields, end to end: sent, validated, persisted.
+
+    Driven through the real endpoint rather than by constructing a payload,
+    because the question is whether `extra="forbid"` lets them through and
+    whether `upsert_submission` writes them - two places a field can be
+    accepted and then quietly dropped.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "time_frame": "one_month",
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "total_input_kg": "50000.000",
+                "total_value_nzd": "120000.00",
+                "wasted_value_nzd": "4500.00",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(
+            select(Submission).order_by(Submission.id.desc())
+        ).first()
+        assert row.time_frame == "one_month"
+        #: The default, not something the request set - v1.48 gives the
+        #: visitor a separate action for this and `POST /calculate` never
+        #: opts anybody in.
+        assert row.is_public_contributed is False
+        entry = row.entries[0]
+        assert entry.total_input_kg == Decimal("50000.000")
+        assert entry.total_value_nzd == Decimal("120000.00")
+        assert entry.wasted_value_nzd == Decimal("4500.00")
+
+
+@pytest.mark.asyncio
+async def test_the_new_fields_are_optional_and_absent_is_not_zero(app):
+    """A visitor who does not know their production total is the common case,
+    and `None` has to survive as `None`.
+
+    Zero would be a different claim - "this stage put nothing through" - and
+    it would make the waste share infinite rather than absent.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+    with app.state.session_factory() as session:
+        row = session.scalars(
+            select(Submission).order_by(Submission.id.desc())
+        ).first()
+        assert row.time_frame is None
+        entry = row.entries[0]
+        assert entry.total_input_kg is None
+        assert entry.total_value_nzd is None
+        assert entry.wasted_value_nzd is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_time_frame_is_refused(app):
+    """§6.2 fixes the vocabulary, for the reason `gwp_horizon` is fixed to
+    20 and 100: a label the results page cannot render is a label that reaches
+    a visitor as a raw string."""
+    body = {
+        "gwp_horizon": 100,
+        "time_frame": "since_the_dawn_of_time",
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_a_negative_money_figure_is_refused(app):
+    """The same guard `qty_kg` has. A negative wasted value would flow into
+    the share in Task 5 and produce a negative percentage on the results
+    page."""
+    body = {
+        "gwp_horizon": 100,
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "wasted_value_nzd": "-1.00",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 400

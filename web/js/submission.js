@@ -26,7 +26,7 @@
  * `units.js`'s, called rather than re-typed.
  */
 
-import { kgString, rowKgString } from './units.js'
+import { exactKgString, rowKgString } from './units.js'
 
 /**
  * The `current` scenario's lines, as §6.2 wants them.
@@ -55,9 +55,15 @@ export function requestLines(entry, presets) {
  * `''` is "not answered" and has to reach the API as `null`, never as `"0.000"` — a zero
  * is the claim that production was actually nil (§6.2: absent is stored as NULL and never
  * as zero).
+ *
+ * **`exactKgString`, not `kgString`, and that is the same ruling the money fields carry.**
+ * `kgString` ends in `.toFixed(3)`, so a typed `1.2345` was sent as `"1.234"` — exactly the
+ * silent rewrite `optionalMoneyString` below refuses to perform, applied by the same
+ * request body to the field next door. The three-decimal ceiling §6.2 states is enforced
+ * where the money ceiling is: at the keystroke, in `calculator.js`.
  */
 export const optionalKgString = (value, unit) =>
-  (value === '' || value === null || value === undefined ? null : kgString(value, unit))
+  (value === '' || value === null || value === undefined ? null : exactKgString(value, unit))
 
 /**
  * A New Zealand dollar figure the visitor may have left alone.

@@ -805,21 +805,26 @@ def test_step_three_asks_for_the_two_money_figures(page_at):
         )
 
 
-def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at):
+@pytest.mark.parametrize("field_id", ["total-input", "total-value", "wasted-value"])
+def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at, field_id):
     """The same guard `#total-waste` and `#unit-count` already have.
 
     A negative value would reach stage one's `ge=0` and come back a 400 for
     the whole submission, after the visitor had left the screen the figure was
     on. The minus is refused at `beforeinput`, which is where the other two
     refuse it.
+
+    All three of step 3's optional figures, for the reason the decimal test
+    above gives: the guard names them one by one, so a test that asks about one
+    of them says nothing about the others.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    field = page.locator("#wasted-value")
+    field = page.locator(f"#{field_id}")
 
     field.press_sequentially("-500")
 
     assert field.input_value() == "500", (
-        f"a minus reached the money field: {field.input_value()!r}"
+        f"a minus reached #{field_id}: {field.input_value()!r}"
     )
 
 
@@ -899,7 +904,16 @@ def test_the_four_new_values_reach_the_request_body(page_at):
     #: `advance_to`, to fill each set of fields on the screen that actually carries it.
     for arrived in walk(page):
         if arrived == 2:
-            page.fill("#total-input", "50000")
+            #: **Tonnes, and that is the whole point of this line.** Filled while the
+            #: entry unit was kilograms, the conversion on `total_input_kg` is the
+            #: identity - so deleting it outright left this test green while claiming in
+            #: its own comment to assert the conversion happened. 50 tonnes is 50,000 kg
+            #: and no other reading of the field produces that number. The unit is
+            #: selected before the field is filled because changing it clears the field.
+            page.select_option("#total-unit", "tonnes")
+            page.wait_for_timeout(80)
+            page.fill("#total-waste", "1")
+            page.fill("#total-input", "50")
             page.fill("#total-value", "120000")
             page.fill("#wasted-value", "4500")
         elif arrived == 4:
@@ -911,11 +925,14 @@ def test_the_four_new_values_reach_the_request_body(page_at):
     assert sent, "no request was made"
     assert sent["time_frame"] == "one_month"
     entry = sent["entries"][0]
-    #: `total_input_kg` is a mass, so it still goes through `kgString`'s
-    #: unit conversion and lands at the contract's three decimal places.
-    #: §1.2: decimals travel as strings because JavaScript's Number is a
-    #: double.
-    assert entry["total_input_kg"] == "50000.000"
+    #: 50 tonnes is 50,000 kg. §1.2: decimals travel as strings because
+    #: JavaScript's Number is a double.
+    #:
+    #: **Exactly `"50000"`, with no invented decimal places.** The send path
+    #: ended in `.toFixed(3)`, which also *rounded* - a typed `1.2345` became
+    #: `"1.234"`, the very rewrite the round-one fix refused to perform on the
+    #: money fields two lines below. The two families now apply one rule.
+    assert entry["total_input_kg"] == "50000"
     #: The two money fields are **not** reformatted - Fix round 1 found
     #: `Number(value).toFixed(2)` silently padding (and, for a third typed
     #: decimal, rounding) a figure nobody asked to have rewritten. "120000"
@@ -959,7 +976,8 @@ def test_an_untouched_field_is_sent_as_null_rather_than_zero(page_at):
     CalculatePayload.model_validate(sent)
 
 
-def test_a_third_decimal_in_a_money_field_is_refused_as_it_is_typed(page_at):
+@pytest.mark.parametrize("field_id", ["total-value", "wasted-value"])
+def test_a_third_decimal_in_a_money_field_is_refused_as_it_is_typed(page_at, field_id):
     """The same keystroke-level refusal `#wasted-value` already gives a
     minus sign, aimed at the decimal point instead of the sign.
 
@@ -971,12 +989,86 @@ def test_a_third_decimal_in_a_money_field_is_refused_as_it_is_typed(page_at):
     the way the minus already is - and then whatever is left must reach the
     wire completely unrounded, which `test_the_four_new_values_reach_the_
     request_body` is what checks.
+
+    **Both money fields, because one was not enough.** Measured only against
+    `#wasted-value`, a mutation narrowing the guard to that single id survived
+    the whole file - and there is nothing about the guard that makes the two
+    fields move together except a test that asks them both.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
-    field = page.locator("#wasted-value")
+    field = page.locator(f"#{field_id}")
 
     field.press_sequentially("12.345")
 
     assert field.input_value() == "12.34", (
-        f"a third decimal place reached the money field: {field.input_value()!r}"
+        f"a third decimal place reached #{field_id}: {field.input_value()!r}"
     )
+
+
+def test_a_fourth_decimal_in_the_production_total_is_refused_as_it_is_typed(page_at):
+    """`total_input_kg` is `DECIMAL(16,3)` (§6.2), so its ceiling is three rather
+    than the money fields' two - and until now it had no ceiling at all while its
+    send path silently rounded, which is the two families applying opposite rules
+    to the same mistake.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator("#total-input")
+
+    field.press_sequentially("1.2345")
+
+    assert field.input_value() == "1.234", (
+        f"a fourth decimal place reached the production total: {field.input_value()!r}"
+    )
+    #: And three are still typeable. A guard that refused the third as well would
+    #: pass the assertion above while quietly imposing the money ceiling here.
+    assert len(field.input_value().split(".")[1]) == 3
+
+
+def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
+    """What the visitor typed is what is sent, in kilograms and in tonnes alike.
+
+    `page.fill` hands the whole string over in one `beforeinput`, which the
+    keystroke guard above deliberately does not count against the ceiling (see
+    the note beside it: counting every digit of a six-digit fill refused an
+    ordinary whole-number entry). That makes `fill` the way to ask what the send
+    path does with a figure the guard never saw - and the answer used to be
+    `.toFixed(3)`, which rounded `1.2345` to `1.234`.
+
+    **`CalculatePayload.model_validate` is deliberately not run on the kilogram
+    body.** `1.2345` kg is four decimal places, so §6.2 refuses it - and that is
+    the honest outcome the round-one money fix chose over rewriting the figure:
+    the ceiling is enforced at the keystroke, and anything that gets past it goes
+    to the server as written rather than being quietly made acceptable. The
+    tonnes body is valid and is checked.
+    """
+
+    def sent_body(unit, typed):
+        page = page_at(1278, 983, 1.25)
+        body = {}
+        page.route(
+            "**/api/v1/calculate",
+            lambda route: (body.update(route.request.post_data_json), route.abort()),
+        )
+        for arrived in walk(page):
+            if arrived == 2:
+                page.select_option("#total-unit", unit)
+                page.wait_for_timeout(80)
+                page.fill("#total-waste", "1000" if unit == "kilograms" else "1")
+                page.fill("#total-input", typed)
+            elif arrived == 4:
+                page.click('.step-nav [data-action="calculate"]')
+                page.wait_for_timeout(400)
+                break
+        assert body, "no request was made"
+        return body
+
+    kilograms = sent_body("kilograms", "1.2345")
+    assert kilograms["entries"][0]["total_input_kg"] == "1.2345", (
+        "the production total was rounded on its way to the wire"
+    )
+
+    tonnes = sent_body("tonnes", "1.2345")
+    #: 1.2345 t is 1234.5 kg exactly - the conversion gains three decimal places,
+    #: so nothing is rounded here either, and the result is inside §6.2's three.
+    assert tonnes["entries"][0]["total_input_kg"] == "1234.5"
+    CalculatePayload.model_validate(tonnes)

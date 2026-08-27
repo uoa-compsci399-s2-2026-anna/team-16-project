@@ -940,12 +940,19 @@ export function bindCalculator(main, retryTaxonomy) {
    */
   main.addEventListener('beforeinput', event => {
     const target = event.target
-    // The two money fields keep two decimal places by refusing the keystroke that
-    // would create a third, the same shape as the minus-refusal below rather than
-    // `Number(...).toFixed(2)` rounding whatever arrived after the fact — the
-    // difference between a character the visitor cannot type and a figure the
-    // visitor typed being silently rewritten. `total-input` (`total_input_kg`) is
-    // three decimal places by contract (§6.2) and is not guarded here.
+    // The three optional figures keep their decimal places by refusing the
+    // keystroke that would create one too many, the same shape as the
+    // minus-refusal below rather than `Number(...).toFixed(n)` rounding whatever
+    // arrived after the fact — the difference between a character the visitor
+    // cannot type and a figure the visitor typed being silently rewritten.
+    //
+    // **The ceiling differs by field and comes from §6.2's own columns**: the two
+    // money figures are `DECIMAL(14,2)` and `total_input_kg` is `DECIMAL(16,3)`.
+    // `#total-input` was left unguarded while its send path still rounded, so the
+    // branch applied opposite rules to the two field families — a typed `12.345`
+    // in a money box was refused at the keystroke and a typed `1.2345` here was
+    // silently sent as `1.234`. Both are now refused as they are typed, and
+    // neither is rewritten afterwards.
     //
     // **`event.data.length === 1` is what keeps this a keystroke guard rather
     // than a bulk-entry one.** A single character is what a real keypress hands
@@ -957,11 +964,12 @@ export function bindCalculator(main, retryTaxonomy) {
     // throws on `type="number"` — so a single new digit is refused once the
     // field already shows two decimal digits, wherever it lands: the same
     // narrow trade the minus guard below documents, on the same missing signal.
+    const decimalCeiling = { 'total-value': 2, 'wasted-value': 2, 'total-input': 3 }[target.id]
     if (
-      (target.id === 'total-value' || target.id === 'wasted-value') &&
+      decimalCeiling !== undefined &&
       event.data?.length === 1 &&
       /\d/.test(event.data) &&
-      (target.value.split('.')[1] || '').length >= 2
+      (target.value.split('.')[1] || '').length >= decimalCeiling
     ) {
       event.preventDefault()
       return

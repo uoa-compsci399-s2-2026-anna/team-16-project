@@ -86,22 +86,18 @@ const sectorName = (entry, response, taxonomy) => {
   return findByCode(taxonomy.sectors, code)?.name || code
 }
 
-// §6.2 labels each per-entry destination section with that entry's sector and food category.
-function entryLabel(entry, response, taxonomy) {
-  const foodCode = response.food_category ?? entry.foodCategory
-  const name = sectorName(entry, response, taxonomy)
-  if (!foodCode) return name
-  return `${name} · ${findByCode(taxonomy.food_categories, foodCode)?.name || foodCode}`
-}
-
-// One row per destination of one entry, every figure read from that entry's own result:
-// `qty_kg` and each metric's `value` come from `by_destination`, which §6.2 populates per
-// entry and leaves empty at the totals level.
+// One row per destination of one scenario, every figure read from that scenario's own
+// result: `qty_kg` and each metric's `value` come from `by_destination`. Called both on
+// one entry's `current` (§6.2 populates it per entry) and on `totals.current` (populated
+// per metric since v1.48, §3 rule 2) — the two calls read the same shape, one entry-scale
+// and one rolled up across every entry, and `code` is kept on the row so a caller can match
+// one scenario's row to the other's by destination rather than by re-reading `label`.
 function destinationRows(scenario, taxonomy) {
   const rows = new Map()
   for (const [code, metric] of Object.entries(scenario.metrics || {})) {
     for (const line of metric.by_destination || []) {
       const row = rows.get(line.destination) || {
+        code: line.destination,
         label: findByCode(taxonomy.destinations, line.destination)?.name || line.destination,
         kilograms: number(line.qty_kg),
         metrics: {},
@@ -113,10 +109,46 @@ function destinationRows(scenario, taxonomy) {
   return [...rows.values()]
 }
 
-function breakdowns(entryResults, taxonomy) {
+// The food leaf under a destination-first stage: the entry's own food category, or the
+// same "unspecified" wording `calculator.js`'s review step already uses for a standard-mix
+// entry — not a new string, so the destination tab does not invent a second way to say it.
+function stageFoodLabel(entry, response, taxonomy) {
+  const foodCode = response.food_category ?? entry.foodCategory
+  const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
+  if (!foodCode || foodDefinition?.is_standard_mix) return t('Standard mix / not specified')
+  return foodDefinition?.name || foodCode
+}
+
+// Destination first, then the entries that share it, then each entry's own food category —
+// the transpose the client asked for of the per-entry sections this replaced. The group
+// total is `totalsRow`, read whole from `totals.current.by_destination` (§7.6.1: nothing
+// here adds the entries' rows together); the per-entry rows nested under it are each
+// entry's own figures, computed once per entry and matched to a group by destination code.
+function destinationGroups(entryResults, totalsRows, taxonomy) {
+  const perEntry = entryResults.map(({ entry, response }) => ({
+    entry,
+    response,
+    rows: destinationRows(response.current || {}, taxonomy),
+  }))
+  return totalsRows
+    .map(totalsRow => {
+      const stages = perEntry.flatMap(({ entry, response, rows }) => {
+        const row = rows.find(candidate => candidate.code === totalsRow.code)
+        if (!row) return []
+        return [{
+          label: sectorName(entry, response, taxonomy),
+          foodLabel: stageFoodLabel(entry, response, taxonomy),
+          row,
+        }]
+      })
+      return { code: totalsRow.code, label: totalsRow.label, totalsRow, stages }
+    })
+    .filter(group => group.stages.length)
+}
+
+function breakdowns(entryResults, totals, taxonomy) {
   const stage = []
   const food = []
-  const destination = []
   for (const { entry, response } of entryResults) {
     const scenario = response.current || {}
     const metrics = metricCells(scenario)
@@ -125,12 +157,14 @@ function breakdowns(entryResults, taxonomy) {
     const foodCode = response.food_category ?? entry.foodCategory
     const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
     if (foodCode && !foodDefinition?.is_standard_mix) food.push({ label: foodDefinition?.name || foodCode, kilograms, metrics })
-    const rows = destinationRows(scenario, taxonomy)
-    if (rows.length) destination.push({ label: entryLabel(entry, response, taxonomy), rows })
   }
+  const totalsRows = destinationRows(totals.current || {}, taxonomy)
+  const groups = destinationGroups(entryResults, totalsRows, taxonomy)
   return {
     stage: { sections: [{ rows: stage }] },
-    destination: destination.length ? { sections: destination, note: t('Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.') } : { unavailable: t('Waste-destination breakdown is not available because no destination data was provided.') },
+    destination: groups.length
+      ? { groups, note: t("The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.") }
+      : { unavailable: t('Waste-destination breakdown is not available because no destination data was provided.') },
     food: food.length ? { sections: [{ rows: food }] } : { unavailable: t('Food-type breakdown is not available because no food category data was provided.') },
   }
 }
@@ -192,15 +226,49 @@ function breakdownTable(section, tabLabel, taxonomy, widest, columns) {
   return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">${escapeHtml(t('Category'))}</th><th scope="col">${escapeHtml(t('Waste amount'))}</th>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`
 }
 
+// One destination group's figures beside its heading or beside a stage: every metric but
+// `mass` (held out for the reason `metricLines` holds it out — it is the kilogram figure
+// printed next to it), read through the same `metricCell` the other two tabs use so a
+// negative `downstream` offset (§7.6.6) is marked here exactly as it is there.
+function destinationRowFigures(row, taxonomy) {
+  return Object.keys(row.metrics || {})
+    .filter(code => code !== MASS_METRIC)
+    .map(code => `<span>${escapeHtml(metricName(code, taxonomy))}: ${metricCell(row, code, taxonomy)}</span>`)
+    .join('')
+}
+
+// The destination-first tree: one `.destination-group` per destination, carrying the
+// engine's own rolled-up total (`data-destination` names the code so a caller — this
+// file's tests among them — can find one group without depending on render order); inside
+// it, one `.destination-group__stage` per entry that used that destination, each showing
+// that entry's own sector and figures; inside that, the one `.destination-group__food` its
+// food category is. Three levels for the three questions the client asked in that order:
+// which destination, which stage of the supply chain sent it there, what food it was.
+function destinationTree(groups, taxonomy) {
+  return groups.map(group => {
+    const stages = group.stages.map(stage => `<li class="destination-group__stage"><div class="destination-group__stage-row"><strong>${escapeHtml(stage.label)}</strong><span>${formatNumber(stage.row.kilograms, 3)} kg</span></div><div class="destination-group__stage-figures">${destinationRowFigures(stage.row, taxonomy)}</div><ul class="destination-group__foods"><li class="destination-group__food">${escapeHtml(stage.foodLabel)}</li></ul></li>`).join('')
+    return `<article class="destination-group" data-destination="${escapeHtml(group.code)}"><div class="destination-group__header"><h3 class="destination-group__name">${escapeHtml(group.label)}</h3><p class="destination-group__total">${formatNumber(group.totalsRow.kilograms, 3)} kg</p></div><div class="destination-group__figures">${destinationRowFigures(group.totalsRow, taxonomy)}</div><ol class="destination-group__stages">${stages}</ol></article>`
+  }).join('')
+}
+
 function breakdownSection(state, entryResults) {
-  const allBreakdowns = breakdowns(entryResults, state.taxonomy)
+  const totals = state.result?.totals || {}
+  const allBreakdowns = breakdowns(entryResults, totals, state.taxonomy)
   const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
   const current = allBreakdowns[active]
-  const scale = current.sections ? widestRow(current.sections.flatMap(section => section.rows)) : 0
-  const columns = current.sections ? metricColumns(current.sections) : []
-  const panel = current.unavailable
-    ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
-    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
+  let panel
+  if (current.unavailable) {
+    panel = `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
+  } else if (active === 'destination') {
+    // The tree, not `breakdownTable`: a destination's stages and foods are two more levels
+    // than that table's single row of columns has room for, and its bars and per-tab metric
+    // columns describe a flat list that this shape no longer is.
+    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${destinationTree(current.groups, state.taxonomy)}`
+  } else {
+    const scale = widestRow(current.sections.flatMap(section => section.rows))
+    const columns = metricColumns(current.sections)
+    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
+  }
   return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 

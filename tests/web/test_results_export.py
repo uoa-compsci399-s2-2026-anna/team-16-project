@@ -33,6 +33,7 @@ from the shape the API actually returns.
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -409,3 +410,280 @@ def test_the_download_no_longer_hard_codes_one_name():
     source = RESULTS_JS.read_text(encoding="utf-8")
     assert "'food-waste-impact-results.txt'" not in source
     assert re.search(r"^\s*link\.download = exportFilename\(\)$", source, re.M)
+
+
+# ------------------------------------------------- the destination-first pivot (browser)
+#
+# **Item ③.** `buildResultsReport`'s harness above proves the plain-text export;
+# `breakdowns()`'s new destination-first tree is markup and CSS, which only a real DOM
+# can prove was built at all and only a real viewport can prove reads as three levels
+# rather than the one section-per-entry list it replaced. So this half runs in a real
+# browser rather than under Node, the same way `test_step_navigation.py` and
+# `test_amount_limits_browser.py` do, and for the same reason.
+#
+# Requires the stack rebuilt after any change under `web/`:
+#     docker compose -f docker/compose.yaml up -d --build web
+
+#: The origin, not a page - `/index.html` is named explicitly so this measures the
+#: calculator whatever the `index` directive does next, the same reasoning
+#: `test_step_navigation.py` gives for its own `BASE`.
+CALCULATOR_URL = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+
+FORCE_AUTO_SCROLL = "html { scroll-behavior: auto !important; }"
+
+
+@pytest.fixture(scope="module")
+def browser():
+    playwright_api = pytest.importorskip(
+        "playwright.sync_api",
+        reason="playwright is required to render the destination-first tree; it is unverified without it",
+    )
+    with playwright_api.sync_playwright() as p:
+        instance = p.chromium.launch()
+        yield instance
+        instance.close()
+
+
+@pytest.fixture
+def page_at(browser):
+    """A page with the calculate POST fulfilled from a given contract-shaped response.
+
+    Mirrors `test_step_navigation.py`'s fixture of the same name: `/api/v1/calculate`
+    carrying `X-Dry-Run` is staff-only and answers 401, so the results view is reached
+    by fulfilling the POST in-browser rather than by driving the real API. Unlike that
+    fixture, the body is a parameter rather than one fixed file, because this file's two
+    tests need two different shapes of it - one where a destination is shared between
+    two entries (there is no such shape in `tests/fixtures/*.json` today) and, for the
+    second test, the same shape read back to check the page against it.
+    """
+    contexts = []
+
+    def open_page(response, width=390, height=900):
+        ctx = browser.new_context(viewport={"width": width, "height": height}, locale="en-NZ", bypass_csp=True)
+        contexts.append(ctx)
+        page = ctx.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(response)),
+        )
+        try:
+            page.goto(f"{CALCULATOR_URL}?lang=en", wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        return page
+
+    yield open_page
+    for ctx in contexts:
+        ctx.close()
+
+
+def _submit_two_entries(page):
+    """Drive the wizard through two entries and press Calculate.
+
+    What is typed does not matter. `sectorName` and `stageFoodLabel` in `results.js`
+    both read `response.sector` / `response.food_category` ahead of what the entry
+    itself carries, so the two entries only have to *exist* - for `entryResultsFrom`'s
+    index pairing (`state.js`) to carry both of the fulfilled response's entries onto
+    the results page. What labels them on screen is the fulfilled body, not this walk.
+    """
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    for first_entry in (True, False):
+        page.evaluate("document.querySelector('input[name=sector]').click()")
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('input[name="food-category"]')
+        page.click('[data-action="continue"]')
+        page.wait_for_selector("#total-waste")
+        page.fill("#total-waste", "1000")
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-line-field="amount"]')
+        page.fill('[data-line-field="amount"] >> nth=0', "1000")
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-action="calculate"]')
+        if first_entry:
+            page.click('[data-action="add-entry"]')
+            page.wait_for_selector('input[name="sector"]')
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+
+
+def _metric(unit, precision, total, rows):
+    """One `MetricResult`, wire-shaped: `(destination, qty_kg, upstream, downstream, value)`
+    tuples become `by_destination` rows, the field names §6.2 and the fixtures use."""
+    return {
+        "unit": unit,
+        "display_precision": precision,
+        "total": total,
+        "by_destination": [
+            {"destination": destination, "qty_kg": qty_kg, "upstream": upstream, "downstream": downstream, "value": value}
+            for destination, qty_kg, upstream, downstream, value in rows
+        ],
+    }
+
+
+#: Two entries, different sectors and different food categories, both wasting to
+#: `landfill` - the one shape neither `calculate_response.json` nor
+#: `calculate_response_single.json` carries. In `calculate_response.json` no
+#: destination is shared by two entries at all; rendered per entry (the shape this
+#: task replaces) or per destination (the new one), a fixture without that overlap
+#: produces the *same* single section either way, so nothing already in the
+#: repository can tell the transpose from the original.
+#:
+#: `totals`' landfill `qty_kg` is deliberately **not** 700 + 500. If it were, a
+#: `.destination-group__total` built by summing the two rows below in JavaScript
+#: would read right by coincidence, and the test that exists to prove §7.6.1 would
+#: pass for the wrong reason - the exact trap its own docstring names. 1,300.000 is
+#: the figure the engine is asserted to have returned, and it is the only one either
+#: test below may show; 1,200.000, the sum of the two rows, must not appear.
+SHARED_DESTINATION_RESPONSE = {
+    "token": "11111111-2222-3333-4444-555555555555",
+    "factor_set": {"version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": True},
+    "factor_source": "published",
+    "gwp_horizon": 100,
+    "totals": {
+        "total_kg": "1200.000",
+        "current": {
+            "metrics": {
+                "co2e": _metric("kg CO2e", 1, "1325.0000000000", [
+                    ("landfill", "1300.000", "0.0000000000", "0.0000000000", "1325.0000000000"),
+                ]),
+                "mass": _metric("kg", 1, "1200.0000000000", [
+                    ("landfill", "1300.000", "0.0000000000", "0.0000000000", "1300.0000000000"),
+                ]),
+            },
+            "equivalences": [],
+        },
+        "alternative": None,
+        "net_benefit": None,
+        "money": None,
+    },
+    "entries": [
+        {
+            "sector": "processing",
+            "food_category": "dairy",
+            "current": {
+                "total_kg": "700.000",
+                "metrics": {
+                    "co2e": _metric("kg CO2e", 1, "770.0000000000", [
+                        ("landfill", "700.000", "1.0000000000", "0.1000000000", "770.0000000000"),
+                    ]),
+                    "mass": _metric("kg", 1, "700.0000000000", [
+                        ("landfill", "700.000", "0.0000000000", "0.0000000000", "700.0000000000"),
+                    ]),
+                },
+                "equivalences": [],
+            },
+            "alternative": None,
+            "net_benefit": None,
+        },
+        {
+            "sector": "primary_production",
+            "food_category": "vegetables",
+            "current": {
+                "total_kg": "500.000",
+                "metrics": {
+                    "co2e": _metric("kg CO2e", 1, "550.0000000000", [
+                        ("landfill", "500.000", "1.3000000000", "-0.2000000000", "550.0000000000"),
+                    ]),
+                    "mass": _metric("kg", 1, "500.0000000000", [
+                        ("landfill", "500.000", "0.0000000000", "0.0000000000", "500.0000000000"),
+                    ]),
+                },
+                "equivalences": [],
+            },
+            "alternative": None,
+            "net_benefit": None,
+        },
+    ],
+}
+
+
+def _results_page_with_two_entries_sharing_a_destination(page_at):
+    """The page, on the destination tab, built from `SHARED_DESTINATION_RESPONSE`."""
+    page = page_at(SHARED_DESTINATION_RESPONSE)
+    _submit_two_entries(page)
+    page.click("#breakdown-tab-destination")
+    page.wait_for_selector(".destination-group", timeout=10000)
+    return page
+
+
+def _results_page_and_its_response(page_at):
+    """The same page, paired with the response it was built from - for asserting the
+    page against the response rather than against a number this file derives."""
+    page = _results_page_with_two_entries_sharing_a_destination(page_at)
+    return page, SHARED_DESTINATION_RESPONSE
+
+
+@pytest.mark.browser
+def test_the_destination_breakdown_is_grouped_by_destination_first(page_at):
+    """**Item ③, and it is the transpose of what is there.**
+
+    Today `breakdowns()` pushed one section per ENTRY and listed that entry's
+    destinations inside it. The client asked for the other axis:
+
+        1. Animal feed
+           a) from the farm    -> dairy, vegetables, mixed
+           b) from a restaurant
+        2. Landfill
+           a) ...
+
+    Every figure for it is already in the response. Each entry carries its own
+    `sector_code` and `food_category`, and its metrics carry a per-destination
+    breakdown; stage one added the cross-entry roll-up that gives the top level a
+    total nobody has to add up.
+    """
+    page = _results_page_with_two_entries_sharing_a_destination(page_at)
+
+    groups = page.locator(".destination-group")
+    assert groups.count() >= 1, "nothing is grouped by destination"
+
+    first = groups.nth(0)
+    heading = first.locator(".destination-group__name").inner_text()
+    assert heading, "a destination group with no destination name"
+
+    #: The stages under it, and the food categories under those. Three levels, which
+    #: is what "destination, then stage, then food" asks for.
+    stages = first.locator(".destination-group__stage")
+    assert stages.count() >= 2, (
+        "the two entries sharing this destination did not both appear under it"
+    )
+    assert stages.nth(0).locator(".destination-group__food").count() >= 1
+
+
+@pytest.mark.browser
+def test_a_destination_group_s_total_comes_from_the_response(page_at):
+    """**§7.6.1, and this is the one place it is tempting to break.**
+
+    The leaves are per-entry figures and the group heading is their sum - so adding
+    them up in JavaScript would produce the right number *for real data* and be
+    forbidden anyway. `totals.current.metrics[*].by_destination` is the engine's own
+    roll-up (§3 rule 2, v1.48), and the page must render it rather than derive it.
+
+    `SHARED_DESTINATION_RESPONSE` is built so the two claims are distinguishable: its
+    landfill `qty_kg` at the totals level (1,300.000) is not the sum of the two
+    entries' own rows (700 + 500 = 1,200.000). Comparing the rendered heading against
+    the response the page was given - rather than against a sum computed in this
+    file - is the only way to tell a read from a re-computation that happens to agree,
+    and here the two do not even agree by coincidence.
+    """
+    page, response = _results_page_and_its_response(page_at)
+
+    rolled = {
+        row["destination"]: row["qty_kg"]
+        for row in response["totals"]["current"]["metrics"]["mass"]["by_destination"]
+    }
+    assert rolled, "the totals-level roll-up is missing from the response"
+
+    for code, qty_kg in rolled.items():
+        group = page.locator(f'.destination-group[data-destination="{code}"]')
+        assert group.count() == 1, f"no group for {code}"
+        shown = group.locator(".destination-group__total").inner_text()
+        #: The response's own string, formatted for display - not a number this page
+        #: arrived at by adding the two entries' rows together.
+        assert f"{float(qty_kg):,.3f}" in shown, (
+            f"{code}: page shows {shown!r}, response says {qty_kg}"
+        )

@@ -788,6 +788,26 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .bar-track { height: 14px; border: 1px solid rgba(0, 50, 35, 0.1); border-radius: 999px; background: rgba(223, 248, 237, 0.38); overflow: hidden; }
 .bar-track span { height: 100%; display: block; border-radius: inherit; background: var(--blueberry); }
 .table-scroll { overflow-x: auto; }
+
+/* The destination-first tree (`web/js/results.js`'s `destinationTree`): destination, then
+   the entries that share it, then each entry's own food category. Three levels have to
+   read as three levels at 320px, where the track is about 280px — so each step in is a
+   small FIXED amount (`padding-inline-start`, never `padding-left`: this mirrors from `dir`
+   alone), not a percentage that would eat the narrowest viewport first, and every label is
+   left to wrap onto a second line rather than widening its row or being clipped. */
+.destination-group + .destination-group { margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--border); }
+.destination-group__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.destination-group__name { margin: 0; font-size: 1.08rem; overflow-wrap: anywhere; }
+.destination-group__total { margin: 0; font-weight: 700; white-space: nowrap; }
+.destination-group__figures { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 0.9rem; }
+.destination-group__stages { margin: 18px 0 0; padding-inline-start: 16px; list-style: none; display: grid; gap: 16px; }
+.destination-group__stage { padding-inline-start: 14px; border-inline-start: 2px solid var(--border); }
+.destination-group__stage-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.destination-group__stage-row strong { overflow-wrap: anywhere; }
+.destination-group__stage-figures { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 0.86rem; }
+.destination-group__foods { margin: 8px 0 0; padding-inline-start: 16px; list-style: disc; display: grid; gap: 4px; }
+.destination-group__food { overflow-wrap: anywhere; }
+
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
 caption { margin-bottom: 10px; text-align: start; font-weight: 700; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }

@@ -795,6 +795,17 @@ def test_the_review_step_asks_what_period_the_figures_cover(page_at):
         f"the period vocabulary does not match what the API accepts: {values}"
     )
 
+    # The field scales nothing - no figure is annualised, divided or multiplied
+    # by it - and a visitor who picks "one week" has no way to know that from
+    # the label alone. The natural assumption runs the other way, so the hint
+    # carries the fact the label cannot.
+    hint = page.locator(".time-frame-field .field-hint")
+    assert hint.count() == 1, "the period selector has no explanatory hint"
+    assert hint.is_visible(), "the period hint exists but is not visible"
+    assert "result" in hint.inner_text().lower(), (
+        "the period hint does not say it leaves the results unchanged"
+    )
+
 
 def test_the_period_is_optional_and_calculate_still_works(page_at):
     """Optional, like the other three. The empty option is first and

@@ -42,6 +42,29 @@
           "by_destination": []
         }
       },
+      "by_destination": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "1200.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "3468.0000000000"
+        },
+        {
+          "destination_code": "animal_feed",
+          "qty_kg": "300.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "525.0000000000"
+        },
+        {
+          "destination_code": "not_harvested",
+          "qty_kg": "800.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "456.0000000000"
+        }
+      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -90,6 +113,29 @@
           "by_destination": []
         }
       },
+      "by_destination": [
+        {
+          "destination_code": "anaerobic_digestion",
+          "qty_kg": "1200.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "2364.0000000000"
+        },
+        {
+          "destination_code": "animal_feed",
+          "qty_kg": "300.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "525.0000000000"
+        },
+        {
+          "destination_code": "prevention",
+          "qty_kg": "800.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "0.0000000000"
+        }
+      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -225,6 +271,7 @@
             ]
           }
         },
+        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",
@@ -348,6 +395,7 @@
             ]
           }
         },
+        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",
@@ -447,6 +495,7 @@
             ]
           }
         },
+        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",
@@ -535,6 +584,7 @@
             ]
           }
         },
+        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",

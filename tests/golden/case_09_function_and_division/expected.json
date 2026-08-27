@@ -28,6 +28,15 @@
           "by_destination": []
         }
       },
+      "by_destination": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "1234.500",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "3567.7050000000"
+        }
+      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -93,6 +102,7 @@
             ]
           }
         },
+        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",

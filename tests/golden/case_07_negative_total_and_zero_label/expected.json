@@ -14,6 +14,15 @@
           "by_destination": []
         }
       },
+      "by_destination": [
+        {
+          "destination_code": "animal_feed",
+          "qty_kg": "1000.000",
+          "upstream": "0",
+          "downstream": "0",
+          "value": "-50.0000000000"
+        }
+      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -55,6 +64,7 @@
             ]
           }
         },
+        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",

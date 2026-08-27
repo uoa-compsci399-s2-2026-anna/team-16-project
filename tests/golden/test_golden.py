@@ -119,6 +119,21 @@ _PROVENANCE = {
         "(`min(qty_kg * upstream, 500000)` against an uncapped 1259190), and a "
         "division inside a parenthesised sub-expression."
     ),
+    "case_10_money_per_entry_rate_and_prevention": (
+        "Hand-computed. §4.5, v1.48 (fix round 3): the only case exercising "
+        "the money block. Three entries share case_08's bundle (a copy, with "
+        "is_prevention added to the prevention row): one priced at $60,000/$9,000 "
+        "(7.50/kg) with no alternative, so it diverts nothing regardless of its own "
+        "price; one priced at $15,000/$6,000 (6.00/kg) diverting 400 of its 1,000 kg "
+        "to prevention, contributing 6.00 x 400 = 2400.00; one entirely unpriced, "
+        "diverting 300 of its own 500 kg to prevention and contributing nothing. "
+        "total_value_nzd 75000.00, wasted_value_nzd 15000.00, wasted_share_percent "
+        "20.00 (exact), saving_nzd 2400.00 (0 + 2400.00 + 0). A blended whole-form "
+        "rate answers 15000/2700 x 700 = 3888.89 instead (all three entries current "
+        "mass, all 700 kg diverted to prevention across the whole request) -- the "
+        "number this case is confirmed to reject when the per-entry rate is reverted "
+        "(see the task-5 report, fix round 3)."
+    ),
     "case_08_mixed_alternative_rollup": (
         "Hand-computed. §3 rule 3: one entry with an alternative and one "
         "without. The entry without contributes its *current* figures to "
@@ -150,13 +165,25 @@ def _lines(rows) -> tuple[ScenarioLine, ...]:
     )
 
 
-def request_from_json(data) -> CalculationRequest:
-    """§3's `CalculationRequest` from `request.json`.
+def _entry_decimal(entry: dict, key: str) -> Decimal | None:
+    """A money field is optional in a request (§4.5, v1.48); a case that
+    omits the key must produce None, not KeyError, so an unpriced entry can be
+    expressed at all."""
+    value = entry.get(key)
+    return None if value is None else Decimal(value)
 
-    Lives here rather than in `engine/` on purpose: §3 and §4 specify no
-    reader for a request, `api/schemas.py` already owns the §6.2 wire shape,
+
+def request_from_json(data) -> CalculationRequest:
+    """§3's CalculationRequest from request.json.
+
+    Lives here rather than in engine/ on purpose: §3 and §4 specify no
+    reader for a request, api/schemas.py already owns the §6.2 wire shape,
     and a third parser inside the engine would be a second definition of the
     request with no contract behind it.
+
+    The three money fields (§4.5, v1.48) are read the same optional way
+    entry["alternative"] already is: absent in nine of the ten cases, and case_10
+    is the one case that needs them to reach the engine at all.
     """
     return CalculationRequest(
         entries=tuple(
@@ -167,6 +194,9 @@ def request_from_json(data) -> CalculationRequest:
                 alternative=(
                     None if entry["alternative"] is None else _lines(entry["alternative"])
                 ),
+                total_input_kg=_entry_decimal(entry, "total_input_kg"),
+                total_value_nzd=_entry_decimal(entry, "total_value_nzd"),
+                wasted_value_nzd=_entry_decimal(entry, "wasted_value_nzd"),
             )
             for entry in data["entries"]
         ),

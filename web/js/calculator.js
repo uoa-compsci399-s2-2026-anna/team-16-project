@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { state, setState, resetCalculator, entryResultsFrom } from './state.js'
-import { containerKg, countLimit, entryTotal, isPlainDecimal, kgString, kgToTonnes, massToKg } from './units.js'
+import { containerKg, countLimit, entryTotal, isPlainDecimal, kgString, kgToTonnes, massToKg, toKg } from './units.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { downloadResults, renderResults } from './results.js'
@@ -43,7 +43,9 @@ const selected = (items, code) => items.find(item => item.code === code)
 // Exported for tests/web/test_entry_destinations.py, which runs it under Node against a
 // taxonomy it builds — the same seam `buildResultsReport` was pulled out for (§7.3a).
 export const entryDestinations = () => sorted(state.taxonomy.destinations).filter(destination => !destination.is_prevention)
-const createLine = (destination, qtyInput = '') => ({ id: randomId(), destination, qtyInput })
+// Item ⑥: a line's own unit, defaulting to the entry's — so a fresh row behaves exactly as
+// every row did before this field existed, until a visitor changes one.
+const createLine = (destination, qtyInput = '', unit = state.totalUnit) => ({ id: randomId(), destination, qtyInput, unit })
 
 // ---------------------------------------------------------------- containers
 //
@@ -183,13 +185,59 @@ const presetPatch = foodCategory => (presetSurvives(foodCategory)
   ? {}
   : { unitPreset: null, measureMode: 'mass', totalUnit: 'kilograms', current: [] })
 
+// Item ⑥: a line's own unit may itself be a container preset — `preset:<code>`, the same
+// value space `#total-unit` uses (see `PRESET_OPTION` and `unitSelectValue` below) — so one
+// row can be measured in crates while its neighbour is measured in tonnes.
+const lineUnitIsPreset = unit => typeof unit === 'string' && unit.startsWith(PRESET_OPTION)
+const lineUnitPresetCode = unit => unit.slice(PRESET_OPTION.length)
+
+// The one place a line's kilograms are derived — `massToKg` for a weight, `toKg` for a
+// container preset — so every reader of a row's total agrees with every other. Returns a
+// **string** at three decimal places, `''` for a blank row, or `null` for a preset the
+// taxonomy no longer carries: this is the figure `buildLines` eventually sends, and `toKg`'s
+// whole reason for existing is that a container conversion must never pass through a double
+// on its way to the wire.
+function lineKgString(qtyInput, unit) {
+  if (qtyInput === '') return ''
+  if (lineUnitIsPreset(unit)) {
+    try {
+      return toKg(qtyInput, lineUnitPresetCode(unit), presetList())
+    } catch {
+      return null
+    }
+  }
+  return kgString(qtyInput, unit)
+}
+
+// The same conversion as a `Number`, for the sums and ceilings that never reach the wire —
+// the allocation total and `MAX_LINE_KG`. §7.6's `Number()`-for-display-only rule is about
+// what travels to the API; a comparison made only in the browser is not that.
+const lineKilograms = (qtyInput, unit) => {
+  const kg = lineKgString(qtyInput, unit)
+  return kg === '' || kg === null ? null : Number(kg)
+}
+
 // §7.3: `kgString` is `massToKg(...).toFixed(3)`, and it exists so the rounding to the
 // API's three decimal places happens in `units.js` rather than at each call site. Both
 // sites here spelled it out instead, which is the same defect `kgToTonnes` was added for.
 // A blank row stays blank — `kgString('', unit)` is "0.000", and a row the user has not
 // filled is not a row holding zero.
-const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : kgString(line.qtyInput, state.totalUnit) }))
-const allocatedAmount = lines => lines.reduce((sum, line) => sum + (Number(line.qtyInput) || 0), 0)
+//
+// **Each line converts with its own `unit`, not the entry's.** A line that predates item ⑥
+// has none, and falls back to `state.totalUnit` — the unit every row was implicitly in
+// before a row could differ from its neighbour, so an entry saved under the old behaviour
+// is never reinterpreted.
+const normaliseLines = lines => lines.map(line => ({ ...line, qtyKg: lineKgString(line.qtyInput, line.unit || state.totalUnit) }))
+// The running allocation, **in `state.totalUnit`** — the unit the summary and the ceiling
+// are stated in — regardless of which unit each row was typed in. Summing raw `qtyInput`
+// values directly was correct only because every row shared one unit; once a row can carry
+// its own, "5" typed in tonnes and "5" typed in kilograms are not the same five, so the sum
+// has to happen in kilograms first and only the *total* is converted back for display —
+// with `kgToTonnes`, `units.js`'s own conversion, rather than a division re-typed here.
+const allocatedAmount = lines => {
+  const kilograms = lines.reduce((sum, line) => sum + (lineKilograms(line.qtyInput, line.unit || state.totalUnit) || 0), 0)
+  return state.totalUnit === 'tonnes' ? kgToTonnes(kilograms) : kilograms
+}
 // `unitPreset` and `unitCount` are here for the same reason `totalAmount` is: they are
 // something the visitor entered, so the Clear button has to appear once either exists.
 // `totalInputKg` joins them for the same reason.
@@ -259,6 +307,37 @@ const unitSelectValue = () =>
   (state.measureMode === 'container' ? PRESET_OPTION + (state.unitPreset || '') : state.totalUnit)
 
 /**
+ * The options `#total-unit` offers, as markup — weights first, then this entry's
+ * containers, exactly as `amountStep` built them before item ⑥.
+ *
+ * **Shared with a destination row's own unit `<select>`**, so a row can be measured in the
+ * same containers the entry's total can be, and the two lists can never drift apart into two
+ * different orderings of the same taxonomy.
+ *
+ * `preset.label` is staff-typed and published exactly as written (§7.7.7): escaped, never
+ * passed through `t()`. The `<optgroup>` labels around it are translated, so a Thai visitor
+ * reads a Thai form still listing English container names — the stated and accepted
+ * consequence of that rule.
+ */
+function unitOptionsHtml(selectedValue) {
+  const presets = containerPresets()
+  return `<optgroup label="${escapeHtml(t('Weight'))}"><option value="kilograms" ${selectedValue === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${selectedValue === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></optgroup>${presets.length ? `<optgroup label="${escapeHtml(t('Containers'))}">${presets.map(preset => {
+    const value = PRESET_OPTION + preset.code
+    return `<option value="${escapeHtml(value)}" ${selectedValue === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
+  }).join('')}</optgroup>` : ''}`
+}
+
+/**
+ * The label beside a destination row's amount field: a translated weight name, or the
+ * container's own staff-typed label when the row is measured in one.
+ *
+ * `unitLabel` alone would answer "kilograms" for a `preset:` value — it recognises only
+ * `'tonnes'` and defaults everything else — which is the right default for `entry.totalUnit`
+ * (never a preset: item ⑦'s note on the entry level) and the wrong one for a row's own unit.
+ */
+const rowUnitLabel = unit => (lineUnitIsPreset(unit) ? (selected(presetList(), lineUnitPresetCode(unit))?.label || unit) : unitLabel(unit))
+
+/**
  * The running kilogram total, as **plain text**.
  *
  * Not escaped here, because it has two consumers that need opposite things: the template
@@ -317,23 +396,13 @@ function containerTotalText() {
  */
 function amountStep() {
   const container = state.measureMode === 'container'
-  const presets = containerPresets()
   const amountId = container ? 'unit-count' : 'total-waste'
   const amountLabel = container ? t('How many containers?') : t('Waste amount')
   const amountHint = container
     ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
     : t('Use up to two decimal places.')
   const amountValue = container ? state.unitCount : state.totalAmount
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit"><optgroup label="${escapeHtml(t('Weight'))}"><option value="kilograms" ${unitSelectValue() === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option><option value="tonnes" ${unitSelectValue() === 'tonnes' ? 'selected' : ''}>${escapeHtml(t('tonnes'))}</option></optgroup>${presets.length ? `<optgroup label="${escapeHtml(t('Containers'))}">${presets.map(preset => {
-    // `preset.label` is `unit_preset.label` — staff-typed, and §7.7.7's ruling of
-    // 14 August is that anything a staff member can edit is published exactly as
-    // written. It is escaped and it is never passed through `t()`. Everything
-    // around it is translated, the `<optgroup>` labels included; a Thai visitor gets
-    // a Thai form listing English container names, which is the stated and accepted
-    // consequence of that rule.
-    const value = PRESET_OPTION + preset.code
-    return `<option value="${escapeHtml(value)}" ${unitSelectValue() === value ? 'selected' : ''}>${escapeHtml(preset.label)}</option>`
-  }).join('')}</optgroup>` : ''}</select></div><div class="form-field"><label for="total-input">${escapeHtml(t('Total amount produced'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalInputKg)}"></div><div class="money-fields"><div class="form-field"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}"></div><div class="form-field"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}"></div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
+  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p><div class="form-panel amount-grid"><div class="form-field ${state.error ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${state.error ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${state.error ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(state.error)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field"><label for="total-input">${escapeHtml(t('Total amount produced'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalInputKg)}"></div><div class="money-fields"><div class="form-field"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}"></div><div class="form-field"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}"></div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
 /**
@@ -366,7 +435,10 @@ function destinationRows() {
     const destination = selected(state.taxonomy.destinations, line.destination)
     const serverError = paths[index] ? state.fieldErrors[paths[index]] : null
     const invalid = Boolean(serverError) || (line.qtyInput !== '' && Number(line.qtyInput) < 0) || (allocationExcess && state.lastChangedDestination === line.destination)
-    return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(destination?.name || line.destination)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: destination?.name || line.destination, unit: unitLabel(state.totalUnit) }))}"><span>${escapeHtml(unitLabel(state.totalUnit))}</span></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
+    // Item ⑥: this row's own unit, defaulting to the entry's — a line saved before this
+    // field existed carries none and is never reinterpreted into a different unit.
+    const rowUnit = line.unit || state.totalUnit
+    return `<div class="destination-row ${invalid ? 'invalid' : ''}"><label for="destination-${line.id}">${escapeHtml(destination?.name || line.destination)}${destination?.description ? `<small>${escapeHtml(destination.description)}</small>` : ''}</label><div class="amount-with-unit"><input id="destination-${line.id}" data-line-field="amount" data-line-id="${line.id}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(line.qtyInput)}" ${invalid ? 'aria-invalid="true"' : ''} aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: destination?.name || line.destination, unit: rowUnitLabel(rowUnit) }))}"><select data-line-field="unit" data-line-id="${line.id}" aria-label="${escapeHtml(t('Unit'))}">${unitOptionsHtml(rowUnit)}</select></div>${serverError ? `<p class="field-error" role="alert">${escapeHtml(serverError)}</p>` : ''}</div>`
   }).join('')
 }
 
@@ -392,12 +464,15 @@ function reviewLines(entry) {
   const lines = normaliseEntryLines(entry).filter(line => Number(line.qtyKg) > 0)
   return `<dl class="review-destinations">${lines.map(line => {
     const destination = selected(state.taxonomy.destinations, line.destination)
-    return `<div><dt>${escapeHtml(destination?.name || line.destination)}</dt><dd>${formatNumber(line.qtyInput, 2)} ${escapeHtml(unitLabel(entry.totalUnit))} <small>(${formatNumber(line.qtyKg, 3)} kg)</small></dd></div>`
+    // Item ⑥: the unit this row was typed in, not the entry's — the kilograms beside it
+    // are what actually reaches the wire, and both are shown so the conversion stays
+    // checkable at the one moment a visitor can still compare the two.
+    return `<div><dt>${escapeHtml(destination?.name || line.destination)}</dt><dd>${formatNumber(line.qtyInput, 2)} ${escapeHtml(rowUnitLabel(line.unit || entry.totalUnit))} <small>(${formatNumber(line.qtyKg, 3)} kg)</small></dd></div>`
   }).join('')}</dl>`
 }
 
 function normaliseEntryLines(entry) {
-  return entry.current.map(line => ({ ...line, qtyKg: line.qtyInput === '' ? '' : kgString(line.qtyInput, entry.totalUnit) }))
+  return entry.current.map(line => ({ ...line, qtyKg: lineKgString(line.qtyInput, line.unit || entry.totalUnit) }))
 }
 
 /**
@@ -516,7 +591,7 @@ function validateCurrentStep() {
     // answer is that the row is over the limit and the message says which limit.
     const overLine = lines.some(line => {
       if (line.qtyInput === '') return false
-      const kilograms = massToKg(line.qtyInput, state.totalUnit)
+      const kilograms = lineKilograms(line.qtyInput, line.unit || state.totalUnit)
       return kilograms === null || kilograms > MAX_LINE_KG
     })
     if (overLine) return t('Enter destination amounts of no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_LINE_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
@@ -816,6 +891,18 @@ export function bindCalculator(main, retryTaxonomy) {
         totalUnit: preset ? 'kilograms' : target.value,
         error: null,
         current: [],
+      })
+    }
+    // Item ⑥: one row's own unit, changed without touching any other row's — the
+    // assertion `test_changing_one_row_s_unit_does_not_change_the_others` exists to catch a
+    // single shared value wearing several `<select>`s. A `<select>` has no mid-edit caret to
+    // preserve, so this goes through `setState` and a full re-render like every other select
+    // on this page, rather than the keystroke-preserving patch `updateLine` uses for typing.
+    if (target.matches('[data-line-field="unit"]')) {
+      const lineId = target.dataset.lineId
+      setState({
+        current: state.current.map(line => (line.id === lineId ? { ...line, unit: target.value } : line)),
+        error: null,
       })
     }
   })

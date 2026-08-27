@@ -47,6 +47,19 @@ export const state = {
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
   // from `improvedAllocations` by `improvement.js`, which never looks at either. A state key
   // that is initialised and reset but never populated reads as a feature under construction.
+  //
+  // Each line is `{id, destination, qtyInput, unit}`. `unit` is the one field this list did
+  // not have before item ⑥: a destination row used to borrow `state.totalUnit` for every row
+  // of an entry, and a site that knows its landfill figure in tonnes and its animal-feed
+  // figure in crates could not say so. `unit` holds exactly the value `#total-unit` (or a
+  // row's own select) would carry — `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+  // — and `calculator.js` converts each row with *its own* `unit`, never the entry's.
+  //
+  // **A line built before this field existed has no `unit`, and every reader falls back to
+  // the entry's own total unit rather than the global default.** That is `state.totalUnit`
+  // for the draft in `state.current`, and `entry.totalUnit` for a saved entry in
+  // `state.entries` — the unit that row's figures were actually typed against — so a visitor
+  // whose entry predates this change is never silently reinterpreted into a different unit.
   current: [],
   entries: [],
   result: null,

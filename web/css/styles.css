@@ -657,7 +657,13 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .destination-row small { color: var(--muted); font-weight: 400; }
 .destination-row.invalid { background: rgba(255, 80, 50, 0.055); }
 .destination-row.invalid input { border-color: var(--error); box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.1); }
-.amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+/* Item ⑥ pins the second column to a range rather than `auto`, because `auto` sizes to
+   the widest thing the item could ever show — every `<option>` in the unit `<select>`,
+   containers included, not only "kilograms" currently selected — and that intrinsic width
+   left the amount input, on `minmax(0, 1fr)`, squeezed to nothing. A bounded track lets the
+   select fill it (the site-wide `input, select { width: 100% }` rule, left alone) while the
+   amount input keeps the row's other half whatever the taxonomy's longest label is. */
+.amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 45%); align-items: center; gap: 10px; }
 .amount-with-unit span { min-width: 76px; color: var(--muted); font-size: 0.9rem; }
 .review-destinations { margin: 10px 0 0; }
 .review-destinations div { padding: 10px 0; display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); }

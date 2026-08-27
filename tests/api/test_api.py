@@ -493,13 +493,21 @@ async def test_stats_only_expose_persisted_public_calculations(app):
     identifies nobody.
     """
     async with await _client(app) as client:
-        await client.post(
+        calculated = await client.post(
             "/api/v1/calculate",
             json=_body(
                 [{"destination": "landfill", "qty_kg": "3.000"}],
                 alternative=[{"destination": "landfill", "qty_kg": "3.000"}],
             ),
         )
+        # v1.48: a calculation is not itself public any more (§5.3) -- this
+        # test is proving the *threshold*, not consent, so the fixture opts
+        # in on the visitor's behalf, the same way the calculator's own
+        # checkbox would.
+        contributed = await client.post(
+            "/api/v1/contribute", json={"token": calculated.json()["token"]}
+        )
+        assert contributed.status_code == 204
         response = await client.get("/api/v1/stats")
     assert response.status_code == 200
     body = response.json()
@@ -804,11 +812,22 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     dual = _fixture("calculate_request.json")
     single = _request_from("calculate_response_single.json")
     async with await _client(app) as client:
+        # v1.48: none of these six is public until its own visitor says so
+        # (§5.3) -- this test is proving the aggregation and the threshold,
+        # not consent, so every submission here opts in.
         for _ in range(5):
             posted = await client.post("/api/v1/calculate", json=dual)
             assert posted.status_code == 200, posted.text
+            contributed = await client.post(
+                "/api/v1/contribute", json={"token": posted.json()["token"]}
+            )
+            assert contributed.status_code == 204
         posted = await client.post("/api/v1/calculate", json=single)
         assert posted.status_code == 200, posted.text
+        contributed = await client.post(
+            "/api/v1/contribute", json={"token": posted.json()["token"]}
+        )
+        assert contributed.status_code == 204
         response = await client.get("/api/v1/stats")
 
     assert response.status_code == 200, response.text
@@ -839,3 +858,272 @@ async def test_stats_fixture_shape_holds_against_a_populated_database(app):
     # a public statistic, because it is by construction waste that did not
     # happen (§5.4).
     assert "prevention" not in {b["code"] for b in body["by_destination"]}
+
+
+@pytest.mark.asyncio
+async def test_the_new_context_fields_are_accepted_and_stored(app):
+    """v1.48's four fields, end to end: sent, validated, persisted.
+
+    Driven through the real endpoint rather than by constructing a payload,
+    because the question is whether `extra="forbid"` lets them through and
+    whether `upsert_submission` writes them - two places a field can be
+    accepted and then quietly dropped.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "time_frame": "one_month",
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "total_input_kg": "50000.000",
+                "total_value_nzd": "120000.00",
+                "wasted_value_nzd": "4500.00",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+
+    with app.state.session_factory() as session:
+        row = session.scalars(
+            select(Submission).order_by(Submission.id.desc())
+        ).first()
+        assert row.time_frame == "one_month"
+        #: The default, not something the request set - v1.48 gives the
+        #: visitor a separate action for this and `POST /calculate` never
+        #: opts anybody in.
+        assert row.is_public_contributed is False
+        entry = row.entries[0]
+        assert entry.total_input_kg == Decimal("50000.000")
+        assert entry.total_value_nzd == Decimal("120000.00")
+        assert entry.wasted_value_nzd == Decimal("4500.00")
+
+
+@pytest.mark.asyncio
+async def test_the_new_fields_are_optional_and_absent_is_not_zero(app):
+    """A visitor who does not know their production total is the common case,
+    and `None` has to survive as `None`.
+
+    Zero would be a different claim - "this stage put nothing through" - and
+    it would make the waste share infinite rather than absent.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+    with app.state.session_factory() as session:
+        row = session.scalars(
+            select(Submission).order_by(Submission.id.desc())
+        ).first()
+        assert row.time_frame is None
+        entry = row.entries[0]
+        assert entry.total_input_kg is None
+        assert entry.total_value_nzd is None
+        assert entry.wasted_value_nzd is None
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_time_frame_is_refused(app):
+    """§6.2 fixes the vocabulary, for the reason `gwp_horizon` is fixed to
+    20 and 100: a label the results page cannot render is a label that reaches
+    a visitor as a raw string."""
+    body = {
+        "gwp_horizon": 100,
+        "time_frame": "since_the_dawn_of_time",
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 400
+    assert response.json()["error"]["code"] == "VALIDATION_ERROR"
+
+
+@pytest.mark.asyncio
+async def test_a_negative_money_figure_is_refused(app):
+    """The same guard `qty_kg` has. A negative wasted value would flow into
+    the share in Task 5 and produce a negative percentage on the results
+    page."""
+    body = {
+        "gwp_horizon": 100,
+        "entries": [
+            {
+                "sector": "processing",
+                "food_category": "dairy",
+                "wasted_value_nzd": "-1.00",
+                "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+                "alternative": None,
+            }
+        ],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_the_money_block_carries_the_right_numbers_over_http(app):
+    """Defect 3: value, not merely shape.
+
+    `test_contract_fixtures_have_the_same_top_level_shapes` (and every other
+    shape check in this file) asserts `type(actual) is type(expected)` for a
+    scalar and stops there - it would pass unchanged if every figure below
+    came back as some other string of the same type. This is the one test in
+    the suite that reads the actual numbers.
+
+    Same two entries as `tests/fixtures/calculate_request.json` /
+    `calculate_response.json`, hand-verified independently here. **This does
+    not call the real engine** - the `app` fixture wires in
+    `tests.support.sqlite.FakeEngineAdapter`, whose own `_money()` is a
+    hand-kept copy of `engine.calculate._money`, not a call to it. What this
+    test certifies is that a correct money figure survives the trip through
+    `api/engine_adapter.py`'s serialisation onto the wire; that the fake's
+    `_money()` agrees with the real one is `tests/support/
+    test_fake_engine_agreement.py`'s job, not this test's:
+
+    entry 1 (processing/dairy) prices its waste at $6750.00 / 1500 kg =
+    $4.50/kg and diverts nothing to `prevention` - its alternative only moves
+    mass between two non-prevention destinations - so it contributes $0.00.
+    entry 2 (primary_production/vegetables) prices its waste at
+    $4000.00 / 800 kg = $5.00/kg and diverts its whole 800 kg to
+    `prevention`, contributing 5.00 x 800 = $4,000.00. A single blended rate
+    over the whole form would instead answer (6750+4000)/(1500+800) x 800 =
+    3739.13, not 4000.00 - the number this test would read back if the two
+    entries' rates were blended instead of kept separate.
+    """
+    body = _fixture("calculate_request.json")
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post("/api/v1/calculate", json=body)
+
+    assert response.status_code == 200, response.text
+    assert response.json()["totals"]["money"] == {
+        "total_value_nzd": "50000.00",
+        "wasted_value_nzd": "10750.00",
+        "wasted_share_percent": "21.50",
+        "saving_nzd": "4000.00",
+    }
+
+
+@pytest.mark.asyncio
+async def test_a_calculation_does_not_reach_the_public_statistics_until_asked(app):
+    """**v1.48 reverses §2.3's "there is no consent checkbox".**
+
+    It said so deliberately - one calculation was one submission and nothing
+    asked. The client asked for the opposite, and this is what the reversal
+    has to mean: a submission is recorded, the panel sees it, and the public
+    aggregate does not count it until the visitor says so.
+    """
+    #: `food_category` is `dairy`, not the brief's `bread_bakery`: this app
+    #: fixture's taxonomy (`tests/support/sqlite.py`) seeds the codes
+    #: `calculate_request.json` and the rest of this file already exercise --
+    #: `standard_mix`, `vegetables`, `dairy` -- and `bread_bakery` is not
+    #: among them, so it 400s as UNKNOWN_CODE before a submission ever exists.
+    body = {
+        "gwp_horizon": 100,
+        "entries": [{
+            "sector": "processing", "food_category": "dairy",
+            "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+            "alternative": None,
+        }],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        calculated = await client.post("/api/v1/calculate", json=body)
+        assert calculated.status_code == 200, calculated.text
+        token = calculated.json()["token"]
+
+        before = (await client.get("/api/v1/stats")).json()["total_calculations"]
+
+        contributed = await client.post("/api/v1/contribute", json={"token": token})
+        assert contributed.status_code == 204
+
+        after = (await client.get("/api/v1/stats")).json()["total_calculations"]
+
+    assert after == before + 1, (
+        "contributing did not move the public count, so either the flag is "
+        "not written or the aggregate is not reading it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_an_unknown_token_is_not_an_error(app):
+    """§6.2's rule for `token` everywhere else: a value that resolves to
+    nothing is treated as absent. A stale `sessionStorage` value is not a
+    request the visitor can fix, and a 400 here would surface as a broken
+    button on a page whose calculation succeeded."""
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        response = await client.post(
+            "/api/v1/contribute",
+            json={"token": "3f2a91c4-77b5-4d1e-9c08-6b5e2a7d4419"},
+        )
+
+    assert response.status_code == 204
+
+
+@pytest.mark.asyncio
+async def test_a_dry_run_contribute_does_not_persist(app):
+    """A dry run must persist nothing (§6.2), and this route writes.
+
+    It is safe today only by coincidence: `/calculate` never mints a token
+    under `X-Dry-Run: true`, so nothing has ever exercised a dry run here
+    with a live token to flip. This test uses a real (non-dry-run) token so
+    that a guard which merely happened to work because dry runs see no token
+    cannot pass it -- the token is genuine, live, and would flip the flag on
+    a non-dry-run call.
+    """
+    body = {
+        "gwp_horizon": 100,
+        "entries": [{
+            "sector": "processing", "food_category": "dairy",
+            "current": [{"destination": "landfill", "qty_kg": "1200.500"}],
+            "alternative": None,
+        }],
+    }
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://t") as client:
+        calculated = await client.post("/api/v1/calculate", json=body)
+        assert calculated.status_code == 200, calculated.text
+        token = calculated.json()["token"]
+
+        response = await client.post(
+            "/api/v1/contribute",
+            json={"token": token},
+            headers={"X-Dry-Run": "true"},
+        )
+        assert response.status_code == 204
+
+    with app.state.session_factory() as db:
+        row = db.scalar(select(Submission).where(Submission.token == token))
+        assert row.is_public_contributed is False, (
+            "a dry run flipped a real consent flag"
+        )

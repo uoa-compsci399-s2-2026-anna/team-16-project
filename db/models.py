@@ -165,6 +165,33 @@ class Submission(Base):
     )
     exclusion_reason: Mapped[str | None] = mapped_column(String(255))
 
+    #: v1.48. The period the visitor says their figures cover - "one_week",
+    #: "one_month", "one_quarter", "one_year". A LABEL, not a computation:
+    #: the client ruled explicitly that it does not enter the engine, and
+    #: nothing annualises or scales anything from it. It travels to the
+    #: results page and into the download so that a figure somebody keeps has
+    #: a period attached to it, which is the whole of what it is for.
+    #:
+    #: A string rather than a pair of dates because a period chosen from a
+    #: list is what was asked for, and two dates would invite arithmetic that
+    #: the ruling above says must not happen.
+    time_frame: Mapped[str | None] = mapped_column(String(32))
+
+    #: v1.48, and it reverses §2.3's "there is no consent checkbox".
+    #:
+    #: **This is a second axis, not a replacement for `excluded_from_public`.**
+    #: That one is staff moderation - a member of staff judging a row
+    #: implausible. This one is the visitor's own choice. The public
+    #: aggregate needs BOTH: staff can withdraw a row the visitor offered,
+    #: and a row the visitor kept is not staff's to publish. Neither can
+    #: stand in for the other, and `get_public_stats` predicates on both.
+    #:
+    #: FALSE by default, which is the point. A default of TRUE would opt
+    #: every visitor in and leave the column decorative.
+    is_public_contributed: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
+
     entries: Mapped[list["SubmissionEntry"]] = relationship(
         back_populates="submission", cascade="all, delete-orphan",
         order_by="SubmissionEntry.sort_order",
@@ -251,6 +278,34 @@ class SubmissionEntry(Base):
     #: whole entry set on every upsert, which reassigns ids.
     sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
                                             server_default="0")
+
+    #: v1.48. What this stage of the supply chain put through in the period,
+    #: so that "waste as a share of production" can be stated. Optional: a
+    #: visitor who does not know it still gets every other figure, and
+    #: `MoneyResult` simply omits the share.
+    #:
+    #: DECIMAL(16,3) matches `submission_line.qty_kg` - a production total is
+    #: a mass in the same units and at the same scale as the waste measured
+    #: against it, and two different scales for one comparison is how a
+    #: thousandfold error gets in.
+    total_input_kg: Mapped[Decimal | None] = mapped_column(DECIMAL(16, 3))
+
+    #: v1.48, and both are STATISTICS ONLY. The client's ruling on open item
+    #: O-2 was that the value of the food does not enter the main formula and
+    #: that cost-price versus retail-price "doesn't matter" - it is whatever
+    #: the client's own client means by it.
+    #:
+    #: So these are inputs a visitor typed, not a metric the engine computed.
+    #: They are deliberately NOT a `metric` row: the formula language takes
+    #: `(qty_kg, upstream, downstream, const_*)` per LINE, and an
+    #: entry-level figure a person typed cannot be expressed in it. Making
+    #: one would mean inventing a per-kilogram money factor, which is exactly
+    #: the modelling this ruling avoided.
+    #:
+    #: DECIMAL(14,2): New Zealand dollars and cents. Two places, because
+    #: money has two, and never FLOAT.
+    total_value_nzd: Mapped[Decimal | None] = mapped_column(DECIMAL(14, 2))
+    wasted_value_nzd: Mapped[Decimal | None] = mapped_column(DECIMAL(14, 2))
 
     submission: Mapped[Submission] = relationship(back_populates="entries")
     sector: Mapped[Sector] = relationship()

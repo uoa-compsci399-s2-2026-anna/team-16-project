@@ -12,7 +12,9 @@ what make that claim worth anything.
 
 **It compares the domain object, not the wire body.** `expected.json` mirrors
 §3 field for field — `food_category_code`, `source_metric_code`,
-`by_destination` present-and-empty at the totals level, `total_kg` on
+`by_destination` populated at both the entry and the totals level (v1.48;
+the totals-level rows carry only `qty_kg` and `value`, the two additive
+fields, with `upstream` and `downstream` left at zero), `total_kg` on
 `totals.alternative` where §6.2 has no room for it. A golden case that
 compared §6.2's body would certify `api/engine_adapter.py` as well as the
 engine, and a hoist or an omitted key there would read as an engine defect.
@@ -117,6 +119,21 @@ _PROVENANCE = {
         "(`min(qty_kg * upstream, 500000)` against an uncapped 1259190), and a "
         "division inside a parenthesised sub-expression."
     ),
+    "case_10_money_per_entry_rate_and_prevention": (
+        "Hand-computed. §4.5, v1.48 (fix round 3): the only case exercising "
+        "the money block. Three entries share case_08's bundle (a copy, with "
+        "is_prevention added to the prevention row): one priced at $60,000/$9,000 "
+        "(7.50/kg) with no alternative, so it diverts nothing regardless of its own "
+        "price; one priced at $15,000/$6,000 (6.00/kg) diverting 400 of its 1,000 kg "
+        "to prevention, contributing 6.00 x 400 = 2400.00; one entirely unpriced, "
+        "diverting 300 of its own 500 kg to prevention and contributing nothing. "
+        "total_value_nzd 75000.00, wasted_value_nzd 15000.00, wasted_share_percent "
+        "20.00 (exact), saving_nzd 2400.00 (0 + 2400.00 + 0). A blended whole-form "
+        "rate answers 15000/2700 x 700 = 3888.89 instead (all three entries current "
+        "mass, all 700 kg diverted to prevention across the whole request) -- the "
+        "number this case is confirmed to reject when the per-entry rate is reverted "
+        "(see the task-5 report, fix round 3)."
+    ),
     "case_08_mixed_alternative_rollup": (
         "Hand-computed. §3 rule 3: one entry with an alternative and one "
         "without. The entry without contributes its *current* figures to "
@@ -148,13 +165,25 @@ def _lines(rows) -> tuple[ScenarioLine, ...]:
     )
 
 
-def request_from_json(data) -> CalculationRequest:
-    """§3's `CalculationRequest` from `request.json`.
+def _entry_decimal(entry: dict, key: str) -> Decimal | None:
+    """A money field is optional in a request (§4.5, v1.48); a case that
+    omits the key must produce None, not KeyError, so an unpriced entry can be
+    expressed at all."""
+    value = entry.get(key)
+    return None if value is None else Decimal(value)
 
-    Lives here rather than in `engine/` on purpose: §3 and §4 specify no
-    reader for a request, `api/schemas.py` already owns the §6.2 wire shape,
+
+def request_from_json(data) -> CalculationRequest:
+    """§3's CalculationRequest from request.json.
+
+    Lives here rather than in engine/ on purpose: §3 and §4 specify no
+    reader for a request, api/schemas.py already owns the §6.2 wire shape,
     and a third parser inside the engine would be a second definition of the
     request with no contract behind it.
+
+    The three money fields (§4.5, v1.48) are read the same optional way
+    entry["alternative"] already is: absent in nine of the ten cases, and case_10
+    is the one case that needs them to reach the engine at all.
     """
     return CalculationRequest(
         entries=tuple(
@@ -165,6 +194,9 @@ def request_from_json(data) -> CalculationRequest:
                 alternative=(
                     None if entry["alternative"] is None else _lines(entry["alternative"])
                 ),
+                total_input_kg=_entry_decimal(entry, "total_input_kg"),
+                total_value_nzd=_entry_decimal(entry, "total_value_nzd"),
+                wasted_value_nzd=_entry_decimal(entry, "wasted_value_nzd"),
             )
             for entry in data["entries"]
         ),
@@ -182,22 +214,26 @@ def _decimal(value: Decimal) -> str:
     return format(value, "f")
 
 
+def _breakdown_rows(rows) -> list[dict]:
+    return [
+        {
+            "destination_code": row.destination_code,
+            "qty_kg": _decimal(row.qty_kg),
+            "upstream": _decimal(row.upstream),
+            "downstream": _decimal(row.downstream),
+            "value": _decimal(row.value),
+        }
+        for row in rows
+    ]
+
+
 def _metric(metric) -> dict:
     return {
         "metric_code": metric.metric_code,
         "unit": metric.unit,
         "display_precision": metric.display_precision,
         "total": _decimal(metric.total),
-        "by_destination": [
-            {
-                "destination_code": row.destination_code,
-                "qty_kg": _decimal(row.qty_kg),
-                "upstream": _decimal(row.upstream),
-                "downstream": _decimal(row.downstream),
-                "value": _decimal(row.value),
-            }
-            for row in metric.by_destination
-        ],
+        "by_destination": _breakdown_rows(metric.by_destination),
     }
 
 
@@ -225,6 +261,26 @@ def _benefit(benefit) -> dict | None:
     return {code: _decimal(value) for code, value in benefit.items()}
 
 
+def _optional_decimal(value: Decimal | None) -> str | None:
+    """Unlike `_decimal`, this may legitimately receive `None` -- every
+    `MoneyResult` field is optional (§4.5), and `None` there means "nobody
+    supplied it", not zero."""
+    return None if value is None else _decimal(value)
+
+
+def _money(money) -> dict | None:
+    """§4.5, v1.48. `None` when no entry supplied a money figure at all; not
+    a metric, so it carries none of `_scenario`'s shape."""
+    if money is None:
+        return None
+    return {
+        "total_value_nzd": _optional_decimal(money.total_value_nzd),
+        "wasted_value_nzd": _optional_decimal(money.wasted_value_nzd),
+        "wasted_share_percent": _optional_decimal(money.wasted_share_percent),
+        "saving_nzd": _optional_decimal(money.saving_nzd),
+    }
+
+
 def render(result: CalculationResult) -> dict:
     """§3's `CalculationResult` as `expected.json`'s shape. Field for field —
     this function performs no arithmetic and drops nothing."""
@@ -236,6 +292,7 @@ def render(result: CalculationResult) -> dict:
             "current": _scenario(result.totals.current),
             "alternative": _scenario(result.totals.alternative),
             "net_benefit": _benefit(result.totals.net_benefit),
+            "money": _money(result.totals.money),
         },
         "entries": [
             {

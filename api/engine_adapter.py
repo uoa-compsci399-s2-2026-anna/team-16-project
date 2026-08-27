@@ -28,13 +28,18 @@ arithmetic at all. The single reshaping it does perform is §3's stated wire
 hoist - `totals.total_kg` is `totals.current.total_kg` - which moves a value
 rather than computing one.
 
-`by_destination` is carried per entry and omitted at the totals level (§3
-rule 2): the same destination can appear under several entries drawing
-different upstream factors, so a cross-entry destination breakdown has no
-single correct aggregation rule. The omission is expressed as "drop the key
-when the tuple is empty", which is one rule rather than two, and is exactly
-equivalent here because §6.2 requires every entry scenario to carry at least
-one line.
+`by_destination` is carried per entry, and now at the totals level too
+(v1.48, amending §3 rule 2): `qty_kg` and `value` are additive across
+entries, so the engine sums them per destination for each metric; `upstream`
+and `downstream` stay at zero there, because they are per-kilogram rates
+that can differ between the entries sharing a destination and cannot be
+summed or averaged into a meaningful figure. Nothing in this module computes
+any of that -- it is `engine.calculate._roll_up`'s output, arriving on
+`result.totals.current.metrics[code].by_destination` exactly as
+`result.entries[i].current.metrics[code].by_destination` does, and this
+module's own rule stays "drop the key when the tuple is empty", which now
+applies uniformly at both levels rather than being unconditional at the
+totals level.
 
 Two §6.2 response fields are supplied by `api/router.py` after this mapping
 returns, because neither has a §3 counterpart: `token` (from
@@ -101,6 +106,9 @@ class DefaultEngineAdapter:
                     food_category_code=entry.food_category,
                     current=lines(entry.current),
                     alternative=lines(entry.alternative),
+                    total_input_kg=entry.total_input_kg,
+                    total_value_nzd=entry.total_value_nzd,
+                    wasted_value_nzd=entry.wasted_value_nzd,
                 )
                 for entry in payload.entries
             ),
@@ -149,6 +157,22 @@ def _totals(totals: Any) -> dict[str, Any]:
         "current": _scenario(totals.current, with_total_kg=False),
         "alternative": _scenario(totals.alternative, with_total_kg=False),
         "net_benefit": _net_benefit(totals.net_benefit),
+        "money": _money(totals.money),
+    }
+
+
+def _money(money: Any) -> dict[str, Any] | None:
+    """§4.5, v1.48. `None` when no entry supplied a money figure at all --
+    present-and-null rather than omitted, on the same terms `net_benefit` and
+    `totals.alternative` already carry. No arithmetic: `MoneyResult`'s four
+    fields arrive already computed and already at their own scale (§4.5)."""
+    if money is None:
+        return None
+    return {
+        "total_value_nzd": money.total_value_nzd,
+        "wasted_value_nzd": money.wasted_value_nzd,
+        "wasted_share_percent": money.wasted_share_percent,
+        "saving_nzd": money.saving_nzd,
     }
 
 

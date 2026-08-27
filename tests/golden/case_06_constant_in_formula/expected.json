@@ -11,13 +11,22 @@
           "unit": "NZD",
           "display_precision": 0,
           "total": "26.2500000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "250.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "26.2500000000"
+            }
+          ]
         }
       },
       "equivalences": []
     },
     "alternative": null,
-    "net_benefit": null
+    "net_benefit": null,
+    "money": null
   },
   "entries": [
     {

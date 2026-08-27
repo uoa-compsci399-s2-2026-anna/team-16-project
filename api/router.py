@@ -16,7 +16,12 @@ from api.errors import (
     ContractJSONResponse,
     engine_problem,
 )
-from api.schemas import CalculatePayload, bundle_row_count, entry_rule_problems
+from api.schemas import (
+    CalculatePayload,
+    ContributePayload,
+    bundle_row_count,
+    entry_rule_problems,
+)
 from api.serialization import wire
 from db.blocklist import ip_fingerprint
 from db.detection import client_ip
@@ -34,6 +39,7 @@ from db.repository import (
     get_taxonomy,
     load_factor_bundle,
     prevention_destination_codes,
+    set_public_contribution,
     upsert_submission,
 )
 
@@ -240,6 +246,7 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
                 payload.token or None,
                 engine_request,
                 factor_set_id,
+                time_frame=payload.time_frame,
             )
         except FactorSetNotFoundError as exc:
             raise _repository_problem(exc) from exc
@@ -251,6 +258,39 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
     response["factor_source"] = factor_source
     response["token"] = token
     return ContractJSONResponse(wire(response))
+
+
+@router.post("/contribute", status_code=204)
+def contribute(payload: ContributePayload, request: Request) -> Response:
+    """§5.3, v1.48. The visitor's own opt-in, keyed on the same session token
+    `/calculate` mints -- no new identifier, per §2.3.
+
+    Rate-limited on the same group and limit as `/calculate`: a button a
+    caller can click once can be scripted into a loop, and this route writes
+    just as `/calculate` does.
+
+    Always 204, contributed or not: a token that does not resolve to a live
+    submission -- unknown, or already expired and nulled by `expire_tokens`
+    -- is treated as absent everywhere else it appears (§6.2), and a 404 here
+    would turn a stale `sessionStorage` value into an error the visitor has
+    no way to act on. `set_public_contribution` reports whether a row moved
+    only to keep that distinction available to a caller that wants it; the
+    route itself does not branch on it, so it also gives nothing away about
+    whether the token exists.
+
+    A dry run must persist nothing, exactly as `/calculate`'s own dry run
+    must (§6.2). Today that is true by coincidence rather than by guard:
+    `/calculate` never mints a token under `X-Dry-Run: true`, so a dry-run
+    caller here has no live token to flip a flag with. `_dry_run_header`
+    still reads the header and skips the write when it is `true`, so the
+    guard holds even if a future dry-run path ever does hand out a real
+    token -- this route must not become a live consent write just because
+    nothing exercises that case yet.
+    """
+    _limit(request, "post-calculate", 120)
+    if not _dry_run_header(request):
+        set_public_contribution(request.state.db, payload.token)
+    return Response(status_code=204)
 
 
 @router.get("/factors")

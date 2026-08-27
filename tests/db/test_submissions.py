@@ -524,3 +524,72 @@ def test_a_submission_defaults_to_the_hundred_year_horizon_and_is_public(session
     row = session.scalars(select(Submission)).one()
     assert row.gwp_horizon == 100
     assert row.excluded_from_public is False
+
+
+@pytest.mark.db
+def test_the_submission_carries_its_time_frame_and_consent(session):
+    """§2.3, v1.48. Two fields about the submission as a whole.
+
+    `time_frame` is a label and nothing computes with it (the client's own
+    ruling: "不用进 engine"), so it is a short string rather than a pair of
+    dates - a period somebody chose from a list, carried to the results page
+    and into the download.
+
+    `is_public_contributed` defaults FALSE, and that default is the whole
+    change: until v1.48 every calculation reached the public statistics
+    because §2.3 said "there is no consent checkbox". There is one now.
+    """
+    factor_set, _, _, _ = _prereqs(session)
+    now = utcnow()
+    row = Submission(
+        token=None, created_at=now, updated_at=now,
+        factor_set_id=factor_set.id, gwp_horizon=100,
+        time_frame="one_month",
+    )
+    session.add(row)
+    session.flush()
+
+    assert row.time_frame == "one_month"
+    assert row.is_public_contributed is False, (
+        "consent must default to withheld - a default of True would opt every "
+        "visitor in and make the column decorative"
+    )
+
+
+@pytest.mark.db
+def test_an_entry_carries_its_input_total_and_its_money(session):
+    """§2.3, v1.48. Three optional numbers per (sector, food category).
+
+    They are on the ENTRY and not the submission because the client asked for
+    the total input "按 sector" - a business with waste at three points in the
+    supply chain has three different production totals, and one figure on the
+    submission could not say which stage it belonged to.
+
+    All three are nullable: §6.2 makes them optional, and a visitor who does
+    not know their production total still gets every other figure.
+    """
+    factor_set, sector, dairy, _ = _prereqs(session)
+    submission = _submission(session, factor_set)
+    entry = SubmissionEntry(
+        submission_id=submission.id, sector_id=sector.id,
+        food_category_id=dairy.id, sort_order=0,
+        total_input_kg=Decimal("50000.000"),
+        total_value_nzd=Decimal("120000.00"),
+        wasted_value_nzd=Decimal("4500.00"),
+    )
+    session.add(entry)
+    session.flush()
+
+    assert entry.total_input_kg == Decimal("50000.000")
+    assert entry.total_value_nzd == Decimal("120000.00")
+    assert entry.wasted_value_nzd == Decimal("4500.00")
+
+    blank = SubmissionEntry(
+        submission_id=submission.id, sector_id=sector.id,
+        food_category_id=None, sort_order=1,
+    )
+    session.add(blank)
+    session.flush()
+    assert blank.total_input_kg is None
+    assert blank.total_value_nzd is None
+    assert blank.wasted_value_nzd is None

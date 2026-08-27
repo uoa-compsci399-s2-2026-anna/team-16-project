@@ -11,35 +11,145 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "4449.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "3468.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "525.0000000000"
+            },
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "456.0000000000"
+            }
+          ]
         },
         "ch4": {
           "metric_code": "ch4",
           "unit": "kg CH4",
           "display_precision": 1,
           "total": "32.4000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "32.4000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            },
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "water": {
           "metric_code": "water",
           "unit": "L",
           "display_precision": 0,
           "total": "1787600.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1224000.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "306000.0000000000"
+            },
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "257600.0000000000"
+            }
+          ]
         },
         "cost": {
           "metric_code": "cost",
           "unit": "NZD",
           "display_precision": 0,
           "total": "72.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "72.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            },
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2300.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1200.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "300.0000000000"
+            },
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000"
+            }
+          ]
         }
       },
       "equivalences": [
@@ -59,35 +169,145 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "2889.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "2364.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "525.0000000000"
+            },
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "ch4": {
           "metric_code": "ch4",
           "unit": "kg CH4",
           "display_precision": 1,
           "total": "1.2000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1.2000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            },
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "water": {
           "metric_code": "water",
           "unit": "L",
           "display_precision": 0,
           "total": "1530000.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1224000.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "306000.0000000000"
+            },
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "cost": {
           "metric_code": "cost",
           "unit": "NZD",
           "display_precision": 0,
           "total": "54.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "54.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            },
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2300.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "anaerobic_digestion",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "1200.0000000000"
+            },
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "300.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "300.0000000000"
+            },
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000"
+            }
+          ]
         }
       },
       "equivalences": [
@@ -105,7 +325,8 @@
       "water": "257600.0000000000",
       "cost": "18.0000000000",
       "mass": "0.0000000000"
-    }
+    },
+    "money": null
   },
   "entries": [
     {

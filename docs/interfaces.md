@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-21 (v1.47 draft)"
+date: "2026-08-27 (v1.48 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,33 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.48 — 2026-08-27 (the client's second round: a reporting period, three money figures a visitor types, a cross-entry destination roll-up, and the visitor's own consent; affects A, B, C, D and E)
+
+From the client meeting of 2026-08-27. **This revision is written against code that already exists.** Six changes landed first and this document was deliberately left untouched while they moved, so that the contract would be written once, against the tree, rather than six times against a moving target. Where an implementation departs from what was planned, the row says so and says why — a contract that describes the plan rather than the code is worse than no revision at all.
+
+**Nothing here changes a number that was already correct.** Every request that was valid at v1.47 is valid now, every existing response field keeps its meaning and its scale, and the nine pre-existing golden cases carry the figures they carried before. What moved on the wire is additive, with one exception that is not additive at all and is item 7.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **§6.2 gains four optional request fields, and none of them reaches a formula.** `time_frame` on the request; `total_input_kg`, `total_value_nzd` and `wasted_value_nzd` on each entry. `time_frame` is a **closed vocabulary** — `one_week`, `one_month`, `one_quarter`, `one_year` — for exactly the reason `gwp_horizon` is closed to 20 and 100: the results page renders a phrase per value, and a value it has no phrase for reaches a visitor as a raw identifier. It is a **label**: the client ruled that nothing is annualised or scaled by it, and the engine is not given it at all, so `upsert_submission` takes it as a keyword argument of its own rather than off the `CalculationRequest` the engine also consumes. A pair of dates was rejected because two dates invite exactly the arithmetic that ruling forbids | §2.3, §5.3, §6.2 |
+| 2 | **§3 rule 2 is amended, not reversed, and the half of it that was wrong is named.** The old rule said a cross-entry destination breakdown "has no single correct aggregation rule" and left the totals-level tuple empty. That holds for `upstream` and `downstream`, which are **per-kilogram rates** drawn from factors that differ between the entries sharing a destination — a mean of two different rates is a number derived from nothing. It never held for `qty_kg`, which is a mass, nor for `value`, which is a summand of a metric total the engine already computes by summing. The roll-up is therefore **per metric**, on `MetricResult.by_destination` at the totals level, carrying the two additive fields and leaving the two rates at **full-scale zero** — `"0.0000000000"`, not `"0"`, because §1.2 and §10.1 both already say those are different answers on the wire. **A consumer reading `upstream` or `downstream` off a rolled-up row is reading the wrong thing**; the two fields are present rather than omitted only because `MetricResult` is one type at both levels | §3, §4.2, §6.2 |
+| 3 | **§4.5 is new: the money block, `totals.money`.** Four figures derived from what the visitor typed — the two sums, the wasted share, and the saving an alternative scenario implies. **Statistics only: never a metric, never a formula, never a factor.** The formula language is per line over `(qty_kg, upstream, downstream, const_*)`, and an entry-level figure a person typed cannot be expressed in it; making it a metric would mean inventing a per-kilogram money factor, which is precisely the modelling O-2's ruling declined. Every field is `null` unless everything it derives from was supplied — a computed zero would read as "this food was worth nothing" rather than "nobody said", and those are different claims | §3, §4.5, §6.2 |
+| 4 | **The saving uses each entry's own value per kilogram against its own diverted mass, and the client has settled it in favour of exactly that.** The original ruling was "a uniform per-kilogram value", which reads as naturally as one rate per line as it does as one blended rate for the whole form; the plan specified the blended form and the implementation ruled for per-entry, which left a real question. **The client's principle is the one the produce trade already uses:** a box of bananas is taken as 50 kg, so 49.8 kg and 50.1 kg are both counted as 50 kg. The rate is therefore **nominal by design** — one figure standing for a line, not a measurement of what is in it — and "uniform" means uniform **within a line**. Under several food supply chains **each line carries its own value**, and **a line with no value written is not calculated.** Those are precisely the two properties the per-entry form has and the blended form does not: a single `Σ wasted ÷ Σ current` rate lets an entry nobody priced borrow a neighbour's price for its own diverted mass, and silently reprices the priced entry's kilograms on the way — on the canonical fixture, one entry at $4.50/kg beside a second at $5.00/kg gives $3,739.13 blended against $4,000.00 per entry. **Raised as O-12 and answered by the client before this revision merged**, which is why there is no v1.49: the question never outlived the entry that raised it | §4.5, O-12 |
+| 5 | **Two properties of the money arithmetic a later reader would otherwise "fix".** The **share is deliberately unclamped**: a visitor who types a wasted value above the total value sees a figure over 100% rather than one silently reshaped inside the engine — that is stage two's input validation to own, and reshaping it here would hide a typo instead of showing it. And **money quantises `ROUND_HALF_UP` explicitly**, where every other quantise in the tree leaves the mode implicit. Money rounds half up; `Decimal`'s default rounds half to even. Both are right in their place, and the explicit one is not a stray to be tidied away | §4.5 |
+| 6 | **§2.3 gains `is_public_contributed`, and "one calculation equals one submission, and nothing asks" is reversed at the client's request.** The calculation is still recorded in the same call and staff still see it; the **public aggregate does not count it until the visitor offers it**, through the new `POST /api/v1/contribute` (§6.2.2). There are now **two flags and neither can stand in for the other**: `excluded_from_public` is staff withdrawing a row the visitor offered, and `is_public_contributed` is a choice that is not staff's to make on a visitor's behalf. **§2.3's prohibition is untouched** — the route keys on the session token `/calculate` already mints, stores no address, no user agent and no fingerprint, and adds one boolean to a row that already existed | §2.3, §5.3, §6.2.2 |
+| 7 | **§5.4 predicates on both flags, and the deployed public count drops to zero the day `0016` lands.** `is_public_contributed` defaults FALSE, so every submission recorded before this revision counts towards nothing — those visitors were never asked, and there is no honest back-fill. `total_calculations` and all three breakdowns go to zero on the live deployment and recover as visitors begin opting in; **the administrators' own figures are unchanged**, because the panel reads the rows and not the aggregate. This is a data change wearing a schema change's clothes, and it is written into §5.4, §6.4 and here so that it is not reported as an outage on the morning it happens | §5.4, §6.4 |
+| 8 | **`is_prevention` joins the bundle projection's `destinations` rows, and §10.2's shape with it.** `FactorBundle` could not answer "is this destination a prevention destination" from a bundle at all, and §4.5's saving must exclude prevention mass from **both** sides of its subtraction. Reading the literal `"prevention"` was refused for v1.22's reason: §10.3's own prevention row is spelled `refed_prevention`, and a literal missed it once already. The key is **optional in `bundle.json`**, on the same terms as `food_categories[].is_standard_mix`, so no existing bundle needs rewriting; and **§6.3's export is provably unaffected**, because `get_factor_export` reads five keys and `destinations` is not among them | §4.1, §10.2 |
+| 9 | **§8.2's submissions screen gains a "Public consent" column and a filter, and deliberately does not merge it with `excluded_from_public`.** A single "is this row actually public" column would be exactly the collapse the two-flag design exists to prevent. Staff read the two independently on the screen, as §5.4 predicates on them independently in the query. A direct client request, taken now because no later stage owned it and deferring it would have dropped it | §8.2 |
+| 10 | **Open item O-2 closes, and the reason matters more than the answer.** Not "we chose cost price" — **the value of the food does not enter the main formula at all**, and cost price versus retail price is the client's own client's question about a number they type into a form. `const_FOOD_VALUE_PER_KG` therefore **stays at zero permanently**, which is what keeps `architecture.md` §10's "O-2 is O-7 again, in the constant dimension" note moot rather than merely unfired: the defect that note describes needs a non-zero constant, and this ruling means there will not be one. If the client ever does want the food's value inside the `cost` metric, that note's fix — model it as an upstream factor, not as a constant — is still the fix, and this closure is not a licence to raise the constant instead | O-2, §4.5 |
+| 11 | **Five columns, in migration `0016`.** `submission.time_frame`, `submission.is_public_contributed`, `submission_entry.total_input_kg`, `.total_value_nzd` and `.wasted_value_nzd`. Every one nullable or defaulted, because the deployed stack has real rows in it and a NOT NULL column with no default fails on the first of them. `total_input_kg` is `DECIMAL(16,3)`, matching `submission_line.qty_kg` — a production total is compared against a waste mass, and two scales for one comparison is how a thousandfold error gets in. The two money columns are `DECIMAL(14,2)`: dollars and cents, and never `FLOAT` | §2.3 |
+| 12 | **`tests/fixtures/` moved with the code rather than after it, and §10's table now says what each file carries.** `calculate_request.json` carries all four new fields, `total_input_kg` on one entry only so that both the present and the absent shapes are exercised; `calculate_response.json` carries a populated `totals.money` and the totals-level roll-up; `calculate_response_single.json` carries `"money": null`, which is the absent case on the wire. A tenth golden case, `case_10_money_per_entry_rate_and_prevention`, is the only evidence that item 4's per-entry rate and its prevention exclusion compute correctly — and writing it uncovered that the golden harness's request loader had never read the three money fields at all, so no golden case could have carried money into the engine even if one had existed | §10, §10.1 |
+
+> **`total_input_kg` is stored and nothing reads it yet, which is stated here rather than left to be discovered.** It is accepted, validated, carried onto `EntryInput` and persisted, and **no figure in any response is derived from it** — §4.5's share is a share of *value*, not of mass. It is the input for "waste as a share of production", which is a stage-two figure and has no consumer today. A field stored one revision ahead of its consumer is a defensible thing to ship; a field *silently* stored and unread is not, which is the whole reason for this note.
+
+> **Still open after this revision.** **O-1** remains the hard blocker: no real emissions factors have been supplied, so the published set stays flagged and the placeholder banner stays mandatory on every result and every export. **O-12 and O-2 are both closed** — O-12 by the client, in favour of the per-entry rate that had already shipped (item 4), and O-2 on the ruling that the food's value does not enter the formula at all (item 10). Carried forward unchanged: **O-3** (the New Zealand sources for the equivalence factors), **O-5**, **O-6** (the container densities), and **O-10** (no link from the calculator to Home or Statistics). §6.4's copy constraint is untouched and still binds — the subject of the statistics page is the calculator and never New Zealand, because this is a self-selected sample, and item 7 makes that sample smaller before it makes it larger.
+
+> **O-12 was raised by this revision and closed inside it, and `docs/architecture.md` §10 carries it closed.** It entered the register the way O-10 did when v1.29 raised it, and the client answered it days later — in favour of the behaviour that had already shipped. **The version was not bumped for the answer**, because this revision was still unmerged and unpushed when it arrived: it has never been the live contract with O-12 open in it, and a v1.49 recording a question nobody outside this branch ever read would leave a phantom revision in this log. Item 4 is therefore written as settled rather than as a ruling awaiting confirmation, and §4.5 carries the reasoning.
 
 ### v1.47 — 2026-08-21 (the language chooser moves to the reading **end** of the header; affects C, D)
 
@@ -1182,6 +1209,10 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 | `gwp_horizon` | SMALLINT | NOT NULL, DEFAULT 100 | Applies to the whole submission |
 | `excluded_from_public` | BOOLEAN | NOT NULL, DEFAULT FALSE | **Staff moderation, not user consent** |
 | `exclusion_reason` | VARCHAR(255) | NULL | |
+| `time_frame` | VARCHAR(32) | NULL | v1.48. The period the visitor says their figures cover: `one_week`, `one_month`, `one_quarter`, `one_year`. **A label, never a multiplier** — see below |
+| `is_public_contributed` | BOOLEAN | NOT NULL, DEFAULT FALSE | v1.48. **The visitor's own consent, and a second axis rather than a replacement for the row above.** Written only by `POST /api/v1/contribute` (§6.2.2) |
+
+> **The five v1.48 columns arrive in migration `0016`, `down_revision = "0015"`** — two here and three on `submission_entry` below. Every one of them is nullable or defaulted, because the deployed stack has real submissions in it: a NOT NULL column with no default fails on the first existing row, and **there is no value that could be back-filled honestly.** Nobody asked those visitors what period their figures covered, or whether they wanted to be counted.
 
 **No IP address, no user agent, no fingerprint of any kind is stored.**
 
@@ -1236,6 +1267,18 @@ Three tables, written together by one `POST /api/v1/calculate` (§5.3). They are
 > layer or are duplicated in `api/` — is **closed in v1.3**: they are in
 > `db/detection.py`, and `admin/detection.py` re-exports them. See §8.3.
 
+> **`time_frame` is a label and nothing computes with it (v1.48).** The client ruled explicitly that no figure is scaled by the period — nothing is annualised, nothing is divided — and **the engine is not given it at all.** `upsert_submission` (§5.3) takes it as a keyword argument of its own rather than off the `CalculationRequest`, because §3's request is the object the engine also consumes and the engine must not be handed a value it is required not to use. The period travels to the results page and into the download so that a figure somebody keeps has a period attached to it, which is the whole of what it is for.
+>
+> **A pair of dates was rejected, and not for storage reasons.** What the client asked for is a period picked from a list; two dates would invite exactly the arithmetic the ruling forbids, and the first person to write `(end − start)` against a metric total would be doing something this contract says must not happen. The vocabulary is closed for the same reason `gwp_horizon` is closed to 20 and 100: the results page renders a phrase per value, and a value it has no phrase for reaches a visitor as a raw identifier.
+
+> **`is_public_contributed` reverses "one calculation equals one submission, and nothing asks" (v1.48).** Until this revision a calculation was public the moment it was recorded, and this document said so deliberately: there was no consent checkbox and no separate "contribute" button, because a checkbox nobody ticks is a statistics page with nothing on it. **The client asked for the opposite**, and this is what the reversal has to mean: the calculation is still recorded in the same call, the panel still sees it, and the **public aggregate does not count it until the visitor offers it** — `POST /api/v1/contribute` (§6.2.2).
+>
+> **Two flags, and neither can stand in for the other.** `excluded_from_public` is staff moderation — a member of staff judging a row implausible, and able to withdraw a row its visitor did offer. `is_public_contributed` is the visitor's own choice, and it is not staff's to grant on their behalf. The public aggregate needs **both**, independently: §5.4 predicates on both at every query site, and §8.2 shows both as separate columns rather than one combined "is this row public" flag, which would be exactly the collapse this design exists to prevent.
+>
+> **It defaults FALSE, and that is the point.** A default of TRUE would opt every visitor in and leave the column decorative. It also means every submission recorded before `0016` counts towards nothing — see §5.4 for what that does to a deployed statistics page on the day this lands.
+>
+> **This introduces no new identifier, and the prohibition above is untouched.** `POST /api/v1/contribute` keys on the same session token `POST /calculate` already mints — the one nulled an hour later by `expire_tokens` (§5.3). No address, no user agent and no fingerprint is read or stored by it, and the consent itself is one boolean on a row that already existed. **The hour is a real deadline rather than an oversight**: once the token is nulled the row cannot be found and the visitor can no longer opt in. That is correct rather than unfortunate — the mechanism that makes the offer possible is the same one the privacy design deliberately destroys, and the front end must therefore offer the choice on the results screen rather than saving it for later.
+
 `sector_id` and `food_category_id` live on `submission_entry`, not here: one submission carries several, each with its own factors.
 
 ### `submission_entry`
@@ -1249,10 +1292,19 @@ One `(sector, food_category)` pair within a submission. A food business has wast
 | `sector_id` | INT | FK, NOT NULL | |
 | `food_category_id` | INT | FK, NULL | Null when the user did not break waste down by type |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | Preserves the order the user entered them, so `entries[]` in the §6.2 response can be paired with the rows on screen |
+| `total_input_kg` | DECIMAL(16,3) | NULL | v1.48. What this stage put through in the period, so waste can be stated as a share of production. NULL is "not stated" and is **not** zero |
+| `total_value_nzd` | DECIMAL(14,2) | NULL | v1.48, **statistics only** (§4.5). The value of what this stage put through |
+| `wasted_value_nzd` | DECIMAL(14,2) | NULL | v1.48, **statistics only** (§4.5). The value of what it wasted |
 
 UNIQUE(`submission_id`, `sector_id`, `food_category_id`)
 
 > The uniqueness constraint has the same MySQL NULL caveat as `factor_downstream` (§2.2): a nullable column in a UNIQUE key does not prevent duplicates, because NULLs compare distinct. Use a functional index over `COALESCE(food_category_id, 0)`.
+
+> **The three v1.48 columns are all nullable, and NULL is a claim about what the visitor said rather than about the food.** Zero would say this stage put nothing through, or that its food was worth nothing; NULL says nobody stated it. §4.5 depends on the distinction — every field of the money block is absent unless everything it derives from was present — so a repository or an adapter that defaults any of these to zero on the way in produces a figure the visitor never implied.
+>
+> **`total_input_kg` is `DECIMAL(16,3)` to match `submission_line.qty_kg`, deliberately.** A production total exists to be compared against a waste mass, and carrying the two at different scales is how a thousandfold error gets into a comparison. The two money columns are `DECIMAL(14,2)` — New Zealand dollars and cents, two places because money has two, and never `FLOAT` (§1.2).
+>
+> **`total_value_nzd` and `wasted_value_nzd` are not a metric and must never become one.** They are entry-level figures a person typed, and the expression language is per line over `(qty_kg, upstream, downstream, const_*)` (§4.3), which cannot express one. Making them a metric would mean inventing a per-kilogram money factor — the modelling the client's ruling on **O-2** declined. §4.5 is where they go instead.
 
 ### `submission_line`
 
@@ -1400,6 +1452,14 @@ class EntryInput:
     food_category_code: str | None          # None -> use standard_mix
     current: tuple[ScenarioLine, ...]
     alternative: tuple[ScenarioLine, ...] | None
+    # v1.48. All three optional, all three carried rather than computed with:
+    # calculate() derives the money block from the two NZD figures (4.5) and
+    # nothing in the engine reads total_input_kg at all. None is not zero --
+    # zero claims this stage put nothing through, or that its food was worth
+    # nothing; None says nobody stated it.
+    total_input_kg: Decimal | None = None
+    total_value_nzd: Decimal | None = None
+    wasted_value_nzd: Decimal | None = None
 
 @dataclass(frozen=True)
 class CalculationRequest:
@@ -1422,7 +1482,10 @@ class MetricResult:
     unit: str
     display_precision: int
     total: Decimal
-    by_destination: tuple[BreakdownRow, ...]    # empty at the totals level; see below
+    # Populated per entry with each line's own rates and value; populated at
+    # the totals level too since v1.48, with qty_kg and value summed across
+    # entries and the two rates left at full-scale zero. See rule 2 below.
+    by_destination: tuple[BreakdownRow, ...]
 
 @dataclass(frozen=True)
 class EquivalenceResult:
@@ -1446,11 +1509,24 @@ class EntryResult:
     net_benefit: dict[str, Decimal] | None  # key = metric_code
 
 @dataclass(frozen=True)
+class MoneyResult:
+    """v1.48, 4.5. What the visitor's own money figures come to.
+
+    Not a metric, and that is a decision rather than an omission -- see 4.5.
+    Every field is optional because every input is: None means nobody supplied
+    what it is derived from, never zero, which is a claim."""
+    total_value_nzd: Decimal | None          # summed across entries
+    wasted_value_nzd: Decimal | None         # summed across entries
+    wasted_share_percent: Decimal | None     # wasted / total * 100, 2 places
+    saving_nzd: Decimal | None               # per-entry rate x diverted mass
+
+@dataclass(frozen=True)
 class CalculationTotals:
     """The cross-entry roll-up. Computed by the engine, never by a caller."""
     current: ScenarioResult
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
+    money: MoneyResult | None               # v1.48; None when nobody typed one
 
 @dataclass(frozen=True)
 class CalculationResult:
@@ -1461,13 +1537,21 @@ class CalculationResult:
     entries: tuple[EntryResult, ...]        # request order, one per EntryInput
 ```
 
-**Five rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
+**Six rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
 
 1. **`entries` preserves request order.** §6.2 states it, and `submission_entry.sort_order` (§2.3) exists to persist it. It is what lets C pair a result with the row the user typed.
-2. **`by_destination` is populated per entry and empty at the totals level.** §6.2: the same destination can appear under several entries drawing different upstream factors, so a cross-entry destination breakdown has no single correct aggregation rule. `MetricResult` is one type either way; at the totals level the tuple is empty and the serialiser omits the key. See §6.2 for the ruling on how the front end renders that breakdown.
+2. **`by_destination` is populated per entry, and at the totals level it is populated per metric with the additive fields only (amended in v1.48).** This rule used to say the tuple was empty at the totals level, on the grounds that "a cross-entry destination breakdown has no single correct aggregation rule". **Half of that reasoning was right and is kept; half of it was wrong and is what changed.**
+
+    - **`qty_kg` and `value` are additive, so they roll up.** A mass is a mass, and `value` is a summand of the metric total the engine already computes by summing (§4.3) — so the cross-entry partition is built from the same summation as the total, and it **cannot drift from it structurally**: there is no request that makes the rows partition a different quantity than the one `total` describes. That is a narrower claim than "the rows always add up to `total`" on the wire, and the narrower claim is the true one. `BreakdownRow.value` is quantised **per line**, to `METRIC_SCALE` (§1.2's ten places); `MetricResult.total` is `quantize(Σ unquantised line values)` — one rounding at the end, not one per line. When a formula's result does not terminate at ten places (`qty_kg * upstream / 3` is `case_09`'s shipped example of exactly this), each stored `value` differs from its true, unrounded figure by up to half of `METRIC_SCALE` — on the order of `5 × 10⁻¹¹`, a unit in the last place per line — and the rows can then sum to a figure a few `10⁻¹⁰`s away from `total`, at the entry level and, because the totals-level roll-up sums already-rounded entry figures without rounding again, at the totals level too. Every shipped formula today is multiplicative and terminates exactly at ten places, which is why nothing in the tree exhibits this yet — but `case_09` is proof staff can author a division, and a consumer charting a rolled-up breakdown against this guarantee should plan for it. It is a caveat worth carrying rather than a defect worth fixing: quantising every line to one fixed, wire-legible scale (§1.2) is what lets `by_destination` and `total` both be plain decimal strings at all, and the price is a gap of `5 × 10⁻¹¹` per affected line — invisible next to any `display_precision` a chart will ever round to.
+    - **`upstream` and `downstream` are not, so they do not.** They are **per-kilogram rates**, drawn from factors that legitimately differ between the entries sharing a destination: 1,200 kg to landfill from processing and 1,200 kg to landfill from primary production draw two different upstream factors. Summing two rates is meaningless and averaging them produces a number derived from nothing. **They are present and zero at the totals level**, and the zero is at full scale — `"0.0000000000"`, never `"0"` (§1.2, and §10.1 says the same of a golden file). **A consumer reading either field off a rolled-up row is reading the wrong thing:** the rate that produced a totals-level row does not exist as a single number, and per-entry rates remain available in `entries[]`, which is where a rate has a meaning.
+
+    **The roll-up is keyed per metric and never crosses a metric boundary.** `value` therefore stays in that metric's own unit — kg CO2e is not additive with NZD — and `qty_kg` comes out identical in every metric's rows, because mass does not depend on which metric is being computed. An earlier shape put one `by_destination` on `ScenarioResult` and drew its `value` from the lowest-`sort_order` metric; that was rejected because the number's meaning would then depend on `sort_order`, nothing in the payload would record which metric it came from, and a front end charting it could not tell kg CO2e from dollars. A consumer that wants the metric-agnostic mass partition reads any metric's rows and gets the same answer.
+
+    `MetricResult` is one type at both levels, and the serialiser's rule is unchanged and now uniform: **drop the key when the tuple is empty.** See §6.2 for how the front end renders the per-entry breakdown, which this does not change.
 3. **An entry with no alternative contributes its `current` result to `totals.alternative`.** This is what §6.2's "entries without one contribute zero to it rather than being excluded, so the totals stay mass-conserving" means in code: the entry's own `EntryResult.alternative` and `EntryResult.net_benefit` stay `None`, but the totals roll-up counts its current figures on both sides, so its contribution to `totals.net_benefit` is exactly zero and `totals.alternative`'s mass equals `totals.current`'s. Excluding it instead would make the alternative lighter than the current scenario and inflate net benefit — the precise failure the dual-scenario design exists to prevent.
 4. **When *no* entry carries an alternative, `totals.alternative` and `totals.net_benefit` are both `None`,** and so is every `EntryResult.alternative` / `EntryResult.net_benefit`.
 5. **`EquivalenceResult.label` interpolates `{value}` in exactly one format**, defined below. Until v1.4 it was defined nowhere, and §6.2's samples were the only evidence of it.
+6. **`CalculationTotals.money` is `None` when no entry supplied a money figure, and each of its own fields is `None` unless everything that field derives from was supplied** (v1.48, §4.5). It is the one field on this type not derived from a metric or a formula, and it is a `None`-or-a-value rather than a zero throughout, because "nobody said" and "the answer is zero" are different claims and only a value actually seen can tell them apart.
 
 > **`EquivalenceResult.label`: the interpolation rule.**
 >
@@ -1556,6 +1640,20 @@ class FactorBundle:
     def has_food_category(self, code: str) -> bool: ...
     def standard_mix_code(self) -> str: ...
 
+    def is_prevention_destination(self, code: str) -> bool:
+        """v1.48. Whether this destination carries the prevention role
+        (destination.is_prevention, 2.1). Backed by
+        `prevention_destination_codes: frozenset[str]`, built from the
+        `is_prevention` key on each `destinations[]` row of the bundle
+        (10.2). The key is OPTIONAL and defaults False, on the same terms
+        as `food_categories[].is_standard_mix`, so no existing bundle.json
+        needs rewriting.
+
+        4.5's saving is the only engine caller. It asks the bundle rather
+        than testing the literal 'prevention' for v1.22's reason: 10.3's
+        own prevention row is spelled `refed_prevention`, and a literal
+        missed it once already."""
+
     @classmethod
     def from_json(cls, data: dict) -> "FactorBundle":
         """Build a bundle from the bundle.json shape defined in §10.2.
@@ -1630,7 +1728,8 @@ Within the engine, the roll-up rules are:
 | `totals.current.metrics[code].total` | Σ over entries of that entry's metric total |
 | `totals.current.total_kg` | Σ over entries of `current.total_kg` |
 | `totals.current.equivalences` | Computed **from the rolled-up metric total**, not summed from the per-entry equivalence values. The conversion is linear so the two agree mathematically, but `Decimal` has finite precision and one computation is one rounding |
-| `totals.current.metrics[code].by_destination` | Empty (§3 rule 2) |
+| `totals.current.metrics[code].by_destination` | **Per metric, per destination, across entries** (§3 rule 2, amended v1.48): `qty_kg` and `value` are Σ over the entries' rows for that destination; `upstream` and `downstream` are zero at `METRIC_SCALE`, i.e. `"0.0000000000"`. Row order is first appearance across entries, so two runs of one request produce the same JSON |
+| `totals.money` | §4.5. `None` when no entry supplied a money figure. **Not derived from any metric**, so it is the one row of this table whose input is the request rather than the per-entry results |
 | `totals.alternative` | Same rules, over each entry's `alternative` — **or its `current` where the entry has none** (§3 rule 3) |
 | `totals.net_benefit` | `net_benefit(totals.current, totals.alternative)` — computed on the rolled-up scenarios, not summed from the per-entry `net_benefit` maps |
 
@@ -1743,6 +1842,68 @@ class FormulaError(EngineError):
 ```
 
 The fields must be separable because §9 gives this error two presentations: opaque for public requests (the expression is never echoed), fully located for authenticated dry runs (staff tuning a formula cannot fix what they cannot see).
+
+---
+
+## 4.5 The Money Block (owner: A, v1.48)
+
+`totals.money` is the one figure in a response that is **not** computed from a factor, a formula or a metric. It is derived from two numbers the visitor typed into the form (§6.2) — `total_value_nzd` and `wasted_value_nzd` — and from the masses they entered, and it lives on `CalculationTotals` as a block of its own.
+
+```python
+@dataclass(frozen=True)
+class MoneyResult:
+    total_value_nzd: Decimal | None
+    wasted_value_nzd: Decimal | None
+    wasted_share_percent: Decimal | None
+    saving_nzd: Decimal | None
+```
+
+| Field | Rule |
+| --- | --- |
+| `total_value_nzd` | Σ of each entry's `total_value_nzd`, over the entries that supplied one. `None` when no entry did |
+| `wasted_value_nzd` | Σ of each entry's `wasted_value_nzd`, on the same terms |
+| `wasted_share_percent` | `wasted_value_nzd ÷ total_value_nzd × 100`. `None` when either side is absent **or when the total is zero** |
+| `saving_nzd` | Σ over entries of `(entry.wasted_value_nzd ÷ entry current mass) × (entry's diverted mass)`. **Two rules, both the client's** (O-12, closed 2026-08-27): **each entry's own value per kilogram applies to its own diverted mass**, and **an entry that supplied no value contributes nothing** rather than borrowing a neighbour's rate. `None` when no entry carries an alternative, and `None` when no entry supplied a wasted value at all. An entry whose current mass is zero is skipped rather than divided by — it has no rate, and it contributes nothing either way |
+
+`MoneyResult` itself is `None` when neither money figure was supplied by any entry. All four figures carry **two decimal places** — New Zealand dollars and cents — not the ten every metric value carries (§1.2). The scale is applied in the engine rather than at the wire edge, because §6.2's `decimal_places=2` is an upper bound rather than an exact scale: a request carrying `"120000"` arrives as `Decimal("120000")` and would otherwise travel verbatim, which is the wrong-scale defect this contract already had once in the rolled-up rates.
+
+**It is not a metric, and that is a decision rather than an omission.** Metrics are rows in a table with a stored formula (Decision 2, "metrics are data, not code"), and the expression language is **per line** over `(qty_kg, upstream, downstream, const_*)` (§4.3). These are **entry-level figures a person typed**; no per-line expression can reach one. Expressing them as a metric would mean inventing a per-kilogram money factor — which is exactly the modelling the client's ruling on **open item O-2** declined to do. Keeping them out of the metric table is also what keeps the `cost` metric honest: `cost` is disposal cost plus the waste levy, computed from factors, and these four numbers never enter it.
+
+> **Open item O-2 closes here, and on the reason rather than on a price.** The question was whether the value of the wasted food itself belongs in the cost metric, and at cost price or at retail price. The client's answer is that **it does not enter the main formula at all** — it is a figure the business states about its own operation, and whether they mean cost or retail is their own question about their own number. `const_FOOD_VALUE_PER_KG` therefore stays at **zero**, permanently, and the `cost` metric continues to report disposal cost and the waste levy only.
+>
+> **This is also what keeps `architecture.md` §10's "O-2 is O-7 again, in the constant dimension" note moot.** That note describes a real defect — a constant is bound once per formula and has no destination to vary by, so a `prevention` line would carry the full food value and `net_benefit.cost` would net it to zero — and it fires only if the constant is ever raised. This closure means it will not be. **It is not a licence to raise the constant instead:** if the client ever does want the food's value inside `cost`, the fix in that note still stands, which is to model it as an upstream factor keyed on `(sector, food_category)` where `prevention`'s zero row offsets it automatically.
+
+> **Absent stays absent, and the reason is worth one line.** Every field is `None` unless every value it derives from was supplied. A computed zero would read to a visitor as "this food was worth nothing" or "you saved nothing", when what happened is that nobody said. Only a value actually seen can tell those two apart, so the sums count the entries that supplied a figure and return `None` when none did.
+
+**The saving is computed per entry, at each entry's own value per kilogram — and an entry with no value written is not calculated.** Both halves are the client's rule, not an implementation choice (O-12). For each entry that supplied a `wasted_value_nzd`, and only those:
+
+```
+rate_i      = entry_i.wasted_value_nzd / Σ entry_i.current.qty_kg
+current_i   = Σ qty_kg over entry_i.current      lines whose destination is NOT prevention
+alt_i       = Σ qty_kg over entry_i.alternative  lines whose destination is NOT prevention
+diverted_i  = current_i − alt_i
+saving      = Σ_i (rate_i × diverted_i)
+```
+
+An entry with no alternative substitutes its own `current` lines for the alternative, exactly as §3 rule 3 requires of the metric roll-up, so its `diverted_i` is zero and it cannot manufacture a saving out of a scenario nobody supplied.
+
+> **Why per entry and not one blended rate across the form (open item O-12, closed by the client on 2026-08-27).** The original ruling was that the saving uses "a uniform per-kilogram value", and that sentence reads as naturally as **one rate per line** as it does as **one blended rate for the whole calculation**. The client settled it by analogy with how produce is already traded: **a box of bananas is taken as 50 kg, so 49.8 kg and 50.1 kg are both counted as 50 kg.** Uniform means uniform *within a line*. **Under several food supply chains, each line carries its own value; a line with no value written is not calculated.** Those are the two rules stated in the table above, in the client's own terms.
+>
+> A blended `Σ wasted ÷ Σ current` rate satisfies neither of them. It lets an entry the visitor never priced borrow a neighbour's price for its own diverted mass, and silently reprices the priced entry's own kilograms in the process: on the canonical fixture, one entry priced at $4.50/kg beside a second entry priced at $5.00/kg gives **$3,739.13** blended against **$4,000.00** per entry, and with the second entry left unpriced the blended figure attributes money to food nobody put a value on.
+>
+> **Per entry is also the conservative reading**, which is why it was what shipped while the question was still open. It never invents a price for food the visitor did not price, and it never dilutes a price the visitor did give; for a client-facing figure whose main risk is being screenshotted out of context, the number that by construction neither overstates nor understates is the one to ship. `tests/golden/case_10_money_per_entry_rate_and_prevention` is what pins it: reverting to the blended rate fails that case at `3888.89` against an expected `2400.00`, so the decision cannot be reversed silently.
+
+> **The rate is nominal, and it must not be read as a measurement.** A line's value per kilogram is `wasted_value_nzd ÷ that line's current mass` — derived from two totals the visitor typed for that line, and from nothing else. **The calculator does not attempt to be more precise than the figures it was given**, which is the whole of the banana principle: a nominal 50 kg box counts as 50 kg whether it holds 49.8 or 50.1. The saving is therefore a nominal figure about the lines a visitor chose to price, not a valuation of the food that moved — and copy that presents it as the latter claims a precision the input does not carry.
+
+> **Prevention mass is excluded from `diverted_i` on *both* sides of the subtraction, not only the alternative side.** A prevention destination is where waste that did not happen goes, so mass sitting there was never diverted from anything. Excluding it only on the alternative side makes two identical scenarios of `700 landfill + 300 prevention` report a saving for a change of nothing. §6.2 refuses a prevention line in a `current` scenario, so that state is unreachable over HTTP — but **the engine is a pure function**, reachable from a golden case and from the dry-run view without that guard, and relying on a validator one layer up is how a wrong number survives a refactor. The rate's own denominator is the entry's whole current mass, prevention included, because it is a price per kilogram of what the entry described rather than a price per kilogram of what moved.
+>
+> The exclusion asks `FactorBundle.is_prevention_destination()` (§4.1) rather than comparing against the literal `"prevention"`, for v1.22's reason: §10.3's ReFED vocabulary spells its own prevention row `refed_prevention`, and a literal missed it once already.
+
+> **`wasted_share_percent` is deliberately unclamped.** A visitor who types a wasted value greater than the total value sees a figure over 100%, not one silently reshaped inside the engine. Clamping here would hide a typo behind a plausible number, on a page where the visitor is the only person who can correct it; **stage two's input validation is where that belongs**, and it can say so in words the engine cannot. The one guard is division by zero: a `total_value_nzd` of zero yields `None` rather than an error or an infinity.
+
+> **Money quantises `ROUND_HALF_UP`, explicitly, and that is not a stray.** Every other quantise in this tree leaves the rounding mode implicit, which means `Decimal`'s default of half-to-even. Money rounds half up — 2.5 cents is 3 cents — and metric values do not. Both are correct in their own place; the explicit argument on the money path is written down here so the next reader does not "tidy" it into consistency with the metrics.
+
+> **`total_input_kg` is carried on `EntryInput` and persisted, and no field of `MoneyResult` reads it.** The share above is a share of **value**, not of mass. Waste as a share of production is a stage-two figure with no consumer today; the column and the field exist so that the number a visitor types is not thrown away while its consumer is built.
 
 ---
 
@@ -1890,7 +2051,8 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
 
 ```python
 def upsert_submission(session, token: str | None, req: CalculationRequest,
-                      factor_set_id: int) -> tuple[int, str]:
+                      factor_set_id: int, *,
+                      time_frame: str | None = None) -> tuple[int, str]:
     """
     Upsert keyed by token. One call, one submission, N entries.
 
@@ -1904,7 +2066,11 @@ def upsert_submission(session, token: str | None, req: CalculationRequest,
       submission        one row; stamps factor_set_id and req.gwp_horizon
       submission_entry  one row per req.entries[i], with sort_order = i so
                         the response's entries[] can be paired back to the
-                        rows on the user's screen (§2.3)
+                        rows on the user's screen (§2.3); and (v1.48) that
+                        entry's own total_input_kg, total_value_nzd and
+                        wasted_value_nzd, read straight off req.entries[i],
+                        which carries all three (§3). None stays None: a
+                        caller that left them unset writes NULL, not zero
       submission_line   one row per line, per scenario, per entry, keyed on
                         submission_entry_id
 
@@ -1914,9 +2080,38 @@ def upsert_submission(session, token: str | None, req: CalculationRequest,
     would have to reconcile an entry the user removed against one they added,
     and the entries have no client-supplied identity to reconcile on.
 
+    `time_frame` (v1.48) is a keyword argument of its own and is deliberately
+    NOT read off `req`. §3's CalculationRequest is the object the engine also
+    consumes, and the client ruled that the period never enters a calculation
+    -- so the engine is not given it, rather than being given it and trusted
+    not to look. It is written on the update path as well as the insert path:
+    a second calculation reusing the same token would otherwise keep the first
+    one's period forever.
+
+    Does NOT set is_public_contributed. It defaults false at the schema and
+    set_public_contribution below is the only writer in the tree.
+
     Returns (submission_id, token). The token is always returned so the
     front end can store it in sessionStorage.
     """
+
+def set_public_contribution(session, token: str) -> bool:
+    """v1.48. The visitor's own opt-in: sets is_public_contributed = TRUE on
+    the submission holding this token. Returns whether a row moved.
+
+    Idempotent, and SILENT ON A MISS. A token that resolves to nothing --
+    unknown, or expired and nulled by expire_tokens below -- is treated as
+    absent, the same as everywhere else a token appears (§6.2). The return
+    value exists so a caller that wants the distinction can have it; §6.2.2
+    does not branch on it, because a route that answered differently would
+    disclose whether a token exists.
+
+    Keyed on `token` because that is the only handle the browser has, and
+    that gives this a deadline nobody should have to discover: expire_tokens
+    nulls the column an hour on, and after that the row cannot be found and
+    the visitor can no longer opt in. That is correct rather than
+    unfortunate -- the mechanism that makes the offer possible is the same
+    one §2.3's privacy design deliberately destroys."""
 
 def expire_tokens(session, now: datetime) -> int:
     """Nulls the token column for rows whose token_expires_at is in the past,
@@ -1932,9 +2127,14 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
     Aggregate public statistics.
 
     - Excludes every entry and every line belonging to a submission with
-      excluded_from_public = TRUE. That column is on `submission` (§2.3),
+      excluded_from_public = TRUE, and (v1.48) counts only submissions with
+      is_public_contributed = TRUE. Both columns are on `submission` (§2.3),
       so each breakdown below joins one table further than its own
       grouping needs — up to `submission`, not merely to the entry.
+    - THE TWO PREDICATES ARE INDEPENDENT AND BOTH REQUIRED, at every query
+      site including total_calculations: staff exclusion withdraws a row the
+      visitor offered, and consent is not staff's to grant on a visitor's
+      behalf. Neither can stand in for the other (§2.3).
     - Merges any bucket with count < threshold into 'other'
     - Then, while 'other' is itself below the threshold, merges the
       smallest remaining visible bucket into it as well; if even that
@@ -1954,6 +2154,10 @@ def get_public_stats(session, threshold: int = 5) -> PublicStats:
                         WHERE submission_line.scenario = 'current'
       total_kg          summed over the same current-scenario lines
       total_calculations  counts submission rows
+
+    Suppression runs strictly AFTER the consent filter, never before it, so
+    no bucket can be recovered by subtracting a suppressed one from a
+    population that included rows nobody offered.
 
     A submission with three entries is three sector observations. Joining
     by_sector to `submission` instead — which is what a schema-driven reading
@@ -1999,6 +2203,10 @@ class PublicStats:
 > **This does not break the shares property.** `other` remains an ordinary bucket carrying every suppressed entry, so the denominator — computed before suppression — is untouched and §6.4's "`share` … does sum to 1" holds exactly as before. An empty breakdown has no shares to sum. The alternatives all cost something the merge-rather-than-drop rule was written to protect: *dropping* `other` removes its entries from that denominator and makes the shares false; *re-normalising* inflates every remaining share by the suppressed mass, in the direction of overclaiming; *folding `other` into the largest visible bucket* hides a small number inside a large one and misattributes its tonnage. Absorbing costs one row of resolution and nothing else.
 >
 > Raised as `docs/ToB_v2.0.md` S6 and recorded as open in v1.4. Decided in favour of privacy: a statistics page that cannot describe its smallest cohort is a page with one fewer row, while a page that describes it is a page that identifies it.
+
+> **The deployed public statistics drop to zero when migration `0016` lands, and recover as visitors opt in (v1.48).** `is_public_contributed` defaults FALSE, so **every submission recorded before that migration counts towards nothing** — `total_calculations` and all three breakdowns included. That is the correct reading of a consent flag applied retrospectively: those visitors were never asked, and there is no value that could be back-filled honestly. It is written here, in §6.4 and in the change log because it is a **data change wearing a schema change's clothes**, and the person who notices it first will be looking at a statistics page that read 1,247 yesterday and reads 0 today.
+>
+> **The administrators' figures are unchanged.** §8.2's submissions screen reads the rows themselves, not this aggregate, so every historical calculation is still there, still searchable and still moderatable. Nothing was deleted; the public denominator was re-derived from a question that had not been asked before.
 
 > **`total_calculations` and the bucket counts are deliberately counting different things, and the statistics page must not present them as if they were not.** `total_calculations` is submissions; every `StatsBucket.count` is entries. `Σ by_sector[].count` is therefore ≥ `total_calculations`, and the gap is exactly the number of multi-entry submissions. `share` is computed within its own breakdown — over entries — so shares still sum to 1 and are the safe figure to display. Copy that reads "1,247 calculations" beside a sector chart whose counts add to 1,600 invites the obvious question; the honest phrasing names the unit ("1,247 calculations, covering 1,600 points in the supply chain"). See §6.4's copy constraint, which is D's.
 
@@ -2148,10 +2356,14 @@ Called once on page load to build every dropdown and input row.
 {
   "token": "3f2b… (optional; omitted on the first call)",
   "gwp_horizon": 100,
+  "time_frame": "one_year",
   "entries": [
     {
       "sector": "processing",
       "food_category": "dairy",
+      "total_input_kg": "10000.000",
+      "total_value_nzd": "45000.00",
+      "wasted_value_nzd": "6750.00",
       "current": [
         { "destination": "landfill", "qty_kg": "1200.000" },
         { "destination": "animal_feed", "qty_kg": "300.000" }
@@ -2164,6 +2376,8 @@ Called once on page load to build every dropdown and input row.
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "total_value_nzd": "5000.00",
+      "wasted_value_nzd": "4000.00",
       "current": [ { "destination": "not_harvested", "qty_kg": "800.000" } ],
       "alternative": [ { "destination": "prevention", "qty_kg": "800.000" } ]
     }
@@ -2176,9 +2390,13 @@ Called once on page load to build every dropdown and input row.
 | --- | --- | --- | --- |
 | `token` | string \| null | No | Session token; omitted on the first call. Any value that does not resolve to a live submission is treated as absent and a new one is minted — a stale `sessionStorage` value must not produce an error |
 | `gwp_horizon` | int | No | 20 or 100; defaults to 100. Applies to the whole submission |
+| `time_frame` | string \| null | No | **v1.48.** One of `one_week`, `one_month`, `one_quarter`, `one_year`. A closed vocabulary; anything else is `VALIDATION_ERROR`. **Persisted and never computed with** — it reaches `submission.time_frame` (§2.3) and is not passed to the engine at all |
 | `entries` | array | Yes | At least one entry |
 | `entries[].sector` | string | Yes | Must exist in the taxonomy |
 | `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
+| `entries[].total_input_kg` | decimal-string \| null | No | **v1.48.** What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. Stored (§2.3); **no response field is derived from it yet** — see §4.5 |
+| `entries[].total_value_nzd` | decimal-string \| null | No | **v1.48.** `>= 0`, at most 2 decimal places, `<= 14` digits. Feeds §4.5's money block and nothing else |
+| `entries[].wasted_value_nzd` | decimal-string \| null | No | **v1.48.** Same bounds. Feeds §4.5's money block and nothing else |
 | `entries[].current` | array | Yes | At least one line |
 | `entries[].alternative` | array \| null | No | Null means no comparison is performed **for that entry** |
 | `dry_run` | object \| null | No | **Staff only**; see §6.2.1. Requires `X-Dry-Run: true` |
@@ -2195,6 +2413,10 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 >
 > `details[].field` points at `entries[i].alternative` — the whole array, not a line, because no single line is at fault.
 
+> **Four optional fields arrived in v1.48 and none of them reaches a formula.** They describe the *context* of a calculation rather than its inputs: the period the figures cover, what the stage put through, and what the food was worth. **Omitting any of them changes no impact figure** — every metric total, every equivalence and every `net_benefit` is computed from `qty_kg` and the factors exactly as before, and a request written against v1.47 produces the identical response body except for `totals.money`, which is then `null`.
+>
+> **Absent is stored as NULL and never as zero** (§2.3). Zero would claim this stage put nothing through, or that its food was worth nothing; NULL says nobody stated it, and §4.5's whole design rests on being able to tell those apart.
+
 **Validation rules (enforced server-side)**
 
 | Rule | On violation |
@@ -2205,6 +2427,8 @@ If **any** entry carries an `alternative`, the response carries `net_benefit` at
 | Per scenario total, per entry `<= 50,000,000` | `VALIDATION_ERROR` |
 | Per scenario line count, per entry `<= 20` | `VALIDATION_ERROR` |
 | Entry count `<= 20` | `VALIDATION_ERROR` |
+| `time_frame` in {`one_week`, `one_month`, `one_quarter`, `one_year`} or absent | `VALIDATION_ERROR` |
+| `total_input_kg`, `total_value_nzd`, `wasted_value_nzd` each `>= 0` and within their scale | `VALIDATION_ERROR` |
 | **Per entry carrying an `alternative`: `\|Σ alternative.qty_kg − Σ current.qty_kg\| <= 0.010`** | `VALIDATION_ERROR`, `field` = `entries[i].alternative` |
 | **No `destination.is_prevention` line in a `current` scenario** | `VALIDATION_ERROR`, `field` = `entries[i].current`, `issue` = `prevention_in_current` |
 | No duplicate `destination` within one entry's scenario | `VALIDATION_ERROR` |
@@ -2288,7 +2512,12 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
         "co2e": {
           "unit": "kg CO2e",
           "display_precision": 1,
-          "total": "5118.0000000000"
+          "total": "5118.0000000000",
+          "by_destination": [
+            { "destination": "landfill", "qty_kg": "1200.000",
+              "upstream": "0.0000000000", "downstream": "0.0000000000",
+              "value": "3468.0000000000" }
+          ]
         }
       },
       "equivalences": [
@@ -2297,7 +2526,13 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
       ]
     },
     "alternative": { "… same shape as current …" },
-    "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" }
+    "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" },
+    "money": {
+      "total_value_nzd": "50000.00",
+      "wasted_value_nzd": "10750.00",
+      "wasted_share_percent": "21.50",
+      "saving_nzd": "4000.00"
+    }
   },
   "entries": [
     {
@@ -2331,11 +2566,15 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
 
 **`totals` is what the headline figures are rendered from; `entries` is what the breakdown table is rendered from.** Both are computed by the engine. The client adds nothing together — it has no correct way to, because a decimal transmitted as a string (§1.2) cannot be summed in JavaScript without going through `Number`, and because the golden suite (§10.1) can only cover a number the engine produced.
 
-`totals.current.metrics[code]` carries no `by_destination`: the same destination can appear under several entries with different upstream factors, so a cross-entry destination breakdown would need its own aggregation rule. If the client asks for one later, it belongs here as a new field the engine fills, not as a loop in the browser.
+**`totals.current.metrics[code].by_destination` is populated from v1.48, per metric, and its two rate fields are zero** (§3 rule 2). `qty_kg` and `value` are summed across the entries that used that destination, so the rows partition the metric total they sit beside exactly. `upstream` and `downstream` are `"0.0000000000"` — present, at full scale, and **meaningless as rates**: the entries sharing a destination draw different factors, and there is no single rate behind a rolled-up row. A front end that renders a rate column from `totals` is rendering zeros; the rates live in `entries[]`, which is where a rate has a meaning. The client asked for a cross-entry destination view, and this is it: a field the engine fills, not a loop in the browser.
 
-> **Settled: the destination breakdown is rendered per entry, from `entries[]`.** C's results page currently builds a single combined destination tab by looping over entries and adding `by_destination[].value` together in JavaScript — a §7.6 violation, and it is the last one that cannot be removed by reading a different field. The resolution is a rendering change, not a contract change: **one breakdown section per entry**, each read straight from `entries[i].current.metrics[code].by_destination`, labelled with that entry's sector and food category.
+`totals.money` is §4.5's block. It is `null` when no entry supplied a money figure, and each of its own four fields is `null` unless what it derives from was supplied. **It carries two decimal places, not ten** — it is dollars and cents, not a metric value.
+
+> **Still settled, and unchanged by the roll-up: the per-entry destination breakdown is rendered per entry, from `entries[]`.** This is no longer a live problem to rule on. `web/js/results.js`'s `breakdowns()` pushes **one section per entry**, each read straight from `entries[i].current.metrics[code].by_destination` and labelled with that entry's sector and food category — the single combined destination tab this ruling once described, built by looping over entries and adding `by_destination[].value` together in JavaScript, is gone from the code, and `web/js/improvement.js` records that the card it fed is gone with it. What follows is the reasoning that produced that rendering, kept for the record.
 >
-> This adds no field, requires no engine change and puts nothing on A's critical path. It is also the more truthful presentation: 1,200 kg to landfill from processing and 1,200 kg to landfill from primary production carry different upstream factors and are genuinely different rows, and merging them into one "landfill" bar hides the reason a multi-entry calculation was worth making. If the client later asks for a single combined view, it arrives as an engine-filled field with a stated aggregation rule — not as a loop in the browser, and not by reopening this.
+> This adds no field, requires no engine change and puts nothing on A's critical path. It is also the more truthful presentation: 1,200 kg to landfill from processing and 1,200 kg to landfill from primary production carry different upstream factors and are genuinely different rows, and merging them into one "landfill" bar hides the reason a multi-entry calculation was worth making.
+>
+> **The last sentence of this ruling is the one v1.48 honoured.** It said that if the client later asked for a single combined view, it would arrive "as an engine-filled field with a stated aggregation rule — not as a loop in the browser". The client did ask, and it did: `totals.…by_destination`, filled by the engine, with the aggregation rule stated in §3 rule 2 and the two fields that have no rule left at zero. **The per-entry sections stay** — they are the only place the factors behind a destination are visible, and the combined view is a summary rather than a replacement.
 >
 > **Two front-end figures are removed rather than relocated, because no field exists to move them to:**
 >
@@ -2357,6 +2596,43 @@ When `alternative` is not supplied, both `alternative` and `net_benefit` are `nu
 Without this field a staff member who gets an unexpected number cannot tell whether their data failed to take effect or their formula is wrong. On a dry run `token` is `null` — present as a key, holding `null`, never omitted.
 
 > **The front end must check `factor_set.is_mock`.** When true, a placeholder-data warning banner is mandatory in the results area.
+
+## 6.2.2 `POST /api/v1/contribute` (v1.48)
+
+**The visitor's own opt-in, and the second half of one flow rather than an endpoint of its own subject** — which is why it is numbered under §6.2 rather than after §6.5. It exists only to complete a calculation that has already been made, it keys on the token `POST /calculate` minted, and it shares that route's rate-limit group.
+
+**Request**
+
+```json
+{ "token": "3f2b…" }
+```
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `token` | string | **Yes** | The session token from the `POST /calculate` that produced the result on screen. Unlike `CalculatePayload.token` it is required: there is no submission to create here, only an existing one to find |
+
+No other key is accepted. The body is `extra="forbid"`, as every request body in this contract is.
+
+**204 response, with no body, always.**
+
+| Case | Answer |
+| --- | --- |
+| The token names a live submission | `204`; `is_public_contributed` becomes TRUE |
+| The token names a submission that is already contributed | `204`; the write is idempotent |
+| The token is unknown, or expired and nulled by `expire_tokens` (§5.3) | `204`; **nothing is written and nothing is said** |
+| `X-Dry-Run: true` | `204`; **nothing is written** |
+| `X-Dry-Run` carrying anything but `true` or `false` | `400`, `VALIDATION_ERROR` — the same reading §6.2 gives it |
+| Rate limit exceeded | `429`, `RATE_LIMITED` (§6.5) |
+
+> **Why a miss is a 204 and not a 404.** A token that does not resolve is treated as absent everywhere else it appears (§6.2's `token` row says exactly this), and an hour after a calculation the token is deliberately gone — §2.3's privacy design nulls it. A 404 would turn a stale `sessionStorage` value into an error the visitor has no way to act on, and it would also disclose whether a given token exists, which is a question this route has no reason to answer. `set_public_contribution` reports whether a row moved so that a caller who wants the distinction can have it; **this route does not branch on it.**
+
+> **The dry-run guard is by construction, not by coincidence.** A dry run mints no token (§6.2), so a dry-run caller has no live token to flip a flag with and this route was already unreachable from one. That is safety by accident, and it is not enough for a consent write: the route reads `X-Dry-Run` itself and skips the write when it is `true`, so the guard still holds if a future dry-run path ever does hand out a real token. **Staff run dozens of calculations while tuning a formula** — §8.2's rule — and a consent flag flipped by one of them would put a staff scenario into the public statistics through a door §6.2's own header was written to close.
+>
+> **Unlike §6.2, the header is not authenticated here, and that is deliberate.** On `POST /calculate` the header changes what the server does with a request and therefore requires `X-Staff-Proof`; here it can only make the route do **less**, and the "less" is what an anonymous caller gets for free by not calling at all. Requiring a proof would add a 401 path to a route whose whole design is to disclose nothing and answer 204.
+
+> **No new identifier, and §2.3 is untouched.** This route reads a token the browser already holds and writes one boolean. It stores no address, no user agent and no fingerprint; it adds no column to any table but the one flag §2.3 documents; and it is the only writer of that flag in the tree. The front end keeps the token in `sessionStorage` exactly as it already does for the upsert — **there is no second token, no cookie and no identifier of any kind introduced by consent.**
+
+> **What the front end must do with it (owners: C and D, stage two).** The offer belongs on the results screen, where the visitor can see what they would be contributing and while the token is still live. It is an **opt-in**: nothing is contributed by default, and a visitor who ignores the control has answered "no" by doing nothing, which is the answer a consent design has to make free. The wording is the client's to approve; what this contract fixes is that the calculation is recorded either way and only the public aggregate turns on the answer.
 
 ## 6.3 `GET /api/v1/factors`
 
@@ -2446,6 +2722,11 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
 }
 ```
 
+> **Every figure on this page counts only the calculations whose visitor opted in (v1.48).** §5.4 predicates on `submission.is_public_contributed` as well as on `excluded_from_public`, so `total_calculations` and all three breakdowns describe **the calculations that were offered**, not every calculation run. Two consequences, and both belong to D:
+>
+> 1. **The count fell to zero on the deployment the day migration `0016` landed**, and climbs from there. Every submission recorded before that migration defaults to withheld, because those visitors were never asked and there is nothing honest to back-fill. A page that read 1,247 the day before reads 0 the day after; **this is the designed behaviour and not an outage.** Build for it: §6.4 already requires an empty breakdown to render "not enough data yet to show this breakdown" rather than a loading state, and on that morning every breakdown is empty at once while `total_calculations` is 0 as well.
+> 2. **The copy constraint below gets stronger, not weaker.** The sample was self-selected before; it is now self-selected twice over, since a visitor chooses both to use the calculator and to be counted. "Across the 1,247 calculations run in this tool" remains the honest form; anything that reads as a statement about New Zealand was already wrong and is now further from true.
+
 `total_calculations` counts **submissions**; every bucket `count` counts **entries** (§5.4). **The sample above is written so the difference is visible rather than hidden:** its 1,247 submissions carry 1,600 entries between them, so `by_sector` and `by_food_category` counts sum to 1,600, not to 1,247. `by_destination` sums higher again — 3,120 — because one entry lands in the bucket of every destination it used. (Each array above is abridged to two buckets for length; a real response carries every bucket that survives suppression, and it is against those full totals that the `share` values shown are computed.) `share` is computed within its own breakdown, against that breakdown's own total, and does sum to 1. **None of the three is a breakdown of `total_calculations`**, and one submission can carry up to twenty entries.
 
 `by_food_category` shows the `unspecified` bucket (§5.4): entries whose user did not break their waste down by food type. It is an ordinary bucket — suppressed on the same threshold, counted and shared like any other — and it is expected to be one of the largest. It is not the same thing as `standard_mix`, which is what a user selects deliberately.
@@ -2462,6 +2743,7 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
 | Endpoint | Limit |
 | --- | --- |
 | `POST /api/v1/calculate` | 120 / hour / IP |
+| `POST /api/v1/contribute` | **The same bucket and the same limit as `POST /calculate`** (v1.48). It is one action from the visitor's point of view and it writes just as `/calculate` does; a button a caller can click once can be scripted into a loop |
 | `GET /api/v1/*` | 600 / hour / IP |
 
 Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or Redis.
@@ -2534,6 +2816,8 @@ export async function getFactors(opts = {});
 Mapping: `/taxonomy` → `taxonomy.json`, `/factors*` → `factors.json`, `/stats` → `stats.json`, `POST /calculate` → `calculate_response.json`.
 
 > **Current behaviour, not a requirement — do not reimplement this.** The mock path was rewritten for the `entries` / `totals` shape on 2026-08-09 and now reproduces §6.2 end to end: one request carrying `entries[]`, one response carrying `totals` beside a per-entry result in request order. It still **derives** two things in JavaScript rather than serving them verbatim — the `mass` metric, which is an identity (`value === qty_kg`, §4.3) and not a formula, and the `totals` roll-up, including the rule that an entry with no `alternative` contributes its current figures to the alternative side. Neither can come from a static file, because both are functions of a request whose entry count the fixture cannot know. Every other figure is the fixture's own. **This is `mockRequest`'s licence and nothing else's** — no module outside it may derive an impact figure (§7.6.1), and the numbers on screen in a mock demo are still partly browser-computed, which is the one property mock mode should not share with a bug.
+>
+> **Not built (v1.48): the mock path does not yet produce `totals.money` or the totals-level `by_destination`.** `mockScenarioTotals` builds the roll-up itself and still carries the comment stating the old §3 rule 2, and `mockTotals` returns four keys with no `money` among them — so **a front end developed against mock mode sees neither of v1.48's two new response fields**, while the same request against the real API carries both. The fixtures themselves are correct and complete: `tests/fixtures/calculate_response.json` carries a populated `money` block and the rolled-up rows, which is what a consumer reading the file directly gets. This is a known gap in the mock *derivation*, recorded here rather than fixed with the contract, and it belongs to whoever builds stage two's screens — the same commit that first reads `totals.money` is the one that will notice it.
 
 **Mock mode constrains the document root, and this is not fixable in JavaScript.** The fixture URL is resolved against this module's own URL (`new URL('../../tests/fixtures/', import.meta.url)`), so it follows the page wherever the site is served from — that much was a real defect and is fixed. What remains is structural: a browser clamps `../` at the origin root, so the root **must be an ancestor of both `web/` and `tests/`**. `python3 -m http.server` at the repository root satisfies it; FastAPI serving `web/` as the static root does not, and every mock call 404s. C, D and E all develop in mock mode, so **B owns a dev-only static mount that exposes `tests/fixtures/`**; until it exists, mock mode runs only under the plain HTTP server.
 
@@ -3337,7 +3621,7 @@ Requirements: list views must offer search and filtering.
 | Clear placeholder flag | `/admin/factor-set/clear-placeholder` | Clears `is_mock`, after the current password or a live TOTP code. Any status, either role. Names the consequence on the page and in the dialog: this removes the placeholder warning from every public result and export, immediately. Writes `audit_log.action = 'clear_placeholder'` with both values |
 | Dry run | `/admin/try` | Enter a test scenario, call `POST /api/v1/calculate` with **`X-Dry-Run: true`** and a `dry_run` object (§6.2.1), and display the line-by-line breakdown |
 | Pre-publish comparison | `/admin/factor-sets/{id}/compare` | Run a fixed set of standard test scenarios against **both** the published set and this draft, and show the published value and the draft value per metric, side by side. The last gate before publishing. |
-| Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason |
+| Submissions | `/admin/submissions` | Record-level list with search and filtering; allows setting `excluded_from_public` with a reason. **From v1.48 it also shows `is_public_contributed` as its own column and offers its own filter** — see below |
 | Audit log | `/admin/audit-log` | Read-only, filterable by actor, time and table. **`role = admin` only** from v1.15 — see the change log for why "their own entries only" was rejected |
 | Deployment | `/admin/deployment` | Read-only read-back of the forwarding state, **`role = admin` only** (v1.39). Shows what this request carried (the `X-Forwarded-For` chain in order, `X-Forwarded-Proto`, `X-Real-IP`, the connection, and the address `db/detection.py::client_ip` decided on), then the settings with **how the page knows each one**, then whether they cohere. **It configures nothing** — see below |
 
@@ -3351,7 +3635,9 @@ Requirements: list views must offer search and filtering.
 
 > **Nothing on it is stored, and that was checked rather than assumed** — the nginx access log was found writing `$remote_addr`, `$http_user_agent`, `$http_referer` and `$http_x_forwarded_for` once already. The rendered `kaicalc` log format carries no header and no address; uvicorn's access line in the `admin` container logs `scope["client"]`, which is the nginx container's own address and never the forwarded one, because `ProxyHeadersMiddleware` declines to rewrite `scope` in this topology (§7.8.1); and `tests/admin/test_deployment_view.py` counts `audit_log` across the request and inspects `before_json`/`after_json` for the address the request carried.
 
-> The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics.
+> **The submissions screen shows both flags, separately, and must not merge them (v1.48).** A single "is this row actually public" column would be exactly the collapse §2.3's two-flag design exists to prevent: `excluded_from_public` is staff's own action and staff can reverse it; `is_public_contributed` is the visitor's, and staff cannot. Merging them would leave a staff member unable to tell "I withheld this" from "they never offered it", which are different situations calling for different responses — and would hide the second one entirely, since it is the one nobody in the building did. The screen carries a **column** ("Public consent") and a **filter** ("Offered only" / "Not offered only") beside the existing exclusion filter, so that narrowing "who has been excluded" and narrowing "who has opted in" stay two questions with two controls. Staff read the two independently here exactly as §5.4 predicates on them independently in the query.
+
+> The dry-run view **must** send the dry-run header. Staff will run dozens of calculations while tuning a formula, and persisting them would directly pollute the public statistics. **From v1.48 that includes consent:** `POST /api/v1/contribute` (§6.2.2) reads the same header and writes nothing when it is set, so no staff scenario can be opted in.
 
 The comparison view is two dry-run calls per scenario — one with `factor_set_version` set to the published label, one to the draft — shown side by side, **not** differenced. Decision 6 puts every impact number server-side, in exactly one place; `POST /api/v1/calculate` computes `net_benefit` only for a current-versus-alternative comparison made *within one call*, and has no concept of a difference between two separate calls made at two different `factor_set_version`s. Subtracting the two response strings in the view or the template would put a number in front of staff that no server-side calculation ever produced, which is exactly what Decision 6 forbids — so the page renders both values, plainly labelled, and says in words that no difference is shown. Whether `POST /api/v1/calculate` should grow a two-version diff so this page can show one is open (raised in the E7 task report; not yet assigned an owner). The standard scenarios it runs are staff-editable rather than hard-coded; hard-coding them would reintroduce "change the code to change the configuration", which Decision 2 exists to prevent. They live in `comparison_scenario` / `comparison_scenario_line` (§2.2a), edited through their own CRUD screens like every other §8.1 table.
 
@@ -3842,9 +4128,9 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 | File | Content |
 | --- | --- |
 | `taxonomy.json` | A complete `GET /taxonomy` response: six sectors, ten food categories including `standard_mix`, **fourteen destinations across the three `destination_group` rows `reuse`, `recycle_recovery` and `disposal`** — `prevention` is a destination in the `reuse` group, not a group of its own — the metrics, and the unit presets. **Its codes are `admin/seed.py`'s codes**, not prose invented for the fixture — `code` is the cross-layer identifier (§1.1), and a fixture that renames one produces a front end bound to a code the API will never send |
-| `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json` |
-| `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry and absent at the totals level |
-| `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4) |
+| `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json`. **From v1.48 it carries all four context fields**: `time_frame` at the top level, both money figures on both entries, and `total_input_kg` on **one** entry only, so that the present and the absent shapes are both exercised. Its two entries are priced at $4.50/kg and $5.00/kg, which is what makes §4.5's per-entry rate visible in the response beside it — a blended rate answers 3,739.13 where the fixture says 4,000.00 |
+| `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry **and, from v1.48, at the totals level too** — summed `qty_kg` and `value`, both rate fields at `"0.0000000000"` (§3 rule 2) — and a populated `totals.money` (§4.5) |
+| `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4), and `"money": null`, which is v1.48's absent case on the wire |
 | `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
 | `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, and `source_note` / `data_quality` on every row. **`prevention` is at zero on both sides** — all three downstream rows, and since v1.8 an upstream row for every `(sector, food_category, metric)` that has a general one (open item O-7). `test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what keeps the upstream half complete |
 | `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
@@ -3857,7 +4143,7 @@ A fixture that agrees with nothing is a fixture that drifts. Two test modules ho
 
 | Module | What it holds | Examples |
 | --- | --- | --- |
-| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form |
+| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; **the totals-level `by_destination` partitions its metric total exactly and both of its rate fields are zero** (v1.48); `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form |
 | `tests/api/test_api.py` | The fixtures against **real responses from the real app** | `test_contract_fixtures_have_the_same_top_level_shapes` (taxonomy, both calculate responses), `test_factors_fixture_matches_the_published_export`, `test_stats_fixture_shape_holds_against_a_populated_database`, and the per-code error assertions inside the behavioural tests |
 
 Both matter, and neither substitutes for the other. The shape check proves the API can produce the fixture; it cannot prove the fixture's numbers are right, because `_assert_shape` compares JSON types and key sets rather than values — which is exactly how a `stats.json` of three empty arrays and a `calculate_response.json` of empty `metrics` passed for two revisions while giving C and D nothing to build against. The consistency check proves the numbers, and cannot prove the API emits them.
@@ -3900,6 +4186,10 @@ Every change to the engine must leave all golden cases passing. This suite is th
 
 > **Where a case's numbers come from is the whole question, and only the first case can avoid the circle.** `case_01` and `case_02` are derived from `calculate_response.json` and `calculate_response_single.json` — figures produced on B's line from the published formulas, independently of A's engine, so those two cases are a genuine cross-check between two implementations. Every case after them would otherwise be the engine certifying itself, so cases 03 to 08 are **hand-computed**: each is small enough to check on paper, each is designed so that the failure mode it targets changes the answer by an amount nobody could mistake for rounding, and the arithmetic is written out in the task-7 report.
 >
+> **`case_10_money_per_entry_rate_and_prevention` is the one that carries §4.5, and it is hand-derived for the reason cases 03 to 08 are.** Three entries: one priced at 7.50/kg with no alternative, one priced at 6.00/kg diverting 400 of 1,000 kg, and one unpriced diverting 300 of 500 kg. The saving is **2,400.00** — the second entry alone, since the first diverts nothing and the third put no price on its food. **Reverting to a single blended rate across the form fails this case at 3,888.89**, so O-12's ruling cannot be reversed without a golden failure that names it.
+>
+> **Adding it found a defect nothing else could have.** The harness's `request_from_json` had never read the three money fields at all — a name collision with an existing `_optional_decimal` — so **no golden case could have carried money into the engine even if one had been written**, and the money block sat wholly outside the only evidence this project has that the calculator computes correctly. Restoring the collision now fails all ten cases. That is the argument for the case in one line: a client-visible figure outside the golden suite is invisible until it is expensive.
+
 > **`case_03_prevention_whole_offset` is the one that carries open item O-7.** 800 kg moved from `not_harvested` to `prevention` gives `net_benefit.co2e` of **456.000**, the figure v1.8 recomputed independently. `test_case_03_fails_if_the_upstream_destination_dimension_is_removed` reverts `FactorBundle.upstream()` to its pre-v1.8 behaviour and asserts that the case then fails **with 96.000** — not merely that it fails. A case that only proves today's engine agrees with today's expected file is not evidence that a closed defect stays closed.
 
 ## 10.2 `bundle.json` Shape (owner: A)
@@ -3936,10 +4226,13 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
     { "code": "dairy",        "name": "Dairy",        "is_standard_mix": false, "sort_order": 6 }
   ],
   "destination_groups": [
-    { "code": "disposal", "name": "Disposal", "is_waste": true, "sort_order": 3 }
+    { "code": "reuse",    "name": "Reuse",    "is_waste": false, "sort_order": 1 },
+    { "code": "disposal", "name": "Disposal", "is_waste": true,  "sort_order": 3 }
   ],
   "destinations": [
-    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 1 }
+    { "code": "landfill", "name": "Landfill", "group": "disposal", "sort_order": 1 },
+    { "code": "prevention", "name": "Prevention", "group": "reuse", "sort_order": 10,
+      "is_prevention": true }
   ],
   "metrics": [
     { "code": "co2e", "name": "Greenhouse gas", "unit": "kg CO2e",
@@ -3992,6 +4285,8 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 `downstream[].food_category` may be `null`, meaning the row applies to every food category for that destination (§2.2 — this is how per-tonne charges such as the waste levy are expressed). **`null` is a legal key value, not a missing field**, and must survive both serialisation and deserialisation.
 
 `downstream[].sector` (v1.31) may be `null` on identical terms, meaning the row applies to every sector for that destination, and `null` is the *usual* value — the New Zealand set carries it on every row. A **missing** `sector` key is a malformed row, not a `null` one: a bundle whose rows had silently lost it would load as every-sector rows and price every stage of the supply chain the same, computing a plausible, wrong answer instead of raising. The example above shows all three states in one section — a category-specific row, the row naming neither dimension, and a sector-specific row — because §4.1's four-step order is only exercised when more than one of them is present.
+
+`destinations[].is_prevention` (v1.48) is **optional and defaults to `false`**, on the same terms as `food_categories[].is_standard_mix`: a row that omits the key is not a prevention destination, so **no bundle written before v1.48 needs rewriting**. It backs `FactorBundle.is_prevention_destination()` (§4.1), whose only engine caller is §4.5's saving. `db/repository.build_bundle_data` — the one projection this shape and §6.3's export are both built from — now selects it; **§6.3's export is unaffected**, because it drops the taxonomy sections and `destinations` is one of them. A bundle whose prevention row omits the key still computes every metric correctly and gets the money saving wrong, which is why the key is named here rather than left to be inferred from the taxonomy.
 
 `upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
 

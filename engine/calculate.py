@@ -51,9 +51,11 @@ from engine.types import (
     CalculationRequest,
     CalculationResult,
     CalculationTotals,
+    EntryInput,
     EntryResult,
     EquivalenceResult,
     MetricResult,
+    MoneyResult,
     ScenarioLine,
     ScenarioResult,
 )
@@ -64,6 +66,19 @@ from engine.types import (
 #: 0.4500000000` carries thirteen places -- so the engine, which is the only
 #: place a metric value is produced, is where the scale is applied.
 METRIC_SCALE = Decimal("0.0000000001")
+
+#: The totals-level roll-up (below) leaves upstream and downstream at
+#: zero because they are per-kilogram rates, not sums -- but zero is
+#: still a metric value on the wire (§1.2), so it carries the same ten
+#: places as every other rate rather than rendering as the bare "0" a
+#: scale-zero Decimal would produce.
+ZERO_RATE = Decimal("0").quantize(METRIC_SCALE)
+
+#: §4.5, v1.48. NZD figures carry two places on the wire (`api/schemas.py`'s
+#: `total_value_nzd`/`wasted_value_nzd` fields, `DECIMAL(14, 2)` in
+#: `db/models.py`), unlike the metric figures above, which carry ten. This is
+#: the money block's own scale, applied here rather than at the wire edge.
+MONEY_SCALE = Decimal("0.01")
 
 #: §4.3's special binding. A formula names `const_GWP_CH4` and never a
 #: horizon, so switching the request between 20 and 100 years rebinds one
@@ -130,7 +145,7 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
         factor_set_version=bundle.version_label,
         is_mock=bundle.is_mock,
         gwp_horizon=request.gwp_horizon,
-        totals=_totals(tuple(entries), bundle),
+        totals=_totals(request.entries, tuple(entries), bundle),
         entries=tuple(entries),
     )
 
@@ -196,8 +211,13 @@ def calculate_scenario(
             )
             # Summed **unrounded**, and quantised once below. Rounding each
             # line and adding those is a different number from adding and
-            # rounding once; the breakdown row carries the rounded figure
-            # because it is display, and it is never added to anything.
+            # rounding once; the breakdown row carries the rounded figure.
+            # It is no longer true that this row is never added to anything
+            # -- _roll_up (v1.48) sums it into the totals-level row for its
+            # destination -- which is exactly why `total` and the summed
+            # `by_destination` rows can differ by a rounding unit in the last
+            # place when a formula does not terminate at METRIC_SCALE (§3
+            # rule 2 in interfaces.md has the full account).
             total += value
             rows.append(
                 BreakdownRow(
@@ -283,7 +303,9 @@ def _constant_bindings(bundle: FactorBundle, gwp_horizon: int) -> dict[str, Deci
 
 
 def _totals(
-    entries: tuple[EntryResult, ...], bundle: FactorBundle
+    request_entries: tuple[EntryInput, ...],
+    entries: tuple[EntryResult, ...],
+    bundle: FactorBundle,
 ) -> CalculationTotals:
     """§4.2's roll-up table, computed here and never in `api/`.
 
@@ -293,6 +315,12 @@ def _totals(
     make the alternative lighter than the current scenario and inflate the
     headline benefit -- the precise failure the dual-scenario design exists
     to prevent.
+
+    `request_entries` -- the original `EntryInput`s -- is threaded through
+    only for `_money()` (§4.5): it is the one figure here derived from what a
+    visitor typed rather than from a metric, so it reads the request's own
+    money fields and raw scenario lines instead of the computed `EntryResult`s
+    (which carry `MetricResult` breakdowns, not the entry-level NZD figures).
     """
     has_alternative = any(entry.alternative is not None for entry in entries)
 
@@ -314,26 +342,181 @@ def _totals(
         # Computed on the rolled-up scenarios, not summed from the per-entry
         # net_benefit maps -- one computation is one rounding.
         net_benefit=net_benefit(current, alternative) if alternative else None,
+        money=_money(request_entries, bundle),
     )
+
+
+def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult | None:
+    """§4.5, v1.48. Derived from what the visitor typed, never from a
+    factor or a formula -- see MoneyResult's own docstring for why this is
+    not a metric.
+
+    Absent stays absent. Every field is None unless every value it is
+    derived from was supplied; a computed zero would read as "this food was
+    worth nothing" rather than "nobody said" (§4.5).
+
+    The share is left unclamped. A visitor who types a wasted value greater
+    than the total value sees a figure over 100%, not one silently reshaped
+    here -- that is stage two's input validation to own.
+
+    The rate is derived per entry, not blended across the whole form. This
+    is a decision, not the brief's original one-blended-rate design: a
+    single sum(wasted) / sum(current) rate lets an entry nobody priced
+    borrow another entry's price for its own diverted mass, and silently
+    reprices the priced entry's own kilograms in the process. "A uniform
+    per-kilogram value" is the client's ruling and it reads at least as
+    naturally as one rate per entry as it does one rate for the whole form;
+    an entry the visitor did not price contributes nothing rather than
+    borrowing a neighbour's price.
+    """
+    total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
+    wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
+
+    if total_value_nzd is None and wasted_value_nzd is None:
+        return None
+
+    # The two passthrough sums are quantised here, in the engine, rather
+    # than left to the wire: api/schemas.py's decimal_places=2 is an upper
+    # bound, not an exact scale, so a request carrying "120000" arrives as
+    # Decimal('120000') and wire() would emit '120000' while SCALES requires
+    # two places -- the identical defect Task 4 shipped, in a new field.
+    if total_value_nzd is not None:
+        total_value_nzd = total_value_nzd.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
+    if wasted_value_nzd is not None:
+        wasted_value_nzd = wasted_value_nzd.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
+
+    wasted_share_percent = None
+    if (
+        total_value_nzd is not None
+        and wasted_value_nzd is not None
+        and total_value_nzd != 0
+    ):
+        wasted_share_percent = (wasted_value_nzd / total_value_nzd * 100).quantize(
+            MONEY_SCALE, rounding=ROUND_HALF_UP
+        )
+
+    saving_nzd = None
+    has_alternative = any(entry.alternative is not None for entry in entries)
+    if has_alternative:
+        saving_total = Decimal("0")
+        any_entry_priced = False
+        for entry in entries:
+            if entry.wasted_value_nzd is None:
+                continue
+            entry_current_kg = sum(
+                (line.qty_kg for line in entry.current), Decimal("0")
+            )
+            if entry_current_kg == 0:
+                continue
+            value_per_kg = entry.wasted_value_nzd / entry_current_kg
+            # §3 rule 3's substitution, on the same terms as
+            # _totals() above: an entry with no alternative contributes its
+            # *current* lines, so it cannot manufacture a saving out of a
+            # scenario nobody supplied -- its own diverted mass comes out at
+            # zero.
+            alternative_lines = (
+                entry.alternative if entry.alternative is not None else entry.current
+            )
+            # Both sides of the subtraction exclude prevention -- not only
+            # the alternative side. entry_current_kg above (the rate's
+            # denominator) may still legitimately include a prevention line:
+            # the API refuses one in a *current* scenario (§6.2), but
+            # the engine is a pure function reachable from a golden case or
+            # the dry-run view without that guard, and relying on a
+            # validator one layer up is how a wrong number survives a
+            # refactor. Comparing "current minus alternative" over the
+            # *same* excluded set on both sides is what keeps two identical
+            # scenarios at zero diverted kilograms regardless of what
+            # either side contains.
+            current_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in entry.current
+                    # The prevention predicate, not a literal "prevention"
+                    # string (§4.5) -- the ReFED vocabulary's own
+                    # prevention row is spelled refed_prevention.
+                    if not bundle.is_prevention_destination(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            alternative_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in alternative_lines
+                    if not bundle.is_prevention_destination(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            diverted_kg = current_non_prevention_kg - alternative_non_prevention_kg
+            saving_total += value_per_kg * diverted_kg
+            any_entry_priced = True
+        if any_entry_priced:
+            saving_nzd = saving_total.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
+
+    return MoneyResult(
+        total_value_nzd=total_value_nzd,
+        wasted_value_nzd=wasted_value_nzd,
+        wasted_share_percent=wasted_share_percent,
+        saving_nzd=saving_nzd,
+    )
+
+
+def _sum_present(values) -> Decimal | None:
+    """`None` when every value is `None`; otherwise the sum of the ones that
+    are not. The "nobody said" case and the "the answer is zero" case are
+    different claims, and only a value actually seen can tell them apart."""
+    present = [value for value in values if value is not None]
+    if not present:
+        return None
+    return sum(present, Decimal("0"))
 
 
 def _roll_up(
     scenarios: tuple[ScenarioResult, ...], bundle: FactorBundle
 ) -> ScenarioResult:
     metrics: dict[str, MetricResult] = {}
+    #: v1.48, amending §3 rule 2 for the half of it that was wrong. Keyed
+    #: first by metric code and then by destination: `qty_kg` and `value`
+    #: are additive across entries -- a mass is a mass, and `value` is a
+    #: summand of the metric total this loop already computes by summing
+    #: (§4.3), so the cross-entry partition cannot disagree with the total
+    #: it partitions. It never crosses a metric boundary, so `value` stays
+    #: in that metric's own unit -- kg CO2e is not additive with NZD -- and
+    #: `qty_kg` comes out identical in every metric's rows, because mass does
+    #: not depend on which metric is being computed. `upstream` and
+    #: `downstream` are left at zero: they are per-kilogram RATES drawn from
+    #: factors that can differ between the entries sharing a destination,
+    #: and a mean of two different rates is a number derived from nothing --
+    #: that half of the old rule stands.
+    destinations: dict[str, dict[str, list[Decimal]]] = {}
     for scenario in scenarios:
         for code, metric in scenario.metrics.items():
             running = metrics[code].total if code in metrics else Decimal("0")
+            bucket_for_metric = destinations.setdefault(code, {})
+            for row in metric.by_destination:
+                bucket = bucket_for_metric.setdefault(
+                    row.destination_code, [Decimal("0"), Decimal("0")]
+                )
+                bucket[0] += row.qty_kg
+                bucket[1] += row.value
             metrics[code] = MetricResult(
                 metric_code=code,
                 unit=metric.unit,
                 display_precision=metric.display_precision,
                 total=running + metric.total,
-                # §3 rule 2: the same destination can appear under several
-                # entries drawing different upstream factors, so a cross-entry
-                # destination breakdown has no single correct aggregation
-                # rule. The serialiser omits the key when this is empty.
-                by_destination=(),
+                # Dict insertion order is first-appearance order across
+                # entries, so two runs of the same request produce the same
+                # JSON.
+                by_destination=tuple(
+                    BreakdownRow(
+                        destination_code=destination_code,
+                        qty_kg=qty,
+                        upstream=ZERO_RATE,
+                        downstream=ZERO_RATE,
+                        value=value,
+                    )
+                    for destination_code, (qty, value) in bucket_for_metric.items()
+                ),
             )
     return ScenarioResult(
         total_kg=sum((scenario.total_kg for scenario in scenarios), Decimal("0")),

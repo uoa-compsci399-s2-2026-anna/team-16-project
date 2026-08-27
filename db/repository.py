@@ -584,7 +584,13 @@ def get_taxonomy_for_bundle(session: Session) -> dict[str, list[dict[str, Any]]]
             for x in groups
         ],
         "destinations": [
-            {"code": x.code, "name": x.name, "group": group, "sort_order": x.sort_order}
+            {
+                "code": x.code,
+                "name": x.name,
+                "group": group,
+                "sort_order": x.sort_order,
+                "is_prevention": x.is_prevention,
+            }
             for x, group in destinations
         ],
         "metrics": [
@@ -983,16 +989,32 @@ def _resolve_id(session: Session, model: Any, code: str) -> int:
 
 
 def upsert_submission(
-    session: Session, token: str | None, req: Any, factor_set_id: int
+    session: Session,
+    token: str | None,
+    req: Any,
+    factor_set_id: int,
+    *,
+    time_frame: str | None = None,
 ) -> tuple[int, str]:
     """Contract §5.3. One call, one submission, N entries.
 
     `req` is a §3 `CalculationRequest` and carries `req.entries`, each one an
-    `EntryInput` with its own `sector_code`, `food_category_code` and its own
-    `current` / `alternative` tuples of `ScenarioLine`. There is no
+    `EntryInput` with its own `sector_code`, `food_category_code`, its own
+    `current` / `alternative` tuples of `ScenarioLine`, and (v1.48) its own
+    `total_input_kg`, `total_value_nzd` and `wasted_value_nzd`. There is no
     `req.current`: `ScenarioInput` was deleted in v1.2 precisely because an
     integration that keeps reading `req.current.sector_code` persists one row
     for a five-entry calculation and nothing raises.
+
+    `time_frame` is kept off `req` deliberately: `req` is §3's
+    `CalculationRequest`, which the engine also consumes, and the period is
+    not an engine input -- the engine must never be handed a value it is
+    required not to use. The three per-entry numbers, by contrast, are read
+    straight off `req.entries[i]`: `EntryInput` carries them (v1.48), so there
+    is no second, wire-shaped object to pair up by position any more.
+
+    Does **not** set `is_public_contributed`: it defaults false at the schema
+    and only the opt-in route Task 6 owns may change it.
     """
     now = utcnow()
     submission = None
@@ -1014,6 +1036,7 @@ def upsert_submission(
             updated_at=now,
             factor_set_id=factor_set_id,
             gwp_horizon=req.gwp_horizon,
+            time_frame=time_frame,
         )
         session.add(submission)
         session.flush()
@@ -1021,6 +1044,9 @@ def upsert_submission(
         submission.updated_at = now
         submission.factor_set_id = factor_set_id
         submission.gwp_horizon = req.gwp_horizon
+        # Written on the update path too: a second calculation reusing the
+        # same token would otherwise keep the first one's period forever.
+        submission.time_frame = time_frame
         # §5.3: the entry set is rebuilt, not patched -- the entries carry no
         # client-supplied identity to reconcile a removed one against an added
         # one. Cleared through the ORM relationship rather than by a bulk
@@ -1068,6 +1094,13 @@ def upsert_submission(
                 #: the rows on the user's screen; id order cannot be relied on
                 #: because the rebuild above reassigns ids.
                 sort_order=sort_order,
+                #: v1.48. `None` is not zero (see `EntryInput`): a caller that
+                #: builds `req` by hand and leaves these unset gets `None` for
+                #: all three, which is the same "not stated" the schema
+                #: already means.
+                total_input_kg=entry.total_input_kg,
+                total_value_nzd=entry.total_value_nzd,
+                wasted_value_nzd=entry.wasted_value_nzd,
                 lines=lines,
             )
         )
@@ -1082,6 +1115,28 @@ def expire_tokens(session: Session, now: datetime) -> int:
         .values(token=None)
     )
     return result.rowcount or 0
+
+
+def set_public_contribution(session: Session, token: str) -> bool:
+    """The visitor's own opt-in (§5.3, v1.48). Returns whether a row moved.
+
+    Keyed on `token` because that is the only handle the browser has - and
+    the reason this has a deadline nobody should have to discover: §2.3's
+    `expire_tokens` nulls the column an hour on, which is what severs the
+    link between a stored row and a session. After that the row cannot be
+    found and the visitor cannot opt in. That is correct rather than
+    unfortunate: the mechanism that makes the offer possible is the same one
+    the privacy design deliberately destroys.
+
+    Idempotent, and silent on a miss. A token that resolves to nothing is
+    treated as absent, the same as everywhere else it appears.
+    """
+    result = session.execute(
+        update(Submission)
+        .where(Submission.token == token)
+        .values(is_public_contributed=True)
+    )
+    return bool(result.rowcount)
 
 
 #: §5.4/§6.4. The label of the bucket a NULL `submission_entry.food_category_id`
@@ -1209,9 +1264,14 @@ def get_public_stats(session: Session, threshold: int = 5) -> PublicStats:
        for waste that by construction did *not* happen — becomes a bucket in
        the public chart and every `total_kg` roughly doubles.
     2. **Every breakdown joins up to `submission`,** one table further than
-       its own grouping needs, because `excluded_from_public` lives there
-       (§2.3). Stopping at `submission_entry` applies staff moderation to
-       nothing.
+       its own grouping needs, because `excluded_from_public` and (v1.48)
+       `is_public_contributed` both live there (§2.3, §5.3). Stopping at
+       `submission_entry` applies neither staff moderation nor visitor
+       consent to anything. The two predicates are independent and both
+       required: staff exclusion withdraws a row the visitor offered, and
+       consent is not staff's to grant on a visitor's behalf, so a row must
+       clear both to be counted anywhere below, including
+       `total_calculations`.
     3. **The unit of aggregation is the entry, not the submission.** One
        submission with three entries is three sector observations; counting
        it once, as whichever stage it happened to enter first, is exactly
@@ -1222,7 +1282,10 @@ def get_public_stats(session: Session, threshold: int = 5) -> PublicStats:
     total_calculations = session.scalar(
         select(func.count())
         .select_from(Submission)
-        .where(Submission.excluded_from_public.is_(False))
+        .where(
+            Submission.excluded_from_public.is_(False),
+            Submission.is_public_contributed.is_(True),
+        )
     ) or 0
 
     # One row per entry: that entry's current-scenario mass. Grouped on the
@@ -1252,7 +1315,10 @@ def get_public_stats(session: Session, threshold: int = 5) -> PublicStats:
             entry_current_kg,
             entry_current_kg.c.submission_entry_id == SubmissionEntry.id,
         )
-        .where(Submission.excluded_from_public.is_(False))
+        .where(
+            Submission.excluded_from_public.is_(False),
+            Submission.is_public_contributed.is_(True),
+        )
         .subquery()
     )
 
@@ -1297,6 +1363,7 @@ def get_public_stats(session: Session, threshold: int = 5) -> PublicStats:
         .join(Destination, SubmissionLine.destination_id == Destination.id)
         .where(
             Submission.excluded_from_public.is_(False),
+            Submission.is_public_contributed.is_(True),
             SubmissionLine.scenario == Scenario.current,
         )
         .group_by(Destination.code, Destination.name)

@@ -543,9 +543,19 @@ def test_totals_are_the_sum_across_entries(bundle):
         result.entries[0].current.metrics["co2e"].total
         + result.entries[1].current.metrics["co2e"].total
     )
-    #: §3 rule 2 -- a cross-entry destination breakdown has no single correct
-    #: aggregation rule, so there is none.
-    assert result.totals.current.metrics["co2e"].by_destination == ()
+    #: v1.48, amending §3 rule 2: the two entries land on different
+    #: destinations here, so this is a same-metric sanity check that the
+    #: totals-level breakdown reproduces each entry's own row rather than a
+    #: test of the cross-entry summing itself -- that is
+    #: `test_the_totals_carry_a_destination_breakdown_across_entries`'s job.
+    #: 1000 x (1.9 + 0.99) = 2890; 800 x (0.45 + 0.21) = 528.
+    rows = {row.destination_code: row for row in result.totals.current.metrics["co2e"].by_destination}
+    assert rows["landfill"].qty_kg == Decimal("1000.000")
+    assert rows["landfill"].value == Decimal("2890.0000000000")
+    assert rows["compost"].qty_kg == Decimal("800.000")
+    assert rows["compost"].value == Decimal("528.0000000000")
+    assert rows["landfill"].upstream == Decimal("0")
+    assert rows["landfill"].downstream == Decimal("0")
 
 
 def test_no_alternative_anywhere_leaves_both_levels_none(bundle):
@@ -879,3 +889,401 @@ def test_the_engine_is_a_pure_function(bundle):
         entries=(dairy_entry((line("landfill", "1000.000"),), (line("compost", "1000.000"),)),)
     )
     assert calculate(request, bundle) == calculate(request, bundle)
+
+
+# --------------------------------------------- the cross-entry roll-up
+
+
+def _bundle_with_two_sectors_sharing_a_destination() -> FactorBundle:
+    """A two-metric bundle, built the same way `one_metric_bundle` is, except
+    it deliberately carries a second metric. `co2e`'s formula uses `upstream`
+    and `downstream`; `mass`'s formula is bare `qty_kg`. A test reading
+    `metrics["co2e"].total` is reading the one number the roll-up could
+    plausibly be confused with, and a test comparing `metrics["co2e"]` and
+    `metrics["mass"]`'s `by_destination` rows is checking the property that
+    makes the mass partition readable off either metric: `qty_kg` does not
+    depend on which metric computed it, so the two must agree row for row.
+
+    `farm` and `retail` draw genuinely different upstream factors for
+    `standard_mix` -- 2.0 against 5.0 per kg. That is deliberate: two equal
+    factors, or a 0/1 pair, would let a wrong roll-up (summing or averaging
+    the *rate* instead of leaving it at zero) land on a number that happens
+    to look right. `downstream` at `landfill` is the same for both sectors,
+    so a defect that mixed the two rates together is visible in `upstream`
+    alone rather than smeared across both.
+
+    Also carries a `prevention` destination, flagged `is_prevention` rather
+    than recognised by its literal code, for the money block's saving figure
+    (§4.5) -- it has no factor rows of its own, since none of the tests that
+    use it read a metric total.
+    """
+    document = {
+        "version_label": "TEST-v0-shared-destination",
+        "is_mock": True,
+        "sectors": [{"code": "farm"}, {"code": "retail"}],
+        "food_categories": [{"code": "standard_mix", "is_standard_mix": True}],
+        "destination_groups": [{"code": "disposal"}, {"code": "reuse"}],
+        "destinations": [
+            {"code": "landfill", "group": "disposal"},
+            {"code": "prevention", "group": "reuse", "is_prevention": True},
+        ],
+        "metrics": [
+            {"code": "co2e", "unit": "kg CO2e", "display_precision": 1, "sort_order": 10},
+            {"code": "mass", "unit": "kg", "display_precision": 1, "sort_order": 20},
+        ],
+        "constants": [],
+        "formulas": [
+            {"metric": "co2e", "expression": "qty_kg * (upstream + downstream)"},
+            {"metric": "mass", "expression": "qty_kg"},
+        ],
+        "upstream": [
+            {
+                "sector": "farm",
+                "food_category": "standard_mix",
+                "destination": None,
+                "metric": "co2e",
+                "value_per_kg": "2.0000000000",
+            },
+            {
+                "sector": "retail",
+                "food_category": "standard_mix",
+                "destination": None,
+                "metric": "co2e",
+                "value_per_kg": "5.0000000000",
+            },
+        ],
+        "downstream": [
+            {
+                "destination": "landfill",
+                "sector": None,
+                "food_category": None,
+                "metric": "co2e",
+                "value_per_kg": "0.5000000000",
+            }
+        ],
+        "equivalences": [],
+    }
+    loaded = FactorBundle.from_json(document)
+    assert loaded.validate() == []
+    return loaded
+
+
+def test_the_totals_carry_a_destination_breakdown_across_entries():
+    """**§3 rule 2 said this could not be done, and it was half right.**
+
+    The engine's own comment: "the same destination can appear under several
+    entries drawing different upstream factors, so a cross-entry destination
+    breakdown has no single correct aggregation rule." That is true of
+    `upstream` and `downstream`, which are per-KILOGRAM rates - averaging two
+    different factors is meaningless.
+
+    It is not true of the other two. `qty_kg` is a mass, and `value` is
+    defined as "this line's contribution to the metric total" - and the
+    metric total is itself `running + metric.total` summed across entries.
+    Summing contributions per destination therefore produces an exact
+    partition of a number the engine already computes by summing.
+
+    So the roll-up carries the two additive fields and leaves the two rates
+    at zero, and v1.48 rewrites the rule to say which is which. It stays a
+    per-metric field -- `MetricResult.by_destination`, not a new field on
+    `ScenarioResult` -- because `value` is in that metric's own unit, and a
+    field that merged `co2e` and `mass` together would mix kg CO2e with kg,
+    which would be worse than either metric alone.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("100.000")),),
+                   alternative=None),
+        EntryInput(sector_code="retail", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("300.000")),),
+                   alternative=None),
+    ))
+
+    result = calculate(request, bundle)
+
+    rows = result.totals.current.metrics["co2e"].by_destination
+    landfill = next(row for row in rows if row.destination_code == "landfill")
+
+    #: The mass is the plain sum.
+    assert landfill.qty_kg == Decimal("400.000")
+
+    #: And the value is a partition of the metric total, exactly - which is
+    #: the assertion that makes this a roll-up rather than a second, parallel
+    #: computation that could drift from it.
+    co2e_total = result.totals.current.metrics["co2e"].total
+    assert sum(
+        (row.value for row in rows), Decimal("0")
+    ) == co2e_total
+
+    #: The same destination, read off a *different* metric, is a genuinely
+    #: different number -- unlike `qty_kg`, which is identical across every
+    #: metric's rows and so cannot expose a roll-up that built one metric's
+    #: rows from another metric's accumulator. `mass`'s formula is bare
+    #: `qty_kg`, so its own rolled-up value has to equal its own qty_kg
+    #: exactly; a roll-up that keyed `mass`'s destination to `co2e`'s bucket
+    #: (or mixed the two together) would put co2e's value here instead, and
+    #: both assertions below would fail.
+    mass_landfill = next(
+        row for row in result.totals.current.metrics["mass"].by_destination
+        if row.destination_code == "landfill"
+    )
+    assert mass_landfill.value == mass_landfill.qty_kg
+    assert mass_landfill.value != landfill.value
+
+
+def test_the_rolled_up_rows_do_not_claim_a_per_kilogram_rate():
+    """The half of §3 rule 2 that still stands.
+
+    `upstream` and `downstream` are rates per kilogram. The two entries above
+    draw different upstream factors for the same destination, so there is no
+    figure to report - and reporting either one, or their mean, would be a
+    number that looks authoritative and is not derived from anything.
+
+    Zero, and the contract says why. A consumer that renders these is
+    rendering the wrong thing, which is what the v1.48 note warns about.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("100.000")),),
+                   alternative=None),
+        EntryInput(sector_code="retail", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("300.000")),),
+                   alternative=None),
+    ))
+
+    result = calculate(request, bundle)
+    row = next(r for r in result.totals.current.metrics["co2e"].by_destination
+               if r.destination_code == "landfill")
+
+    assert row.upstream == Decimal("0")
+    assert row.downstream == Decimal("0")
+
+
+def test_a_single_entry_rolls_up_to_the_same_rows_it_already_had():
+    """The affirmative half. With one entry there is nothing to combine, so
+    the roll-up must reproduce that entry's own breakdown - masses and values
+    both. A roll-up that returned an empty tuple would satisfy the sum
+    assertion above whenever the total happened to be zero."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("100.000")),),
+                   alternative=None),
+    ))
+
+    result = calculate(request, bundle)
+    entry_rows = result.entries[0].current.metrics["co2e"].by_destination
+    total_rows = result.totals.current.metrics["co2e"].by_destination
+
+    assert {r.destination_code for r in total_rows} == {
+        r.destination_code for r in entry_rows}
+    assert sum((r.qty_kg for r in total_rows), Decimal("0")) == Decimal("100.000")
+
+
+# ------------------------------------------------------------------ the money
+
+
+def test_the_money_block_states_the_share_of_value_wasted():
+    """The client's ask: "浪费的金额占总金额的多少百分比".
+
+    Computed HERE and not in the browser, because §7.6.1 gives the front end
+    exactly one calculation - unit conversion in `units.js` - and every other
+    number on the page comes from the API.
+
+    It is NOT a metric. `metric` rows are evaluated by the formula engine,
+    whose language is per-LINE and takes (qty_kg, upstream, downstream,
+    const_*); an entry-level figure a visitor typed cannot be expressed in it,
+    and inventing a per-kilogram money factor is exactly the modelling the
+    client's O-2 ruling avoided.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   total_value_nzd=Decimal("120000.00"),
+                   wasted_value_nzd=Decimal("4500.00"),
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.total_value_nzd == Decimal("120000.00")
+    assert money.wasted_value_nzd == Decimal("4500.00")
+    assert money.wasted_share_percent == Decimal("3.75")
+
+
+def test_the_saving_is_value_per_kilogram_times_the_mass_diverted():
+    """The client's ruling: "节省额按每公斤均匀价值计算".
+
+    1,000 kg wasted at $4,500 is $4.50/kg. An alternative that sends 300 kg
+    to a prevention destination diverts 300 kg, so the saving is $1,350.
+
+    **Uniform value per kilogram is an assumption, and it is the client's.**
+    Milk and mixed waste are not worth the same per kilogram; this figure is
+    only as good as that. The contract note in v1.48 says so, because this is
+    the number most likely to be screenshotted.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(
+            sector_code="farm", food_category_code=None,
+            total_value_nzd=Decimal("120000.00"),
+            wasted_value_nzd=Decimal("4500.00"),
+            current=(ScenarioLine(destination_code="landfill",
+                                  qty_kg=Decimal("1000.000")),),
+            alternative=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+        ),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.saving_nzd == Decimal("1350.00")
+
+
+def test_the_money_block_is_absent_when_nobody_typed_a_value():
+    """The common case. Every field is optional, and absent must stay absent
+    rather than becoming zero - "$0 wasted" is a claim, and "0% of value
+    wasted" is a different and much stronger one."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    assert calculate(request, bundle).totals.money is None
+
+
+def test_a_share_needs_a_total_and_a_saving_needs_an_alternative():
+    """Each figure appears only when what it is derived from is there.
+
+    A visitor who typed the wasted value but not the total gets the wasted
+    value and no share - dividing by an absent total is not zero and not
+    infinity, it is a question nobody answered.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   wasted_value_nzd=Decimal("4500.00"),
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.wasted_value_nzd == Decimal("4500.00")
+    assert money.wasted_share_percent is None
+    assert money.saving_nzd is None, "no alternative scenario, so nothing is saved"
+
+
+def test_the_rate_is_per_entry_not_blended_across_the_whole_form():
+    """The coordinator's ruling (change 4), against the brief's original
+    step 4: two entries priced differently, only one of them diverting -
+    the case a single-entry test cannot tell apart from a blended rate.
+
+    farm: priced at $4.50/kg (4500.00 / 1000 kg), no alternative, so it
+    diverts nothing and must contribute $0.00 regardless of its own price.
+    retail: priced at $1.00/kg (1000.00 / 1000 kg), and diverts 300 kg to
+    prevention, so it must contribute exactly 1.00 x 300 = $300.00.
+
+    A blended whole-form rate would instead compute
+    (4500.00 + 1000.00) / (1000.000 + 1000.000) = $2.75/kg and apply it to
+    the same 300 kg diverted, landing on $825.00 - a different number, and
+    the one this test exists to rule out.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(
+            sector_code="farm", food_category_code=None,
+            wasted_value_nzd=Decimal("4500.00"),
+            current=(ScenarioLine(destination_code="landfill",
+                                  qty_kg=Decimal("1000.000")),),
+            alternative=None,
+        ),
+        EntryInput(
+            sector_code="retail", food_category_code=None,
+            wasted_value_nzd=Decimal("1000.00"),
+            current=(ScenarioLine(destination_code="landfill",
+                                  qty_kg=Decimal("1000.000")),),
+            alternative=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+        ),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.saving_nzd == Decimal("300.00")
+
+
+def test_two_identical_scenarios_save_nothing_even_with_prevention_in_both():
+    """Defect 5: `diverted_kg` must compare like with like.
+
+    The current scenario carries a `prevention` line here on purpose - the
+    API refuses that over HTTP (§6.2), but the engine is a pure function
+    reachable from a golden case or the dry-run view without that guard, and
+    a saving figure that trusted a validator one layer up to make this
+    unreachable would be wrong the moment something reached it anyway.
+
+    Current and alternative are byte-for-byte the same: 700 kg landfill and
+    300 kg already-prevented. Nothing changed, so nothing was saved - a
+    diverted-mass calculation that counted the current scenario's own
+    prevention line as "still wasted" would instead answer $1,350.00 for a
+    scenario that is a no-op.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(
+            sector_code="farm", food_category_code=None,
+            wasted_value_nzd=Decimal("4500.00"),
+            current=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+            alternative=(
+                ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+            ),
+        ),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.saving_nzd == Decimal("0.00")
+
+
+def test_the_passthrough_totals_are_quantised_to_two_places():
+    """Defect 1: `decimal_places=2` on the wire schema is an *upper* bound,
+    not an exact scale, so a whole-number request value such as `"120000"`
+    arrives at the engine as `Decimal('120000')` - zero places, not two.
+    Left unquantised, `total_value_nzd` would leave the engine at the wrong
+    scale for `tests/api/test_fixture_consistency.py`'s `SCALES` to catch,
+    the same defect Task 4 shipped for a rolled-up rate two commits ago.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        EntryInput(sector_code="farm", food_category_code=None,
+                   total_value_nzd=Decimal("120000"),
+                   current=(ScenarioLine(destination_code="landfill",
+                                         qty_kg=Decimal("1000.000")),),
+                   alternative=None),
+    ))
+
+    money = calculate(request, bundle).totals.money
+
+    assert money.total_value_nzd == Decimal("120000.00")
+    assert str(money.total_value_nzd) == "120000.00"

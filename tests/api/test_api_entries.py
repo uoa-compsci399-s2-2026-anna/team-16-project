@@ -410,17 +410,22 @@ async def test_an_uninterpretable_dry_run_header_is_still_rejected(app):
 # --------------------------------------------------------------------------
 
 
-async def test_the_totals_carry_no_destination_breakdown(app):
-    """§3 rule 2: the same destination can appear under several entries with
-    different upstream factors, so there is no correct cross-entry
-    aggregation. The serialiser omits the key."""
+async def test_the_totals_roll_up_the_destination_breakdown_too(app):
+    """§3 rule 2, as v1.48 amends it: both entries send their line to
+    `landfill`, so the totals-level roll-up must merge them into one row
+    whose `qty_kg` and (for this stand-in, whose `co2e` total *is* the mass)
+    `value` are the plain sum, `15.000` -- not two rows, and not omitted."""
     response = await _post(
         app, {"entries": [_entry("10.000"), _entry("5.000", food_category=None)]}
     )
     assert response.status_code == 200, response.text
     body = response.json()
     for metric in body["totals"]["current"]["metrics"].values():
-        assert "by_destination" not in metric
+        assert [row["destination"] for row in metric["by_destination"]] == ["landfill"]
+        row = metric["by_destination"][0]
+        assert row["qty_kg"] == "15.000"
+        assert row["upstream"] == "0.0000000000"
+        assert row["downstream"] == "0.0000000000"
     for entry in body["entries"]:
         for metric in entry["current"]["metrics"].values():
             assert metric["by_destination"]

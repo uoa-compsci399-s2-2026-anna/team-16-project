@@ -11,14 +11,30 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "456.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "456.0000000000"
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "800.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "not_harvested",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000"
+            }
+          ]
         }
       },
       "equivalences": [
@@ -38,14 +54,30 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "0.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "0.0000000000"
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "800.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "800.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "800.0000000000"
+            }
+          ]
         }
       },
       "equivalences": [
@@ -60,7 +92,8 @@
     "net_benefit": {
       "co2e": "456.0000000000",
       "mass": "0.0000000000"
-    }
+    },
+    "money": null
   },
   "entries": [
     {

@@ -12,6 +12,7 @@ from decimal import Decimal
 from types import SimpleNamespace
 
 from api.engine_adapter import DefaultEngineAdapter
+from api.schemas import CalculatePayload, EntryPayload, ScenarioLinePayload
 from api.serialization import wire
 
 
@@ -21,6 +22,20 @@ def _breakdown(destination, qty, value):
         qty_kg=Decimal(qty),
         upstream=Decimal("1.9000000000"),
         downstream=Decimal("0.9900000000"),
+        value=Decimal(value),
+    )
+
+
+def _rolled_up_breakdown(destination, qty, value):
+    """v1.48, amending §3 rule 2: a totals-level row. Unlike `_breakdown`
+    above, the two rate fields are zero — they are per-kilogram rates that
+    can differ between the entries sharing a destination, so a cross-entry
+    row cannot state one."""
+    return SimpleNamespace(
+        destination_code=destination,
+        qty_kg=Decimal(qty),
+        upstream=Decimal("0.0000000000"),
+        downstream=Decimal("0.0000000000"),
         value=Decimal(value),
     )
 
@@ -114,14 +129,42 @@ def _result(*, with_alternative=True):
     totals_net = (
         {"co2e": Decimal("2196.0000000000")} if with_alternative else None
     )
+    #: The totals-level rows are a real partition of the two figures above:
+    #: 3468 (landfill) + 456 (not_harvested) = 3924, and on the alternative
+    #: side 1368 (anaerobic_digestion) + 360 (prevention) = 1728 — the same
+    #: totals this stand-in already gave the metric before v1.48.
     totals = SimpleNamespace(
-        current=_scenario("2300.000", _metric("3924.0000000000"), "16406.0800000000"),
+        current=_scenario(
+            "2300.000",
+            _metric(
+                "3924.0000000000",
+                [
+                    _rolled_up_breakdown("landfill", "1200.000", "3468.0000000000"),
+                    _rolled_up_breakdown("not_harvested", "800.000", "456.0000000000"),
+                ],
+            ),
+            "16406.0800000000",
+        ),
         alternative=_scenario(
-            "2300.000", _metric("1728.0000000000"), "7204.8000000000"
+            "2300.000",
+            _metric(
+                "1728.0000000000",
+                [
+                    _rolled_up_breakdown(
+                        "anaerobic_digestion", "1200.000", "1368.0000000000"
+                    ),
+                    _rolled_up_breakdown("prevention", "800.000", "360.0000000000"),
+                ],
+            ),
+            "7204.8000000000",
         )
         if with_alternative
         else None,
         net_benefit=totals_net,
+        #: §4.5, v1.48. Not exercised by this file's own numbers -- none of
+        #: this stand-in's entries carry a money figure -- but present
+        #: because `_totals()` reads `totals.money` unconditionally.
+        money=None,
     )
     return SimpleNamespace(
         factor_set_version="MOCK-v0 — PLACEHOLDER",
@@ -178,11 +221,11 @@ def test_the_hoist_is_the_only_arithmetic_free_reshaping():
     assert body["entries"][1]["net_benefit"] == {"co2e": Decimal("96.0000000000")}
 
 
-def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
-    """§3 rule 2."""
+def test_by_destination_is_per_entry_and_rolled_up_at_the_totals_level():
+    """§3 rule 2, as v1.48 amends it: `by_destination` is real at both
+    levels now. Per entry it carries each line's own rate; at the totals
+    level the rates are zero and only `qty_kg`/`value` are meaningful."""
     body = DefaultEngineAdapter().serialize_result(_result())
-    assert "by_destination" not in body["totals"]["current"]["metrics"]["co2e"]
-    assert "by_destination" not in body["totals"]["alternative"]["metrics"]["co2e"]
     assert body["entries"][0]["current"]["metrics"]["co2e"]["by_destination"] == [
         {
             "destination": "landfill",
@@ -191,6 +234,38 @@ def test_by_destination_is_per_entry_and_omitted_at_the_totals_level():
             "downstream": Decimal("0.9900000000"),
             "value": Decimal("3468.0000000000"),
         }
+    ]
+    assert body["totals"]["current"]["metrics"]["co2e"]["by_destination"] == [
+        {
+            "destination": "landfill",
+            "qty_kg": Decimal("1200.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("3468.0000000000"),
+        },
+        {
+            "destination": "not_harvested",
+            "qty_kg": Decimal("800.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("456.0000000000"),
+        },
+    ]
+    assert body["totals"]["alternative"]["metrics"]["co2e"]["by_destination"] == [
+        {
+            "destination": "anaerobic_digestion",
+            "qty_kg": Decimal("1200.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("1368.0000000000"),
+        },
+        {
+            "destination": "prevention",
+            "qty_kg": Decimal("800.000"),
+            "upstream": Decimal("0.0000000000"),
+            "downstream": Decimal("0.0000000000"),
+            "value": Decimal("360.0000000000"),
+        },
     ]
 
 
@@ -232,4 +307,67 @@ def test_every_decimal_leaves_as_a_string_once_wired():
             "downstream"
         ]
         == "0.9900000000"
+    )
+
+
+def test_the_money_block_is_carried_present_and_not_summed_here():
+    """§4.5, v1.48. `serialize_result` performs no arithmetic (§4.2): the four
+    `MoneyResult` fields arrive already computed and this module only renames
+    the object, on the same "present and null, not omitted" terms as
+    `totals.alternative` and `totals.net_benefit`."""
+    result = _result()
+    result.totals.money = SimpleNamespace(
+        total_value_nzd=Decimal("120000.00"),
+        wasted_value_nzd=Decimal("4500.00"),
+        wasted_share_percent=Decimal("3.75"),
+        saving_nzd=None,
+    )
+    body = DefaultEngineAdapter().serialize_result(result)
+    assert body["totals"]["money"] == {
+        "total_value_nzd": Decimal("120000.00"),
+        "wasted_value_nzd": Decimal("4500.00"),
+        "wasted_share_percent": Decimal("3.75"),
+        "saving_nzd": None,
+    }
+
+
+def test_the_money_block_is_null_when_the_engine_produced_none():
+    body = DefaultEngineAdapter().serialize_result(_result())
+    assert body["totals"]["money"] is None
+
+
+def test_the_adapter_carries_the_new_entry_numbers_into_the_engine():
+    """The three per-entry numbers reach `EntryInput`.
+
+    **`time_frame` deliberately does not.** The engine is a pure function of
+    a request and a bundle, and the client ruled that the period computes
+    nothing - so putting it on `CalculationRequest` would be handing the
+    engine a value it must promise never to use. It is stored by the
+    repository and rendered by the front end, and the engine never sees it.
+    """
+    payload = CalculatePayload(
+        gwp_horizon=100,
+        time_frame="one_month",
+        entries=[
+            EntryPayload(
+                sector="processing",
+                food_category="bread_bakery",
+                total_input_kg=Decimal("50000.000"),
+                total_value_nzd=Decimal("120000.00"),
+                wasted_value_nzd=Decimal("4500.00"),
+                current=[
+                    ScenarioLinePayload(destination="landfill", qty_kg="1200.500")
+                ],
+            )
+        ],
+    )
+
+    request = DefaultEngineAdapter().make_request(payload)
+
+    entry = request.entries[0]
+    assert entry.total_input_kg == Decimal("50000.000")
+    assert entry.total_value_nzd == Decimal("120000.00")
+    assert entry.wasted_value_nzd == Decimal("4500.00")
+    assert not hasattr(request, "time_frame"), (
+        "the engine must not be handed a value it is required never to use"
     )

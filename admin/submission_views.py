@@ -1,6 +1,6 @@
 """`/admin/submissions` — contract §8.2's record-level moderation screen.
 
-**Three columns, and two of them are not columns.** §8.2 asks for a list "with
+**Four columns, and two of them are not columns.** §8.2 asks for a list "with
 search and filtering" that "allows setting ``excluded_from_public`` with a
 reason". What a staff member needs in order to decide *whether* to exclude a row
 is what the calculation was about, and `submission` records almost none of it
@@ -9,6 +9,18 @@ directly: the sectors live on `submission_entry` and the quantities on
 per row, and `list_query` eager-loads the two collections they walk — without
 that, one page of fifty rows is fifty-one queries and then another hundred for
 the sectors.
+
+**`is_public_contributed` is a plain column, not a third derived one.** It is
+the visitor's own opt-in (§5.3, v1.48) and a real column on `submission`, so
+unlike the sector summary and the recorded mass it needs no per-row Python:
+sqladmin's own `column_type_formatters` renders any bare `bool` column as a
+checkmark or an X, the same as `excluded_from_public` already does with no
+formatter of its own. It is deliberately **not**
+folded together with `excluded_from_public` into one "is this row actually
+public" column: that would be exactly the collapse the two-flag design (see
+`Submission.is_public_contributed`'s own docstring) exists to prevent. Staff
+read the two independently here, the same as the aggregate predicates on both
+independently in `db.repository.get_public_stats`.
 
 ## What this screen cannot show, and why that is not a gap to be closed
 
@@ -255,6 +267,16 @@ EXCLUSION_CHOICES: list[tuple[str, str]] = [
     ("false", "Included only"),
 ]
 
+#: The visitor's own opt-in (§5.3, v1.48) -- a separate filter from
+#: `excluded`, which is staff moderation. Neither can stand in for the other
+#: (see `Submission.is_public_contributed`'s own docstring), so a staff member
+#: narrowing "who has been excluded" and a staff member narrowing "who has
+#: opted in" are two different questions and get two different controls.
+CONTRIBUTED_CHOICES: list[tuple[str, str]] = [
+    ("true", "Offered only"),
+    ("false", "Not offered only"),
+]
+
 HORIZON_CHOICES: list[tuple[str, str]] = [("20", "20 years"), ("100", "100 years")]
 
 
@@ -299,6 +321,13 @@ CONTROL_SPECS: list[dict] = [
         "multiple": False,
         "empty_label": "Included and excluded",
         "options": EXCLUSION_CHOICES,
+    },
+    {
+        "name": "contributed",
+        "title": "Public consent",
+        "multiple": False,
+        "empty_label": "Offered and not offered",
+        "options": CONTRIBUTED_CHOICES,
     },
     {
         "name": "horizon",
@@ -408,12 +437,14 @@ def _utc_time_element(moment, pattern: str) -> Markup:
 def _list_created_at(submission: Submission, _name) -> str:
     """The timestamp, carrying the excluded state with it.
 
-    **A marker in this cell rather than a fourth column.** A staff member
+    **A marker in this cell rather than a column of its own.** A staff member
     scanning the list has to be able to tell which rows have already been dealt
-    with, and a boolean column to say so costs width on a table that is three
-    columns by design. Module level, not a method: sqladmin calls a formatter as
-    `formatter(model, name)`, so a method here would bind `self` to the row and
-    the row to the column name.
+    with, and a boolean column to say so costs width the table would rather
+    spend elsewhere -- `is_public_contributed` took that budget instead,
+    because unlike this one it is not staff's own action to reverse. Module
+    level, not a method: sqladmin calls a formatter as `formatter(model,
+    name)`, so a method here would bind `self` to the row and the row to the
+    column name.
     """
     if submission.created_at is None:
         return "—"
@@ -434,12 +465,23 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
     can_edit = False
     can_view_details = True
 
-    #: Three columns, and the two derived ones are rendered by the formatters
-    #: below. `excluded_from_public` is deliberately **not** a fourth: the state
-    #: is shown on the row itself (see `_format_created_at`), which keeps the
-    #: table narrow enough to read on a laptop while still making it impossible
-    #: to miss that a row has been excluded.
-    column_list = ["created_at", "sector_summary", "current_total_kg"]
+    #: Four columns, and two of the derived ones are rendered by the
+    #: formatters below. `excluded_from_public` is deliberately **not** one of
+    #: them: the state is shown on the row itself (see `_format_created_at`),
+    #: which keeps the table narrow while still making it impossible to miss
+    #: that a row has been excluded. `is_public_contributed` **is** one of
+    #: them -- a direct client request (v1.48): staff need to see, without
+    #: opening a row, whether its own visitor asked to be counted. It is a
+    #: real column and needs no formatter of its own; sqladmin's own
+    #: `column_type_formatters` renders a bare `bool` as a checkmark or an X,
+    #: the same as it already does for `excluded_from_public` in the details
+    #: view below.
+    column_list = [
+        "created_at",
+        "sector_summary",
+        "current_total_kg",
+        "is_public_contributed",
+    ]
 
     #: **Narrowed on purpose, and `token` is why.** `column_details_list`
     #: defaults to every mapped column (`admin/modelviews.py`, point 2), which
@@ -454,6 +496,7 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
         "gwp_horizon",
         "factor_set",
         "excluded_from_public",
+        "is_public_contributed",
     ]
 
     column_labels = {
@@ -463,13 +506,22 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
         "gwp_horizon": "Methane time horizon",
         "factor_set": "Factor set",
         "excluded_from_public": "Excluded from public statistics",
+        #: Deliberately not "Shown to public": that would claim the combined
+        #: answer this column and `excluded_from_public` only give together,
+        #: and a row can carry this `True` while `excluded_from_public` is
+        #: also `True` -- offered, then excluded. The label says only what
+        #: the column itself records.
+        "is_public_contributed": "Contributed to public statistics",
     }
 
     #: **Only real columns.** sqladmin sorts in SQL, so naming a derived
     #: attribute here produces a header that looks sortable and then fails on
     #: the click. `sector_summary` and `current_total_kg` are computed in Python
     #: from two child tables and are not sortable at any price worth paying.
-    column_sortable_list = ["created_at", "gwp_horizon", "excluded_from_public"]
+    #: `is_public_contributed` is real and joins the two that already were.
+    column_sortable_list = [
+        "created_at", "gwp_horizon", "excluded_from_public", "is_public_contributed",
+    ]
 
     #: **Empty, and deliberately.** Every control on this screen is built by
     #: `filter_controls` and applied in `list_query`, because two of them take
@@ -586,6 +638,12 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
         excluded = params.get("excluded")
         if excluded in ("true", "false"):
             query = query.where(Submission.excluded_from_public.is_(excluded == "true"))
+
+        contributed = params.get("contributed")
+        if contributed in ("true", "false"):
+            query = query.where(
+                Submission.is_public_contributed.is_(contributed == "true")
+            )
 
         horizon = params.get("horizon")
         if horizon in ("20", "100"):

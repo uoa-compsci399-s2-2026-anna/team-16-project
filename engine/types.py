@@ -46,6 +46,19 @@ class EntryInput:
     food_category_code: str | None  # None -> use standard_mix
     current: tuple[ScenarioLine, ...]
     alternative: tuple[ScenarioLine, ...] | None
+    #: v1.48. All three optional, all three carried rather than computed
+    #: with here: `calculate` derives the money block from them (§4.5) and
+    #: nothing else in the engine reads them.
+    #:
+    #: `total_input_kg` is what this stage put through in the period, so that
+    #: waste can be stated as a share of production. The two money figures
+    #: are statistics only - the client's ruling on O-2 - and are deliberately
+    #: not a metric: the formula language is per LINE and takes
+    #: `(qty_kg, upstream, downstream, const_*)`, which an entry-level figure
+    #: a person typed cannot be expressed in.
+    total_input_kg: Decimal | None = None
+    total_value_nzd: Decimal | None = None
+    wasted_value_nzd: Decimal | None = None
 
 
 @dataclass(frozen=True)
@@ -72,11 +85,17 @@ class MetricResult:
     unit: str
     display_precision: int
     total: Decimal
-    #: Populated per entry, **empty at the totals level** (§3 rule 2): the
-    #: same destination can appear under several entries drawing different
-    #: upstream factors, so a cross-entry destination breakdown has no single
-    #: correct aggregation rule. `MetricResult` is one type either way; the
-    #: serialiser omits the key when the tuple is empty.
+    #: Populated per entry with each line's own `upstream`, `downstream` and
+    #: `value`. Populated at the totals level too (v1.48, amending §3 rule
+    #: 2): `qty_kg` and `value` are additive across entries -- a mass is a
+    #: mass, and `value` is a summand of `total`, which this metric's own
+    #: total is already computed by summing (§4.3) -- so the cross-entry
+    #: partition cannot disagree with the total it partitions. `upstream`
+    #: and `downstream` stay at zero there: they are per-kilogram RATES
+    #: drawn from factors that can differ between the entries sharing a
+    #: destination, and a mean of two different rates is a number derived
+    #: from nothing. `MetricResult` is one type either way; the serialiser
+    #: omits the key when the tuple is empty.
     by_destination: tuple[BreakdownRow, ...]
 
 
@@ -114,6 +133,37 @@ class EntryResult:
 
 
 @dataclass(frozen=True)
+class MoneyResult:
+    """§4.5, v1.48. What the visitor's own money figures come to.
+
+    **Not a metric, and that is a decision rather than an omission.** Metrics
+    are rows in a table with a stored formula, and the formula language is
+    per-line over `(qty_kg, upstream, downstream, const_*)`. These figures are
+    entry-level numbers a person typed; expressing them as a metric would mean
+    inventing a per-kilogram money factor, which is exactly the modelling the
+    client's ruling on open item O-2 declined to do. O-2 closes on that
+    ruling: the value of the food does not enter the main formula, and
+    cost-price versus retail-price is the client's own client's question.
+
+    Every field is optional because every input is. `None` means nobody
+    supplied what it is derived from - never zero, which is a claim.
+    """
+
+    #: Summed across entries. A business reporting at three stages has three
+    #: production values and one total.
+    total_value_nzd: Decimal | None
+    wasted_value_nzd: Decimal | None
+    #: `wasted / total * 100`, two places. None when either side is absent.
+    wasted_share_percent: Decimal | None
+    #: **Uniform value per kilogram, which is the client's own assumption and
+    #: is stated in v1.48 rather than left implicit.** Milk and mixed waste
+    #: are not worth the same per kilogram, and this figure is only as good as
+    #: that assumption. None without an alternative scenario, and None when
+    #: no wasted value was supplied.
+    saving_nzd: Decimal | None
+
+
+@dataclass(frozen=True)
 class CalculationTotals:
     """The cross-entry roll-up. Computed by the engine, never by a caller.
 
@@ -129,11 +179,16 @@ class CalculationTotals:
 
     There is no `total_kg` field. §6.2's `totals.total_kg` is a wire-format
     hoist of `current.total_kg`, performed by `api/engine_adapter.py`.
+
+    `money` (v1.48) is the one field here that is not derived from a metric
+    or a formula -- see `MoneyResult`. It is `None` when no entry supplied
+    either money figure.
     """
 
     current: ScenarioResult
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
+    money: MoneyResult | None
 
 
 @dataclass(frozen=True)

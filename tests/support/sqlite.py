@@ -29,7 +29,7 @@ on SQLite, which is why B isolated it in the first place.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -77,23 +77,48 @@ class FormulaError(Exception):
         self.reason = "division by zero"
 
 
-def _scenario_result(lines, *, with_breakdown):
+def _scenario_result(lines, *, with_breakdown, rolled_up=False):
     """A §3 `ScenarioResult`, with a deliberately trivial `co2e`.
 
     The single metric's total is the scenario's mass, so no factor
     arithmetic is faked here — the numbers in these tests are the ones the
     request carried. What the metric exists for is *shape*: without it the
     §6.2 body has an empty `metrics` object and nothing exercises the
-    `by_destination` mapping, the `metric_code`/`destination_code` renames,
-    or their omission at the totals level.
+    `by_destination` mapping or the `metric_code`/`destination_code` renames.
+
+    `rolled_up` mirrors `engine.calculate._roll_up` (v1.48, amending §3 rule
+    2): at the entry level each line keeps its own row, in request order,
+    because two lines to the same destination in one scenario are two
+    separate contributions; at the totals level, `lines` is the flattened,
+    cross-entry list and rows are merged one per destination, summing
+    `qty_kg` (and, since this fake's `co2e` total *is* the mass, `value`
+    along with it) and leaving the two rate fields at zero — they are
+    per-kilogram rates that can differ between the entries sharing a
+    destination, not sums.
     """
     total = sum((line.qty_kg for line in lines), Decimal("0"))
-    metric = SimpleNamespace(
-        metric_code="co2e",
-        unit="kg CO2e",
-        display_precision=1,
-        total=total,
-        by_destination=tuple(
+    if not with_breakdown:
+        rows: tuple = ()
+    elif rolled_up:
+        merged: dict[str, Decimal] = {}
+        order: list[str] = []
+        for line in lines:
+            if line.destination_code not in merged:
+                merged[line.destination_code] = Decimal("0")
+                order.append(line.destination_code)
+            merged[line.destination_code] += line.qty_kg
+        rows = tuple(
+            SimpleNamespace(
+                destination_code=code,
+                qty_kg=merged[code],
+                upstream=Decimal("0.0000000000"),
+                downstream=Decimal("0.0000000000"),
+                value=merged[code],
+            )
+            for code in order
+        )
+    else:
+        rows = tuple(
             SimpleNamespace(
                 destination_code=line.destination_code,
                 qty_kg=line.qty_kg,
@@ -103,8 +128,12 @@ def _scenario_result(lines, *, with_breakdown):
             )
             for line in lines
         )
-        if with_breakdown
-        else (),
+    metric = SimpleNamespace(
+        metric_code="co2e",
+        unit="kg CO2e",
+        display_precision=1,
+        total=total,
+        by_destination=rows,
     )
     return SimpleNamespace(
         total_kg=total,
@@ -128,7 +157,8 @@ class FakeEngineAdapter:
     own sector, food category and scenario lines — and `calculate` returns
     the §3 `CalculationResult`: `factor_set_version`, `is_mock`,
     `gwp_horizon`, `totals` and `entries`, with `by_destination` populated
-    per entry and empty at the totals level (§3 rule 2).
+    at both levels (v1.48, amending §3 rule 2) — one row per line per
+    entry, merged one row per destination at the totals level.
 
     **`serialize_result` is not faked.** It delegates to the real
     `DefaultEngineAdapter`, so every API test that reads a 200 body is
@@ -156,6 +186,9 @@ class FakeEngineAdapter:
                     food_category_code=entry.food_category,
                     current=lines(entry.current),
                     alternative=lines(entry.alternative),
+                    total_input_kg=entry.total_input_kg,
+                    total_value_nzd=entry.total_value_nzd,
+                    wasted_value_nzd=entry.wasted_value_nzd,
                 )
                 for entry in payload.entries
             ),
@@ -199,9 +232,11 @@ class FakeEngineAdapter:
             for entry in request.entries
             for line in (entry.alternative if entry.alternative is not None else entry.current)
         ]
-        totals_current = _scenario_result(current_lines, with_breakdown=False)
+        totals_current = _scenario_result(
+            current_lines, with_breakdown=True, rolled_up=True
+        )
         totals_alternative = (
-            _scenario_result(alternative_lines, with_breakdown=False)
+            _scenario_result(alternative_lines, with_breakdown=True, rolled_up=True)
             if has_alternative
             else None
         )
@@ -214,6 +249,7 @@ class FakeEngineAdapter:
             }
             if has_alternative
             else None,
+            money=_money(request.entries, bundle),
         )
         return SimpleNamespace(
             factor_set_version=bundle.data["version_label"],
@@ -233,6 +269,98 @@ def _net_benefit(current, alternative):
     mass = sum((line.qty_kg for line in current), Decimal("0"))
     other = sum((line.qty_kg for line in alternative), Decimal("0"))
     return {"co2e": mass - other}
+
+
+def _money(entries, bundle):
+    """A stand-in for engine.calculate._money (§4.5), kept in step with it
+    on purpose: fix round 2 found that a fake computing a plausible but
+    different number is invisible to every shape-only test in this suite,
+    so this mirrors the real per-entry rate, the real exclusion of
+    prevention from both sides of diverted_kg, and the real quantisation of
+    the two passthrough sums, rather than a simplified stand-in.
+
+    Reads prevention from `bundle.data["destinations"][*]["is_prevention"]`
+    -- the real flag `build_bundle_data` now selects (fix round 1) -- rather
+    than a literal `"prevention"` string, since a request POSTed through
+    this fake goes through the same projection a live request does.
+    """
+    prevention_codes = {
+        row["code"]
+        for row in bundle.data.get("destinations", [])
+        if row.get("is_prevention")
+    }
+
+    def is_prevention(code):
+        return code in prevention_codes
+
+    total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
+    wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
+    if total_value_nzd is None and wasted_value_nzd is None:
+        return None
+
+    if total_value_nzd is not None:
+        total_value_nzd = total_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+    if wasted_value_nzd is not None:
+        wasted_value_nzd = wasted_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    wasted_share_percent = None
+    if (
+        total_value_nzd is not None
+        and wasted_value_nzd is not None
+        and total_value_nzd != 0
+    ):
+        wasted_share_percent = (wasted_value_nzd / total_value_nzd * 100).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    saving_nzd = None
+    has_alternative = any(entry.alternative is not None for entry in entries)
+    if has_alternative:
+        saving_total = Decimal("0")
+        any_entry_priced = False
+        for entry in entries:
+            if entry.wasted_value_nzd is None:
+                continue
+            entry_current_kg = sum((line.qty_kg for line in entry.current), Decimal("0"))
+            if entry_current_kg == 0:
+                continue
+            value_per_kg = entry.wasted_value_nzd / entry_current_kg
+            alternative_lines = (
+                entry.alternative if entry.alternative is not None else entry.current
+            )
+            current_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in entry.current
+                    if not is_prevention(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            alternative_non_prevention_kg = sum(
+                (
+                    line.qty_kg
+                    for line in alternative_lines
+                    if not is_prevention(line.destination_code)
+                ),
+                Decimal("0"),
+            )
+            diverted_kg = current_non_prevention_kg - alternative_non_prevention_kg
+            saving_total += value_per_kg * diverted_kg
+            any_entry_priced = True
+        if any_entry_priced:
+            saving_nzd = saving_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+
+    return SimpleNamespace(
+        total_value_nzd=total_value_nzd,
+        wasted_value_nzd=wasted_value_nzd,
+        wasted_share_percent=wasted_share_percent,
+        saving_nzd=saving_nzd,
+    )
+
+
+def _sum_present(values):
+    present = [value for value in values if value is not None]
+    return sum(present, Decimal("0")) if present else None
 
 
 @pytest.fixture

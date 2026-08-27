@@ -1,3 +1,4 @@
+import uuid
 from decimal import Decimal
 from types import SimpleNamespace
 
@@ -10,12 +11,16 @@ from db.errors import FactorSetStateError
 from db.models import (
     AuditLog,
     Constant,
+    Destination,
+    DestinationGroup,
     FactorDownstream,
     FactorSet,
     FactorSetStatus,
     FactorUpstream,
+    FoodCategory,
     Metric,
     Scenario,
+    Sector,
     Submission,
     SubmissionEntry,
     SubmissionLine,
@@ -31,6 +36,7 @@ from db.repository import (
     load_factor_bundle,
     publish_factor_set,
     rollback_to,
+    set_public_contribution,
     upsert_submission,
     write_audit,
 )
@@ -53,6 +59,11 @@ def _request(current="10", alternative="999", food_category="dairy"):
         food_category_code=food_category,
         current=(line(current),),
         alternative=(line(alternative),) if alternative is not None else None,
+        #: v1.48. `EntryInput` defaults all three to `None`; a hand-built
+        #: stand-in has to state that default explicitly.
+        total_input_kg=None,
+        total_value_nzd=None,
+        wasted_value_nzd=None,
     )
     return SimpleNamespace(entries=(entry,), gwp_horizon=100)
 
@@ -63,6 +74,78 @@ def _lines_of(session, submission_id):
         .join(SubmissionEntry, SubmissionLine.submission_entry_id == SubmissionEntry.id)
         .where(SubmissionEntry.submission_id == submission_id)
     ).all()
+
+
+def _prereqs(session):
+    """The taxonomy and factor-set rows a submission has to point at.
+
+    Same shape as `tests/db/test_submissions.py::_prereqs` -- a minimal,
+    self-contained set of rows on the real (MySQL) `session` fixture, not
+    `seeded_session`'s rich SQLite taxonomy, because the test below only
+    needs one sector, one destination and one published factor set to point
+    at and does not touch the engine.
+    """
+    group = DestinationGroup(code="consent_disposal", name="Disposal", is_waste=True)
+    sector = Sector(code="consent_processing", name="Processing")
+    category = FoodCategory(code="consent_dairy", name="Dairy")
+    factor_set = FactorSet(
+        version_label="consent-MOCK-v0", status=FactorSetStatus.published, is_mock=True
+    )
+    session.add_all([group, sector, category, factor_set])
+    session.flush()
+    destination = Destination(group_id=group.id, code="consent_landfill", name="Landfill")
+    session.add(destination)
+    session.flush()
+    return factor_set, sector, category, destination
+
+
+def _submission_with_mass(session, factor_set, sector, destination):
+    """A submission with one entry and one current-scenario line.
+
+    Not a bare `Submission()` row: `get_public_stats` counts `total_calculations`
+    over `submission`, but its two bucket queries only ever see a submission
+    through a `submission_entry` with a current-scenario `submission_line`
+    behind it (see that function's own docstring, point 3). A helper that
+    skipped the entry and line would make every one of this file's stats
+    assertions pass whether or not `get_public_stats` joined out to
+    `submission` at all -- the count would move for the wrong reason, or not
+    move when the predicate was silently dropped, and a null-mass row could
+    not tell the two apart.
+
+    `food_category_id` is left `None` (§5.4's `unspecified` bucket): the test
+    this exists for asserts `total_calculations` and the `by_destination`/
+    `by_sector` bucket sums, none of which needs a second taxonomy row to do
+    it.
+    """
+    now = utcnow()
+    submission = Submission(
+        token=str(uuid.uuid4()),
+        token_expires_at=now + timedelta(hours=1),
+        created_at=now,
+        updated_at=now,
+        factor_set_id=factor_set.id,
+        gwp_horizon=100,
+    )
+    session.add(submission)
+    session.flush()
+    entry = SubmissionEntry(
+        submission_id=submission.id,
+        sector_id=sector.id,
+        food_category_id=None,
+        sort_order=0,
+    )
+    session.add(entry)
+    session.flush()
+    session.add(
+        SubmissionLine(
+            submission_entry_id=entry.id,
+            scenario=Scenario.current,
+            destination_id=destination.id,
+            qty_kg=Decimal("10.000"),
+        )
+    )
+    session.flush()
+    return submission
 
 
 def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
@@ -96,7 +179,15 @@ def test_upsert_reuses_a_valid_token_and_replaces_lines(seeded_session):
 
 def test_public_stats_use_current_only(seeded_session):
     from db.repository import get_published_factor_set_id
-    upsert_submission(seeded_session, None, _request("10", "999"), get_published_factor_set_id(seeded_session))
+    submission_id, _ = upsert_submission(
+        seeded_session, None, _request("10", "999"), get_published_factor_set_id(seeded_session)
+    )
+    # v1.48: `upsert_submission` never opts a row in (that is this test's
+    # subject's own rule, in `test_the_new_context_fields_are_accepted_and_
+    # stored` over in tests/api/test_api.py) -- this test is about the
+    # current/alternative split, not consent, so it opts in by hand.
+    seeded_session.get(Submission, submission_id).is_public_contributed = True
+    seeded_session.flush()
     stats = get_public_stats(seeded_session, threshold=1)
     assert stats.by_destination[0].total_kg == Decimal("10.000")
     # The scenario predicate belongs on every breakdown, not only on the one
@@ -256,6 +347,37 @@ def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     assert Decimal(rows["prevention"]["value_per_kg"]) == 0
     #: §1.1 - `code` crosses the layer boundary, never a primary key.
     assert all("destination_id" not in row for row in data["upstream"])
+
+
+def test_the_destinations_projection_carries_is_prevention(seeded_session):
+    """Contract v1.22: `destination.is_prevention` has been a real column
+    since migration 0013, and `engine.bundle.FactorBundle.is_prevention_
+    destination()` (§4.5's money block, the first caller) is how code outside
+    `db/` is meant to read it, in place of a literal `"prevention"` string --
+    the second-vocabulary row `refed_prevention` is the reason the literal was
+    retired.
+
+    Until now `get_taxonomy_for_bundle`'s `destinations` projection dropped
+    the column silently, even though the *neighbouring* projection in this
+    same file (`get_taxonomy`, feeding `GET /taxonomy`) already selects it.
+    Every existing test of the predicate built its own bundle by hand and set
+    the key itself, so a deployed bundle answering `False` for every
+    destination -- the exact shape of open item O-9 -- passed unnoticed.
+
+    Goes through the real projection and the real loader, not a hand-built
+    bundle.json: only that proves the database column actually reaches the
+    engine.
+    """
+    from engine.bundle import FactorBundle
+
+    data = build_bundle_data(seeded_session, get_published_factor_set_id(seeded_session))
+    rows = {row["code"]: row for row in data["destinations"]}
+    assert rows["prevention"]["is_prevention"] is True
+    assert rows["landfill"]["is_prevention"] is False
+
+    bundle = FactorBundle.from_json(data)
+    assert bundle.is_prevention_destination("prevention") is True
+    assert bundle.is_prevention_destination("landfill") is False
 
 
 def test_the_bundle_carries_each_downstream_rows_sector(seeded_session):
@@ -836,13 +958,19 @@ def test_stats_exclude_staff_flagged_submissions_and_bucket_null_food_as_unspeci
     excluded_id, _ = upsert_submission(
         seeded_session, None, _request("100", None), factor_set_id
     )
-    seeded_session.get(Submission, excluded_id).excluded_from_public = True
-    upsert_submission(
+    row = seeded_session.get(Submission, excluded_id)
+    row.excluded_from_public = True
+    # v1.48: staff exclusion and visitor consent are independent (§5.3) --
+    # this test's subject is exclusion, so it opts this row in too, to prove
+    # exclusion alone still wins over consent.
+    row.is_public_contributed = True
+    kept_id, _ = upsert_submission(
         seeded_session,
         None,
         _request("7", None, food_category=None),
         factor_set_id,
     )
+    seeded_session.get(Submission, kept_id).is_public_contributed = True
     seeded_session.flush()
 
     stats = get_public_stats(seeded_session, threshold=1)
@@ -851,3 +979,80 @@ def test_stats_exclude_staff_flagged_submissions_and_bucket_null_food_as_unspeci
     assert stats.by_food_category[0].code == "unspecified"
     assert stats.by_food_category[0].label == "Not broken down by type"
     assert stats.by_food_category[0].count == 1
+
+
+@pytest.mark.db
+def test_staff_exclusion_and_visitor_consent_are_both_required(session):
+    """**Two flags, two owners, and neither can stand in for the other.**
+
+    `excluded_from_public` is staff moderation - somebody judging a row
+    implausible. `is_public_contributed` is the visitor's own choice. Staff
+    must be able to withdraw a row the visitor offered; and a row the visitor
+    kept is not staff's to publish. Collapsing them into one column would
+    make one of those two impossible, and it would not be obvious which.
+    """
+    factor_set, sector, category, destination = _prereqs(session)
+
+    offered_and_kept = _submission_with_mass(session, factor_set, sector, destination)
+    offered_and_kept.is_public_contributed = True
+
+    offered_then_excluded = _submission_with_mass(session, factor_set, sector, destination)
+    offered_then_excluded.is_public_contributed = True
+    offered_then_excluded.excluded_from_public = True
+
+    never_offered = _submission_with_mass(session, factor_set, sector, destination)
+    session.commit()
+
+    stats = get_public_stats(session, threshold=1)
+
+    assert stats.total_calculations == 1, (
+        "only the submission that was offered AND not excluded should count"
+    )
+    # The count above is only half the claim. `get_public_stats` predicates
+    # on both flags at *three* separate query sites (§5.4) -- the
+    # `total_calculations` count, the `entries` subquery behind `by_sector`/
+    # `by_food_category`, and `by_destination` -- and every submission built
+    # above shares one sector and one destination, so a predicate dropped
+    # from either of the other two sites would let `offered_then_excluded`
+    # or `never_offered` leak into a bucket while the headline above still
+    # read 1. `threshold=1` keeps the bucket visible rather than merged into
+    # `other`, where a leaked row would be invisible to a count assertion.
+    assert sum(bucket.count for bucket in stats.by_destination) == 1, (
+        "a bucket counted a row that was excluded or never offered"
+    )
+    assert sum(bucket.count for bucket in stats.by_sector) == 1, (
+        "a bucket counted a row that was excluded or never offered"
+    )
+
+
+@pytest.mark.db
+def test_contribute_moves_only_the_matching_token(session):
+    """`set_public_contribution` is keyed on `token` alone (§2.3, §5.3): it
+    must flip the one row whose token matches and leave every other row -
+    including one that already opted in and one that never will - exactly as
+    it was.
+    """
+    factor_set, sector, category, destination = _prereqs(session)
+    target = _submission_with_mass(session, factor_set, sector, destination)
+    other = _submission_with_mass(session, factor_set, sector, destination)
+    session.commit()
+
+    moved = set_public_contribution(session, target.token)
+    session.commit()
+
+    assert moved is True
+    assert session.get(Submission, target.id).is_public_contributed is True
+    assert session.get(Submission, other.id).is_public_contributed is False
+
+
+@pytest.mark.db
+def test_contribute_on_an_unknown_token_moves_nothing(session):
+    factor_set, sector, category, destination = _prereqs(session)
+    row = _submission_with_mass(session, factor_set, sector, destination)
+    session.commit()
+
+    moved = set_public_contribution(session, "00000000-0000-4000-8000-000000000000")
+    session.commit()
+
+    assert moved is False
+    assert session.get(Submission, row.id).is_public_contributed is False

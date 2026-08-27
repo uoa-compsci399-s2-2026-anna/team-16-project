@@ -11,14 +11,30 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "3468.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "3468.0000000000"
+            }
+          ]
         },
         "ch4": {
           "metric_code": "ch4",
           "unit": "kg CH4",
           "display_precision": 1,
           "total": "2721.6000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1200.000",
+              "upstream": "0.0000000000",
+              "downstream": "0.0000000000",
+              "value": "2721.6000000000"
+            }
+          ]
         }
       },
       "equivalences": [
@@ -31,7 +47,8 @@
       ]
     },
     "alternative": null,
-    "net_benefit": null
+    "net_benefit": null,
+    "money": null
   },
   "entries": [
     {

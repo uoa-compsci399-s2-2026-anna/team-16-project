@@ -476,3 +476,73 @@ def test_every_statistics_breakdown_is_drawn_as_a_share(browser):
             )
     finally:
         context.close()
+
+
+def test_render_bar_draws_a_negative_value_below_the_axis(browser):
+    """`renderBar`'s `allowNegative` has no caller on this page today - item ⑫
+    put every statistics breakdown on `renderDonut` instead, and a donut cannot
+    express a negative slice - so nothing in `stats.js` reaches the branch this
+    exercises. It is retained capability rather than dead code: §7.3a's "charts
+    must render negative values" still stands, because `factor_downstream` may
+    be negative (an offset) - `animal_feed` is `-0.15` in
+    `tests/fixtures/factors.json` - and this is D's own library for whatever
+    chart draws that figure next.
+
+    So the coverage has to be a direct unit test on `renderBar` itself, called
+    the way a future caller would, rather than anything read off `stats.html`.
+    A mutation replacing `allowNegative ? Math.min(0, ...finiteValues) : 0`
+    with a bare `0` left every one of the 142 tests in this file's siblings
+    green; this is the test that must fail against it.
+    """
+    context = browser.new_context(bypass_csp=True)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/stats.html", wait_until="domcontentloaded")
+        measured = page.evaluate(
+            """async () => {
+              const { renderBar } = await import('/js/charts.js')
+              const rows = [
+                { label: 'Landfill', value: 12 },
+                { label: 'Animal feed', value: -5 },
+              ]
+              const canvas = document.createElement('canvas')
+              canvas.width = 400
+              canvas.height = 300
+              document.body.appendChild(canvas)
+
+              const defaulted = renderBar(canvas, rows)
+              const withNegative = {
+                data: [...defaulted.data.datasets[0].data],
+                suggestedMin: defaulted.options.scales.y.suggestedMin,
+              }
+              defaulted.destroy()
+
+              const suppressed = renderBar(canvas, rows, { allowNegative: false })
+              const withoutNegative = suppressed.options.scales.y.suggestedMin
+              suppressed.destroy()
+
+              return { withNegative, withoutNegative }
+            }"""
+        )
+    finally:
+        context.close()
+
+    # The value itself is drawn verbatim - never clipped, never made positive -
+    # which is `renderBar`'s own documented contract and not merely this
+    # option's concern, but a mutation that broke it would land here too.
+    assert measured["withNegative"]["data"] == [12, -5], (
+        f"a negative row was not drawn as negative: {measured['withNegative']['data']}"
+    )
+    # The mutation under test: `allowNegative` (true by default - `opts.allowNegative
+    # !== false`) must lower the axis floor below the data's own minimum, not leave
+    # it pinned at zero.
+    assert measured["withNegative"]["suggestedMin"] < 0, (
+        "a negative value did not lower the y-axis floor below zero: "
+        f"{measured['withNegative']['suggestedMin']!r}"
+    )
+    # The opt-out this option exists to provide: explicitly `false` must still pin
+    # the floor at zero even though the data is negative, or `allowNegative` does
+    # nothing in either direction.
+    assert measured["withoutNegative"] == 0, (
+        f"allowNegative: false did not hold the axis floor at zero: {measured['withoutNegative']!r}"
+    )

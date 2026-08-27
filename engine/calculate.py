@@ -211,8 +211,13 @@ def calculate_scenario(
             )
             # Summed **unrounded**, and quantised once below. Rounding each
             # line and adding those is a different number from adding and
-            # rounding once; the breakdown row carries the rounded figure
-            # because it is display, and it is never added to anything.
+            # rounding once; the breakdown row carries the rounded figure.
+            # It is no longer true that this row is never added to anything
+            # -- _roll_up (v1.48) sums it into the totals-level row for its
+            # destination -- which is exactly why `total` and the summed
+            # `by_destination` rows can differ by a rounding unit in the last
+            # place when a formula does not terminate at METRIC_SCALE (§3
+            # rule 2 in interfaces.md has the full account).
             total += value
             rows.append(
                 BreakdownRow(

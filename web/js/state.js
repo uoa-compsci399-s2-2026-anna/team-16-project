@@ -34,6 +34,14 @@ export const state = {
   // as zero, so nothing here ever defaults to `'0'`.
   totalValueNzd: '',
   wastedValueNzd: '',
+  // Item ⑦: the span the whole submission's figures cover - one value for
+  // every entry, not one per supply-chain stage, so it lives beside the
+  // review of the whole submission rather than inside the per-entry loop.
+  // `''` means the visitor did not choose and must reach the API as absent,
+  // never as a guess and never as a default period; the four non-empty
+  // values are exactly what §6.2 accepts as `time_frame`, and the engine is
+  // never given it.
+  timeFrame: '',
   // §7.2's key list, and nothing beyond it. `alternative: []` and `compareAlternative: false`
   // stood here and in `resetCalculator` below, were assigned `[]` / never assigned by two
   // functions in `calculator.js`, and were read by nothing: the alternative scenario is built
@@ -115,6 +123,7 @@ export function resetCalculator() {
     totalInputKg: '',
     totalValueNzd: '',
     wastedValueNzd: '',
+    timeFrame: '',
     current: [],
     entries: [],
     result: null,

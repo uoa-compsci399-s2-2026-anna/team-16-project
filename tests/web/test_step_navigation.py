@@ -762,3 +762,44 @@ def test_a_negative_money_figure_is_refused_as_it_is_typed(page_at):
     assert field.input_value() == "500", (
         f"a minus reached the money field: {field.input_value()!r}"
     )
+
+
+def test_the_review_step_asks_what_period_the_figures_cover(page_at):
+    """Item ⑦, and it belongs on step 5 rather than step 3.
+
+    The client asked for it "在计算第六步出结果之前" - before the results. It
+    is a statement about the whole submission, not about one supply-chain
+    stage, so it sits with the review of everything rather than inside the
+    per-entry loop where a visitor with three entries would be asked three
+    times.
+
+    The values are the four §6.2 accepts. A fifth would be refused by the API
+    after the visitor pressed Calculate.
+    """
+    #: `4`, not the UI's own "Step 5" label - `walk()`'s numeric yields are
+    #: one behind the 1-based on-screen label; `4` is the review screen,
+    #: confirmed by what it waits for: `[data-action="calculate"]`.
+    page = advance_to(page_at(1278, 983, 1.25), 4)
+
+    select = page.locator("#time-frame")
+    assert select.count() == 1, "the review step has no period selector"
+    # `count() == 1` alone is satisfied by a hidden or disabled selector just
+    # as readily as by one a visitor can actually use.
+    assert select.is_visible(), "#time-frame exists but is not visible"
+    assert select.is_enabled(), "#time-frame exists but cannot be used"
+
+    values = select.locator("option").evaluate_all(
+        "options => options.map(o => o.value)"
+    )
+    assert values == ["", "one_week", "one_month", "one_quarter", "one_year"], (
+        f"the period vocabulary does not match what the API accepts: {values}"
+    )
+
+
+def test_the_period_is_optional_and_calculate_still_works(page_at):
+    """Optional, like the other three. The empty option is first and
+    selected, and leaving it there must not block the button."""
+    page = advance_to(page_at(1278, 983, 1.25), 4)
+
+    assert page.locator("#time-frame").input_value() == ""
+    assert page.locator('.step-nav [data-action="calculate"]').is_enabled()

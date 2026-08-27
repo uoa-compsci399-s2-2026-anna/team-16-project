@@ -32,7 +32,9 @@ from the shape the API actually returns.
 
 from __future__ import annotations
 
+import copy
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -241,6 +243,28 @@ def test_the_input_the_user_typed_survives(report):
     assert re.search(r"^Factor version: MOCK-v0 — PLACEHOLDER$", report, re.M)
 
 
+@node
+def test_the_export_does_not_ask_for_a_figure_the_visitor_already_gave(report):
+    """**Finding 2, in the file this time.**
+
+    `#total-input` is collected on step 2 and persisted as `total_input_kg`, and
+    §4.5 states plainly that **no field of `MoneyResult` reads it**: waste as a
+    share of production has no consumer yet. The export's closing line said the
+    figure was unavailable "because total food handled data is required", a few
+    lines under a money block built from the very value that sentence asks for.
+
+    §4.5 forbids deriving the share in the browser, so the figure stays
+    unavailable. What changes is that the file stops blaming its reader for it.
+    """
+    assert "data is required" not in report, report
+    assert re.search(
+        r"^Percentage waste: Not available\. This calculator does not report waste "
+        r"as a share of food handled yet\.$",
+        report,
+        re.M,
+    ), report
+
+
 # --------------------------------------------------------- the placeholder rule
 
 NOTICE = "Demonstration only — verified calculation factors have not yet been supplied."
@@ -409,3 +433,857 @@ def test_the_download_no_longer_hard_codes_one_name():
     source = RESULTS_JS.read_text(encoding="utf-8")
     assert "'food-waste-impact-results.txt'" not in source
     assert re.search(r"^\s*link\.download = exportFilename\(\)$", source, re.M)
+
+
+# ------------------------------------------------- the destination-first pivot (browser)
+#
+# **Item ③.** `buildResultsReport`'s harness above proves the plain-text export;
+# `breakdowns()`'s new destination-first tree is markup and CSS, which only a real DOM
+# can prove was built at all and only a real viewport can prove reads as three levels
+# rather than the one section-per-entry list it replaced. So this half runs in a real
+# browser rather than under Node, the same way `test_step_navigation.py` and
+# `test_amount_limits_browser.py` do, and for the same reason.
+#
+# Requires the stack rebuilt after any change under `web/`:
+#     docker compose -f docker/compose.yaml up -d --build web
+
+#: The origin, not a page - `/index.html` is named explicitly so this measures the
+#: calculator whatever the `index` directive does next, the same reasoning
+#: `test_step_navigation.py` gives for its own `BASE`.
+CALCULATOR_URL = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
+
+FORCE_AUTO_SCROLL = "html { scroll-behavior: auto !important; }"
+
+
+@pytest.fixture(scope="module")
+def browser():
+    playwright_api = pytest.importorskip(
+        "playwright.sync_api",
+        reason="playwright is required to render the destination-first tree; it is unverified without it",
+    )
+    with playwright_api.sync_playwright() as p:
+        instance = p.chromium.launch()
+        yield instance
+        instance.close()
+
+
+@pytest.fixture
+def page_at(browser):
+    """A page with the calculate POST fulfilled from a given contract-shaped response.
+
+    Mirrors `test_step_navigation.py`'s fixture of the same name: `/api/v1/calculate`
+    carrying `X-Dry-Run` is staff-only and answers 401, so the results view is reached
+    by fulfilling the POST in-browser rather than by driving the real API. Unlike that
+    fixture, the body is a parameter rather than one fixed file, because this file's two
+    tests need two different shapes of it - one where a destination is shared between
+    two entries (there is no such shape in `tests/fixtures/*.json` today) and, for the
+    second test, the same shape read back to check the page against it.
+    """
+    contexts = []
+
+    def open_page(response, width=390, height=900):
+        ctx = browser.new_context(viewport={"width": width, "height": height}, locale="en-NZ", bypass_csp=True)
+        contexts.append(ctx)
+        page = ctx.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(response)),
+        )
+        try:
+            page.goto(f"{CALCULATOR_URL}?lang=en", wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        return page
+
+    yield open_page
+    for ctx in contexts:
+        ctx.close()
+
+
+def _submit_two_entries(page, time_frame=None):
+    """Drive the wizard through two entries and press Calculate.
+
+    What is typed does not matter. `sectorName` and `stageFoodLabel` in `results.js`
+    both read `response.sector` / `response.food_category` ahead of what the entry
+    itself carries, so the two entries only have to *exist* - for `entryResultsFrom`'s
+    index pairing (`state.js`) to carry both of the fulfilled response's entries onto
+    the results page. What labels them on screen is the fulfilled body, not this walk.
+
+    `time_frame`, when given, is chosen on the review step's `#time-frame` select
+    before the final Calculate click - the one place `state.timeFrame` (item ⑦) is
+    ever set, since it is never part of the fulfilled response.
+    """
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    for first_entry in (True, False):
+        page.evaluate("document.querySelector('input[name=sector]').click()")
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('input[name="food-category"]')
+        page.click('[data-action="continue"]')
+        page.wait_for_selector("#total-waste")
+        page.fill("#total-waste", "1000")
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-line-field="amount"]')
+        page.fill('[data-line-field="amount"] >> nth=0', "1000")
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-action="calculate"]')
+        if first_entry:
+            page.click('[data-action="add-entry"]')
+            page.wait_for_selector('input[name="sector"]')
+    if time_frame:
+        page.select_option("#time-frame", time_frame)
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+
+
+def _metric(unit, precision, total, rows):
+    """One `MetricResult`, wire-shaped: `(destination, qty_kg, upstream, downstream, value)`
+    tuples become `by_destination` rows, the field names §6.2 and the fixtures use."""
+    return {
+        "unit": unit,
+        "display_precision": precision,
+        "total": total,
+        "by_destination": [
+            {"destination": destination, "qty_kg": qty_kg, "upstream": upstream, "downstream": downstream, "value": value}
+            for destination, qty_kg, upstream, downstream, value in rows
+        ],
+    }
+
+
+#: Two entries, different sectors and different food categories, both wasting to
+#: `landfill` - the one shape neither `calculate_response.json` nor
+#: `calculate_response_single.json` carries. In `calculate_response.json` no
+#: destination is shared by two entries at all; rendered per entry (the shape this
+#: task replaces) or per destination (the new one), a fixture without that overlap
+#: produces the *same* single section either way, so nothing already in the
+#: repository can tell the transpose from the original.
+#:
+#: `totals`' landfill `qty_kg` is deliberately **not** 700 + 500. If it were, a
+#: `.destination-group__total` built by summing the two rows below in JavaScript
+#: would read right by coincidence, and the test that exists to prove §7.6.1 would
+#: pass for the wrong reason - the exact trap its own docstring names. 1,300.000 is
+#: the figure the engine is asserted to have returned, and it is the only one either
+#: test below may show; 1,200.000, the sum of the two rows, must not appear.
+SHARED_DESTINATION_RESPONSE = {
+    "token": "11111111-2222-3333-4444-555555555555",
+    "factor_set": {"version_label": "MOCK-v0 — PLACEHOLDER", "is_mock": True},
+    "factor_source": "published",
+    "gwp_horizon": 100,
+    "totals": {
+        "total_kg": "1200.000",
+        "current": {
+            "metrics": {
+                "co2e": _metric("kg CO2e", 1, "1325.0000000000", [
+                    ("landfill", "1300.000", "0.0000000000", "0.0000000000", "1325.0000000000"),
+                ]),
+                "mass": _metric("kg", 1, "1200.0000000000", [
+                    ("landfill", "1300.000", "0.0000000000", "0.0000000000", "1300.0000000000"),
+                ]),
+            },
+            "equivalences": [],
+        },
+        "alternative": None,
+        "net_benefit": None,
+        "money": None,
+    },
+    "entries": [
+        {
+            "sector": "processing",
+            "food_category": "dairy",
+            "current": {
+                "total_kg": "700.000",
+                "metrics": {
+                    "co2e": _metric("kg CO2e", 1, "770.0000000000", [
+                        ("landfill", "700.000", "1.0000000000", "0.1000000000", "770.0000000000"),
+                    ]),
+                    "mass": _metric("kg", 1, "700.0000000000", [
+                        ("landfill", "700.000", "0.0000000000", "0.0000000000", "700.0000000000"),
+                    ]),
+                },
+                "equivalences": [],
+            },
+            "alternative": None,
+            "net_benefit": None,
+        },
+        {
+            "sector": "primary_production",
+            "food_category": "vegetables",
+            "current": {
+                "total_kg": "500.000",
+                "metrics": {
+                    "co2e": _metric("kg CO2e", 1, "550.0000000000", [
+                        ("landfill", "500.000", "1.3000000000", "-0.2000000000", "550.0000000000"),
+                    ]),
+                    "mass": _metric("kg", 1, "500.0000000000", [
+                        ("landfill", "500.000", "0.0000000000", "0.0000000000", "500.0000000000"),
+                    ]),
+                },
+                "equivalences": [],
+            },
+            "alternative": None,
+            "net_benefit": None,
+        },
+    ],
+}
+
+
+def _results_page_with_two_entries_sharing_a_destination(page_at):
+    """The page, on the destination tab, built from `SHARED_DESTINATION_RESPONSE`."""
+    page = page_at(SHARED_DESTINATION_RESPONSE)
+    _submit_two_entries(page)
+    page.click("#breakdown-tab-destination")
+    page.wait_for_selector(".destination-group", timeout=10000)
+    return page
+
+
+def _results_page_and_its_response(page_at):
+    """The same page, paired with the response it was built from - for asserting the
+    page against the response rather than against a number this file derives."""
+    page = _results_page_with_two_entries_sharing_a_destination(page_at)
+    return page, SHARED_DESTINATION_RESPONSE
+
+
+@pytest.mark.browser
+def test_the_destination_breakdown_is_grouped_by_destination_first(page_at):
+    """**Item ③, and it is the transpose of what is there.**
+
+    Today `breakdowns()` pushed one section per ENTRY and listed that entry's
+    destinations inside it. The client asked for the other axis:
+
+        1. Animal feed
+           a) from the farm    -> dairy, vegetables, mixed
+           b) from a restaurant
+        2. Landfill
+           a) ...
+
+    Every figure for it is already in the response. Each entry carries its own
+    `sector_code` and `food_category`, and its metrics carry a per-destination
+    breakdown; stage one added the cross-entry roll-up that gives the top level a
+    total nobody has to add up.
+    """
+    page = _results_page_with_two_entries_sharing_a_destination(page_at)
+
+    groups = page.locator(".destination-group")
+    assert groups.count() >= 1, "nothing is grouped by destination"
+
+    first = groups.nth(0)
+    heading = first.locator(".destination-group__name").inner_text()
+    assert heading, "a destination group with no destination name"
+
+    #: The stages under it, and the food categories under those. Three levels, which
+    #: is what "destination, then stage, then food" asks for.
+    stages = first.locator(".destination-group__stage")
+    assert stages.count() >= 2, (
+        "the two entries sharing this destination did not both appear under it"
+    )
+    assert stages.nth(0).locator(".destination-group__food").count() >= 1
+
+
+@pytest.mark.browser
+def test_a_destination_group_s_total_comes_from_the_response(page_at):
+    """**§7.6.1, and this is the one place it is tempting to break.**
+
+    The leaves are per-entry figures and the group heading is their sum - so adding
+    them up in JavaScript would produce the right number *for real data* and be
+    forbidden anyway. `totals.current.metrics[*].by_destination` is the engine's own
+    roll-up (§3 rule 2, v1.48), and the page must render it rather than derive it.
+
+    `SHARED_DESTINATION_RESPONSE` is built so the two claims are distinguishable: its
+    landfill `qty_kg` at the totals level (1,300.000) is not the sum of the two
+    entries' own rows (700 + 500 = 1,200.000). Comparing the rendered heading against
+    the response the page was given - rather than against a sum computed in this
+    file - is the only way to tell a read from a re-computation that happens to agree,
+    and here the two do not even agree by coincidence.
+    """
+    page, response = _results_page_and_its_response(page_at)
+
+    rolled = {
+        row["destination"]: row["qty_kg"]
+        for row in response["totals"]["current"]["metrics"]["mass"]["by_destination"]
+    }
+    assert rolled, "the totals-level roll-up is missing from the response"
+
+    for code, qty_kg in rolled.items():
+        group = page.locator(f'.destination-group[data-destination="{code}"]')
+        assert group.count() == 1, f"no group for {code}"
+        shown = group.locator(".destination-group__total").inner_text()
+        #: The response's own string, formatted for display - not a number this page
+        #: arrived at by adding the two entries' rows together.
+        assert f"{float(qty_kg):,.3f}" in shown, (
+            f"{code}: page shows {shown!r}, response says {qty_kg}"
+        )
+
+
+@pytest.mark.browser
+def test_a_destination_group_s_metric_figures_come_from_the_response(page_at):
+    """**§7.6.1 again, one column to the right - and this is the half that had no
+    test.**
+
+    The assertion above reads `.destination-group__total`, the kilogram figure.
+    Every other figure in the header - greenhouse gases, methane, water, cost -
+    goes through the same roll-up and had nothing asserting it, so summing the
+    leaves in JavaScript produced a page showing **1,320.0 kg CO2e against the
+    response's 1,325.0** and all thirty-six tests stayed green.
+
+    The two claims are distinguishable in `SHARED_DESTINATION_RESPONSE` on
+    purpose: the totals-level `co2e` value for landfill (1,325.0) is deliberately
+    not 770.0 + 550.0, so a figure arrived at by adding the two entries' rows is
+    not merely forbidden, it is a different number on screen. Both are asserted -
+    the response's figure present, the leaf sum absent - because a header
+    carrying both would satisfy either check alone.
+    """
+    page, response = _results_page_and_its_response(page_at)
+
+    checked = 0
+    for code, metric in response["totals"]["current"]["metrics"].items():
+        if code == "mass":
+            #: `mass` is the kilogram figure the assertion above already covers,
+            #: and `destinationRowFigures` holds it out for that reason.
+            continue
+        precision = int(metric["display_precision"])
+        #: What the browser would get by adding the entries' own rows together -
+        #: the forbidden number, computed here so it can be asserted *absent*.
+        leaves = {}
+        for entry in response["entries"]:
+            for row in entry["current"]["metrics"][code]["by_destination"]:
+                leaves[row["destination"]] = leaves.get(row["destination"], 0) + float(row["value"])
+        for row in metric["by_destination"]:
+            destination = row["destination"]
+            group = page.locator(f'.destination-group[data-destination="{destination}"]')
+            assert group.count() == 1, f"no group for {destination}"
+            shown = group.locator(".destination-group__figures").inner_text()
+            assert f"{float(row['value']):,.{precision}f}" in shown, (
+                f"{destination}/{code}: page shows {shown!r}, response says {row['value']}"
+            )
+            leaf_sum = f"{leaves.get(destination, 0):,.{precision}f}"
+            if leaf_sum != f"{float(row['value']):,.{precision}f}":
+                assert leaf_sum not in shown, (
+                    f"{destination}/{code}: the header shows {leaf_sum}, which is the "
+                    "entries' rows added up in the browser rather than the engine's "
+                    f"own roll-up of {row['value']}"
+                )
+            checked += 1
+    assert checked, "no non-mass metric was checked, so this proves nothing"
+
+
+@pytest.mark.browser
+def test_a_group_fed_by_one_entry_prints_its_figures_once(page_at):
+    """**Finding 7, and it is the commonest journey rather than an edge case.**
+
+    §3 rule 2 builds a destination's group total by rolling the entries' own
+    `by_destination` rows up, so a group used by exactly one entry has a total
+    that *is* that entry's row - identical at every metric, by construction. The
+    tree printed both, under a note saying the rows "add up to the total shown
+    rather than repeat it". With one entry, which is what the calculator opens
+    on, every group was such a group: the page contradicted itself everywhere.
+
+    `calculate_response.json` has two entries and **no destination shared between
+    them**, so every group here has exactly one contributing entry - the same
+    shape a single-entry calculation produces, reached through the fixture this
+    file already drives.
+
+    The stage and its food category still render. Losing them would answer one of
+    the client's three questions instead of three; what is dropped is the repeat,
+    not the level.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    _submit_two_entries(page)
+    page.click("#breakdown-tab-destination")
+    page.wait_for_selector(".destination-group", timeout=10000)
+
+    groups = page.locator(".destination-group")
+    assert groups.count() >= 1
+    single = 0
+    for index in range(groups.count()):
+        group = groups.nth(index)
+        stages = group.locator(".destination-group__stage")
+        if stages.count() != 1:
+            continue
+        single += 1
+        assert group.locator(".destination-group__total").inner_text().strip(), (
+            "the group lost the engine's own total"
+        )
+        assert group.locator(".destination-group__stage-figures").count() == 0, (
+            "the only contributing entry repeats the group's metric figures"
+        )
+        assert group.locator(".destination-group__stage-row span").count() == 0, (
+            "the only contributing entry repeats the group's kilogram figure"
+        )
+        assert stages.locator(".destination-group__food").count() >= 1, (
+            "suppressing the repeat also removed the food category, which is one "
+            "of the three questions this tree answers"
+        )
+        assert stages.inner_text().strip(), "the stage lost its name as well"
+    assert single, "no single-entry group in a fixture built to have only those"
+
+    assert page.locator(".breakdown-note").count() == 0, (
+        "the note says the rows add up to the total rather than repeat it, on a "
+        "page where no group has more than one row"
+    )
+
+
+@pytest.mark.browser
+def test_a_group_fed_by_two_entries_still_shows_both_and_says_why(page_at):
+    """The affirmative half of the test above, and the reason it is not a licence
+    to delete the level.
+
+    Where a destination really is shared, the per-entry rows carry figures that
+    are *not* the group's - 700 kg and 500 kg under a rolled-up 1,300 kg here -
+    and the note explaining that relationship is printed exactly where the
+    relationship exists.
+    """
+    page = _results_page_with_two_entries_sharing_a_destination(page_at)
+
+    shared = page.locator('.destination-group[data-destination="landfill"]')
+    assert shared.locator(".destination-group__stage").count() == 2
+    assert shared.locator(".destination-group__stage-figures").count() == 2, (
+        "two entries share this destination and their own figures are hidden"
+    )
+    note = page.locator(".breakdown-note")
+    assert note.count() == 1, "the note is missing where the rows really do differ"
+    assert "repeat" in note.inner_text().lower()
+
+
+# ------------------------------------------------------ the money, and the period
+#
+# Task 2. `totals.money` (§4.5) is figures the *visitor typed*, not a metric and not
+# derived here - the section and the export line print exactly what the response
+# carries. `state.timeFrame` (item ⑦) is a label the visitor chose on the review
+# step; it is never part of the fulfilled response, so `_submit_two_entries` selects
+# it in-browser via `#time-frame` on the way to Calculate.
+
+
+def _money_response(*, total=None, wasted=None, share=None):
+    """A deep copy of `calculate_response.json` - the fixture §10 names as the one
+    that carries a populated `totals.money` - with that block replaced by exactly
+    the three figures given. A figure left as `None` here stays absent on the wire,
+    the same as a visitor who left that field blank (§4.5: every field is `null`
+    unless everything it derives from was supplied).
+
+    **`saving_nzd` is held at `None` and is not a parameter**, because this fixture
+    fulfils the *Calculate* POST, and Calculate sends `alternative: null` for every
+    entry - so §4.5 makes the saving `None` on every response this helper can
+    honestly stand for. Two tests used to pass a value here and assert the row on
+    screen; the shape they built could not come out of the API, which is how the
+    row stayed dead in the product with both of them green. The saving is proved
+    against the real stack in `tests/web/test_improvement_saving_browser.py`.
+    """
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["money"] = {
+        "total_value_nzd": total,
+        "wasted_value_nzd": wasted,
+        "wasted_share_percent": share,
+        "saving_nzd": None,
+    }
+    return response
+
+
+def _results_page_with_money(page_at, *, total=None, wasted=None, share=None,
+                              time_frame=None):
+    """The results page, fulfilled from a response carrying exactly the given
+    `totals.money` figures - and, when `time_frame` is given, with that period
+    chosen on the way through the wizard."""
+    page = page_at(_money_response(total=total, wasted=wasted, share=share))
+    _submit_two_entries(page, time_frame=time_frame)
+    return page
+
+
+def _results_page_without_money(page_at):
+    """The common case: `totals.money` is `null`, the same shape
+    `calculate_response_single.json` carries on the wire (§4.5's absent case)."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["money"] = None
+    page = page_at(response)
+    _submit_two_entries(page)
+    return page
+
+
+def _results_page_with_time_frame(page_at, time_frame):
+    """A visitor who chose a reporting period and supplied no money figure at all -
+    item ⑦ does not depend on item ⑤, so the money block stays `null` here."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["money"] = None
+    page = page_at(response)
+    _submit_two_entries(page, time_frame=time_frame)
+    return page
+
+
+@pytest.mark.browser
+def test_the_money_figures_appear_when_the_visitor_supplied_them(page_at):
+    """Item ⑤'s display half. Every figure is read from `totals.money`, which
+    the engine derived - the share is not computed here, and neither is the
+    saving.
+
+    The share given (`61.11`) is deliberately **not** what `wasted / total *
+    100` would produce from the totals below (that division is `3.75`) - a
+    page that recomputed the share in JavaScript instead of reading
+    `wasted_share_percent` would show `3.75` here and fail this assertion,
+    the same strengthening Task 1's mutation step applies to its own figures.
+    """
+    page = _results_page_with_money(page_at, total="120000.00",
+                                     wasted="4500.00", share="61.11")
+
+    section = page.locator(".money-summary")
+    assert section.count() == 1, "no money section on a result that has money"
+    text = section.inner_text()
+    assert "61.11" in text, "the share of value wasted is not the response's own figure"
+    assert "4,500" in text
+    assert "NZ$" in text or "NZD" in text, "the currency is not named"
+
+
+@pytest.mark.browser
+def test_the_money_section_is_absent_when_nobody_supplied_a_value(page_at):
+    """The common case, and the affirmative half of the test above: a section
+    that always renders would satisfy it while showing "—" to every visitor
+    who typed nothing."""
+    page = _results_page_without_money(page_at)
+
+    assert page.locator(".money-summary").count() == 0
+
+
+@pytest.mark.browser
+def test_an_absent_money_figure_renders_as_nothing_at_all(page_at):
+    """**Absent is not zero - and it is not "Not available" either.**
+
+    §4.5 makes each field `null` unless everything it derives from was supplied,
+    and a computed zero would read as "this food was worth nothing" rather than
+    "nobody said". `hasValue` is the whole of that rule in `results.js`, and it
+    had no test: loosening it to `value !== undefined` puts `null` through `nzd`,
+    which hands `formatNumber` a NaN, which prints the interface's own
+    "Not available" - so the page read "Value of food not wasted at all:
+    NZ$Not available" with all thirty-six tests green.
+
+    So this counts the rows as well as reading them. One figure supplied means
+    one row; a block that renders every row whatever the response says would
+    satisfy a substring check on the figure that *was* supplied.
+    """
+    page = _results_page_with_money(page_at, total="120000.00")
+
+    summary = page.locator(".money-summary")
+    assert summary.count() == 1, "the money block is missing from a priced response"
+    text = summary.inner_text()
+    assert "120,000.00" in text, f"the one supplied figure is not shown: {text!r}"
+    assert summary.locator(".money-row").count() == 1, (
+        "two money fields were null and the block printed a row for them anyway: "
+        f"{text!r}"
+    )
+    remainder = text.replace("120,000.00", "")
+    for placeholder in ("Not available", "NZ$0.00", "0.00%", "\u2014"):
+        assert placeholder not in remainder, (
+            f"an absent money figure rendered as {placeholder!r}: {text!r}"
+        )
+
+
+@pytest.mark.browser
+def test_the_saving_is_not_advertised_by_a_calculation_that_has_none(page_at):
+    """The other half of the row's move (finding 1).
+
+    Calculate sends `alternative: null`, so §4.5 leaves `saving_nzd` `None` on
+    every response this block is fed by. The label must not appear here at all -
+    not as a row, and not as a caveat with nothing above it. Where it *does*
+    appear is beside the comparison, which
+    `tests/web/test_improvement_saving_browser.py` drives against the real API.
+    """
+    page = _results_page_with_money(page_at, total="120000.00",
+                                     wasted="4500.00", share="3.75")
+
+    text = page.locator(".money-summary").inner_text().lower()
+    assert "not wasted at all" not in text
+    assert "assumes an even value per kilogram" not in text
+
+
+@pytest.mark.browser
+def test_a_share_over_100_percent_renders_as_a_number(page_at):
+    """§4.5: the share is deliberately unclamped - a visitor who typed a wasted
+    value above the total value sees a figure over 100%, not a value silently
+    reshaped, and not a bar or fill that would look like a rendering fault. This
+    section draws no bar for the share at all, so a figure over 100% is simply
+    the number the response gave."""
+    page = _results_page_with_money(page_at, total="1000.00", wasted="1425.00",
+                                     share="142.50")
+
+    text = page.locator(".money-summary").inner_text()
+    assert "142.5" in text
+
+
+@pytest.mark.browser
+def test_the_mock_warning_still_shows_beside_the_money_section(page_at):
+    """§7.6.2: the placeholder-data warning is mandatory and non-dismissible on
+    every results view. Adding the money section must not push it off the top of
+    the page or behind a disclosure - it is asserted visible here on a page that
+    also carries `.money-summary`, and it must not be sitting inside a `<details>`
+    (a `<details>` renders and stays queryable while collapsed, so the safeguard
+    is that no ancestor of it is one)."""
+    page = _results_page_with_money(page_at, total="120000.00", wasted="4500.00",
+                                     share="3.75")
+
+    warning = page.locator(".disclaimer")
+    assert warning.count() == 1
+    assert warning.is_visible()
+    assert warning.locator("xpath=ancestor::details").count() == 0
+
+
+@pytest.mark.browser
+def test_the_period_is_shown_when_it_was_stated(page_at):
+    """Item ⑦'s display half. A label, not a computation - nothing on this
+    page is scaled by it."""
+    page = _results_page_with_time_frame(page_at, "one_month")
+
+    assert "month" in page.locator(".results-period").inner_text().lower()
+
+
+@pytest.mark.browser
+def test_the_period_is_absent_when_it_was_not_stated(page_at):
+    """The affirmative half of the test above: `''` means the visitor did not
+    say, and it must render nothing - never the raw empty string, and never a
+    phrase implying "not stated" is itself a period."""
+    page = _results_page_with_money(page_at, total="120000.00", wasted="4500.00",
+                                     share="3.75")
+
+    assert page.locator(".results-period").count() == 0
+
+
+@node
+def test_the_export_carries_the_money_and_the_period(tmp_path):
+    """§7.3a: the file named "results" carries the results. The money figures and
+    the period are on the page (the tests above); they belong in the file for the
+    same reason the impact figures do.
+
+    Driven through `buildResultsReport` directly, the way every other export
+    assertion in this file is - `report_for`'s Node harness is what proves the
+    string a browser download would produce, and it does so without a real
+    download's platform-specific blob/`<a download>` handling, which this
+    project's browser tests do not exercise anywhere else either.
+
+    **Three figures here, not four.** `saving_nzd` was asserted in this state
+    until stage three's whole-branch review, and this state is one the API cannot
+    produce: §4.5 makes the saving `None` unless an entry carries an alternative,
+    and the Calculate button that fills `state.result` never sends one. The
+    saving's own test is below, driven from `state.improvementResult`.
+    """
+    #: `wasted_share_percent` (`61.11`) deliberately disagrees with what
+    #: `4500 / 120000 * 100` would give (`3.75`), for the reason the browser
+    #: test above gives: the export must print the response's own figure.
+    state = build_state()
+    state["timeFrame"] = "one_month"
+    state["result"]["totals"]["money"] = {
+        "total_value_nzd": "120000.00",
+        "wasted_value_nzd": "4500.00",
+        "wasted_share_percent": "61.11",
+        "saving_nzd": None,
+    }
+    report = report_for(tmp_path, state)
+    assert "61.11" in report and "120,000" in report and "month" in report.lower()
+    assert "not wasted at all" not in report.lower(), (
+        "the export advertises a saving on a calculation that carries none"
+    )
+
+
+@node
+def test_the_saving_reaches_the_export_from_the_comparison(tmp_path):
+    """**Finding 1, in the file.** The saving is written under the comparison's
+    own heading, from `state.improvementResult` - the only response that can
+    carry one - and never from `state.result`.
+
+    `build_state(with_comparison=True)` puts the fixture on `improvementResult`,
+    so the figure asserted here (`4,000.00`) is `tests/fixtures/calculate_
+    response.json`'s own `totals.money.saving_nzd`, not a number written here.
+    """
+    state = build_state(with_comparison=True)
+    report = report_for(tmp_path, state)
+    improved = report.split("Improved scenario (Current", 1)
+    assert len(improved) == 2, f"no comparison section in the export: {report}"
+    assert re.search(
+        r"^  - Value of food not wasted at all: NZ\$4,000\.00$", improved[1], re.M
+    ), improved[1]
+    #: The caveat travels with the figure, in the file as on the screen: the rate
+    #: is nominal (§4.5), and a report written to be attached to an email and
+    #: believed is the last place to drop the sentence that says so.
+    assert "assumes an even value per kilogram" in improved[1]
+
+
+@node
+def test_no_saving_is_written_when_no_comparison_was_run(tmp_path):
+    """The affirmative half: absent is not zero, in the export too.
+
+    A `savingLines` that printed `NZ$0.00` - or the `NZ$Not available` a `hasValue`
+    loosened to `value !== undefined` produces - would satisfy the test above and
+    still tell every visitor who never pressed Compare Impact that they saved
+    nothing, when what happened is that nobody asked.
+    """
+    report = report_for(tmp_path, build_state())
+    assert "not wasted at all" not in report.lower()
+    assert "NZ$Not available" not in report
+
+
+@node
+def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
+    """The mutation-resistant half of the export test above: a report that
+    always prints "The money" heading with "—" figures would pass the test
+    above and still mislead every visitor who supplied nothing."""
+    state = build_state()
+    state["result"]["totals"]["money"] = None
+    report = report_for(tmp_path, state)
+    assert not re.search(r"^The money$", report, re.M)
+
+
+# ------------------------------------------------------------- the contribute control
+#
+# Task 3. §6.2.2's opt-in, reached through the ordinary wizard so the token exercised
+# is the one the results page actually holds - `_results_page` below is `_submit_two_
+# entries` against the default fixture response, the same walk every other browser
+# test in this file already drives.
+
+
+def _results_page(page_at, *, contribute_calls=None):
+    """The results page, reached with `calculate_response.json` - the fixture that
+    carries a real `token` (§6.2), which is what the control this section tests
+    actually sends.
+
+    `contribute_calls`, when given, is a list this appends every `/contribute`
+    request body to, and the route is installed before the wizard is driven at
+    all - so it catches a call made on page load or at any other point before a
+    test installs its own, later route. Playwright runs the most-recently-added
+    matching route first and only falls through to an earlier one if that
+    handler calls `route.fallback()`, which this one never does - so a route a
+    test adds afterwards, to capture the on-press request specifically, takes
+    over cleanly without this counter also swallowing it.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    if contribute_calls is not None:
+        page.route(
+            "**/api/v1/contribute",
+            lambda route: (contribute_calls.append(route.request.post_data_json), route.fulfill(status=204)),
+        )
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.mark.browser
+def test_the_results_page_offers_to_contribute_and_does_not_assume(page_at):
+    """**Item ⑬ reverses a decision §2.3 wrote down deliberately**: "one
+    calculation is one submission... there is no consent checkbox and no
+    separate contribute button". The client asked for exactly the thing that
+    sentence excluded.
+
+    So the control starts UNCHECKED. A pre-ticked box is not consent, and a
+    default of opted-in would make stage one's `is_public_contributed`
+    decorative.
+    """
+    page = _results_page(page_at)
+
+    control = page.locator("#contribute")
+    assert control.count() == 1, "the results page does not offer to contribute"
+    assert control.is_checked() is False, (
+        "the contribution control is pre-ticked, which is not a choice"
+    )
+
+    label = page.locator('label[for="contribute"]').inner_text()
+    assert label.strip(), "the control has no label"
+
+
+@pytest.mark.browser
+def test_ticking_it_posts_the_token(page_at):
+    """The request the button exists to make - and, first, the half that is easy
+    to lose: that nothing is sent before the box is pressed. A control that
+    calls `contribute()` on page load would still make this request eventually
+    and could still pass a version of this test that only checked the request's
+    shape once it arrived; the count below is what actually distinguishes "sent
+    on the press" from "sent regardless, and the press did nothing new"."""
+    early = []
+    page = _results_page(page_at, contribute_calls=early)
+    assert not early, "a request to /contribute was made before the box was ever pressed"
+
+    sent = {}
+    page.route(
+        "**/api/v1/contribute",
+        lambda route: (sent.update(route.request.post_data_json), route.fulfill(status=204)),
+    )
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(400)
+
+    assert sent.get("token"), "no token was sent, so no row can be found to update"
+
+
+@pytest.mark.browser
+def test_the_page_says_what_contributing_means_before_it_is_clicked(page_at):
+    """The public statistics are the client's own page, and what goes into
+    them is a decision a visitor should be able to make informed. The sentence
+    beside the control says what is contributed - an anonymous calculation -
+    and what is not."""
+    page = _results_page(page_at)
+
+    text = page.locator(".contribute-block").inner_text().lower()
+    assert "anonymous" in text or "no personal" in text or "nothing that identifies" in text
+
+
+@pytest.mark.browser
+def test_the_tick_does_not_visibly_undo_itself_while_the_request_is_in_flight(page_at):
+    """**Fix round 1, must-fix 1.** `contributeBlock` keyed `checked` on `done` and
+    `disabled` on `pending || done`, so for the whole time the request was in flight
+    the box read back unchecked *and* disabled - a visitor ticks a consent box and
+    watches it come back empty. The route below is held open rather than fulfilled,
+    so this measures the box mid-flight rather than after an answer has arrived.
+    """
+    page = _results_page(page_at)
+    held = {}
+    page.route("**/api/v1/contribute", lambda route: held.setdefault("route", route))
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(300)
+
+    control = page.locator("#contribute")
+    assert control.is_checked() is True, (
+        "the box is unticked while the request is still in flight"
+    )
+    assert control.is_disabled() is True, (
+        "the box is not yet locked while the request is still in flight"
+    )
+
+    held["route"].fulfill(status=204)
+
+
+@pytest.mark.browser
+def test_the_confirmation_is_present_tense_and_names_no_past_success(page_at):
+    """**Fix round 1, must-fix 2.** §6.2.2 answers `204` identically whether the
+    token named a live submission or was unknown / already expired - "nothing is
+    written and nothing is said" is the contract's own wording. "...has been added"
+    asserts a past event this page cannot actually confirm; the replacement states
+    the present, true-on-every-press fact instead, which is also true again after a
+    recalculation without needing to know whether this was the first press or not.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(400)
+
+    status = page.locator(".contribute-status").inner_text().lower()
+    assert "has been added" not in status, (
+        "the confirmation still claims a past success the front end cannot verify"
+    )
+    assert "are in" in status or "is in" in status or "public statistics" in status
+
+
+@pytest.mark.browser
+def test_the_control_is_described_for_a_visitor_who_cannot_see_the_sentence(page_at):
+    """**Fix round 1, fix 4.** A visitor tabbing to `#contribute` without sight
+    hears its label and nothing else unless the control is described by the
+    sentence that says what contributing means - the whole point of item 13's
+    "read before you click" requirement, for someone who cannot read the page
+    layout to find that sentence unaided."""
+    page = _results_page(page_at)
+
+    control = page.locator("#contribute")
+    described_by = control.get_attribute("aria-describedby")
+    assert described_by, "the control has no aria-describedby at all"
+
+    described_text = page.locator(f"#{described_by}").inner_text().lower()
+    assert "anonymous" in described_text, (
+        "aria-describedby does not point at the sentence explaining the choice"
+    )

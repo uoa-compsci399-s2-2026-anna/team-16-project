@@ -743,6 +743,29 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .result-value { margin-bottom: 12px; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1.2; font-weight: 700; }
 .result-note { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
 
+/* §4.5's money block, rendered beside `.results-grid` inside the same "Impact summary"
+   section rather than as a section of its own - see `moneySummary` in `results.js` for
+   why. Every row is a figure the engine already summed from what the visitor typed
+   (§7.6.1); nothing here computes a width, a percentage or a total, which is also why
+   there is no bar and no fill to worry about when `wasted_share_percent` is over 100. */
+.money-summary { margin: 26px 0 0; padding-top: 22px; border-top: 1px solid var(--border); }
+.money-summary h3 { margin-bottom: 4px; font-size: 1.05rem; }
+.money-rows { display: grid; gap: 4px; margin-top: 12px; }
+.money-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding-block: 9px; border-bottom: 1px solid var(--border); }
+.money-row:last-of-type { border-bottom: 0; }
+.money-label { color: var(--muted); }
+.money-value { font-weight: 700; white-space: nowrap; }
+/* The saving is the figure most likely to be screenshotted (§4.5's own ruling), so it
+   carries its own caveat directly beneath it rather than in a tooltip or a footnote that
+   a screenshot would crop away. */
+.money-saving { margin-top: 6px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.money-saving .money-value { color: var(--green-dark); }
+.money-caveat { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+
+/* Item ⑦: a label, never a computation (§6.2's `time_frame`) - so it sits as plain text
+   near the top of the page rather than beside any figure it might read as scaling. */
+.results-period { margin: 14px 0 0; color: var(--muted); font-weight: 700; }
+
 .equivalent-grid { display: grid; gap: 14px; margin-top: 24px; }
 .equivalent-grid article { padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
 .equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 700; }
@@ -788,6 +811,26 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .bar-track { height: 14px; border: 1px solid rgba(0, 50, 35, 0.1); border-radius: 999px; background: rgba(223, 248, 237, 0.38); overflow: hidden; }
 .bar-track span { height: 100%; display: block; border-radius: inherit; background: var(--blueberry); }
 .table-scroll { overflow-x: auto; }
+
+/* The destination-first tree (`web/js/results.js`'s `destinationTree`): destination, then
+   the entries that share it, then each entry's own food category. Three levels have to
+   read as three levels at 320px, where the track is about 280px — so each step in is a
+   small FIXED amount (`padding-inline-start`, never `padding-left`: this mirrors from `dir`
+   alone), not a percentage that would eat the narrowest viewport first, and every label is
+   left to wrap onto a second line rather than widening its row or being clipped. */
+.destination-group + .destination-group { margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--border); }
+.destination-group__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.destination-group__name { margin: 0; font-size: 1.08rem; overflow-wrap: anywhere; }
+.destination-group__total { margin: 0; font-weight: 700; white-space: nowrap; }
+.destination-group__figures { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 0.9rem; }
+.destination-group__stages { margin: 18px 0 0; padding-inline-start: 16px; list-style: none; display: grid; gap: 16px; }
+.destination-group__stage { padding-inline-start: 14px; border-inline-start: 2px solid var(--border); }
+.destination-group__stage-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.destination-group__stage-row strong { overflow-wrap: anywhere; }
+.destination-group__stage-figures { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 0.86rem; }
+.destination-group__foods { margin: 8px 0 0; padding-inline-start: 16px; list-style: disc; display: grid; gap: 4px; }
+.destination-group__food { overflow-wrap: anywhere; }
+
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
 caption { margin-bottom: 10px; text-align: start; font-weight: 700; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }
@@ -795,6 +838,20 @@ thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
 tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
 .result-actions .button-primary { margin-inline-start: auto; }
+.contribute-block {
+  margin: 28px 0 12px;
+  padding: 20px 24px;
+  border: 1px solid rgba(40, 200, 130, 0.4);
+  border-inline-start: 4px solid var(--green);
+  border-radius: 14px;
+  background: var(--mint);
+}
+.contribute-sentence { margin: 0 0 14px; color: var(--ink); }
+.contribute-control { display: flex; align-items: flex-start; gap: 10px; }
+.contribute-control input[type="checkbox"] { margin-block-start: 3px; width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--green-dark); }
+.contribute-control label { font-weight: 700; color: var(--green-dark); }
+.contribute-status { margin: 12px 0 0; color: var(--green-dark); font-weight: 700; }
+.contribute-block .field-error { margin: 12px 0 0; }
 .methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-inline-start: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }
 .methodology-compact h2 { margin-bottom: 8px; font-size: 1.25rem; }
 .methodology-compact > p { margin: 4px 0; color: var(--muted); }
@@ -823,6 +880,14 @@ tbody th { font-weight: 700; }
 .comparison-results { background: #fff; }
 .comparison-estimate-note { padding: 14px 16px; border-radius: 10px; color: var(--kai-kale); background: rgba(255, 215, 110, 0.28); font-weight: 700; }
 .comparison-summary { margin: 24px 0; padding: 22px; border-radius: 14px; background: rgba(40, 200, 130, 0.12); }
+/* §4.5's saving, beside the comparison that produced it rather than in the money block
+   above - see `comparisonSaving` in `improvement.js`. It borrows `.money-row` and
+   `.money-caveat` from that block so the figure reads as the same kind of thing in both
+   places; what it does not borrow is `.money-summary`'s top rule, because here it sits
+   directly under `.comparison-summary` and a second horizontal line between the two
+   would read as a section break where there is none. */
+.comparison-saving { margin: -8px 0 24px; padding-inline: 22px; }
+.comparison-saving .money-saving { margin-top: 0; border-top: 0; }
 .comparison-summary ul { margin-bottom: 0; padding-inline-start: 22px; }
 .comparison-summary li { margin: 8px 0; }
 .impact-comparison-grid { display: grid; gap: 16px; }

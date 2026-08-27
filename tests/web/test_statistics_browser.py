@@ -342,3 +342,51 @@ def test_the_page_carries_no_placeholder_data_banner(stats_page):
         "the statistics page must carry no mock-data banner: its figures are not derived "
         "from any factor set"
     )
+
+
+#: Mirrors `test_i18n_browser.py::open_page` for this one call. Not imported from
+#: there: that module skips its own collection (`pytest.skip(allow_module_level=True)`)
+#: when the stack is down or Playwright is missing, and importing it here would let
+#: that skip escape as an import error instead of this file's own stack-up guard above.
+_LANGUAGES_SHIM = """
+Object.defineProperty(navigator, 'languages', {{ get: () => {languages} }});
+Object.defineProperty(navigator, 'language', {{ get: () => {first} }});
+"""
+
+
+def open_page(browser, languages, path="/stats.html", query="", stats_fixture=False):
+    context = browser.new_context(extra_http_headers={"Accept-Language": ",".join(languages)})
+    page = context.new_page()
+    page.add_init_script(
+        _LANGUAGES_SHIM.format(languages=json.dumps(languages), first=json.dumps(languages[0]))
+    )
+    if stats_fixture:
+        page.route(
+            "**/api/v1/stats",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(STATS)
+            ),
+        )
+    page.goto(f"{BASE}{path}{query}", wait_until="networkidle")
+    return context, page
+
+
+def test_the_statistics_page_no_longer_claims_every_calculation(browser):
+    """**Stage one made the old sentence untrue.**
+
+    The page said "across the calculations run in this tool". Since v1.48 the
+    aggregate counts only the calculations whose visitors offered them, so that
+    phrasing overstated its own sample - and this is the page whose entire
+    design problem is not overclaiming.
+
+    The replacement is the more honest sentence, not a smaller one: a
+    self-selected sample was always the situation, and now the page says so.
+    """
+    context, page = open_page(browser, ["en-NZ"], path="/stats.html", stats_fixture=True)
+    try:
+        text = page.locator("main").inner_text().lower()
+        assert "contribut" in text or "chose to share" in text, (
+            "the page does not say the figures come from calculations people offered"
+        )
+    finally:
+        context.close()

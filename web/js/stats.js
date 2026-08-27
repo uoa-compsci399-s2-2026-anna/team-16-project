@@ -68,7 +68,7 @@ const BREAKDOWNS = [
   {
     key: 'by_destination',
     title: () => t('Destinations entered'),
-    description: () => t('Share of destination entries across calculations run in this tool.'),
+    description: () => t('Share of destination entries across calculations contributed to this tool.'),
     chart: 'donut',
     chartTitle: () => t('Destinations entered (share)'),
     count: (count) => t('%(count)s destination entries', { count }),
@@ -76,7 +76,7 @@ const BREAKDOWNS = [
   {
     key: 'by_sector',
     title: () => t('Sectors selected'),
-    description: () => t('Share of supply-chain points by the sector selected in this tool.'),
+    description: () => t('Share of supply-chain points by the sector selected across calculations contributed to this tool.'),
     chart: 'bar',
     chartTitle: () => t('Sectors selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
@@ -84,7 +84,7 @@ const BREAKDOWNS = [
   {
     key: 'by_food_category',
     title: () => t('Food categories selected'),
-    description: () => t('Share of supply-chain points by the food category entered in this tool.'),
+    description: () => t('Share of supply-chain points by the food category entered across calculations contributed to this tool.'),
     chart: 'bar',
     chartTitle: () => t('Food categories selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
@@ -172,11 +172,11 @@ export function destroyCharts() {
  * The headline sentence, with its figure still inside a `<strong>`.
  *
  * The sentence is **one key** rather than three fragments concatenated around
- * the number, because a translator handed "Across " and " calculations run in
- * this tool." cannot move the figure — and in several of these twenty languages
- * the number does not sit where English puts it. It is split on the placeholder
- * *after* the lookup and *before* substitution, so the emphasis survives without
- * any markup crossing the catalogue.
+ * the number, because a translator handed "Across " and " calculations
+ * contributed to this tool." cannot move the figure — and in several of these
+ * twenty languages the number does not sit where English puts it. It is split
+ * on the placeholder *after* the lookup and *before* substitution, so the
+ * emphasis survives without any markup crossing the catalogue.
  *
  * **It takes the translated sentence, not the key, and that is not a style
  * choice.** Written the other way — `sentenceAround('Across %(count)s …')`, with
@@ -196,7 +196,7 @@ function sentenceAround(translated, value, className) {
 function renderSummary(stats, target) {
   const fragment = document.createDocumentFragment()
   fragment.append(sentenceAround(
-    t('Across %(count)s calculations run in this tool.'),
+    t('Across %(count)s calculations contributed to this tool.'),
     integer(stats.total_calculations),
     'stats-calculation-total',
   ))
@@ -232,7 +232,7 @@ function renderEquivalentList(rows, definition) {
       element('span', { text: t('%(share)s share', { share: sharePercent(row?.share) }) }),
       element('span', { text: definition.count(integer(row?.count)) }),
       element('span', {
-        text: t('%(mass)s cumulative quantity entered into this tool', {
+        text: t('%(mass)s cumulative quantity contributed to this tool', {
           mass: kilograms(row?.total_kg),
         }),
       }),

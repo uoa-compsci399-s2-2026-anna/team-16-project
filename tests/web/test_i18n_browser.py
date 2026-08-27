@@ -2219,10 +2219,16 @@ _PAGE_TITLE = {
     "/methodology.html": "Documentation | Kai Commitment Food Waste Impact Calculator",
 }
 
+#: The footer notice every public page carries. **Reworded in stage three's fix
+#: round**: it renders in `index.html`'s footer, which is the calculator, so a
+#: visitor met it on the results page a few centimetres above the contribute
+#: control - reading that their calculation was already in the aggregate
+#: statistics and then being asked to opt in to exactly that. `tests/web/
+#: test_consent_copy.py` holds the rule; this constant is the rendered half.
 _TRANSPARENCY = (
-    "This calculator stores the sector, food category and quantities entered "
-    "for aggregate statistics. It stores nothing that identifies you or your "
-    "business."
+    "This calculator stores the sector, food category and quantities entered. "
+    "They join the public statistics only if you choose to offer them, and "
+    "nothing that identifies you or your business is stored."
 )
 
 
@@ -2264,14 +2270,14 @@ def test_the_content_pages_translate_their_own_prose(browser, path, heading, lan
 def test_the_statistics_summary_is_translated_around_its_figure(browser, language):
     """The one string on these pages that shipped English after the first pass.
 
-    It reads "Across 1,247 calculations run in this tool.", and the figure sits
-    in a `<strong>` inside the sentence. That is built by splitting the
-    translation on its placeholder, and the first version passed the **key** to
-    the helper that splits - so the literal was an argument to that helper
-    rather than to `t()`, `tests/web/i18n_keys.py` never extracted it, no
-    catalogue was required to carry it, and the headline of the statistics page
-    rendered in English on an Arabic screen with the whole suite green. It was
-    found by looking at a screenshot.
+    It reads "Across 1,247 calculations contributed to this tool.", and the
+    figure sits in a `<strong>` inside the sentence. That is built by splitting
+    the translation on its placeholder, and the first version passed the
+    **key** to the helper that splits - so the literal was an argument to that
+    helper rather than to `t()`, `tests/web/i18n_keys.py` never extracted it,
+    no catalogue was required to carry it, and the headline of the statistics
+    page rendered in English on an Arabic screen with the whole suite green.
+    It was found by looking at a screenshot.
 
     So it is asserted here, in two languages, against the catalogue's own entry
     with the placeholder filled the way the page fills it - and the figure is
@@ -2279,7 +2285,7 @@ def test_the_statistics_summary_is_translated_around_its_figure(browser, languag
     sentence by dropping the emphasis would be a different regression.
     """
     strings = i18n_keys.catalogue(language)["strings"]
-    expected = strings["Across %(count)s calculations run in this tool."].replace(
+    expected = strings["Across %(count)s calculations contributed to this tool."].replace(
         "%(count)s", "1,247"
     )
     context, page = open_page(
@@ -2294,7 +2300,7 @@ def test_the_statistics_summary_is_translated_around_its_figure(browser, languag
         # The two sentences under it, which are ordinary `t()` calls and would
         # not have caught the defect above on their own.
         assert page.inner_text(".stats-breakdown-note >> nth=0") == strings[
-            "Share of destination entries across calculations run in this tool."
+            "Share of destination entries across calculations contributed to this tool."
         ]
     finally:
         context.close()

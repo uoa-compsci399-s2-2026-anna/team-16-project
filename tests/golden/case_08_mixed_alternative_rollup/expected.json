@@ -11,25 +11,32 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "4615.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "2500.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "4615.0000000000"
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2500.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "landfill",
+              "qty_kg": "2500.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "2500.0000000000"
+            }
+          ]
         }
       },
-      "by_destination": [
-        {
-          "destination_code": "landfill",
-          "qty_kg": "2500.000",
-          "upstream": "0",
-          "downstream": "0",
-          "value": "4615.0000000000"
-        }
-      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -47,32 +54,46 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "1725.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "1000.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "0.0000000000"
+            },
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1500.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "1725.0000000000"
+            }
+          ]
         },
         "mass": {
           "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2500.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "prevention",
+              "qty_kg": "1000.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "1000.0000000000"
+            },
+            {
+              "destination_code": "landfill",
+              "qty_kg": "1500.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "1500.0000000000"
+            }
+          ]
         }
       },
-      "by_destination": [
-        {
-          "destination_code": "prevention",
-          "qty_kg": "1000.000",
-          "upstream": "0",
-          "downstream": "0",
-          "value": "0.0000000000"
-        },
-        {
-          "destination_code": "landfill",
-          "qty_kg": "1500.000",
-          "upstream": "0",
-          "downstream": "0",
-          "value": "1725.0000000000"
-        }
-      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -125,7 +146,6 @@
             ]
           }
         },
-        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",
@@ -169,7 +189,6 @@
             ]
           }
         },
-        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",
@@ -221,7 +240,6 @@
             ]
           }
         },
-        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",

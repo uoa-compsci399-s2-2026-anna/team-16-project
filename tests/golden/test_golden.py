@@ -12,7 +12,9 @@ what make that claim worth anything.
 
 **It compares the domain object, not the wire body.** `expected.json` mirrors
 §3 field for field — `food_category_code`, `source_metric_code`,
-`by_destination` present-and-empty at the totals level, `total_kg` on
+`by_destination` populated at both the entry and the totals level (v1.48;
+the totals-level rows carry only `qty_kg` and `value`, the two additive
+fields, with `upstream` and `downstream` left at zero), `total_kg` on
 `totals.alternative` where §6.2 has no room for it. A golden case that
 compared §6.2's body would certify `api/engine_adapter.py` as well as the
 engine, and a hoist or an omitted key there would read as an engine defect.
@@ -211,10 +213,6 @@ def _scenario(scenario) -> dict | None:
     return {
         "total_kg": _decimal(scenario.total_kg),
         "metrics": {code: _metric(metric) for code, metric in scenario.metrics.items()},
-        #: v1.48. Empty at the entry level (one entry has nothing to roll up
-        #: across); populated at the totals level with the cross-entry
-        #: partition of `qty_kg` and `value`, rates left at zero.
-        "by_destination": _breakdown_rows(scenario.by_destination),
         "equivalences": [
             {
                 "code": equivalence.code,

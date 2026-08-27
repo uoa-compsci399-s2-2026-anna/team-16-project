@@ -543,9 +543,19 @@ def test_totals_are_the_sum_across_entries(bundle):
         result.entries[0].current.metrics["co2e"].total
         + result.entries[1].current.metrics["co2e"].total
     )
-    #: §3 rule 2 -- a cross-entry destination breakdown has no single correct
-    #: aggregation rule, so there is none.
-    assert result.totals.current.metrics["co2e"].by_destination == ()
+    #: v1.48, amending §3 rule 2: the two entries land on different
+    #: destinations here, so this is a same-metric sanity check that the
+    #: totals-level breakdown reproduces each entry's own row rather than a
+    #: test of the cross-entry summing itself -- that is
+    #: `test_the_totals_carry_a_destination_breakdown_across_entries`'s job.
+    #: 1000 x (1.9 + 0.99) = 2890; 800 x (0.45 + 0.21) = 528.
+    rows = {row.destination_code: row for row in result.totals.current.metrics["co2e"].by_destination}
+    assert rows["landfill"].qty_kg == Decimal("1000.000")
+    assert rows["landfill"].value == Decimal("2890.0000000000")
+    assert rows["compost"].qty_kg == Decimal("800.000")
+    assert rows["compost"].value == Decimal("528.0000000000")
+    assert rows["landfill"].upstream == Decimal("0")
+    assert rows["landfill"].downstream == Decimal("0")
 
 
 def test_no_alternative_anywhere_leaves_both_levels_none(bundle):
@@ -885,9 +895,14 @@ def test_the_engine_is_a_pure_function(bundle):
 
 
 def _bundle_with_two_sectors_sharing_a_destination() -> FactorBundle:
-    """A single-metric bundle, built the same way `one_metric_bundle` is: the
-    only metric is `co2e`, so a test reading `metrics["co2e"].total` is
-    reading the one number the roll-up could plausibly be confused with.
+    """A two-metric bundle, built the same way `one_metric_bundle` is, except
+    it deliberately carries a second metric. `co2e`'s formula uses `upstream`
+    and `downstream`; `mass`'s formula is bare `qty_kg`. A test reading
+    `metrics["co2e"].total` is reading the one number the roll-up could
+    plausibly be confused with, and a test comparing `metrics["co2e"]` and
+    `metrics["mass"]`'s `by_destination` rows is checking the property that
+    makes the mass partition readable off either metric: `qty_kg` does not
+    depend on which metric computed it, so the two must agree row for row.
 
     `farm` and `retail` draw genuinely different upstream factors for
     `standard_mix` -- 2.0 against 5.0 per kg. That is deliberate: two equal
@@ -905,11 +920,13 @@ def _bundle_with_two_sectors_sharing_a_destination() -> FactorBundle:
         "destination_groups": [{"code": "disposal"}],
         "destinations": [{"code": "landfill", "group": "disposal"}],
         "metrics": [
-            {"code": "co2e", "unit": "kg CO2e", "display_precision": 1, "sort_order": 10}
+            {"code": "co2e", "unit": "kg CO2e", "display_precision": 1, "sort_order": 10},
+            {"code": "mass", "unit": "kg", "display_precision": 1, "sort_order": 20},
         ],
         "constants": [],
         "formulas": [
-            {"metric": "co2e", "expression": "qty_kg * (upstream + downstream)"}
+            {"metric": "co2e", "expression": "qty_kg * (upstream + downstream)"},
+            {"metric": "mass", "expression": "qty_kg"},
         ],
         "upstream": [
             {
@@ -959,7 +976,11 @@ def test_the_totals_carry_a_destination_breakdown_across_entries():
     partition of a number the engine already computes by summing.
 
     So the roll-up carries the two additive fields and leaves the two rates
-    at zero, and v1.48 rewrites the rule to say which is which.
+    at zero, and v1.48 rewrites the rule to say which is which. It stays a
+    per-metric field -- `MetricResult.by_destination`, not a new field on
+    `ScenarioResult` -- because `value` is in that metric's own unit, and a
+    field that merged `co2e` and `mass` together would mix kg CO2e with kg,
+    which would be worse than either metric alone.
     """
     bundle = _bundle_with_two_sectors_sharing_a_destination()
     request = CalculationRequest(entries=(
@@ -975,7 +996,7 @@ def test_the_totals_carry_a_destination_breakdown_across_entries():
 
     result = calculate(request, bundle)
 
-    rows = result.totals.current.by_destination
+    rows = result.totals.current.metrics["co2e"].by_destination
     landfill = next(row for row in rows if row.destination_code == "landfill")
 
     #: The mass is the plain sum.
@@ -988,6 +1009,16 @@ def test_the_totals_carry_a_destination_breakdown_across_entries():
     assert sum(
         (row.value for row in rows), Decimal("0")
     ) == co2e_total
+
+    #: The same partition, read off a different metric, carries the same
+    #: masses. `qty_kg` does not depend on which metric computed it, so a
+    #: roll-up that keyed a destination's mass to the wrong metric -- or
+    #: mixed the two metrics' accumulators together -- would show up here
+    #: even though checking `co2e` alone could not catch it.
+    mass_rows = result.totals.current.metrics["mass"].by_destination
+    assert {r.destination_code: r.qty_kg for r in mass_rows} == {
+        r.destination_code: r.qty_kg for r in rows
+    }
 
 
 def test_the_rolled_up_rows_do_not_claim_a_per_kilogram_rate():
@@ -1014,7 +1045,7 @@ def test_the_rolled_up_rows_do_not_claim_a_per_kilogram_rate():
     ))
 
     result = calculate(request, bundle)
-    row = next(r for r in result.totals.current.by_destination
+    row = next(r for r in result.totals.current.metrics["co2e"].by_destination
                if r.destination_code == "landfill")
 
     assert row.upstream == Decimal("0")
@@ -1036,7 +1067,7 @@ def test_a_single_entry_rolls_up_to_the_same_rows_it_already_had():
 
     result = calculate(request, bundle)
     entry_rows = result.entries[0].current.metrics["co2e"].by_destination
-    total_rows = result.totals.current.by_destination
+    total_rows = result.totals.current.metrics["co2e"].by_destination
 
     assert {r.destination_code for r in total_rows} == {
         r.destination_code for r in entry_rows}

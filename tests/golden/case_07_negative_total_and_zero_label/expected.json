@@ -11,18 +11,17 @@
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "-50.0000000000",
-          "by_destination": []
+          "by_destination": [
+            {
+              "destination_code": "animal_feed",
+              "qty_kg": "1000.000",
+              "upstream": "0",
+              "downstream": "0",
+              "value": "-50.0000000000"
+            }
+          ]
         }
       },
-      "by_destination": [
-        {
-          "destination_code": "animal_feed",
-          "qty_kg": "1000.000",
-          "upstream": "0",
-          "downstream": "0",
-          "value": "-50.0000000000"
-        }
-      ],
       "equivalences": [
         {
           "code": "km_driven",
@@ -64,7 +63,6 @@
             ]
           }
         },
-        "by_destination": [],
         "equivalences": [
           {
             "code": "km_driven",

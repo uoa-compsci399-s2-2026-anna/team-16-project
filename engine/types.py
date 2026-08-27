@@ -85,11 +85,17 @@ class MetricResult:
     unit: str
     display_precision: int
     total: Decimal
-    #: Populated per entry, **empty at the totals level** (§3 rule 2): the
-    #: same destination can appear under several entries drawing different
-    #: upstream factors, so a cross-entry destination breakdown has no single
-    #: correct aggregation rule. `MetricResult` is one type either way; the
-    #: serialiser omits the key when the tuple is empty.
+    #: Populated per entry with each line's own `upstream`, `downstream` and
+    #: `value`. Populated at the totals level too (v1.48, amending §3 rule
+    #: 2): `qty_kg` and `value` are additive across entries -- a mass is a
+    #: mass, and `value` is a summand of `total`, which this metric's own
+    #: total is already computed by summing (§4.3) -- so the cross-entry
+    #: partition cannot disagree with the total it partitions. `upstream`
+    #: and `downstream` stay at zero there: they are per-kilogram RATES
+    #: drawn from factors that can differ between the entries sharing a
+    #: destination, and a mean of two different rates is a number derived
+    #: from nothing. `MetricResult` is one type either way; the serialiser
+    #: omits the key when the tuple is empty.
     by_destination: tuple[BreakdownRow, ...]
 
 
@@ -111,21 +117,6 @@ class ScenarioResult:
     total_kg: Decimal
     metrics: dict[str, MetricResult]  # key = metric_code
     equivalences: tuple[EquivalenceResult, ...]
-    #: v1.48, amending §3 rule 2. The cross-entry destination breakdown, and
-    #: it carries only what can be added.
-    #:
-    #: `qty_kg` and `value` are additive: a mass is a mass, and `value` is
-    #: this line's contribution to a metric total that the engine itself
-    #: computes by summing. `upstream` and `downstream` are per-kilogram
-    #: RATES drawn from factors that differ between entries, so they are left
-    #: at zero - the original rule stands for them, and a mean of two factors
-    #: would be a number derived from nothing.
-    #:
-    #: Keyed by destination and by nothing else. A consumer wanting the
-    #: (destination, sector, food category) tree the results page draws
-    #: builds it from `entries[]`, each of which carries its own
-    #: `sector_code`, `food_category_code` and per-metric breakdown.
-    by_destination: tuple[BreakdownRow, ...]
 
 
 @dataclass(frozen=True)

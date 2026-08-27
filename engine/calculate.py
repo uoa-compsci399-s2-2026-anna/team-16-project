@@ -227,10 +227,6 @@ def calculate_scenario(
         total_kg=sum((row.qty_kg for row in lines), Decimal("0")),
         metrics=metrics,
         equivalences=_equivalences(metrics, bundle),
-        # §3 rule 2, unamended for this level: `ScenarioResult.by_destination`
-        # is the *cross-entry* roll-up (§4.2), and one entry has nothing to
-        # roll up across. It is populated by `_roll_up` only.
-        by_destination=(),
     )
 
 
@@ -325,81 +321,57 @@ def _roll_up(
     scenarios: tuple[ScenarioResult, ...], bundle: FactorBundle
 ) -> ScenarioResult:
     metrics: dict[str, MetricResult] = {}
+    #: v1.48, amending §3 rule 2 for the half of it that was wrong. Keyed
+    #: first by metric code and then by destination: `qty_kg` and `value`
+    #: are additive across entries -- a mass is a mass, and `value` is a
+    #: summand of the metric total this loop already computes by summing
+    #: (§4.3), so the cross-entry partition cannot disagree with the total
+    #: it partitions. It never crosses a metric boundary, so `value` stays
+    #: in that metric's own unit -- kg CO2e is not additive with NZD -- and
+    #: `qty_kg` comes out identical in every metric's rows, because mass does
+    #: not depend on which metric is being computed. `upstream` and
+    #: `downstream` are left at zero: they are per-kilogram RATES drawn from
+    #: factors that can differ between the entries sharing a destination,
+    #: and a mean of two different rates is a number derived from nothing --
+    #: that half of the old rule stands.
+    destinations: dict[str, dict[str, list[Decimal]]] = {}
     for scenario in scenarios:
         for code, metric in scenario.metrics.items():
             running = metrics[code].total if code in metrics else Decimal("0")
+            bucket_for_metric = destinations.setdefault(code, {})
+            for row in metric.by_destination:
+                bucket = bucket_for_metric.setdefault(
+                    row.destination_code, [Decimal("0"), Decimal("0")]
+                )
+                bucket[0] += row.qty_kg
+                bucket[1] += row.value
             metrics[code] = MetricResult(
                 metric_code=code,
                 unit=metric.unit,
                 display_precision=metric.display_precision,
                 total=running + metric.total,
-                # §3 rule 2 still stands *here*: the same destination can
-                # appear under several entries drawing different upstream
-                # factors for the same metric, so a per-metric cross-entry
-                # breakdown has no single correct aggregation rule either.
-                # The serialiser omits the key when this is empty. What
-                # *can* be rolled up without that problem -- the additive
-                # `qty_kg` and `value`, metric-agnostic -- now lives on
-                # `ScenarioResult.by_destination` below.
-                by_destination=(),
+                # Dict insertion order is first-appearance order across
+                # entries, so two runs of the same request produce the same
+                # JSON.
+                by_destination=tuple(
+                    BreakdownRow(
+                        destination_code=destination_code,
+                        qty_kg=qty,
+                        upstream=Decimal("0"),
+                        downstream=Decimal("0"),
+                        value=value,
+                    )
+                    for destination_code, (qty, value) in bucket_for_metric.items()
+                ),
             )
     return ScenarioResult(
         total_kg=sum((scenario.total_kg for scenario in scenarios), Decimal("0")),
         metrics=metrics,
-        by_destination=_rolled_up_destinations(scenarios, bundle),
         # §4.2: derived from the metric totals **this function just rolled
         # up**, not from `scenario.equivalences`. Adding the per-entry values
         # would be a second place a headline number is produced, and the two
         # disagree in the last place whenever a per-entry product rounds.
         equivalences=_equivalences(metrics, bundle),
-    )
-
-
-def _rolled_up_destinations(
-    scenarios: tuple[ScenarioResult, ...], bundle: FactorBundle
-) -> tuple[BreakdownRow, ...]:
-    """v1.48, amending §3 rule 2. `qty_kg` and `value` are additive across
-    entries -- a mass is a mass, and `value` is a summand of a metric total
-    the engine already computes by summing (§4.3), so partitioning that sum
-    by destination cannot disagree with it. `upstream` and `downstream` stay
-    at zero: they are per-kilogram RATES drawn from factors that can differ
-    between the entries sharing a destination, and a mean of two different
-    rates is a number derived from nothing.
-
-    `BreakdownRow` carries one `value` per destination, and a bundle may
-    price several metrics in different units -- kg CO2e is not additive with
-    NZD. Rather than naming one, this draws from `bundle.metrics[0]`: the
-    metric with the lowest `sort_order`, which is a property of the bundle's
-    own data (§4.1 already requires `bundle.metrics` sorted for this reason)
-    and never a metric code written here. Adding a metric is still one row.
-    """
-    if not bundle.metrics:
-        return ()
-    primary_metric = bundle.metrics[0].code
-
-    totals: dict[str, list[Decimal]] = {}
-    for scenario in scenarios:
-        metric = scenario.metrics.get(primary_metric)
-        if metric is None:
-            continue
-        for row in metric.by_destination:
-            bucket = totals.setdefault(
-                row.destination_code, [Decimal("0"), Decimal("0")]
-            )
-            bucket[0] += row.qty_kg
-            bucket[1] += row.value
-
-    # Dict insertion order is first-appearance order across entries, so two
-    # runs of the same request produce the same JSON.
-    return tuple(
-        BreakdownRow(
-            destination_code=code,
-            qty_kg=qty,
-            upstream=Decimal("0"),
-            downstream=Decimal("0"),
-            value=value,
-        )
-        for code, (qty, value) in totals.items()
     )
 
 

@@ -29,7 +29,7 @@ on SQLite, which is why B isolated it in the first place.
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal
 from types import SimpleNamespace
 
 import pytest
@@ -249,6 +249,7 @@ class FakeEngineAdapter:
             }
             if has_alternative
             else None,
+            money=_money(request.entries),
         )
         return SimpleNamespace(
             factor_set_version=bundle.data["version_label"],
@@ -268,6 +269,65 @@ def _net_benefit(current, alternative):
     mass = sum((line.qty_kg for line in current), Decimal("0"))
     other = sum((line.qty_kg for line in alternative), Decimal("0"))
     return {"co2e": mass - other}
+
+
+def _money(entries):
+    """A stand-in for `engine.calculate._money` (§4.5), narrow enough for the
+    API tests that exercise it -- none of which combine an alternative
+    scenario with a money figure, so `"prevention"` as a literal is a
+    simplification safe *here* rather than the pattern the real engine
+    follows; `engine.bundle.FactorBundle.is_prevention_destination` is what
+    production code reads instead, from an explicit flag.
+    """
+    total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
+    wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
+    if total_value_nzd is None and wasted_value_nzd is None:
+        return None
+
+    wasted_share_percent = None
+    if (
+        total_value_nzd is not None
+        and wasted_value_nzd is not None
+        and total_value_nzd != 0
+    ):
+        wasted_share_percent = (wasted_value_nzd / total_value_nzd * 100).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    saving_nzd = None
+    has_alternative = any(entry.alternative is not None for entry in entries)
+    current_total_kg = sum(
+        (line.qty_kg for entry in entries for line in entry.current), Decimal("0")
+    )
+    if wasted_value_nzd is not None and has_alternative and current_total_kg != 0:
+        value_per_kg = wasted_value_nzd / current_total_kg
+        alternative_non_prevention_kg = sum(
+            (
+                line.qty_kg
+                for entry in entries
+                for line in (
+                    entry.alternative if entry.alternative is not None else entry.current
+                )
+                if line.destination_code != "prevention"
+            ),
+            Decimal("0"),
+        )
+        diverted_kg = current_total_kg - alternative_non_prevention_kg
+        saving_nzd = (value_per_kg * diverted_kg).quantize(
+            Decimal("0.01"), rounding=ROUND_HALF_UP
+        )
+
+    return SimpleNamespace(
+        total_value_nzd=total_value_nzd,
+        wasted_value_nzd=wasted_value_nzd,
+        wasted_share_percent=wasted_share_percent,
+        saving_nzd=saving_nzd,
+    )
+
+
+def _sum_present(values):
+    present = [value for value in values if value is not None]
+    return sum(present, Decimal("0")) if present else None
 
 
 @pytest.fixture

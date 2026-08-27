@@ -52,6 +52,13 @@ SCALES = {
     "downstream": 10,
     "value_per_kg": 10,
     "value_per_unit": 10,
+    #: §4.5, v1.48. NZD figures, not metric ones -- two places, matching
+    #: `api/schemas.py`'s `decimal_places=2` and `DECIMAL(14, 2)` in
+    #: `db/models.py`, not the ten every metric value above carries.
+    "total_value_nzd": 2,
+    "wasted_value_nzd": 2,
+    "wasted_share_percent": 2,
+    "saving_nzd": 2,
 }
 
 

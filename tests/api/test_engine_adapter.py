@@ -161,6 +161,10 @@ def _result(*, with_alternative=True):
         if with_alternative
         else None,
         net_benefit=totals_net,
+        #: §4.5, v1.48. Not exercised by this file's own numbers -- none of
+        #: this stand-in's entries carry a money figure -- but present
+        #: because `_totals()` reads `totals.money` unconditionally.
+        money=None,
     )
     return SimpleNamespace(
         factor_set_version="MOCK-v0 — PLACEHOLDER",
@@ -304,6 +308,32 @@ def test_every_decimal_leaves_as_a_string_once_wired():
         ]
         == "0.9900000000"
     )
+
+
+def test_the_money_block_is_carried_present_and_not_summed_here():
+    """§4.5, v1.48. `serialize_result` performs no arithmetic (§4.2): the four
+    `MoneyResult` fields arrive already computed and this module only renames
+    the object, on the same "present and null, not omitted" terms as
+    `totals.alternative` and `totals.net_benefit`."""
+    result = _result()
+    result.totals.money = SimpleNamespace(
+        total_value_nzd=Decimal("120000.00"),
+        wasted_value_nzd=Decimal("4500.00"),
+        wasted_share_percent=Decimal("3.75"),
+        saving_nzd=None,
+    )
+    body = DefaultEngineAdapter().serialize_result(result)
+    assert body["totals"]["money"] == {
+        "total_value_nzd": Decimal("120000.00"),
+        "wasted_value_nzd": Decimal("4500.00"),
+        "wasted_share_percent": Decimal("3.75"),
+        "saving_nzd": None,
+    }
+
+
+def test_the_money_block_is_null_when_the_engine_produced_none():
+    body = DefaultEngineAdapter().serialize_result(_result())
+    assert body["totals"]["money"] is None
 
 
 def test_the_adapter_carries_the_new_entry_numbers_into_the_engine():

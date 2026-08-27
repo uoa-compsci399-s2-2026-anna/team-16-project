@@ -157,6 +157,22 @@ def _totals(totals: Any) -> dict[str, Any]:
         "current": _scenario(totals.current, with_total_kg=False),
         "alternative": _scenario(totals.alternative, with_total_kg=False),
         "net_benefit": _net_benefit(totals.net_benefit),
+        "money": _money(totals.money),
+    }
+
+
+def _money(money: Any) -> dict[str, Any] | None:
+    """§4.5, v1.48. `None` when no entry supplied a money figure at all --
+    present-and-null rather than omitted, on the same terms `net_benefit` and
+    `totals.alternative` already carry. No arithmetic: `MoneyResult`'s four
+    fields arrive already computed and already at their own scale (§4.5)."""
+    if money is None:
+        return None
+    return {
+        "total_value_nzd": money.total_value_nzd,
+        "wasted_value_nzd": money.wasted_value_nzd,
+        "wasted_share_percent": money.wasted_share_percent,
+        "saving_nzd": money.saving_nzd,
     }
 
 

@@ -32,6 +32,7 @@ from the shape the API actually returns.
 
 from __future__ import annotations
 
+import copy
 import json
 import os
 import re
@@ -479,7 +480,7 @@ def page_at(browser):
         ctx.close()
 
 
-def _submit_two_entries(page):
+def _submit_two_entries(page, time_frame=None):
     """Drive the wizard through two entries and press Calculate.
 
     What is typed does not matter. `sectorName` and `stageFoodLabel` in `results.js`
@@ -487,6 +488,10 @@ def _submit_two_entries(page):
     itself carries, so the two entries only have to *exist* - for `entryResultsFrom`'s
     index pairing (`state.js`) to carry both of the fulfilled response's entries onto
     the results page. What labels them on screen is the fulfilled body, not this walk.
+
+    `time_frame`, when given, is chosen on the review step's `#time-frame` select
+    before the final Calculate click - the one place `state.timeFrame` (item ⑦) is
+    ever set, since it is never part of the fulfilled response.
     """
     page.click('[data-action="start"]')
     page.wait_for_selector('input[name="sector"]')
@@ -507,6 +512,8 @@ def _submit_two_entries(page):
         if first_entry:
             page.click('[data-action="add-entry"]')
             page.wait_for_selector('input[name="sector"]')
+    if time_frame:
+        page.select_option("#time-frame", time_frame)
     page.click('[data-action="calculate"]')
     page.wait_for_selector(".results-page", timeout=15000)
 
@@ -687,3 +694,208 @@ def test_a_destination_group_s_total_comes_from_the_response(page_at):
         assert f"{float(qty_kg):,.3f}" in shown, (
             f"{code}: page shows {shown!r}, response says {qty_kg}"
         )
+
+
+# ------------------------------------------------------ the money, and the period
+#
+# Task 2. `totals.money` (§4.5) is figures the *visitor typed*, not a metric and not
+# derived here - the section and the export line print exactly what the response
+# carries. `state.timeFrame` (item ⑦) is a label the visitor chose on the review
+# step; it is never part of the fulfilled response, so `_submit_two_entries` selects
+# it in-browser via `#time-frame` on the way to Calculate.
+
+
+def _money_response(*, total=None, wasted=None, share=None, saving=None):
+    """A deep copy of `calculate_response.json` - the fixture §10 names as the one
+    that carries a populated `totals.money` - with that block replaced by exactly
+    the four figures given. A figure left as `None` here stays absent on the wire,
+    the same as a visitor who left that field blank (§4.5: every field is `null`
+    unless everything it derives from was supplied)."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["money"] = {
+        "total_value_nzd": total,
+        "wasted_value_nzd": wasted,
+        "wasted_share_percent": share,
+        "saving_nzd": saving,
+    }
+    return response
+
+
+def _results_page_with_money(page_at, *, total=None, wasted=None, share=None,
+                              saving=None, time_frame=None):
+    """The results page, fulfilled from a response carrying exactly the given
+    `totals.money` figures - and, when `time_frame` is given, with that period
+    chosen on the way through the wizard."""
+    page = page_at(_money_response(total=total, wasted=wasted, share=share, saving=saving))
+    _submit_two_entries(page, time_frame=time_frame)
+    return page
+
+
+def _results_page_without_money(page_at):
+    """The common case: `totals.money` is `null`, the same shape
+    `calculate_response_single.json` carries on the wire (§4.5's absent case)."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["money"] = None
+    page = page_at(response)
+    _submit_two_entries(page)
+    return page
+
+
+def _results_page_with_time_frame(page_at, time_frame):
+    """A visitor who chose a reporting period and supplied no money figure at all -
+    item ⑦ does not depend on item ⑤, so the money block stays `null` here."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["money"] = None
+    page = page_at(response)
+    _submit_two_entries(page, time_frame=time_frame)
+    return page
+
+
+@pytest.mark.browser
+def test_the_money_figures_appear_when_the_visitor_supplied_them(page_at):
+    """Item ⑤'s display half. Every figure is read from `totals.money`, which
+    the engine derived - the share is not computed here, and neither is the
+    saving."""
+    page = _results_page_with_money(page_at, total="120000.00",
+                                     wasted="4500.00", share="3.75")
+
+    section = page.locator(".money-summary")
+    assert section.count() == 1, "no money section on a result that has money"
+    text = section.inner_text()
+    assert "3.75" in text, "the share of value wasted is not shown"
+    assert "4,500" in text
+    assert "NZ$" in text or "NZD" in text, "the currency is not named"
+
+
+@pytest.mark.browser
+def test_the_money_section_is_absent_when_nobody_supplied_a_value(page_at):
+    """The common case, and the affirmative half of the test above: a section
+    that always renders would satisfy it while showing "—" to every visitor
+    who typed nothing."""
+    page = _results_page_without_money(page_at)
+
+    assert page.locator(".money-summary").count() == 0
+
+
+@pytest.mark.browser
+def test_the_saving_is_labelled_as_resting_on_an_assumption(page_at):
+    """**The figure most likely to be screenshotted, so it carries its own
+    caveat.**
+
+    The saving is `wasted value / wasted mass x mass diverted` - uniform value
+    per kilogram, which is the client's own ruling and is not true of milk
+    against mixed waste. The number is theirs to publish; the sentence beside
+    it is what stops it being read as measured.
+    """
+    page = _results_page_with_money(page_at, total="120000.00",
+                                     wasted="4500.00", share="3.75",
+                                     saving="1350.00")
+
+    text = page.locator(".money-summary").inner_text().lower()
+    assert "1,350" in page.locator(".money-summary").inner_text()
+    assert "assum" in text or "even" in text or "average" in text, (
+        "the saving is presented as a measurement rather than an estimate"
+    )
+
+
+@pytest.mark.browser
+def test_the_saving_is_named_for_prevention_not_a_generic_saving(page_at):
+    """`saving_nzd` counts only mass moved to a *prevention* destination (§4.5:
+    `diverted_i` excludes prevention mass on both sides of the subtraction, so
+    only mass that left the non-prevention total contributes). A label reading
+    generically as money "saved" would mislead a visitor into reading a landfill
+    -> anaerobic-digestion diversion as a dollar saving it does not report."""
+    page = _results_page_with_money(page_at, total="120000.00",
+                                     wasted="4500.00", share="3.75",
+                                     saving="1350.00")
+
+    text = page.locator(".money-summary").inner_text().lower()
+    assert "wasted at all" in text or "not wasted" in text, (
+        "the saving is not named for what it actually measures"
+    )
+
+
+@pytest.mark.browser
+def test_a_share_over_100_percent_renders_as_a_number(page_at):
+    """§4.5: the share is deliberately unclamped - a visitor who typed a wasted
+    value above the total value sees a figure over 100%, not a value silently
+    reshaped, and not a bar or fill that would look like a rendering fault. This
+    section draws no bar for the share at all, so a figure over 100% is simply
+    the number the response gave."""
+    page = _results_page_with_money(page_at, total="1000.00", wasted="1425.00",
+                                     share="142.50")
+
+    text = page.locator(".money-summary").inner_text()
+    assert "142.5" in text
+
+
+@pytest.mark.browser
+def test_the_mock_warning_still_shows_beside_the_money_section(page_at):
+    """§7.6.2: the placeholder-data warning is mandatory and non-dismissible on
+    every results view. Adding the money section must not push it off the top of
+    the page or behind a disclosure - it is asserted visible here on a page that
+    also carries `.money-summary`, and it must not be sitting inside a `<details>`
+    (a `<details>` renders and stays queryable while collapsed, so the safeguard
+    is that no ancestor of it is one)."""
+    page = _results_page_with_money(page_at, total="120000.00", wasted="4500.00",
+                                     share="3.75")
+
+    warning = page.locator(".disclaimer")
+    assert warning.count() == 1
+    assert warning.is_visible()
+    assert warning.locator("xpath=ancestor::details").count() == 0
+
+
+@pytest.mark.browser
+def test_the_period_is_shown_when_it_was_stated(page_at):
+    """Item ⑦'s display half. A label, not a computation - nothing on this
+    page is scaled by it."""
+    page = _results_page_with_time_frame(page_at, "one_month")
+
+    assert "month" in page.locator(".results-period").inner_text().lower()
+
+
+@pytest.mark.browser
+def test_the_period_is_absent_when_it_was_not_stated(page_at):
+    """The affirmative half of the test above: `''` means the visitor did not
+    say, and it must render nothing - never the raw empty string, and never a
+    phrase implying "not stated" is itself a period."""
+    page = _results_page_with_money(page_at, total="120000.00", wasted="4500.00",
+                                     share="3.75")
+
+    assert page.locator(".results-period").count() == 0
+
+
+@node
+def test_the_export_carries_the_money_and_the_period(tmp_path):
+    """§7.3a: the file named "results" carries the results. The four money
+    figures and the period are on the page (the tests above); they belong in the
+    file for the same reason the impact figures do.
+
+    Driven through `buildResultsReport` directly, the way every other export
+    assertion in this file is - `report_for`'s Node harness is what proves the
+    string a browser download would produce, and it does so without a real
+    download's platform-specific blob/`<a download>` handling, which this
+    project's browser tests do not exercise anywhere else either.
+    """
+    state = build_state()
+    state["timeFrame"] = "one_month"
+    state["result"]["totals"]["money"] = {
+        "total_value_nzd": "120000.00",
+        "wasted_value_nzd": "4500.00",
+        "wasted_share_percent": "3.75",
+        "saving_nzd": "1350.00",
+    }
+    report = report_for(tmp_path, state)
+    assert "3.75" in report and "1,350" in report and "month" in report.lower()
+
+
+@node
+def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
+    """The mutation-resistant half of the export test above: a report that
+    always prints "The money" heading with "—" figures would pass the test
+    above and still mislead every visitor who supplied nothing."""
+    state = build_state()
+    state["result"]["totals"]["money"] = None
+    report = report_for(tmp_path, state)
+    assert not re.search(r"^The money$", report, re.M)

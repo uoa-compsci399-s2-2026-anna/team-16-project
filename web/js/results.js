@@ -47,6 +47,102 @@ const findByCode = (items, code) => (items || []).find(item => item.code === cod
 // Prefer the response's own `unit` regardless: it travels with the figure.
 const metricUnit = (metric, definition) => metric?.unit || definition?.unit || ''
 
+// Item ⑦: `time_frame` is a closed vocabulary (§6.2) for exactly the reason
+// `gwp_horizon` is closed to 20 and 100 - a value this map has no phrase for must
+// never reach a visitor as the raw identifier. The four phrases are the ones
+// `calculator.js`'s own step-4 `<select>` already offers, reused rather than
+// reworded so the word a visitor chose is the word they see reflected back.
+const TIME_FRAME_LABELS = {
+  one_week: 'One week',
+  one_month: 'One month',
+  one_quarter: 'One quarter',
+  one_year: 'One year',
+}
+
+// A label, never a computation (contract v1.48, §6.2): nothing on this page is scaled
+// by the period, so it renders as one plain line rather than beside any figure it might
+// be misread as multiplying. `''` - "not stated" - renders nothing, the same way an
+// unstated money figure renders nothing rather than a placeholder.
+function resultsPeriod(timeFrame) {
+  const phrase = TIME_FRAME_LABELS[timeFrame]
+  if (!phrase) return ''
+  return `<p class="results-period">${escapeHtml(t('These figures cover: %(period)s', { period: t(phrase) }))}</p>`
+}
+
+// The export's own line for the same fact, worded identically to `resultsPeriod`
+// above so a visitor reading the page and the file they downloaded from it sees
+// the same sentence rather than two different ways of saying the same thing.
+const periodLine = timeFrame => {
+  const phrase = TIME_FRAME_LABELS[timeFrame]
+  return phrase ? t('These figures cover: %(period)s', { period: t(phrase) }) : ''
+}
+
+// Display-only coercion of a two-decimal-place NZD string (§4.5, §1.2): the money
+// block is dollars and cents, not a ten-place metric value, but it is still a string
+// on the wire and still passes through `Number()` for display only (§7.6.1). 'NZ$' is
+// currency notation, not a phrase, so it is not passed through `t()` - the same
+// reasoning `kg` throughout this file is written in and never translated (§7.7.7).
+const nzd = value => `NZ$${formatNumber(number(value), 2)}`
+const hasValue = value => value !== null && value !== undefined
+
+/**
+ * §4.5's money block, rendered beside `summaryCards()` inside the same "Impact
+ * summary" section rather than as a section of its own - four figures the engine
+ * derived from what the visitor typed, and nothing here derives a fifth. `totals.money`
+ * is `null` unless at least one entry supplied a value, and each of the four fields is
+ * independently `null` unless what it derives from was supplied - a computed zero would
+ * read as "this food was worth nothing" rather than "nobody said" (§4.5), so a `null`
+ * field is left off the list rather than printed as `0.00`, a dash, or a bare `NZ$`.
+ *
+ * The share is printed exactly as the response gives it, deliberately unclamped
+ * (§4.5): a figure over 100% is a visitor's own typo showing through, not a rendering
+ * fault, and nothing here is a bar or a width that a figure over 100% could overflow.
+ *
+ * The saving carries its own caveat sentence beneath it rather than a tooltip a
+ * screenshot would crop away: it is a nominal per-entry rate against mass moved to a
+ * *prevention* destination specifically (§4.5), not a market valuation, and not what a
+ * blended rate across the whole form would give.
+ */
+function moneySummary(totals) {
+  const money = totals.money
+  if (!money) return ''
+  const rows = []
+  if (hasValue(money.total_value_nzd)) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Total value of food handled'))}</span><span class="money-value">${nzd(money.total_value_nzd)}</span></div>`)
+  }
+  if (hasValue(money.wasted_value_nzd)) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Value of food wasted'))}</span><span class="money-value">${nzd(money.wasted_value_nzd)}</span></div>`)
+  }
+  if (hasValue(money.wasted_share_percent)) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${formatNumber(number(money.wasted_share_percent), 2)}%</span></div>`)
+  }
+  let saving = ''
+  if (hasValue(money.saving_nzd)) {
+    saving = `<div class="money-row money-saving"><span class="money-label">${escapeHtml(t('Value of food not wasted at all'))}</span><span class="money-value">${nzd(money.saving_nzd)}</span></div><p class="money-caveat">${escapeHtml(t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.'))}</p>`
+  }
+  if (!rows.length && !saving) return ''
+  return `<div class="money-summary"><h3>${escapeHtml(t('The money'))}</h3><p class="result-note">${escapeHtml(t("Figures the calculator did not derive: what you typed for value, summed by the calculation service."))}</p><div class="money-rows">${rows.join('')}${saving}</div></div>`
+}
+
+// `moneySummary`'s figures, in text, worded to match the rows on screen rather than
+// re-deriving them: same fields, same `null`-means-absent rule, same caveat beside the
+// saving. Returns `[]` (no heading printed) when the block is `null` or carries nothing
+// - a heading over an empty list is the "—" this module exists to avoid.
+function moneyLines(totals) {
+  const money = totals.money
+  if (!money) return []
+  const lines = []
+  if (hasValue(money.total_value_nzd)) lines.push(`  - ${t('Total value of food handled')}: ${nzd(money.total_value_nzd)}`)
+  if (hasValue(money.wasted_value_nzd)) lines.push(`  - ${t('Value of food wasted')}: ${nzd(money.wasted_value_nzd)}`)
+  if (hasValue(money.wasted_share_percent)) lines.push(`  - ${t('Share of value wasted')}: ${formatNumber(number(money.wasted_share_percent), 2)}%`)
+  if (hasValue(money.saving_nzd)) {
+    lines.push(`  - ${t('Value of food not wasted at all')}: ${nzd(money.saving_nzd)}`)
+    lines.push(`    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`)
+  }
+  if (!lines.length) return []
+  return ['', t('The money'), ...lines]
+}
+
 function summaryCards(totals, taxonomy) {
   const metrics = totals.current?.metrics || {}
   const impactCards = Object.entries(metrics).filter(([code]) => code !== MASS_METRIC).map(([code, metric]) => {
@@ -430,9 +526,13 @@ export function buildResultsReport(state) {
   // language it was written in, so a machine-translated interface has to say so on
   // the file as well as on the screen it came from.
   const translationNotice = isMachineTranslated() ? ['', MACHINE_TRANSLATION_NOTICE] : []
+  // Item ⑦: a label, printed once near the top of the file, same as on screen — no
+  // figure below it is scaled by the period (contract v1.48).
+  const period = periodLine(state.timeFrame)
   return [
     t('Food Waste Impact Calculator — Results'),
     '',
+    ...(period ? [period, ''] : []),
     `${t('Total food waste')}: ${formatNumber(totalKg, 2)} kg`,
     `${t('Total food waste')}: ${formatNumber(kgToTonnes(totals.total_kg), 3)} ${t('tonnes')}`,
     '',
@@ -441,6 +541,7 @@ export function buildResultsReport(state) {
     '',
     t('Tangible equivalents'),
     ...(equivalents.length ? equivalents : [`  - ${t('Tangible equivalents are available once approved conversion factors are supplied.')}`]),
+    ...moneyLines(totals),
     ...comparisonLines(state),
     '',
     ...entryLines,
@@ -512,8 +613,8 @@ export function renderResults(state) {
   // header's home button already offers it.
   return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
-      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${warning}
-    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div></section>
+      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}
+    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Percentage waste remains unavailable until total food handled data is supplied.'))}</p></div></details></section>

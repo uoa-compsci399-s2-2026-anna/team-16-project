@@ -414,10 +414,6 @@ const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario,
   return `  - ${row.label} (${formatNumber(row.kilograms, 3)} kg): ${figures.join('; ') || t('no impact figures were returned')}`
 })
 
-// The comparison screen, in text, and only when one was run. `net_benefit` is read from the
-// response — §6.2 computes `current − alternative` per metric and the browser must not
-// subtract the two itself (§7.6.1), which is the defect `improvement.js` already had removed
-// from the screen and which this file must not reintroduce on its way to a file.
 /**
  * §4.5's saving, in text, in the two lines the comparison screen shows it in.
  *
@@ -435,6 +431,10 @@ function savingLines(totals) {
   ]
 }
 
+// The comparison screen, in text, and only when one was run. `net_benefit` is read from the
+// response — §6.2 computes `current − alternative` per metric and the browser must not
+// subtract the two itself (§7.6.1), which is the defect `improvement.js` already had removed
+// from the screen and which this file must not reintroduce on its way to a file.
 function comparisonLines(state) {
   const totals = state.improvementResult?.totals
   if (!totals?.alternative) return []

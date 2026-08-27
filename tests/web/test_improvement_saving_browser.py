@@ -74,7 +74,7 @@ TAXONOMY = os.environ.get(
 
 @pytest.fixture(scope="module")
 def destinations():
-    """`(waste destination, prevention destination)` from the published set.
+    """`(non-prevention destination, prevention destination)` from the published set.
 
     `is_prevention` is a field of the taxonomy response (§6.1), which is the
     same question `FactorBundle.is_prevention_destination()` answers engine-side
@@ -110,7 +110,7 @@ def page(browser):
     are read with `expect_response` around the click that causes each, which is
     the sync API's own way of holding one: an `on("response")` listener has to
     call `response.json()` from inside the event loop's own callback, and the
-    two calls it caught here arrived empty about half the time.
+    first run of this file caught neither of the two.
     """
     context = browser.new_context(viewport={"width": 1278, "height": 983}, locale="en-NZ")
     opened = context.new_page()
@@ -147,7 +147,7 @@ def calculate(page, waste, *, wasted_value: str | None) -> dict:
         page.fill("#wasted-value", wasted_value)
     page.click('.step-nav [data-action="continue"]')
 
-    #: All of it to one waste destination. Step 4 renders one fixed row per
+    #: All of it to one non-prevention destination. Step 4 renders one fixed row per
     #: destination and the row carries the destination's own name in its
     #: `aria-label` (§7.3), so the row is found by name rather than by position.
     #: A published set's names are staff-typed and are never translated (§7.7.7),

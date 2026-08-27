@@ -1104,7 +1104,18 @@ def test_every_public_footer_has_transparency_copy_and_what_we_record_link():
         assert len(footers) == 1
         copy = _text(footers[0]).lower()
         assert "sector" in copy and "food categor" in copy and "quantit" in copy
-        assert "aggregate statistics" in copy
+        # **"public statistics", not "aggregate statistics", and the choice with
+        # it.** Item 13 made the aggregate opt-in, and this notice renders in
+        # `index.html`'s footer - which is the calculator, so a visitor met it on
+        # the results page a few centimetres above the contribute control, being
+        # told their calculation was already in the statistics and then asked to
+        # opt in to exactly that. `tests/web/test_consent_copy.py` holds the rule
+        # this line now checks one instance of.
+        assert "public statistics" in copy
+        assert "choose to offer" in copy, (
+            f"{path.name}: the footer states the statistics as a fact rather than "
+            "as the visitor's choice"
+        )
         assert "nothing" in copy and "identif" in copy and "business" in copy
         record_links = [
             link for link in page.matching("a")

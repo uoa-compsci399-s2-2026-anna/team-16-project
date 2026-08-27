@@ -320,7 +320,7 @@
     "Start calculator": "കാൽക്കുലേറ്റർ തുടങ്ങുക",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "നിങ്ങളുടെ ഭക്ഷ്യമാലിന്യ അളവുകളെ, അവയുടെ സാധ്യമായ പാരിസ്ഥിതികവും സാമ്പത്തികവുമായ ആഘാതത്തിന്റെ കൂടുതൽ വ്യക്തമായ ചിത്രമാക്കി മാറ്റുക.",
     "(optional)": "(ഐച്ഛികം)",
-    "Total amount produced": "ഉൽപ്പാദിപ്പിച്ച ആകെ അളവ്",
+    "Total amount produced (%(unit)s)": "ഉൽപ്പാദിപ്പിച്ച ആകെ അളവ് (%(unit)s)",
     "So results can show waste as a share of production.": "ഉൽപ്പാദനത്തിന്റെ ഒരു പങ്കായി പാഴാക്കൽ ഫലങ്ങളിൽ കാണിക്കാൻ കഴിയുന്നതിന്.",
     "Value of production (NZ$)": "ഉൽപ്പാദനത്തിന്റെ മൂല്യം (NZ$)",
     "Value of the waste (NZ$)": "പാഴാക്കലിന്റെ മൂല്യം (NZ$)",

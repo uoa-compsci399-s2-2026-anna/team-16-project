@@ -322,7 +322,7 @@
     "Start calculator": "ਕੈਲਕੁਲੇਟਰ ਸ਼ੁਰੂ ਕਰੋ",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "ਆਪਣੀ ਭੋਜਨ ਬਰਬਾਦੀ ਦੇ ਮਾਪਾਂ ਨੂੰ ਉਨ੍ਹਾਂ ਦੇ ਸੰਭਾਵੀ ਵਾਤਾਵਰਣਕ ਅਤੇ ਵਿੱਤੀ ਪ੍ਰਭਾਵ ਦੀ ਸਾਫ਼ ਤਸਵੀਰ ਵਿੱਚ ਬਦਲੋ।",
     "(optional)": "(ਵਿਕਲਪਿਕ)",
-    "Total amount produced": "ਪੈਦਾ ਕੀਤੀ ਕੁੱਲ ਮਾਤਰਾ",
+    "Total amount produced (%(unit)s)": "ਪੈਦਾ ਕੀਤੀ ਕੁੱਲ ਮਾਤਰਾ (%(unit)s)",
     "So results can show waste as a share of production.": "ਤਾਂ ਜੋ ਨਤੀਜੇ ਬਰਬਾਦੀ ਨੂੰ ਉਤਪਾਦਨ ਦੇ ਇੱਕ ਹਿੱਸੇ ਵਜੋਂ ਦਿਖਾ ਸਕਣ।",
     "Value of production (NZ$)": "ਉਤਪਾਦਨ ਦਾ ਮੁੱਲ (NZ$)",
     "Value of the waste (NZ$)": "ਬਰਬਾਦੀ ਦਾ ਮੁੱਲ (NZ$)",

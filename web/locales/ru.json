@@ -320,7 +320,7 @@
     "Start calculator": "Открыть калькулятор",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Превратите свои измерения пищевых отходов в более ясную картину их возможного экологического и финансового воздействия.",
     "(optional)": "(необязательно)",
-    "Total amount produced": "Общее произведённое количество",
+    "Total amount produced (%(unit)s)": "Общее произведённое количество (%(unit)s)",
     "So results can show waste as a share of production.": "Чтобы результаты могли показать потери как долю от производства.",
     "Value of production (NZ$)": "Стоимость произведённого (NZ$)",
     "Value of the waste (NZ$)": "Стоимость отходов (NZ$)",

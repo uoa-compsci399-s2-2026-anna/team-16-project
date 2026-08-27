@@ -320,7 +320,7 @@
     "Start calculator": "Abrir la calculadora",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Convierte tus mediciones de residuos de alimentos en una visión más clara de su posible impacto ambiental y económico.",
     "(optional)": "(opcional)",
-    "Total amount produced": "Cantidad total producida",
+    "Total amount produced (%(unit)s)": "Cantidad total producida (%(unit)s)",
     "So results can show waste as a share of production.": "Para que los resultados puedan mostrar el desperdicio como una proporción de la producción.",
     "Value of production (NZ$)": "Valor de la producción (NZ$)",
     "Value of the waste (NZ$)": "Valor del desperdicio (NZ$)",

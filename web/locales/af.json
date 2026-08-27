@@ -320,7 +320,7 @@
     "Start calculator": "Begin die berekener",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Verander jou voedselafvalmetings in 'n duideliker beeld van hul moontlike omgewings- en finansiële impak.",
     "(optional)": "(opsioneel)",
-    "Total amount produced": "Totale hoeveelheid geproduseer",
+    "Total amount produced (%(unit)s)": "Totale hoeveelheid geproduseer (%(unit)s)",
     "So results can show waste as a share of production.": "Sodat resultate vermorsing as 'n aandeel van produksie kan wys.",
     "Value of production (NZ$)": "Waarde van produksie (NZ$)",
     "Value of the waste (NZ$)": "Waarde van die vermorsing (NZ$)",

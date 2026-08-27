@@ -320,7 +320,7 @@
     "Start calculator": "कैलकुलेटर शुरू करें",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "अपने खाद्य अपशिष्ट के मापों से उसके संभावित पर्यावरणीय और वित्तीय प्रभाव की अधिक स्पष्ट तस्वीर पाएँ।",
     "(optional)": "(वैकल्पिक)",
-    "Total amount produced": "उत्पादित कुल मात्रा",
+    "Total amount produced (%(unit)s)": "उत्पादित कुल मात्रा (%(unit)s)",
     "So results can show waste as a share of production.": "ताकि परिणाम अपव्यय को उत्पादन के एक हिस्से के रूप में दिखा सकें।",
     "Value of production (NZ$)": "उत्पादन का मूल्य (NZ$)",
     "Value of the waste (NZ$)": "बर्बादी का मूल्य (NZ$)",

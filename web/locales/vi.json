@@ -320,7 +320,7 @@
     "Start calculator": "Mở công cụ tính",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Biến các số liệu đo lường thực phẩm bỏ đi của bạn thành bức tranh rõ hơn về tác động môi trường và tài chính có thể xảy ra.",
     "(optional)": "(tùy chọn)",
-    "Total amount produced": "Tổng lượng sản xuất",
+    "Total amount produced (%(unit)s)": "Tổng lượng sản xuất (%(unit)s)",
     "So results can show waste as a share of production.": "Để kết quả có thể hiển thị lượng lãng phí theo tỷ lệ so với sản lượng.",
     "Value of production (NZ$)": "Giá trị sản xuất (NZ$)",
     "Value of the waste (NZ$)": "Giá trị lượng lãng phí (NZ$)",

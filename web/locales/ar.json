@@ -321,7 +321,7 @@
     "Start calculator": "ابدأ الحاسبة",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "حوِّل قياسات هدر الطعام لديك إلى صورة أوضح لأثرها البيئي والمالي المحتمل.",
     "(optional)": "(اختياري)",
-    "Total amount produced": "إجمالي الكمية المنتجة",
+    "Total amount produced (%(unit)s)": "إجمالي الكمية المنتجة (%(unit)s)",
     "So results can show waste as a share of production.": "حتى تتمكن النتائج من عرض الهدر كنسبة من الإنتاج.",
     "Value of production (NZ$)": "قيمة الإنتاج (NZ$)",
     "Value of the waste (NZ$)": "قيمة الهدر (NZ$)",

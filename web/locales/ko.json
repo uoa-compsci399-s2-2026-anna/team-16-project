@@ -320,7 +320,7 @@
     "Start calculator": "계산기 시작",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "측정한 음식물 폐기물 수치를 환경적·경제적 영향이 한눈에 보이는 형태로 바꿔 보세요.",
     "(optional)": "(선택)",
-    "Total amount produced": "생산된 총량",
+    "Total amount produced (%(unit)s)": "생산된 총량 (%(unit)s)",
     "So results can show waste as a share of production.": "결과에서 폐기물을 생산량 대비 비율로 나타낼 수 있도록 하기 위함입니다.",
     "Value of production (NZ$)": "생산 가치 (NZ$)",
     "Value of the waste (NZ$)": "폐기물 가치 (NZ$)",

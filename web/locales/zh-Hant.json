@@ -323,7 +323,7 @@
     "Start calculator": "開始使用計算機",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "把您的食物浪費測量資料，變成對潛在環境與經濟影響的清楚認識。",
     "(optional)": "（選填）",
-    "Total amount produced": "生產總量",
+    "Total amount produced (%(unit)s)": "生產總量 (%(unit)s)",
     "So results can show waste as a share of production.": "讓結果能以佔生產量的比例顯示浪費量。",
     "Value of production (NZ$)": "生產價值（NZ$）",
     "Value of the waste (NZ$)": "浪費價值（NZ$）",

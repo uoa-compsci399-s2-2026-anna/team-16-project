@@ -320,7 +320,7 @@
     "Start calculator": "Lancer le calculateur",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "Transformez vos mesures de gaspillage alimentaire en une vision plus claire de leur impact environnemental et financier potentiel.",
     "(optional)": "(facultatif)",
-    "Total amount produced": "Quantité totale produite",
+    "Total amount produced (%(unit)s)": "Quantité totale produite (%(unit)s)",
     "So results can show waste as a share of production.": "Pour que les résultats puissent montrer le gaspillage en proportion de la production.",
     "Value of production (NZ$)": "Valeur de la production (NZ$)",
     "Value of the waste (NZ$)": "Valeur du gaspillage (NZ$)",

@@ -320,7 +320,7 @@
     "Start calculator": "கால்குலேட்டரைத் தொடங்கு",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "உங்கள் உணவுக் கழிவு அளவீடுகளை, அவற்றின் சாத்தியமான சுற்றுச்சூழல் மற்றும் நிதித் தாக்கம் குறித்த தெளிவான பார்வையாக மாற்றுங்கள்.",
     "(optional)": "(விருப்பத்தேர்வு)",
-    "Total amount produced": "உற்பத்தி செய்யப்பட்ட மொத்த அளவு",
+    "Total amount produced (%(unit)s)": "உற்பத்தி செய்யப்பட்ட மொத்த அளவு (%(unit)s)",
     "So results can show waste as a share of production.": "விளைவுகள் விரயத்தை உற்பத்தியின் பங்காகக் காட்ட முடியும் வகையில்.",
     "Value of production (NZ$)": "உற்பத்தியின் மதிப்பு (NZ$)",
     "Value of the waste (NZ$)": "விரயத்தின் மதிப்பு (NZ$)",

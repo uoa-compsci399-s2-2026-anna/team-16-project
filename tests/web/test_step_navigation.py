@@ -696,6 +696,63 @@ def test_step_three_asks_what_the_stage_put_through(page_at):
     assert box["y"] < page.evaluate("window.innerHeight")
 
 
+def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_changes(page_at):
+    """`#total-input` is a mass in `state.totalUnit`, and `#total-unit` is the
+    control that says which unit that is - so before this, changing the select
+    silently reinterpreted whatever was already in the box. Both directions were
+    measured on the running stack: 50000 typed against kilograms left as
+    `"50000000.000"` once tonnes was chosen, and 50 typed against tonnes left as
+    `"50.000"` once a container preset pinned `totalUnit` back to kilograms.
+
+    **Two halves, and neither is sufficient alone.** The field is cleared, the
+    same way `state.current` already is and for the same reason - the figure was
+    entered against a unit that is no longer in force. And it *names* its unit,
+    because a box that says only "Total amount produced" gives a visitor nothing
+    to check the number against; `#total-waste` at least sits beside the select
+    the visitor just used and is read back on the review step, and this field
+    appears on neither screen again.
+
+    Clearing rather than converting is deliberate: converting it would be the
+    front end doing arithmetic on the visitor's behalf, on a figure they can no
+    longer see, and the destination rows beside it are cleared rather than
+    converted already.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator("#total-input")
+    label = page.locator('label[for="total-input"]')
+
+    assert "kilograms" in label.inner_text(), (
+        f"the field does not name the unit it is read in: {label.inner_text()!r}"
+    )
+
+    field.fill("50000")
+    page.select_option("#total-unit", "tonnes")
+    page.wait_for_timeout(120)
+    assert page.locator("#total-input").input_value() == "", (
+        "50000 entered against kilograms survived the switch to tonnes, where it "
+        "means a thousand times as much"
+    )
+    assert "tonnes" in page.locator('label[for="total-input"]').inner_text(), (
+        "the label still names the old unit after the select changed"
+    )
+
+    # The other direction, and the one no arithmetic could have rescued: a
+    # container pins `totalUnit` back to kilograms, so a figure entered in tonnes
+    # would have been read as kilograms with nothing on screen having moved.
+    page.fill("#total-input", "50")
+    preset = page.locator("#total-unit option").evaluate_all(
+        "options => options.map(o => o.value).filter(v => v.startsWith('preset:'))"
+    )
+    assert preset, "step 3 offers no container preset, so this half cannot be measured"
+    page.select_option("#total-unit", preset[0])
+    page.wait_for_timeout(120)
+    assert page.locator("#total-input").input_value() == "", (
+        "50 entered against tonnes survived the switch to a container, which pins "
+        "the unit to kilograms"
+    )
+    assert "kilograms" in page.locator('label[for="total-input"]').inner_text()
+
+
 def test_the_production_total_is_optional_and_continue_still_works(page_at):
     """The affirmative half. A test that only checks the field exists is
     satisfied by a field that blocks the form."""

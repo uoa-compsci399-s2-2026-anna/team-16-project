@@ -320,7 +320,7 @@
     "Start calculator": "計算ツールを開始",
     "Turn your food waste measurements into a clearer view of their potential environmental and financial impact.": "食品廃棄の測定値を、環境面と経済面の潜在的な影響が見える形に変えます。",
     "(optional)": "（任意）",
-    "Total amount produced": "生産された総量",
+    "Total amount produced (%(unit)s)": "生産された総量 (%(unit)s)",
     "So results can show waste as a share of production.": "結果が廃棄量を生産量に対する割合として示せるようにするためです。",
     "Value of production (NZ$)": "生産の価値（NZ$）",
     "Value of the waste (NZ$)": "廃棄物の価値（NZ$）",

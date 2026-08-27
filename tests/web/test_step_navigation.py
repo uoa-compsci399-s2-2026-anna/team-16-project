@@ -45,6 +45,8 @@ from pathlib import Path
 
 import pytest
 
+from api.schemas import CalculatePayload
+
 playwright_api = pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to measure where the primary action lands; the bar is unverified without it",
@@ -852,11 +854,25 @@ def test_the_four_new_values_reach_the_request_body(page_at):
     assert sent, "no request was made"
     assert sent["time_frame"] == "one_month"
     entry = sent["entries"][0]
-    #: Strings, not numbers. §1.2: decimals travel as strings because
-    #: JavaScript's Number is a double.
+    #: `total_input_kg` is a mass, so it still goes through `kgString`'s
+    #: unit conversion and lands at the contract's three decimal places.
+    #: §1.2: decimals travel as strings because JavaScript's Number is a
+    #: double.
     assert entry["total_input_kg"] == "50000.000"
-    assert entry["total_value_nzd"] == "120000.00"
-    assert entry["wasted_value_nzd"] == "4500.00"
+    #: The two money fields are **not** reformatted - Fix round 1 found
+    #: `Number(value).toFixed(2)` silently padding (and, for a third typed
+    #: decimal, rounding) a figure nobody asked to have rewritten. "120000"
+    #: and "4500" are exactly what was typed, and that is what must arrive.
+    assert entry["total_value_nzd"] == "120000"
+    assert entry["wasted_value_nzd"] == "4500"
+
+    #: The front-end half of the agreement stage one's `test_evaluator.py`
+    #: runs on the engine side: two independent pictures of one contract,
+    #: and nothing but a test stops them drifting. `route.abort()` above
+    #: proves the front end sends *a* shape; running the real Pydantic model
+    #: over the captured body is what proves it sends *the* shape - cheaply,
+    #: in CI, with no container and no network call.
+    CalculatePayload.model_validate(sent)
 
 
 def test_an_untouched_field_is_sent_as_null_rather_than_zero(page_at):
@@ -879,3 +895,31 @@ def test_an_untouched_field_is_sent_as_null_rather_than_zero(page_at):
     assert entry["total_value_nzd"] is None
     assert entry["wasted_value_nzd"] is None
     assert sent["time_frame"] is None
+
+    #: The absent shape agrees with §6.2 too - `null` on all four optional
+    #: fields is what `CalculatePayload` accepts, not merely what this test
+    #: asserts about it.
+    CalculatePayload.model_validate(sent)
+
+
+def test_a_third_decimal_in_a_money_field_is_refused_as_it_is_typed(page_at):
+    """The same keystroke-level refusal `#wasted-value` already gives a
+    minus sign, aimed at the decimal point instead of the sign.
+
+    Fix round 1: `submitCalculation` used to call `Number(value).toFixed(2)`,
+    so a visitor who typed "12.345" silently sent "12.35" - a figure they
+    never wrote down. Rounding what already arrived is not an option §7.6.1
+    allows (it is a calculation, and the front end's only permitted one is a
+    unit conversion), so the third decimal has to be refused as it is typed,
+    the way the minus already is - and then whatever is left must reach the
+    wire completely unrounded, which `test_the_four_new_values_reach_the_
+    request_body` is what checks.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    field = page.locator("#wasted-value")
+
+    field.press_sequentially("12.345")
+
+    assert field.input_value() == "12.34", (
+        f"a third decimal place reached the money field: {field.input_value()!r}"
+    )

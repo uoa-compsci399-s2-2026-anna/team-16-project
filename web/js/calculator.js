@@ -613,9 +613,14 @@ function buildLines(entry) {
 const optionalKgString = (value, unit) => (value === '' ? null : kgString(value, unit))
 
 // The two money fields carry no unit — always NZD — so they have no tonnes branch to
-// share with `kgString`, but they keep the same absent-is-null shape rather than a third
-// inline `.toFixed(2)`.
-const optionalMoneyString = value => (value === '' ? null : Number(value).toFixed(2))
+// share with `kgString`. **Not `Number(value).toFixed(2)`, deliberately**: §7.6.1 permits
+// the front end exactly one calculation, unit conversion, and rounding a figure the
+// visitor typed is a second one — it silently turned a typed "12.345" into a sent
+// "12.35", which is not what was typed and not something a 400 would ever have caught.
+// The two-decimal ceiling is enforced earlier, at the keystroke (see the `beforeinput`
+// listener's money-field guard), so what is left here is exactly what the visitor typed —
+// `''` still means absent, never "0.00".
+const optionalMoneyString = value => (value === '' ? null : value)
 
 let reloadTaxonomy = null
 
@@ -961,6 +966,32 @@ export function bindCalculator(main, retryTaxonomy) {
    */
   main.addEventListener('beforeinput', event => {
     const target = event.target
+    // The two money fields keep two decimal places by refusing the keystroke that
+    // would create a third, the same shape as the minus-refusal below rather than
+    // `Number(...).toFixed(2)` rounding whatever arrived after the fact — the
+    // difference between a character the visitor cannot type and a figure the
+    // visitor typed being silently rewritten. `total-input` (`total_input_kg`) is
+    // three decimal places by contract (§6.2) and is not guarded here.
+    //
+    // **`event.data.length === 1` is what keeps this a keystroke guard rather
+    // than a bulk-entry one.** A single character is what a real keypress hands
+    // over; `page.fill()` and a paste hand over the whole string in one
+    // `beforeinput` event, and counting every digit in a six-digit fill against
+    // a two-decimal ceiling refused the fill outright — an ordinary whole-number
+    // entry blocked by a guard meant for a fraction. Caret position is as
+    // unreachable here as it is for the minus guard below — `selectionStart`
+    // throws on `type="number"` — so a single new digit is refused once the
+    // field already shows two decimal digits, wherever it lands: the same
+    // narrow trade the minus guard below documents, on the same missing signal.
+    if (
+      (target.id === 'total-value' || target.id === 'wasted-value') &&
+      event.data?.length === 1 &&
+      /\d/.test(event.data) &&
+      (target.value.split('.')[1] || '').length >= 2
+    ) {
+      event.preventDefault()
+      return
+    }
     if (!event.data?.includes('-')) return
     // Three fields refuse a minus outright; a destination amount below does not.
     // The difference is what a refusal has to point at. `validateCurrentStep`

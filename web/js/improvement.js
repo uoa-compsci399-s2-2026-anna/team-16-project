@@ -1,6 +1,6 @@
 import { calculate } from './api.js'
 import { setState, draftEntry } from './state.js'
-import { rowKgString } from './units.js'
+import { rowKgString, percentageToKg, kgToPercentage } from './units.js'
 import { requestLines, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug } from './view.js'
 import { t } from './i18n.js'
@@ -14,6 +14,20 @@ const number = value => (value === null || value === undefined || value === '' ?
 // Arithmetic on what the user typed, not on an API figure. A blank destination row is a
 // zero here, and that is the only reason a `|| 0` is correct anywhere in this module.
 const typed = value => Number(value) || 0
+
+// §4.5's two-decimal NZD string, displayed. A local copy rather than an import, for the
+// reason `number`, `typed` and `MASS_METRIC` above are local copies: `results.js` already
+// imports this module and the import back would close a cycle.
+//
+// **`hasValue` is not `Boolean(value)` and must never be relaxed into it.** §4.5 makes
+// every money field `null` unless everything it derives from was supplied, and `null` has
+// to render as *nothing* — a computed zero would read as "you saved nothing" when what
+// happened is that nobody priced the food. `nzd(null)` prints `NZ$Not available`, because
+// `formatNumber` answers a non-finite input that way, so a guard that lets `null` through
+// puts that string on a client-facing page. `tests/web/test_improvement_saving_browser.py`
+// drives the unpriced journey against the real API for exactly this.
+const nzd = value => `NZ$${formatNumber(number(value), 2)}`
+const hasValue = value => value !== null && value !== undefined
 
 const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order || 0) - Number(b.sort_order || 0))
 
@@ -93,6 +107,30 @@ function submissionEntries(state) {
   return [...state.entries, draftEntry()]
 }
 
+// The mass every allocation redistributes: every `submissionEntries` entry's own
+// current-scenario total, summed. Item ⑧'s kilogram mode divides and multiplies by this
+// number, and it is the same sum `improvementValidation` already takes per entry (§6.2's
+// own mass-conservation rule) — a second copy of "what does this entry weigh" here would
+// be free to disagree with the one the server-side check is built on.
+function totalAllocatableKg(state, presets) {
+  return submissionEntries(state).reduce((sum, entry) => sum + sumQtyKg(requestLines(entry, presets)), 0)
+}
+
+// `percentageToKg`, made safe to print: `NaN` reads as "Not available" everywhere else on
+// this page, and a slider `max` or a box `value` has no use for that string — a headroom
+// of zero is a real answer and a missing one should render as zero, not stall the input.
+const displayKg = (percentage, totalKg) => {
+  const kg = percentageToKg(percentage, totalKg)
+  return Number.isFinite(kg) ? Math.max(0, kg) : 0
+}
+
+// Every destination at 0, not the current share. A visitor modelling an improvement is
+// choosing a new allocation, and seeding the sliders from the old one hides which numbers
+// they have actually decided — the client asked for every slider to start at 0.
+function zeroAllocations(state) {
+  return Object.fromEntries((state.taxonomy.destinations || []).map(destination => [destination.code, 0]))
+}
+
 const polar = (cx, cy, radius, degrees) => {
   const radians = (degrees - 90) * Math.PI / 180
   return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) }
@@ -133,35 +171,108 @@ function PieChart(state, destinations) {
     return `<g class="improvement-pie-label"><polyline points="${edge.x},${edge.y} ${elbow.x},${elbow.y} ${endX},${elbow.y}" stroke="${slice.colour}"/><circle cx="${edge.x}" cy="${edge.y}" r="3" fill="${slice.colour}"/><text x="${textX}" y="${elbow.y + 4}" text-anchor="${anchor}">${formatNumber(slice.share, 1)}%</text></g>`
   }).join('')
   const legend = slices.map(slice => `<div><i style="background:${slice.colour}"></i><span>${escapeHtml(slice.destination.name)}</span></div>`).join('')
-  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(currentWasteKg(state), 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
-}
-
-// The mass the improved scenario redistributes: the *current* scenario's allocated mass,
-// the same quantity `improvedLines` takes its percentages of, so the donut's centre and the
-// rule the Compare button enforces cannot drift apart.
-function currentWasteKg(state) {
-  const presets = state.taxonomy?.unit_presets || []
-  return submissionEntries(state).reduce((sum, entry) => sum + sumQtyKg(requestLines(entry, presets)), 0)
+  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(totalAllocatableKg(state, state.taxonomy?.unit_presets || []), 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
 }
 
 export function openImprovement(state) {
-  const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : currentAllocationPercentages(state)
+  const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : zeroAllocations(state)
   setState({ improvementOpen: true, improvedAllocations: allocations, improvementChartExpanded: false, improvementError: null })
 }
 
+// No longer an undo — the panel does not open on the current allocation any more, so
+// there is nothing here to return *to*. It is kept as a shortcut to the current shares,
+// and the button says so: `t('Match the current allocation')`, not `t('Reset to Current')`.
 export function resetImprovement(state) {
   setState({ improvedAllocations: currentAllocationPercentages(state), improvementResult: null, improvementError: null })
 }
 
+// Each slider's own ceiling is its current value plus whatever is unallocated —
+// `headroom = 100 - allocationTotal(...)` — so dragging one destination to its own limit
+// leaves every other destination's slider unable to move at all. Recomputed after every
+// change, here and in the row template's first render, from the same two numbers.
+function sliderMax(value, headroom) {
+  return Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)
+}
+
+// The pointer-drag granularity: half a percentage point of the mass being redistributed,
+// restated in kilograms when that is the display unit. `step="0.01"` gave the earlier
+// percentage slider ten thousand stops and was "too sensitive" to land on with a pointer,
+// so a drag is still rounded to this coarseness — but the rounding happens here, in
+// `updateImprovementInput`, rather than through the range's own `step` attribute (see the
+// row template): a native `step` snaps *any* value assigned to the control, including an
+// exact figure mirrored in from the number box, which is what made a box reading `399.55`
+// sit beside a range the browser had silently rounded to `400`. Doing it ourselves, only
+// on the control the drag actually fired on, is what lets the box's exact value reach the
+// range unrounded while a drag still lands on a nameable number.
+function rangeStep(mode, totalKg) {
+  return mode === 'kilograms' ? Math.max(0.01, Number((totalKg * 0.005).toFixed(2)) || 0.5) : 0.5
+}
+
+/**
+ * Reads one control's keystroke and patches the DOM directly, the same bypass of
+ * `setState` the module docstring above explains — a full re-render on every keystroke
+ * loses the caret.
+ *
+ * **`state.improvedAllocations` is a percentage in every mode.** Item ⑧ added a
+ * kilogram *display*, not a second place the allocation can live: storing kilograms
+ * instead would make the exactly-100 rule in `improvementValidation` a floating-point
+ * comparison against a mass, and a mass that rounds differently at every tonnage would
+ * start refusing allocations that are correct. So a keystroke here is converted to a
+ * percentage immediately — `kgToPercentage(control.value, totalKg)` in kilogram mode,
+ * `control.value` itself in percentage mode — and everything downstream of that line
+ * (the total, the validation, the mirrored inputs' *raw displayed value*) is unchanged
+ * by which mode produced it.
+ *
+ * **A cleared box stays cleared, in both modes.** `kgToPercentage('', totalKg)` reads
+ * `Number('')` as `0`, which is finite — so a kilogram box the visitor had emptied was
+ * silently stored as an allocation of zero rather than as "not answered yet", and
+ * `improvementValidation` had nothing to catch, only the mismatch it produces once the
+ * other destinations no longer sum to 100%. Percentage mode never had this: `control.value`
+ * passes straight through, so `''` reaches the state as `''` and the blank check below
+ * fires on it directly. The empty string is now checked before either conversion, in
+ * both modes, so it is what reaches the state either way.
+ *
+ * **The range carries `step="any"`, not a fixed step (see the row template).** A `step`
+ * on `<input type="range">` snaps *anything* assigned to `.value` — an exact figure
+ * mirrored in from the number box included — which is what put a box reading `399.55`
+ * beside a range the browser had silently rounded to a multiple of five. With no native
+ * step, an exact mirror lands exactly; a drag, which still has to land on a nameable
+ * number, is rounded here instead, to `rangeStep`'s own coarseness, only when `control`
+ * is the range itself.
+ */
 export function updateImprovementInput(control, state) {
   const code = control.dataset.improvementCode
-  state.improvedAllocations = { ...state.improvedAllocations, [code]: control.value }
+  const mode = state.improvementMode || 'percentage'
+  const presets = state.taxonomy?.unit_presets || []
+  const totalKg = totalAllocatableKg(state, presets)
+  let raw = control.value
+  if (control.type === 'range' && raw !== '') {
+    const step = rangeStep(mode, totalKg)
+    const numeric = Number(raw)
+    if (Number.isFinite(numeric)) {
+      const snapped = Math.round(numeric / step) * step
+      raw = mode === 'kilograms' ? snapped.toFixed(2) : String(Math.round(snapped * 100) / 100)
+      control.value = raw
+    }
+  }
+  const percentage = raw === '' ? '' : (mode === 'kilograms' ? kgToPercentage(raw, totalKg) : raw)
+  state.improvedAllocations = { ...state.improvedAllocations, [code]: percentage }
   state.improvementResult = null
   state.improvementError = null
+  // Mirrors the *raw* value, not the percentage just computed: every control sharing this
+  // code is rendered in the same mode (§ `ImprovementScenario`), so the slider and the
+  // number box always agree on which unit `.value` is in and a straight copy is correct.
+  // `raw` rather than `control.value` so a range's own drag mirrors its *rounded* figure,
+  // not the pointer position that produced it.
   document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
-    if (input !== control) input.value = control.value
+    if (input !== control) input.value = raw
   })
   const total = allocationTotal(state.improvedAllocations)
+  const headroom = 100 - total
+  document.querySelectorAll('input[type="range"][data-improvement-code]').forEach(slider => {
+    const maxPercent = sliderMax(state.improvedAllocations[slider.dataset.improvementCode], headroom)
+    slider.max = String(mode === 'kilograms' ? displayKg(maxPercent, totalKg).toFixed(2) : maxPercent)
+  })
   const error = improvementValidation(state)
   const totalPanel = document.querySelector('.improvement-total')
   totalPanel?.classList.toggle('invalid', Boolean(error))
@@ -193,10 +304,20 @@ export function allocationTotal(allocations) {
  * points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's limit, so the panel enabled
  * Compare on a submission the server then refused with a 400 — after the user had left the
  * screen where the numbers are.
+ *
+ * **The blank/range message names the unit on screen, not the one stored.** The state
+ * this checks is always a percentage (see `updateImprovementInput`), but a visitor working
+ * in kilogram mode never typed a percentage and telling them to "enter a percentage" names
+ * a unit their own screen does not show them. `state.improvementMode` decides which of the
+ * two catalogue strings is returned; nothing about what is being checked changes.
  */
 export function improvementValidation(state) {
+  const mode = state.improvementMode || 'percentage'
   const values = Object.values(state.improvedAllocations || {})
-  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return t('Enter a percentage from 0 to 100 for every destination.')
+  const rangeMessage = mode === 'kilograms'
+    ? t('Enter a mass in kilograms, from 0 up to the total, for every destination.')
+    : t('Enter a percentage from 0 to 100 for every destination.')
+  if (values.some(value => value === '' || !Number.isFinite(Number(value)) || Number(value) < 0 || Number(value) > 100)) return rangeMessage
   const total = allocationTotal(state.improvedAllocations)
   const mismatch = t('Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.', { total: total.toFixed(2) })
   if (Math.abs(total - 100) > 0.01) return mismatch
@@ -265,7 +386,11 @@ export async function compareImprovement(state, toPublicMessage = error => error
   }
 }
 
-function DestinationAllocationRow(destination, current, improved) {
+// An options object rather than a sixth positional parameter: `mode` and `totalKg` travel
+// together (one is meaningless without the other) and `DestinationAllocationRow(d, c, i,
+// m, mode, totalKg)` was already unreadable at the call site without counting commas
+// against the signature above it.
+function DestinationAllocationRow({ destination, current, improved, max, mode, totalKg }) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -277,15 +402,69 @@ function DestinationAllocationRow(destination, current, improved) {
   // keystroke path reads — so two codes that slug alike share a label association but never
   // a value.)
   const id = `improved-${slug(destination.code)}`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="100" step="0.01" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>%</span></div></div></div>`
+  const kilograms = mode === 'kilograms'
+  // Item ⑧: the control's raw `.value` is in the displayed unit, never the stored
+  // percentage — `updateImprovementInput` is what converts back on the way in. `max` is
+  // this row's `improved` value plus whatever headroom the whole allocation has left (§
+  // `updateImprovementInput`), not the fixed `100` a slider starts and ends at regardless
+  // of its neighbours, converted into kilograms the same way the value is.
+  //
+  // **Percentage mode prints `improved` / `max` exactly as it always did — no `.toFixed`
+  // added here.** `test_the_sliders_start_at_zero_and_the_total_says_so` reads the
+  // sliders' own `.value` and requires the literal `"0"`; rounding every percentage to two
+  // places for symmetry with the new kilogram branch would have turned that into `"0.00"`
+  // for a reason with nothing to do with kilograms at all.
+  // A genuinely blank allocation stays blank through a full re-render (a mode toggle, a
+  // reopen) in both units — `displayKg('', totalKg)` reads `Number('')` as `0`, which is
+  // finite, so the kilogram branch alone would turn "not answered yet" into "0.00" the
+  // moment the panel redrew, even though nothing was typed.
+  const value = improved === '' ? '' : (kilograms ? displayKg(improved, totalKg).toFixed(2) : improved)
+  const ceiling = kilograms ? displayKg(max, totalKg).toFixed(2) : max
+  const numberMax = kilograms ? (Number.isFinite(totalKg) && totalKg > 0 ? totalKg.toFixed(2) : '') : 100
+  const unitLabel = kilograms ? 'kg' : '%'
+  // The number box stays the exact-entry control and the slider the coarse one in both
+  // modes: `step="0.01"` here is the same two-decimal ceiling `MASS_TOLERANCE_KG` checks
+  // in kilograms, so a visitor typing to that precision is typing to the precision the
+  // mass check actually honours.
+  //
+  // **The range's own `step` is `"any"`, not the coarse figure it drags in steps of.**
+  // `<input type="range">` snaps *any* value assigned to `.value` to the nearest multiple
+  // of its `step` attribute — including an exact figure mirrored in from the number box —
+  // so a fixed `step` here made a box reading `399.55` sit beside a range the browser had
+  // silently rounded to `400`. `updateImprovementInput` applies that same coarseness
+  // itself, only to a drag on the range, so the two controls never show a different number
+  // for the same allocation.
+  //
+  // **The two `aria-label`s are the accessible name a screen reader gets for these
+  // controls, and they name the unit the same way the visible label beside the box
+  // does.** An `aria-label` fixed to "percentage" in kilogram mode told a screen-reader
+  // visitor the field wanted a percentage when it did not - the same defect as the
+  // validation message above, on a surface a sighted visitor never sees at all.
+  const rangeLabel = kilograms
+    ? t('Improved %(destination)s kilograms', { destination: destination.name })
+    : t('Improved %(destination)s percentage', { destination: destination.name })
+  const boxLabel = kilograms
+    ? t('Improved %(destination)s kilograms value', { destination: destination.name })
+    : t('Improved %(destination)s percentage value', { destination: destination.name })
+  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="0.01" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(boxLabel)}"><span>${unitLabel}</span></div></div></div>`
 }
 
 export function ImprovementScenario(state) {
   if (!state.improvementOpen) return `<section class="explore-improvements"><h2>${escapeHtml(t('Want to explore potential improvements?'))}</h2><p>${escapeHtml(t('Adjust how your food waste is managed to see how the environmental and economic impacts could change.'))}</p><button class="button button-primary" type="button" data-action="explore-improvements">${escapeHtml(t('Explore Improvements'))}</button></section>`
   const current = currentAllocationPercentages(state)
   const total = allocationTotal(state.improvedAllocations)
+  const headroom = 100 - total
   const error = improvementValidation(state)
-  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content">${PieChart(state, sorted(state.taxonomy.destinations))}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart"><span aria-hidden="true">⛶</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div></div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${state.improvementChartExpanded ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${PieChart(state, sorted(state.taxonomy.destinations))}</div></div>` : ''}</section>`
+  // Item ⑧: a site manager thinks in tonnes diverted, not in percentage points. This
+  // decides only what the sliders and boxes below *display* — see the note on
+  // `updateImprovementInput` for why the stored allocation is unaffected either way.
+  const mode = state.improvementMode || 'percentage'
+  const totalKg = totalAllocatableKg(state, state.taxonomy?.unit_presets || [])
+  const modeField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode"><option value="percentage" ${mode === 'percentage' ? 'selected' : ''}>${escapeHtml(t('Percentage'))}</option><option value="kilograms" ${mode === 'kilograms' ? 'selected' : ''}>${escapeHtml(t('kilograms'))}</option></select></div>`
+  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p>${modeField}<div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content">${PieChart(state, sorted(state.taxonomy.destinations))}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart"><span aria-hidden="true">⛶</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => {
+    const improved = state.improvedAllocations[destination.code] ?? 0
+    return DestinationAllocationRow({ destination, current: current[destination.code] || 0, improved, max: sliderMax(improved, headroom), mode, totalKg })
+  }).join('')}</div></div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong id="improvement-total-kg">${formatNumber(totalKg, 2)}</strong> kg</span></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${state.improvementChartExpanded ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${PieChart(state, sorted(state.taxonomy.destinations))}</div></div>` : ''}</section>`
 }
 
 /**
@@ -414,10 +593,34 @@ function equivalentComparison(rows) {
   return `<p class="comparison-equivalent-note">${escapeHtml(t('Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.'))}</p><ul class="comparison-equivalents">${rows.map(row => `<li><div class="comparison-values">${side(t('Current'), row.current)}<span class="comparison-arrow" aria-hidden="true">→</span>${side(t('Improved'), row.improved)}</div></li>`).join('')}</ul>`
 }
 
+/**
+ * §4.5's saving, rendered where the scenario that produced it is.
+ *
+ * **It used to live in `results.js`'s money block and could not be reached.** That block
+ * reads `state.result`, and the Calculate button sends `alternative: null` for every
+ * entry, so §4.5's "`None` when no entry carries an alternative" made `saving_nzd` null
+ * on every response a visitor could produce. The saving is a property of the comparison —
+ * `Σ (entry's own value per kilogram × that entry's diverted mass)`, and `diverted` is
+ * `current − alternative` — so it belongs beside the comparison, not beside three figures
+ * describing the current scenario alone.
+ *
+ * The caveat rides directly beneath it rather than in a tooltip a screenshot would crop
+ * away: the rate is nominal, derived from two totals the visitor typed for that entry, and
+ * copy presenting it as a measured valuation claims a precision the input does not carry.
+ *
+ * The classes are `results.js`'s own `.money-row` / `.money-saving` / `.money-caveat`, so
+ * the figure reads as the same kind of thing in both places rather than as a new widget.
+ */
+function comparisonSaving(result) {
+  const saving = result.totals?.money?.saving_nzd
+  if (!hasValue(saving)) return ''
+  return `<div class="comparison-saving"><div class="money-row money-saving"><span class="money-label">${escapeHtml(t('Value of food not wasted at all'))}</span><span class="money-value">${nzd(saving)}</span></div><p class="money-caveat">${escapeHtml(t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.'))}</p></div>`
+}
+
 export function ComparisonResults(state) {
   const result = state.improvementResult
   if (!result?.totals?.alternative) return ''
   const data = comparisonData(result)
   const mock = result.factor_set?.is_mock
-  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">${escapeHtml(t('Current Results → Improved Scenario'))}</p><h2 id="comparison-results-title">${escapeHtml(t('Compare Results'))}</h2>${mock ? `<p class="comparison-estimate-note">${escapeHtml(t('Demonstration only — this comparison uses mock factors and is not a verified impact result.'))}</p>` : ''}${ComparisonSummary(data, state.taxonomy)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>${escapeHtml(t('Tangible equivalents'))}</h2>${equivalentComparison(data.equivalences)}</section></section>`
+  return `<section class="comparison-results" id="comparison-results" aria-labelledby="comparison-results-title"><p class="eyebrow">${escapeHtml(t('Current Results → Improved Scenario'))}</p><h2 id="comparison-results-title">${escapeHtml(t('Compare Results'))}</h2>${mock ? `<p class="comparison-estimate-note">${escapeHtml(t('Demonstration only — this comparison uses mock factors and is not a verified impact result.'))}</p>` : ''}${ComparisonSummary(data, state.taxonomy)}${comparisonSaving(result)}<div class="impact-comparison-grid">${comparableCodes(data.metrics).map(code => ImpactComparisonCard(code, data.metrics[code], state.taxonomy)).join('')}</div>${ComparisonBars(data.metrics, state.taxonomy)}<section class="comparison-equivalent-section"><h2>${escapeHtml(t('Tangible equivalents'))}</h2>${equivalentComparison(data.equivalences)}</section></section>`
 }

@@ -674,15 +674,20 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
     assert number.input_value() == slider.input_value()
 
     # The same invariant in the direction that actually breaks it, and the reason
-    # the range carries `step="0.01"` rather than a rounder figure.
+    # the range carries `step="any"` rather than any fixed figure.
     # `<input type="range">` snaps *anything* assigned to `.value` to a multiple of
     # its own step; `<input type="number">` does not. So a range stepped more
     # coarsely than the box beside it leaves one allocation showing as two numbers
-    # — a box reading 39.55 next to a slider sitting on 35 — and the visitor has no
+    # — a box reading 39.55 next to a slider sitting on 40 — and the visitor has no
     # way to tell which of the two the Compare button is about to send.
     #
-    # 39.55 is chosen to be representable at the box's own step and at no coarser
-    # one, so this fails the moment the two steps stop matching.
+    # Stage four is what made the two agree, and it did it by removing the range's
+    # native step rather than by matching it to the box's: `updateImprovementInput`
+    # rounds a *drag* to `rangeStep`'s own coarseness itself, so a drag still lands
+    # on a nameable number while an exact figure mirrored in from the box arrives
+    # unrounded. 39.55 is representable at the box's step and at no coarser one, so
+    # this fails the moment a native step comes back onto the range — checked by
+    # putting `step="5"` back and watching it report `box 39.55, slider 40`.
     number.press("ControlOrMeta+A")
     number.press("Backspace")
     number.press_sequentially("39.55")

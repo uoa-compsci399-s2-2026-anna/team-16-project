@@ -387,3 +387,40 @@ def test_download_uses_a_pdf_blob():
     source = RESULTS_JS.read_text(encoding="utf-8")
     assert "type: 'application/pdf'" in source
     assert "type: 'text/plain" not in source
+    assert "setTimeout(() => URL.revokeObjectURL(url), 0)" in source
+
+
+UNICODE_HARNESS = """
+import { writeFileSync } from 'node:fs'
+const { reportNeedsUnicodeFallback } = await import(process.argv[2])
+writeFileSync(process.argv[3], JSON.stringify({
+  english: reportNeedsUnicodeFallback('Food waste results'),
+  chinese: reportNeedsUnicodeFallback('食物浪费结果'),
+  punctuation: reportNeedsUnicodeFallback('Current → improved — 2 × bins'),
+}))
+"""
+
+
+@node
+def test_non_latin_reports_select_the_unicode_safe_pdf_path(tmp_path):
+    harness = tmp_path / "unicode-harness.mjs"
+    harness.write_text(UNICODE_HARNESS, encoding="utf-8")
+    out = tmp_path / "unicode.json"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            (ROOT / "web" / "js" / "pdf.js").as_uri(),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+    assert json.loads(out.read_text(encoding="utf-8")) == {
+        "english": False,
+        "chinese": True,
+        "punctuation": False,
+    }

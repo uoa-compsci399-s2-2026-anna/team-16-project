@@ -389,8 +389,12 @@ export function downloadResults(state) {
   const link = document.createElement('a')
   link.href = url
   link.download = exportFilename()
+  document.body?.append(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove?.()
+  // Firefox and Safari can still be consuming the object URL when `click()` returns.
+  // Releasing it on the next task keeps the download alive without leaking it.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 export function renderResults(state) {

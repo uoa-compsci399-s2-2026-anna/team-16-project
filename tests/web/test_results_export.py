@@ -1,7 +1,7 @@
 """The results export actually carries results (contract §7.3a, §7.6.2).
 
 **What this file exists to stop happening again.** `downloadResults` produced
-`food-waste-impact-results.txt` containing the total mass, each entry, its
+`food-waste-impact-results.pdf` containing the total mass, each entry, its
 destinations and quantities, the factor set version and the placeholder
 warning — and **not one output figure**. No greenhouse gas, no methane, no
 water, no cost. A results export with no results is the file somebody attaches
@@ -328,7 +328,7 @@ def test_the_export_file_name_carries_a_zero_padded_timestamp(tmp_path):
     the harness rather than read from the clock - `exportFilename` takes `now`
     for the same reason `engine.calculate` takes no clock.
     """
-    assert _filename_for(tmp_path) == "food-waste-impact-results-2026-08-12-090405.txt"
+    assert _filename_for(tmp_path) == "food-waste-impact-results-2026-08-12-090405.pdf"
 
 
 def test_the_download_no_longer_hard_codes_one_name():
@@ -341,3 +341,49 @@ def test_the_download_no_longer_hard_codes_one_name():
     source = RESULTS_JS.read_text(encoding="utf-8")
     assert "'food-waste-impact-results.txt'" not in source
     assert re.search(r"^\s*link\.download = exportFilename\(\)$", source, re.M)
+
+
+PDF_HARNESS = """
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { buildResultsReport } = await import(process.argv[2])
+const { buildTextReportPdf } = await import(process.argv[3])
+const state = JSON.parse(readFileSync(process.argv[4], 'utf8'))
+writeFileSync(process.argv[5], buildTextReportPdf(buildResultsReport(state)))
+"""
+
+
+@node
+def test_pdf_is_valid_and_contains_the_result_figures(tmp_path):
+    harness = tmp_path / "pdf-harness.mjs"
+    harness.write_text(PDF_HARNESS, encoding="utf-8")
+    state_file = tmp_path / "state.json"
+    state_file.write_text(json.dumps(build_state()), encoding="utf-8")
+    out = tmp_path / "results.pdf"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            RESULTS_JS.as_uri(),
+            (ROOT / "web" / "js" / "pdf.js").as_uri(),
+            str(state_file),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+    pdf = out.read_bytes()
+    assert pdf.startswith(b"%PDF-1.4")
+    assert pdf.rstrip().endswith(b"%%EOF")
+    assert b"4,449.0 kg CO2e" in pdf
+
+
+def test_download_uses_a_pdf_blob():
+    source = RESULTS_JS.read_text(encoding="utf-8")
+    assert "type: 'application/pdf'" in source
+    assert "type: 'text/plain" not in source

@@ -2,6 +2,7 @@ import { escapeHtml, formatNumber, stepNav } from './view.js'
 import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
 import { entryTotal, kgToTonnes } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
+import { buildTextReportPdf } from './pdf.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -356,7 +357,7 @@ export function buildResultsReport(state) {
  * The download's file name, stamped with local time.
  *
  * A fixed name meant every export after the first arrived as
- * `food-waste-impact-results (1).txt`, and the browser decides that suffix, not
+ * `food-waste-impact-results (1).pdf`, and the browser decides that suffix, not
  * this code - so the order is the download order, not the calculation order, and
  * nothing on the file says which scenario it holds. Somebody comparing two runs
  * has to open both to tell them apart.
@@ -379,11 +380,12 @@ export function exportFilename(now = new Date()) {
     pad(now.getMinutes()),
     pad(now.getSeconds()),
   ].join('')
-  return `food-waste-impact-results-${stamp}.txt`
+  return `food-waste-impact-results-${stamp}.pdf`
 }
 
 export function downloadResults(state) {
-  const url = URL.createObjectURL(new Blob([buildResultsReport(state)], { type: 'text/plain;charset=utf-8' }))
+  const pdf = buildTextReportPdf(buildResultsReport(state))
+  const url = URL.createObjectURL(new Blob([pdf], { type: 'application/pdf' }))
   const link = document.createElement('a')
   link.href = url
   link.download = exportFilename()

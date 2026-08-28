@@ -807,13 +807,33 @@ tbody th { font-weight: 700; }
 .explore-improvements { text-align: center; }
 .explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
-.improvement-allocation-list { margin-top: 24px; overflow: hidden; border-radius: 14px; background: #fff; }
-.improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(220px, 0.8fr) minmax(320px, 1.2fr); gap: 24px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
+.improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(250px, 0.72fr) minmax(380px, 1.28fr); gap: 24px; align-items: start; }
+.improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
+.improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
+.improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
+.improvement-pie-centre, .improvement-pie-total { pointer-events: none; }
+.improvement-pie-label polyline { fill: none; stroke-width: 1.5; }
+.improvement-pie-label text { fill: var(--green-dark); font-size: 13px; font-weight: 700; }
+.improvement-pie-total { fill: var(--green-dark); font-size: 16px; font-weight: 700; }
+.improvement-pie-total tspan + tspan { fill: var(--muted); font-size: 11px; font-weight: 500; }
+.improvement-pie-key { margin: -18px 10px 8px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 9px 14px; }
+.improvement-pie-key > div { display: grid; grid-template-columns: 11px minmax(0, 1fr); gap: 8px; align-items: center; }
+.improvement-pie-key i { width: 11px; height: 11px; border-radius: 50%; }
+.improvement-pie-key span { min-width: 0; color: var(--muted); font-size: 0.82rem; line-height: 1.25; }
+.improvement-expand-chart { width: calc(100% - 20px); margin: 18px 10px 6px; }
+.improvement-chart-modal { position: fixed; z-index: 1000; inset: 0; display: grid; place-items: center; padding: 24px; background: rgba(0, 32, 24, 0.72); }
+.improvement-chart-expanded { position: relative; width: min(860px, 92vw); max-height: 92vh; overflow: auto; padding: 34px 44px 28px; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px rgba(0, 20, 14, 0.32); }
+.improvement-chart-expanded .improvement-pie-chart { width: min(720px, 100%); margin: 0 auto; }
+.improvement-chart-expanded .improvement-pie-key { max-width: 680px; margin: -18px auto 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.improvement-chart-close { position: absolute; z-index: 1; inset-block-start: 14px; inset-inline-start: 14px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--green-dark); background: #fff; font-size: 1.8rem; line-height: 1; cursor: pointer; }
+.improvement-chart-close:hover { background: rgba(0, 50, 35, 0.07); }
+.improvement-allocation-list { overflow: hidden; border-radius: 14px; background: #fff; }
+.improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.2fr); gap: 20px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
 .improvement-allocation-row:last-child { border-bottom: 0; }
 .improvement-allocation-row > div:first-child { display: grid; gap: 4px; }
 .improvement-allocation-row label { font-weight: 700; }
 .improvement-allocation-row span { color: var(--muted); }
-.improvement-control { display: grid; grid-template-columns: minmax(120px, 1fr) 118px; gap: 16px; align-items: center; }
+.improvement-control { display: grid; grid-template-columns: minmax(90px, 1fr) 108px; gap: 12px; align-items: center; }
 .improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }
 .percentage-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
 .percentage-input input { min-width: 0; }
@@ -950,6 +970,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .result-actions { flex-direction: column; }
   .result-actions .button-primary { margin-inline-start: 0; }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
+  .improvement-editor { grid-template-columns: 1fr; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
   .improvement-control { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }

@@ -845,7 +845,9 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)
-    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementResult: null, improvementError: null })
+    if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: true })
+    if (action === 'close-improvement-chart') setState({ improvementChartExpanded: false })
+    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementChartExpanded: false, improvementResult: null, improvementError: null })
     // §9's code-to-copy map travels with the call. `improvement.js` cannot import it —
     // this module already imports that one — and without it the improvement panel showed
     // raw backend prose for the codes the main flow words carefully.

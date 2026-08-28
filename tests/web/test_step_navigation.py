@@ -662,6 +662,107 @@ def test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number
     assert slider.input_value() != before, "the slider stopped responding"
     assert number.input_value() == slider.input_value()
 
+    # The same invariant in the direction that actually breaks it, and the reason
+    # the range carries `step="0.01"` rather than a rounder figure.
+    # `<input type="range">` snaps *anything* assigned to `.value` to a multiple of
+    # its own step; `<input type="number">` does not. So a range stepped more
+    # coarsely than the box beside it leaves one allocation showing as two numbers
+    # — a box reading 39.55 next to a slider sitting on 35 — and the visitor has no
+    # way to tell which of the two the Compare button is about to send.
+    #
+    # 39.55 is chosen to be representable at the box's own step and at no coarser
+    # one, so this fails the moment the two steps stop matching.
+    number.press("ControlOrMeta+A")
+    number.press("Backspace")
+    number.press_sequentially("39.55")
+    assert number.input_value() == "39.55"
+    assert slider.input_value() == number.input_value(), (
+        "the slider and the number box are showing different numbers for one "
+        f"allocation: box {number.input_value()}, slider {slider.input_value()}"
+    )
+
+
+def test_the_kilogram_guard_refuses_an_allocation_the_percentage_guard_allows(page_at):
+    """`improvementValidation` guards the allocation twice, and the second guard
+    is not a belt-and-braces afterthought — it is the one that fires at ordinary
+    scales.
+
+    60 + 40.005 totals 100.005%, and |100.005 - 100| is 0.005, *inside* the
+    0.01-percentage-point tolerance. The percentage guard passes it. On this
+    journey's 1,000 kg the same allocation describes 1,000.05 kg of waste, which
+    is 0.05 kg heavier than the current scenario and five times
+    `MASS_TOLERANCE_KG`, so Compare Impact is refused by the kilogram guard
+    alone.
+
+    That refusal is the domain rule, not a preference: both scenarios have to
+    move the same mass, or a net benefit can be inflated by quietly assuming
+    less waste in the alternative. A percentage tolerance cannot express it,
+    because 0.01 percentage points is a different number of kilograms at every
+    tonnage.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page.click('[data-action="explore-improvements"]')
+    boxes = page.locator('.percentage-input input[type="number"]')
+    assert boxes.count() >= 2, "this needs two destinations to split an allocation across"
+
+    # The panel opens seeded from the current scenario, so every row is cleared
+    # before the two under test are set; otherwise the seeded 100% is still in
+    # the total and the percentage guard would refuse it too, for the wrong
+    # reason.
+    for index in range(boxes.count()):
+        boxes.nth(index).fill("0")
+    boxes.nth(0).fill("60")
+    boxes.nth(1).fill("40.005")
+
+    total = sum(float(boxes.nth(i).input_value() or 0) for i in range(boxes.count()))
+    assert abs(total - 100) <= 0.01, (
+        f"the premise of this test has moved: {total} is no longer inside the "
+        "percentage tolerance, so it no longer isolates the kilogram guard"
+    )
+    compare = page.locator('[data-action="compare-improvement"]')
+    assert compare.is_disabled(), (
+        "Compare Impact was offered on an allocation 0.05 kg heavier than the "
+        "current scenario; the kilogram guard is not firing"
+    )
+    assert page.locator("#improvement-inline-error").is_visible()
+
+    # The positive control, on the same two rows: the refusal is about the
+    # 0.005, not about the panel refusing everything.
+    boxes.nth(1).fill("40")
+    assert compare.is_enabled(), "an exact 60/40 split was refused"
+
+
+def test_the_improvement_donut_draws_the_share_the_slider_holds(page_at):
+    """The donut is display only (§7.6.1): every slice is an angle turned from a
+    percentage the panel already shows as a number, never a second derivation of
+    it. So the callout beside a slice has to read back the figure typed into the
+    box, and it has to keep doing so on the keystroke path — which patches the
+    DOM instead of re-rendering, precisely so the caret survives mid-number, and
+    would therefore leave a stale chart if `updateImprovementInput` did not redraw
+    it by hand.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 5)
+    page.click('[data-action="explore-improvements"]')
+    assert page.locator(".improvement-pie-chart").count() == 1
+
+    number = page.locator('.percentage-input input[type="number"]').first
+    number.press("ControlOrMeta+A")
+    number.press("Backspace")
+    number.press_sequentially("42.5")
+    #: `all_inner_texts` is `innerText`, which an SVG element does not have; the
+    #: callouts came back as `[None, None]` before this read `textContent`.
+    labels = page.locator(".improvement-pie-label text").all_text_contents()
+    assert "42.5%" in labels, (
+        f"the donut did not redraw to the typed allocation; callouts were {labels}"
+    )
+
+    # Enlarging it is a second copy of the same chart, not a second chart: the
+    # dialog reads the same state, so it cannot show a different allocation.
+    page.click('[data-action="expand-improvement-chart"]')
+    assert page.locator(".improvement-chart-modal .improvement-pie-chart").count() == 1
+    page.click('[data-action="close-improvement-chart"]')
+    assert page.locator(".improvement-chart-modal").count() == 0
+
 
 def test_step_three_asks_what_the_stage_put_through(page_at):
     """Item ④. Without it the results page can never state waste as a share

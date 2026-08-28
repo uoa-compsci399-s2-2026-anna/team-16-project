@@ -22,7 +22,7 @@ likely to have something on all of them already, and a port clash on first run
 is the out-of-the-box failure this launcher exists to prevent. 18080 is
 reserved for the reverse proxy - do not take it.
 
-THREE DEPLOYMENT FACTS THIS SCRIPT IS SHAPED BY
+FOUR DEPLOYMENT FACTS THIS SCRIPT IS SHAPED BY
 
 1. `migrate` is a separate subcommand, and it must run ONCE, from ONE process,
    before `api` or `admin` starts. MySQL autocommits DDL, so two replicas
@@ -41,6 +41,25 @@ THREE DEPLOYMENT FACTS THIS SCRIPT IS SHAPED BY
    address: the per-address rate limit collapses into a single global bucket,
    and one block denies every visitor. Set it to true only once a proxy that
    overwrites X-Forwarded-For itself is genuinely in front.
+
+4. PROTECTION_TRUSTED_PROXY is also what this script hands uvicorn, as
+   --forwarded-allow-ips. Left unset uvicorn trusts only 127.0.0.1, so behind
+   a container-network proxy - which is never 127.0.0.1 - `request.url.scheme`
+   stays http no matter what nginx sends: sqladmin builds every asset URL and
+   redirect from that scheme, so a panel reached over real https serves
+   http:// stylesheets and scripts - mixed content, blocked by the browser.
+   Get-ServeArgv passes --forwarded-allow-ips * when and only when this same
+   variable is true, trusting whichever peer actually connected no more than
+   db/detection.py already trusts it for the address - and --no-access-log
+   travels with it in the same condition, because trusting the peer for
+   scheme also hands uvicorn's own ProxyHeadersMiddleware the address: it
+   rewrites scope["client"] from the same X-Forwarded-For header, and
+   uvicorn's default access log prints that on every line. Left on, this
+   turns a log line that was always one constant, non-identifying container
+   address into the visitor's real one - an address stored, which contract
+   2.3 forbids outright. run.sh carries the long form of this argument,
+   including why `*` and not a pinned address, and why this is the one
+   existing switch and not a second one.
 
 See .env.example and docs/architecture.md 9.1 / 9.1.1 for the long form.
 #>
@@ -147,6 +166,23 @@ function Test-HasFlag {
     return $false
 }
 
+# Fact 4. Mirrors run.sh's `trusts_forwarding_proxy` on the same vocabulary
+# admin/config.py and api/app.py already parse PROTECTION_TRUSTED_PROXY on -
+# case-insensitive 1/true/yes/on, 0/false/no/off - and refuses, loudly, to
+# guess at anything else, throwing rather than defaulting one way. Unset
+# means false, the same default both processes fall back to.
+function Test-TrustedForwardingProxy {
+    $raw = "$env:PROTECTION_TRUSTED_PROXY".Trim().ToLowerInvariant()
+    switch ($raw) {
+        { $_ -in @('1', 'true', 'yes', 'on') } { return $true }
+        { $_ -in @('', '0', 'false', 'no', 'off') } { return $false }
+        default {
+            throw "run.ps1: PROTECTION_TRUSTED_PROXY=$env:PROTECTION_TRUSTED_PROXY is " +
+                  "not a recognised boolean. Use true or false."
+        }
+    }
+}
+
 # Builds the argument vector, and does NOT run it. A function that ran uvicorn
 # would have to return its exit code, and in PowerShell a native command's
 # stdout goes to the success stream - so `$code = Invoke-Serve ...` would
@@ -163,6 +199,17 @@ function Get-ServeArgv {
     }
     if (-not (Test-HasFlag '--port' $Argv)) {
         $injected += @('--port', $DefaultPort)
+    }
+    if (Test-TrustedForwardingProxy) {
+        # See fact 4 above and run.sh's own comment for why this is
+        # PROTECTION_TRUSTED_PROXY, why it is `*` and not an address, and why
+        # --no-access-log is not a separate decision from this one.
+        if (-not (Test-HasFlag '--forwarded-allow-ips' $Argv)) {
+            $injected += @('--forwarded-allow-ips', '*')
+        }
+        if ((-not (Test-HasFlag '--access-log' $Argv)) -and (-not (Test-HasFlag '--no-access-log' $Argv))) {
+            $injected += @('--no-access-log')
+        }
     }
 
     # Both apps are factories, not module-level `app` objects.

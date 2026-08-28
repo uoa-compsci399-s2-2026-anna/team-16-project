@@ -26,6 +26,11 @@ const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order ||
 const lineKg = (entry, line, presets) => Number(rowKgString(line.qtyInput, line.unit || entry.totalUnit, presets)) || 0
 const sumQtyKg = lines => lines.reduce((sum, line) => sum + typed(line.qty_kg), 0)
 
+// The donut's palette, brand colours first. It is display only: every slice is a share
+// this module already holds, so the chart reads `improvedAllocations` and computes nothing
+// the panel does not already show as a number beside its slider (§7.6.1).
+const PIE_COLOURS = ['#003223', '#28c882', '#87005a', '#ffd76e', '#005ae6', '#e6beff', '#ff5032', '#5c7c70', '#9b6bc1', '#86a83e']
+
 // §6.2 rejects an entry whose two scenarios differ in mass by more than this, and it
 // rejects the whole submission rather than the entry.
 const MASS_TOLERANCE_KG = 0.01
@@ -88,9 +93,60 @@ function submissionEntries(state) {
   return [...state.entries, draftEntry()]
 }
 
+const polar = (cx, cy, radius, degrees) => {
+  const radians = (degrees - 90) * Math.PI / 180
+  return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) }
+}
+
+function slicePath(start, end) {
+  const from = polar(260, 210, 112, end)
+  const to = polar(260, 210, 112, start)
+  return `M 260 210 L ${from.x} ${from.y} A 112 112 0 ${end - start > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`
+}
+
+// The improved allocation drawn as shares of one circle, with a leader line per slice.
+//
+// **Degrees come from the percentage, not from a re-derived one.** `share * 3.6` is the
+// slider's own number turned into an angle, so a chart that disagrees with the box beside it
+// is not expressible. A destination sitting at zero draws nothing rather than a zero-width
+// wedge whose leader line would still claim space in the callout column.
+//
+// The centre reports the mass being redistributed, which is the figure the 100% rule is
+// about: every arrangement of these slices moves the same kilograms.
+function PieChart(state, destinations) {
+  let cursor = 0
+  const slices = destinations.map((destination, index) => {
+    const share = typed(state.improvedAllocations?.[destination.code])
+    const start = cursor
+    cursor += share * 3.6
+    return { destination, share, start, end: cursor, colour: PIE_COLOURS[index % PIE_COLOURS.length] }
+  }).filter(slice => slice.share > 0)
+  const paths = slices.map(slice => `<path d="${slicePath(slice.start, slice.end)}" fill="${slice.colour}"><title>${escapeHtml(slice.destination.name)} — ${formatNumber(slice.share, 1)}%</title></path>`).join('')
+  const labels = slices.map(slice => {
+    const middle = (slice.start + slice.end) / 2
+    const edge = polar(260, 210, 116, middle)
+    const elbow = polar(260, 210, 142, middle)
+    const right = elbow.x >= 260
+    const endX = right ? 438 : 82
+    const textX = right ? 446 : 74
+    const anchor = right ? 'start' : 'end'
+    return `<g class="improvement-pie-label"><polyline points="${edge.x},${edge.y} ${elbow.x},${elbow.y} ${endX},${elbow.y}" stroke="${slice.colour}"/><circle cx="${edge.x}" cy="${edge.y}" r="3" fill="${slice.colour}"/><text x="${textX}" y="${elbow.y + 4}" text-anchor="${anchor}">${formatNumber(slice.share, 1)}%</text></g>`
+  }).join('')
+  const legend = slices.map(slice => `<div><i style="background:${slice.colour}"></i><span>${escapeHtml(slice.destination.name)}</span></div>`).join('')
+  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(currentWasteKg(state), 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
+}
+
+// The mass the improved scenario redistributes: the *current* scenario's allocated mass,
+// the same quantity `improvedLines` takes its percentages of, so the donut's centre and the
+// rule the Compare button enforces cannot drift apart.
+function currentWasteKg(state) {
+  const presets = state.taxonomy?.unit_presets || []
+  return submissionEntries(state).reduce((sum, entry) => sum + sumQtyKg(requestLines(entry, presets)), 0)
+}
+
 export function openImprovement(state) {
   const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : currentAllocationPercentages(state)
-  setState({ improvementOpen: true, improvedAllocations: allocations, improvementError: null })
+  setState({ improvementOpen: true, improvedAllocations: allocations, improvementChartExpanded: false, improvementError: null })
 }
 
 export function resetImprovement(state) {
@@ -111,6 +167,11 @@ export function updateImprovementInput(control, state) {
   totalPanel?.classList.toggle('invalid', Boolean(error))
   const totalValue = document.getElementById('improvement-total-value')
   if (totalValue) totalValue.textContent = `${total.toFixed(2)}%`
+  // This path deliberately patches the DOM rather than re-rendering (a re-render would take
+  // the caret out of the box mid-number), so the donut has to be redrawn by hand or it would
+  // show the allocation as it stood before the keystroke.
+  const chart = document.querySelector('.improvement-pie-content')
+  if (chart) chart.innerHTML = PieChart(state, sorted(state.taxonomy.destinations))
   const errorElement = document.getElementById('improvement-inline-error')
   if (errorElement) {
     errorElement.textContent = error
@@ -224,7 +285,7 @@ export function ImprovementScenario(state) {
   const current = currentAllocationPercentages(state)
   const total = allocationTotal(state.improvedAllocations)
   const error = improvementValidation(state)
-  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div></section>`
+  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content">${PieChart(state, sorted(state.taxonomy.destinations))}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart"><span aria-hidden="true">⛶</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div></div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${state.improvementChartExpanded ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${PieChart(state, sorted(state.taxonomy.destinations))}</div></div>` : ''}</section>`
 }
 
 /**

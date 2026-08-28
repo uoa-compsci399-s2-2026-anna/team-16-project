@@ -4,7 +4,7 @@ import { containerKg, countLimit, entryTotal, isPlainDecimal, kgString, kgToTonn
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
 import { downloadResults, renderResults } from './results.js'
-import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
+import { addImprovementDestination, compareImprovement, openImprovement, removeImprovementDestination, resetImprovement, selectImprovementDestination, updateImprovementInput } from './improvement.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
 
@@ -771,7 +771,11 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)
-    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementResult: null, improvementError: null })
+    if (action === 'add-improvement-destination') addImprovementDestination(state)
+    if (action === 'remove-improvement-destination') removeImprovementDestination(Number(control.dataset.index), state)
+    if (action === 'expand-improvement-chart') setState({ improvementChartExpanded: true })
+    if (action === 'close-improvement-chart') setState({ improvementChartExpanded: false })
+    if (action === 'cancel-improvement') setState({ improvementOpen: false, improvementChartExpanded: false, improvementResult: null, improvementError: null })
     // §9's code-to-copy map travels with the call. `improvement.js` cannot import it —
     // this module already imports that one — and without it the improvement panel showed
     // raw backend prose for the codes the main flow words carefully.
@@ -785,6 +789,7 @@ export function bindCalculator(main, retryTaxonomy) {
 
   main.addEventListener('change', event => {
     const target = event.target
+    if (target.matches('[data-improvement-destination-index]')) selectImprovementDestination(target, state)
     if (target.name === 'sector') setState({ sector: target.value, error: null })
     if (target.name === 'food-category') setState({ foodCategory: target.value, ...presetPatch(target.value) })
     // One control, both modes. `current: []` was already this handler's behaviour and the
@@ -858,7 +863,7 @@ export function bindCalculator(main, retryTaxonomy) {
     if (
       target.id === 'total-waste' ||
       target.id === 'unit-count' ||
-      target.matches('.percentage-input [data-improvement-code]')
+      target.matches('[data-improvement-kg-code]')
     ) {
       event.preventDefault()
       return
@@ -896,7 +901,7 @@ export function bindCalculator(main, retryTaxonomy) {
       }
       updateLine(target)
     }
-    if (target.matches('[data-improvement-code]')) updateImprovementInput(target, state)
+    if (target.matches('[data-improvement-kg-code]')) updateImprovementInput(target, state)
   })
 
   main.addEventListener('keydown', event => {

@@ -90,8 +90,6 @@
     "Impact summary": "Сводка воздействия",
     "Important information": "Важная информация",
     "Improved": "Улучшенный",
-    "Improved %(destination)s percentage": "Доля %(destination)s в улучшенном сценарии",
-    "Improved %(destination)s percentage value": "Значение доли %(destination)s в улучшенном сценарии",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "Распределение по способам утилизации в улучшенном сценарии должно составлять 100%, чтобы улучшенный сценарий описывал тот же объём отходов, что и текущий. Текущая сумма: %(total)s%.",
     "Improved scenario (Current → Improved)": "Улучшенный сценарий (Текущий → Улучшенный)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - лидерство в борьбе с пищевыми отходами",

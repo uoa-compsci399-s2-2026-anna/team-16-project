@@ -91,8 +91,6 @@
     "Impact summary": "اثر کا خلاصہ",
     "Important information": "اہم معلومات",
     "Improved": "بہتر",
-    "Improved %(destination)s percentage": "بہتر منظرنامے میں %(destination)s کا فیصد",
-    "Improved %(destination)s percentage value": "بہتر منظرنامے میں %(destination)s کے فیصد کی قدر",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "بہتر منظرنامے میں منزلوں کی تقسیم کا مجموعہ 100% ہونا چاہیے، تاکہ بہتر منظرنامہ اتنے ہی ضیاع کو بیان کرے جتنا موجودہ۔ موجودہ مجموعہ: %(total)s%۔",
     "Improved scenario (Current → Improved)": "بہتر منظرنامہ (موجودہ → بہتر)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - کھانے کے ضیاع کے خلاف قیادت",

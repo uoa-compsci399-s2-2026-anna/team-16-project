@@ -90,8 +90,6 @@
     "Impact summary": "અસરનો સારાંશ",
     "Important information": "મહત્વની માહિતી",
     "Improved": "સુધારેલું",
-    "Improved %(destination)s percentage": "સુધારેલા દૃશ્યમાં %(destination)s ની ટકાવારી",
-    "Improved %(destination)s percentage value": "સુધારેલા દૃશ્યમાં %(destination)s ની ટકાવારીનું મૂલ્ય",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "સુધારેલા દૃશ્યની ગંતવ્ય ફાળવણીઓનો સરવાળો 100% થવો જોઈએ, જેથી એ દૃશ્ય વર્તમાન જેટલા જ કચરાનું વર્ણન કરે. અત્યારનો સરવાળો: %(total)s%.",
     "Improved scenario (Current → Improved)": "સુધારેલું દૃશ્ય (વર્તમાન → સુધારેલું)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - ખોરાકના કચરા સામે અગ્રણી પગલાં",

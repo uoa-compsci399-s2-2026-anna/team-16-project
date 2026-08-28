@@ -90,8 +90,6 @@
     "Impact summary": "தாக்கச் சுருக்கம்",
     "Important information": "முக்கியத் தகவல்",
     "Improved": "மேம்பட்டது",
-    "Improved %(destination)s percentage": "மேம்பட்ட காட்சியில் %(destination)s சதவீதம்",
-    "Improved %(destination)s percentage value": "மேம்பட்ட காட்சியில் %(destination)s சதவீத மதிப்பு",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "மேம்பட்ட காட்சியின் சேருமிட ஒதுக்கீடுகளின் மொத்தம் 100% ஆக இருக்க வேண்டும்; அப்போதுதான் அந்தக் காட்சி தற்போதையதைப் போன்ற அதே கழிவை விவரிக்கும். தற்போதைய மொத்தம்: %(total)s%.",
     "Improved scenario (Current → Improved)": "மேம்பட்ட காட்சி (தற்போதைய → மேம்பட்டது)",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - உணவுக் கழிவில் முன்னோடி நடவடிக்கை",

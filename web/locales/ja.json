@@ -90,8 +90,6 @@
     "Impact summary": "影響の概要",
     "Important information": "重要なお知らせ",
     "Improved": "改善後",
-    "Improved %(destination)s percentage": "改善後の %(destination)s の割合",
-    "Improved %(destination)s percentage value": "改善後の %(destination)s の割合の値",
     "Improved destination allocations must total 100%, so the improved scenario describes the same waste as the current one. Current total: %(total)s%.": "改善後の廃棄先の割り当ては合計 100% にする必要があります。そうすることで、改善シナリオが現状と同じ廃棄量を表します。現在の合計：%(total)s%。",
     "Improved scenario (Current → Improved)": "改善シナリオ（現状 → 改善後）",
     "Kai Commitment - Leading action on food waste": "Kai Commitment - 食品廃棄への取り組みを牽引",

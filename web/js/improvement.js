@@ -24,6 +24,8 @@ const sorted = items => [...(items || [])].sort((a, b) => Number(a.sort_order ||
 const lineKg = (entry, line) => massToKg(line.qtyInput, entry.totalUnit) ?? 0
 const sumQtyKg = lines => lines.reduce((sum, line) => sum + typed(line.qty_kg), 0)
 
+const PIE_COLOURS = ['#003223', '#28c882', '#87005a', '#ffc94a', '#5c7c70', '#9b6bc1', '#e47845', '#5b8def', '#86a83e', '#c95f8f']
+
 // §6.2 rejects an entry whose two scenarios differ in mass by more than this, and it
 // rejects the whole submission rather than the entry.
 const MASS_TOLERANCE_KG = 0.01
@@ -84,29 +86,118 @@ function submissionEntries(state) {
   return [...state.entries, currentEntry(state)]
 }
 
+function currentWasteKg(state) {
+  return submissionEntries(state).reduce((sum, entry) => sum + sumQtyKg(currentLines(entry)), 0)
+}
+
+function allocationKg(state, code) {
+  return currentWasteKg(state) * typed(state.improvedAllocations?.[code]) / 100
+}
+
+function kgInputValue(value) {
+  return Number(value.toFixed(2)).toString()
+}
+
+const polar = (cx, cy, radius, degrees) => {
+  const radians = (degrees - 90) * Math.PI / 180
+  return { x: cx + radius * Math.cos(radians), y: cy + radius * Math.sin(radians) }
+}
+
+function slicePath(start, end) {
+  const from = polar(260, 210, 112, end)
+  const to = polar(260, 210, 112, start)
+  return `M 260 210 L ${from.x} ${from.y} A 112 112 0 ${end - start > 180 ? 1 : 0} 0 ${to.x} ${to.y} Z`
+}
+
+function PieChart(state, destinations) {
+  let cursor = 0
+  const slices = destinations.map((destination, index) => {
+    const share = typed(state.improvedAllocations?.[destination.code])
+    const start = cursor
+    cursor += share * 3.6
+    return { destination, share, start, end: cursor, colour: PIE_COLOURS[index % PIE_COLOURS.length] }
+  }).filter(slice => slice.share > 0)
+  const paths = slices.map(slice => `<path d="${slicePath(slice.start, slice.end)}" fill="${slice.colour}"><title>${escapeHtml(slice.destination.name)} — ${formatNumber(slice.share, 1)}%</title></path>`).join('')
+  const labels = slices.map(slice => {
+    const middle = (slice.start + slice.end) / 2
+    const edge = polar(260, 210, 116, middle)
+    const elbow = polar(260, 210, 142, middle)
+    const right = elbow.x >= 260
+    const endX = right ? 438 : 82
+    const textX = right ? 446 : 74
+    const anchor = right ? 'start' : 'end'
+    return `<g class="improvement-pie-label"><polyline points="${edge.x},${edge.y} ${elbow.x},${elbow.y} ${endX},${elbow.y}" stroke="${slice.colour}"/><circle cx="${edge.x}" cy="${edge.y}" r="3" fill="${slice.colour}"/><text x="${textX}" y="${elbow.y + 4}" text-anchor="${anchor}">${formatNumber(slice.share, 1)}%</text></g>`
+  }).join('')
+  const legend = slices.map(slice => `<div><i style="background:${slice.colour}"></i><span>${escapeHtml(slice.destination.name)}</span></div>`).join('')
+  return `<svg class="improvement-pie-chart" viewBox="0 0 520 420" role="img" aria-label="${escapeHtml(t('Total allocation'))}">${paths}<circle class="improvement-pie-centre" cx="260" cy="210" r="48" fill="#fff"/><text class="improvement-pie-total" x="260" y="205" text-anchor="middle"><tspan>${formatNumber(currentWasteKg(state), 2)}</tspan><tspan x="260" dy="20">kg</tspan></text>${labels}</svg><div class="improvement-pie-key">${legend}</div>`
+}
+
 export function openImprovement(state) {
   const allocations = Object.keys(state.improvedAllocations || {}).length ? state.improvedAllocations : currentAllocationPercentages(state)
-  setState({ improvementOpen: true, improvedAllocations: allocations, improvementError: null })
+  const selected = sorted(state.taxonomy.destinations).filter(destination => typed(allocations[destination.code]) > 0).map(destination => destination.code)
+  setState({ improvementOpen: true, improvedAllocations: allocations, improvementDestinations: selected.length ? selected : [sorted(state.taxonomy.destinations)[0]?.code].filter(Boolean), improvementChartExpanded: false, improvementError: null })
 }
 
 export function resetImprovement(state) {
-  setState({ improvedAllocations: currentAllocationPercentages(state), improvementResult: null, improvementError: null })
+  const allocations = currentAllocationPercentages(state)
+  const selected = sorted(state.taxonomy.destinations).filter(destination => typed(allocations[destination.code]) > 0).map(destination => destination.code)
+  setState({ improvedAllocations: allocations, improvementDestinations: selected, improvementResult: null, improvementError: null })
+}
+
+export function addImprovementDestination(state) {
+  if (state.improvementDestinations.includes('')) return
+  setState({ improvementDestinations: [...state.improvementDestinations, ''] })
+}
+
+export function selectImprovementDestination(control, state) {
+  const index = Number(control.dataset.improvementDestinationIndex)
+  const selected = [...state.improvementDestinations]
+  selected[index] = control.value
+  setState({ improvementDestinations: selected })
+}
+
+export function removeImprovementDestination(index, state) {
+  if (state.improvementDestinations.length <= 1) return
+  const removedCode = state.improvementDestinations[index]
+  const selected = state.improvementDestinations.filter((_, selectedIndex) => selectedIndex !== index)
+  const recipients = selected.filter(Boolean)
+  const removedShare = typed(state.improvedAllocations?.[removedCode])
+  const recipientTotal = recipients.reduce((sum, code) => sum + typed(state.improvedAllocations?.[code]), 0)
+  const allocations = { ...state.improvedAllocations, [removedCode]: 0 }
+  recipients.forEach((code, recipientIndex) => {
+    allocations[code] = typed(allocations[code]) + (recipientTotal ? typed(allocations[code]) / recipientTotal * removedShare : recipientIndex === 0 ? removedShare : 0)
+  })
+  setState({ improvementDestinations: selected, improvedAllocations: allocations, improvementResult: null, improvementError: null })
 }
 
 export function updateImprovementInput(control, state) {
-  const code = control.dataset.improvementCode
-  state.improvedAllocations = { ...state.improvedAllocations, [code]: control.value }
+  const code = control.dataset.improvementKgCode
+  const totalKg = currentWasteKg(state)
+  const destinations = sorted(state.taxonomy.destinations)
+  const otherCodes = destinations.map(destination => destination.code).filter(destinationCode => destinationCode !== code)
+  const requestedKg = Math.min(totalKg, Math.max(0, typed(control.value)))
+  const requestedShare = totalKg ? requestedKg / totalKg * 100 : 0
+  const remainingShare = 100 - requestedShare
+  const previousOtherTotal = otherCodes.reduce((sum, destinationCode) => sum + typed(state.improvedAllocations?.[destinationCode]), 0)
+  const next = { ...state.improvedAllocations, [code]: requestedShare }
+  otherCodes.forEach((destinationCode, index) => {
+    if (previousOtherTotal > 0) next[destinationCode] = typed(state.improvedAllocations?.[destinationCode]) / previousOtherTotal * remainingShare
+    else next[destinationCode] = index === 0 ? remainingShare : 0
+  })
+  state.improvedAllocations = next
   state.improvementResult = null
   state.improvementError = null
-  document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
-    if (input !== control) input.value = control.value
+  document.querySelectorAll('[data-improvement-kg-code]').forEach(input => {
+    input.value = kgInputValue(allocationKg(state, input.dataset.improvementKgCode))
   })
   const total = allocationTotal(state.improvedAllocations)
   const error = improvementValidation(state)
   const totalPanel = document.querySelector('.improvement-total')
   totalPanel?.classList.toggle('invalid', Boolean(error))
   const totalValue = document.getElementById('improvement-total-value')
-  if (totalValue) totalValue.textContent = `${total.toFixed(2)}%`
+  if (totalValue) totalValue.textContent = `${formatNumber(totalKg, 2)} kg`
+  const chart = document.querySelector('.improvement-pie-content')
+  if (chart) chart.innerHTML = PieChart(state, destinations.filter(destination => state.improvementDestinations.includes(destination.code)))
   const errorElement = document.getElementById('improvement-inline-error')
   if (errorElement) {
     errorElement.textContent = error
@@ -207,7 +298,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
   }
 }
 
-function DestinationAllocationRow(destination, current, improved) {
+function DestinationAllocationRow(destination, current, improved, destinations, selectedCodes, index) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -219,15 +310,22 @@ function DestinationAllocationRow(destination, current, improved) {
   // keystroke path reads — so two codes that slug alike share a label association but never
   // a value.)
   const id = `improved-${slug(destination.code)}`
-  return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control"><input id="${id}" type="range" min="0" max="100" step="0.01" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage', { destination: destination.name }))}"><div class="percentage-input"><input type="number" min="0" max="100" step="0.01" inputmode="decimal" value="${escapeHtml(improved)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Improved %(destination)s percentage value', { destination: destination.name }))}"><span>%</span></div></div></div>`
+  return `<div class="improvement-allocation-row"><div class="improvement-destination-choice"><label class="sr-only" for="improvement-destination-${index}">${escapeHtml(t('Destinations'))}</label><select id="improvement-destination-${index}" data-improvement-destination-index="${index}">${destinations.map(option => `<option value="${escapeHtml(option.code)}" ${option.code === destination.code ? 'selected' : ''} ${selectedCodes.includes(option.code) && option.code !== destination.code ? 'disabled' : ''}>${escapeHtml(option.name)}</option>`).join('')}</select></div><div class="improvement-control"><input id="${id}" type="number" min="0" step="0.01" inputmode="decimal" value="${escapeHtml(kgInputValue(improved))}" data-improvement-kg-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('%(destination)s amount in %(unit)s', { destination: destination.name, unit: 'kg' }))}"><span>kg</span><button class="text-button danger" type="button" data-action="remove-improvement-destination" data-index="${index}" ${selectedCodes.length <= 1 ? 'disabled' : ''}>${escapeHtml(t('Remove'))}</button></div><span class="improvement-current-amount">${escapeHtml(t('Current'))}: ${formatNumber(current, 2)} kg</span></div>`
+}
+
+function EmptyDestinationRow(destinations, selectedCodes, index) {
+  return `<div class="improvement-allocation-row improvement-allocation-row-empty"><div class="improvement-destination-choice"><label class="sr-only" for="improvement-destination-${index}">${escapeHtml(t('Destinations'))}</label><select id="improvement-destination-${index}" data-improvement-destination-index="${index}"><option value="" selected disabled>${escapeHtml(t('Destinations'))}</option>${destinations.filter(destination => !selectedCodes.includes(destination.code)).map(destination => `<option value="${escapeHtml(destination.code)}">${escapeHtml(destination.name)}</option>`).join('')}</select></div><button class="text-button danger" type="button" data-action="remove-improvement-destination" data-index="${index}">${escapeHtml(t('Remove'))}</button></div>`
 }
 
 export function ImprovementScenario(state) {
   if (!state.improvementOpen) return `<section class="explore-improvements"><h2>${escapeHtml(t('Want to explore potential improvements?'))}</h2><p>${escapeHtml(t('Adjust how your food waste is managed to see how the environmental and economic impacts could change.'))}</p><button class="button button-primary" type="button" data-action="explore-improvements">${escapeHtml(t('Explore Improvements'))}</button></section>`
   const current = currentAllocationPercentages(state)
-  const total = allocationTotal(state.improvedAllocations)
+  const totalKg = currentWasteKg(state)
+  const destinations = sorted(state.taxonomy.destinations)
+  const selectedCodes = state.improvementDestinations || []
+  const selectedDestinations = destinations.filter(destination => selectedCodes.includes(destination.code))
   const error = improvementValidation(state)
-  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => DestinationAllocationRow(destination, current[destination.code] || 0, state.improvedAllocations[destination.code] ?? 0)).join('')}</div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div></section>`
+  return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p><div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content">${PieChart(state, selectedDestinations)}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart"><span aria-hidden="true">⛶</span> ${escapeHtml(t('Total allocation'))}</button></div><div><div class="improvement-allocation-list">${selectedCodes.map((code, index) => { const destination = destinations.find(item => item.code === code); return destination ? DestinationAllocationRow(destination, current[code] * totalKg / 100 || 0, allocationKg(state, code), destinations, selectedCodes, index) : EmptyDestinationRow(destinations, selectedCodes, index) }).join('')}</div><button class="button button-add improvement-add-destination" type="button" data-action="add-improvement-destination" ${selectedCodes.length >= destinations.length || selectedCodes.includes('') ? 'disabled' : ''}>+ ${escapeHtml(t('Destinations'))}</button></div></div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${formatNumber(totalKg, 2)} kg</strong></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Reset to Current'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${state.improvementChartExpanded ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${PieChart(state, selectedDestinations)}</div></div>` : ''}</section>`
 }
 
 /**

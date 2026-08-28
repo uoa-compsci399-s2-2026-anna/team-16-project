@@ -16,6 +16,7 @@ from api.errors import (
     ContractJSONResponse,
     engine_problem,
 )
+from api.export import EXPORT_FILENAME, ExportPayload, render_export_pdf
 from api.schemas import (
     CalculatePayload,
     ContributePayload,
@@ -258,6 +259,59 @@ def calculate(payload: CalculatePayload, request: Request) -> ContractJSONRespon
     response["factor_source"] = factor_source
     response["token"] = token
     return ContractJSONResponse(wire(response))
+
+
+@router.post("/export/pdf")
+def export_pdf(payload: ExportPayload, request: Request) -> Response:
+    """The document endpoint. See `api/export.py`'s module docstring for why
+    it exists, why its payload cannot carry a figure of its own, and what its
+    renderer does and does not do yet.
+
+    Rate-limited on the same group and limit as `/calculate`: this route runs
+    the engine on every call exactly as `/calculate` does, so a caller cannot
+    dodge §6.5's budget for that cost by asking for a PDF instead of a JSON
+    body.
+
+    **No `X-Dry-Run`, no staff proof, no token.** Those all belong to
+    `/calculate`'s persisted, staff-rehearsable path; this route persists
+    nothing and always prices the published factor set, so none of the three
+    has anything to attach to here. `upsert_submission` is never called - a
+    download is not a calculation (§2.3).
+    """
+    _limit(request, "post-calculate", 120)
+
+    try:
+        prevention_codes = prevention_destination_codes(request.state.db)
+    except Exception as exc:
+        raise _repository_problem(exc) from exc
+
+    problems = entry_rule_problems(payload, prevention_codes=prevention_codes)
+    if problems:
+        raise ApiProblem(400, "VALIDATION_ERROR", "Request validation failed", problems)
+
+    adapter = _engine(request)
+    try:
+        factor_set_id = get_published_factor_set_id(request.state.db)
+        bundle = load_factor_bundle(
+            request.state.db,
+            factor_set_id,
+            bundle_factory=adapter.bundle_from_json,
+        )
+        engine_request = adapter.make_request(payload)
+        result = adapter.calculate(engine_request, bundle)
+    except ApiProblem:
+        raise
+    except (NoPublishedFactorSetError, FactorSetNotFoundError, FactorSetStateError) as exc:
+        raise _repository_problem(exc) from exc
+    except Exception as exc:
+        raise engine_problem(exc, authenticated_dry_run=False) from exc
+
+    pdf_bytes = render_export_pdf(result, payload)
+    return Response(
+        content=pdf_bytes,
+        media_type="application/pdf",
+        headers={"Content-Disposition": f'attachment; filename="{EXPORT_FILENAME}"'},
+    )
 
 
 @router.post("/contribute", status_code=204)

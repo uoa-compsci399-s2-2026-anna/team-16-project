@@ -44,6 +44,7 @@ answered `-139.200` kg.
 from __future__ import annotations
 
 import json
+import os
 import shutil
 import subprocess
 from decimal import ROUND_HALF_UP, Decimal
@@ -312,3 +313,228 @@ def test_the_served_order_is_preserved_and_not_re_sorted(tmp_path):
     assert offered(tmp_path, "vegetables", reversed_presets) == [
         "spud_bin_vegetables", "bucket_20l_full", "wheelie_bin_240l",
     ]
+
+
+# --------------------------------------------------------- item ⑥: a unit per row
+#
+# Driven in a real browser against a running stack, for the reason every other browser
+# file in this directory gives: a test that greps the markup for `data-line-field="unit"`
+# asserts that a `<select>` was typed, not that a visitor can use it to say one row is in
+# tonnes and another is in kilograms. `test_container_input_browser.py`'s and
+# `test_step_navigation.py`'s `page_at`/`browser` fixtures are not imported from here —
+# every browser file in this project is self-contained, run one at a time, against its own
+# fresh page — and this section follows that convention rather than reaching across files.
+
+playwright_api = pytest.importorskip(
+    "playwright.sync_api",
+    reason="playwright is required to drive the per-row unit select; it is unverified without it",
+)
+
+WEB_BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html")
+
+#: `html { scroll-behavior: smooth }` otherwise animates `scrollTo`, which nothing here
+#: measures — but `test_step_navigation.py`'s note that a mid-animation read can misfire
+#: is a reason to disable it everywhere it is not the thing under test, not only where it is.
+FORCE_AUTO = "html { scroll-behavior: auto !important; }"
+
+
+@pytest.fixture(scope="session")
+def browser():
+    with playwright_api.sync_playwright() as p:
+        instance = p.chromium.launch()
+        yield instance
+        instance.close()
+
+
+@pytest.fixture
+def page_at(browser):
+    """A page at a given viewport, English, on the introduction screen."""
+    contexts = []
+
+    def open_page(width, height, dpr=1.0):
+        ctx = browser.new_context(
+            viewport={"width": width, "height": height},
+            device_scale_factor=dpr,
+            locale="en-NZ",
+            bypass_csp=True,
+        )
+        contexts.append(ctx)
+        page = ctx.new_page()
+        url = WEB_BASE + ("&" if "?" in WEB_BASE else "?") + "lang=en"
+        try:
+            page.goto(url, wait_until="networkidle", timeout=20000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {WEB_BASE}: {error}")
+        page.add_style_tag(content=FORCE_AUTO)
+        page.click('[data-action="start"]')
+        page.wait_for_selector('input[name="sector"]', timeout=10000)
+        return page
+
+    yield open_page
+    for ctx in contexts:
+        ctx.close()
+
+
+def to_amount_step(page):
+    """Walk to step 3 (`#total-waste`, `#total-unit`) and stop.
+
+    **Not `advance_to(page, 3)`.** `tests/web/test_step_navigation.py`'s `walk()` yields
+    index 2 on arrival at this screen and index 3 on arrival at the *next* one, the
+    destination-allocation screen this file's tests actually want to reach from — the
+    amount step's own defect. This helper is `test_container_input_browser.py`'s
+    `to_amount_step`, transcribed rather than counted past.
+    """
+    page.wait_for_selector('input[name="sector"]')
+    page.evaluate("document.querySelector('input[name=sector]').click()")
+    page.wait_for_timeout(60)
+    page.click('[data-action="continue"]')
+    page.wait_for_selector('input[name="food-category"]')
+    page.click('[data-action="continue"]')
+    page.wait_for_selector("#total-waste")
+    return page
+
+
+def test_each_destination_row_carries_its_own_unit(page_at):
+    """Item ⑥. Every row currently borrows `state.totalUnit`, so a visitor
+    who measured one destination in tonnes and another in buckets cannot say
+    so.
+
+    **No contract change.** §7.6.1 gives the front end exactly one
+    calculation - unit conversion in `units.js` - and this is that. The wire
+    still carries `qty_kg` and the API never learns a unit was chosen.
+    """
+    page = to_amount_step(page_at(1278, 983, 1.25))
+    page.fill("#total-waste", "5")
+    page.select_option("#total-unit", "tonnes")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row")
+
+    rows = page.locator(".destination-row")
+    assert rows.count() >= 2, "need two rows to tell a per-row unit from a shared one"
+
+    selects = page.locator('.destination-row select[data-line-field="unit"]')
+    assert selects.count() == rows.count(), (
+        "not every destination row has its own unit selector"
+    )
+
+    #: Each row starts on the unit chosen for the entry, so a visitor who
+    #: wants one unit throughout types nothing extra.
+    assert selects.nth(0).input_value() == "tonnes"
+
+
+def test_changing_one_row_s_unit_does_not_change_the_others(page_at):
+    """The assertion that distinguishes a per-row control from a shared one
+    wearing several hats. Without it, a single `state.totalUnit` rendered
+    N times passes every other test here."""
+    page = to_amount_step(page_at(1278, 983, 1.25))
+    page.fill("#total-waste", "5")
+    page.select_option("#total-unit", "tonnes")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row")
+
+    selects = page.locator('.destination-row select[data-line-field="unit"]')
+    selects.nth(0).select_option("kilograms")
+
+    assert selects.nth(0).input_value() == "kilograms"
+    assert selects.nth(1).input_value() == "tonnes", (
+        "changing one row's unit changed another's - the state is still shared"
+    )
+
+    #: The native `<select>`'s own value above is unbinding-blind: Playwright's
+    #: `select_option` sets it whether or not any `change` handler ever runs, and
+    #: nothing re-renders to contradict it. `rowUnitLabel(rowUnit)` only reaches the
+    #: page through `state.current[i].unit` and `destinationRows()`'s own read of it,
+    #: so the amount input's `aria-label` is a state-derived witness a DOM-only
+    #: mutation cannot fake.
+    amounts = page.locator('.destination-row input[data-line-field="amount"]')
+    assert "kilograms" in (amounts.nth(0).get_attribute("aria-label") or ""), (
+        "row 0's aria-label still names the old unit - the change did not reach state"
+    )
+    assert "tonnes" in (amounts.nth(1).get_attribute("aria-label") or ""), (
+        "row 1's aria-label changed too - the state is still shared"
+    )
+
+
+def test_the_review_step_shows_each_row_in_the_unit_it_was_typed_in(page_at):
+    """And the kilograms beside it, which is what actually goes on the wire.
+
+    Showing only the typed figure would hide the conversion at the one moment
+    a visitor can still check it; showing only kilograms would throw away
+    what they typed.
+    """
+    page = to_amount_step(page_at(1278, 983, 1.25))
+    page.fill("#total-waste", "5")
+    page.select_option("#total-unit", "tonnes")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row")
+
+    page.locator('.destination-row select[data-line-field="unit"]').nth(0).select_option("kilograms")
+    page.locator('.destination-row input[data-line-field="amount"]').nth(0).fill("250")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".review-destinations")
+
+    #: An exact pair in one `dd`, not a substring scan of the whole section. `"250" in
+    #: text` matches `"250000.000 kg"` just as happily as `"250.000 kg"` - it is the
+    #: assertion that let the pure-conversion mutation (`line.unit` replaced by
+    #: `state.totalUnit`) through in review: 250 *tonnes* misreported as "250.00
+    #: kilograms" beside a correct-looking but wrong "(250000.000 kg)".
+    dds = page.locator(".review-destinations dd").all_inner_texts()
+    assert any("250.00 kilograms" in text and "(250.000 kg)" in text for text in dds), dds
+
+
+def test_two_rows_in_different_units_convert_to_different_kilograms(page_at):
+    """The test that actually tells a per-row unit from the behaviour it replaces.
+
+    One row of "5" in kilograms and one row of "5" in tonnes must reach two
+    different kilogram figures on review — a single shared unit, or a select
+    that renders without binding to state, both collapse this to one figure
+    repeated twice.
+    """
+    page = to_amount_step(page_at(1278, 983, 1.25))
+    page.fill("#total-waste", "6000")
+    page.select_option("#total-unit", "kilograms")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row")
+
+    amounts = page.locator('.destination-row input[data-line-field="amount"]')
+    units = page.locator('.destination-row select[data-line-field="unit"]')
+    amounts.nth(0).fill("5")
+    units.nth(0).select_option("kilograms")
+    amounts.nth(1).fill("5")
+    units.nth(1).select_option("tonnes")
+    page.wait_for_timeout(80)
+
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".review-destinations")
+    lines = page.locator(".review-destinations dd").all_inner_texts()
+
+    #: `formatNumber` is locale-formatted (`en-NZ`), so 5,000 kilograms prints with a
+    #: thousands separator - the same figure `test_container_input_browser.py` checks for
+    #: German and Arabic. The two rows must disagree, not merely both be present.
+    assert any("(5.000 kg)" in text for text in lines), lines
+    assert any("5,000.000 kg" in text for text in lines), lines
+
+
+@pytest.mark.parametrize("width", [390, 700])
+def test_the_amount_input_stays_usable_beside_the_unit_select(page_at, width):
+    """Item ⑥'s `<select>` sits in the same two-column row `.amount-with-unit` always
+    had, and a track that lets the select claim the whole row leaves the amount input
+    a number field nobody can type into.
+
+    **`count() == 1` and a value assertion both pass at 28px.** Neither measures a
+    dimension, and 28px is worse than merely cramped - `test_amount_limits_browser.py`
+    and this file's other assertions never fail on it, because nothing here reads a
+    box. `.destination-row`'s narrower single-column layout applies at 480px and
+    below, so 390 and 700 are the two widths that exercise, respectively, the stacked
+    and the side-by-side `.amount-with-unit` template.
+    """
+    page = to_amount_step(page_at(width, 800))
+    page.fill("#total-waste", "1000")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('.destination-row input[data-line-field="amount"]')
+
+    box = page.locator('.destination-row input[data-line-field="amount"]').first.bounding_box()
+    assert box is not None and box["width"] >= 80, (
+        f"the amount input is {box['width'] if box else None}px wide at {width}px - "
+        "too narrow to type an amount into"
+    )

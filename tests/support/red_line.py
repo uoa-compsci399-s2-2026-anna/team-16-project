@@ -136,7 +136,7 @@ COUNTEREXAMPLES = (
 #: be "fixed" into one that simply forbids the words. The first is the
 #: statistics page's own copy, and the reason the page passes at all.
 PERMITTED = (
-    "These figures describe a self-selected sample of calculations run in this tool. "
+    "These figures describe a self-selected sample of calculations contributed to this tool. "
     "They are not a survey or a picture of food waste across New Zealand.",
     "This tool uses New Zealand definitions of food waste.",
     "Kai Commitment is a New Zealand programme.",

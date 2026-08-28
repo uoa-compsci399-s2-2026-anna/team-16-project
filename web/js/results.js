@@ -1,8 +1,10 @@
 import { escapeHtml, formatNumber, stepNav } from './view.js'
 import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
-import { entryTotal, kgToTonnes } from './units.js'
+import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
 import { buildTextReportPdf } from './pdf.js'
+import { contribute } from './api.js'
+import { setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
@@ -48,6 +50,104 @@ const findByCode = (items, code) => (items || []).find(item => item.code === cod
 // Prefer the response's own `unit` regardless: it travels with the figure.
 const metricUnit = (metric, definition) => metric?.unit || definition?.unit || ''
 
+// Item ⑦: `time_frame` is a closed vocabulary (§6.2) for exactly the reason
+// `gwp_horizon` is closed to 20 and 100 - a value this map has no phrase for must
+// never reach a visitor as the raw identifier. The four phrases are the ones
+// `calculator.js`'s own step-4 `<select>` already offers, reused rather than
+// reworded so the word a visitor chose is the word they see reflected back.
+const TIME_FRAME_LABELS = {
+  one_week: 'One week',
+  one_month: 'One month',
+  one_quarter: 'One quarter',
+  one_year: 'One year',
+}
+
+// A label, never a computation (contract v1.48, §6.2): nothing on this page is scaled
+// by the period, so it renders as one plain line rather than beside any figure it might
+// be misread as multiplying. `''` - "not stated" - renders nothing, the same way an
+// unstated money figure renders nothing rather than a placeholder.
+function resultsPeriod(timeFrame) {
+  const phrase = TIME_FRAME_LABELS[timeFrame]
+  if (!phrase) return ''
+  return `<p class="results-period">${escapeHtml(t('These figures cover: %(period)s', { period: t(phrase) }))}</p>`
+}
+
+// The export's own line for the same fact, worded identically to `resultsPeriod`
+// above so a visitor reading the page and the file they downloaded from it sees
+// the same sentence rather than two different ways of saying the same thing.
+const periodLine = timeFrame => {
+  const phrase = TIME_FRAME_LABELS[timeFrame]
+  return phrase ? t('These figures cover: %(period)s', { period: t(phrase) }) : ''
+}
+
+// Display-only coercion of a two-decimal-place NZD string (§4.5, §1.2): the money
+// block is dollars and cents, not a ten-place metric value, but it is still a string
+// on the wire and still passes through `Number()` for display only (§7.6.1). 'NZ$' is
+// currency notation, not a phrase, so it is not passed through `t()` - the same
+// reasoning `kg` throughout this file is written in and never translated (§7.7.7).
+const nzd = value => `NZ$${formatNumber(number(value), 2)}`
+const hasValue = value => value !== null && value !== undefined
+
+/**
+ * §4.5's money block, rendered beside `summaryCards()` inside the same "Impact
+ * summary" section rather than as a section of its own - four figures the engine
+ * derived from what the visitor typed, and nothing here derives a fifth. `totals.money`
+ * is `null` unless at least one entry supplied a value, and each of the four fields is
+ * independently `null` unless what it derives from was supplied - a computed zero would
+ * read as "this food was worth nothing" rather than "nobody said" (§4.5), so a `null`
+ * field is left off the list rather than printed as `0.00`, a dash, or a bare `NZ$`.
+ *
+ * The share is printed exactly as the response gives it, deliberately unclamped
+ * (§4.5): a figure over 100% is a visitor's own typo showing through, not a rendering
+ * fault, and nothing here is a bar or a width that a figure over 100% could overflow.
+ *
+ * **Three figures, not four: `saving_nzd` is not one of them, and that is the fix
+ * rather than a deletion.** The three above are properties of the *current* scenario
+ * alone — what the visitor said their food was worth — and this block is fed by the
+ * Calculate button, which sends `alternative: null` for every entry
+ * (`submission.js`). §4.5 makes `saving_nzd` `None` "when no entry carries an
+ * alternative", so the row this block used to carry could not be reached by any
+ * visitor: the response that does hold a saving is Compare Impact's, and it lands on
+ * `state.improvementResult`. The saving is now rendered by `ComparisonResults`
+ * (`improvement.js`), beside the comparison that produced it, and written to the
+ * export by `comparisonLines` below, under the same heading as that comparison.
+ * Teaching this block to read a second response would have put a figure about the
+ * improved scenario inside a section describing the current one.
+ */
+function moneySummary(totals) {
+  const money = totals.money
+  if (!money) return ''
+  const rows = []
+  if (hasValue(money.total_value_nzd)) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Total value of food handled'))}</span><span class="money-value">${nzd(money.total_value_nzd)}</span></div>`)
+  }
+  if (hasValue(money.wasted_value_nzd)) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Value of food wasted'))}</span><span class="money-value">${nzd(money.wasted_value_nzd)}</span></div>`)
+  }
+  if (hasValue(money.wasted_share_percent)) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${formatNumber(number(money.wasted_share_percent), 2)}%</span></div>`)
+  }
+  if (!rows.length) return ''
+  return `<div class="money-summary"><h3>${escapeHtml(t('The money'))}</h3><p class="result-note">${escapeHtml(t("Figures the calculator did not derive: what you typed for value, summed by the calculation service."))}</p><div class="money-rows">${rows.join('')}</div></div>`
+}
+
+// `moneySummary`'s figures, in text, worded to match the rows on screen rather than
+// re-deriving them: same three fields, same `null`-means-absent rule. Returns `[]` (no
+// heading printed) when the block is `null` or carries nothing - a heading over an empty
+// list is the "—" this module exists to avoid. The saving is not here for the reason it
+// is not on screen here either: it belongs to the comparison, and `savingLines` below
+// writes it under that comparison's own heading.
+function moneyLines(totals) {
+  const money = totals.money
+  if (!money) return []
+  const lines = []
+  if (hasValue(money.total_value_nzd)) lines.push(`  - ${t('Total value of food handled')}: ${nzd(money.total_value_nzd)}`)
+  if (hasValue(money.wasted_value_nzd)) lines.push(`  - ${t('Value of food wasted')}: ${nzd(money.wasted_value_nzd)}`)
+  if (hasValue(money.wasted_share_percent)) lines.push(`  - ${t('Share of value wasted')}: ${formatNumber(number(money.wasted_share_percent), 2)}%`)
+  if (!lines.length) return []
+  return ['', t('The money'), ...lines]
+}
+
 function summaryCards(totals, taxonomy) {
   const metrics = totals.current?.metrics || {}
   const impactCards = Object.entries(metrics).filter(([code]) => code !== MASS_METRIC).map(([code, metric]) => {
@@ -57,7 +157,7 @@ function summaryCards(totals, taxonomy) {
     return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
   }).join('')
   const totalKg = number(totals.total_kg)
-  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(t('Not available'))}</p><p class="result-note">${escapeHtml(t('Total food handled data is required.'))}</p></article>`
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(t('Not available'))}</p><p class="result-note">${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and
@@ -87,22 +187,18 @@ const sectorName = (entry, response, taxonomy) => {
   return findByCode(taxonomy.sectors, code)?.name || code
 }
 
-// §6.2 labels each per-entry destination section with that entry's sector and food category.
-function entryLabel(entry, response, taxonomy) {
-  const foodCode = response.food_category ?? entry.foodCategory
-  const name = sectorName(entry, response, taxonomy)
-  if (!foodCode) return name
-  return `${name} · ${findByCode(taxonomy.food_categories, foodCode)?.name || foodCode}`
-}
-
-// One row per destination of one entry, every figure read from that entry's own result:
-// `qty_kg` and each metric's `value` come from `by_destination`, which §6.2 populates per
-// entry and leaves empty at the totals level.
+// One row per destination of one scenario, every figure read from that scenario's own
+// result: `qty_kg` and each metric's `value` come from `by_destination`. Called both on
+// one entry's `current` (§6.2 populates it per entry) and on `totals.current` (populated
+// per metric since v1.48, §3 rule 2) — the two calls read the same shape, one entry-scale
+// and one rolled up across every entry, and `code` is kept on the row so a caller can match
+// one scenario's row to the other's by destination rather than by re-reading `label`.
 function destinationRows(scenario, taxonomy) {
   const rows = new Map()
   for (const [code, metric] of Object.entries(scenario.metrics || {})) {
     for (const line of metric.by_destination || []) {
       const row = rows.get(line.destination) || {
+        code: line.destination,
         label: findByCode(taxonomy.destinations, line.destination)?.name || line.destination,
         kilograms: number(line.qty_kg),
         metrics: {},
@@ -114,10 +210,46 @@ function destinationRows(scenario, taxonomy) {
   return [...rows.values()]
 }
 
-function breakdowns(entryResults, taxonomy) {
+// The food leaf under a destination-first stage: the entry's own food category, or the
+// same "unspecified" wording `calculator.js`'s review step already uses for a standard-mix
+// entry — not a new string, so the destination tab does not invent a second way to say it.
+function stageFoodLabel(entry, response, taxonomy) {
+  const foodCode = response.food_category ?? entry.foodCategory
+  const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
+  if (!foodCode || foodDefinition?.is_standard_mix) return t('Standard mix / not specified')
+  return foodDefinition?.name || foodCode
+}
+
+// Destination first, then the entries that share it, then each entry's own food category —
+// the transpose the client asked for of the per-entry sections this replaced. The group
+// total is `totalsRow`, read whole from `totals.current.by_destination` (§7.6.1: nothing
+// here adds the entries' rows together); the per-entry rows nested under it are each
+// entry's own figures, computed once per entry and matched to a group by destination code.
+function destinationGroups(entryResults, totalsRows, taxonomy) {
+  const perEntry = entryResults.map(({ entry, response }) => ({
+    entry,
+    response,
+    rows: destinationRows(response.current || {}, taxonomy),
+  }))
+  return totalsRows
+    .map(totalsRow => {
+      const stages = perEntry.flatMap(({ entry, response, rows }) => {
+        const row = rows.find(candidate => candidate.code === totalsRow.code)
+        if (!row) return []
+        return [{
+          label: sectorName(entry, response, taxonomy),
+          foodLabel: stageFoodLabel(entry, response, taxonomy),
+          row,
+        }]
+      })
+      return { code: totalsRow.code, label: totalsRow.label, totalsRow, stages }
+    })
+    .filter(group => group.stages.length)
+}
+
+function breakdowns(entryResults, totals, taxonomy) {
   const stage = []
   const food = []
-  const destination = []
   for (const { entry, response } of entryResults) {
     const scenario = response.current || {}
     const metrics = metricCells(scenario)
@@ -126,12 +258,21 @@ function breakdowns(entryResults, taxonomy) {
     const foodCode = response.food_category ?? entry.foodCategory
     const foodDefinition = findByCode(taxonomy.food_categories, foodCode)
     if (foodCode && !foodDefinition?.is_standard_mix) food.push({ label: foodDefinition?.name || foodCode, kilograms, metrics })
-    const rows = destinationRows(scenario, taxonomy)
-    if (rows.length) destination.push({ label: entryLabel(entry, response, taxonomy), rows })
   }
+  const totalsRows = destinationRows(totals.current || {}, taxonomy)
+  const groups = destinationGroups(entryResults, totalsRows, taxonomy)
+  // The note explains a relationship between two levels of figures, so it is printed
+  // only where that relationship exists: a group fed by one entry now prints its
+  // figures once (see `destinationTree`), and with one entry — the commonest journey
+  // by far — *every* group is such a group. Printing the sentence there had the page
+  // saying the rows "add up to the total rather than repeat it" directly beneath rows
+  // that repeated it exactly.
+  const anySplit = groups.some(group => group.stages.length > 1)
   return {
     stage: { sections: [{ rows: stage }] },
-    destination: destination.length ? { sections: destination, note: t('Each supply-chain entry is shown on its own. The same destination under two entries draws two different upstream factors, so it is genuinely two rows.') } : { unavailable: t('Waste-destination breakdown is not available because no destination data was provided.') },
+    destination: groups.length
+      ? { groups, note: anySplit ? t("The figure beside each destination is the engine's own cross-entry total. The rows beneath it are each entry's own — they can draw different upstream factors, which is why they add up to the total shown rather than repeat it.") : '' }
+      : { unavailable: t('Waste-destination breakdown is not available because no destination data was provided.') },
     food: food.length ? { sections: [{ rows: food }] } : { unavailable: t('Food-type breakdown is not available because no food category data was provided.') },
   }
 }
@@ -193,15 +334,58 @@ function breakdownTable(section, tabLabel, taxonomy, widest, columns) {
   return `<div class="breakdown-entry">${heading}<div class="bar-list" aria-hidden="true">${bars}</div><div class="table-scroll" tabindex="0"><table><caption>${escapeHtml(caption)}</caption><thead><tr><th scope="col">${escapeHtml(t('Category'))}</th><th scope="col">${escapeHtml(t('Waste amount'))}</th>${head}</tr></thead><tbody>${body}</tbody></table></div></div>`
 }
 
+// One destination group's figures beside its heading or beside a stage: every metric but
+// `mass` (held out for the reason `metricLines` holds it out — it is the kilogram figure
+// printed next to it), read through the same `metricCell` the other two tabs use so a
+// negative `downstream` offset (§7.6.6) is marked here exactly as it is there.
+function destinationRowFigures(row, taxonomy) {
+  return Object.keys(row.metrics || {})
+    .filter(code => code !== MASS_METRIC)
+    .map(code => `<span>${escapeHtml(metricName(code, taxonomy))}: ${metricCell(row, code, taxonomy)}</span>`)
+    .join('')
+}
+
+// The destination-first tree: one `.destination-group` per destination, carrying the
+// engine's own rolled-up total (`data-destination` names the code so a caller — this
+// file's tests among them — can find one group without depending on render order); inside
+// it, one `.destination-group__stage` per entry that used that destination, each showing
+// that entry's own sector and figures; inside that, the one `.destination-group__food` its
+// food category is. Three levels for the three questions the client asked in that order:
+// which destination, which stage of the supply chain sent it there, what food it was.
+function destinationTree(groups, taxonomy) {
+  return groups.map(group => {
+    // **One contributing entry means one set of figures.** §3 rule 2 builds the
+    // group's total by rolling the entries' own `by_destination` rows up, so when
+    // exactly one entry used this destination the roll-up *is* that entry's row —
+    // identical by construction, at every metric. Printing both put the same
+    // numbers on screen twice under a note saying they were different, in the
+    // default single-entry journey. The stage and its food category still render:
+    // "which stage sent it there, what food it was" are two of the three questions
+    // this tree exists to answer, and neither is a repeated figure.
+    const repeated = group.stages.length === 1
+    const stages = group.stages.map(stage => `<li class="destination-group__stage"><div class="destination-group__stage-row"><strong>${escapeHtml(stage.label)}</strong>${repeated ? '' : `<span>${formatNumber(stage.row.kilograms, 3)} kg</span>`}</div>${repeated ? '' : `<div class="destination-group__stage-figures">${destinationRowFigures(stage.row, taxonomy)}</div>`}<ul class="destination-group__foods"><li class="destination-group__food">${escapeHtml(stage.foodLabel)}</li></ul></li>`).join('')
+    return `<article class="destination-group" data-destination="${escapeHtml(group.code)}"><div class="destination-group__header"><h3 class="destination-group__name">${escapeHtml(group.label)}</h3><p class="destination-group__total">${formatNumber(group.totalsRow.kilograms, 3)} kg</p></div><div class="destination-group__figures">${destinationRowFigures(group.totalsRow, taxonomy)}</div><ol class="destination-group__stages">${stages}</ol></article>`
+  }).join('')
+}
+
 function breakdownSection(state, entryResults) {
-  const allBreakdowns = breakdowns(entryResults, state.taxonomy)
+  const totals = state.result?.totals || {}
+  const allBreakdowns = breakdowns(entryResults, totals, state.taxonomy)
   const active = state.resultBreakdownTab in TAB_LABELS ? state.resultBreakdownTab : 'stage'
   const current = allBreakdowns[active]
-  const scale = current.sections ? widestRow(current.sections.flatMap(section => section.rows)) : 0
-  const columns = current.sections ? metricColumns(current.sections) : []
-  const panel = current.unavailable
-    ? `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
-    : `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
+  let panel
+  if (current.unavailable) {
+    panel = `<p class="empty-state">${escapeHtml(current.unavailable)}</p>`
+  } else if (active === 'destination') {
+    // The tree, not `breakdownTable`: a destination's stages and foods are two more levels
+    // than that table's single row of columns has room for, and its bars and per-tab metric
+    // columns describe a flat list that this shape no longer is.
+    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${destinationTree(current.groups, state.taxonomy)}`
+  } else {
+    const scale = widestRow(current.sections.flatMap(section => section.rows))
+    const columns = metricColumns(current.sections)
+    panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
+  }
   return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 
@@ -231,6 +415,23 @@ const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario,
   return `  - ${row.label} (${formatNumber(row.kilograms, 3)} kg): ${figures.join('; ') || t('no impact figures were returned')}`
 })
 
+/**
+ * §4.5's saving, in text, in the two lines the comparison screen shows it in.
+ *
+ * Same fields and the same `null`-means-absent rule as `moneyLines`, and the caveat
+ * travels with the figure here exactly as it does on screen: the rate is nominal —
+ * `wasted_value_nzd ÷ that entry's current mass` — so a sentence saying so has to be
+ * as hard to crop away in a text file as it is in a screenshot.
+ */
+function savingLines(totals) {
+  const saving = totals?.money?.saving_nzd
+  if (!hasValue(saving)) return []
+  return [
+    `  - ${t('Value of food not wasted at all')}: ${nzd(saving)}`,
+    `    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`,
+  ]
+}
+
 // The comparison screen, in text, and only when one was run. `net_benefit` is read from the
 // response — §6.2 computes `current − alternative` per metric and the browser must not
 // subtract the two itself (§7.6.1), which is the defect `improvement.js` already had removed
@@ -257,23 +458,47 @@ function comparisonLines(state) {
     const figure = value => `${formatNumber(number(value), precision)} ${unit}`.trimEnd()
     lines.push(`  - ${definition?.name || code}: ${figure(cell.total)} → ${figure(improved.total)} (${change})`)
   }
-  if (!lines.length) return []
-  return ['', t('Improved scenario (Current → Improved)'), ...lines]
+  // §4.5's saving is a figure about *this* comparison — `rate x diverted mass`, and
+  // `diverted` is `current − alternative` — so it is written here rather than beside the
+  // three current-scenario money figures `moneyLines` prints. It is also why the heading
+  // is printed when `lines` is empty but a saving is present: a response can carry a
+  // saving and no comparable metric, and dropping the heading would strand the figure.
+  const saving = savingLines(totals)
+  if (!lines.length && !saving.length) return []
+  return ['', t('Improved scenario (Current → Improved)'), ...lines, ...saving]
 }
 
 /**
- * The plain-text report, built and returned rather than downloaded.
+ * One destination row of one entry, in the unit **that row** was measured in.
  *
- * Split out of `downloadResults` because it is the half worth asserting on: the export was
- * shipping the total mass, the entries and the factor version and **not one output figure**
- * — no greenhouse gas, no methane, no water, no cost — under the file name
- * `food-waste-impact-results.txt`. A results export with no results is the file somebody
- * attaches to an email, and every number in it now comes from `state.result`, which is the
- * engine's, never from arithmetic performed here (§7.6.1).
+ * `${qtyInput} ${entry.totalUnit}` stood here, and since a row carries its own unit that
+ * was a figure labelled with somebody else's: 500 kg entered against an entry measured in
+ * tonnes exported as `500.00 tonnes`, and half a tonne against an entry measured in
+ * kilograms exported as `0.50 kilograms`. This file's own note says the report exists to
+ * be attached to an email and believed, which is why a wrong label on it is not a cosmetic
+ * defect — it is a thousandfold error in a document written to be trusted.
  *
- * @param {object} state
- * @returns {string}
+ * A row measured in anything but kilograms carries the kilograms too, the way
+ * `wasteAmountLine` does for a container: `0.50 tonnes` is what the visitor said and
+ * `(500.000 kg)` is what was calculated from it, and a reader holding only this file needs
+ * both to check one against the other. `kg` is not translated — §7.7.7, metric units are
+ * international notation — and a container's `label` is staff-typed and published as
+ * written.
  */
+function destinationLine(line, entry, taxonomy) {
+  const unit = line.unit || entry.totalUnit
+  const destination = findByCode(taxonomy.destinations, line.destination)?.name || line.destination
+  const amount = typed(line.qtyInput).toFixed(2)
+  const presets = taxonomy.unit_presets || []
+  const kilograms = rowKgString(line.qtyInput, unit, presets)
+  if (isPresetUnit(unit)) {
+    const preset = findByCode(presets, presetUnitCode(unit))
+    return `  - ${destination}: ${amount} × ${preset?.label || presetUnitCode(unit)}${kilograms ? ` (${kilograms} kg)` : ''}`
+  }
+  if (unit === 'tonnes') return `  - ${destination}: ${amount} ${t('tonnes')} (${kilograms} kg)`
+  return `  - ${destination}: ${amount} ${t('kilograms')}`
+}
+
 /**
  * One entry's waste amount, as the visitor gave it.
  *
@@ -291,6 +516,19 @@ function wasteAmountLine(entry, taxonomy) {
   return `${t('Waste amount')}: ${typed(entry.unitCount).toFixed(2)} × ${container} (${kilograms} kg)`
 }
 
+/**
+ * The plain-text report, built and returned rather than downloaded.
+ *
+ * Split out of `downloadResults` because it is the half worth asserting on: the export was
+ * shipping the total mass, the entries and the factor version and **not one output figure**
+ * — no greenhouse gas, no methane, no water, no cost — under the file name
+ * `food-waste-impact-results.txt`. A results export with no results is the file somebody
+ * attaches to an email, and every number in it now comes from `state.result`, which is the
+ * engine's, never from arithmetic performed here (§7.6.1).
+ *
+ * @param {object} state
+ * @returns {string}
+ */
 export function buildResultsReport(state) {
   const totals = state.result?.totals || {}
   const totalKg = number(totals.total_kg)
@@ -302,7 +540,7 @@ export function buildResultsReport(state) {
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
     const sector = findByCode(state.taxonomy.sectors, entry.sector)
     const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)
-    const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => `  - ${findByCode(state.taxonomy.destinations, line.destination)?.name || line.destination}: ${typed(line.qtyInput).toFixed(2)} ${entry.totalUnit}`)
+    const destinations = entry.current.filter(line => typed(line.qtyInput) > 0).map(line => destinationLine(line, entry, state.taxonomy))
     const scenario = response?.current || {}
     const impact = metricLines(scenario, state.taxonomy, '  - ')
     const byDestination = destinationImpactLines(scenario, state.taxonomy)
@@ -332,9 +570,13 @@ export function buildResultsReport(state) {
   // language it was written in, so a machine-translated interface has to say so on
   // the file as well as on the screen it came from.
   const translationNotice = isMachineTranslated() ? ['', MACHINE_TRANSLATION_NOTICE] : []
+  // Item ⑦: a label, printed once near the top of the file, same as on screen — no
+  // figure below it is scaled by the period (contract v1.48).
+  const period = periodLine(state.timeFrame)
   return [
     t('Food Waste Impact Calculator — Results'),
     '',
+    ...(period ? [period, ''] : []),
     `${t('Total food waste')}: ${formatNumber(totalKg, 2)} kg`,
     `${t('Total food waste')}: ${formatNumber(kgToTonnes(totals.total_kg), 3)} ${t('tonnes')}`,
     '',
@@ -343,12 +585,13 @@ export function buildResultsReport(state) {
     '',
     t('Tangible equivalents'),
     ...(equivalents.length ? equivalents : [`  - ${t('Tangible equivalents are available once approved conversion factors are supplied.')}`]),
+    ...moneyLines(totals),
     ...comparisonLines(state),
     '',
     ...entryLines,
     `${t('Factor version')}: ${state.result?.factor_set?.version_label || t('Not supplied')}`,
     ...notice,
-    t('Percentage waste is not available because total food handled data is required.'),
+    `${t('Percentage waste')}: ${t('Not available')}. ${t('This calculator does not report waste as a share of food handled yet.')}`,
     ...translationNotice,
   ].join('\n')
 }
@@ -397,6 +640,78 @@ export function downloadResults(state) {
   setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
+/**
+ * §6.2.2, and the control this whole task exists to write.
+ *
+ * **Unticked by construction.** `state.contributed` starts `false` and nothing here
+ * sets it before a press — a pre-checked box would make stage one's `is_public_
+ * contributed` default of FALSE decorative, which is exactly what item ⑬ reverses
+ * §2.3's "no consent checkbox" decision to prevent.
+ *
+ * **One-way, and said so before the click, not after.** The route only ever sets the
+ * flag (§6.2.2's own table has no path that clears it), so unticking this box would be
+ * a control that lies about its own affordance. Rather than allow that gesture, both
+ * `checked` and `disabled` are keyed on `pending || done` — ticked and locked the
+ * moment the press happens, not only once the response lands. **Fix round 1:** `checked`
+ * used to read `done` alone, so for the whole of the request the box showed unticked
+ * and disabled — a visitor watching their own tick appear to undo itself, which is the
+ * one message this particular control must never send. The sentence beside it says the
+ * choice is one-way before the click reaches it at all.
+ *
+ * **Consent survives a recalculation, on purpose.** `state.contributed` is not reset
+ * by `submitCalculation` or `compareImprovement` on a return trip through the wizard,
+ * matching `upsert_submission`'s own behaviour: the row is the same submission,
+ * revised, and the flag this control set is not touched by an update either. Resetting
+ * the box here would show an unticked control over a row that is, in the database,
+ * still contributed — a front end telling a visitor "you haven't" about a choice the
+ * server has already recorded. The sentence below says plainly that a recalculation's
+ * *figures* replace the earlier ones under the same choice, which is the true state of
+ * affairs rather than a fresh question with a false "no" already implied. The status
+ * line after a successful press (**fix round 1**) states the same thing in the present
+ * tense, rather than a past tense the server cannot actually promise — §6.2.2 answers
+ * 204 on an unknown or expired token exactly as it does on a live one, so "has been
+ * added" may be false in a way this page cannot detect; "are in" is true on the first
+ * press and true again after every revision.
+ */
+function contributeBlock(state) {
+  const pending = state.contributing
+  const done = state.contributed
+  return `<div class="contribute-block">
+    <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
+    <div class="contribute-control">
+      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" ${pending || done ? 'checked' : ''} ${pending || done ? 'disabled' : ''}>
+      <label for="contribute">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</label>
+    </div>
+    ${done ? `<p class="contribute-status" role="status">${escapeHtml(t("Your latest figures are in this calculator's public statistics."))}</p>` : ''}
+    ${state.contributeError ? `<p class="field-error" role="alert">${escapeHtml(state.contributeError)}</p>` : ''}
+  </div>`
+}
+
+/**
+ * Runs on the checkbox's `change` and stores the result, or its message, on the state.
+ *
+ * `toPublicMessage` is `calculator.js`'s `publicError`, passed in rather than imported
+ * for the same reason `compareImprovement` (`improvement.js`) takes it as a parameter:
+ * that module already imports this one, and the import back would be a cycle. §6.2.2
+ * answers 204 always, so there is nothing here to read as a domain-level failure — only
+ * the network call itself can fail, and `ApiError`'s message is already the calculator's
+ * own network-unreachable copy.
+ *
+ * A failed call leaves `contributed` false, which re-enables the checkbox and leaves it
+ * unticked — the "pre-press state" the brief asks for — rather than reporting a success
+ * that did not happen.
+ */
+export async function contributeCalculation(state, toPublicMessage = error => error.message || t('The calculator service could not be reached. Check your connection and try again.')) {
+  if (state.contributing || state.contributed || !state.token) return
+  setState({ contributing: true, contributeError: null })
+  try {
+    await contribute(state.token)
+    setState({ contributing: false, contributed: true })
+  } catch (error) {
+    setState({ contributing: false, contributed: false, contributeError: toPublicMessage(error) })
+  }
+}
+
 export function renderResults(state) {
   const result = state.result
   const entryResults = result?.entry_results || []
@@ -419,14 +734,15 @@ export function renderResults(state) {
   // header's home button already offers it.
   return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
-      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${warning}
-    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div></section>
+      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}
+    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
-    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Percentage waste remains unavailable until total food handled data is supplied.'))}</p></div></details></section>
+    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></div></details></section>
     <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button></div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
+    ${contributeBlock(state)}
     ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), label: t('Download results'), action: 'download-results' })}
   </section>`
 }

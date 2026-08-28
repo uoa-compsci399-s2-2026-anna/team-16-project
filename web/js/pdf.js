@@ -1,8 +1,16 @@
 const PAGE_WIDTH = 595.28
 const PAGE_HEIGHT = 841.89
 const LEFT = 48
-const TOP = 742
-const BOTTOM = 58
+const TOP = 714
+const BOTTOM = 62
+
+// Kai Commitment brand palette (Brand Guidelines, August 2026).
+const KALE_PDF = '0 0.196 0.137'
+const PEA_PDF = '0.157 0.784 0.510'
+const BODY_PDF = '0.13 0.22 0.19'
+const KALE = '#003223'
+const PEA = '#28C882'
+const BODY = '#213832'
 
 const WIN_1252 = new Map([
   [0x20ac, 0x80], [0x201a, 0x82], [0x0192, 0x83], [0x201e, 0x84],
@@ -39,7 +47,7 @@ function wrap(text, limit) {
   // Scripts without word-separating spaces (for example Chinese and Japanese) need a
   // narrower character budget because one glyph is roughly twice as wide as a Latin
   // lowercase letter at the same font size.
-  const effectiveLimit = [...text].some(char => char.codePointAt(0) > 0x024f)
+  const effectiveLimit = /[\u3040-\u30ff\u3400-\u4dbf\u4e00-\u9fff\uac00-\ud7af]/u.test(text)
     ? Math.floor(limit * 0.52)
     : limit
   const words = text.trim().split(/\s+/)
@@ -70,61 +78,128 @@ function wrap(text, limit) {
 function reportPages(report) {
   const source = report.split('\n')
   const title = source.shift() || 'Food Waste Impact Calculator - Results'
+  const groups = []
+  let group = []
+  source.forEach((line, index) => {
+    if (line.trim()) group.push(index)
+    else if (group.length) {
+      groups.push(group)
+      group = []
+    }
+  })
+  if (group.length) groups.push(group)
+  const summaryGroup = groups.find(indexes => indexes.length >= 2 && indexes.every(index => !/^\s+-\s/.test(source[index]) && /[:：]/.test(source[index]))) || []
+  const summaryIndexes = new Set(summaryGroup)
+  const summaryEnd = summaryGroup.at(-1) ?? -1
+  const metadataGroup = groups.find(indexes => /^(Factor version|因子版本)[:：]/i.test(source[indexes[0]].trim())) || []
+  const metadataIndexes = new Set(metadataGroup)
   const pages = [[]]
   let y = TOP
-  let afterBlank = true
+
+  const newPage = () => {
+    pages.push([])
+    y = TOP
+  }
 
   const add = item => {
-    if (y - item.height < BOTTOM) {
-      pages.push([])
-      y = TOP
-    }
     pages.at(-1).push({ ...item, y })
     y -= item.height
   }
 
-  for (const raw of source) {
-    if (!raw.trim()) {
-      y -= 7
-      afterBlank = true
-      continue
-    }
-    const bullet = /^\s+-\s/.test(raw)
-    const heading = afterBlank && !bullet && !raw.includes(':')
-    const indent = bullet ? 13 : 0
-    const size = heading ? 13 : 9.5
-    const height = heading ? 21 : 14
-    const limit = bullet ? 82 : 88
-    const prefix = bullet ? '- ' : ''
-    const body = bullet ? raw.replace(/^\s+-\s/, '') : raw.trim()
-    wrap(body, limit).forEach((line, index) => add({
-      text: `${index === 0 ? prefix : '  '}${line}`,
-      font: heading ? 'F2' : 'F1',
-      size,
-      height,
-      indent,
-      colour: heading ? '0 0.25 0.18' : '0.13 0.22 0.19',
-    }))
-    afterBlank = false
+  for (const indexes of groups) {
+    const block = []
+    indexes.forEach((sourceIndex, position) => {
+      const raw = source[sourceIndex]
+      const bullet = /^\s+-\s/.test(raw)
+      const hasColon = /[:：]/.test(raw)
+      const heading = position === 0 && !bullet && !hasColon
+      const nextLine = source[sourceIndex + 1]?.trim() || ''
+      const entryHeading = position === 0 && sourceIndex > summaryEnd && !bullet && hasColon && /[:：]/.test(nextLine)
+      const label = !bullet && /[:：]$/.test(raw.trim())
+      const summary = summaryIndexes.has(sourceIndex)
+      const metadata = metadataIndexes.has(sourceIndex)
+      const kind = heading ? 'heading' : entryHeading ? 'entry' : label ? 'label' : summary ? 'summary' : metadata ? 'metadata' : bullet ? 'bullet' : 'body'
+      const emphasis = ['heading', 'entry', 'label'].includes(kind)
+      const indent = bullet ? 13 : 0
+      const size = heading ? 14 : entryHeading ? 12 : summary ? 11.25 : label ? 10.75 : metadata ? 9.2 : 10.5
+      const height = heading ? 24 : entryHeading ? 21 : summary ? 18 : label ? 18 : metadata ? 15 : 16.5
+      const limit = metadata ? 112 : bullet ? 72 : 78
+      const prefix = bullet ? '- ' : ''
+      const body = bullet ? raw.replace(/^\s+-\s/, '') : raw.trim()
+      wrap(body, limit).forEach((line, index) => block.push({
+        text: `${index === 0 ? prefix : '  '}${line}`,
+        font: emphasis ? 'F2' : 'F1',
+        size,
+        height,
+        indent,
+        kind,
+        colour: emphasis ? KALE_PDF : BODY_PDF,
+      }))
+    })
+
+    const groupGap = pages.at(-1).length ? 12 : 0
+    const blockHeight = block.reduce((total, item) => total + item.height, 0)
+    const usableHeight = TOP - BOTTOM
+    const remainingHeight = y - groupGap - BOTTOM
+    // Keep short sections together. Long entry sections may use the remaining space and
+    // continue on the next page, avoiding a nearly empty page before a large block.
+    if (blockHeight <= usableHeight && blockHeight > remainingHeight && (blockHeight <= 220 || remainingHeight < 110)) newPage()
+    else y -= groupGap
+    block.forEach((item, index) => {
+      const keepWithNext = index === 0 && ['heading', 'entry'].includes(item.kind) && block[index + 1]
+      let requiredHeight = item.height + (keepWithNext ? block[index + 1].height : 0)
+      if (item.kind === 'label') {
+        const nextLabel = block.findIndex((candidate, candidateIndex) => candidateIndex > index && candidate.kind === 'label')
+        const sectionEnd = nextLabel === -1 ? block.length : nextLabel
+        const sectionHeight = block.slice(index, sectionEnd).reduce((total, candidate) => total + candidate.height, 0)
+        if (sectionHeight <= usableHeight) requiredHeight = sectionHeight
+      }
+      if (y - requiredHeight < BOTTOM) newPage()
+      add(item)
+    })
   }
   return { title, pages }
+}
+
+function circlePath(cx, cy, radius) {
+  const k = 0.5522847498 * radius
+  return `${cx + radius} ${cy} m ${cx + radius} ${cy + k} ${cx + k} ${cy + radius} ${cx} ${cy + radius} c ${cx - k} ${cy + radius} ${cx - radius} ${cy + k} ${cx - radius} ${cy} c ${cx - radius} ${cy - k} ${cx - k} ${cy - radius} ${cx} ${cy - radius} c ${cx + k} ${cy - radius} ${cx + radius} ${cy - k} ${cx + radius} ${cy} c`
 }
 
 function pageStream(title, items, pageNumber, pageCount) {
   const commands = [
     'q',
-    '0 0.25 0.18 rg',
-    `0 ${PAGE_HEIGHT - 72} ${PAGE_WIDTH} 72 re f`,
-    '0.16 0.78 0.48 rg',
-    `0 ${PAGE_HEIGHT - 76} ${PAGE_WIDTH} 4 re f`,
+    `${KALE_PDF} rg`,
+    `0 ${PAGE_HEIGHT - 84} ${PAGE_WIDTH} 84 re f`,
+    `${PEA_PDF} rg`,
+    `0 ${PAGE_HEIGHT - 88} ${PAGE_WIDTH} 4 re f`,
+    `${PEA_PDF} RG 0.75 w`,
+    `${circlePath(595, 805, 19)} S`,
+    `${circlePath(595, 805, 31)} S`,
+    `${circlePath(595, 805, 43)} S`,
     'Q',
     'BT /F2 10 Tf 1 1 1 rg 48 801 Td (KAI COMMITMENT) Tj ET',
     `BT /F2 19 Tf 1 1 1 rg 48 779 Td (${pdfString(title)}) Tj ET`,
   ]
-  for (const item of items) {
-    commands.push(`BT /${item.font} ${item.size} Tf ${item.colour} rg ${LEFT + item.indent} ${item.y} Td (${pdfString(item.text)}) Tj ET`)
+  const summary = items.filter(item => item.kind === 'summary')
+  if (summary.length) {
+    const top = summary[0].y + 11
+    const bottom = summary.at(-1).y - 7
+    commands.push('0.94 0.98 0.96 rg')
+    commands.push(`42 ${bottom} 511 ${top - bottom} re f`)
+    commands.push(`${PEA_PDF} rg 42 ${bottom} 4 ${top - bottom} re f`)
   }
-  commands.push('0.78 0.84 0.81 RG 48 40 m 547 40 l S')
+  for (const item of items) {
+    if (item.kind === 'heading') {
+      commands.push(`${PEA_PDF} rg 48 ${item.y - 3} 4 16 re f`)
+    } else if (item.kind === 'entry') {
+      commands.push('0.86 0.91 0.89 RG 0.5 w')
+      commands.push(`48 ${item.y + 9} m 547 ${item.y + 9} l S`)
+    }
+    const headingOffset = item.kind === 'heading' ? 12 : 0
+    commands.push(`BT /${item.font} ${item.size} Tf ${item.colour} rg ${LEFT + item.indent + headingOffset} ${item.y} Td (${pdfString(item.text)}) Tj ET`)
+  }
+  commands.push('0.78 0.84 0.81 RG 0.5 w 48 40 m 547 40 l S')
   commands.push(`BT /F1 8 Tf 0.35 0.43 0.4 rg 48 25 Td (Food Waste Impact Calculator) Tj ET`)
   commands.push(`BT /F1 8 Tf 0.35 0.43 0.4 rg 506 25 Td (Page ${pageNumber} of ${pageCount}) Tj ET`)
   return `${commands.join('\n')}\n`
@@ -217,20 +292,49 @@ function rasterTextReportPdf(report) {
     const y = value => (PAGE_HEIGHT - value) * scale
     context.fillStyle = '#ffffff'
     context.fillRect(0, 0, canvas.width, canvas.height)
-    context.fillStyle = '#00402e'
-    context.fillRect(0, 0, canvas.width, x(72))
-    context.fillStyle = '#29c77f'
-    context.fillRect(0, x(72), canvas.width, x(4))
+    context.fillStyle = KALE
+    context.fillRect(0, 0, canvas.width, x(84))
+    context.fillStyle = PEA
+    context.fillRect(0, x(84), canvas.width, x(4))
+    context.strokeStyle = PEA
+    context.lineWidth = x(0.75)
+    for (const radius of [19, 31, 43]) {
+      context.beginPath()
+      context.arc(x(595), y(805), x(radius), 0, Math.PI * 2)
+      context.stroke()
+    }
     context.textBaseline = 'alphabetic'
     context.fillStyle = '#ffffff'
-    context.font = `700 ${x(10)}px Arial, sans-serif`
+    context.font = `700 ${x(10)}px Geologica, Helvetica, Arial, sans-serif`
     context.fillText('KAI COMMITMENT', x(48), y(801))
-    context.font = `700 ${x(19)}px Arial, sans-serif`
+    context.font = `700 ${x(19)}px Geologica, Helvetica, Arial, sans-serif`
     context.fillText(title, x(48), y(779), x(499))
+    const summary = items.filter(item => item.kind === 'summary')
+    if (summary.length) {
+      const top = summary[0].y + 11
+      const bottom = summary.at(-1).y - 7
+      context.fillStyle = '#EFF9F4'
+      context.fillRect(x(42), y(top), x(511), x(top - bottom))
+      context.fillStyle = PEA
+      context.fillRect(x(42), y(top), x(4), x(top - bottom))
+    }
     for (const item of items) {
-      context.fillStyle = item.font === 'F2' ? '#00402e' : '#213832'
-      context.font = `${item.font === 'F2' ? 700 : 400} ${x(item.size)}px Arial, sans-serif`
-      context.fillText(item.text, x(LEFT + item.indent), y(item.y), x(499 - item.indent))
+      if (item.kind === 'heading') {
+        context.fillStyle = PEA
+        context.fillRect(x(48), y(item.y + 13), x(4), x(16))
+      } else if (item.kind === 'entry') {
+        context.strokeStyle = '#DCE7E1'
+        context.lineWidth = x(0.5)
+        context.beginPath()
+        context.moveTo(x(48), y(item.y + 9))
+        context.lineTo(x(547), y(item.y + 9))
+        context.stroke()
+      }
+      context.fillStyle = item.font === 'F2' ? KALE : BODY
+      const family = item.font === 'F2' ? 'Geologica, Helvetica, Arial, sans-serif' : '"Kumbh Sans", Helvetica, Arial, sans-serif'
+      context.font = `${item.font === 'F2' ? 700 : 400} ${x(item.size)}px ${family}`
+      const headingOffset = item.kind === 'heading' ? 12 : 0
+      context.fillText(item.text, x(LEFT + item.indent + headingOffset), y(item.y), x(499 - item.indent - headingOffset))
     }
     context.strokeStyle = '#c7d6cf'
     context.lineWidth = 1
@@ -239,7 +343,7 @@ function rasterTextReportPdf(report) {
     context.lineTo(x(547), y(40))
     context.stroke()
     context.fillStyle = '#596e66'
-    context.font = `400 ${x(8)}px Arial, sans-serif`
+    context.font = `400 ${x(8)}px "Kumbh Sans", Helvetica, Arial, sans-serif`
     context.fillText('Food Waste Impact Calculator', x(48), y(25))
     context.textAlign = 'right'
     context.fillText(`Page ${index + 1} of ${pages.length}`, x(547), y(25))

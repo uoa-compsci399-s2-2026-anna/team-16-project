@@ -381,6 +381,81 @@ def test_pdf_is_valid_and_contains_the_result_figures(tmp_path):
     assert pdf.startswith(b"%PDF-1.4")
     assert pdf.rstrip().endswith(b"%%EOF")
     assert b"4,449.0 kg CO2e" in pdf
+    # Report metadata and the two closing notes each remain a single PDF text row.
+    assert b"Demonstration only \x97 verified calculation factors have not yet been supplied." in pdf
+    assert b"Percentage waste is not available because total food handled data is required." in pdf
+    # Optional sections are never invented by the PDF layout. They appear only when the
+    # report builder supplied them for this calculation.
+    assert b"These figures cover:" not in pdf
+    assert b"The money" not in pdf
+    # Brand Guidelines, August 2026: Kale, Pea, and the pale summary panel.
+    assert b"0 0.196 0.137 rg" in pdf
+    assert b"0.157 0.784 0.510 RG" in pdf
+    assert b"0.94 0.98 0.96 rg" in pdf
+
+
+REPORT_PDF_HARNESS = """
+import { readFileSync, writeFileSync } from 'node:fs'
+const { buildTextReportPdf } = await import(process.argv[2])
+writeFileSync(process.argv[4], buildTextReportPdf(readFileSync(process.argv[3], 'utf8')))
+"""
+
+
+@node
+def test_pdf_layout_preserves_period_and_money_sections(tmp_path):
+    """The stage-two report adds a period and money block before each entry."""
+    report = """Food Waste Impact Calculator — Results
+
+These figures cover: One week
+
+Total food waste: 11.60 kg
+Total food waste: 0.012 tonnes
+
+Impact summary
+  - Greenhouse gases: 8.0 kg CO2e
+
+The money
+  - Total value of food handled: NZ$500.00
+  - Value of food wasted: NZ$90.00
+  - Share of value wasted: 18.00%
+
+Entry 1: Primary production
+Food type: Vegetables
+
+Factor version: MOCK-v0 - PLACEHOLDER
+Demonstration only — verified calculation factors have not yet been supplied.
+Percentage waste: Not available. This calculator does not report waste as a share of food handled yet.
+"""
+    harness = tmp_path / "report-pdf-harness.mjs"
+    harness.write_text(REPORT_PDF_HARNESS, encoding="utf-8")
+    source = tmp_path / "report.txt"
+    source.write_text(report, encoding="utf-8")
+    out = tmp_path / "report.pdf"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            (ROOT / "web" / "js" / "pdf.js").as_uri(),
+            str(source),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, completed.stderr
+    pdf = out.read_bytes()
+    for expected in [
+        b"These figures cover: One week",
+        b"The money",
+        b"Total value of food handled: NZ$500.00",
+        b"Value of food wasted: NZ$90.00",
+        b"Share of value wasted: 18.00%",
+        b"Demonstration only \x97 verified calculation factors have not yet been supplied.",
+        b"Percentage waste: Not available. This calculator does not report waste as a share of food handled yet.",
+    ]:
+        assert expected in pdf
 
 
 def test_download_uses_a_pdf_blob():
@@ -396,6 +471,9 @@ const { reportNeedsUnicodeFallback } = await import(process.argv[2])
 writeFileSync(process.argv[3], JSON.stringify({
   english: reportNeedsUnicodeFallback('Food waste results'),
   chinese: reportNeedsUnicodeFallback('食物浪费结果'),
+  japanese: reportNeedsUnicodeFallback('食品廃棄物の結果'),
+  korean: reportNeedsUnicodeFallback('음식물 쓰레기 결과'),
+  german: reportNeedsUnicodeFallback('Ergebnisse für Lebensmittelabfälle'),
   punctuation: reportNeedsUnicodeFallback('Current → improved — 2 × bins'),
 }))
 """
@@ -422,5 +500,8 @@ def test_non_latin_reports_select_the_unicode_safe_pdf_path(tmp_path):
     assert json.loads(out.read_text(encoding="utf-8")) == {
         "english": False,
         "chinese": True,
+        "japanese": True,
+        "korean": True,
+        "german": False,
         "punctuation": False,
     }

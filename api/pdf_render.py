@@ -546,11 +546,26 @@ def _local_url_fetcher(url: str, timeout: int = 10, ssl_context: Any = None) -> 
     # that would make an HTTP request if this function's guards were ever
     # loosened. Reading the file directly means there is no network-capable
     # call in the renderer at all, which is what §7.6 rule 7 actually asks for.
-    return {
-        "string": path.read_bytes(),
-        "mime_type": _mime_type(path),
-        "redirected_url": url,
-    }
+    #
+    # THE RETURN TYPE IS VERSION-DEPENDENT AND THE WRONG ONE IS SILENT.
+    # WeasyPrint accepted a dict through 68 and warns for it in 69, and it
+    # catches whatever a fetcher raises and merely LOGS "Failed to load" -- so
+    # a fetcher that raises (a DeprecationWarning promoted to an error under
+    # `-W error`, for instance) does not fail the render, it produces a
+    # document quietly set in a fallback face. `URLFetcherResponse` is used
+    # where it exists and the dict is the fallback for the >=62 floor, and
+    # `test_the_brand_faces_are_embedded_in_the_pdf` reads the font names back
+    # out of the PDF so that a silent fallback fails a test rather than
+    # shipping.
+    body = path.read_bytes()
+    mime_type = _mime_type(path)
+    try:
+        from weasyprint.urls import URLFetcherResponse
+    except ImportError:  # WeasyPrint < 69
+        return {"string": body, "mime_type": mime_type, "redirected_url": url}
+    return URLFetcherResponse(
+        url, body=body, headers={"Content-Type": mime_type}
+    )
 
 
 #: `mimetypes` does not know the web font types on every host - it answers

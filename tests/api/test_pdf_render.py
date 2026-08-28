@@ -488,6 +488,36 @@ def test_the_embedded_faces_match_the_public_ones():
         assert hashlib.sha256(embedded).hexdigest() == hashlib.sha256(served).hexdigest(), name
 
 
+@requires_weasyprint
+def test_the_brand_faces_are_embedded_in_the_pdf():
+    """**That the fonts actually loaded, read back out of the file.**
+
+    This is the test the rest of this file would have been missing, and it was
+    written after a real near-miss: WeasyPrint catches whatever a URL fetcher
+    raises and merely LOGS "Failed to load", so a fetcher that fails produces a
+    perfectly good-looking document set in a fallback face, and every other
+    assertion here - the warning, the figures, the wrapping - still passes. Off
+    brand, silently, in the client's own deliverable.
+
+    So the font names are read out of the PDF's own resource dictionary. A
+    subset is named `ABCDEF+Geologica-Bold`, hence the substring match.
+    """
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    pdf = render_results_pdf(_result(), _taxonomy(), "en")
+    names: set[str] = set()
+    for page in PdfReader(BytesIO(pdf)).pages:
+        fonts = page.get("/Resources", {}).get("/Font", {})
+        for key in fonts:
+            names.add(str(fonts[key].get_object().get("/BaseFont", "")))
+
+    joined = " ".join(names)
+    assert "Geologica" in joined, f"headings are not in the brand face: {names}"
+    assert "Kumbh" in joined, f"body text is not in the brand face: {names}"
+
+
 def test_a_missing_face_is_an_error_and_not_a_silent_fallback(monkeypatch, tmp_path):
     """A document that quietly rendered in a system font would be off-brand with
     nothing in the output to say so. The brand's type or nothing."""

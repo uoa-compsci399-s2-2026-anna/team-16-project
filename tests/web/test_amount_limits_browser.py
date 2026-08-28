@@ -98,7 +98,7 @@ import pytest
 
 pytestmark = pytest.mark.browser
 
-playwright_api = pytest.importorskip(
+pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to type into the real inputs; these rules are unverified without it",
 )
@@ -166,14 +166,10 @@ def taxonomy():
     return served
 
 
-@pytest.fixture(scope="session")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
+#: `browser` itself now comes from `tests/web/conftest.py`, package-scoped
+#: and shared across every file in this directory - see that module's
+#: docstring for why a per-file `session`-scoped fixture corrupted the rest
+#: of the run.
 @pytest.fixture
 def page_at(browser, taxonomy):
     """A page at a given viewport and language, with the calculate POST captured.

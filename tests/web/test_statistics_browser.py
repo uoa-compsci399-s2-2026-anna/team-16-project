@@ -41,7 +41,7 @@ import pytest
 
 pytestmark = pytest.mark.browser
 
-playwright_api = pytest.importorskip(
+pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to measure where a legend entry is drawn; it is unverified without it",
 )
@@ -105,14 +105,9 @@ if not _stack_is_up():  # pragma: no cover - environment guard
     )
 
 
-@pytest.fixture(scope="module")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
+#: `browser` itself now comes from `tests/web/conftest.py`, package-scoped
+#: and shared across every file in this directory - see that module's
+#: docstring for why a per-file fixture corrupted the rest of the run.
 @pytest.fixture
 def stats_page(browser):
     """The statistics page at a viewport, rendered from the canonical fixture."""

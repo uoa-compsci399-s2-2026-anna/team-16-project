@@ -9,9 +9,13 @@ nothing about production.
 Run without them:  python -m pytest -m "not db"
 """
 
+from pathlib import Path
+
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
+
+from tests.support import mysql_lock
 
 #: B's SQLite fixtures - `sqlite_engine`, `seeded_session` and `app`. Registered
 #: here rather than as a `tests/db/conftest.py` so that a test file's directory
@@ -45,6 +49,57 @@ from db.base import Base
 ROOT_URL = "mysql+pymysql://root:devroot@127.0.0.1:3307/"
 TEST_DB = "kaicalc_test"
 TEST_URL = f"mysql+pymysql://root:devroot@127.0.0.1:3307/{TEST_DB}"
+
+_TESTS_DIR = Path(__file__).resolve().parent
+
+#: The open lock handle for this session, if `pytest_collection_modifyitems`
+#: below acquired one - module-level rather than on `config`/`session`
+#: because `pytest_sessionfinish` needs it back and neither object is a
+#: reliable place to stash arbitrary state across pytest versions.
+_mysql_lock_handle = None
+
+
+def _shares_kaicalc_test_mysql(item) -> bool:
+    """True for a collected item under tests/api, tests/db or tests/admin.
+
+    Those three directories are the ones that actually run against the
+    shared `kaicalc_test` MySQL database (see the module docstring above and
+    `tests/support/mysql_lock.py`). tests/web, tests/golden, tests/benchmark
+    and the root-level test_*.py files do not, and a run confined to them
+    should never so much as touch the lock file.
+    """
+    try:
+        rel = item.path.relative_to(_TESTS_DIR)
+    except ValueError:  # pragma: no cover - defensive; every item is under tests/
+        return False
+    return len(rel.parts) > 1 and rel.parts[0] in {"api", "db", "admin"}
+
+
+def pytest_collection_modifyitems(session, config, items):
+    """Refuse to start, immediately and loudly, if another pytest session
+    already holds the lock on the shared `kaicalc_test` MySQL database.
+
+    This runs once, after collection and before the first test executes -
+    `mysql_lock.acquire()` never blocks, so a second session is turned away
+    within the same second it was started rather than left to race the
+    first one to a `drop_all()` or a fixture's teardown. See
+    `tests/support/mysql_lock.py` for why a lock file rather than a MySQL
+    advisory lock, and why the file lives outside this (iCloud-synced)
+    checkout.
+    """
+    global _mysql_lock_handle
+    if not any(_shares_kaicalc_test_mysql(item) for item in items):
+        return
+    try:
+        _mysql_lock_handle = mysql_lock.acquire()
+    except mysql_lock.DatabaseLockHeld as exc:
+        pytest.exit(str(exc), returncode=1)
+
+
+def pytest_sessionfinish(session, exitstatus):
+    global _mysql_lock_handle
+    mysql_lock.release(_mysql_lock_handle)
+    _mysql_lock_handle = None
 
 
 @pytest.fixture(scope="session")

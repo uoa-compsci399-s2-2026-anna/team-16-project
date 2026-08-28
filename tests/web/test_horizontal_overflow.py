@@ -187,24 +187,26 @@ if not _stack_is_up():  # pragma: no cover - environment guard
         allow_module_level=True,
     )
 
-from playwright.sync_api import sync_playwright  # noqa: E402
-
-
 @pytest.fixture(scope="module")
-def browser():
+def browser(_playwright):
     """Headless Chromium **with its scrollbars drawn**. See the module docstring.
 
     `--hide-scrollbars` is one of Playwright's default arguments, and removing it
     is the whole difference between `clientWidth == innerWidth` (a page that can
     never be seen to overflow by a viewport-unit rule) and `clientWidth ==
     innerWidth - 15` (a desktop browser). Nothing else about the launch changes.
+
+    Built on `_playwright` (`tests/web/conftest.py`'s package-scoped driver)
+    rather than a second `sync_playwright()` of its own: two Chromium
+    instances launched from the same driver coexist fine, but two
+    `sync_playwright()` contexts on one thread is the exact conflict that
+    fixture exists to close - see its docstring.
     """
-    with sync_playwright() as playwright:
-        instance = playwright.chromium.launch(
-            ignore_default_args=["--hide-scrollbars"]
-        )
-        yield instance
-        instance.close()
+    instance = _playwright.chromium.launch(
+        ignore_default_args=["--hide-scrollbars"]
+    )
+    yield instance
+    instance.close()
 
 
 def _open(browser, path, language, width):

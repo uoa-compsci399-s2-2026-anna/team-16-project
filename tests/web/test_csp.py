@@ -78,14 +78,9 @@ if not _stack_is_up():  # pragma: no cover - environment guard
     )
 
 
-@pytest.fixture(scope="module")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
+#: `browser` itself now comes from `tests/web/conftest.py`, package-scoped
+#: and shared across every file in this directory - see that module's
+#: docstring for why a per-file fixture corrupted the rest of the run.
 @pytest.mark.parametrize("path", PAGES)
 def test_no_public_page_violates_its_own_policy(browser, path):
     """Load each public page with the policy enforced and collect what it refused.

@@ -45,7 +45,7 @@ from pathlib import Path
 
 import pytest
 
-playwright_api = pytest.importorskip(
+pytest.importorskip(
     "playwright.sync_api",
     reason="playwright is required to measure where the primary action lands; the bar is unverified without it",
 )
@@ -91,14 +91,10 @@ PAST_FOLD = """
 """
 
 
-@pytest.fixture(scope="session")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
+#: `browser` itself now comes from `tests/web/conftest.py`, package-scoped
+#: and shared across every file in this directory - see that module's
+#: docstring for why a per-file `session`-scoped fixture corrupted the rest
+#: of the run.
 @pytest.fixture
 def page_at(browser):
     """A page at a given viewport, with the calculate POST fulfilled locally.

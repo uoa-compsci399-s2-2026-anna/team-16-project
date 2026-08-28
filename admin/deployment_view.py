@@ -78,10 +78,23 @@ against the running stack rather than reasoned about:
 1. the rendered ``kaicalc`` log format in ``/etc/nginx/conf.d/kaicalc.conf``
    carries ``$time_local``, ``$request``, ``$status``, ``$body_bytes_sent``
    and ``$request_time``, and no header and no address;
-2. uvicorn's own access line in the ``admin`` container logs
+2. uvicorn's own access line in the ``admin`` container **used to** log
    ``scope["client"]`` — the nginx container's network address, the same
    value for every visitor, never the forwarded one, because
-   ``ProxyHeadersMiddleware`` declines to rewrite ``scope`` here (§7.8.1);
+   ``ProxyHeadersMiddleware`` declined to rewrite ``scope`` at all while
+   ``run.sh`` left ``--forwarded-allow-ips`` at uvicorn's own default of
+   ``127.0.0.1``. It no longer does: ``run.sh`` now passes
+   ``--forwarded-allow-ips '*'`` whenever ``PROTECTION_TRUSTED_PROXY`` is
+   true — the shipped default — which is what makes ``request.url.scheme``
+   (and this page's own read of it, above) honest behind this stack's own
+   nginx. The same middleware pass that fixes the scheme also rewrites
+   ``scope["client"]`` from the same ``X-Forwarded-For`` header, so uvicorn's
+   access log would start printing the **visitor's real address** on every
+   line — an address stored, which contract §2.3 forbids. ``run.sh`` closes
+   that with ``--no-access-log``, set in the same condition as
+   ``--forwarded-allow-ips`` and never independently of it, so this fact is
+   true again for a different reason: not because the middleware declines to
+   look, but because nothing is listening when it does;
 3. no ``audit_log`` row is written by loading this page.
    ``tests/admin/test_deployment_view.py`` asserts (3) by counting the table
    across the request.
@@ -158,7 +171,27 @@ class Observation:
     chain: tuple[str, ...]
     forwarded_proto: str | None
     real_ip: str | None
+    #: ``request.client.host`` — used to be the one field on this page
+    #: nothing could put a claimed value into, because uvicorn never rewrote
+    #: it. That stopped being true the day ``run.sh`` started passing
+    #: ``--forwarded-allow-ips`` (see its own comment, "fact 4"): with
+    #: ``PROTECTION_TRUSTED_PROXY`` true — the shipped default — uvicorn's
+    #: own ``ProxyHeadersMiddleware`` now rewrites this from the same
+    #: ``X-Forwarded-For`` this page already shows above, before this
+    #: handler ever runs, and there is no ASGI-level way to see the value
+    #: it overwrote. On the shipped default this field is therefore no
+    #: longer independent evidence: it will read the same as "the address
+    #: the system decided on" below it, not the raw socket peer the name on
+    #: the page still says it is. ``X-Real-IP`` (above) is what stays raw —
+    #: nginx never rewrites it — and is the field to trust for that now.
     peer: str | None
+    #: ``request.url.scheme``. The same rewrite applies here for the same
+    #: reason: it is what the whole point of ``run.sh`` fact 4 was — sqladmin
+    #: could not build an ``https://`` asset URL without it. Before that fix
+    #: this was uselessly constant (``http``, always — this stack terminates
+    #: no TLS of its own, so the unrewritten value carried no information);
+    #: now it is live, and on the shipped default it is the trusted value,
+    #: not a raw one either.
     scheme: str
     decided_address: str | None
     decided_from: str
@@ -446,6 +479,24 @@ def _assess_address(observation: Observation, settings: Settings) -> list[Findin
             "the right pairing for a panel reached directly — what "
             "docker/compose.direct-ports.yaml sets up, and what a bare "
             "`./run.sh admin` gets from the code default.",
+        ))
+
+    if trusted:
+        findings.append(Finding(
+            "note",
+            "\"The connection this panel accepted\", below, is no longer "
+            "independent evidence",
+            "The same PROTECTION_TRUSTED_PROXY this finding is about is also "
+            "handed to uvicorn itself (run.sh's --forwarded-allow-ips, fact 4 "
+            "in that file), which rewrites request.client and "
+            "request.url.scheme from this same X-Forwarded-For and "
+            "X-Forwarded-Proto pair before this handler ever runs — there is "
+            "no ASGI-level way to see what it overwrote. That row, and the "
+            "scheme beside it, will now read the same as the decided address "
+            "above rather than the raw socket peer their labels still "
+            "promise. X-Real-IP is the field that stays raw on either setting "
+            "of this flag — nginx never rewrites it — and is the one to "
+            "trust for what actually connected to this stack's nginx.",
         ))
 
     if _is_not_public(observation.decided_address):

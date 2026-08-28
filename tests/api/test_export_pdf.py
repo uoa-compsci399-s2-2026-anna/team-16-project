@@ -14,6 +14,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from db.models import Submission
+from tests.support.pdf import requires_weasyprint
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -51,6 +52,7 @@ async def test_the_export_calculates_rather_than_trusting_the_client(app):
     assert response.json()["error"]["code"] == "VALIDATION_ERROR"
 
 
+@requires_weasyprint
 async def test_the_export_persists_nothing(app):
     """A download is not a calculation (§2.3): no `submission` row, whatever
     the response looks like. Read directly off the app's own database rather
@@ -70,12 +72,18 @@ async def test_the_export_persists_nothing(app):
     )
 
 
+@requires_weasyprint
 async def test_the_export_answers_a_pdf(app):
     async with await _client(app) as client:
         response = await client.post("/api/v1/export/pdf", json=_valid_payload())
     assert response.status_code == 200, response.text
     assert response.headers["content-type"] == "application/pdf"
     assert response.content[:5] == b"%PDF-"
+    # `%PDF-` is a byte check, not evidence about the document. What the
+    # document says is asserted in tests/api/test_pdf_render.py, by extracting
+    # the text - the export this route replaced produced a perfectly valid PDF
+    # that said `K?mara`. This test is about the ROUTE: status, content type,
+    # and that the renderer was reached at all.
 
 
 async def test_a_prevention_destination_is_refused_in_a_current_scenario(app):

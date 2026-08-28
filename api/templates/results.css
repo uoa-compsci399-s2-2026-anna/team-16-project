@@ -1,0 +1,285 @@
+/* The export document's stylesheet. Read by WeasyPrint, never by a browser.
+ *
+ * WHY THERE IS NO MEASUREMENT ANYWHERE IN THIS TASK. The export this replaces
+ * placed every glyph by hand in JavaScript, which is why a German title ran
+ * 84pt off a 595pt page, why Arabic came out left-to-right with its full stop
+ * stranded at the start of the line, and why one macron in a staff-typed name
+ * ("Kumara" with a macron) either rasterised the whole document or silently
+ * became "K?mara". Every one of those is a line-breaking, bidi or shaping
+ * problem, and all three are solved by the same thing: hand HTML and CSS to a
+ * layout engine and let Pango and HarfBuzz do the work. A width computed in
+ * Python would be the identical mistake in a second language, so this file --
+ * not api/pdf_render.py -- is where a layout problem gets fixed.
+ *
+ * LOGICAL PROPERTIES ONLY. No `left`, no `right`, no `margin-left`, no
+ * `text-align: right`. Task 4 turns this document Arabic and Urdu, and every
+ * physical property written here is a line it would have to unpick. `dir` on
+ * <html> is then the only thing that has to change, because `padding-inline`,
+ * `border-inline-start` and `text-align: start` already mean the mirrored
+ * thing. The two exceptions are the CSS Paged Media margin boxes
+ * (`@top-center`, `@bottom-center`): those are at-rule names rather than
+ * properties, CSS defines no logical spelling for them, and the centred ones
+ * are chosen precisely so no side has to be named.
+ *
+ * NOTHING HERE FETCHES ANYTHING. Contract 7.6 rule 7 forbids a runtime asset
+ * from a third-party host, and a server-rendered document is not an exception
+ * -- if anything it is the stricter case, since the fetch would come from
+ * inside the API container. The two @font-face rules below are rewritten by
+ * `api/pdf_render.py` to absolute file:// URLs before WeasyPrint sees them;
+ * there is no http(s) URL in this file and a test asserts there is none.
+ */
+
+/* ------------------------------------------------------------------ fonts */
+/* KAICALC_FONT_SRC_* are substituted by api/pdf_render.py with a file:// URL
+ * for the copy that ships inside this package (api/assets/fonts/). They are
+ * placeholders rather than relative URLs because WeasyPrint resolves a
+ * relative url() against the stylesheet's base URL, and this stylesheet is
+ * handed over as a string, not as a path. */
+@font-face {
+  font-family: 'Geologica';
+  src: url('KAICALC_FONT_SRC_GEOLOGICA') format('woff2');
+  font-weight: 700;
+  font-style: normal;
+}
+@font-face {
+  font-family: 'Kumbh Sans';
+  src: url('KAICALC_FONT_SRC_KUMBH') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+}
+
+/* ------------------------------------------------------------------- page */
+@page {
+  size: A4;
+  /* Generous inline margins: this is a document meant to be printed and read,
+   * and a measure of roughly 90 characters is what the brand's body face is
+   * comfortable at. */
+  margin: 18mm 16mm 16mm 16mm;
+
+  /* THE PLACEHOLDER FLAG, ON EVERY PAGE. `string(mockflag)` is set by the
+   * warning element in the flow (see .mock-warning__flag below), so this
+   * margin box carries text only when that element exists -- it cannot be
+   * given a value here and it cannot be typed in by hand. When the factor set
+   * is real, no element sets the string, the box resolves to the empty string
+   * and no header is drawn. This is the second of the two places the warning
+   * appears, and the reason a reader who turns to page three still sees it. */
+  @top-center {
+    content: string(mockflag);
+    font-family: 'Kumbh Sans', 'DejaVu Sans', Helvetica, sans-serif;
+    font-size: 8pt;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #FF5032;
+    padding-block-end: 3mm;
+  }
+
+  @bottom-center {
+    content: counter(page) ' / ' counter(pages);
+    font-family: 'Kumbh Sans', 'DejaVu Sans', Helvetica, sans-serif;
+    font-size: 8pt;
+    color: #003223;
+    padding-block-start: 4mm;
+  }
+}
+
+/* ------------------------------------------------------------------- base */
+:root {
+  /* The brand palette, as documented. Kale is the primary; Orange carries the
+   * warning; Pea and Banana are the light grounds that take Kale text. */
+  --kale: #003223;
+  --orange: #FF5032;
+  --pea: #28C882;
+  --banana: #FFD76E;
+  --rule: #C8D2CE;
+}
+
+html {
+  font-family: 'Kumbh Sans', 'DejaVu Sans', Helvetica, sans-serif;
+  font-size: 10pt;
+  line-height: 1.45;
+  color: var(--kale);
+}
+
+body {
+  margin: 0;
+  /* THE ONE PROPERTY THAT CLOSES DEFECT ONE. A long word -- a German compound,
+   * a staff-typed destination name, a URL -- breaks rather than travelling off
+   * the edge of the page. `anywhere` rather than `break-word` because the two
+   * differ exactly where it matters: `anywhere` also lets the break point
+   * count towards the element's intrinsic minimum width, which is what keeps a
+   * table cell from being sized to fit an unbreakable 70-character word and
+   * pushing the table off the paper. Nothing is measured, clamped or
+   * truncated: the text is all there, on more lines.
+   *
+   * `word-break: break-word` stood beside this and has been removed -- it is a
+   * non-standard alias that WeasyPrint rejects outright ("Ignored
+   * `word-break: break-word`, invalid value"), so it was doing nothing but
+   * emitting a warning on every render. */
+  overflow-wrap: anywhere;
+  /* `start`, not `left`: in an RTL document this is the right edge. */
+  text-align: start;
+}
+
+h1, h2, h3, th {
+  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-weight: 700;
+}
+
+h1 {
+  font-size: 19pt;
+  line-height: 1.2;
+  margin: 0 0 2mm 0;
+  /* Hyphenation needs a language to know a dictionary, and <html lang> supplies
+   * it. On a locale Pyphen has no dictionary for this is simply inert. */
+  hyphens: auto;
+}
+
+h2 {
+  font-size: 12pt;
+  margin: 7mm 0 2mm 0;
+  padding-block-end: 1mm;
+  border-block-end: 1pt solid var(--rule);
+  /* A heading is not left orphaned at the foot of a page. */
+  break-after: avoid;
+}
+
+p { margin: 0 0 2mm 0; }
+
+.subtitle {
+  font-size: 9.5pt;
+  color: #4A6660;
+  margin-block-end: 4mm;
+}
+
+/* ---------------------------------------------------------- mock warning */
+/* DEFECT-PROOFING, NOT DECORATION. Section 2.2 makes the placeholder banner
+ * mandatory and non-dismissible on every results view and export while the
+ * active factor set is mock, and open item O-1 means every figure this
+ * document can carry today is placeholder data.
+ *
+ * The rules below are chosen so that the banner cannot be lost to layout:
+ *
+ *   - `break-inside: avoid` keeps it from being split across a page boundary.
+ *   - it is a direct child of <body> in the template, so there is no ancestor
+ *     that can collapse, clip or scroll it away.
+ *   - `string-set` on the flag inside it is what feeds the running header
+ *     above, so the banner is also the source of the per-page repeat.
+ *
+ * There is deliberately no `display: none` anywhere in this file, and no rule
+ * that could resolve to one for this element. A test extracts the text of a
+ * rendered PDF and asserts the warning is in it, so a CSS change that hid it
+ * would fail rather than ship. */
+.mock-warning {
+  background: var(--banana);
+  border-inline-start: 4pt solid var(--orange);
+  padding: 4mm 5mm;
+  margin-block-end: 6mm;
+  break-inside: avoid;
+  color: var(--kale);
+}
+
+.mock-warning__flag {
+  /* The short form, repeated in the @top-center margin box of every page. */
+  string-set: mockflag content(text);
+  display: block;
+  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-size: 9pt;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  margin-block-end: 1.5mm;
+}
+
+.mock-warning__body { margin: 0; font-size: 9.5pt; }
+
+/* ---------------------------------------------------------------- summary */
+.summary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3mm;
+  margin-block-end: 4mm;
+}
+
+.summary__item {
+  border: 0.75pt solid var(--rule);
+  padding: 2.5mm 3.5mm;
+  min-inline-size: 38mm;
+}
+
+.summary__label {
+  display: block;
+  font-size: 7.5pt;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: #4A6660;
+}
+
+.summary__value {
+  display: block;
+  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-size: 11pt;
+}
+
+/* ----------------------------------------------------------------- tables */
+table {
+  inline-size: 100%;
+  border-collapse: collapse;
+  margin-block-end: 3mm;
+  font-size: 9.5pt;
+}
+
+thead { display: table-header-group; }  /* repeat the head on every page */
+tr { break-inside: avoid; }
+
+th, td {
+  padding: 1.6mm 2.5mm;
+  border-block-end: 0.5pt solid var(--rule);
+  /* `start` rather than `left`, and `end` rather than `right`: the figures
+   * column sits at the end of the line in English and at the start of it in
+   * Arabic, which is what a reader of either expects. */
+  text-align: start;
+  vertical-align: top;
+}
+
+th {
+  font-size: 8.5pt;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  border-block-end: 1pt solid var(--kale);
+}
+
+td.figure, th.figure {
+  text-align: end;
+  /* Digits line up in a column even in a proportional face. */
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.unit { color: #4A6660; font-size: 8.5pt; }
+
+tr.net td { border-block-end: 1pt solid var(--kale); }
+
+/* ----------------------------------------------------------- equivalences */
+.equivalences { margin: 0; padding-inline-start: 5mm; }
+.equivalences li { margin-block-end: 1mm; }
+
+/* ----------------------------------------------------------------- entries */
+.entry { break-inside: avoid; margin-block-end: 5mm; }
+
+.entry__heading {
+  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-size: 10.5pt;
+  margin: 0 0 1.5mm 0;
+  padding-inline-start: 2.5mm;
+  border-inline-start: 3pt solid var(--pea);
+}
+
+.entry__meta { font-size: 8.5pt; color: #4A6660; margin-block-end: 2mm; }
+
+/* ------------------------------------------------------------------ colophon */
+.colophon {
+  margin-block-start: 8mm;
+  padding-block-start: 3mm;
+  border-block-start: 0.75pt solid var(--rule);
+  font-size: 8.5pt;
+  color: #4A6660;
+}

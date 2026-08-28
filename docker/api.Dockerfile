@@ -73,6 +73,42 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# WeasyPrint's system libraries, and the fallback faces it draws with.
+#
+# `POST /api/v1/export/pdf` renders the results document by handing HTML and
+# CSS to WeasyPrint; Pango does the line breaking and the Unicode bidirectional
+# algorithm, HarfBuzz does the shaping. Those are C libraries, and pip cannot
+# install them - `pip install weasyprint` succeeds on any platform and then
+# raises `OSError: cannot load library 'libgobject-2.0-0'` on first import.
+# WITHOUT THIS LAYER THE IMAGE BUILDS, STARTS, PASSES ITS HEALTH CHECK AND
+# ANSWERS 500 ON THE ONE ROUTE THAT NEEDS IT, which is why it is a RUN here and
+# not a note in a README.
+#
+#   libpango-1.0-0, libpangoft2-1.0-0  line breaking, bidi, FreeType binding
+#   libharfbuzz-subset0                glyph shaping, and the subsetter
+#                                      WeasyPrint uses to embed only the glyphs
+#                                      a document actually draws
+#
+# libcairo2 is deliberately ABSENT: WeasyPrint 62 draws through pydyf rather
+# than cairo, and pyproject.toml floors the dependency at 62 for this reason.
+#
+# THE FONT PACKAGES ARE NOT DECORATION. The two brand faces ship inside the
+# wheel (api/assets/fonts/) but they are Latin subsets, and a staff-typed name
+# is whatever staff typed: the defect this export exists to fix was one macron
+# - `Kumara` written with one - silently becoming `K?mara`. DejaVu covers the
+# Latin Extended range that catches, and Noto covers the scripts the interface
+# is being translated into, so an unshaped run falls back to a real face rather
+# than to tofu. A missing glyph in a document about somebody's own data is a
+# corrupted export, not a cosmetic problem.
+RUN apt-get update \
+ && apt-get install --no-install-recommends --yes \
+      libpango-1.0-0 \
+      libpangoft2-1.0-0 \
+      libharfbuzz-subset0 \
+      fonts-dejavu-core \
+      fonts-noto-core \
+ && rm -rf /var/lib/apt/lists/*
+
 # Non-root. uid/gid pinned so a bind-mounted volume has predictable ownership.
 RUN groupadd --system --gid 10001 kaicalc \
  && useradd --system --uid 10001 --gid kaicalc --home-dir /app --shell /usr/sbin/nologin kaicalc

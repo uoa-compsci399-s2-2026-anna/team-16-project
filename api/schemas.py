@@ -229,19 +229,34 @@ class EntryPayload(BaseModel):
     alternative: AlternativeScenarioPayload | None = None
 
 
-class CalculatePayload(BaseModel):
+class PricingOptions(BaseModel):
+    """The two request options that decide **how** a calculation is priced,
+    and the two closed-vocabulary checks over them.
+
+    **Why this class exists.** `CalculatePayload` and `api/export.py`'s
+    `ExportPayload` both carry `gwp_horizon` and `time_frame` and both check
+    them the same way. `ExportPayload` is deliberately *not* a subclass of
+    `CalculatePayload` -- that model also carries `token` and `dry_run`, and
+    neither means anything to a route that persists nothing and always prices
+    the published set -- so until now the two checks were written out twice.
+
+    Duplicated validators drift, and the whole justification for the export
+    endpoint is that its figures are the server's rather than the client's: a
+    horizon accepted on one route and refused on the other would mean two
+    documents of the same request disagreeing about methane, with nothing to
+    say which was right. Sharing the pair here is the narrowest fix that
+    cannot drift -- it moves the two fields the two models genuinely have in
+    common, and nothing else.
+
+    `extra="forbid"` is set here and inherited, so neither payload can be
+    handed a field it does not declare -- which is what stops a client
+    smuggling a precomputed figure into the export.
+    """
+
     model_config = ConfigDict(extra="forbid")
 
-    #: §6.2: "Any value that does not resolve to a live submission is treated
-    #: as absent and a new one is minted - a stale `sessionStorage` value must
-    #: not produce an error". Typed `str`, therefore, and not `UUID4`: a token
-    #: left over from an earlier deployment is not a request the user can fix,
-    #: and `upsert_submission` already treats a lookup miss as absent.
-    token: str | None = None
     gwp_horizon: int = 100
     time_frame: str | None = None
-    entries: list[EntryPayload] = Field(min_length=1, max_length=MAX_ENTRIES)
-    dry_run: DryRunPayload | None = None
 
     @field_validator("gwp_horizon")
     @classmethod
@@ -256,6 +271,17 @@ class CalculatePayload(BaseModel):
         if value is not None and value not in TIME_FRAMES:
             raise ValueError(f"must be one of {sorted(TIME_FRAMES)}")
         return value
+
+
+class CalculatePayload(PricingOptions):
+    #: §6.2: "Any value that does not resolve to a live submission is treated
+    #: as absent and a new one is minted - a stale `sessionStorage` value must
+    #: not produce an error". Typed `str`, therefore, and not `UUID4`: a token
+    #: left over from an earlier deployment is not a request the user can fix,
+    #: and `upsert_submission` already treats a lookup miss as absent.
+    token: str | None = None
+    entries: list[EntryPayload] = Field(min_length=1, max_length=MAX_ENTRIES)
+    dry_run: DryRunPayload | None = None
 
 
 class ContributePayload(BaseModel):

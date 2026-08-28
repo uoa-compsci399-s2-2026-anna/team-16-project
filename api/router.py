@@ -282,6 +282,15 @@ def export_pdf(payload: ExportPayload, request: Request) -> Response:
 
     try:
         prevention_codes = prevention_destination_codes(request.state.db)
+        # The §5.1 snapshot, read through the repository like everything else
+        # that touches the database. The renderer needs it because `result`
+        # speaks in `code`s and a document a person reads has to say
+        # "Landfill" rather than `landfill`; it is a read, it persists
+        # nothing, and it is the same call `GET /taxonomy` makes. Loaded here
+        # rather than beside the bundle below so that a taxonomy fault is
+        # reported as the repository problem it is, rather than being run
+        # through `engine_problem` and blamed on the engine.
+        taxonomy = get_taxonomy(request.state.db)
     except Exception as exc:
         raise _repository_problem(exc) from exc
 
@@ -306,7 +315,7 @@ def export_pdf(payload: ExportPayload, request: Request) -> Response:
     except Exception as exc:
         raise engine_problem(exc, authenticated_dry_run=False) from exc
 
-    pdf_bytes = render_export_pdf(result, payload)
+    pdf_bytes = render_export_pdf(result, payload, taxonomy)
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

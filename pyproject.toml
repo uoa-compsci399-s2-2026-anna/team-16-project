@@ -77,6 +77,29 @@ dependencies = [
     "pymysql>=1.1",            # pure Python; avoids the mysqlclient toolchain
     # Admin panel
     "sqladmin>=0.20",
+    # PDF export (api/pdf_render.py)
+    #
+    # NOT an optional extra. `POST /api/v1/export/pdf` is a documented route on
+    # the public API, and an install without these answers it with a 500 - so a
+    # client who ran `pip install kaicalc` and got a calculator whose Download
+    # button never works would be right to call that broken.
+    #
+    # WeasyPrint needs Pango, HarfBuzz and GObject as SYSTEM libraries, which
+    # pip cannot install: `docker/api.Dockerfile` and `docker/admin.Dockerfile`
+    # apt-get them, and `api/pdf_render.py` imports weasyprint lazily so that a
+    # developer machine without them can still run every other API test.
+    # `weasyprint_unavailable_reason()` is how anything asks whether a host can
+    # render.
+    #
+    # 62 is the floor because that is the first release to draw PDFs through
+    # pydyf rather than cairo, which is what removed libcairo from the list of
+    # system packages the images have to carry.
+    "weasyprint>=62",
+    # The export document's template. Already an indirect dependency (sqladmin
+    # renders through it), stated directly because api/pdf_render.py imports it
+    # by name - an indirect dependency that stops being pulled in is a
+    # ModuleNotFoundError in a route nobody ran during the upgrade.
+    "jinja2>=3.1",
     # NOT test-only, despite sitting under "--- Testing ---" in
     # requirements.txt until now. admin/calc_client.py does a module-level
     # `import httpx`, and admin/app.py imports it, so the panel does not start
@@ -99,6 +122,14 @@ dependencies = [
 dev = [
     "pytest>=8.3",
     "pytest-asyncio>=0.24",
+    # Test-only, and load-bearing for the one thing the PDF tests have to do:
+    # EXTRACT THE TEXT AND ASSERT ON IT. A test that checks a PDF is non-empty,
+    # or that it starts with `%PDF-`, proves nothing about what a reader will
+    # see - and the defect this whole export exists to fix is a document that
+    # was a valid PDF and still said `K?mara`. pypdf is how
+    # tests/api/test_pdf_render.py reads the placeholder warning, the figures
+    # and the macron back out of the bytes.
+    "pypdf>=5.1",
     # httpx is deliberately absent here: it is a runtime dependency (see
     # above), and listing it twice would let someone "tidy up" the runtime
     # copy on the strength of this one.
@@ -133,6 +164,26 @@ include-package-data = false
 # pattern that silently matches nothing produces a wheel whose admin panel
 # raises at start-up - the failure this file exists to prevent.
 [tool.setuptools.package-data]
+# The export document. Same failure mode as the admin guidance blocks below,
+# one package over: `api/pdf_render.py` reads all four of these off disk at
+# render time, so a wheel built without these patterns ships an API whose
+# `POST /api/v1/export/pdf` raises TemplateNotFound or FileNotFoundError - and
+# the checkout cannot reproduce it, because the files are simply there.
+#
+# THE TWO .woff2 FILES ARE A THIRD COPY IN THIS TREE AND HAVE TO BE. The same
+# faces sit under `web/assets/fonts/` (served by nginx) and
+# `admin/static/fonts/` (the admin package's own copy, listed below). Neither
+# is reachable: package-data cannot cross a package boundary - the note above
+# [tool.setuptools.data-files] says so already - and `api/` may not import
+# `admin/`. docker/api.Dockerfile copies only admin/ api/ db/ engine/ into the
+# build context, which shuts the same door a second time. A test asserts this
+# copy is byte-identical to web/'s so the public page and the exported document
+# cannot drift into different type.
+api = [
+    "templates/*.html.j2",
+    "templates/*.css",
+    "assets/fonts/*.woff2",
+]
 admin = [
     "templates/*.html",
     "templates/brand/*.html",

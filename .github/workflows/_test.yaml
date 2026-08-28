@@ -110,6 +110,24 @@ jobs:
             pyproject.toml
             docker/constraints.txt
 
+      - name: WeasyPrint's system libraries
+        # THE PDF TESTS ARE NOT ALLOWED TO SKIP HERE.
+        #
+        # `api/pdf_render.py` hands HTML and CSS to WeasyPrint, which binds
+        # Pango, HarfBuzz and GObject through cffi at import. pip cannot install
+        # those, so without this step the whole of tests/api/test_pdf_render.py
+        # would skip - and a suite that skips the tests for the export it just
+        # rewrote is green for the worst possible reason. The runner image
+        # usually carries libpango already; this makes the dependency explicit
+        # rather than inherited from whatever GitHub ships this month.
+        #
+        # The same three packages docker/api.Dockerfile installs. If that list
+        # changes, change it here too: CI testing a different set of system
+        # libraries than the image ships is a failure nobody can reproduce.
+        run: |
+          sudo apt-get update
+          sudo apt-get install --no-install-recommends --yes             libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0             fonts-dejavu-core fonts-noto-core
+
       - name: Install the package and its dev extra
         # `-e` is deliberate and safe HERE, unlike in an image: the PEP 660
         # editable backend drops [tool.setuptools.data-files], so an editable
@@ -212,4 +230,10 @@ jobs:
         # a MySQL service container of its own, so runs cannot collide with
         # each other - but a `-n auto` inside one run would recreate exactly
         # that overlap.
+        env:
+          # Turns "WeasyPrint is not installed, skip the PDF tests" from a skip
+          # into a collection error. On a machine that is supposed to be able to
+          # render, "skipped" is not an available outcome - see
+          # tests/support/pdf.py.
+          KAICALC_PDF_REQUIRED: '1'
         run: python -m pytest

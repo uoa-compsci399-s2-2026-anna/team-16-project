@@ -461,6 +461,7 @@ p { line-height: 1.65; }
 .form-field { margin: 25px 0; }
 .form-field label { display: block; margin-bottom: 8px; font-weight: 700; }
 .required { color: var(--kai-orange); font-size: 0.8rem; }
+.optional-tag { color: var(--muted); font-size: 0.8rem; font-weight: 400; }
 .field-hint { margin: -2px 0 8px; color: var(--muted); font-size: 0.92rem; }
 .field-error { margin: 8px 0 0; color: var(--error); font-weight: 700; }
 input, select {
@@ -576,7 +577,16 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .stage-fieldset > .field-error { margin-top: 12px; }
 .stage-fieldset.has-error .stage-card-list { padding: 5px; border-inline-start: 4px solid var(--error); }
 
-.choice-fieldset { min-width: 0; margin: 30px 0 18px; padding: 0; border: 0; }
+/* `margin-top` matches `.stage-fieldset` deliberately: both fieldsets sit in the same
+   position - directly after `.section-intro`, directly before `.step-nav` - on the two
+   steps (supply-chain stage, food type) that are structurally identical enough to be
+   compared side by side. A 30px/34px split there is a Step-1-to-Step-2 layout shift with
+   no design reason behind it; `tests/web/test_step_navigation.py`'s
+   `test_the_gap_above_the_first_panel_is_the_same_on_every_comparable_step` is what
+   catches it coming back. The bottom margin stays its own value - it clears the optional
+   "Clear optional selection" button this step alone can render below the list, which
+   `.stage-fieldset` has no equivalent of. */
+.choice-fieldset { min-width: 0; margin: 34px 0 18px; padding: 0; border: 0; }
 .simple-choice-list { display: grid; gap: 12px; }
 .simple-choice {
   min-height: 70px;
@@ -598,6 +608,12 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .simple-choice small { color: var(--muted); line-height: 1.45; }
 
 .amount-grid { display: grid; gap: 0 20px; }
+/* The two money fields are one grid item here, not two - see `amountStep()`'s own
+   docstring for why. Below `min-width: 650px` `.amount-grid` has no column
+   template at all, so this group and its own children just stack in source
+   order like every other `.form-field`; the split into two only happens
+   alongside `.amount-grid`'s own three-column rule, below. */
+.money-fields { min-width: 0; }
 
 /* The running kilogram total, under the amount row when a container is chosen.
 
@@ -650,7 +666,13 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .destination-row small { color: var(--muted); font-weight: 400; }
 .destination-row.invalid { background: rgba(255, 80, 50, 0.055); }
 .destination-row.invalid input { border-color: var(--error); box-shadow: 0 0 0 2px rgba(255, 80, 50, 0.1); }
-.amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 10px; }
+/* Item ⑥ pins the second column to a range rather than `auto`, because `auto` sizes to
+   the widest thing the item could ever show — every `<option>` in the unit `<select>`,
+   containers included, not only "kilograms" currently selected — and that intrinsic width
+   left the amount input, on `minmax(0, 1fr)`, squeezed to nothing. A bounded track lets the
+   select fill it (the site-wide `input, select { width: 100% }` rule, left alone) while the
+   amount input keeps the row's other half whatever the taxonomy's longest label is. */
+.amount-with-unit { display: grid; grid-template-columns: minmax(0, 1fr) minmax(120px, 45%); align-items: center; gap: 10px; }
 .amount-with-unit span { min-width: 76px; color: var(--muted); font-size: 0.9rem; }
 .review-destinations { margin: 10px 0 0; }
 .review-destinations div { padding: 10px 0; display: flex; justify-content: space-between; gap: 18px; border-top: 1px solid var(--border); }
@@ -730,6 +752,29 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .result-value { margin-bottom: 12px; font-size: clamp(1.45rem, 4vw, 2rem); line-height: 1.2; font-weight: 700; }
 .result-note { margin: 0; color: var(--muted); font-size: 0.9rem; line-height: 1.45; }
 
+/* §4.5's money block, rendered beside `.results-grid` inside the same "Impact summary"
+   section rather than as a section of its own - see `moneySummary` in `results.js` for
+   why. Every row is a figure the engine already summed from what the visitor typed
+   (§7.6.1); nothing here computes a width, a percentage or a total, which is also why
+   there is no bar and no fill to worry about when `wasted_share_percent` is over 100. */
+.money-summary { margin: 26px 0 0; padding-top: 22px; border-top: 1px solid var(--border); }
+.money-summary h3 { margin-bottom: 4px; font-size: 1.05rem; }
+.money-rows { display: grid; gap: 4px; margin-top: 12px; }
+.money-row { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 16px; padding-block: 9px; border-bottom: 1px solid var(--border); }
+.money-row:last-of-type { border-bottom: 0; }
+.money-label { color: var(--muted); }
+.money-value { font-weight: 700; white-space: nowrap; }
+/* The saving is the figure most likely to be screenshotted (§4.5's own ruling), so it
+   carries its own caveat directly beneath it rather than in a tooltip or a footnote that
+   a screenshot would crop away. */
+.money-saving { margin-top: 6px; padding-top: 14px; border-top: 1px dashed var(--border); }
+.money-saving .money-value { color: var(--green-dark); }
+.money-caveat { margin: 6px 0 0; color: var(--muted); font-size: 0.86rem; line-height: 1.45; }
+
+/* Item ⑦: a label, never a computation (§6.2's `time_frame`) - so it sits as plain text
+   near the top of the page rather than beside any figure it might read as scaling. */
+.results-period { margin: 14px 0 0; color: var(--muted); font-weight: 700; }
+
 .equivalent-grid { display: grid; gap: 14px; margin-top: 24px; }
 .equivalent-grid article { padding: 20px; border: 1px solid rgba(255, 215, 110, 0.72); border-radius: 13px; background: rgba(255, 215, 110, 0.2); }
 .equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 700; }
@@ -775,6 +820,26 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .bar-track { height: 14px; border: 1px solid rgba(0, 50, 35, 0.1); border-radius: 999px; background: rgba(223, 248, 237, 0.38); overflow: hidden; }
 .bar-track span { height: 100%; display: block; border-radius: inherit; background: var(--blueberry); }
 .table-scroll { overflow-x: auto; }
+
+/* The destination-first tree (`web/js/results.js`'s `destinationTree`): destination, then
+   the entries that share it, then each entry's own food category. Three levels have to
+   read as three levels at 320px, where the track is about 280px — so each step in is a
+   small FIXED amount (`padding-inline-start`, never `padding-left`: this mirrors from `dir`
+   alone), not a percentage that would eat the narrowest viewport first, and every label is
+   left to wrap onto a second line rather than widening its row or being clipped. */
+.destination-group + .destination-group { margin-top: 34px; padding-top: 30px; border-top: 1px solid var(--border); }
+.destination-group__header { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 16px; }
+.destination-group__name { margin: 0; font-size: 1.08rem; overflow-wrap: anywhere; }
+.destination-group__total { margin: 0; font-weight: 700; white-space: nowrap; }
+.destination-group__figures { margin-top: 8px; display: flex; flex-wrap: wrap; gap: 6px 18px; color: var(--muted); font-size: 0.9rem; }
+.destination-group__stages { margin: 18px 0 0; padding-inline-start: 16px; list-style: none; display: grid; gap: 16px; }
+.destination-group__stage { padding-inline-start: 14px; border-inline-start: 2px solid var(--border); }
+.destination-group__stage-row { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.destination-group__stage-row strong { overflow-wrap: anywhere; }
+.destination-group__stage-figures { margin-top: 6px; display: flex; flex-wrap: wrap; gap: 4px 16px; color: var(--muted); font-size: 0.86rem; }
+.destination-group__foods { margin: 8px 0 0; padding-inline-start: 16px; list-style: disc; display: grid; gap: 4px; }
+.destination-group__food { overflow-wrap: anywhere; }
+
 table { width: 100%; min-width: 760px; border-collapse: collapse; }
 caption { margin-bottom: 10px; text-align: start; font-weight: 700; }
 th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align: start; vertical-align: top; }
@@ -782,6 +847,20 @@ thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
 tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
 .result-actions .button-primary { margin-inline-start: auto; }
+.contribute-block {
+  margin: 28px 0 12px;
+  padding: 20px 24px;
+  border: 1px solid rgba(40, 200, 130, 0.4);
+  border-inline-start: 4px solid var(--green);
+  border-radius: 14px;
+  background: var(--mint);
+}
+.contribute-sentence { margin: 0 0 14px; color: var(--ink); }
+.contribute-control { display: flex; align-items: flex-start; gap: 10px; }
+.contribute-control input[type="checkbox"] { margin-block-start: 3px; width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--green-dark); }
+.contribute-control label { font-weight: 700; color: var(--green-dark); }
+.contribute-status { margin: 12px 0 0; color: var(--green-dark); font-weight: 700; }
+.contribute-block .field-error { margin: 12px 0 0; }
 .methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-inline-start: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }
 .methodology-compact h2 { margin-bottom: 8px; font-size: 1.25rem; }
 .methodology-compact > p { margin: 4px 0; color: var(--muted); }
@@ -794,8 +873,9 @@ tbody th { font-weight: 700; }
 .explore-improvements { text-align: center; }
 .explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
+.improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
 .improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(250px, 0.72fr) minmax(380px, 1.28fr); gap: 24px; align-items: start; }
-.improvement-pie-wrap { position: static; padding: 12px; border-radius: 14px; background: #fff; }
+.improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
 .improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
 .improvement-pie-centre, .improvement-pie-total { pointer-events: none; }
@@ -812,27 +892,33 @@ tbody th { font-weight: 700; }
 .improvement-chart-expanded { position: relative; width: min(860px, 92vw); max-height: 92vh; overflow: auto; padding: 34px 44px 28px; border-radius: 20px; background: #fff; box-shadow: 0 24px 70px rgba(0, 20, 14, 0.32); }
 .improvement-chart-expanded .improvement-pie-chart { width: min(720px, 100%); margin: 0 auto; }
 .improvement-chart-expanded .improvement-pie-key { max-width: 680px; margin: -18px auto 0; grid-template-columns: repeat(3, minmax(0, 1fr)); }
-.improvement-chart-close { position: absolute; z-index: 1; top: 14px; left: 14px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--green-dark); background: #fff; font-size: 1.8rem; line-height: 1; cursor: pointer; }
+.improvement-chart-close { position: absolute; z-index: 1; inset-block-start: 14px; inset-inline-start: 14px; width: 42px; height: 42px; display: grid; place-items: center; border: 1px solid var(--border); border-radius: 50%; color: var(--green-dark); background: #fff; font-size: 1.8rem; line-height: 1; cursor: pointer; }
 .improvement-chart-close:hover { background: rgba(0, 50, 35, 0.07); }
 .improvement-allocation-list { overflow: hidden; border-radius: 14px; background: #fff; }
-.improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(180px, 1fr) minmax(150px, 0.55fr); gap: 20px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
+.improvement-allocation-row { padding: 18px 20px; display: grid; grid-template-columns: minmax(150px, 0.8fr) minmax(230px, 1.2fr); gap: 20px; align-items: center; border-bottom: 1px solid rgba(0, 50, 35, 0.09); }
 .improvement-allocation-row:last-child { border-bottom: 0; }
-.improvement-allocation-row > div:first-child { display: grid; gap: 7px; }
+.improvement-allocation-row > div:first-child { display: grid; gap: 4px; }
 .improvement-allocation-row label { font-weight: 700; }
 .improvement-allocation-row span { color: var(--muted); }
-.improvement-destination-choice select { width: 100%; min-width: 0; }
-.improvement-control { display: grid; grid-template-columns: minmax(90px, 1fr) auto auto; gap: 9px; align-items: center; }
-.improvement-control input { min-width: 0; }
-.improvement-control .text-button { padding-inline-start: 8px; }
-.improvement-current-amount { grid-column: 1 / -1; margin-top: -9px; font-size: 0.85rem; }
-.improvement-allocation-row-empty { grid-template-columns: 1fr auto; }
-.improvement-add-destination { width: 100%; margin-top: 12px; }
-.improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; justify-content: space-between; gap: 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
+.improvement-control { display: grid; grid-template-columns: minmax(90px, 1fr) 108px; gap: 12px; align-items: center; }
+.improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }
+.percentage-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
+.percentage-input input { min-width: 0; }
+.improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
+.improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .comparison-results { background: #fff; }
 .comparison-estimate-note { padding: 14px 16px; border-radius: 10px; color: var(--kai-kale); background: rgba(255, 215, 110, 0.28); font-weight: 700; }
 .comparison-summary { margin: 24px 0; padding: 22px; border-radius: 14px; background: rgba(40, 200, 130, 0.12); }
+/* §4.5's saving, beside the comparison that produced it rather than in the money block
+   above - see `comparisonSaving` in `improvement.js`. It borrows `.money-row` and
+   `.money-caveat` from that block so the figure reads as the same kind of thing in both
+   places; what it does not borrow is `.money-summary`'s top rule, because here it sits
+   directly under `.comparison-summary` and a second horizontal line between the two
+   would read as a section break where there is none. */
+.comparison-saving { margin: -8px 0 24px; padding-inline: 22px; }
+.comparison-saving .money-saving { margin-top: 0; border-top: 0; }
 .comparison-summary ul { margin-bottom: 0; padding-inline-start: 22px; }
 .comparison-summary li { margin: 8px 0; }
 .impact-comparison-grid { display: grid; gap: 16px; }
@@ -882,7 +968,25 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 @media (min-width: 650px) {
   .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .amount-grid { grid-template-columns: 1.6fr 1fr; }
+  /* Three columns, not two-plus-a-wrapped-row: the production total is a third
+     field on this step, and letting it fall onto a row of its own is what
+     pushed a step that used to fit `1278x983` into a scrollbar - the layout a
+     step-3 field must not cause, per `amountStep()`'s own docstring. */
+  .amount-grid { grid-template-columns: 1fr 1fr 1fr; }
+  /* The pair spans the whole row rather than taking one of the three tracks
+     above and leaving the other two empty - a full-width row split evenly in
+     two, not a ragged one-of-three. */
+  .amount-grid .money-fields { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+}
+
+/* A secondary pair, set slightly closer together than the primary row above
+   it - `25px` is `.form-field`'s rhythm for a step's own required and
+   load-bearing questions; these two are optional statistics that lean on
+   each other, so `16px` reads as one paired unit rather than two more
+   fields competing for the same weight as `Waste amount` or `Unit`. */
+.money-fields .form-field { margin: 16px 0; }
+
+@media (min-width: 650px) {
   .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
   .impact-comparison-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
@@ -943,7 +1047,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .result-actions .button-primary { margin-inline-start: 0; }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
   .improvement-editor { grid-template-columns: 1fr; }
-  .improvement-pie-wrap { position: static; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
   .improvement-control { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }

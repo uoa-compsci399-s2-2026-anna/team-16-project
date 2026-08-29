@@ -179,10 +179,30 @@ include-package-data = false
 # build context, which shuts the same door a second time. A test asserts this
 # copy is byte-identical to web/'s so the public page and the exported document
 # cannot drift into different type.
+#
+# THE SAME REASONING, TWICE MORE, FOR THE SAME REASON.
+#
+# `assets/fonts/noto/*` are the thirteen script fallback faces. The brand
+# faces are 228-glyph Latin subsets and the interface ships in twenty
+# languages across eleven scripts, so without these an Arabic, Tamil or
+# Japanese export is a page of empty boxes. Licences and provenance ship
+# beside them (`*.txt`, `*.md`) because the SIL OFL requires the licence to
+# travel with the font - a wheel carrying the fonts and not the licence would
+# be a redistribution that breaks its own terms.
+#
+# `assets/locales/*.json` are the twenty catalogues, copied from
+# `web/locales/`. Same wall as the fonts: `web/` is not in this package and is
+# not in docker/api.Dockerfile's build context, so a renderer that read it
+# would work on a checkout and raise FileNotFoundError in the image. A test
+# hash-compares the two directories.
 api = [
     "templates/*.html.j2",
     "templates/*.css",
     "assets/fonts/*.woff2",
+    "assets/fonts/noto/*.woff2",
+    "assets/fonts/noto/*.txt",
+    "assets/fonts/noto/*.md",
+    "assets/locales/*.json",
 ]
 admin = [
     "templates/*.html",

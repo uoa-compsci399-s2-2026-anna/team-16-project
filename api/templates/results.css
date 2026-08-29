@@ -48,6 +48,38 @@
   font-style: normal;
 }
 
+/* THE SCRIPT FALLBACK FACES, AND WHY THERE ARE TWELVE OF THEM.
+ *
+ * Both brand faces are 228-glyph Latin subsets. The interface ships in twenty
+ * languages and those twenty span Arabic, Devanagari, Gurmukhi, Gujarati,
+ * Tamil, Malayalam, Thai, Japanese, Korean and two Chinese scripts, none of
+ * which either brand face carries a single glyph of. A character with no
+ * glyph anywhere is drawn as a box or dropped, and that is the same defect as
+ * the WinAnsi rasterisation this export replaces: fine for whoever generated
+ * it, corrupt for whoever reads it.
+ *
+ * They are NOT the `fonts-noto-core` apt package docker/api.Dockerfile
+ * installs. That is a safety net; these are what this stylesheet names, so a
+ * checkout, CI and the container all set the document in the same type. A
+ * render whose typography depends on the host is one nobody can reproduce.
+ *
+ * SIL Open Font License 1.1, whole text and provenance beside the files in
+ * api/assets/fonts/noto/. The four CJK faces are subsets - a whole one is
+ * 10.9 MiB and four of them 43.6 MiB - and PROVENANCE.md says what that gives
+ * up and what stops it being silent. */
+@font-face { font-family: 'Noto Sans';            src: url('KAICALC_FONT_SRC_NOTO_SANS') format('woff2'); }
+@font-face { font-family: 'Noto Sans Arabic';     src: url('KAICALC_FONT_SRC_NOTO_ARABIC') format('woff2'); }
+@font-face { font-family: 'Noto Sans Devanagari'; src: url('KAICALC_FONT_SRC_NOTO_DEVANAGARI') format('woff2'); }
+@font-face { font-family: 'Noto Sans Gurmukhi';   src: url('KAICALC_FONT_SRC_NOTO_GURMUKHI') format('woff2'); }
+@font-face { font-family: 'Noto Sans Gujarati';   src: url('KAICALC_FONT_SRC_NOTO_GUJARATI') format('woff2'); }
+@font-face { font-family: 'Noto Sans Tamil';      src: url('KAICALC_FONT_SRC_NOTO_TAMIL') format('woff2'); }
+@font-face { font-family: 'Noto Sans Malayalam';  src: url('KAICALC_FONT_SRC_NOTO_MALAYALAM') format('woff2'); }
+@font-face { font-family: 'Noto Sans Thai';       src: url('KAICALC_FONT_SRC_NOTO_THAI') format('woff2'); }
+@font-face { font-family: 'Noto Sans CJK JP';     src: url('KAICALC_FONT_SRC_NOTO_CJK_JP') format('woff2'); }
+@font-face { font-family: 'Noto Sans CJK KR';     src: url('KAICALC_FONT_SRC_NOTO_CJK_KR') format('woff2'); }
+@font-face { font-family: 'Noto Sans CJK SC';     src: url('KAICALC_FONT_SRC_NOTO_CJK_SC') format('woff2'); }
+@font-face { font-family: 'Noto Sans CJK TC';     src: url('KAICALC_FONT_SRC_NOTO_CJK_TC') format('woff2'); }
+
 /* ------------------------------------------------------------------- page */
 @page {
   size: A4;
@@ -65,7 +97,12 @@
    * appears, and the reason a reader who turns to page three still sees it. */
   @top-center {
     content: string(mockflag);
-    font-family: 'Kumbh Sans', 'DejaVu Sans', Helvetica, sans-serif;
+    font-family:
+      'Kumbh Sans', 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari',
+      'Noto Sans Gurmukhi', 'Noto Sans Gujarati', 'Noto Sans Tamil',
+      'Noto Sans Malayalam', 'Noto Sans Thai', 'Noto Sans CJK SC',
+      'Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
+      'DejaVu Sans', Helvetica, sans-serif;
     font-size: 8pt;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -75,7 +112,12 @@
 
   @bottom-center {
     content: counter(page) ' / ' counter(pages);
-    font-family: 'Kumbh Sans', 'DejaVu Sans', Helvetica, sans-serif;
+    font-family:
+      'Kumbh Sans', 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari',
+      'Noto Sans Gurmukhi', 'Noto Sans Gujarati', 'Noto Sans Tamil',
+      'Noto Sans Malayalam', 'Noto Sans Thai', 'Noto Sans CJK SC',
+      'Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
+      'DejaVu Sans', Helvetica, sans-serif;
     font-size: 8pt;
     color: #003223;
     padding-block-start: 4mm;
@@ -91,10 +133,63 @@
   --pea: #28C882;
   --banana: #FFD76E;
   --rule: #C8D2CE;
+
+  /* THE FALLBACK CHAIN, IN ONE PLACE. Every rule below that names a face
+   * names a brand face and then this, so there is exactly one list to keep in
+   * script order and no rule that quietly has a shorter one.
+   *
+   * `Noto Sans` comes first because it carries Latin, Cyrillic, Greek and
+   * Vietnamese: Latin text in a Chinese document must reach it rather than the
+   * Latin inside a CJK face, which is a different design at a different
+   * width. The script faces follow; `DejaVu Sans` and `Helvetica` stay at the
+   * end as the host's own last resort, but nothing in the twenty languages
+   * needs to get that far - `api/pdf_render.py` refuses to render a character
+   * no embedded face can draw, so a box never reaches the paper. */
+  --script:
+    'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari', 'Noto Sans Gurmukhi',
+    'Noto Sans Gujarati', 'Noto Sans Tamil', 'Noto Sans Malayalam', 'Noto Sans Thai',
+    'Noto Sans CJK SC', 'Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
+    'DejaVu Sans', Helvetica, sans-serif;
+}
+
+/* FIVE LANGUAGES NEED THE ORDER CHANGED, AND ORDER IS THE WHOLE MECHANISM.
+ *
+ * The four CJK subsets share most of their ideographs, and whichever is named
+ * first wins - Traditional Chinese set in Simplified glyphs is legible and
+ * wrong, in a way a reader of it notices immediately and a reader of neither
+ * never will.
+ *
+ * URDU IS DELIBERATELY NOT ONE OF THESE. Noto Nastaliq Urdu was vendored,
+ * tried and removed: nastaliq shapes a line into long cascading ligatures, one
+ * PDF glyph standing for several characters, and the text a reader SELECTS out
+ * of the result comes back mangled - `تصدیق` extracted as `تصدیت`. That is
+ * defect two's second half returning in a subtler form, since the whole point
+ * of leaving the rasterised export behind was text that can be selected,
+ * searched and read aloud. Urdu is therefore set in Noto Sans Arabic, which
+ * covers every character of it, extracts cleanly, and is naskh rather than the
+ * nastaliq an Urdu reader would expect. A real typographic compromise, made
+ * with the reason written down.
+ *
+ * `lang` on <html> is an exact catalogue code (api/pdf_render.py resolves the
+ * requested tag to one of the twenty-one before it is written out), so these
+ * are exact attribute matches rather than `|=` prefix matches - `[lang|="zh"]`
+ * would match `zh-Hant` as well and put Simplified first in a Traditional
+ * document, which is precisely the mistake being avoided. */
+html[lang="ja"] {
+  --script: 'Noto Sans', 'Noto Sans CJK JP', 'DejaVu Sans', Helvetica, sans-serif;
+}
+html[lang="ko"] {
+  --script: 'Noto Sans', 'Noto Sans CJK KR', 'DejaVu Sans', Helvetica, sans-serif;
+}
+html[lang="zh"] {
+  --script: 'Noto Sans', 'Noto Sans CJK SC', 'DejaVu Sans', Helvetica, sans-serif;
+}
+html[lang="zh-Hant"] {
+  --script: 'Noto Sans', 'Noto Sans CJK TC', 'DejaVu Sans', Helvetica, sans-serif;
 }
 
 html {
-  font-family: 'Kumbh Sans', 'DejaVu Sans', Helvetica, sans-serif;
+  font-family: 'Kumbh Sans', var(--script);
   font-size: 10pt;
   line-height: 1.45;
   color: var(--kale);
@@ -121,7 +216,7 @@ body {
 }
 
 h1, h2, h3, th {
-  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-family: 'Geologica', var(--script);
   font-weight: 700;
 }
 
@@ -182,7 +277,7 @@ p { margin: 0 0 2mm 0; }
   /* The short form, repeated in the @top-center margin box of every page. */
   string-set: mockflag content(text);
   display: block;
-  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-family: 'Geologica', var(--script);
   font-size: 9pt;
   letter-spacing: 0.08em;
   text-transform: uppercase;
@@ -215,7 +310,7 @@ p { margin: 0 0 2mm 0; }
 
 .summary__value {
   display: block;
-  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-family: 'Geologica', var(--script);
   font-size: 11pt;
 }
 
@@ -266,7 +361,7 @@ tr.net td { border-block-end: 1pt solid var(--kale); }
 .entry { break-inside: avoid; margin-block-end: 5mm; }
 
 .entry__heading {
-  font-family: 'Geologica', 'DejaVu Sans', Helvetica, sans-serif;
+  font-family: 'Geologica', var(--script);
   font-size: 10.5pt;
   margin: 0 0 1.5mm 0;
   padding-inline-start: 2.5mm;

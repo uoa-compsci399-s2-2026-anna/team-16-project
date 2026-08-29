@@ -110,3 +110,79 @@ def overflowing_boxes(document: object) -> list[str]:
                     f"{start:.1f}..{start + width:.1f} on a {limit:.1f} page"
                 )
     return problems
+
+
+def document_language(pdf: bytes) -> str | None:
+    """The language the PDF *declares*, out of its document catalogue.
+
+    **Read structurally rather than as `b"/Lang" in pdf`.** WeasyPrint
+    compresses its object streams, so the byte sequence is not in the file even
+    when the entry is there - and a byte search would in any case pass on a
+    `/Lang` that appeared anywhere for any reason, without saying what it was
+    set to. This returns the value, so a test can assert the document declares
+    the language it was actually written in.
+
+    It is what a screen reader, a search index and a hyphenation dictionary
+    all read, and it is the half of "twelve locales were opaque to a screen
+    reader" that a text-extraction test cannot see.
+    """
+    from pypdf import PdfReader
+
+    value = PdfReader(BytesIO(pdf)).root_object.get("/Lang")
+    return None if value is None else str(value)
+
+
+def _class_of(box: object) -> str | None:
+    element = getattr(box, "element", None)
+    return None if element is None else element.get("class")
+
+
+def laid_out_lines(document: object, class_name: str) -> dict:
+    """Where the layout engine actually put the lines of one element.
+
+    **This is the assertion that catches a right-to-left document that only
+    looks right-to-left.** Extracted text cannot: a PDF stores glyphs in
+    drawing order, so Arabic comes back reordered whichever base direction was
+    used, and "the text is there" is true of the broken rendering as well. The
+    box tree is where the truth is - a paragraph's last line is short, and
+    which end of the measure that short line sits at *is* the base direction.
+
+    Returns the element's content box and the position and width of each line
+    inside it, all in CSS pixels.
+    """
+    for page in document.pages:
+        for box in page._page_box.descendants():
+            if _class_of(box) != class_name:
+                continue
+            lines = [
+                (child.position_x, child.width)
+                for child in getattr(box, "children", ())
+                if type(child).__name__ == "LineBox"
+            ]
+            if not lines:
+                continue
+            return {
+                "content_x": box.content_box_x(),
+                "content_width": box.width,
+                "lines": lines,
+            }
+    raise AssertionError(f"no laid-out element with class {class_name!r}")
+
+
+def border_widths(document: object, class_name: str) -> tuple[float, float]:
+    """`(left, right)` border widths of the first element with that class.
+
+    `results.css` writes `border-inline-start`, never `border-left`. In a
+    left-to-right document that resolves to the left edge and in a
+    right-to-left one to the right, so this pair is the accent bar's answer to
+    "did the document mirror?" - the specific thing PR #46 got wrong when every
+    bar, indent and footer stayed physically left under Arabic.
+    """
+    for page in document.pages:
+        for box in page._page_box.descendants():
+            if _class_of(box) == class_name:
+                return (
+                    float(box.style["border_left_width"]),
+                    float(box.style["border_right_width"]),
+                )
+    raise AssertionError(f"no laid-out element with class {class_name!r}")

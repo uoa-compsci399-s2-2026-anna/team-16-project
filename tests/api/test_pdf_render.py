@@ -56,9 +56,19 @@ from engine.types import (
     EntryResult,
     EquivalenceResult,
     MetricResult,
+    MoneyResult,
     ScenarioResult,
 )
-from tests.support.pdf import extract_text, overflowing_boxes, requires_weasyprint
+from api import i18n
+from api.pdf_render import DOCUMENT_STRINGS, MOCK_WARNING_BODY, UndrawableCharacterError
+from tests.support.pdf import (
+    border_widths,
+    document_language,
+    extract_text,
+    laid_out_lines,
+    overflowing_boxes,
+    requires_weasyprint,
+)
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -121,6 +131,22 @@ def _scenario(total_kg: str, metrics: dict[str, MetricResult], labels=()) -> Sce
     )
 
 
+def _money() -> MoneyResult:
+    """A filled-in §4.5 money block.
+
+    The default fixture used to leave `money=None`, which meant the document's
+    whole money section - and its four translated labels - were never rendered
+    by any test. A locale that had lost one of those four keys would have gone
+    to production green.
+    """
+    return MoneyResult(
+        total_value_nzd=Decimal("18000.00"),
+        wasted_value_nzd=Decimal("3600.00"),
+        wasted_share_percent=Decimal("20.00"),
+        saving_nzd=Decimal("2400.00"),
+    )
+
+
 def _result(
     *,
     co2e: str = "4449.0",
@@ -152,7 +178,7 @@ def _result(
             current=current,
             alternative=alternative,
             net_benefit={"co2e": Decimal("3249.0")},
-            money=None,
+            money=_money(),
         ),
         entries=tuple(entry for _ in range(entry_count)),
     )
@@ -195,7 +221,13 @@ def test_the_mock_warning_is_in_the_pdf_text():
     """
     text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
     assert "placeholder" in text.lower()
-    assert "mock emissions factors" in text.lower()
+    # The wording moved to the catalogue's own, which is what makes the warning
+    # translatable at all - `web/js/results.js` renders these same two strings
+    # into the on-screen banner, so the paper and the page now say the same
+    # thing in the same words. The assertion is not weakened by the move: it
+    # was "mock emissions factors", it is now the whole catalogue sentence, and
+    # `test_the_mock_warning_survives_in_every_locale` checks all twenty-one.
+    assert "verified calculation factors have not yet been supplied" in text.lower()
 
 
 @requires_weasyprint
@@ -678,3 +710,517 @@ def test_a_metric_is_a_row_and_not_a_call_site():
         if isinstance(node, ast.Constant) and isinstance(node.value, str)
     }
     assert compared.isdisjoint({"co2e", "cost_nzd", "water_l", "prevention"})
+
+
+# --------------------------------------------------------------------------
+# Task 4: twenty languages, and the two that mirror.
+# --------------------------------------------------------------------------
+#
+# WHAT THE HAND-ROLLED EXPORT DID, so that what is asserted below is measured
+# against it rather than against "looks fine":
+#
+#   * Right-to-left was not handled at all. `context.direction` and
+#     `textAlign` were never set, so every accent bar, indent and footer
+#     stayed physically left under Arabic and the bidi algorithm put the colon
+#     on the wrong side of each label. The worst instance printed the
+#     mock-data sentence's FULL STOP AT THE START OF THE LINE.
+#   * Twelve of the twenty locales were unselectable, unsearchable and opaque
+#     to a screen reader, because one character outside WinAnsi flipped the
+#     whole document to a rasterised image.
+#
+# Neither is caught by "the PDF is not empty", and neither is caught by "there
+# is text in it". The tests below therefore assert on three different kinds of
+# evidence, and each says what it would miss on its own:
+#
+#   * the EXTRACTED TEXT - proves glyphs were drawn as text rather than as a
+#     picture, and proves *which* words. Blind to where they are on the page.
+#   * the DOCUMENT CATALOGUE's `/Lang` - what a screen reader and a search
+#     index read. Blind to what was actually drawn.
+#   * the LAID-OUT BOX TREE - the only thing that can tell a mirrored document
+#     from one that merely contains Arabic, because a PDF stores glyphs in
+#     drawing order and extraction reorders them either way.
+
+#: Twenty catalogues plus English, whose catalogue is the source strings. Read
+#: from the loader rather than listed, so a twenty-first language is covered by
+#: every test here on the day its file lands.
+ALL_LOCALES = i18n.languages()
+
+
+def _normalise(text: str) -> str:
+    """Extracted text, reduced to what can honestly be compared.
+
+    Three things are removed, and each one is a real property of PDF text
+    extraction rather than a convenience:
+
+    * **Whitespace**, because where a line ends is the layout engine's
+      decision, and because a mark composed onto a base letter can come back
+      with a space beside it (Vietnamese `so` with its two marks extracts with
+      the marks spaced away from the letter).
+    * **Hyphens**, because `hyphens: auto` plus `<html lang>` means Pyphen now
+      breaks German and French headings, and the soft hyphen is in the text.
+    * **Case**, because `text-transform: uppercase` on the placeholder flag is
+      applied by the renderer, so the drawn text is `PLATZHALTERDATEN` and the
+      catalogue says `Platzhalterdaten`.
+
+    NFC first, so a letter composed from base plus combining mark compares
+    equal to its precomposed form. What is deliberately NOT done is any
+    reordering: an assertion that reversed right-to-left text until it matched
+    would be a test that passes for the wrong reason, and that is exactly the
+    failure this project keeps producing.
+    """
+    text = unicodedata.normalize("NFC", text)
+    for stripped in ("­", "‐", "-"):
+        text = text.replace(stripped, "")
+    return re.sub(r"\s+", "", text).casefold()
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_every_locale_renders_as_extractable_text(locale):
+    """**Defect two's second half, per language.**
+
+    Twelve of twenty locales came back as a picture. A picture yields no text,
+    so this asserts text comes back - and then asserts *which* text, because
+    "some text" is also what a document rendered entirely in English would
+    give.
+
+    Four things, and each kills a different failure:
+
+    * text comes back at all -> not rasterised;
+    * `/Lang` is this document's language -> a screen reader and a search
+      index are told what they are reading;
+    * the placeholder flag is present IN THIS LANGUAGE -> the catalogue was
+      actually used, and section 2.2's warning reached the page rather than
+      only the HTML;
+    * the staff-typed destination name is present verbatim -> section 2.1's
+      database rows are not translated, in any locale.
+
+    **What it misses:** where any of it sits on the page. A document rendered
+    left-to-right would pass every line of this, which is why
+    `test_a_right_to_left_document_is_actually_mirrored` exists and reads the
+    box tree instead.
+    """
+    pdf = render_results_pdf(_result(), _taxonomy(), locale)
+    text = extract_text(pdf)
+    assert text.strip(), f"{locale}: no extractable text - the page was rasterised"
+
+    assert document_language(pdf) == locale, (
+        f"{locale}: the document declares {document_language(pdf)!r}"
+    )
+
+    flag = i18n.catalogue(locale).gettext(MOCK_WARNING_FLAG)
+    assert _normalise(flag) in _normalise(text), (
+        f"{locale}: the placeholder warning is not on the page in this language"
+    )
+
+    assert "Landfill" in text, (
+        f"{locale}: a staff-typed destination name was lost or translated"
+    )
+
+
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_no_locale_falls_back_to_english(locale):
+    """**Every string the document can print, in this language, in the HTML.**
+
+    Asserted on the rendered HTML rather than on extracted text, and
+    deliberately: extraction returns a PDF's glyphs in drawing order, so a
+    right-to-left or a reordering script comes back with its clauses shuffled
+    and a whole-sentence comparison against it would fail for Arabic, Tamil and
+    Thai on grounds that have nothing to do with translation. The HTML is what
+    the catalogue produced, exactly.
+
+    **What it misses:** whether any of it was drawn. A stylesheet that hid an
+    element would leave this green, which is what
+    `test_every_locale_renders_as_extractable_text` and
+    `test_the_mock_warning_is_in_the_pdf_text` cover from the other side.
+    """
+    from markupsafe import escape
+
+    html = render_html(_result(), _taxonomy(), locale)
+    catalogue = i18n.catalogue(locale)
+
+    for source in DOCUMENT_STRINGS:
+        translated = catalogue.gettext(source)
+        assert str(escape(translated)) in html, (
+            f"{locale}: {source!r} did not reach the document"
+        )
+        if locale != "en" and translated != source:
+            assert str(escape(source)) not in html, (
+                f"{locale}: the English source of {source!r} is in the document"
+            )
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", [code for code in ALL_LOCALES if code != "en"])
+def test_no_locale_prints_the_english_title(locale):
+    """The same rule as above, read back off the PAPER rather than the HTML.
+
+    One string, because one string is all that survives this comparison for
+    every script - but it is the string a reader sees first, and a document
+    that silently rendered in English would be caught by it in any language.
+    """
+    title = "Food Waste Impact Calculator — Results"
+    text = _normalise(extract_text(render_results_pdf(_result(), _taxonomy(), locale)))
+    english = _normalise(title)
+    if _normalise(i18n.catalogue(locale).gettext(title)) != english:
+        assert english not in text, f"{locale} rendered the English title"
+
+
+@pytest.mark.parametrize("locale", [code for code in ALL_LOCALES if code != "en"])
+def test_every_document_string_is_in_every_catalogue(locale):
+    """**The check that keeps the strict lookup from ever firing in earnest.**
+
+    `Catalogue.gettext` raises rather than falling back to English, which is
+    right for a document read months later by somebody who cannot ask - but a
+    renderer that raises in production is only an improvement on a renderer
+    that lies if something catches the mismatch first. This is that something,
+    and it runs without rendering anything, so it is green or red on every
+    desk including the ones with no Pango.
+
+    **What it misses:** a translation that is present but wrong, or present but
+    still in English. `tests/web/test_i18n_web.py` owns both of those for the
+    whole catalogue; this is about the twenty-one strings the export uses.
+    """
+    catalogue = i18n.catalogue(locale)
+    missing = [key for key in DOCUMENT_STRINGS if key not in catalogue.strings]
+    assert not missing, f"{locale} has no translation for: {missing}"
+
+
+def test_a_missing_key_is_refused_rather_than_rendered_in_english(monkeypatch):
+    """**The mutation, automated.**
+
+    A catalogue with one key removed. The front end's rule - render the English
+    source - is right for a page and wrong for this: a Tamil report with an
+    English heading in the middle looks like a corrupted file, and one rendered
+    *entirely* in English would be indistinguishable from one that had been
+    asked for in English. So the render fails.
+    """
+    catalogue = i18n.catalogue("ta")
+    without = dict(catalogue.strings)
+    del without[MOCK_WARNING_BODY]
+    monkeypatch.setitem(
+        i18n._CATALOGUES,
+        "ta",
+        i18n.Catalogue("ta", without, catalogue.direction, catalogue.tags),
+    )
+    with pytest.raises(i18n.MissingTranslationError):
+        render_html(_result(), _taxonomy(), "ta")
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_the_mock_warning_survives_in_every_locale(locale):
+    """Section 2.2 in twenty-one languages, which is the only version of
+    "non-dismissible" that means anything to a reader of one of the other
+    twenty. O-1 means every figure this document can carry is placeholder data.
+
+    The flag is checked on the paper; the body is guaranteed by the render
+    having succeeded at all, because `_assert_mock_warning_present` compares
+    BOTH translated literals against the rendered HTML and raises before
+    WeasyPrint is called.
+    """
+    pdf = render_results_pdf(_result(), _taxonomy(), locale)
+    flag = i18n.catalogue(locale).gettext(MOCK_WARNING_FLAG)
+    assert _normalise(flag) in _normalise(extract_text(pdf))
+
+
+# --------------------------------------------------------------------------
+# The two that mirror.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+@pytest.mark.parametrize("locale", ["ar", "ur"])
+def test_a_right_to_left_document_is_actually_mirrored(locale):
+    """**Defect two, at the only place it can honestly be measured.**
+
+    PR #46 rendered Arabic left-to-right and printed the mock-data sentence's
+    full stop at the START of the line. Extracted text cannot catch that: a PDF
+    stores glyphs in drawing order, so Arabic comes back reordered whichever
+    base direction was used, and every text-level assertion passes on the
+    broken rendering too.
+
+    So this reads the laid-out box tree. A paragraph's LAST line is short, and
+    which end of the measure that short line sits at is precisely the base
+    direction - in a right-to-left document it hugs the right edge, and the
+    sentence therefore *ends*, with its terminal punctuation, at the left. That
+    is the visible failure, stated as a measurement.
+
+    The accent bar is checked with it, because "every accent bar, indent and
+    the footer stayed physically left" was the rest of the same finding:
+    `results.css` writes `border-inline-start` and never `border-left`, so
+    under `dir="rtl"` the bar has to resolve to the right edge.
+
+    **What it misses:** nothing about the words. A document with the right
+    geometry and the wrong language passes this, which is what the extraction
+    tests above are for.
+
+    **Mutation:** hardcode `dir="ltr"` in `results.html.j2` and both assertions
+    fail - the last line moves to the left edge and the border moves with it.
+    """
+    document = pdf_render.render_document(_result(), _taxonomy(), locale)
+    body = laid_out_lines(document, "mock-warning__body")
+
+    assert len(body["lines"]) > 1, "single-line paragraph - this proves nothing"
+    start, width = body["lines"][-1]
+    assert width < body["content_width"] - 20, (
+        "the last line fills the measure - a full line sits at both edges and "
+        "this test would prove nothing"
+    )
+
+    measure_end = body["content_x"] + body["content_width"]
+    assert abs((start + width) - measure_end) < 1.0, (
+        f"{locale}: the last line ends at {start + width:.1f} on a measure "
+        f"ending at {measure_end:.1f} - it is not right-aligned, so the "
+        "sentence's terminal punctuation is at the wrong end of the line"
+    )
+    assert start > body["content_x"] + 20, (
+        f"{locale}: the last line still starts at the left margin"
+    )
+
+    left, right = border_widths(document, "mock-warning")
+    assert right > 0 and left == 0, (
+        f"{locale}: the accent bar did not move to the right edge "
+        f"(left={left}, right={right}) - border-inline-start did not mirror"
+    )
+
+
+@requires_weasyprint
+def test_a_left_to_right_document_is_not_mirrored():
+    """The other half, and the reason the test above is not vacuous: the same
+    two measurements on English have to come out the other way round. Without
+    this, a renderer that right-aligned everything in every language would pass
+    the right-to-left test."""
+    document = pdf_render.render_document(_result(), _taxonomy(), "en")
+    body = laid_out_lines(document, "mock-warning__body")
+
+    assert len(body["lines"]) > 1
+    start, width = body["lines"][-1]
+    assert width < body["content_width"] - 20
+    assert abs(start - body["content_x"]) < 1.0, "the last line is not left-aligned"
+
+    left, right = border_widths(document, "mock-warning")
+    assert left > 0 and right == 0
+
+
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_the_document_direction_follows_the_catalogue(locale):
+    """`dir` is read off the catalogue's own declaration, not guessed from the
+    language subtag. Arabic and Urdu are the two right-to-left catalogues the
+    calculator ships; everything else runs the other way, and a document that
+    mirrored a language nobody had marked would be a layout defect introduced
+    by a table rather than by a translator."""
+    expected = "rtl" if locale in ("ar", "ur") else "ltr"
+    assert build_context(_result(), _taxonomy(), locale)["dir"] == expected
+
+
+@pytest.mark.parametrize(
+    "requested, language",
+    [
+        ("ar", "ar"),
+        ("ar-EG", "ar"),
+        ("zh-TW", "zh-Hant"),
+        ("zh-HK", "zh-Hant"),
+        ("zh-CN", "zh"),
+        ("zh-Hans", "zh"),
+        ("en-NZ", "en"),
+        ("fil", "tl"),
+        ("he", "en"),
+        ("qq", "en"),
+        ("", "en"),
+    ],
+)
+def test_the_document_declares_the_language_it_is_written_in(requested, language):
+    """`zh-TW` must not truncate into Simplified Chinese, and a tag nobody
+    claims must not leave the document claiming to be in a language it is not
+    written in.
+
+    `he` is the case worth reading twice: there is no Hebrew catalogue, so the
+    document is English - and it says `lang="en"`, `dir="ltr"`. Declaring
+    `lang="he"` would tell a screen reader to pronounce English as Hebrew and
+    would mirror the page around text that runs the other way.
+    """
+    context = build_context(_result(), _taxonomy(), requested)
+    assert context["lang"] == language
+    assert 'lang="%s"' % language in render_html(_result(), _taxonomy(), requested)
+
+
+# --------------------------------------------------------------------------
+# Font coverage: a box is a defect.
+# --------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("locale", ALL_LOCALES)
+def test_every_character_the_document_can_print_has_a_glyph(locale):
+    """**The fonts actually cover the scripts in use, checked per language.**
+
+    The brand faces are 228-glyph Latin subsets and the twenty languages span
+    eleven scripts. A character with no glyph in any embedded face is drawn as
+    an empty box or dropped, which is the same class of defect as the WinAnsi
+    rasterisation this export replaces - it looks fine to whoever generated it.
+
+    Read out of the font files' own character maps, not out of a table beside
+    them: a table is a second thing to keep in step, and the day it drifts is
+    the day this passes for the wrong reason.
+
+    **What it misses:** which face a character is drawn in - Traditional
+    Chinese set in Simplified glyphs would pass. That is what the per-language
+    ordering in `results.css` is for, and what
+    `test_the_script_faces_are_embedded_in_the_pdf` checks from the file.
+    """
+    catalogue = i18n.catalogue(locale)
+    text = "".join(catalogue.gettext(key) for key in DOCUMENT_STRINGS)
+    undrawable = sorted({c for c in text if not pdf_render._is_drawable(c)})
+    assert not undrawable, (
+        f"{locale} would print these as empty boxes: "
+        f"{[hex(ord(c)) for c in undrawable]}"
+    )
+
+
+def test_no_character_in_any_catalogue_would_print_as_a_box():
+    """**The widest form of the coverage question, and it comes out clean.**
+
+    Not the twenty-one strings the document prints today - every string in
+    every catalogue, 340 of them times twenty languages, 1,861 distinct
+    characters across eleven scripts. All of them have a glyph in some embedded
+    face.
+
+    That is a stronger claim than the document needs, and it is asserted at the
+    wider scope on purpose: the export's copy is assembled from catalogue keys,
+    so the set it draws from is the set below. A key swapped for another one
+    tomorrow cannot introduce a box.
+
+    **What it misses:** a staff-typed taxonomy name, which is not in any
+    catalogue and can contain anything. That is what
+    `test_a_character_no_face_can_draw_is_refused_and_not_drawn_as_a_box`
+    covers, and why the renderer raises rather than drawing one.
+    """
+    everything = set()
+    for locale in ALL_LOCALES:
+        for value in i18n.catalogue(locale).strings.values():
+            everything.update(value)
+    assert len(everything) > 1500, f"only {len(everything)} characters - fixture broken"
+    undrawable = sorted({c for c in everything if not pdf_render._is_drawable(c)})
+    assert not undrawable, [hex(ord(c)) for c in undrawable]
+
+
+@requires_weasyprint
+def test_a_character_no_face_can_draw_is_refused_and_not_drawn_as_a_box():
+    """**What stops the CJK subsets being a silent gap.**
+
+    The four CJK faces are cut to the characters the catalogues contain,
+    because whole ones are 10.9 MiB each and there are four
+    (`api/assets/fonts/noto/PROVENANCE.md` has the measurement). A staff-typed
+    taxonomy name in Chinese could therefore contain a character no embedded
+    face has - and WeasyPrint would draw an empty box and say nothing, which is
+    the defect this whole task exists to stop.
+
+    It raises instead, naming the character. A loud failure, not tofu.
+    """
+    rare = "鱻"  # a Han character outside every embedded subset
+    assert not pdf_render._is_drawable(rare), (
+        "this character is now covered - pick another, or delete this test"
+    )
+    with pytest.raises(UndrawableCharacterError) as raised:
+        render_results_pdf(_result(), _taxonomy(destination_name=rare), "zh")
+    assert "U+9C7B" in str(raised.value)
+
+
+@requires_weasyprint
+@pytest.mark.parametrize(
+    "locale, face",
+    [
+        ("ar", "Noto-Sans-Arabic"),
+        ("ur", "Noto-Sans-Arabic"),
+        ("ja", "Noto-Sans-CJK-JP"),
+        ("ko", "Noto-Sans-CJK-KR"),
+        ("zh", "Noto-Sans-CJK-SC"),
+        ("zh-Hant", "Noto-Sans-CJK-TC"),
+        ("ta", "Noto-Sans-Tamil"),
+        ("th", "Noto-Sans-Thai"),
+        ("hi", "Noto-Sans-Devanagari"),
+        ("pa", "Noto-Sans-Gurmukhi"),
+        ("gu", "Noto-Sans-Gujarati"),
+        ("ml", "Noto-Sans-Malayalam"),
+    ],
+)
+def test_the_script_faces_are_embedded_in_the_pdf(locale, face):
+    """**Read back out of the file, because a failed fetch is silent.**
+
+    WeasyPrint catches whatever a URL fetcher raises and merely logs "Failed to
+    load", so a face that did not load produces a good-looking document set in
+    whatever the host had lying around - and on a machine with
+    `fonts-noto-core` installed that is a *different copy of the same family*,
+    which no other assertion here could tell apart. The font names in the PDF's
+    own resource dictionary can.
+
+    Traditional Chinese is in the list beside Simplified for the reason the
+    per-language ordering in `results.css` exists: the four CJK faces overlap,
+    and a single stack would set one of the two in the other's glyphs.
+    """
+    from io import BytesIO
+
+    from pypdf import PdfReader
+
+    pdf = render_results_pdf(_result(), _taxonomy(), locale)
+    names = set()
+    for page in PdfReader(BytesIO(pdf)).pages:
+        fonts = page.get("/Resources", {}).get("/Font", {})
+        for key in fonts:
+            names.add(str(fonts[key].get_object().get("/BaseFont", "")))
+    joined = " ".join(sorted(names))
+    assert face in joined, f"{locale} is not set in {face}: {sorted(names)}"
+
+
+def test_the_embedded_catalogues_match_the_public_ones():
+    """`api/assets/locales/` is a copy of `web/locales/` and has to be -
+    package-data cannot cross a package boundary and `web/` is not in the API
+    image's build context. What it must not be is a DIFFERENT copy: a visitor
+    who reads a label on the screen and then downloads the PDF must not meet
+    two translations of it."""
+    served = sorted((ROOT / "web" / "locales").glob("*.json"))
+    embedded = sorted((ROOT / "api" / "assets" / "locales").glob("*.json"))
+    assert [p.name for p in served] == [p.name for p in embedded]
+    for one, other in zip(served, embedded):
+        assert (
+            hashlib.sha256(one.read_bytes()).hexdigest()
+            == hashlib.sha256(other.read_bytes()).hexdigest()
+        ), one.name
+
+
+def test_the_fallback_faces_ship_with_their_licence():
+    """The SIL OFL requires the licence to travel with the font. A wheel that
+    carried the faces and not the licence would be a redistribution breaking
+    its own terms, and `pyproject.toml` lists the `.txt` and `.md` patterns for
+    exactly this reason."""
+    directory = ROOT / "api" / "assets" / "fonts" / "noto"
+    faces = sorted(directory.glob("*.woff2"))
+    assert len(faces) == 12, [p.name for p in faces]
+    licences = sorted(directory.glob("LICENCE-*.txt"))
+    assert licences, "no licence beside the fonts"
+    for licence in licences:
+        # Case-insensitive: Debian's two copyright files state the same grant
+        # in two different casings ("SIL OPEN FONT LICENSE Version 1.1" as a
+        # heading, "the SIL Open Font License, Version 1.1" as a sentence), and
+        # which one a package uses is not a property worth asserting.
+        text = licence.read_text(encoding="utf-8", errors="replace").lower()
+        assert "sil open font license" in text, licence.name
+        assert "1.1" in text, licence.name
+    assert (directory / "PROVENANCE.md").is_file()
+
+
+def test_the_stylesheet_names_every_embedded_face():
+    """A face on disk that no rule names is dead weight in the wheel; a face
+    named by a rule and missing from disk is a render that silently falls back.
+    Both are caught by comparing the two lists."""
+    source = pdf_render._STYLESHEET.read_text(encoding="utf-8")
+    for placeholder, filename in pdf_render._FONT_PLACEHOLDERS.items():
+        assert placeholder in source, placeholder
+        assert (pdf_render._FONT_DIR / filename).is_file(), filename
+    on_disk = {p.name for p in (pdf_render._FONT_DIR / "noto").glob("*.woff2")}
+    declared = {
+        Path(name).name
+        for name in pdf_render._FONT_PLACEHOLDERS.values()
+        if name.startswith("noto/")
+    }
+    assert on_disk == declared

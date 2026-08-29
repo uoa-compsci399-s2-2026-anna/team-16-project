@@ -50,11 +50,14 @@ than remembered.
 from __future__ import annotations
 
 import mimetypes
+import unicodedata
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
 from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
+
+from api import i18n
 
 # --------------------------------------------------------------------------
 # Where the document's own files live.
@@ -78,12 +81,34 @@ _FONT_DIR = _ASSET_DIR / "fonts"
 _TEMPLATE_NAME = "results.html.j2"
 _STYLESHEET = _TEMPLATE_DIR / "results.css"
 
-#: The two substitution points in `results.css`. The stylesheet is handed to
+#: The substitution points in `results.css`. The stylesheet is handed to
 #: WeasyPrint as a string rather than as a path, so a relative `url()` in it
 #: has no base to resolve against; these become absolute `file://` URLs.
+#:
+#: THE SCRIPT FALLBACK FACES ARE NOT OPTIONAL EXTRAS. Both brand faces are
+#: 228-glyph Latin subsets; the interface ships in twenty languages across
+#: eleven scripts, and neither brand face carries one glyph of Arabic,
+#: Devanagari, Gurmukhi, Gujarati, Tamil, Malayalam, Thai, kana, Hangul or Han.
+#: These are what `results.css` names, so the document is set in the same type
+#: on a checkout, in CI and in the container - `docker/api.Dockerfile`'s
+#: `fonts-noto-core` is a safety net for whatever Debian happens to ship, not
+#: the thing the stylesheet asks for. SIL OFL 1.1; licences and provenance sit
+#: beside the files in `api/assets/fonts/noto/`.
 _FONT_PLACEHOLDERS = {
     "KAICALC_FONT_SRC_GEOLOGICA": "geologica-bold.woff2",
     "KAICALC_FONT_SRC_KUMBH": "kumbh-sans-regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_SANS": "noto/NotoSans-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_ARABIC": "noto/NotoSansArabic-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_DEVANAGARI": "noto/NotoSansDevanagari-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_GURMUKHI": "noto/NotoSansGurmukhi-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_GUJARATI": "noto/NotoSansGujarati-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_TAMIL": "noto/NotoSansTamil-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_MALAYALAM": "noto/NotoSansMalayalam-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_THAI": "noto/NotoSansThai-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_CJK_JP": "noto/NotoSansCJKjp-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_CJK_KR": "noto/NotoSansCJKkr-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_CJK_SC": "noto/NotoSansCJKsc-Regular.woff2",
+    "KAICALC_FONT_SRC_NOTO_CJK_TC": "noto/NotoSansCJKtc-Regular.woff2",
 }
 
 
@@ -113,14 +138,26 @@ _FONT_PLACEHOLDERS = {
 #   3. `results.css` feeds the flag into the running header of every page via
 #      `string-set`, so page three carries it as well as page one.
 #
-# Kept free of `&`, `<`, `>`, `"` and `'` so that Jinja's autoescaping is the
-# identity function over it and (2) can compare against the same literal.
-MOCK_WARNING_FLAG = "PLACEHOLDER DATA"
+# **BOTH ARE CATALOGUE KEYS, NOT COPY WRITTEN HERE**, and that is what makes
+# §2.2 hold in twenty languages rather than one. `web/js/results.js` renders
+# the same two strings into the on-screen banner, so the paper and the page
+# carry the same warning in the same words - and a Tamil reader gets the
+# warning in Tamil, which is the only version of "non-dismissible" that means
+# anything to them. `api/i18n.py::Catalogue.gettext` raises rather than falling
+# back to English, so a catalogue that lost either string fails the render
+# instead of quietly downgrading the warning to a language its reader may not
+# have.
+#
+# The literals below are the ENGLISH SOURCE (the key); what (2) compares
+# against is the translation for the document's own language, HTML-escaped the
+# way Jinja escaped it - several translations contain an apostrophe, and a
+# comparison against the unescaped form would fail on French and Italian for a
+# reason that has nothing to do with the warning being present.
+MOCK_WARNING_FLAG = "Placeholder data"
 MOCK_WARNING_BODY = (
-    "The figures in this document were produced from mock emissions factors. "
-    "The Kai Commitment has not yet supplied the real New Zealand factor set, "
-    "so every number here is a placeholder that shows how the calculator "
-    "works, not what the impact is. Do not quote, publish or act on them."
+    "Demonstration only — verified calculation factors have not yet been "
+    "supplied. Final results will depend on factors supplied and approved by "
+    "Kai Commitment."
 )
 
 
@@ -294,27 +331,78 @@ class _Taxonomy:
 # in the template" rule checkable by reading one file: there is no expression
 # in `results.html.j2` that could become a sum.
 
+# --------------------------------------------------------------------------
+# The document's own words.
+# --------------------------------------------------------------------------
+#
+# **EVERY ONE OF THESE IS ALREADY A KEY IN `web/locales/*.json`, AND THAT IS A
+# CONSTRAINT, NOT A COINCIDENCE.** The document is written in whichever of the
+# twenty languages was asked for, and the only way to do that honestly is to
+# say what the calculator already says: `tests/web/test_i18n_web.py::
+# test_no_catalogue_carries_a_key_the_front_end_never_asks_for` fails on a key
+# the front end does not use, so a heading invented here would mean authoring
+# twenty unreviewed machine translations *and* breaking another stream's test.
+# Nineteen of the twenty catalogues are machine-translated as it is; adding to
+# them is a translation-workflow decision, not a renderer's.
+#
+# The wording therefore reads slightly differently from the English-only draft
+# this replaces - "Improved" rather than "Alternative", "Impact summary" rather
+# than "Impact totals" - and it reads the same as the screen the reader
+# exported it from, which is worth more than either phrasing on its own.
+#
+# ONE THING THE CATALOGUES CANNOT SAY: the methane horizon. No key names it,
+# so rather than leave one English label in a Tamil report, the horizon is
+# printed as part of the factor-set value in the ISO notation - `GWP100` - that
+# is the same token in every language. §4.4 formulas reference `const_GWP_CH4`
+# and never a horizon literal; this is the reader's copy of the same fact.
+_TITLE = "Food Waste Impact Calculator — Results"
+_SUBTITLE = (
+    "Results are estimates, produced from the calculation factors supplied "
+    "and approved by Kai Commitment."
+)
+_COLOPHON = (
+    "Data sources and calculation factors are maintained and approved by Kai "
+    "Commitment."
+)
+
 _LABELS = {
     "total_mass": "Total food waste",
-    "gwp_horizon": "Methane horizon",
     "factor_set": "Factor set",
-    "totals": "Impact totals",
-    "metric": "Impact",
+    "totals": "Impact summary",
+    "metric": "Metric",
     "current": "Current",
-    "alternative": "Alternative",
-    "net_benefit": "Net benefit",
-    "destinations": "Where the waste goes",
+    "alternative": "Improved",
+    "net_benefit": "Potential Improvement",
+    "destinations": "Waste destinations",
     "destination": "Destination",
-    "money": "Value of the food",
-    "equivalences": "What that is equivalent to",
-    "entries": "Each stage in detail",
+    "money": "The money",
+    "equivalences": "Tangible equivalents",
+    "entries": "Added entries",
 }
 
+#: `§4.5`'s money block. The unit annotations the English-only draft carried in
+#: the label - "(NZD)", "(%)" - are gone rather than translated: a currency
+#: code is not language and gluing it into a translatable string would have
+#: made four more keys that no catalogue has.
 _MONEY_LABELS = (
-    ("total_value_nzd", "Total value of food handled (NZD)"),
-    ("wasted_value_nzd", "Value of food wasted (NZD)"),
-    ("wasted_share_percent", "Share of value wasted (%)"),
-    ("saving_nzd", "Value recovered in the alternative (NZD)"),
+    ("total_value_nzd", "Total value of food handled"),
+    ("wasted_value_nzd", "Value of food wasted"),
+    ("wasted_share_percent", "Share of value wasted"),
+    ("saving_nzd", "Value of food not wasted at all"),
+)
+
+#: Every translatable string the document can print, in one tuple, so that a
+#: test can assert all twenty catalogues carry all of them **without rendering
+#: anything**. A per-locale render proves the document came out; this proves
+#: there is no locale in which one heading would quietly have to be English.
+DOCUMENT_STRINGS: tuple[str, ...] = (
+    _TITLE,
+    _SUBTITLE,
+    _COLOPHON,
+    MOCK_WARNING_FLAG,
+    MOCK_WARNING_BODY,
+    *_LABELS.values(),
+    *(key for _attribute, key in _MONEY_LABELS),
 )
 
 
@@ -387,13 +475,17 @@ def _destination_rows(totals: Any, names: _Taxonomy) -> list[dict[str, str]]:
     ]
 
 
-def _money_rows(money: Any) -> list[dict[str, str]]:
+def _money_rows(money: Any, translate: Any) -> list[dict[str, str]]:
     """Section 4.5's money block, when the visitor supplied one.
 
     Every field is optional and `None` means nobody supplied what it derives
     from - never zero, which would be a claim. A field that is `None` is left
     out of the table rather than printed as a dash, and a block in which every
     field is `None` produces no table at all.
+
+    `translate` is the document language's `gettext`; the labels are catalogue
+    keys, and it raises rather than returning English for a language that has
+    lost one.
     """
     if money is None:
         return []
@@ -401,13 +493,38 @@ def _money_rows(money: Any) -> list[dict[str, str]]:
     for attribute, label in _MONEY_LABELS:
         value = getattr(money, attribute, None)
         if value is not None:
-            rows.append({"name": label, "value": _figure(value, 2)})
+            rows.append({"name": translate(label), "value": _figure(value, 2)})
     return rows
 
 
 def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
-    """The template's whole input. Public so a test can assert on it directly
-    rather than only through a rendered PDF."""
+    """The template's whole input, in the language that was asked for.
+
+    Public so a test can assert on it directly rather than only through a
+    rendered PDF.
+
+    **`lang` is the language the document is actually written in, not the tag
+    the caller sent.** `api/i18n.resolve` turns `zh-TW` into `zh-Hant` and
+    `en-GB` into `en`, and a tag no catalogue claims into `en` - and then the
+    document says `en`, because labelling an English document `lang="he"` would
+    tell a screen reader to pronounce English as Hebrew and would set the page
+    right-to-left around text that runs the other way.
+
+    **`dir` comes from the catalogue's own declaration**, not from a table of
+    language subtags. `text_direction` still exists and is still the answer for
+    a bare tag, but where a translation exists the people who wrote it are the
+    better authority on which way it runs. That one attribute is the whole of
+    defect two: it is what makes Pango run the Unicode bidirectional algorithm
+    in a right-to-left base context, which is the difference between a sentence
+    that ends with a full stop and one that starts with it. **Nothing in this
+    file reorders a character.**
+
+    NAMES ARE STILL NOT TRANSLATED. Sector, destination, food-category and
+    metric names are staff-typed rows (§2.1) and are printed exactly as typed,
+    in every one of the twenty-one languages.
+    """
+    catalogue = i18n.catalogue(locale)
+    translate = catalogue.gettext
     names = _Taxonomy(taxonomy)
     totals = result.totals
 
@@ -425,21 +542,21 @@ def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
         )
 
     return {
-        "lang": str(locale),
-        "dir": text_direction(locale),
-        "title": "Kai Commitment food waste impact calculator",
-        "subtitle": (
-            "Impact of the food waste described, and of the alternative "
-            "scenario beside it. Calculated by the Kai Commitment calculator; "
-            "figures are the calculator server's, not the browser's."
-        ),
+        "lang": catalogue.language,
+        "dir": catalogue.direction,
+        "title": translate(_TITLE),
+        "subtitle": translate(_SUBTITLE),
         "is_mock": bool(result.is_mock),
-        "mock_flag": MOCK_WARNING_FLAG,
-        "mock_body": MOCK_WARNING_BODY,
+        "mock_flag": translate(MOCK_WARNING_FLAG),
+        "mock_body": translate(MOCK_WARNING_BODY),
         "factor_set_version": result.factor_set_version,
         "gwp_horizon": f"GWP{result.gwp_horizon}",
+        # The two facts that identify the calculation basis, in one tile. See
+        # the note above `_TITLE`: no catalogue key names the methane horizon,
+        # and `GWP100` is the same token in every language.
+        "factor_set": f"{result.factor_set_version} · GWP{result.gwp_horizon}",
         "total_kg": _figure(totals.current.total_kg, 3),
-        "labels": _LABELS,
+        "labels": {slot: translate(key) for slot, key in _LABELS.items()},
         "totals": _metric_rows(
             totals.current,
             getattr(totals, "alternative", None),
@@ -447,15 +564,10 @@ def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
             names,
         ),
         "destinations": _destination_rows(totals, names),
-        "money": _money_rows(getattr(totals, "money", None)),
+        "money": _money_rows(getattr(totals, "money", None), translate),
         "equivalences": [item.label for item in totals.current.equivalences],
         "entries": entries,
-        "colophon": (
-            "Produced by the Kai Commitment food waste impact calculator, for "
-            "the New Zealand Food Waste Champions 12.3 Trust. Impact is "
-            "calculated on the server from the published factor set named "
-            f"above ({result.factor_set_version})."
-        ),
+        "colophon": translate(_COLOPHON),
     }
 
 
@@ -597,7 +709,9 @@ def _environment() -> Any:
     )
 
 
-def _assert_mock_warning_present(html: str, *, is_mock: bool) -> None:
+def _assert_mock_warning_present(
+    html: str, *, is_mock: bool, flag: str, body: str
+) -> None:
     """The warning, re-read off the rendered HTML before anything is drawn.
 
     `render_results_pdf` already passes `result.is_mock` through
@@ -610,11 +724,19 @@ def _assert_mock_warning_present(html: str, *, is_mock: bool) -> None:
 
     Both literals are compared, not just the flag, so replacing the body with
     softer wording while leaving the heading in place is caught too.
+
+    **The literals are the ones for THIS document's language**, not the English
+    source. Checking for the English wording would have made the guard a check
+    that fires only on English exports - and §2.2 is not a rule about English
+    documents. They are HTML-escaped before comparing, because Jinja escaped
+    them on the way in and a number of the translations contain an apostrophe.
     """
     if not is_mock:
         return
-    for literal in (MOCK_WARNING_FLAG, MOCK_WARNING_BODY):
-        if literal not in html:
+    from markupsafe import escape
+
+    for literal in (flag, body):
+        if str(escape(literal)) not in html:
             raise MockWarningMissingError(
                 "The factor set is mock but the rendered export does not carry "
                 f"the placeholder warning ({literal[:40]!r} is absent). Section "
@@ -628,10 +750,138 @@ def render_html(result: Any, taxonomy: Any, locale: str) -> str:
     """The document as HTML, warning already verified. Separated from the PDF
     call so that a test - and a developer debugging a layout - can look at what
     WeasyPrint was given without needing WeasyPrint installed."""
-    context = build_context(result, taxonomy, locale)
+    return _html(build_context(result, taxonomy, locale))
+
+
+def _html(context: dict[str, Any]) -> str:
+    """One context to one HTML string, warning verified. Split out so that
+    `render_document` does not have to build the context twice to run the
+    font-coverage guard over the same strings the template was given."""
     html = _environment().get_template(_TEMPLATE_NAME).render(doc=context)
-    _assert_mock_warning_present(html, is_mock=context["is_mock"])
+    _assert_mock_warning_present(
+        html,
+        is_mock=context["is_mock"],
+        flag=context["mock_flag"],
+        body=context["mock_body"],
+    )
     return html
+
+
+# --------------------------------------------------------------------------
+# Font coverage: a box is a defect, not a cosmetic problem.
+# --------------------------------------------------------------------------
+#
+# THIS IS THE SAME DEFECT CLASS AS THE ONE THE WHOLE TASK EXISTS TO CLOSE. The
+# browser export turned `Kūmara` into `K?mara` or into a 71 KB picture; a
+# document whose font has no glyph for a character draws an empty box, or
+# nothing at all, and looks perfectly fine to whoever generated it. Both are a
+# corrupted export of somebody else's data, and neither says so anywhere.
+#
+# Twelve faces are embedded (see `_FONT_PLACEHOLDERS`) and between them they
+# cover every character in all twenty catalogues. The four CJK faces are
+# SUBSETS, because a whole Noto Sans CJK face is 10.9 MiB in WOFF2 and there
+# would be four of them - 43.6 MiB in the repository, the wheel and two images,
+# against 696 KiB for the four cut to what the catalogues actually contain.
+# `api/assets/fonts/noto/PROVENANCE.md` records that measurement.
+#
+# What a subset gives up is a staff-typed taxonomy name in CJK, and this is
+# what stops that being silent: the document's own text is checked against the
+# embedded faces before WeasyPrint is called, and an uncovered character raises
+# with the character named. A loud failure, not tofu.
+
+
+class UndrawableCharacterError(RuntimeError):
+    """The document contains a character no embedded face can draw."""
+
+
+def _face_charsets() -> tuple[tuple[str, frozenset[int]], ...]:
+    """Every embedded face, and the code points it has a glyph for.
+
+    Read from the font files themselves rather than from a table beside them: a
+    table is a second thing to keep in step with the fonts, and the day it
+    drifts is the day this guard starts passing for the wrong reason.
+
+    `fontTools` is not a new dependency - WeasyPrint declares `fonttools[woff]`
+    and `docker/constraints.txt` pins it at 4.63.0 alongside `brotli`, which is
+    what reads a WOFF2. Cached, because this is a dozen font parses and the
+    answer cannot change while the process is alive.
+    """
+    global _FACE_CHARSETS
+    if _FACE_CHARSETS is None:
+        from fontTools.ttLib import TTFont
+
+        faces = []
+        for filename in _FONT_PLACEHOLDERS.values():
+            path = _FONT_DIR / filename
+            faces.append((path.name, frozenset(TTFont(path).getBestCmap())))
+        _FACE_CHARSETS = tuple(faces)
+    return _FACE_CHARSETS
+
+
+_FACE_CHARSETS: tuple[tuple[str, frozenset[int]], ...] | None = None
+
+
+def _is_drawable(character: str) -> bool:
+    """Whether some embedded face can draw this character.
+
+    Two ways, and the second is the one that keeps te reo Māori working. A face
+    may carry the character outright, or it may carry the pieces it decomposes
+    into - `ū` is U+016B, which neither brand subset has, but Kumbh Sans has
+    `u` and the combining macron U+0304 and HarfBuzz composes the letter out of
+    them. That is why `test_a_macron_survives_the_document` passes today, and a
+    coverage check that did not know about it would refuse to render the very
+    document this export exists for.
+
+    The decomposition has to be satisfied by ONE face, not by several: glyphs
+    from two different faces do not compose into a letter.
+    """
+    if character.isspace():
+        return True
+    point = ord(character)
+    decomposed = unicodedata.normalize("NFD", character)
+    for _name, charset in _face_charsets():
+        if point in charset:
+            return True
+        if decomposed != character and all(ord(c) in charset for c in decomposed):
+            return True
+    return False
+
+
+def _document_characters(context: Any) -> set[str]:
+    """Every character the context will put on the page.
+
+    Walked over the context rather than scraped out of the rendered HTML,
+    because the HTML also contains tag names, class names and entity
+    references, none of which is drawn - a guard that checked those would be
+    checking the template's source code for glyph coverage.
+    """
+    characters: set[str] = set()
+    stack = [context]
+    while stack:
+        item = stack.pop()
+        if isinstance(item, str):
+            characters.update(item)
+        elif isinstance(item, dict):
+            stack.extend(item.keys())
+            stack.extend(item.values())
+        elif isinstance(item, (list, tuple, set)):
+            stack.extend(item)
+    return characters
+
+
+def assert_every_character_is_drawable(context: Any) -> None:
+    """Raise unless every character in the document has a glyph."""
+    undrawable = sorted(c for c in _document_characters(context) if not _is_drawable(c))
+    if undrawable:
+        listed = ", ".join(f"U+{ord(c):04X} {c!r}" for c in undrawable[:12])
+        raise UndrawableCharacterError(
+            f"The document contains {len(undrawable)} character(s) that no "
+            f"embedded face can draw: {listed}. WeasyPrint would draw an empty "
+            "box or nothing at all, and the document would not say so - which "
+            "is the same defect as the export this one replaced. Re-cut the "
+            "face concerned, or add one, following "
+            "api/assets/fonts/noto/PROVENANCE.md."
+        )
 
 
 def render_document(result: Any, taxonomy: Any, locale: str) -> Any:
@@ -652,7 +902,12 @@ def render_document(result: Any, taxonomy: Any, locale: str) -> Any:
     from weasyprint import CSS, HTML
     from weasyprint.text.fonts import FontConfiguration
 
-    html = render_html(result, taxonomy, locale)
+    context = build_context(result, taxonomy, locale)
+    html = _html(context)
+    # Checked here rather than in `render_html` because it is a question about
+    # glyphs, and because `fontTools` is WeasyPrint's own dependency: a host
+    # that can answer it is exactly a host that can render.
+    assert_every_character_is_drawable(context)
 
     # One `FontConfiguration` per render, shared by the stylesheet and the
     # render: WeasyPrint registers `@font-face` faces into it when the CSS is

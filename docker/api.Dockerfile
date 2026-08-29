@@ -106,7 +106,6 @@ RUN apt-get update \
       libpangoft2-1.0-0 \
       libharfbuzz-subset0 \
       fonts-dejavu-core \
-      fonts-noto-core \
  && rm -rf /var/lib/apt/lists/*
 
 # Non-root. uid/gid pinned so a bind-mounted volume has predictable ownership.

@@ -1171,6 +1171,25 @@ def test_the_script_faces_are_embedded_in_the_pdf(locale, face):
     joined = " ".join(sorted(names))
     assert face in joined, f"{locale} is not set in {face}: {sorted(names)}"
 
+    # AND NOT IN A SIBLING'S GLYPHS. This half was added after the mutation
+    # test found the first half green with the per-language ordering deleted:
+    # the four CJK subsets are each cut to their own catalogue, so a document
+    # set in the wrong one still reaches the right one for the characters that
+    # one happens to lack - and "Noto-Sans-CJK-TC is in the file" was true of a
+    # Traditional document half-set in Simplified. The claim that matters is
+    # that no sibling is there at all.
+    siblings = {
+        "Noto-Sans-CJK-JP",
+        "Noto-Sans-CJK-KR",
+        "Noto-Sans-CJK-SC",
+        "Noto-Sans-CJK-TC",
+    } - {face}
+    for sibling in sorted(siblings):
+        assert sibling not in joined, (
+            f"{locale} is partly set in {sibling} - the per-language font "
+            "ordering in results.css is not doing its job"
+        )
+
 
 def test_the_embedded_catalogues_match_the_public_ones():
     """`api/assets/locales/` is a copy of `web/locales/` and has to be -

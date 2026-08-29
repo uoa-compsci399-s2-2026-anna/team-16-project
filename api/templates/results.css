@@ -88,7 +88,15 @@
    * comfortable at. */
   margin: 18mm 16mm 16mm 16mm;
 
-  /* THE PLACEHOLDER FLAG, ON EVERY PAGE. `string(mockflag)` is set by the
+  /* The margin boxes take `var(--script)` like everything else, and it
+   * resolves: WeasyPrint computes a page's style with the ROOT ELEMENT as the
+   * inherited parent, so a custom property set by `html[lang="zh-Hant"]`
+   * reaches `@top-center` too. That is load-bearing rather than tidy - the
+   * running header carries the translated placeholder flag, and without it a
+   * Traditional Chinese document had its header set in the Simplified face
+   * while its body was Traditional. Found by mutation, not by looking.
+   *
+   * THE PLACEHOLDER FLAG, ON EVERY PAGE. `string(mockflag)` is set by the
    * warning element in the flow (see .mock-warning__flag below), so this
    * margin box carries text only when that element exists -- it cannot be
    * given a value here and it cannot be typed in by hand. When the factor set
@@ -97,12 +105,7 @@
    * appears, and the reason a reader who turns to page three still sees it. */
   @top-center {
     content: string(mockflag);
-    font-family:
-      'Kumbh Sans', 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari',
-      'Noto Sans Gurmukhi', 'Noto Sans Gujarati', 'Noto Sans Tamil',
-      'Noto Sans Malayalam', 'Noto Sans Thai', 'Noto Sans CJK SC',
-      'Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
-      'DejaVu Sans', Helvetica, sans-serif;
+    font-family: 'Kumbh Sans', var(--script);
     font-size: 8pt;
     letter-spacing: 0.08em;
     text-transform: uppercase;
@@ -112,12 +115,7 @@
 
   @bottom-center {
     content: counter(page) ' / ' counter(pages);
-    font-family:
-      'Kumbh Sans', 'Noto Sans', 'Noto Sans Arabic', 'Noto Sans Devanagari',
-      'Noto Sans Gurmukhi', 'Noto Sans Gujarati', 'Noto Sans Tamil',
-      'Noto Sans Malayalam', 'Noto Sans Thai', 'Noto Sans CJK SC',
-      'Noto Sans CJK TC', 'Noto Sans CJK JP', 'Noto Sans CJK KR',
-      'DejaVu Sans', Helvetica, sans-serif;
+    font-family: 'Kumbh Sans', var(--script);
     font-size: 8pt;
     color: #003223;
     padding-block-start: 4mm;

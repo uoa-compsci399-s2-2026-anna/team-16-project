@@ -436,6 +436,18 @@ def test_a_macron_survives_the_document():
     over - and papering over it here, by normalising the extracted text until it
     matched, is precisely the "test that passes for the wrong reason" this
     project keeps producing.
+
+    **Task 4 did not fix it, and adding twelve script faces did not either.**
+    Noto Sans, now embedded for Vietnamese and Cyrillic, *does* carry a
+    precomposed U+016B - but HarfBuzz decomposes the character and finds both
+    pieces in Kumbh Sans first, so the brand face still wins and still composes.
+    The only real fix is re-cutting the brand subsets to carry Latin Extended-A,
+    which replaces a client-supplied asset that `web/assets/fonts/` also serves
+    to every visitor; that is a brand decision, not a renderer's. The exact
+    extracted form shifted from `Kuūmara` to `Ku ū mara` - the mark's own
+    advance now reads as a space - which is the same defect with different
+    whitespace, and is why the assertions below are on the pieces rather than
+    on one literal.
     """
     pdf = render_results_pdf(_result(), _taxonomy(destination_name=MACRON_NAME), "en")
     text = unicodedata.normalize("NFC", extract_text(pdf))

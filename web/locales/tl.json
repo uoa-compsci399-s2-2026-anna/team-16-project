@@ -346,6 +346,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Iniimbak ng pantuos na ito ang sektor, kategorya ng pagkain at mga daming inilagay. Napapasama lamang ang mga ito sa pampublikong estadistika kung piliin mong ialok ang mga ito, at walang iniimbak na makakakilala sa iyo o sa iyong negosyo.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Tuklasin ang walang pangalan at pinagsamang estadistika mula sa mga pagtuos na iniambag sa pantuos ng epekto ng basurang pagkain ng Kai Commitment.",
     "Percentage": "Porsyento",
-    "Total mass": "Kabuuang bigat"
+    "Total mass": "Kabuuang bigat",
+    "Download PDF": "I-download ang PDF"
   }
 }

@@ -114,3 +114,33 @@ export function submissionPayload(state, entries, alternativeFor = () => null) {
     entries: entries.map(entry => entryPayload(entry, presets, alternativeFor(entry))),
   }
 }
+
+/**
+ * The `POST /api/v1/export/pdf` request body (`api/export.py`'s `ExportPayload`).
+ *
+ * **Built from `state.result.entry_results`, not from `state.entries`.** By the time the
+ * results page — and its PDF button — exist, the wizard's own draft has already been
+ * folded into the frozen record `entryResultsFrom` (`state.js`) built at Calculate time:
+ * each item pairs the entry as submitted with the response it produced. That is the same
+ * pairing the plain-text export reads its figures from, so this reads the same entries the
+ * visitor is looking at rather than a second copy of the wizard's working state.
+ *
+ * **No `token`.** `ExportPayload` has no field for one and `extra="forbid"` refuses a
+ * request that adds one — the route persists nothing, so there is nothing for a token to
+ * name (see `api/export.py`'s module docstring). `submissionPayload` above cannot be reused
+ * as-is for exactly this reason.
+ *
+ * @param {object} state
+ * @param {string} locale  the interface language the visitor is reading, so the document
+ *   renders in it — `i18n.js`'s `activeLanguage()`, not a value invented here.
+ */
+export function exportPayload(state, locale) {
+  const presets = state.taxonomy?.unit_presets || []
+  const entries = (state.result?.entry_results || []).map(item => item.entry)
+  return {
+    gwp_horizon: state.gwpHorizon,
+    time_frame: state.timeFrame || null,
+    entries: entries.map(entry => entryPayload(entry, presets)),
+    locale,
+  }
+}

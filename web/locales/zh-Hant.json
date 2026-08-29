@@ -348,6 +348,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "本計算機會保存您填寫的產業環節、食物類別與數量。只有在您選擇提供時才會納入公開統計，且不會保存任何足以辨識您本人或您公司的資訊。",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "瀏覽提供給 Kai Commitment 食物浪費影響計算機的各次計算的匿名彙總統計。",
     "Percentage": "百分比",
-    "Total mass": "總重量"
+    "Total mass": "總重量",
+    "Download PDF": "下載 PDF"
   }
 }

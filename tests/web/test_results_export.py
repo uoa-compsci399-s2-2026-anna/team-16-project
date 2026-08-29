@@ -1287,3 +1287,79 @@ def test_the_control_is_described_for_a_visitor_who_cannot_see_the_sentence(page
     assert "anonymous" in described_text, (
         "aria-describedby does not point at the sentence explaining the choice"
     )
+
+
+# ---------------------------------------------------------------- the PDF export
+#
+# Task 5. `POST /api/v1/export/pdf` already works (`api/export.py`, `api/router.py`); this
+# is the button that reaches it, beside the plain-text download rather than replacing it.
+# Both tests assert the outgoing request rather than only a download having fired - a
+# button pointed at the wrong path, or one that drops the locale, would still trigger a
+# download and still pass a check that stopped at "something downloaded".
+
+PDF_BYTES = b"%PDF-1.4\n%mock pdf body\n"
+
+
+def _fulfil_pdf(route, calls):
+    calls.append(
+        {
+            "method": route.request.method,
+            "url": route.request.url,
+            "body": route.request.post_data_json,
+        }
+    )
+    route.fulfill(status=200, content_type="application/pdf", body=PDF_BYTES)
+
+
+@pytest.mark.browser
+def test_the_pdf_button_posts_the_export_route_carrying_the_locale(page_at):
+    """The request the button exists to make.
+
+    `page_at` opens with `?lang=en` (see its own docstring), so `en` is the tag
+    `activeLanguage()` holds when the click happens - the export endpoint has no other way
+    to learn which language the visitor is reading (`api/export.py`'s own docstring).
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    button = page.locator('[data-action="download-pdf"]')
+    assert button.count() == 1, "no PDF button on the results page"
+    assert button.is_visible(), "the PDF button is present but not visible"
+
+    with page.expect_download() as download_info:
+        button.click()
+    download = download_info.value
+
+    assert len(calls) == 1, f"expected exactly one request to /export/pdf, got {calls}"
+    call = calls[0]
+    assert call["method"] == "POST"
+    assert call["url"].endswith("/api/v1/export/pdf"), call["url"]
+
+    body = call["body"] or {}
+    assert body.get("locale") == "en", f"the visitor's locale did not reach the request: {body}"
+    assert body.get("entries"), f"the request carries no entries: {body}"
+    #: §2.3/`api/export.py`: the export route persists nothing and `ExportPayload` has no
+    #: field for a token at all - a request that carried one would be a 422, not a document.
+    assert "token" not in body, f"the export request carries a token it has no use for: {body}"
+
+    assert download.suggested_filename.endswith(".pdf"), download.suggested_filename
+
+
+@pytest.mark.browser
+def test_the_text_download_still_works_alongside_the_pdf_button(page_at):
+    """Both formats, one screen - the brief's own framing, and the trap it exists to
+    catch: a PDF button wired up by replacing the text one rather than joining it."""
+    page = page_at(_fixture("calculate_response.json"))
+    _submit_two_entries(page)
+
+    text_button = page.locator('[data-action="download-results"]')
+    pdf_button = page.locator('[data-action="download-pdf"]')
+    assert text_button.count() == 1 and text_button.is_visible()
+    assert pdf_button.count() == 1 and pdf_button.is_visible()
+
+    with page.expect_download() as download_info:
+        text_button.click()
+    download = download_info.value
+    assert download.suggested_filename.endswith(".txt"), download.suggested_filename

@@ -345,6 +345,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Công cụ này lưu lại lĩnh vực, nhóm thực phẩm và các số lượng bạn nhập. Chúng chỉ tham gia thống kê công khai nếu bạn chọn đóng góp chúng, và không có thông tin nào nhận dạng bạn hay doanh nghiệp của bạn được lưu.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Khám phá thống kê tổng hợp, ẩn danh từ các phép tính đã đóng góp cho công cụ tính tác động của thực phẩm bỏ đi Kai Commitment.",
     "Percentage": "Phần trăm",
-    "Total mass": "Tổng khối lượng"
+    "Total mass": "Tổng khối lượng",
+    "Download PDF": "Tải xuống PDF"
   }
 }

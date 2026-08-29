@@ -345,6 +345,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Dieser Rechner speichert den Sektor, die Lebensmittelkategorie und die eingegebenen Mengen. Sie gehen nur dann in die öffentliche Statistik ein, wenn Sie sie dafür freigeben, und es wird nichts gespeichert, was Sie oder Ihren Betrieb identifiziert.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Erkunden Sie anonymisierte, zusammengefasste Statistiken aus Berechnungen, die zum Kai Commitment Rechner für die Auswirkungen von Lebensmittelabfällen beigetragen wurden.",
     "Percentage": "Prozentsatz",
-    "Total mass": "Gesamtmasse"
+    "Total mass": "Gesamtmasse",
+    "Download PDF": "PDF herunterladen"
   }
 }

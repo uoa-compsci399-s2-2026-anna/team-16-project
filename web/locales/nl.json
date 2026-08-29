@@ -345,6 +345,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Deze rekentool bewaart de sector, de voedselcategorie en de ingevoerde hoeveelheden. Ze komen alleen in de openbare statistieken als u ervoor kiest die aan te bieden, en er wordt niets bewaard waarmee u of uw bedrijf kan worden geïdentificeerd.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Verken geanonimiseerde, geaggregeerde statistieken uit berekeningen die zijn bijgedragen aan de Kai Commitment rekentool voor het effect van voedselafval.",
     "Percentage": "Procenten",
-    "Total mass": "Totale massa"
+    "Total mass": "Totale massa",
+    "Download PDF": "PDF downloaden"
   }
 }

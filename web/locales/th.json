@@ -345,6 +345,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "เครื่องคำนวณนี้จะเก็บข้อมูลภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอก ข้อมูลเหล่านี้จะรวมอยู่ในสถิติสาธารณะก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น และไม่มีการเก็บสิ่งใดที่ระบุตัวคุณหรือธุรกิจของคุณ",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "สำรวจสถิติรวมแบบไม่ระบุตัวตนจากการคำนวณที่มอบให้แก่เครื่องคำนวณผลกระทบจากขยะอาหารของ Kai Commitment",
     "Percentage": "เปอร์เซ็นต์",
-    "Total mass": "น้ำหนักรวม"
+    "Total mass": "น้ำหนักรวม",
+    "Download PDF": "ดาวน์โหลด PDF"
   }
 }

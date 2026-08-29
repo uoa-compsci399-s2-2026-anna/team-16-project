@@ -345,6 +345,7 @@
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Этот калькулятор сохраняет указанные отрасль, категорию продуктов и количества. Они попадают в общедоступную статистику, только если вы решите их предоставить, и ничего, что позволяет установить вас или ваш бизнес, не сохраняется.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Изучите анонимную сводную статистику по расчётам, переданным в калькулятор воздействия пищевых отходов Kai Commitment.",
     "Percentage": "Процент",
-    "Total mass": "Общая масса"
+    "Total mass": "Общая масса",
+    "Download PDF": "Скачать PDF"
   }
 }

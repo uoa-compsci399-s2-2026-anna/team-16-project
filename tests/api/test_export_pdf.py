@@ -22,20 +22,16 @@ pytestmark = pytest.mark.asyncio
 
 
 def _valid_payload() -> dict:
-    """§6.2's request fixture, reshaped into an export request.
+    """§6.2.3's own request fixture (`tests/fixtures/export_pdf_request.json`),
+    not `calculate_request.json` reshaped at test time.
 
-    `token` and `dry_run` are `/calculate`-only fields - `ExportPayload`
-    declares neither (see `api/export.py`'s module docstring for why) - so
-    both are dropped rather than left at their fixture value of `null`;
-    `extra="forbid"` refuses an unknown field regardless of what it is set
-    to, and leaving them in would make every "this succeeds" test below fail
-    for a reason that has nothing to do with what it is testing.
+    It carries no `token` and no `dry_run` in the file itself - `ExportPayload`
+    declares neither (see `api/export.py`'s module docstring for why) and
+    `extra="forbid"` refuses both - so there is nothing here to strip before
+    posting it. Loaded fresh per call so a test that mutates its own copy
+    (`| {...}` below) never leaks into another.
     """
-    body = json.loads((FIXTURES / "calculate_request.json").read_text(encoding="utf-8"))
-    body.pop("token", None)
-    body.pop("dry_run", None)
-    body["locale"] = "en"
-    return body
+    return json.loads((FIXTURES / "export_pdf_request.json").read_text(encoding="utf-8"))
 
 
 async def _client(app):

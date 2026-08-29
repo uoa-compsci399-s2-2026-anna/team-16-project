@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-27 (v1.48 draft)"
+date: "2026-08-29 (v1.49 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,22 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.49 — 2026-08-29 (a server-rendered PDF, replacing a hand-rolled one that never merged; affects B, C, D, E)
+
+A teammate's browser-side PDF export (`web/js/pdf.js`, on the unmerged `pdf-results-download` branch) ran the whole layout by hand: a German title ran off the page, Arabic rendered left-to-right with the full stop stranded at the line's start, and a staff-typed name outside WinAnsi turned the document into an unreadable image. This revision replaces it before it ever reached `main` — rendering moves to the server, where WeasyPrint, Pango and HarfBuzz do the shaping, ordering and line-breaking a hand-rolled canvas cannot.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New endpoint, `POST /api/v1/export/pdf`.** Answers `application/pdf`, calculates through the same engine call `/calculate` uses, and **persists nothing** — no `submission`, no token, no `X-Dry-Run`, no `X-Staff-Proof`. A download is not a calculation (§2.3) | §6.2.3 |
+| 2 | **The document renders in the visitor's own interface language**, negotiated the same way the page is (§7.7.2), with one deliberate asymmetry: a missing translation key is an error here, not a silent fallback to English, because a document read later by someone who cannot ask is the one place a partial-English render is worse than a refusal. **Database-sourced names — sector, food category and destination labels — are never translated, in any locale**; they are staff-typed rows, printed exactly as typed | §6.2.3 |
+| 3 | **`web/js/api.js` gains `exportPdf(payload)`**, returning a `Blob` rather than going through `request()`'s `.json()`. The results screen gained a second download button, "Download PDF", beside the existing plain-text "Download results" — both reach the same report, neither replaces the other | §7.1, §7.3a |
+| 4 | **`web/js/submission.js` gains `exportPayload(state, locale)`**, the one builder of the export request, for the same reason `submissionPayload` is the one builder of the calculate request (§7.3b): a second hand-assembled copy of the entry shape is where the next field goes missing | §7.3b |
+| 5 | **Twelve Noto faces ship under `api/assets/fonts/noto/`** (SIL OFL 1.1), embedded the same way the two brand faces already are, so the document sets correctly in all eleven non-Latin scripts the twenty translated languages span. `docker/api.Dockerfile`'s `fonts-noto-core` system package — installed for a different, unrelated reason before this document existed — was dropped as redundant once the embedded set was verified to cover every locale on its own: same 218-test suite, same result, with and without the package installed | — |
+
+> **Why the figures are the server's, and stated here because a document is exactly the artefact this matters most for.** This PDF is built to be attached to an email and believed months later, by a reader who cannot ask a follow-up question. `ExportPayload` is a *request* shape — sector, food category, scenario lines — not a *result* shape, and `extra="forbid"` refuses a payload that tries to add a precomputed total. There is nowhere in the model for a client's own figure to hide; every number on the page is computed on the request that downloads it, exactly as `/calculate`'s are.
+>
+> **Still open, unchanged by this revision.** O-1 remains the hard blocker — the mandatory, non-dismissible placeholder-data warning appears on this document exactly as it does on the results view, because the published set is still mock. O-8 is still unsettled about which interface languages are *promised*; twenty are shipped in this document as they are on the page.
 
 ### v1.48 — 2026-08-27 (the client's second round: a reporting period, three money figures a visitor types, a cross-entry destination roll-up, and the visitor's own consent; affects A, B, C, D and E)
 
@@ -2634,6 +2650,70 @@ No other key is accepted. The body is `extra="forbid"`, as every request body in
 
 > **What the front end must do with it (owners: C and D, stage two).** The offer belongs on the results screen, where the visitor can see what they would be contributing and while the token is still live. It is an **opt-in**: nothing is contributed by default, and a visitor who ignores the control has answered "no" by doing nothing, which is the answer a consent design has to make free. The wording is the client's to approve; what this contract fixes is that the calculation is recorded either way and only the public aggregate turns on the answer.
 
+## 6.2.3 `POST /api/v1/export/pdf` (v1.49)
+
+**The document a visitor downloads and forwards, not a JSON body.** Numbered under §6.2 for the same reason §6.2.2 is — it shares §6.2's request shape and its engine call, not because it continues an existing submission. `api/export.py` defines the request; `api/pdf_render.py` is the WeasyPrint invocation behind it. It replaces a hand-rolled, browser-side export that never reached `main` (v1.49's changelog entry).
+
+**It persists nothing, stated plainly rather than left to be inferred.** §2.3's rule is "one calculation equals one submission" — a download is not a calculation. This route never calls `upsert_submission`, mints no token, and reads neither `X-Dry-Run` nor `X-Staff-Proof`: both are `/calculate`'s concerns for a persisted call or an authenticated staff rehearsal (§6.2's request headers), and neither has anything to attach to on a route that persists nothing and always prices the published factor set. Calling it once or a thousand times writes no row anywhere — it cannot inflate `GET /stats` (§6.4), and there is no draft submission for the one-hour expiry job (§2.3) to find.
+
+**Why it recalculates instead of trusting the client.** This document exists to be attached to an email and believed months later, by a reader who cannot ask a follow-up question, so its figures must be the server's — computed on the request that downloads it — never numbers a browser happened to be holding on screen. `ExportPayload` is therefore a *request* shape (sector, food category, scenario lines), not a *result* shape: `extra="forbid"`, inherited from `PricingOptions`, refuses a payload that tries to add a field for a precomputed total to hide in.
+
+**Deliberately not a subclass of `CalculatePayload`.** That model also carries `token` (what a persisted calculation is resumed by) and `dry_run` (a staff-only alternate bundle); neither means anything here, and inheriting them would invite a caller to believe one of them does something. `gwp_horizon` and `time_frame` — and their two closed-vocabulary checks — live on the shared `PricingOptions` base both payloads inherit instead, so the two routes cannot come to disagree about a methane horizon one accepts and the other refuses.
+
+**Request**
+
+```json
+{
+  "gwp_horizon": 100,
+  "time_frame": "one_year",
+  "entries": [
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "current": [
+        { "destination": "landfill", "qty_kg": "1200.000" }
+      ],
+      "alternative": [
+        { "destination": "anaerobic_digestion", "qty_kg": "1200.000" }
+      ]
+    }
+  ],
+  "locale": "ar"
+}
+```
+
+| Field | Type | Required | Notes |
+| --- | --- | --- | --- |
+| `gwp_horizon` | int | No | 20 or 100; defaults to 100. Same validator as §6.2's |
+| `time_frame` | string \| null | No | Same closed vocabulary as §6.2's (`one_week`, `one_month`, `one_quarter`, `one_year`, or absent) |
+| `entries` | array | Yes | Same shape, and the same §6.2 validation table, as `POST /calculate`'s `entries` — sector/food-category existence, mass conservation between scenarios, no `is_prevention` destination in `current`, no duplicate destination or `(sector, food_category)`, the same per-line, per-scenario and per-submission limits |
+| `locale` | string | Yes | 2–35 characters. **Not checked against a closed vocabulary.** A tag with no catalogue resolves to English — the same rule `web/js/i18n.js` follows for the page (§7.7.2) — because a download is not the place to tell somebody their browser's language is unsupported |
+
+No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather than silently ignored.
+
+**200 response**
+
+`Content-Type: application/pdf`, `Content-Disposition: attachment; filename="kai-commitment-impact-calculator.pdf"`. One fixed filename regardless of what the request contains — the same reason `GET /factors?format=csv` (§6.3) answers a fixed archive name: nothing in a request body is safe to place in that header unescaped.
+
+**The document renders in the resolved locale, and one thing inside it never does.** The chrome — headings, unit labels, the mock-data warning banner, and the running header and footer on every page — is drawn from the same catalogues that serve the page, a byte-identical copy of `web/locales/*.json` under `api/assets/locales/` (a hash-comparison test holds the two in step). A Tamil-reading visitor therefore reads the document in Tamil. **The taxonomy names printed inside it — sector, food category and destination labels — are staff-typed database rows, supplied by `db/repository.get_taxonomy`, and are never translated in any locale: they are printed exactly as staff typed them.** Unlike the page, a missing catalogue key is not silently rendered in its English source here — `api/i18n.py`'s `Catalogue.gettext` raises rather than falling back, because a document read later by someone who cannot ask a follow-up is the one place a silently half-English render is worse than a failed request.
+
+**The placeholder-data warning is mandatory here on the same terms as everywhere else (§2.2).** `render_export_pdf` reads `result.is_mock` unconditionally — there is no parameter, keyword or locale that suppresses it — and the renderer re-reads its own rendered output and refuses to produce a document that is missing the banner, rather than shipping one silently without it.
+
+**Error codes it can answer**
+
+| HTTP | `code` | Trigger |
+| --- | --- | --- |
+| 400 | `VALIDATION_ERROR` | The same field, quantity, mass-conservation and prevention-destination rules as §6.2 |
+| 400 | `UNKNOWN_CODE` | A sector, food category or destination code in the request does not exist |
+| 403 | `BLOCKED` | The caller's address is on the blocklist (§9.2), as on every route |
+| 429 | `RATE_LIMITED` | The same bucket and the same limit as `POST /calculate` (§6.5) |
+| 500 | `FORMULA_ERROR` | A staff-configured formula is invalid. **Always the public presentation** (§9.1) — there is no authenticated dry-run path into this route to unlock the located one |
+| 500 | `INTERNAL_ERROR` | Any unhandled server-side failure, including a template that lost the mandatory mock-data warning |
+| 503 | `NO_PUBLISHED_FACTOR_SET` | No factor set has been published |
+| 503 | `ENGINE_UNAVAILABLE` | The calculation engine is not installed or failed to load |
+
+**No `UNAUTHORIZED`.** `X-Dry-Run` and `X-Staff-Proof` are simply not read by this route (above), so there is no header combination on it that produces a 401 the way an unproven dry run does on §6.2.
+
 ## 6.3 `GET /api/v1/factors`
 
 Factors and formulas are published openly (Decision 7).
@@ -2744,6 +2824,7 @@ With `format=csv`, one CSV file per table is returned, bundled as a zip archive 
 | --- | --- |
 | `POST /api/v1/calculate` | 120 / hour / IP |
 | `POST /api/v1/contribute` | **The same bucket and the same limit as `POST /calculate`** (v1.48). It is one action from the visitor's point of view and it writes just as `/calculate` does; a button a caller can click once can be scripted into a loop |
+| `POST /api/v1/export/pdf` | **The same bucket and the same limit as `POST /calculate`** (v1.49). It runs the engine on every call exactly as `/calculate` does, so a caller cannot dodge that budget by asking for a PDF instead of a JSON body |
 | `GET /api/v1/*` | 600 / hour / IP |
 
 Exceeding a limit returns `429` with `RATE_LIMITED`. Counters live in memory or Redis.
@@ -2811,6 +2892,17 @@ export async function contribute(token);
 
 /** GET /api/v1/factors[?version=…]   @returns {Promise<Factors>} */
 export async function getFactors(opts = {});
+
+/**
+ * POST /api/v1/export/pdf — §6.2.3, v1.49. The document, not JSON, so this cannot
+ * go through the shared `request()` helper above: that helper always calls
+ * `response.json()`, which throws on a binary body. Everything else about the
+ * failure shapes matches it — the same `ApiError`, the same envelope fields read
+ * off a JSON error body where the route answers one.
+ * @param {object} payload   §6.2.3 body — `submission.js`'s `exportPayload(state, locale)`
+ * @returns {Promise<Blob>} @throws {ApiError}
+ */
+export async function exportPdf(payload);
 ```
 
 `api.js` owns URL construction, headers, JSON parsing, and converting any non-2xx response into a thrown `ApiError`, reading `body.error.{code,message,details}` with a fallback to a flat `body.{code,message,details}`. It distinguishes three failure modes — network unreachable, non-JSON response, structured API error — and they carry different messages.
@@ -3202,7 +3294,7 @@ export function renderChrome();
 export function bindCalculator(main, retryTaxonomy);
 ```
 
-`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
+`data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
 Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
@@ -3244,6 +3336,23 @@ export function buildResultsReport(state);
 /** Wraps buildResultsReport in a Blob and triggers the download as
  *  'food-waste-impact-results.txt'. */
 export function downloadResults(state);
+
+/**
+ * §6.2.3, v1.49. The server-rendered document, beside the plain-text download
+ * above rather than instead of it — two buttons, two formats, both reaching the
+ * same report. Sends `submission.js`'s `exportPayload(state, activeLanguage())`
+ * to `api.js`'s `exportPdf`, then downloads what comes back under the one fixed
+ * name the server's own `Content-Disposition` sets (`kai-commitment-impact-
+ * calculator.pdf`). Every figure in the document is the server's (§7.6.1),
+ * computed on this request rather than carried over from `state.result`.
+ *
+ * Tracks `state.pdfExporting` / `state.pdfError`, mirroring `contributing` /
+ * `contributeError`. The object URL is revoked inside `setTimeout(..., 0)`
+ * rather than synchronously — the one fix a prior, unmerged hand-rolled export
+ * got right, carried forward rather than re-broken: revoking before the browser
+ * has finished reading the URL can cancel the download in some browsers.
+ */
+export async function downloadPdf(state);
 ```
 
 > **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
@@ -3392,6 +3501,26 @@ export function entryPayload(entry, presets, alternative);
  *   `improvement.js` passes its allocation of the entry's own current mass.
  */
 export function submissionPayload(state, entries, alternativeFor);
+
+/**
+ * §6.2.3, v1.49. The `POST /api/v1/export/pdf` request body — `api/export.py`'s
+ * `ExportPayload` — built the same way `submissionPayload` builds §6.2's, and kept
+ * separate from it rather than reused: `ExportPayload` has no `token` field and
+ * `extra="forbid"` refuses one, so a shared builder would have to strip a key
+ * `submissionPayload` always sets.
+ *
+ * Reads `state.result.entry_results` rather than `state.entries` — by the time the
+ * results screen and its PDF button exist, the wizard's own draft has already been
+ * folded into the frozen record `entryResultsFrom` (§7.2) built at Calculate time,
+ * and this reads the same entries the visitor is looking at rather than a second
+ * copy of the wizard's working state.
+ *
+ * @param {object} state
+ * @param {string} locale  the interface language the visitor is reading — `i18n.js`'s
+ *   `activeLanguage()` (§7.7.2), not a value invented here, so the document renders
+ *   in the same language the page around the button does
+ */
+export function exportPayload(state, locale);
 ```
 
 > **Nothing in this module calculates (§7.6.1).** Its only arithmetic is the unit conversion,
@@ -4337,7 +4466,7 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 
 **These files are the executable form of the contract.** Backend contract tests assert that real responses match their shape, the fixtures are checked against each other and against the shipped seed data, and the front end develops against them directly. They must be updated whenever the contract changes (see §0).
 
-**One canonical set, in this tree, in the v1.3 shape.** Thirteen files. v1.2 recorded two divergent sets on two unmerged branches and neither of them here; that is now history and the paragraph describing it has been replaced by what is actually on disk.
+**One canonical set, in this tree, in the v1.3 shape.** Fourteen files, since v1.49 added `export_pdf_request.json`. v1.2 recorded two divergent sets on two unmerged branches and neither of them here; that is now history and the paragraph describing it has been replaced by what is actually on disk.
 
 | File | Content |
 | --- | --- |
@@ -4345,6 +4474,7 @@ Located in `tests/fixtures/`. C and D consume these directly before the backend 
 | `calculate_request.json` | A two-entry `POST /calculate` request (§6.2), mass-conserving per entry, and the request that produces `calculate_response.json`. **From v1.48 it carries all four context fields**: `time_frame` at the top level, both money figures on both entries, and `total_input_kg` on **one** entry only, so that the present and the absent shapes are both exercised. Its two entries are priced at $4.50/kg and $5.00/kg, which is what makes §4.5's per-entry rate visible in the response beside it — a blended rate answers 3,739.13 where the fixture says 4,000.00 |
 | `calculate_response.json` | The corresponding 200 body: `totals` plus two `entries`, dual scenario, with `by_destination` per entry **and, from v1.48, at the totals level too** — summed `qty_kg` and `value`, both rate fields at `"0.0000000000"` (§3 rule 2) — and a populated `totals.money` (§4.5) |
 | `calculate_response_single.json` | A 200 body with no alternative scenario: `alternative` and `net_benefit` null at both levels (§3 rule 4), and `"money": null`, which is v1.48's absent case on the wire |
+| `export_pdf_request.json` | **v1.49.** A `POST /export/pdf` request (§6.2.3): `calculate_request.json`'s two entries, with `token` and `dry_run` dropped — `ExportPayload` declares neither and `extra="forbid"` refuses both — and `locale: "ar"` added, so the one fixture exercising this route also exercises a right-to-left catalogue. `tests/api/test_export_pdf.py` posts it to the real route rather than reshaping `calculate_request.json` at test time, so a field this file gets wrong fails the same test a hand-built payload could quietly pass |
 | `stats.json` | A `GET /stats` response with a suppressed `other` bucket in every breakdown, an `unspecified` food-category bucket, and shares that sum to exactly 1 |
 | `factors.json` | A `GET /factors` response: constants, five formulas, upstream and downstream rows including a **negative** downstream factor and a generic (`food_category: null`) row, and `source_note` / `data_quality` on every row. **`prevention` is at zero on both sides** — all three downstream rows, and since v1.8 an upstream row for every `(sector, food_category, metric)` that has a general one (open item O-7). `test_prevention_is_a_whole_offset_upstream_as_well_as_down` is what keeps the upstream half complete |
 | `errors/*.json` | **Seven files, one per §9 code that has a fixed body**: `validation_error`, `unknown_code`, `unauthorized`, `blocked`, `rate_limited`, `formula_error`, `no_published_factor_set`. `errors/blocked.json` is the only one whose `details` is `null` rather than `[]` (§9.2) |
@@ -4357,7 +4487,7 @@ A fixture that agrees with nothing is a fixture that drifts. Two test modules ho
 
 | Module | What it holds | Examples |
 | --- | --- | --- |
-| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; **the totals-level `by_destination` partitions its metric total exactly and both of its rate fields are zero** (v1.48); `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form |
+| `tests/api/test_fixture_consistency.py` | The fixtures against **each other, the arithmetic, and `admin/seed.py`** — no HTTP, no app | Every decimal is a string at the contracted scale; no fixture leaks a primary key (§1.1); the request and the response describe the same calculation; every entry conserves mass to §6.2's 0.010 kg; a destination's factors do not change between scenarios; the response's own arithmetic closes; every line equals its formula applied to `factors.json`; every equivalence is derived from the metric total it names; **the totals-level `by_destination` partitions its metric total exactly and both of its rate fields are zero** (v1.48); `taxonomy.json`'s codes **and names** are the shipped seeds; `prevention` never appears in a current scenario; **`export_pdf_request.json` conserves mass to the same 0.010 kg and carries neither `token` nor `dry_run`** (v1.49); `stats.json`'s shares sum to 1; every §9 code has a fixture; `blocked` is the one `details: null`; `details[].field` uses the bracket form |
 | `tests/api/test_api.py` | The fixtures against **real responses from the real app** | `test_contract_fixtures_have_the_same_top_level_shapes` (taxonomy, both calculate responses), `test_factors_fixture_matches_the_published_export`, `test_stats_fixture_shape_holds_against_a_populated_database`, and the per-code error assertions inside the behavioural tests |
 
 Both matter, and neither substitutes for the other. The shape check proves the API can produce the fixture; it cannot prove the fixture's numbers are right, because `_assert_shape` compares JSON types and key sets rather than values — which is exactly how a `stats.json` of three empty arrays and a `calculate_response.json` of empty `metrics` passed for two revisions while giving C and D nothing to build against. The consistency check proves the numbers, and cannot prove the API emits them.

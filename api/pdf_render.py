@@ -44,7 +44,8 @@ document at least as hard as it binds a page -- the request would come from
 inside the API container, where nobody would see it. The two brand faces are
 embedded from a copy that ships inside this package, and ``_local_url_fetcher``
 below refuses every URL that is not one of them, so the rule is enforced rather
-than remembered.
+than remembered. The twelve script fallback faces added for the twenty
+languages are embedded the same way, from ``api/assets/fonts/noto/``.
 """
 
 from __future__ import annotations
@@ -511,9 +512,11 @@ def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
     right-to-left around text that runs the other way.
 
     **`dir` comes from the catalogue's own declaration**, not from a table of
-    language subtags. `text_direction` still exists and is still the answer for
-    a bare tag, but where a translation exists the people who wrote it are the
-    better authority on which way it runs. That one attribute is the whole of
+    language subtags - the people who wrote a translation are the better
+    authority on which way it runs. `text_direction` is the fallback for a
+    catalogue that did not say, and it reads the language subtag rather than
+    assuming left-to-right, so a new right-to-left catalogue that forgets the
+    key still mirrors. That one attribute is the whole of
     defect two: it is what makes Pango run the Unicode bidirectional algorithm
     in a right-to-left base context, which is the difference between a sentence
     that ends with a full stop and one that starts with it. **Nothing in this
@@ -543,7 +546,7 @@ def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
 
     return {
         "lang": catalogue.language,
-        "dir": catalogue.direction,
+        "dir": catalogue.direction or text_direction(catalogue.language),
         "title": translate(_TITLE),
         "subtitle": translate(_SUBTITLE),
         "is_mock": bool(result.is_mock),

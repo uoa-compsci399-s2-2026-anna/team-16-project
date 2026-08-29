@@ -56,13 +56,17 @@ from pydantic import Field
 from api.pdf_render import render_results_pdf
 from api.schemas import MAX_ENTRIES, EntryPayload, PricingOptions
 
-#: A locale tag, not yet validated against a closed vocabulary the way
-#: ``gwp_horizon`` and ``time_frame`` are: the renderer accepts any tag and
-#: derives only the document's base direction and its ``lang`` from it
-#: (``api/pdf_render.text_direction``), and §O-8 has not yet settled which
-#: interface languages are promised. Bounded so an absurd value cannot reach
-#: the ``lang`` attribute, not because a real allow-list exists to check
-#: against.
+#: A locale tag, still not validated against a closed vocabulary the way
+#: ``gwp_horizon`` and ``time_frame`` are - and the reason has changed shape
+#: rather than gone away. The renderer now negotiates the tag against the
+#: calculator's own catalogues (``api/i18n.resolve``), exactly as the page
+#: does: ``zh-TW`` reaches Traditional Chinese, ``en-GB`` reaches English, and
+#: a tag nobody claims reaches English rather than being refused. That is
+#: deliberate - a download is not the place to tell somebody their browser's
+#: language is unsupported - so there is nothing here for an allow-list to
+#: reject. Bounded only so an absurd value cannot reach the ``lang``
+#: attribute. §O-8 still has not settled which interface languages are
+#: *promised*; twenty are shipped.
 _LOCALE_MIN = 2
 _LOCALE_MAX = 35
 

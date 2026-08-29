@@ -83,13 +83,18 @@ class Catalogue:
 
     language: str
     strings: Mapping[str, str]
-    #: `"ltr"` or `"rtl"`. **Read from the catalogue file, not guessed from
-    #: the tag.** `api/pdf_render.text_direction` still exists and still
-    #: derives a direction from a bare BCP-47 tag - it has to, for a locale
-    #: with no catalogue at all - but where a catalogue exists its own
-    #: declaration wins, because the people who wrote the translation are a
-    #: better authority on which way it runs than a table of language subtags.
-    direction: str = "ltr"
+    #: `"ltr"`, `"rtl"`, or **`None` when the file did not say**.
+    #:
+    #: Read from the catalogue rather than guessed from the tag, because the
+    #: people who wrote the translation are a better authority on which way it
+    #: runs than a table of language subtags. But `dir` is optional in the
+    #: catalogue format - `tests/web/test_i18n_web.py` reads it as
+    #: `catalogue.get("dir", "ltr")` - and defaulting a silent file to
+    #: left-to-right *here* would mean a new right-to-left catalogue that
+    #: forgot the key rendered mirrored-wrong with nothing to say so. `None`
+    #: instead, and `api/pdf_render.build_context` falls back to
+    #: `text_direction`, which reads the language subtag.
+    direction: str | None = None
     #: Every BCP-47 tag this catalogue claims, itself included. This is what
     #: stops `zh-TW` reaching Simplified Chinese: RFC 4647 lookup truncates
     #: `zh-TW` to `zh`, which for Traditional Chinese is not a graceful
@@ -128,7 +133,7 @@ def _load() -> dict[str, Catalogue]:
     drift.
     """
     catalogues = {
-        DEFAULT_LANGUAGE: Catalogue(DEFAULT_LANGUAGE, {}, "ltr", ("en", "en-NZ")),
+        DEFAULT_LANGUAGE: Catalogue(DEFAULT_LANGUAGE, {}, None, ("en", "en-NZ")),
     }
     if LOCALES_DIR.is_dir():
         for path in sorted(LOCALES_DIR.glob("*.json")):
@@ -138,10 +143,14 @@ def _load() -> dict[str, Catalogue]:
             catalogues[raw["language"]] = Catalogue(
                 language=raw["language"],
                 strings=raw["strings"],
-                # Anything that is not exactly "rtl" is left-to-right: a typo
-                # must not produce a third writing direction that no renderer
-                # understands and that `dir` would emit verbatim.
-                direction="rtl" if raw.get("dir") == "rtl" else "ltr",
+                # Only the two values CSS and HTML understand are taken. A
+                # typo must not become a third writing direction that `dir`
+                # would emit verbatim, and it must not silently become
+                # left-to-right either - it becomes "the file did not say",
+                # and the language subtag answers.
+                direction=(
+                    raw["dir"] if raw.get("dir") in ("ltr", "rtl") else None
+                ),
                 tags=tuple(raw.get("tags") or [raw["language"]]),
             )
     return catalogues

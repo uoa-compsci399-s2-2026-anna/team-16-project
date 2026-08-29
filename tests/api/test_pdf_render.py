@@ -1014,6 +1014,22 @@ def test_the_document_direction_follows_the_catalogue(locale):
     assert build_context(_result(), _taxonomy(), locale)["dir"] == expected
 
 
+def test_a_catalogue_that_does_not_declare_a_direction_reads_the_tag(monkeypatch):
+    """**The fallback that keeps `text_direction` load-bearing.**
+
+    `dir` is optional in the catalogue format, and every catalogue on disk
+    happens to carry it - so a renderer that defaulted a silent file to
+    left-to-right would look correct today and mirror a future Hebrew or
+    Persian catalogue the wrong way the day somebody forgot the key. The
+    language subtag answers instead, which is the one thing that cannot be
+    forgotten: it is the file's name.
+    """
+    catalogue = i18n.catalogue("ar")
+    silent = i18n.Catalogue("ar", catalogue.strings, None, catalogue.tags)
+    monkeypatch.setitem(i18n._CATALOGUES, "ar", silent)
+    assert build_context(_result(), _taxonomy(), "ar")["dir"] == "rtl"
+
+
 @pytest.mark.parametrize(
     "requested, language",
     [

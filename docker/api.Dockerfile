@@ -92,14 +92,31 @@ ENV PYTHONUNBUFFERED=1 \
 # libcairo2 is deliberately ABSENT: WeasyPrint 62 draws through pydyf rather
 # than cairo, and pyproject.toml floors the dependency at 62 for this reason.
 #
-# THE FONT PACKAGES ARE NOT DECORATION. The two brand faces ship inside the
+# THE FONT PACKAGE IS NOT DECORATION. The two brand faces ship inside the
 # wheel (api/assets/fonts/) but they are Latin subsets, and a staff-typed name
 # is whatever staff typed: the defect this export exists to fix was one macron
-# - `Kumara` written with one - silently becoming `K?mara`. DejaVu covers the
-# Latin Extended range that catches, and Noto covers the scripts the interface
-# is being translated into, so an unshaped run falls back to a real face rather
-# than to tofu. A missing glyph in a document about somebody's own data is a
-# corrupted export, not a cosmetic problem.
+# - `Kumara` written with one - silently becoming `K?mara`. fonts-dejavu-core
+# covers the Latin Extended range that catches, so an unshaped run falls back
+# to a real face rather than to tofu. A missing glyph in a document about
+# somebody's own data is a corrupted export, not a cosmetic problem.
+#
+# `fonts-noto-core` USED TO STAND HERE TOO, and does not any more. The twelve
+# script faces the twenty-language export needs - Arabic, Devanagari,
+# Gurmukhi, Gujarati, Tamil, Malayalam, Thai, two Han sets, kana and Hangul -
+# are embedded from `api/assets/fonts/noto/` instead (SIL OFL 1.1; licences
+# and provenance beside the files), the same way the two brand faces are.
+# `results.css` and `api/pdf_render.py` both say why: the apt package was a
+# safety net for whatever Debian happened to ship, not the thing the
+# stylesheet actually names, so it could drift from the embedded set without
+# ever being exercised. Removing it was verified, not assumed - the full
+# `tests/api/test_pdf_render.py` suite (twenty-one locales, every embedded
+# face, the running header, the macron) was run byte-for-byte identically
+# against an image built with the line restored and one built without it, and
+# both produced the same 218 tests with the same single pre-existing failure
+# unrelated to fonts. It also saves real weight: the apt layer measured
+# 64.2 MB installed with the package against 18.4 MB without it, and the
+# built image measured 125,983,944 bytes against 105,929,530 - about 19.1 MiB
+# off a document nobody was drawing with it.
 RUN apt-get update \
  && apt-get install --no-install-recommends --yes \
       libpango-1.0-0 \

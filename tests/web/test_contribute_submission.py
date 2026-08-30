@@ -85,14 +85,6 @@ def is_public_contributed(token: str) -> bool:
     return rows[0][0] == "1"
 
 
-@pytest.fixture(scope="module")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
 @pytest.fixture
 def page(browser):
     """A fresh context and a fresh token, with no route interception at all - the

@@ -55,14 +55,6 @@ playwright_api = pytest.importorskip(
 BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/") + "/index.html"
 
 
-@pytest.fixture(scope="module")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
 @pytest.fixture
 def page(browser):
     """A fresh context and a fresh session token, and no route interception at all —

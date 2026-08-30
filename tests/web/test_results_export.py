@@ -455,18 +455,6 @@ CALCULATOR_URL = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rst
 FORCE_AUTO_SCROLL = "html { scroll-behavior: auto !important; }"
 
 
-@pytest.fixture(scope="module")
-def browser():
-    playwright_api = pytest.importorskip(
-        "playwright.sync_api",
-        reason="playwright is required to render the destination-first tree; it is unverified without it",
-    )
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
 @pytest.fixture
 def page_at(browser):
     """A page with the calculate POST fulfilled from a given contract-shaped response.

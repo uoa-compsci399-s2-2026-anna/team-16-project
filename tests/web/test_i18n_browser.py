@@ -71,17 +71,9 @@ if not _stack_is_up():  # pragma: no cover - environment guard
         allow_module_level=True,
     )
 
-from playwright.sync_api import sync_playwright  # noqa: E402
-
-
-@pytest.fixture(scope="module")
-def browser():
-    with sync_playwright() as playwright:
-        instance = playwright.chromium.launch()
-        yield instance
-        instance.close()
-
-
+#: `browser` itself now comes from `tests/web/conftest.py`, package-scoped
+#: and shared across every file in this directory - see that module's
+#: docstring for why a per-file fixture corrupted the rest of the run.
 def open_page(browser, languages, path="/index.html", query="", stats_fixture=False):
     """A page whose browser claims `languages`, in preference order.
 

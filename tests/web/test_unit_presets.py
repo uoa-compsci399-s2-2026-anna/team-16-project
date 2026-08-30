@@ -338,14 +338,6 @@ WEB_BASE = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080/index.html"
 FORCE_AUTO = "html { scroll-behavior: auto !important; }"
 
 
-@pytest.fixture(scope="session")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
 @pytest.fixture
 def page_at(browser):
     """A page at a given viewport, English, on the introduction screen."""

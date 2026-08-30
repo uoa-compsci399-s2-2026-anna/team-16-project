@@ -113,14 +113,6 @@ def stored_current_kg(token: str) -> list[str]:
     return sorted(row[0] for row in rows)
 
 
-@pytest.fixture(scope="module")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
-
 @pytest.fixture
 def page(browser):
     """A fresh context, so every run mints its own session token.

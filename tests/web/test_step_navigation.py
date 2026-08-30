@@ -93,13 +93,6 @@ PAST_FOLD = """
 """
 
 
-@pytest.fixture(scope="session")
-def browser():
-    with playwright_api.sync_playwright() as p:
-        instance = p.chromium.launch()
-        yield instance
-        instance.close()
-
 
 @pytest.fixture
 def page_at(browser):

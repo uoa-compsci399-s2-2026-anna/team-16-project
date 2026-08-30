@@ -51,6 +51,19 @@ let latestRequestGeneration = 0
 /**
  * The three breakdowns §6.4 publishes.
  *
+ * **All three are drawn as doughnuts, and that is only honest because of what
+ * they count.** Every value a breakdown here charts is `share`, derived in
+ * `db/repository.py::_bucketise` from `func.count()` — destination entries,
+ * supply-chain points, food categories selected. A count cannot be negative,
+ * and any bucket the suppression threshold would otherwise expose is merged
+ * into `other` before a share is computed, so the shares that remain still
+ * sum to 1: the slices are the whole. **A doughnut cannot draw a negative
+ * slice** — there is no such thing as a negative share of a whole — which is
+ * exactly why `renderBar`'s `allowNegative` exists at all: `factor_downstream`
+ * may be negative (an offset, such as the waste levy), so a future breakdown
+ * of impact *values* rather than counts needs a bar, not a doughnut. Do not
+ * switch that one on the strength of this comment; recheck what it sums.
+ *
  * **Every string is a function, not a value**, the same shape
  * `methodology.js::METADATA_FIELDS` uses. A constant would be read once at module
  * evaluation and would still be in the first language after a change; a call
@@ -68,7 +81,7 @@ const BREAKDOWNS = [
   {
     key: 'by_destination',
     title: () => t('Destinations entered'),
-    description: () => t('Share of destination entries across calculations run in this tool.'),
+    description: () => t('Share of destination entries across calculations contributed to this tool.'),
     chart: 'donut',
     chartTitle: () => t('Destinations entered (share)'),
     count: (count) => t('%(count)s destination entries', { count }),
@@ -76,16 +89,16 @@ const BREAKDOWNS = [
   {
     key: 'by_sector',
     title: () => t('Sectors selected'),
-    description: () => t('Share of supply-chain points by the sector selected in this tool.'),
-    chart: 'bar',
+    description: () => t('Share of supply-chain points by the sector selected across calculations contributed to this tool.'),
+    chart: 'donut',
     chartTitle: () => t('Sectors selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
   },
   {
     key: 'by_food_category',
     title: () => t('Food categories selected'),
-    description: () => t('Share of supply-chain points by the food category entered in this tool.'),
-    chart: 'bar',
+    description: () => t('Share of supply-chain points by the food category entered across calculations contributed to this tool.'),
+    chart: 'donut',
     chartTitle: () => t('Food categories selected (share)'),
     count: (count) => t('%(count)s supply-chain points', { count }),
   },
@@ -172,11 +185,11 @@ export function destroyCharts() {
  * The headline sentence, with its figure still inside a `<strong>`.
  *
  * The sentence is **one key** rather than three fragments concatenated around
- * the number, because a translator handed "Across " and " calculations run in
- * this tool." cannot move the figure — and in several of these twenty languages
- * the number does not sit where English puts it. It is split on the placeholder
- * *after* the lookup and *before* substitution, so the emphasis survives without
- * any markup crossing the catalogue.
+ * the number, because a translator handed "Across " and " calculations
+ * contributed to this tool." cannot move the figure — and in several of these
+ * twenty languages the number does not sit where English puts it. It is split
+ * on the placeholder *after* the lookup and *before* substitution, so the
+ * emphasis survives without any markup crossing the catalogue.
  *
  * **It takes the translated sentence, not the key, and that is not a style
  * choice.** Written the other way — `sentenceAround('Across %(count)s …')`, with
@@ -196,7 +209,7 @@ function sentenceAround(translated, value, className) {
 function renderSummary(stats, target) {
   const fragment = document.createDocumentFragment()
   fragment.append(sentenceAround(
-    t('Across %(count)s calculations run in this tool.'),
+    t('Across %(count)s calculations contributed to this tool.'),
     integer(stats.total_calculations),
     'stats-calculation-total',
   ))
@@ -232,7 +245,7 @@ function renderEquivalentList(rows, definition) {
       element('span', { text: t('%(share)s share', { share: sharePercent(row?.share) }) }),
       element('span', { text: definition.count(integer(row?.count)) }),
       element('span', {
-        text: t('%(mass)s cumulative quantity entered into this tool', {
+        text: t('%(mass)s cumulative quantity contributed to this tool', {
           mass: kilograms(row?.total_kg),
         }),
       }),

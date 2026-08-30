@@ -626,13 +626,27 @@ export function exportFilename(now = new Date()) {
   return `food-waste-impact-results-${stamp}.txt`
 }
 
+/**
+ * The plain-text download, on `data-action="download-results"` — the original export, and
+ * still the one the step navigation offers. PR #46 replaced this implementation with a
+ * hand-rolled PDF rather than adding one beside it; the PDF now comes from the server
+ * (`downloadPdf` below), so the two formats are two buttons and this one stays text.
+ *
+ * The link is attached to the document before `click()` and removed after: a detached
+ * anchor is not reliably actionable in Firefox. Both details, and the deferred revoke
+ * below, are PR #46's and are kept on their merit.
+ */
 export function downloadResults(state) {
   const url = URL.createObjectURL(new Blob([buildResultsReport(state)], { type: 'text/plain;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
   link.download = exportFilename()
+  document.body?.append(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove?.()
+  // Firefox and Safari can still be consuming the object URL when `click()` returns, so
+  // revoking synchronously can cancel the download. Released on the next task instead.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
 }
 
 /**
@@ -661,7 +675,9 @@ export async function downloadPdf(state) {
     const link = document.createElement('a')
     link.href = url
     link.download = PDF_EXPORT_FILENAME
+    document.body?.append(link)
     link.click()
+    link.remove?.()
     // Same fix PR #46's review confirmed was right: revoking synchronously can cancel the
     // download in some browsers, because Firefox and Safari can still be reading the
     // object URL when `click()` returns. Deferred to the next task instead.

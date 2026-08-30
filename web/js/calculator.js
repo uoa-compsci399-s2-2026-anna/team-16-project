@@ -4,7 +4,7 @@ import { containerKg, countLimit, entryTotal, isPlainDecimal, isPresetUnit, kgTo
 import { requestLines, submissionPayload } from './submission.js'
 import { escapeHtml, formatNumber, slug, stepNav } from './view.js'
 import { t } from './i18n.js'
-import { contributeCalculation, downloadResults, renderResults } from './results.js'
+import { contributeCalculation, downloadPdf, downloadResults, renderResults } from './results.js'
 import { compareImprovement, openImprovement, resetImprovement, updateImprovementInput } from './improvement.js'
 
 const decimalPattern = /^\d+(\.\d{1,2})?$/
@@ -905,6 +905,7 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'calculate') submitCalculation()
     if (action === 'start-over' && window.confirm(t('Clear all calculator data and return to the introduction?'))) resetCalculator()
     if (action === 'download-results') downloadResults(state)
+    if (action === 'download-pdf') downloadPdf(state)
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)

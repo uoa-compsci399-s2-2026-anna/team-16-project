@@ -1,8 +1,9 @@
 import { escapeHtml, formatNumber, stepNav } from './view.js'
-import { t, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
+import { t, activeLanguage, isMachineTranslated, MACHINE_TRANSLATION_NOTICE } from './i18n.js'
 import { entryTotal, isPresetUnit, kgToTonnes, presetUnitCode, rowKgString } from './units.js'
 import { ComparisonResults, ImprovementScenario } from './improvement.js'
-import { contribute } from './api.js'
+import { contribute, exportPdf } from './api.js'
+import { exportPayload } from './submission.js'
 import { setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
@@ -625,13 +626,66 @@ export function exportFilename(now = new Date()) {
   return `food-waste-impact-results-${stamp}.txt`
 }
 
+/**
+ * The plain-text download, on `data-action="download-results"` — the original export, and
+ * still the one the step navigation offers. PR #46 replaced this implementation with a
+ * hand-rolled PDF rather than adding one beside it; the PDF now comes from the server
+ * (`downloadPdf` below), so the two formats are two buttons and this one stays text.
+ *
+ * The link is attached to the document before `click()` and removed after: a detached
+ * anchor is not reliably actionable in Firefox. Both details, and the deferred revoke
+ * below, are PR #46's and are kept on their merit.
+ */
 export function downloadResults(state) {
   const url = URL.createObjectURL(new Blob([buildResultsReport(state)], { type: 'text/plain;charset=utf-8' }))
   const link = document.createElement('a')
   link.href = url
   link.download = exportFilename()
+  document.body?.append(link)
   link.click()
-  URL.revokeObjectURL(url)
+  link.remove?.()
+  // Firefox and Safari can still be consuming the object URL when `click()` returns, so
+  // revoking synchronously can cancel the download. Released on the next task instead.
+  setTimeout(() => URL.revokeObjectURL(url), 0)
+}
+
+/**
+ * The document `POST /api/v1/export/pdf` renders (`api/export.py`) — beside the plain-text
+ * download above, not instead of it. Sends what the state already has and downloads what
+ * comes back; every figure in the document is the server's (§7.6.1), computed on this
+ * request rather than carried over from `state.result`.
+ *
+ * `exportPayload` reads the locale from `activeLanguage()` — the same value `i18n.js`
+ * negotiated to put the rest of this page's own text on screen — because the server has no
+ * other way to know which language the visitor is reading (§O-8).
+ *
+ * **One fixed name, matching the server's own `Content-Disposition`** (`EXPORT_FILENAME` in
+ * `api/export.py`): the blob this creates has no headers of its own for the browser to read
+ * a name from, and a document downloaded twice under two different names would be the
+ * confusing sibling of `exportFilename()`'s reason for stamping the text export instead.
+ */
+const PDF_EXPORT_FILENAME = 'kai-commitment-impact-calculator.pdf'
+
+export async function downloadPdf(state) {
+  if (state.pdfExporting) return
+  setState({ pdfExporting: true, pdfError: null })
+  try {
+    const blob = await exportPdf(exportPayload(state, activeLanguage()))
+    const url = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = url
+    link.download = PDF_EXPORT_FILENAME
+    document.body?.append(link)
+    link.click()
+    link.remove?.()
+    // Same fix PR #46's review confirmed was right: revoking synchronously can cancel the
+    // download in some browsers, because Firefox and Safari can still be reading the
+    // object URL when `click()` returns. Deferred to the next task instead.
+    setTimeout(() => URL.revokeObjectURL(url), 0)
+    setState({ pdfExporting: false })
+  } catch (error) {
+    setState({ pdfExporting: false, pdfError: error.message || t('The calculator service could not be reached. Check your connection and try again.') })
+  }
 }
 
 /**
@@ -733,7 +787,7 @@ export function renderResults(state) {
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button></div>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><button class="button button-secondary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
     ${contributeBlock(state)}

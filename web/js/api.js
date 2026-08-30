@@ -196,6 +196,45 @@ export function getStats() {
 }
 
 /**
+ * `POST /api/v1/export/pdf`. The document, not JSON, so this cannot go through
+ * `request()` above: that helper always reads `response.json()`, which throws on a
+ * binary body. Everything else about the failure shapes matches it — the same
+ * `ApiError`, the same envelope fields read off a JSON error body where the route
+ * answers one.
+ *
+ * @param {object} payload  `submission.js`'s `exportPayload(state, locale)`.
+ * @returns {Promise<Blob>}
+ */
+export async function exportPdf(payload) {
+  let response
+  try {
+    response = await fetch(`${API_BASE}/export/pdf`, {
+      method: 'POST',
+      headers: { Accept: 'application/pdf', 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    })
+  } catch {
+    throw new ApiError('NETWORK_ERROR', t('The calculator service could not be reached. Check your connection and try again.'))
+  }
+  if (!response.ok) {
+    let body = null
+    try {
+      body = await response.json()
+    } catch {
+      // The error body is not JSON either; `body` stays null and the fallback
+      // message below is what is shown.
+    }
+    throw new ApiError(
+      body?.error?.code || body?.code || 'HTTP_ERROR',
+      body?.error?.message || body?.message || t('The request could not be completed.'),
+      body?.error?.details || body?.details || [],
+      response.status,
+    )
+  }
+  return response.blob()
+}
+
+/**
  * §6.2.2's opt-in. `token` is the only field the request carries — the same session
  * token `/calculate` already minted and the front end already holds in `sessionStorage`
  * — and the response is 204 with no body, always: the route gives nothing away about

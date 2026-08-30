@@ -1,0 +1,175 @@
+{
+  "default": "en",
+  "catalogues": [
+    {
+      "language": "zh",
+      "endonym": "中文（简体）",
+      "machine_translated": false,
+      "tags": [
+        "zh",
+        "zh-Hans",
+        "zh-CN",
+        "zh-SG",
+        "zh-MY"
+      ]
+    },
+    {
+      "language": "zh-Hant",
+      "endonym": "中文（繁體）",
+      "machine_translated": true,
+      "tags": [
+        "zh-Hant",
+        "zh-TW",
+        "zh-HK",
+        "zh-MO"
+      ]
+    },
+    {
+      "language": "hi",
+      "endonym": "हिन्दी",
+      "machine_translated": true,
+      "tags": [
+        "hi"
+      ]
+    },
+    {
+      "language": "tl",
+      "endonym": "Tagalog",
+      "machine_translated": true,
+      "tags": [
+        "tl",
+        "fil"
+      ]
+    },
+    {
+      "language": "pa",
+      "endonym": "ਪੰਜਾਬੀ",
+      "machine_translated": true,
+      "tags": [
+        "pa",
+        "pa-Guru",
+        "pa-IN"
+      ]
+    },
+    {
+      "language": "ko",
+      "endonym": "한국어",
+      "machine_translated": true,
+      "tags": [
+        "ko"
+      ]
+    },
+    {
+      "language": "af",
+      "endonym": "Afrikaans",
+      "machine_translated": true,
+      "tags": [
+        "af"
+      ]
+    },
+    {
+      "language": "fr",
+      "endonym": "Français",
+      "machine_translated": true,
+      "tags": [
+        "fr"
+      ]
+    },
+    {
+      "language": "de",
+      "endonym": "Deutsch",
+      "machine_translated": true,
+      "tags": [
+        "de"
+      ]
+    },
+    {
+      "language": "es",
+      "endonym": "Español",
+      "machine_translated": true,
+      "tags": [
+        "es"
+      ]
+    },
+    {
+      "language": "nl",
+      "endonym": "Nederlands",
+      "machine_translated": true,
+      "tags": [
+        "nl"
+      ]
+    },
+    {
+      "language": "ja",
+      "endonym": "日本語",
+      "machine_translated": true,
+      "tags": [
+        "ja"
+      ]
+    },
+    {
+      "language": "gu",
+      "endonym": "ગુજરાતી",
+      "machine_translated": true,
+      "tags": [
+        "gu"
+      ]
+    },
+    {
+      "language": "ar",
+      "endonym": "العربية",
+      "machine_translated": true,
+      "tags": [
+        "ar"
+      ]
+    },
+    {
+      "language": "ta",
+      "endonym": "தமிழ்",
+      "machine_translated": true,
+      "tags": [
+        "ta"
+      ]
+    },
+    {
+      "language": "vi",
+      "endonym": "Tiếng Việt",
+      "machine_translated": true,
+      "tags": [
+        "vi"
+      ]
+    },
+    {
+      "language": "th",
+      "endonym": "ไทย",
+      "machine_translated": true,
+      "tags": [
+        "th"
+      ]
+    },
+    {
+      "language": "ru",
+      "endonym": "Русский",
+      "machine_translated": true,
+      "tags": [
+        "ru"
+      ]
+    },
+    {
+      "language": "ur",
+      "endonym": "اردو",
+      "machine_translated": true,
+      "tags": [
+        "ur"
+      ]
+    },
+    {
+      "language": "ml",
+      "endonym": "മലയാളം",
+      "machine_translated": true,
+      "tags": [
+        "ml"
+      ]
+    }
+  ]
+}

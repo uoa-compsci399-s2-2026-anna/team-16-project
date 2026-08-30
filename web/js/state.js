@@ -95,6 +95,11 @@ export const state = {
   contributing: false,
   contributed: false,
   contributeError: null,
+  // The PDF button (`results.js`'s `downloadPdf`). Unlike `contributed` above this never
+  // needs to survive past its own request: there is nothing to remember about a document
+  // once it has downloaded, only whether one is in flight right now.
+  pdfExporting: false,
+  pdfError: null,
 }
 
 /**
@@ -203,5 +208,7 @@ export function resetCalculator() {
     contributing: false,
     contributed: false,
     contributeError: null,
+    pdfExporting: false,
+    pdfError: null,
   })
 }

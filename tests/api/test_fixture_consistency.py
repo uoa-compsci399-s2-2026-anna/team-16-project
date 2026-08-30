@@ -83,6 +83,11 @@ def request_fixture():
 
 
 @pytest.fixture(scope="module")
+def export_request_fixture():
+    return load("export_pdf_request.json")
+
+
+@pytest.fixture(scope="module")
 def response_fixture():
     return load("calculate_response.json")
 
@@ -329,6 +334,34 @@ def test_every_entry_conserves_mass_between_its_scenarios(request_fixture):
 
     seen = {(e["sector"], e["food_category"]) for e in request_fixture["entries"]}
     assert len(seen) == len(request_fixture["entries"]), "duplicate (sector, food_category)"
+
+
+def test_the_export_fixture_conserves_mass_and_names_no_calculate_only_field(
+    export_request_fixture,
+):
+    """§6.2.3. `export_pdf_request.json` is a `POST /export/pdf` body, not a
+    `POST /calculate` one — it must hold §6.2's mass-conservation rule exactly
+    as `calculate_request.json` does (the same engine runs either way), and it
+    must not carry `token` or `dry_run`, which `ExportPayload` does not
+    declare and `extra="forbid"` refuses outright."""
+    assert "token" not in export_request_fixture
+    assert "dry_run" not in export_request_fixture
+    assert export_request_fixture["locale"]
+
+    for index, entry in enumerate(export_request_fixture["entries"]):
+        if entry["alternative"] is None:
+            continue
+        current = sum((Decimal(l["qty_kg"]) for l in entry["current"]), Decimal("0"))
+        alternative = sum(
+            (Decimal(l["qty_kg"]) for l in entry["alternative"]), Decimal("0")
+        )
+        assert abs(alternative - current) <= MASS_TOLERANCE_KG, (
+            f"entries[{index}].alternative describes {alternative} kg against a "
+            f"current scenario of {current} kg"
+        )
+        assert "prevention" not in {
+            line["destination"] for line in entry["current"]
+        }, f"entries[{index}].current carries a prevention destination"
 
 
 def test_prevention_is_a_whole_offset_upstream_as_well_as_down(factors):
@@ -767,6 +800,7 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
         "calculate_request.json",
         "calculate_response.json",
         "calculate_response_single.json",
+        "export_pdf_request.json",
         "factors.json",
         "stats.json",
     ):

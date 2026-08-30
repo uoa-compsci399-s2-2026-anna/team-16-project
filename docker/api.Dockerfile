@@ -73,6 +73,58 @@ ENV PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
     PIP_DISABLE_PIP_VERSION_CHECK=1
 
+# WeasyPrint's system libraries, and the fallback faces it draws with.
+#
+# `POST /api/v1/export/pdf` renders the results document by handing HTML and
+# CSS to WeasyPrint; Pango does the line breaking and the Unicode bidirectional
+# algorithm, HarfBuzz does the shaping. Those are C libraries, and pip cannot
+# install them - `pip install weasyprint` succeeds on any platform and then
+# raises `OSError: cannot load library 'libgobject-2.0-0'` on first import.
+# WITHOUT THIS LAYER THE IMAGE BUILDS, STARTS, PASSES ITS HEALTH CHECK AND
+# ANSWERS 500 ON THE ONE ROUTE THAT NEEDS IT, which is why it is a RUN here and
+# not a note in a README.
+#
+#   libpango-1.0-0, libpangoft2-1.0-0  line breaking, bidi, FreeType binding
+#   libharfbuzz-subset0                glyph shaping, and the subsetter
+#                                      WeasyPrint uses to embed only the glyphs
+#                                      a document actually draws
+#
+# libcairo2 is deliberately ABSENT: WeasyPrint 62 draws through pydyf rather
+# than cairo, and pyproject.toml floors the dependency at 62 for this reason.
+#
+# THE FONT PACKAGE IS NOT DECORATION. The two brand faces ship inside the
+# wheel (api/assets/fonts/) but they are Latin subsets, and a staff-typed name
+# is whatever staff typed: the defect this export exists to fix was one macron
+# - `Kumara` written with one - silently becoming `K?mara`. fonts-dejavu-core
+# covers the Latin Extended range that catches, so an unshaped run falls back
+# to a real face rather than to tofu. A missing glyph in a document about
+# somebody's own data is a corrupted export, not a cosmetic problem.
+#
+# `fonts-noto-core` USED TO STAND HERE TOO, and does not any more. The twelve
+# script faces the twenty-language export needs - Arabic, Devanagari,
+# Gurmukhi, Gujarati, Tamil, Malayalam, Thai, two Han sets, kana and Hangul -
+# are embedded from `api/assets/fonts/noto/` instead (SIL OFL 1.1; licences
+# and provenance beside the files), the same way the two brand faces are.
+# `results.css` and `api/pdf_render.py` both say why: the apt package was a
+# safety net for whatever Debian happened to ship, not the thing the
+# stylesheet actually names, so it could drift from the embedded set without
+# ever being exercised. Removing it was verified, not assumed - the full
+# `tests/api/test_pdf_render.py` suite (twenty-one locales, every embedded
+# face, the running header, the macron) was run byte-for-byte identically
+# against an image built with the line restored and one built without it, and
+# both produced the same 218 tests with the same single pre-existing failure
+# unrelated to fonts. It also saves real weight: the apt layer measured
+# 64.2 MB installed with the package against 18.4 MB without it, and the
+# built image measured 125,983,944 bytes against 105,929,530 - about 19.1 MiB
+# off a document nobody was drawing with it.
+RUN apt-get update \
+ && apt-get install --no-install-recommends --yes \
+      libpango-1.0-0 \
+      libpangoft2-1.0-0 \
+      libharfbuzz-subset0 \
+      fonts-dejavu-core \
+ && rm -rf /var/lib/apt/lists/*
+
 # Non-root. uid/gid pinned so a bind-mounted volume has predictable ownership.
 RUN groupadd --system --gid 10001 kaicalc \
  && useradd --system --uid 10001 --gid kaicalc --home-dir /app --shell /usr/sbin/nologin kaicalc

@@ -1287,3 +1287,119 @@ def test_the_control_is_described_for_a_visitor_who_cannot_see_the_sentence(page
     assert "anonymous" in described_text, (
         "aria-describedby does not point at the sentence explaining the choice"
     )
+
+
+# ---------------------------------------------------------------- the PDF export
+#
+# Task 5. `POST /api/v1/export/pdf` already works (`api/export.py`, `api/router.py`); this
+# is the button that reaches it, beside the plain-text download rather than replacing it.
+# Both tests assert the outgoing request rather than only a download having fired - a
+# button pointed at the wrong path, or one that drops the locale, would still trigger a
+# download and still pass a check that stopped at "something downloaded".
+
+PDF_BYTES = b"%PDF-1.4\n%mock pdf body\n"
+
+
+def _fulfil_pdf(route, calls):
+    calls.append(
+        {
+            "method": route.request.method,
+            "url": route.request.url,
+            "body": route.request.post_data_json,
+        }
+    )
+    route.fulfill(status=200, content_type="application/pdf", body=PDF_BYTES)
+
+
+@pytest.mark.browser
+def test_the_pdf_button_posts_the_export_route_carrying_the_locale(page_at):
+    """The request the button exists to make.
+
+    `page_at` opens with `?lang=en` (see its own docstring), so `en` is the tag
+    `activeLanguage()` holds when the click happens - the export endpoint has no other way
+    to learn which language the visitor is reading (`api/export.py`'s own docstring).
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    button = page.locator('[data-action="download-pdf"]')
+    assert button.count() == 1, "no PDF button on the results page"
+    assert button.is_visible(), "the PDF button is present but not visible"
+
+    with page.expect_download() as download_info:
+        button.click()
+    download = download_info.value
+
+    assert len(calls) == 1, f"expected exactly one request to /export/pdf, got {calls}"
+    call = calls[0]
+    assert call["method"] == "POST"
+    assert call["url"].endswith("/api/v1/export/pdf"), call["url"]
+
+    body = call["body"] or {}
+    assert body.get("locale") == "en", f"the visitor's locale did not reach the request: {body}"
+    assert body.get("entries"), f"the request carries no entries: {body}"
+    #: §2.3/`api/export.py`: the export route persists nothing and `ExportPayload` has no
+    #: field for a token at all - a request that carried one would be a 422, not a document.
+    assert "token" not in body, f"the export request carries a token it has no use for: {body}"
+
+    assert download.suggested_filename.endswith(".pdf"), download.suggested_filename
+
+
+@pytest.mark.browser
+def test_both_downloads_are_offered_and_each_produces_its_own_format(page_at):
+    """Both formats, one screen - and the regression this file exists to hold shut.
+
+    PR #46 did not add a PDF button beside the text one; it **replaced the text
+    download's implementation**, turning the `text/plain` blob into a hand-rolled PDF.
+    Merging that branch reintroduces the removal, and a check that stopped at "two
+    buttons are present" would pass against two buttons emitting the same document.
+
+    So each button is driven separately and its *output* is asserted:
+
+    - the text button downloads a `.txt` whose bytes are `buildResultsReport`'s report,
+      built in the browser - and makes **no** request to the export route;
+    - the PDF button posts to `/api/v1/export/pdf` and downloads what the server answered.
+
+    Both are asserted enabled, not merely visible: `downloadPdf` disables its own button
+    while a request is in flight, and a permanently disabled control is present, visible
+    and useless.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    text_button = page.locator('[data-action="download-results"]')
+    pdf_button = page.locator('[data-action="download-pdf"]')
+    assert text_button.count() == 1, "the plain-text download is gone from the results page"
+    assert pdf_button.count() == 1, "no PDF button on the results page"
+    assert text_button.is_visible() and text_button.is_enabled()
+    assert pdf_button.is_visible() and pdf_button.is_enabled()
+
+    with page.expect_download() as text_info:
+        text_button.click()
+    text_download = text_info.value
+    assert text_download.suggested_filename.endswith(".txt"), text_download.suggested_filename
+    text_bytes = Path(text_download.path()).read_bytes()
+    #: The report itself, not a PDF wearing a `.txt` name - the figures reach the file and
+    #: the mock-data notice travels with them (§7.6.2).
+    assert not text_bytes.startswith(b"%PDF"), "the text button produced a PDF"
+    text = text_bytes.decode("utf-8")
+    assert "Impact summary" in text, text[:400]
+    assert "4,449.0 kg CO2e" in text, text[:400]
+    assert NOTICE in text, text[:400]
+    #: Built in the browser from state already held; the export route is the PDF's alone.
+    assert calls == [], f"the text download called the PDF export route: {calls}"
+
+    with page.expect_download() as pdf_info:
+        pdf_button.click()
+    pdf_download = pdf_info.value
+    assert pdf_download.suggested_filename.endswith(".pdf"), pdf_download.suggested_filename
+    assert Path(pdf_download.path()).read_bytes() == PDF_BYTES
+    assert len(calls) == 1, f"expected one request to /export/pdf, got {calls}"
+    assert calls[0]["method"] == "POST"
+
+    #: Two names, so a visitor who takes both does not overwrite one with the other.
+    assert text_download.suggested_filename != pdf_download.suggested_filename

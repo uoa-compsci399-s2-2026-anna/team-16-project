@@ -1,0 +1,187 @@
+{#-
+  The export document.
+
+  WHAT THIS FILE IS ALLOWED TO DO: print. Every figure below arrives as an
+  already-formatted string on `doc`; there is no arithmetic here, no `sum`, no
+  `|float` and no `round`. Section 7.6.1 leaves the front end no calculation but
+  unit conversion, and a server-side template that summed a column would be the
+  same defect one layer down -- a second calculation site with no golden case
+  behind it. `api/pdf_render.py` builds this context out of the engine's own
+  `CalculationResult` and does no arithmetic either.
+
+  WHAT IT MUST NOT DO: drop the placeholder warning. See the `mock-warning`
+  block below, and `api/pdf_render.py::_assert_mock_warning_present`, which
+  refuses to hand this document to WeasyPrint at all if an edit here removes
+  it while the factor set is mock.
+
+  NAMES ARE NOT TRANSLATED. `sector`, `food_category`, `destination` and
+  `metric` names are staff-typed rows out of the taxonomy (section 2.1). They
+  are printed exactly as they were typed, in whatever language they were typed
+  in, in every locale this document renders in.
+
+  EVERYTHING ELSE IS. Every label, heading and sentence below arrives on `doc`
+  already translated into the document's own language, out of the same
+  `web/locales/*.json` catalogues the calculator page reads
+  (`api/i18n.py`). There is no English fallback: a catalogue missing one of
+  these strings raises rather than printing English into the middle of a
+  translated report.
+
+  AND NOTHING HERE MIRRORS ANYTHING. `<html dir>` two lines down is the whole
+  of the right-to-left support; Pango runs the Unicode bidirectional algorithm
+  from it, and `results.css` uses logical properties throughout so every
+  accent bar, indent and column alignment follows without a rule being
+  written twice.
+-#}
+<!DOCTYPE html>
+<html lang="{{ doc.lang }}" dir="{{ doc.dir }}">
+<head>
+  <meta charset="utf-8">
+  <title>{{ doc.title }}</title>
+</head>
+<body>
+
+{#- THE PLACEHOLDER WARNING.
+
+    A DIRECT CHILD OF <body>, first in the flow, above the title and above
+    every figure. Not inside the header, not inside a section, not inside any
+    element that a later edit could collapse, clip, float or paginate away --
+    there is no ancestor here but <body> itself.
+
+    Its inner flag element is what `results.css` reads with `string-set` to
+    repeat "placeholder data" in the running header of every page, so the
+    banner is both a block at the top and a mark on each sheet.
+
+    This block is not optional and there is no parameter that suppresses it:
+    `doc.is_mock` is `result.is_mock` off the engine's own result, and while
+    open item O-1 stands -- the client has supplied no real emissions factors
+    -- it is true of every calculation this system can perform. A PDF is the
+    artefact most likely to be read months later by someone who was not in the
+    room; it has to say so on its face. -#}
+{% if doc.is_mock %}
+<aside class="mock-warning" role="note">
+  <strong class="mock-warning__flag">{{ doc.mock_flag }}</strong>
+  <p class="mock-warning__body">{{ doc.mock_body }}</p>
+</aside>
+{% endif %}
+
+<h1>{{ doc.title }}</h1>
+<p class="subtitle">{{ doc.subtitle }}</p>
+
+<div class="summary">
+  <div class="summary__item">
+    <span class="summary__label">{{ doc.labels.total_mass }}</span>
+    <span class="summary__value">{{ doc.total_kg }} kg</span>
+  </div>
+  {#- The factor set and the methane horizon in one tile. No catalogue key
+      names the horizon, and one English label in a Tamil report is worse than
+      a compact one: `GWP100` is the ISO notation and reads the same in every
+      language. `api/pdf_render.py` joins the two; nothing is computed here. -#}
+  <div class="summary__item">
+    <span class="summary__label">{{ doc.labels.factor_set }}</span>
+    <span class="summary__value">{{ doc.factor_set }}</span>
+  </div>
+</div>
+
+<h2>{{ doc.labels.totals }}</h2>
+<table>
+  <thead>
+    <tr>
+      <th>{{ doc.labels.metric }}</th>
+      <th class="figure">{{ doc.labels.current }}</th>
+      <th class="figure">{{ doc.labels.alternative }}</th>
+      <th class="figure">{{ doc.labels.net_benefit }}</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in doc.totals %}
+    <tr>
+      <td>{{ row.name }} <span class="unit">({{ row.unit }})</span></td>
+      <td class="figure">{{ row.current }}</td>
+      <td class="figure">{{ row.alternative }}</td>
+      <td class="figure">{{ row.net_benefit }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+
+{% if doc.destinations %}
+<h2>{{ doc.labels.destinations }}</h2>
+<table>
+  <thead>
+    <tr>
+      <th>{{ doc.labels.destination }}</th>
+      <th class="figure">{{ doc.labels.current }} (kg)</th>
+      <th class="figure">{{ doc.labels.alternative }} (kg)</th>
+    </tr>
+  </thead>
+  <tbody>
+    {% for row in doc.destinations %}
+    <tr>
+      <td>{{ row.name }}</td>
+      <td class="figure">{{ row.current }}</td>
+      <td class="figure">{{ row.alternative }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if doc.money %}
+<h2>{{ doc.labels.money }}</h2>
+<table>
+  <tbody>
+    {% for row in doc.money %}
+    <tr>
+      <td>{{ row.name }}</td>
+      <td class="figure">{{ row.value }}</td>
+    </tr>
+    {% endfor %}
+  </tbody>
+</table>
+{% endif %}
+
+{% if doc.equivalences %}
+<h2>{{ doc.labels.equivalences }}</h2>
+{#- The engine interpolated these labels itself (section 3's interpolation
+    rule), so the string below is printed verbatim and never re-formatted. -#}
+<ul class="equivalences">
+  {% for label in doc.equivalences %}
+  <li>{{ label }}</li>
+  {% endfor %}
+</ul>
+{% endif %}
+
+{% if doc.entries %}
+<h2>{{ doc.labels.entries }}</h2>
+{% for entry in doc.entries %}
+<section class="entry">
+  <h3 class="entry__heading">{{ entry.sector }} &middot; {{ entry.food_category }}</h3>
+  <p class="entry__meta">{{ doc.labels.total_mass }}: {{ entry.total_kg }} kg</p>
+  <table>
+    <thead>
+      <tr>
+        <th>{{ doc.labels.metric }}</th>
+        <th class="figure">{{ doc.labels.current }}</th>
+        <th class="figure">{{ doc.labels.alternative }}</th>
+        <th class="figure">{{ doc.labels.net_benefit }}</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for row in entry.metrics %}
+      <tr>
+        <td>{{ row.name }} <span class="unit">({{ row.unit }})</span></td>
+        <td class="figure">{{ row.current }}</td>
+        <td class="figure">{{ row.alternative }}</td>
+        <td class="figure">{{ row.net_benefit }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>
+{% endfor %}
+{% endif %}
+
+<p class="colophon">{{ doc.colophon }}</p>
+
+</body>
+</html>

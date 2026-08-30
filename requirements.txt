@@ -32,6 +32,24 @@ alembic>=1.14
 pymysql>=1.1               # pure Python; avoids the mysqlclient build toolchain
                            # on a team split across Windows and macOS
 
+# --- PDF export (api/pdf_render.py) ---
+# Runtime, not test-only: POST /api/v1/export/pdf is a public route and an
+# install without these answers it with a 500. WeasyPrint additionally needs
+# Pango, HarfBuzz and GObject as SYSTEM libraries, which pip cannot install -
+# docker/api.Dockerfile and docker/admin.Dockerfile apt-get them, and
+# api/pdf_render.py imports weasyprint lazily so a desk without them can still
+# run the rest of the suite. 62 is the floor because it is the first release
+# that draws through pydyf rather than cairo.
+#
+# NOTHING HERE IS A LAYOUT LIBRARY WE DRIVE BY HAND. WeasyPrint is given HTML
+# and CSS; Pango and HarfBuzz do the shaping, the bidi and the line breaking.
+# That is the whole point of the task that added it - the export it replaced
+# measured text in JavaScript, and a text-measuring routine in Python would
+# have been the same mistake in a different language.
+weasyprint>=62
+jinja2>=3.1                # the export template; also sqladmin's renderer, but
+                           # api/pdf_render.py imports it by name
+
 # --- Admin panel ---
 sqladmin>=0.20
 httpx>=0.28                # admin/calc_client.py imports it at module level,
@@ -65,3 +83,8 @@ python-dotenv>=1.0
 # installing the package does not get a test runner:  pip install -e ".[dev]"
 pytest>=8.3
 pytest-asyncio>=0.24
+pypdf>=5.1                 # tests/api/test_pdf_render.py extracts the text of a
+                           # rendered PDF and asserts on it. A test that only
+                           # checks the bytes start with %PDF- proves nothing:
+                           # the defect this export exists to fix produced a
+                           # perfectly valid PDF that said "K?mara".

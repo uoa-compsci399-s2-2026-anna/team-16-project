@@ -25,9 +25,9 @@ This document defines **what every person's code receives and what it returns.**
 
 ## 0.1 Change Log
 
-### v1.49 — 2026-08-29 (a server-rendered PDF, replacing a hand-rolled one that never merged; affects B, C, D, E)
+### v1.49 — 2026-08-29 (a server-rendered PDF, replacing a hand-rolled one; affects B, C, D, E)
 
-A teammate's browser-side PDF export (`web/js/pdf.js`, on the unmerged `pdf-results-download` branch) ran the whole layout by hand: a German title ran off the page, Arabic rendered left-to-right with the full stop stranded at the line's start, and a staff-typed name outside WinAnsi turned the document into an unreadable image. This revision replaces it before it ever reached `main` — rendering moves to the server, where WeasyPrint, Pango and HarfBuzz do the shaping, ordering and line-breaking a hand-rolled canvas cannot.
+A teammate's browser-side PDF export (`web/js/pdf.js`, from the `pdf-results-download` branch) ran the whole layout by hand: a German title ran off the page, Arabic rendered left-to-right with the full stop stranded at the line's start, and a staff-typed name outside WinAnsi turned the document into an unreadable image. This revision replaces it before it ever reached `main` — rendering moves to the server, where WeasyPrint, Pango and HarfBuzz do the shaping, ordering and line-breaking a hand-rolled canvas cannot. That branch has since been merged rather than closed, so its three commits keep their author in the history, and `web/js/pdf.js` is deleted on top of them: the decision superseded the implementation, not the contribution.
 
 | # | Change | Section |
 | --- | --- | --- |

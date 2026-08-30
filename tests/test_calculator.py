@@ -27,7 +27,14 @@ import pytest
 from engine.bundle import FactorBundle
 from engine.calculate import calculate, calculate_scenario
 from engine.errors import UnknownCodeError
-from engine.types import CalculationRequest, EntryInput, ScenarioLine
+from engine.types import (
+    DATA_COMPLETE,
+    DATA_INCOMPLETE,
+    DATA_NOT_SUPPLIED,
+    CalculationRequest,
+    EntryInput,
+    ScenarioLine,
+)
 
 # --------------------------------------------------------------- the bundle
 
@@ -1264,6 +1271,257 @@ def test_two_identical_scenarios_save_nothing_even_with_prevention_in_both():
     money = calculate(request, bundle).totals.money
 
     assert money.saving_nzd == Decimal("0.00")
+
+
+# ----------------------------------------------- the share of production
+
+
+def _entry(sector, lines, total_input_kg=None, alternative=None, **money):
+    """One entry over `_bundle_with_two_sectors_sharing_a_destination`'s
+    codes. `lines` is a list of `(destination_code, qty_kg)` pairs."""
+    return EntryInput(
+        sector_code=sector,
+        food_category_code=None,
+        current=tuple(
+            ScenarioLine(destination_code=code, qty_kg=Decimal(qty))
+            for code, qty in lines
+        ),
+        alternative=alternative,
+        total_input_kg=None if total_input_kg is None else Decimal(total_input_kg),
+        **money,
+    )
+
+
+def test_waste_is_reported_as_a_share_of_what_was_handled():
+    """The visitor types how much the site put through; the card that asks
+    for exactly that number has said "Not available" since it shipped, from a
+    hardcoded string. Nothing had ever computed the share.
+
+    Computed HERE and not in the browser (§7.6.1), and **the one figure on
+    the results page open item O-1 does not touch**: it divides one mass the
+    visitor typed by another, so the mock factor set that qualifies every
+    other number on the page cannot move it.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")], total_input_kg="1000.000"),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.production_share_percent == Decimal("25.00")
+    assert result.totals.data_state.production_share_percent == DATA_COMPLETE
+
+
+def test_no_production_total_means_no_share_rather_than_zero():
+    """A zero here would read as "this site wastes none of what it handles",
+    which is a claim, not an absence."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")]),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.production_share_percent is None
+    assert result.totals.data_state.production_share_percent == DATA_NOT_SUPPLIED
+    assert result.entries[0].production_share_percent is None
+
+
+def test_the_totals_share_is_the_summed_mass_over_the_summed_production():
+    """**The case one entry cannot express.** Two entries, sized an order of
+    magnitude apart and answering very differently:
+
+    farm    250 kg wasted of 1,000 kg produced -> its own share is 25.00%
+    retail  900 kg wasted of 9,000 kg produced -> its own share is 10.00%
+
+    The submission wasted 1,150 kg of 10,000 kg, which is 11.50%. The mean of
+    the two entries' own percentages is 17.50% -- a figure that weights a
+    1,000 kg site equally with a 9,000 kg one, which is the same defect the
+    per-entry money rate was corrected for in v1.48. A single-entry test
+    cannot tell the two apart, because for one entry they are the same
+    number.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")], total_input_kg="1000.000"),
+        _entry("retail", [("landfill", "900.000")], total_input_kg="9000.000"),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.production_share_percent == Decimal("11.50")
+    assert result.totals.production_share_percent != Decimal("17.50"), (
+        "the totals share is a mean of the entries' percentages"
+    )
+    assert result.totals.data_state.production_share_percent == DATA_COMPLETE
+    # Permanent residents of the breakdown: each entry keeps its own figure.
+    assert [entry.production_share_percent for entry in result.entries] == [
+        Decimal("25.00"),
+        Decimal("10.00"),
+    ]
+
+
+def test_a_submission_only_some_entries_answered_is_incomplete_not_a_number():
+    """**The third state, and the whole point of the ruling.**
+
+    farm answered (250 kg of 1,000 kg); retail did not, and still wasted
+    900 kg. Summing only the entry that answered gives 250 / 1,000 = 25.00% --
+    a real-looking figure whose denominator silently excludes 900 kg of the
+    submission's own waste. A number that is quietly wrong is worse than a
+    stated gap, so the figure is withheld and the state says so.
+
+    The entry that answered keeps its own 25.00% regardless: that figure is
+    about that entry and is not affected by what its neighbour did or did not
+    type.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")], total_input_kg="1000.000"),
+        _entry("retail", [("landfill", "900.000")]),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.production_share_percent is None
+    assert result.totals.data_state.production_share_percent == DATA_INCOMPLETE
+    assert result.entries[0].production_share_percent == Decimal("25.00")
+    assert result.entries[1].production_share_percent is None
+
+
+def test_incomplete_and_nothing_supplied_are_different_states():
+    """The two absences the results card conflated. Both withhold the figure,
+    and they are not the same thing to say: one submission answered the
+    question on half its rows, the other never answered it at all. The API
+    has to let the front end tell them apart, or the card cannot."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    partly = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")], total_input_kg="1000.000"),
+        _entry("retail", [("landfill", "900.000")]),
+    ))
+    not_at_all = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")]),
+        _entry("retail", [("landfill", "900.000")]),
+    ))
+
+    partly_state = calculate(partly, bundle).totals.data_state
+    silent_state = calculate(not_at_all, bundle).totals.data_state
+
+    assert partly_state.production_share_percent == DATA_INCOMPLETE
+    assert silent_state.production_share_percent == DATA_NOT_SUPPLIED
+    assert partly_state.production_share_percent != silent_state.production_share_percent
+
+
+def test_the_share_rounds_half_away_from_zero():
+    """24,690 kg of 200,000 kg is exactly 12.345%. `ROUND_HALF_UP` answers
+    12.35; the `ROUND_HALF_EVEN` the decimal context supplies when a
+    `quantize` leaves the mode implicit answers 12.34. Two percentages on one
+    card must not round a trailing five in opposite directions, and the money
+    block beside this one already rounds half away from zero."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "24690.000")], total_input_kg="200000.000"),
+    ))
+
+    assert calculate(request, bundle).totals.production_share_percent == Decimal("12.35")
+
+
+def test_a_production_total_of_zero_is_not_a_division():
+    """`total_input_kg` is `ge=0` on the wire, so nothing stops a visitor
+    typing zero. A share of nothing is undefined -- not zero, not infinity --
+    and `Decimal` raises rather than answering."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")], total_input_kg="0.000"),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.production_share_percent is None
+    assert result.entries[0].production_share_percent is None
+
+
+def test_the_money_block_marks_a_partly_priced_submission_incomplete():
+    """**The money block follows the same rule, and until now it did not.**
+
+    It summed whichever entries happened to answer: this request would have
+    reported `total_value_nzd` as 120000.00 and `wasted_share_percent` as
+    3.75% -- one entry's money, presented as the whole submission's. The
+    second entry wasted 900 kg that nobody priced, and no figure here can
+    honestly speak for it.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "1000.000")],
+               total_value_nzd=Decimal("120000.00"),
+               wasted_value_nzd=Decimal("4500.00")),
+        _entry("retail", [("landfill", "900.000")]),
+    ))
+
+    totals = calculate(request, bundle).totals
+
+    assert totals.money is not None, "somebody did supply a money figure"
+    assert totals.money.total_value_nzd is None
+    assert totals.money.total_value_nzd != Decimal("120000.00")
+    assert totals.money.wasted_value_nzd is None
+    assert totals.money.wasted_share_percent is None
+    assert totals.data_state.total_value_nzd == DATA_INCOMPLETE
+    assert totals.data_state.wasted_value_nzd == DATA_INCOMPLETE
+    assert totals.data_state.wasted_share_percent == DATA_INCOMPLETE
+
+
+def test_a_fully_priced_submission_still_reports_its_money():
+    """The other side of the rule: two entries, both priced, and the block is
+    complete. Without this the change above would be indistinguishable from
+    deleting the money block."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "1000.000")],
+               total_value_nzd=Decimal("120000.00"),
+               wasted_value_nzd=Decimal("4500.00")),
+        _entry("retail", [("landfill", "900.000")],
+               total_value_nzd=Decimal("80000.00"),
+               wasted_value_nzd=Decimal("3500.00")),
+    ))
+
+    totals = calculate(request, bundle).totals
+
+    assert totals.money.total_value_nzd == Decimal("200000.00")
+    assert totals.money.wasted_value_nzd == Decimal("8000.00")
+    assert totals.money.wasted_share_percent == Decimal("4.00")
+    assert totals.data_state.total_value_nzd == DATA_COMPLETE
+    assert totals.data_state.wasted_value_nzd == DATA_COMPLETE
+    assert totals.data_state.wasted_share_percent == DATA_COMPLETE
+
+
+def test_a_saving_is_withheld_when_an_entry_nobody_priced_diverts_mass():
+    """§4.5's saving is a sum over entries of (this entry's price per
+    kilogram x this entry's diverted mass), so an entry nobody priced
+    contributes nothing to it -- which understates the submission's saving
+    exactly the way a short denominator understates a total. retail diverts
+    300 of its 900 kg here and no price exists for any of it, so $0.00 is not
+    the answer and neither is farm's own saving presented as the whole form's.
+    """
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "1000.000")],
+               alternative=(
+                   ScenarioLine(destination_code="landfill", qty_kg=Decimal("700.000")),
+                   ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+               ),
+               wasted_value_nzd=Decimal("4500.00")),
+        _entry("retail", [("landfill", "900.000")],
+               alternative=(
+                   ScenarioLine(destination_code="landfill", qty_kg=Decimal("600.000")),
+                   ScenarioLine(destination_code="prevention", qty_kg=Decimal("300.000")),
+               )),
+    ))
+
+    totals = calculate(request, bundle).totals
+
+    assert totals.money.saving_nzd is None
+    assert totals.money.saving_nzd != Decimal("1350.00")
+    assert totals.data_state.saving_nzd == DATA_INCOMPLETE
 
 
 def test_the_passthrough_totals_are_quantised_to_two_places():

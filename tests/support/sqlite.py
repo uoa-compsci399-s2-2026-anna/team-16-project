@@ -219,6 +219,10 @@ class FakeEngineAdapter:
                 net_benefit=_net_benefit(entry.current, entry.alternative)
                 if entry.alternative is not None
                 else None,
+                production_share_percent=_share_percent(
+                    sum((line.qty_kg for line in entry.current), Decimal("0")),
+                    entry.total_input_kg,
+                ),
             )
             for entry in request.entries
         )
@@ -240,6 +244,10 @@ class FakeEngineAdapter:
             if has_alternative
             else None
         )
+        money, money_state = _money(request.entries, bundle)
+        production_kg, production_state = _across_entries(
+            entry.total_input_kg for entry in request.entries
+        )
         totals = SimpleNamespace(
             current=totals_current,
             alternative=totals_alternative,
@@ -249,7 +257,13 @@ class FakeEngineAdapter:
             }
             if has_alternative
             else None,
-            money=_money(request.entries, bundle),
+            money=money,
+            production_share_percent=_share_percent(
+                totals_current.total_kg, production_kg
+            ),
+            data_state=SimpleNamespace(
+                production_share_percent=production_state, **money_state
+            ),
         )
         return SimpleNamespace(
             factor_set_version=bundle.data["version_label"],
@@ -293,29 +307,40 @@ def _money(entries, bundle):
     def is_prevention(code):
         return code in prevention_codes
 
-    total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
-    wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
-    if total_value_nzd is None and wasted_value_nzd is None:
-        return None
+    total_value_nzd, total_state = _across_entries(
+        entry.total_value_nzd for entry in entries
+    )
+    wasted_value_nzd, wasted_state = _across_entries(
+        entry.wasted_value_nzd for entry in entries
+    )
+    if total_state == NOT_SUPPLIED and wasted_state == NOT_SUPPLIED:
+        return None, {
+            "total_value_nzd": NOT_SUPPLIED,
+            "wasted_value_nzd": NOT_SUPPLIED,
+            "wasted_share_percent": NOT_SUPPLIED,
+            "saving_nzd": NOT_SUPPLIED,
+        }
 
     if total_value_nzd is not None:
         total_value_nzd = total_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     if wasted_value_nzd is not None:
         wasted_value_nzd = wasted_value_nzd.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-    wasted_share_percent = None
-    if (
-        total_value_nzd is not None
-        and wasted_value_nzd is not None
-        and total_value_nzd != 0
-    ):
-        wasted_share_percent = (wasted_value_nzd / total_value_nzd * 100).quantize(
-            Decimal("0.01"), rounding=ROUND_HALF_UP
-        )
+    share_state = _combined_state(total_state, wasted_state)
+    wasted_share_percent = (
+        _share_percent(wasted_value_nzd, total_value_nzd)
+        if share_state == COMPLETE
+        else None
+    )
 
     saving_nzd = None
     has_alternative = any(entry.alternative is not None for entry in entries)
-    if has_alternative:
+    saving_state = (
+        wasted_state
+        if has_alternative and wasted_state != NOT_SUPPLIED
+        else NOT_SUPPLIED
+    )
+    if saving_state == COMPLETE:
         saving_total = Decimal("0")
         any_entry_priced = False
         for entry in entries:
@@ -350,17 +375,57 @@ def _money(entries, bundle):
         if any_entry_priced:
             saving_nzd = saving_total.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
-    return SimpleNamespace(
-        total_value_nzd=total_value_nzd,
-        wasted_value_nzd=wasted_value_nzd,
-        wasted_share_percent=wasted_share_percent,
-        saving_nzd=saving_nzd,
+    return (
+        SimpleNamespace(
+            total_value_nzd=total_value_nzd,
+            wasted_value_nzd=wasted_value_nzd,
+            wasted_share_percent=wasted_share_percent,
+            saving_nzd=saving_nzd,
+        ),
+        {
+            "total_value_nzd": total_state,
+            "wasted_value_nzd": wasted_state,
+            "wasted_share_percent": share_state,
+            "saving_nzd": saving_state,
+        },
     )
 
 
-def _sum_present(values):
+#: The three states of §4.6, re-typed as literals for the same reason
+#: `Decimal("0.01")` and `ROUND_HALF_UP` are: this file is a hand-kept copy
+#: that `tests/support/test_fake_engine_agreement.py` compares against the
+#: real engine, and importing the real constants would let a rename in
+#: `engine/types.py` pass unnoticed.
+COMPLETE = "complete"
+INCOMPLETE = "incomplete"
+NOT_SUPPLIED = "not_supplied"
+
+
+def _across_entries(values):
+    """A stand-in for engine.calculate._across_entries (§4.6): the sum only
+    when every entry supplied the input, and otherwise which of the two kinds
+    of absence it is."""
+    values = list(values)
     present = [value for value in values if value is not None]
-    return sum(present, Decimal("0")) if present else None
+    if not present:
+        return None, NOT_SUPPLIED
+    if len(present) != len(values):
+        return None, INCOMPLETE
+    return sum(present, Decimal("0")), COMPLETE
+
+
+def _combined_state(*states):
+    if NOT_SUPPLIED in states:
+        return NOT_SUPPLIED
+    if INCOMPLETE in states:
+        return INCOMPLETE
+    return COMPLETE
+
+
+def _share_percent(part, whole):
+    if part is None or whole is None or whole == 0:
+        return None
+    return (part / whole * 100).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
 
 
 @pytest.fixture

@@ -48,7 +48,15 @@
     },
     "alternative": null,
     "net_benefit": null,
-    "money": null
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
+    }
   },
   "entries": [
     {
@@ -98,7 +106,8 @@
         ]
       },
       "alternative": null,
-      "net_benefit": null
+      "net_benefit": null,
+      "production_share_percent": null
     }
   ]
 }

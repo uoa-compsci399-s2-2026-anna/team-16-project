@@ -47,10 +47,14 @@ from engine.bundle import FactorBundle
 from engine.errors import UnknownCodeError
 from engine.evaluator import evaluate
 from engine.types import (
+    DATA_COMPLETE,
+    DATA_INCOMPLETE,
+    DATA_NOT_SUPPLIED,
     BreakdownRow,
     CalculationRequest,
     CalculationResult,
     CalculationTotals,
+    DataState,
     EntryInput,
     EntryResult,
     EquivalenceResult,
@@ -79,6 +83,18 @@ ZERO_RATE = Decimal("0").quantize(METRIC_SCALE)
 #: `db/models.py`), unlike the metric figures above, which carry ten. This is
 #: the money block's own scale, applied here rather than at the wire edge.
 MONEY_SCALE = Decimal("0.01")
+
+#: §4.6. A percentage, two places, `ROUND_HALF_UP`.
+#:
+#: **Two places because it sits beside `wasted_share_percent` on the same
+#: card**, and `ROUND_HALF_UP` for the same reason: the rest of this file
+#: leaves the rounding mode implicit and gets `ROUND_HALF_EVEN` from the
+#: context, which would make two percentages printed side by side round a
+#: trailing 5 in opposite directions. Every figure a visitor reads as a
+#: percentage in this calculator rounds half away from zero -- §3's
+#: equivalence labels already do, and so does the money block -- so this is
+#: the existing rule applied rather than a new one invented.
+SHARE_SCALE = Decimal("0.01")
 
 #: §4.3's special binding. A formula names `const_GWP_CH4` and never a
 #: horizon, so switching the request between 20 and 100 years rebinds one
@@ -138,6 +154,9 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
                 current=current,
                 alternative=alternative,
                 net_benefit=benefit,
+                production_share_percent=_share_percent(
+                    current.total_kg, entry.total_input_kg
+                ),
             )
         )
 
@@ -336,24 +355,56 @@ def _totals(
         if has_alternative
         else None
     )
+    money, money_state = _money(request_entries, bundle)
+
+    # §4.6. The production total is a per-entry input, so the roll-up obeys
+    # the same all-or-nothing rule the money figures do -- see `_across_
+    # entries`. The numerator is the rolled-up current mass, which is the
+    # sum of every entry's own waste; the denominator is the sum of every
+    # entry's production. Sum over sum, never a mean of the per-entry
+    # percentages: an entry reporting 10 kg would otherwise weigh as much as
+    # one reporting 10 tonnes.
+    production_kg, production_state = _across_entries(
+        entry.total_input_kg for entry in request_entries
+    )
+    production_share_percent = _share_percent(current.total_kg, production_kg)
+
     return CalculationTotals(
         current=current,
         alternative=alternative,
         # Computed on the rolled-up scenarios, not summed from the per-entry
         # net_benefit maps -- one computation is one rounding.
         net_benefit=net_benefit(current, alternative) if alternative else None,
-        money=_money(request_entries, bundle),
+        money=money,
+        production_share_percent=production_share_percent,
+        data_state=DataState(
+            production_share_percent=production_state, **money_state
+        ),
     )
 
 
-def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult | None:
+def _money(
+    entries: tuple[EntryInput, ...], bundle: FactorBundle
+) -> tuple[MoneyResult | None, dict[str, str]]:
     """§4.5, v1.48. Derived from what the visitor typed, never from a
     factor or a formula -- see MoneyResult's own docstring for why this is
     not a metric.
 
+    Returns the block and the state of each of its four figures, together,
+    because the two cannot be allowed to disagree: `_across_entries` below is
+    the only place either is decided, and it never produces a value with a
+    state other than `complete`.
+
     Absent stays absent. Every field is None unless every value it is
     derived from was supplied; a computed zero would read as "this food was
     worth nothing" rather than "nobody said" (§4.5).
+
+    **Partial coverage is not absence either, and until §4.6 this block
+    treated it as arithmetic.** `total_value_nzd` summed whichever entries
+    happened to answer, so a two-entry submission that priced one entry
+    reported that entry's figure as the whole submission's total value -- a
+    real-looking number with a silently short denominator, which is worse
+    than a stated gap. Every figure here now says `incomplete` instead.
 
     The share is left unclamped. A visitor who types a wasted value greater
     than the total value sees a figure over 100%, not one silently reshaped
@@ -369,11 +420,20 @@ def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult
     an entry the visitor did not price contributes nothing rather than
     borrowing a neighbour's price.
     """
-    total_value_nzd = _sum_present(entry.total_value_nzd for entry in entries)
-    wasted_value_nzd = _sum_present(entry.wasted_value_nzd for entry in entries)
+    total_value_nzd, total_state = _across_entries(
+        entry.total_value_nzd for entry in entries
+    )
+    wasted_value_nzd, wasted_state = _across_entries(
+        entry.wasted_value_nzd for entry in entries
+    )
 
-    if total_value_nzd is None and wasted_value_nzd is None:
-        return None
+    if total_state == DATA_NOT_SUPPLIED and wasted_state == DATA_NOT_SUPPLIED:
+        return None, {
+            "total_value_nzd": DATA_NOT_SUPPLIED,
+            "wasted_value_nzd": DATA_NOT_SUPPLIED,
+            "wasted_share_percent": DATA_NOT_SUPPLIED,
+            "saving_nzd": DATA_NOT_SUPPLIED,
+        }
 
     # The two passthrough sums are quantised here, in the engine, rather
     # than left to the wire: api/schemas.py's decimal_places=2 is an upper
@@ -385,19 +445,30 @@ def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult
     if wasted_value_nzd is not None:
         wasted_value_nzd = wasted_value_nzd.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
 
-    wasted_share_percent = None
-    if (
-        total_value_nzd is not None
-        and wasted_value_nzd is not None
-        and total_value_nzd != 0
-    ):
-        wasted_share_percent = (wasted_value_nzd / total_value_nzd * 100).quantize(
-            MONEY_SCALE, rounding=ROUND_HALF_UP
-        )
+    # A ratio needs both halves, and it is only as complete as the less
+    # complete of the two.
+    share_state = _combined_state(total_state, wasted_state)
+    wasted_share_percent = (
+        _share_percent(wasted_value_nzd, total_value_nzd)
+        if share_state == DATA_COMPLETE
+        else None
+    )
 
     saving_nzd = None
     has_alternative = any(entry.alternative is not None for entry in entries)
-    if has_alternative:
+    # The saving is a sum over entries of (this entry's price per kilogram x
+    # this entry's diverted mass), so an entry nobody priced contributes
+    # nothing -- which understates a submission-wide figure exactly the way a
+    # short denominator does. Coverage of `wasted_value_nzd` therefore decides
+    # it too. "No alternative scenario" is `not_supplied` rather than
+    # `incomplete`: an alternative is one of this figure's inputs, and nobody
+    # supplied one.
+    saving_state = (
+        wasted_state
+        if has_alternative and wasted_state != DATA_NOT_SUPPLIED
+        else DATA_NOT_SUPPLIED
+    )
+    if saving_state == DATA_COMPLETE:
         saving_total = Decimal("0")
         any_entry_priced = False
         for entry in entries:
@@ -453,22 +524,84 @@ def _money(entries: tuple[EntryInput, ...], bundle: FactorBundle) -> MoneyResult
         if any_entry_priced:
             saving_nzd = saving_total.quantize(MONEY_SCALE, rounding=ROUND_HALF_UP)
 
-    return MoneyResult(
-        total_value_nzd=total_value_nzd,
-        wasted_value_nzd=wasted_value_nzd,
-        wasted_share_percent=wasted_share_percent,
-        saving_nzd=saving_nzd,
+    return (
+        MoneyResult(
+            total_value_nzd=total_value_nzd,
+            wasted_value_nzd=wasted_value_nzd,
+            wasted_share_percent=wasted_share_percent,
+            saving_nzd=saving_nzd,
+        ),
+        {
+            "total_value_nzd": total_state,
+            "wasted_value_nzd": wasted_state,
+            "wasted_share_percent": share_state,
+            "saving_nzd": saving_state,
+        },
     )
 
 
-def _sum_present(values) -> Decimal | None:
-    """`None` when every value is `None`; otherwise the sum of the ones that
-    are not. The "nobody said" case and the "the answer is zero" case are
-    different claims, and only a value actually seen can tell them apart."""
+def _across_entries(values) -> tuple[Decimal | None, str]:
+    """§4.6. Roll one optional per-entry input up across every entry, and
+    say how completely the submission answered it.
+
+    **The single place a totals-level figure and its state are decided**, so
+    that the pair cannot disagree: a value comes back only with
+    `DATA_COMPLETE`, and both other states come back with `None`.
+
+    Three states, not two, and the two forbidden shortcuts are what make the
+    third necessary:
+
+    * summing only the entries that answered gives a figure whose denominator
+      silently excludes part of the submission -- it reads as the whole
+      submission's total and is not;
+    * averaging the entries' own percentages weights a small entry equally
+      with a large one, which is the same defect the per-entry money rate was
+      corrected for in v1.48.
+
+    "Nobody said" and "the answer is zero" remain different claims, and so do
+    "nobody said" and "half of them said".
+    """
+    values = list(values)
     present = [value for value in values if value is not None]
     if not present:
+        return None, DATA_NOT_SUPPLIED
+    if len(present) != len(values):
+        return None, DATA_INCOMPLETE
+    return sum(present, Decimal("0")), DATA_COMPLETE
+
+
+def _combined_state(*states: str) -> str:
+    """A figure derived from several inputs is as complete as its least
+    complete input, and an input nobody supplied at all outranks a partial
+    one: a share with no denominator anywhere was never asked, not
+    half-answered."""
+    if DATA_NOT_SUPPLIED in states:
+        return DATA_NOT_SUPPLIED
+    if DATA_INCOMPLETE in states:
+        return DATA_INCOMPLETE
+    return DATA_COMPLETE
+
+
+def _share_percent(part: Decimal | None, whole: Decimal | None) -> Decimal | None:
+    """`part / whole` as a percentage at `SHARE_SCALE`, or `None`.
+
+    `None` when either side is absent and when the whole is zero -- a share
+    of nothing is undefined, and dividing by it would raise rather than
+    answer. Never clamped: a visitor who reports more waste than production
+    sees a figure over 100%, which is a data-entry problem the results page
+    should show rather than one the engine should hide.
+
+    **Open item O-1 does not reach this function.** Every other figure the
+    engine produces is evaluated from a factor set that is still mock data
+    and carries the mandatory placeholder banner; this one divides one mass
+    the visitor typed by another and would give the same answer against the
+    real factors. It is the one number on the results page the banner does
+    not qualify, and a reader who distrusts it because of the banner is
+    distrusting the wrong figure.
+    """
+    if part is None or whole is None or whole == 0:
         return None
-    return sum(present, Decimal("0"))
+    return (part / whole * 100).quantize(SHARE_SCALE, rounding=ROUND_HALF_UP)
 
 
 def _roll_up(

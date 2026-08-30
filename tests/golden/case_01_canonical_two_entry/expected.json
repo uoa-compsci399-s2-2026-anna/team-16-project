@@ -326,7 +326,15 @@
       "cost": "18.0000000000",
       "mass": "0.0000000000"
     },
-    "money": null
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
+    }
   },
   "entries": [
     {
@@ -584,7 +592,8 @@
         "water": "0.0000000000",
         "cost": "18.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null
     },
     {
       "sector_code": "primary_production",
@@ -771,7 +780,8 @@
         "water": "257600.0000000000",
         "cost": "0.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null
     }
   ]
 }

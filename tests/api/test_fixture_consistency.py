@@ -60,6 +60,12 @@ SCALES = {
     "wasted_value_nzd": 2,
     "wasted_share_percent": 2,
     "saving_nzd": 2,
+    #: §4.6. A percentage, two places, on `totals` and on every entry. It
+    #: fires on `calculate_response.json`'s first entry, which supplies a
+    #: production total and therefore carries `"15.00"` -- a `SCALES` entry
+    #: every fixture answers with `null` is an entry that never runs, which
+    #: is how `total_input_kg` sat here unexercised for a revision.
+    "production_share_percent": 2,
 }
 
 
@@ -128,6 +134,14 @@ def test_every_decimal_is_a_string_at_the_contracted_scale(name):
         #: values and carry the same ten places.
         if len(parts) > 1 and parts[-2] == "net_benefit":
             required = 10
+        #: §4.6's `data_state` is keyed by the figure it describes, so four
+        #: of its five keys collide by name with `SCALES` entries above --
+        #: and its values are the enum strings `complete` / `incomplete` /
+        #: `not_supplied`, not decimals. Skipped by parent, the same way
+        #: `net_benefit` is matched by parent: the figures themselves, one
+        #: level up, are still checked.
+        elif len(parts) > 1 and parts[-2] == "data_state":
+            continue
         elif key in SCALES:
             required = SCALES[key]
         else:

@@ -158,6 +158,34 @@ def _totals(totals: Any) -> dict[str, Any]:
         "alternative": _scenario(totals.alternative, with_total_kg=False),
         "net_benefit": _net_benefit(totals.net_benefit),
         "money": _money(totals.money),
+        # §4.6. The share of production, and the state of every figure it
+        # is grouped with. Carried, not computed: `_share_percent` in the
+        # engine is the only place either is decided, and an adapter that
+        # divided one mass by another here would be the second calculation
+        # site §4.2 rules out.
+        "production_share_percent": totals.production_share_percent,
+        "data_state": _data_state(totals.data_state),
+    }
+
+
+def _data_state(state: Any) -> dict[str, str]:
+    """§4.6's three-state discriminant, one entry per totals-level figure.
+
+    **Additive, and deliberately not a change to the figures' own shape.**
+    Every value above stays the decimal string §1.2 requires, so a caller
+    that has not learned about this key keeps reading exactly what it read
+    before -- it simply renders nothing where a partial figure used to show a
+    number that excluded part of the submission. A caller that has learned
+    about it can tell "nobody answered" from "half of them answered", which
+    a bare `null` cannot express and a sentinel decimal could only express by
+    smuggling a plottable number into a numeric field.
+    """
+    return {
+        "production_share_percent": state.production_share_percent,
+        "total_value_nzd": state.total_value_nzd,
+        "wasted_value_nzd": state.wasted_value_nzd,
+        "wasted_share_percent": state.wasted_share_percent,
+        "saving_nzd": state.saving_nzd,
     }
 
 
@@ -183,6 +211,10 @@ def _entry(entry: Any) -> dict[str, Any]:
         "current": _scenario(entry.current),
         "alternative": _scenario(entry.alternative),
         "net_benefit": _net_benefit(entry.net_benefit),
+        # §4.6. This entry's own share of its own production, present
+        # whenever the entry supplied a production total and independent of
+        # whether its neighbours did.
+        "production_share_percent": entry.production_share_percent,
     }
 
 

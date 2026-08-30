@@ -132,7 +132,31 @@ _PROVENANCE = {
         "rate answers 15000/2700 x 700 = 3888.89 instead (all three entries current "
         "mass, all 700 kg diverted to prevention across the whole request) -- the "
         "number this case is confirmed to reject when the per-entry rate is reverted "
-        "(see the task-5 report, fix round 3)."
+        "(see the task-5 report, fix round 3). "
+        "**\u00a74.6 changed what it is evidence of.** Its third entry is unpriced, "
+        "so `total_value_nzd` is a roll-up of an input only two of the three "
+        "entries supplied: every money figure is now withheld and "
+        "`data_state` says `incomplete` four times. It is the golden evidence "
+        "for the incomplete state -- that a partial submission reports a gap "
+        "and not 75000.00, which is two entries' money presented as three "
+        "entries' total. case_11 carries the same three entries fully "
+        "answered and keeps the per-entry-rate arithmetic above under test."
+    ),
+    "case_11_money_and_share_every_entry_answered": (
+        "case_10's bundle and request with the third entry priced "
+        "($25,000 / $2,500 = 5.00/kg, diverting 300 of its 500 kg to "
+        "prevention for 1500.00) and a production total on all three. Every "
+        "metric figure is case_10's unchanged -- the money and production "
+        "fields reach no formula -- so the only hand arithmetic is \u00a74.5's "
+        "and \u00a74.6's: total_value_nzd 100000.00, wasted_value_nzd 17500.00, "
+        "wasted_share_percent 17.50, saving_nzd 3900.00 (0 + 2400.00 + "
+        "1500.00; a blended whole-form rate answers 17500/2700 x 700 = "
+        "4537.04 instead). production_share_percent is 2700 / 19500 = 13.85, "
+        "and the three entries' own shares are 10.00, 20.00 and 20.00 -- "
+        "whose mean is 16.67, so this case rejects an averaged share as well "
+        "as a summed-over-answerers one. **This is the complete state**, and "
+        "the only golden case in which any of the five figures carries a "
+        "number."
     ),
     "case_08_mixed_alternative_rollup": (
         "Hand-computed. §3 rule 3: one entry with an alternative and one "
@@ -293,6 +317,18 @@ def render(result: CalculationResult) -> dict:
             "alternative": _scenario(result.totals.alternative),
             "net_benefit": _benefit(result.totals.net_benefit),
             "money": _money(result.totals.money),
+            "production_share_percent": _optional_decimal(
+                result.totals.production_share_percent
+            ),
+            "data_state": {
+                "production_share_percent":
+                    result.totals.data_state.production_share_percent,
+                "total_value_nzd": result.totals.data_state.total_value_nzd,
+                "wasted_value_nzd": result.totals.data_state.wasted_value_nzd,
+                "wasted_share_percent":
+                    result.totals.data_state.wasted_share_percent,
+                "saving_nzd": result.totals.data_state.saving_nzd,
+            },
         },
         "entries": [
             {
@@ -301,6 +337,9 @@ def render(result: CalculationResult) -> dict:
                 "current": _scenario(entry.current),
                 "alternative": _scenario(entry.alternative),
                 "net_benefit": _benefit(entry.net_benefit),
+                "production_share_percent": _optional_decimal(
+                    entry.production_share_percent
+                ),
             }
             for entry in result.entries
         ],

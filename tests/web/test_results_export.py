@@ -38,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -1619,3 +1620,281 @@ def test_both_downloads_are_offered_and_each_produces_its_own_format(page_at):
 
     #: Two names, so a visitor who takes both does not overwrite one with the other.
     assert text_download.suggested_filename != pdf_download.suggested_filename
+
+
+# ------------------------------------------------- the two buttons, and the PDF's own name
+#
+# Task 3, the plan of 2026-08-31. Two client complaints landing in one place: the text
+# download was the step-nav's own primary action and the PDF a secondary afterthought in
+# `.result-actions`, so the pair did not read as a pair; and the PDF's file name was the
+# fixed `kai-commitment-impact-calculator.pdf`, so a second download became `... (1).pdf`.
+
+
+@node
+def test_the_shared_helper_stamps_a_pdf_name_from_the_same_clock_as_the_text_export(tmp_path):
+    """`exportFilename` is the one place a timestamp is turned into a file name -
+    `docs`'s own reasoning for the text export's stamp - so the PDF has to be
+    stamped by a call to the *same* function, not a second implementation of the
+    same date arithmetic.
+
+    Two calls at the same fixed instant, one for each extension, carry the same
+    date-and-time stamp; only the extension (and, for the PDF, an added
+    identifier - see the distinctness tests below) differs. The text call is the
+    exact call `downloadResults` already made before this task, so this also
+    guards the existing convention against a change made in passing while the
+    PDF gains its own.
+    """
+    harness = tmp_path / "harness.mjs"
+    harness.write_text(
+        """
+        globalThis.window = { location: { search: '' } }
+        globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+        import { writeFileSync } from 'node:fs'
+        const { exportFilename } = await import(process.argv[2])
+        const fixed = new Date(2026, 7, 12, 9, 4, 5)
+        const names = {
+          text: exportFilename(fixed),
+          pdfOne: exportFilename(fixed, { ext: 'pdf', unique: 'aaaaaaaa' }),
+          pdfTwo: exportFilename(fixed, { ext: 'pdf', unique: 'bbbbbbbb' }),
+        }
+        writeFileSync(process.argv[3], JSON.stringify(names), 'utf8')
+        """,
+        encoding="utf-8",
+    )
+    out = tmp_path / "names.json"
+    completed = subprocess.run(
+        [shutil.which("node"), str(harness), RESULTS_JS.as_uri(), str(out)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not build the file names:\n{completed.stdout}\n{completed.stderr}"
+    )
+    names = json.loads(out.read_text(encoding="utf-8"))
+
+    #: The existing text convention, unchanged by the PDF gaining one.
+    assert names["text"] == "food-waste-impact-results-2026-08-12-090405.txt", names
+    #: The PDF carries the identical stamp, plus the identifier that tells two
+    #: PDFs taken in the same second apart.
+    assert names["pdfOne"] == "food-waste-impact-results-2026-08-12-090405-aaaaaaaa.pdf", names
+    assert names["pdfTwo"] == "food-waste-impact-results-2026-08-12-090405-bbbbbbbb.pdf", names
+
+
+def test_the_pdf_no_longer_hard_codes_one_file_name():
+    """The regression this task exists to close: a constant name is what turned
+    every second PDF download into `... (1).pdf`.
+
+    Both downloads' `link.download` are asserted set from `exportFilename` -
+    counting the call sites rather than grepping for either one alone, because a
+    file that kept the old constant *beside* a new call would satisfy a
+    presence check while the PDF still had a fixed name available to fall back
+    to.
+    """
+    source = RESULTS_JS.read_text(encoding="utf-8")
+    assert "kai-commitment-impact-calculator.pdf" not in source, (
+        "the PDF still carries a constant file name somewhere in the file"
+    )
+    calls = re.findall(r"link\.download\s*=\s*exportFilename\(", source)
+    assert len(calls) == 2, (
+        f"expected the text and PDF downloads to both set `link.download` from "
+        f"`exportFilename`, found {len(calls)} such call(s)"
+    )
+
+
+#: `food-waste-impact-results-2026-08-30-213033`, less its extension - the shape both
+#: downloads must share, the PDF with an identifier appended before its own extension.
+STAMP_PATTERN = r"food-waste-impact-results-\d{4}-\d{2}-\d{2}-\d{6}"
+
+
+@pytest.mark.browser
+def test_the_two_downloads_sit_together_as_one_choice(page_at):
+    """**Complaint 1.** The text download used to be the step-nav's own primary
+    action, reachable nowhere near the PDF button in `.result-actions` - a
+    visitor reading the page saw one action and, below it, an afterthought, and
+    could not find the text export among the sentence-shaped step navigation at
+    all. The two now sit in one container as two buttons of equal visual
+    weight, so the page reads as a choice of format rather than an action plus
+    an extra.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    text_button = page.locator('[data-action="download-results"]')
+    pdf_button = page.locator('[data-action="download-pdf"]')
+    assert text_button.count() == 1, "the text download is missing from the results page"
+    assert pdf_button.count() == 1, "the PDF download is missing from the results page"
+
+    #: The step-nav keeps only its back action - the primary slot the text
+    #: download used to occupy is gone, not merely relabelled.
+    assert page.locator('.step-nav [data-action="download-results"]').count() == 0, (
+        "the text download is still living inside the step navigation"
+    )
+    assert page.locator('.step-nav [data-action="go-step"]').count() == 1, (
+        "the step-nav's own back action moved when it was not supposed to"
+    )
+
+    #: One container holds both. A single `page.evaluate` reads both elements out of the
+    #: live DOM in one call, rather than comparing two locators' handles across separate
+    #: round trips - which is not the same node identity check it looks like.
+    same_parent = page.evaluate(
+        """() => {
+            const text = document.querySelector('[data-action="download-results"]');
+            const pdf = document.querySelector('[data-action="download-pdf"]');
+            return !!text && !!pdf && text.parentElement === pdf.parentElement;
+        }"""
+    )
+    assert same_parent, "the two downloads do not share a parent element"
+
+    #: Equal weight - the same button styling, not one primary and one secondary.
+    text_classes = set((text_button.get_attribute("class") or "").split())
+    pdf_classes = set((pdf_button.get_attribute("class") or "").split())
+    assert text_classes == pdf_classes, (
+        f"the two downloads are not styled as equals: {text_classes} vs {pdf_classes}"
+    )
+    assert "button-secondary" not in text_classes or "button-primary" not in pdf_classes, (
+        "one button reads as primary and the other secondary"
+    )
+
+
+@pytest.mark.browser
+def test_two_pdf_downloads_in_the_same_frozen_second_still_get_distinct_names(page_at):
+    """**Complaint 2, made deliberately non-flaky.** `exportFilename`'s stamp has
+    one-second resolution, so two downloads taken in quick succession would
+    only prove distinctness by luck - passing when the clicks happen to straddle
+    a second boundary and failing, or worse, silently agreeing, when they land
+    inside the same one. That is exactly the "timestamp alone" version of this
+    fix the client did not ask for: they asked for a timestamp *and* something
+    unique per file.
+
+    So the browser's own clock is frozen to one instant before either click.
+    Both downloads are therefore built from the identical timestamp; if the
+    file name depended on the timestamp alone the two names would be identical
+    outright, which is what the assertion below actually tests for - not "two
+    downloads happened to differ" but "two downloads forced onto the same
+    second still differ", which only a genuinely unique identifier can produce.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    page.clock.set_fixed_time(datetime(2026, 8, 30, 21, 30, 33))
+
+    pdf_button = page.locator('[data-action="download-pdf"]')
+
+    with page.expect_download() as first_info:
+        pdf_button.click()
+    first_name = first_info.value.suggested_filename
+
+    #: `downloadPdf` disables the button for the length of the request; the
+    #: second click has to wait for it, exactly as a visitor's second press
+    #: would have to.
+    page.wait_for_selector('[data-action="download-pdf"]:not([disabled])', timeout=10000)
+
+    with page.expect_download() as second_info:
+        pdf_button.click()
+    second_name = second_info.value.suggested_filename
+
+    assert len(calls) == 2, f"expected two requests to /export/pdf, got {calls}"
+
+    first_stamp = re.match(STAMP_PATTERN, first_name)
+    second_stamp = re.match(STAMP_PATTERN, second_name)
+    assert first_stamp and second_stamp, (first_name, second_name)
+    assert first_stamp.group() == second_stamp.group(), (
+        "the clock was not actually frozen for both downloads - the test proves "
+        f"nothing about the same-second case: {first_name!r} vs {second_name!r}"
+    )
+
+    assert first_name != second_name, (
+        "two PDF downloads taken in the same frozen second produced the same "
+        f"file name: {first_name!r}"
+    )
+
+
+@pytest.mark.browser
+def test_the_pdf_filename_follows_the_same_convention_as_the_text_export(page_at):
+    """The stamp itself - not merely that the two names differ from each other,
+    but that the PDF's name is built the way the text export's already was:
+    the same sortable date-and-time prefix, with the PDF's own identifier and
+    extension after it rather than before or in place of the stamp."""
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    with page.expect_download() as text_info:
+        page.locator('[data-action="download-results"]').click()
+    text_name = text_info.value.suggested_filename
+
+    with page.expect_download() as pdf_info:
+        page.locator('[data-action="download-pdf"]').click()
+    pdf_name = pdf_info.value.suggested_filename
+
+    assert re.fullmatch(STAMP_PATTERN + r"\.txt", text_name), text_name
+    assert re.fullmatch(STAMP_PATTERN + r"-[0-9a-z]{6,10}\.pdf", pdf_name), pdf_name
+
+
+#: 320, 390, 700, 938 and 1278 - the plan's own five widths - checked in German, the
+#: longest of the twenty catalogues shipped, per `tests/web/test_horizontal_overflow.py`'s
+#: own reasoning for including it.
+DOWNLOAD_LAYOUT_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", DOWNLOAD_LAYOUT_WIDTHS)
+def test_neither_download_button_overflows_in_german(browser, width):
+    """Measured, not reasoned about - `test_horizontal_overflow.py`'s own rule,
+    applied to the one change this task makes to the page's layout. German is
+    checked because it is this catalogue set's longest language and the one
+    that builds unbreakable compounds; a button pair that wraps rather than
+    overflows at a narrow width is a pass, the same allowance
+    `test_horizontal_overflow.py` makes for `.result-actions` already wrapping.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 900},
+        locale="de",
+        extra_http_headers={"Accept-Language": "de,en;q=0.5"},
+        bypass_csp=True,
+    )
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(_fixture("calculate_response.json")),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+
+        de = page.evaluate(
+            "() => ({scroll: document.documentElement.scrollWidth, "
+            "client: document.documentElement.clientWidth})"
+        )
+        #: The same 320px floor `test_horizontal_overflow.py` applies: below that,
+        #: the interface stops reflowing by design and the page is 320px wide on
+        #: purpose rather than by defect.
+        assert de["scroll"] <= max(de["client"], 320), (
+            f"the page scrolls sideways at {width}px in German: "
+            f"scrollWidth={de['scroll']} clientWidth={de['client']}"
+        )
+
+        for action in ("download-results", "download-pdf"):
+            button = page.locator(f'[data-action="{action}"]')
+            box = button.bounding_box()
+            assert box is not None, f"{action} has no box at {width}px"
+            assert box["x"] + box["width"] <= de["client"] + 1, (
+                f"{action} overflows its own viewport at {width}px in German: {box}"
+            )
+    finally:
+        context.close()

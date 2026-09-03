@@ -846,7 +846,11 @@ th, td { padding: 12px 10px; border-bottom: 1px solid var(--border); text-align:
 thead th { color: var(--muted); background: #f5f8f6; font-size: 0.82rem; }
 tbody th { font-weight: 700; }
 .result-actions { margin-top: 36px; padding-top: 26px; display: flex; flex-wrap: wrap; gap: 12px; border-top: 1px solid var(--border); }
-.result-actions .button-primary { margin-inline-start: auto; }
+/* The two downloads (Task 3, 2026-08-31): one container, pushed to the row's end, holding
+   both format buttons at equal weight. `flex-wrap` here is the same allowance
+   `.result-actions` already makes for itself — at a width too narrow for both German
+   labels side by side, the second wraps onto its own line rather than overflowing. */
+.download-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-inline-start: auto; }
 .contribute-block {
   margin: 28px 0 12px;
   padding: 20px 24px;
@@ -1044,7 +1048,7 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .results-section { padding: 19px; }
   .result-section-heading { gap: 11px; }
   .result-actions { flex-direction: column; }
-  .result-actions .button-primary { margin-inline-start: 0; }
+  .download-actions { flex-direction: column; margin-inline-start: 0; }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
   .improvement-editor { grid-template-columns: 1fr; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }

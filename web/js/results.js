@@ -678,7 +678,8 @@ export function buildResultsReport(state) {
 }
 
 /**
- * The download's file name, stamped with local time.
+ * The download's file name, stamped with local time — shared by both downloads
+ * (Task 3, 2026-08-31) so the stamp's own convention exists in exactly one place.
  *
  * A fixed name meant every export after the first arrived as
  * `food-waste-impact-results (1).txt`, and the browser decides that suffix, not
@@ -692,8 +693,16 @@ export function buildResultsReport(state) {
  *
  * `now` is a parameter because a function that reads the system clock cannot be
  * asserted on - the same reason `engine.calculate` takes no clock.
+ *
+ * `ext` and `unique` are both optional and both new: the text download still
+ * calls this with neither, so its own name is untouched. The PDF passes both —
+ * see `downloadPdf` — because the stamp alone has one-second resolution and a
+ * fixed name is exactly what made a second PDF land as `... (1).pdf`; the client
+ * asked for a timestamp *and* something unique per file, not the timestamp
+ * alone, so `unique` is a real per-download identifier rather than a second
+ * clock reading.
  */
-export function exportFilename(now = new Date()) {
+export function exportFilename(now = new Date(), { ext = 'txt', unique } = {}) {
   const pad = (value) => String(value).padStart(2, '0')
   const stamp = [
     now.getFullYear(),
@@ -704,14 +713,31 @@ export function exportFilename(now = new Date()) {
     pad(now.getMinutes()),
     pad(now.getSeconds()),
   ].join('')
-  return `food-waste-impact-results-${stamp}.txt`
+  const suffix = unique ? `-${unique}` : ''
+  return `food-waste-impact-results-${stamp}${suffix}.${ext}`
 }
 
 /**
- * The plain-text download, on `data-action="download-results"` — the original export, and
- * still the one the step navigation offers. PR #46 replaced this implementation with a
- * hand-rolled PDF rather than adding one beside it; the PDF now comes from the server
- * (`downloadPdf` below), so the two formats are two buttons and this one stays text.
+ * A short identifier that tells two downloads apart without depending on the
+ * clock — `exportFilename`'s stamp alone cannot, at one-second resolution.
+ * `crypto.randomUUID` is available in every browser this interface supports
+ * (it needs only a secure context, and `localhost` qualifies for it exactly as
+ * the deployed origin will); the fallback covers an embedded or older engine
+ * that Playwright or a real visitor could still present.
+ */
+function downloadUniqueId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+  }
+  return Math.random().toString(36).slice(2, 10)
+}
+
+/**
+ * The plain-text download, on `data-action="download-results"` — the original export.
+ * PR #46 replaced this implementation with a hand-rolled PDF rather than adding one beside
+ * it; the PDF now comes from the server (`downloadPdf` below), so the two formats are two
+ * buttons, rendered together as one choice rather than one in the step navigation and one
+ * trailing after it (Task 3, 2026-08-31 — see `renderResults`' own `.download-actions`).
  *
  * The link is attached to the document before `click()` and removed after: a detached
  * anchor is not reliably actionable in Firefox. Both details, and the deferred revoke
@@ -740,13 +766,15 @@ export function downloadResults(state) {
  * negotiated to put the rest of this page's own text on screen — because the server has no
  * other way to know which language the visitor is reading (§O-8).
  *
- * **One fixed name, matching the server's own `Content-Disposition`** (`EXPORT_FILENAME` in
- * `api/export.py`): the blob this creates has no headers of its own for the browser to read
- * a name from, and a document downloaded twice under two different names would be the
- * confusing sibling of `exportFilename()`'s reason for stamping the text export instead.
+ * **Stamped by `exportFilename`, the same helper the text export uses, not a constant.**
+ * `EXPORT_FILENAME` in `api/export.py` still names the response's `Content-Disposition`
+ * header, but that header is never what names this file: `exportPdf` (`api/js/api.js`)
+ * returns a `Blob` from a completed `fetch`, not a navigation the browser could read a
+ * header from, so the name a visitor sees has only ever been this `<a download>`'s own
+ * attribute — a front-end fix, and not one the contract needs to record. A fixed name here
+ * is exactly what turned every second PDF into `... (1).pdf`, the confusing sibling of
+ * `exportFilename()`'s reason for stamping the text export in the first place.
  */
-const PDF_EXPORT_FILENAME = 'kai-commitment-impact-calculator.pdf'
-
 export async function downloadPdf(state) {
   if (state.pdfExporting) return
   setState({ pdfExporting: true, pdfError: null })
@@ -755,7 +783,7 @@ export async function downloadPdf(state) {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = PDF_EXPORT_FILENAME
+    link.download = exportFilename(new Date(), { ext: 'pdf', unique: downloadUniqueId() })
     document.body?.append(link)
     link.click()
     link.remove?.()
@@ -868,10 +896,10 @@ export function renderResults(state) {
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><button class="button button-secondary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
     ${contributeBlock(state)}
-    ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), label: t('Download results'), action: 'download-results' })}
+    ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), action: null })}
   </section>`
 }

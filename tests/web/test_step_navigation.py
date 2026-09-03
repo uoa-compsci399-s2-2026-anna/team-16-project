@@ -212,8 +212,18 @@ def advance_to(page, step):
 
 #: The screen, and the selector for the action that advances it. The intro has
 #: no bar — it is a full-bleed hero whose own CTA measured -447 / -362 / -273 on
-#: the pass that put this table here — and the results screen's advancing action
-#: is the download.
+#: the pass that put this table here.
+#:
+#: **Step 5 changed under the plan of 2026-08-31 (Task 3).** The download used to
+#: be `.step-nav [data-action="download-results"]`, pinned exactly like every
+#: other step's advancing action. The client's second-round feedback was that
+#: the text export was unreachable beside the PDF button, which lived outside
+#: the bar in `.result-actions` — so the text download moved out to sit beside
+#: it as an equal-weight pair, and the step-nav's primary slot for this one step
+#: is now empty (`stepNav({..., action: null})`, `web/js/view.js`). Results is
+#: the wizard's terminal screen — there is nothing further to "advance" to — so
+#: what this table now measures there is the one action Task 3's own brief says
+#: must stay put: the back action, still pinned in the bar.
 PRIMARY = {
     -1: '[data-action="start"]',
     0: '.step-nav [data-action="continue"]',
@@ -221,7 +231,7 @@ PRIMARY = {
     2: '.step-nav [data-action="continue"]',
     3: '.step-nav [data-action="continue"]',
     4: '.step-nav [data-action="calculate"]',
-    5: '.step-nav [data-action="download-results"]',
+    5: '.step-nav [data-action="go-step"]',
 }
 
 

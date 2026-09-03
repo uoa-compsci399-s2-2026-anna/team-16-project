@@ -860,9 +860,110 @@ tbody th { font-weight: 700; }
   background: var(--mint);
 }
 .contribute-sentence { margin: 0 0 14px; color: var(--ink); }
-.contribute-control { display: flex; align-items: flex-start; gap: 10px; }
-.contribute-control input[type="checkbox"] { margin-block-start: 3px; width: 20px; height: 20px; flex: 0 0 auto; accent-color: var(--green-dark); }
-.contribute-control label { font-weight: 700; color: var(--green-dark); }
+/* Task 4 (2026-08-31): a long rounded button rather than a tick. `#contribute` stays a
+   real `input[type="checkbox"]` - not `display: none`, which would drop it from the
+   accessibility tree and the tab order alike, and not clipped to a single pixel either:
+   an input shrunk that small sits *underneath* the pill in paint order and a real click
+   (a person's or Playwright's `locator.check()` alike) lands on the pill and never
+   reaches it. Instead the input is stretched with `inset: 0` to exactly cover
+   `.contribute-toggle`'s own box and made transparent with `opacity: 0` rather than
+   `visibility: hidden` - invisible, but still the topmost element at every point over the
+   button, so it is what actually receives the click. The visible pill underneath is
+   `pointer-events: none` for exactly that reason: the input, not the label, is the
+   target. */
+.contribute-control { position: relative; display: inline-flex; }
+.contribute-control input[type="checkbox"] {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  opacity: 0;
+  cursor: pointer;
+  border: 0;
+}
+.contribute-control input:disabled { cursor: default; }
+/* The input is now exactly the pill's own box, so the global `:focus-visible { outline }`
+   (top of this file) already draws its ring in the right place - no wrapper-level
+   `:focus-within` trick needed, unlike `.stage-card`/`.simple-choice`'s own visually-
+   hidden inputs, which stay their natural size beside a separate label. */
+.contribute-toggle {
+  pointer-events: none;
+  display: inline-flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 56px;
+  padding: 10px 26px;
+  border: 2px solid var(--kai-kale);
+  border-radius: 999px;
+  /* Unchecked: Banana, a light ground - Kale text per the brand rule. */
+  background: var(--kai-banana);
+  color: var(--kai-kale);
+  font-weight: 700;
+  line-height: 1.35;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease;
+}
+.contribute-control input:hover:not(:disabled) + .contribute-toggle { border-color: var(--green-dark); }
+/* Checked: Pea, the brand's other light ground - still Kale text, so the state change is
+   never "dark ground swapped for light ground and the text colour flipped with it", only
+   ever one light ground for another. The shape change on `__mark` below, not this colour
+   swap, is what actually carries the state - see the rule this answers in `results.js`'s
+   own note over `contributeBlock`. */
+.contribute-control input:checked + .contribute-toggle { background: var(--kai-pea); border-color: var(--green-dark); }
+.contribute-toggle__mark {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  border: 2px solid currentColor;
+  position: relative;
+}
+.contribute-control input:checked + .contribute-toggle .contribute-toggle__mark {
+  border-style: solid;
+  background: var(--kai-kale);
+}
+/* The check mark itself: an `::after` whose `content` and `border-style` both change
+   between the two states (read by `test_the_checked_state_is_marked_by_more_than_
+   colour`), so a screenshot in greyscale would still show a different mark, not just a
+   different shade of the same one. */
+.contribute-toggle__mark::after {
+  content: '';
+  position: absolute;
+  inset-inline-start: 8px;
+  inset-block-start: 4px;
+  width: 6px;
+  height: 12px;
+  border-style: none;
+}
+.contribute-control input:checked + .contribute-toggle .contribute-toggle__mark::after {
+  content: '';
+  border-inline-end: 2px solid #fff;
+  border-block-end: 2px solid #fff;
+  transform: rotate(40deg);
+}
+/* The flower - inline SVG only, built in `results.js`'s `contributeFlower()` from five
+   half-circles, the brand's own supporting graphic. `contribute-control`'s own
+   `position: relative` is what this positions against; `pointer-events: none` keeps it
+   from ever intercepting the click that is about to lock the button anyway. It exists in
+   the DOM only while `state.contributeCelebrating` is true and motion is allowed - see
+   that flag's note in `state.js` - so the `@media (prefers-reduced-motion: reduce)` rule
+   at the foot of this file, which mutes every *other* animation in this stylesheet, has
+   nothing to mute here: there is nothing to find. */
+.contribute-flower {
+  position: absolute;
+  inset-inline-start: 100%;
+  inset-block-start: 50%;
+  margin-inline-start: 6px;
+  transform: translateY(-50%);
+  pointer-events: none;
+  animation: kc-flower-bloom 600ms cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+@keyframes kc-flower-bloom {
+  from { opacity: 0; transform: translateY(-50%) scale(0.15) rotate(-35deg); }
+  to { opacity: 1; transform: translateY(-50%) scale(1) rotate(0deg); }
+}
 .contribute-status { margin: 12px 0 0; color: var(--green-dark); font-weight: 700; }
 .contribute-block .field-error { margin: 12px 0 0; }
 .methodology-compact { margin: 34px 0; padding: 22px 24px; border: 1px solid rgba(135, 0, 90, 0.2); border-inline-start: 3px solid var(--beetroot); border-radius: 12px; background: rgba(230, 190, 255, 0.16); }

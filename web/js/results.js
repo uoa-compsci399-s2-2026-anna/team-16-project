@@ -8,6 +8,22 @@ import { setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
+// Task 4's flower stays on screen for one `kc-flower-bloom` (styles.css) plus headroom,
+// then `contributeCalculation` clears the flag that renders it. Not the animation's own
+// duration alone: a re-render that lands mid-tween (a keystroke in the improvement panel,
+// say) would otherwise cut the bloom off with the timer already spent.
+const CONTRIBUTE_CELEBRATE_MS = 900
+
+// §7.6.5-adjacent: the one piece of user *preference* this module reads rather than an
+// API figure. Guarded rather than called bare because the Node harness
+// `tests/web/test_results_export.py` stubs `window` as `{ location: { search: '' } }` -
+// no `matchMedia` - to run this module outside a browser at all; a bare call would throw
+// on module load rather than on the one branch that actually needs it.
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 // The English source strings, which are also the catalogue keys. `TAB_LABELS` is
 // keyed by tab and read in three places, one of which is a table caption, so the
 // translation happens where it is rendered rather than here - a module-level t()
@@ -798,12 +814,48 @@ export async function downloadPdf(state) {
 }
 
 /**
+ * The client's own ask (round three): "a long rounded button rather than a tick, a bit
+ * cuter, perhaps a small flower animation on press" — built from five half-circles, the
+ * brand's own supporting graphic (the logo's half-disc, at small scale in an odd-numbered
+ * group), rotated around a shared centre. Renders only from `contributeBlock`, only while
+ * `state.contributeCelebrating` is true, so it never plays on its own — see that flag's
+ * note in `state.js` for why a re-render alone must not replay it, and
+ * `contributeCalculation` below for what clears it.
+ *
+ * `aria-hidden`: the flower adds nothing a screen reader needs. Every fact it stands for
+ * — ticked, and now contributed — is already on the accessible checkbox itself and in
+ * `.contribute-status`'s own text.
+ */
+function contributeFlower() {
+  const petal = (rotate, fill) =>
+    `<path d="M0,-9 A9,9 0 0 1 0,9 Z" fill="${fill}" transform="rotate(${rotate})"></path>`
+  return `<svg class="contribute-flower" width="34" height="34" viewBox="-17 -17 34 34" aria-hidden="true" focusable="false">${petal(0, 'var(--kai-pea)')}${petal(72, 'var(--kai-banana)')}${petal(144, 'var(--kai-pea)')}${petal(216, 'var(--kai-banana)')}${petal(288, 'var(--kai-pea)')}<circle r="3.4" fill="var(--kai-kale)"></circle></svg>`
+}
+
+/**
  * §6.2.2, and the control this whole task exists to write.
  *
  * **Unticked by construction.** `state.contributed` starts `false` and nothing here
  * sets it before a press — a pre-checked box would make stage one's `is_public_
  * contributed` default of FALSE decorative, which is exactly what item ⑬ reverses
  * §2.3's "no consent checkbox" decision to prevent.
+ *
+ * **Still a real checkbox, underneath.** Round three restyled this into the "long
+ * rounded button" the client asked for, but `#contribute` is still a native
+ * `input[type="checkbox"]` — visually replaced by the `<label>` beside it (`styles.css`'s
+ * `.contribute-toggle`), never removed from the accessibility tree. That is what keeps
+ * `page.locator('#contribute').check()` / `.is_checked()` — this file's own database-
+ * reading tests among them — working unchanged: Playwright and a screen reader alike
+ * still see a checkbox with this label as its accessible name. `aria-checked` is set
+ * explicitly alongside the native `checked` property, redundant on a native input but
+ * literally what the brief asks for kept, in case the visual control is ever rebuilt on
+ * a non-native element that has no `checked` property of its own to fall back on.
+ *
+ * **The checked state is never colour alone.** `.contribute-toggle__mark` (`styles.css`)
+ * switches from an open ring to a filled disc with a check mark drawn in its own `::after`
+ * — a shape change, not a repaint — and `.contribute-status` below says the same thing in
+ * words once a press succeeds. A visitor who cannot see colour, or is reading a screen
+ * reader, still gets an unambiguous answer either way.
  *
  * **One-way, and said so before the click, not after.** The route only ever sets the
  * flag (§6.2.2's own table has no path that clears it), so unticking this box would be
@@ -833,11 +885,14 @@ export async function downloadPdf(state) {
 function contributeBlock(state) {
   const pending = state.contributing
   const done = state.contributed
+  const active = pending || done
+  const celebrate = done && state.contributeCelebrating && !prefersReducedMotion()
   return `<div class="contribute-block">
     <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
     <div class="contribute-control">
-      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" ${pending || done ? 'checked' : ''} ${pending || done ? 'disabled' : ''}>
-      <label for="contribute">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</label>
+      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" aria-checked="${active ? 'true' : 'false'}" ${active ? 'checked' : ''} ${active ? 'disabled' : ''}>
+      <label for="contribute" class="contribute-toggle"><span class="contribute-toggle__mark" aria-hidden="true"></span><span class="contribute-toggle__text">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</span></label>
+      ${celebrate ? contributeFlower() : ''}
     </div>
     ${done ? `<p class="contribute-status" role="status">${escapeHtml(t("Your latest figures are in this calculator's public statistics."))}</p>` : ''}
     ${state.contributeError ? `<p class="field-error" role="alert">${escapeHtml(state.contributeError)}</p>` : ''}
@@ -857,13 +912,22 @@ function contributeBlock(state) {
  * A failed call leaves `contributed` false, which re-enables the checkbox and leaves it
  * unticked — the "pre-press state" the brief asks for — rather than reporting a success
  * that did not happen.
+ *
+ * **`contributeCelebrating` is set on success and cleared by this function, not by the
+ * next render.** `renderResults` rebuilds the whole section on every `setState`
+ * (`main.js`'s `render()`), so a flower that rendered for as long as `state.contributed`
+ * stayed true would bloom again on every unrelated re-render — opening the improvement
+ * panel after contributing, say. Setting a second, one-shot flag and clearing it with its
+ * own `setTimeout` is what confines the animation to the actual transition, the same
+ * pattern `calculator.js` and `downloadPdf` above already use for a timed state clear.
  */
 export async function contributeCalculation(state, toPublicMessage = error => error.message || t('The calculator service could not be reached. Check your connection and try again.')) {
   if (state.contributing || state.contributed || !state.token) return
   setState({ contributing: true, contributeError: null })
   try {
     await contribute(state.token)
-    setState({ contributing: false, contributed: true })
+    setState({ contributing: false, contributed: true, contributeCelebrating: true })
+    setTimeout(() => setState({ contributeCelebrating: false }), CONTRIBUTE_CELEBRATE_MS)
   } catch (error) {
     setState({ contributing: false, contributed: false, contributeError: toPublicMessage(error) })
   }

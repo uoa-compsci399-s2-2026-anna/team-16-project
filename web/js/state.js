@@ -95,6 +95,15 @@ export const state = {
   contributing: false,
   contributed: false,
   contributeError: null,
+  // Task 4's flower, and nothing else. `contributed` above is the durable choice and
+  // survives every re-render for as long as it holds; this is a one-shot flourish tied
+  // to the exact transition into it. `render()` (`calculator.js`) replaces `<main>`
+  // wholesale on every `setState` (`main.js`), so a flower keyed on `contributed` alone
+  // would re-bloom on every unrelated re-render for as long as the box stayed ticked -
+  // opening the improvement panel, say. `contributeCalculation` (`results.js`) sets this
+  // true on success and clears it itself once the animation's own duration has passed;
+  // see that function for why a timeout-cleared flag rather than a CSS one-shot.
+  contributeCelebrating: false,
   // The PDF button (`results.js`'s `downloadPdf`). Unlike `contributed` above this never
   // needs to survive past its own request: there is nothing to remember about a document
   // once it has downloaded, only whether one is in flight right now.
@@ -208,6 +217,7 @@ export function resetCalculator() {
     contributing: false,
     contributed: false,
     contributeError: null,
+    contributeCelebrating: false,
     pdfExporting: false,
     pdfError: null,
   })

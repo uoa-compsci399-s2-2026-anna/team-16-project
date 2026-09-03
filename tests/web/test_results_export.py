@@ -539,8 +539,13 @@ def page_at(browser):
     """
     contexts = []
 
-    def open_page(response, width=390, height=900):
-        ctx = browser.new_context(viewport={"width": width, "height": height}, locale="en-NZ", bypass_csp=True)
+    def open_page(response, width=390, height=900, reduced_motion=None):
+        ctx = browser.new_context(
+            viewport={"width": width, "height": height},
+            locale="en-NZ",
+            bypass_csp=True,
+            reduced_motion=reduced_motion,
+        )
         contexts.append(ctx)
         page = ctx.new_page()
         page.route(
@@ -1356,7 +1361,7 @@ def test_the_export_says_incomplete_for_a_money_figure_partial_coverage_gave_no_
 # test in this file already drives.
 
 
-def _results_page(page_at, *, contribute_calls=None):
+def _results_page(page_at, *, contribute_calls=None, reduced_motion=None):
     """The results page, reached with `calculate_response.json` - the fixture that
     carries a real `token` (§6.2), which is what the control this section tests
     actually sends.
@@ -1369,8 +1374,12 @@ def _results_page(page_at, *, contribute_calls=None):
     handler calls `route.fallback()`, which this one never does - so a route a
     test adds afterwards, to capture the on-press request specifically, takes
     over cleanly without this counter also swallowing it.
+
+    `reduced_motion`, when given, is forwarded to `page_at`'s own context - see
+    `test_the_flower_blooms_only_when_motion_is_allowed` below for the one
+    place this actually varies.
     """
-    page = page_at(_fixture("calculate_response.json"))
+    page = page_at(_fixture("calculate_response.json"), reduced_motion=reduced_motion)
     if contribute_calls is not None:
         page.route(
             "**/api/v1/contribute",
@@ -1504,6 +1513,172 @@ def test_the_control_is_described_for_a_visitor_who_cannot_see_the_sentence(page
     assert "anonymous" in described_text, (
         "aria-describedby does not point at the sentence explaining the choice"
     )
+
+
+# ------------------------------------------------------- the invitation (Task 4)
+#
+# The client's ask was a long rounded button rather than a tick, "a bit cuter",
+# and perhaps a small flower animation on press. The three tests above this
+# banner - unticked by default, described before the click, an explicit
+# aria-describedby - all still pass unchanged against whatever markup this
+# section builds, because the id `#contribute`, the `label[for="contribute"]`
+# association and `.contribute-block`'s own text never move. What follows is
+# new ground: an explicit `aria-checked` alongside the control's native
+# semantics, a checked-state mark that does not rely on colour alone, and the
+# flower itself, gated on `prefers-reduced-motion`.
+
+
+@pytest.mark.browser
+def test_the_control_reports_an_explicit_aria_checked_state(page_at):
+    """The brief's own wording: "keep a real checkbox or switch role, and
+    `aria-checked`". A native `input[type=checkbox]` already exposes its
+    checked state to the accessibility tree through the `checked` property
+    alone, so this is not asserting the control is *readable* - the existing
+    `test_the_results_page_offers_to_contribute_and_does_not_assume` already
+    covers that with `is_checked()`. It asserts the explicit attribute the
+    brief calls for is present *and tracks the same state*, which a control
+    that set it once at render time and never updated it would fail.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    control = page.locator("#contribute")
+    assert control.get_attribute("aria-checked") == "false", (
+        "the control has no aria-checked attribute, or it is not false before the press"
+    )
+
+    control.check()
+    page.wait_for_timeout(400)
+
+    assert control.get_attribute("aria-checked") == "true", (
+        "aria-checked did not move to true once the control was ticked"
+    )
+
+
+@pytest.mark.browser
+def test_the_checked_state_is_marked_by_more_than_colour(page_at):
+    """"A button that looks the same pressed and unpressed is worse than the
+    checkbox it replaced" - so this measures a *non-colour* property of the
+    control's own state mark before and after the press, the same way
+    `test_site_drawer.py` measures its chevron's rotation rather than trusting
+    a colour token to have changed. A mutation that left only a background
+    colour switching between the two states passes every other test in this
+    file and fails this one.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    read_mark = (
+        "() => { const mark = document.querySelector('.contribute-toggle__mark');"
+        " const after = getComputedStyle(mark, '::after');"
+        " return after.content + '|' + after.borderStyle + '|' + mark.className; }"
+    )
+    before = page.evaluate(read_mark)
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(400)
+
+    after = page.evaluate(read_mark)
+    assert before != after, (
+        "the control's state mark reads identically before and after the "
+        f"press ({before!r}); only colour would then distinguish the two states"
+    )
+
+
+@pytest.mark.browser
+def test_the_flower_blooms_only_when_motion_is_allowed(page_at):
+    """The client's own ask - "perhaps a small flower animation... when it is
+    pressed" - and the one non-negotiable beside it: it must not run under
+    `prefers-reduced-motion: reduce`, and the control's own state change must
+    be complete and visible without it.
+
+    Both halves live in one test rather than two. A suite that only asserted
+    the reduced-motion half would pass equally against an implementation that
+    never grew a flower at all - asserting the element DOES appear under
+    ordinary motion first is what makes the reduced-motion assertion below
+    mean "suppressed" rather than "never built".
+    """
+    ordinary = _results_page(page_at, reduced_motion="no-preference")
+    ordinary.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+    ordinary.locator("#contribute").check()
+    ordinary.wait_for_timeout(300)
+    assert ordinary.locator(".contribute-flower").count() >= 1, (
+        "no flower ever appears, even with motion allowed - the reduced-motion "
+        "assertion below would prove nothing"
+    )
+
+    reduced = _results_page(page_at, reduced_motion="reduce")
+    reduced.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+    reduced.locator("#contribute").check()
+    reduced.wait_for_timeout(300)
+    assert reduced.locator(".contribute-flower").count() == 0, (
+        "the flower animation element is present in the DOM under "
+        "prefers-reduced-motion: reduce"
+    )
+
+    # The state change itself does not depend on the animation having played.
+    assert reduced.locator("#contribute").is_checked() is True
+    assert reduced.locator(".contribute-status").count() == 1, (
+        "the contributed state is not fully conveyed without the animation"
+    )
+
+
+#: 320, 390, 700, 938 and 1278 - the plan's own five widths - checked in German,
+#: the longest of the twenty catalogues shipped. Mirrors
+#: `DOWNLOAD_LAYOUT_WIDTHS`/`test_neither_download_button_overflows_in_german`
+#: below, applied to the one other piece of layout this task touches.
+CONTRIBUTE_LAYOUT_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", CONTRIBUTE_LAYOUT_WIDTHS)
+def test_the_contribute_button_does_not_overflow_in_german(browser, width):
+    """A "long rounded button" is exactly the shape that breaks first at a
+    narrow width - German is this catalogue set's longest language and the one
+    that builds unbreakable compounds (`test_horizontal_overflow.py`'s own
+    reasoning), so its label is what a real button has to accommodate rather
+    than English's shorter one.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 900},
+        locale="de",
+        extra_http_headers={"Accept-Language": "de,en;q=0.5"},
+        bypass_csp=True,
+    )
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(_fixture("calculate_response.json")),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+
+        de = page.evaluate(
+            "() => ({scroll: document.documentElement.scrollWidth, "
+            "client: document.documentElement.clientWidth})"
+        )
+        assert de["scroll"] <= max(de["client"], 320), (
+            f"the page scrolls sideways at {width}px in German: "
+            f"scrollWidth={de['scroll']} clientWidth={de['client']}"
+        )
+
+        toggle = page.locator(".contribute-toggle")
+        box = toggle.bounding_box()
+        assert box is not None, f"the contribute button has no box at {width}px"
+        assert box["x"] + box["width"] <= de["client"] + 1, (
+            f"the contribute button overflows its own viewport at {width}px in German: {box}"
+        )
+    finally:
+        context.close()
 
 
 # ---------------------------------------------------------------- the PDF export

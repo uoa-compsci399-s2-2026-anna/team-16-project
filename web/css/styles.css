@@ -884,10 +884,18 @@ tbody th { font-weight: 700; }
   border: 0;
 }
 .contribute-control input:disabled { cursor: default; }
-/* The input is now exactly the pill's own box, so the global `:focus-visible { outline }`
-   (top of this file) already draws its ring in the right place - no wrapper-level
-   `:focus-within` trick needed, unlike `.stage-card`/`.simple-choice`'s own visually-
-   hidden inputs, which stay their natural size beside a separate label. */
+/* The input is `opacity: 0`, so the global `:focus-visible { outline }` (top of this
+   file) is painted on an element with nothing to see it against - `opacity` applies to
+   the outline along with everything else the element draws, so that ring is real but
+   invisible. Suppressed here and redrawn on the sibling label instead, keyed off the
+   input's own `:focus-visible` state - the same construction `.stage-card` and
+   `.simple-choice` use for their own visually-hidden inputs, just reached with `+`
+   rather than `:focus-within` because the toggle is a sibling, not a wrapper. */
+.contribute-control input:focus-visible { outline: none; }
+.contribute-control input:focus-visible + .contribute-toggle {
+  outline: 2px solid var(--focus);
+  outline-offset: 3px;
+}
 .contribute-toggle {
   pointer-events: none;
   display: inline-flex;

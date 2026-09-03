@@ -1623,6 +1623,84 @@ def test_the_flower_blooms_only_when_motion_is_allowed(page_at):
     )
 
 
+@pytest.mark.browser
+def test_the_flower_does_not_bloom_over_a_failed_contribute(page_at):
+    """The brief: the flower plays on the transition INTO the contributed state
+    and never on the way out. Nothing above drives a failed `/contribute` at
+    all, so nothing constrained which branch of `contributeCalculation`
+    (`results.js`) is allowed to set `contributeCelebrating` - a version that
+    set it in the `catch` too, alongside dropping the `done &&` half of
+    `celebrate`'s guard, left every other test in this file green: a failed
+    press still leaves `checked=False`, so `test_the_results_page_offers_to_
+    contribute_and_does_not_assume`'s "starts unticked" reads exactly the same
+    whether or not a flower bloomed on the way there.
+
+    A failed contribute must snap the control back to its unticked, unpressed
+    state; a flower blooming over that is celebrating a consent that was never
+    recorded.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=500))
+
+    # `.click()` rather than `.check()`: the box settles back to unticked once the
+    # failure lands, so `.check()`'s own "ends up checked" postcondition would retry
+    # the click forever and time out - the failure path is exactly what this test
+    # means to drive.
+    page.locator("#contribute").click()
+    page.wait_for_timeout(400)
+
+    assert page.locator("#contribute").is_checked() is False, (
+        "the control still reads ticked after the contribute request failed"
+    )
+    assert page.locator(".contribute-flower").count() == 0, (
+        "the flower bloomed over a contribute that failed and snapped back to unticked"
+    )
+
+
+@pytest.mark.browser
+def test_the_control_shows_a_focus_ring_when_tabbed_to(page_at):
+    """**Required fix.** `#contribute` is `opacity: 0` (see `styles.css`'s own
+    note over `.contribute-control input[type="checkbox"]`) so the ring the
+    top-of-file `:focus-visible { outline }` rule draws on the input itself is
+    real but painted on nothing anybody can see - the parent's full-opacity
+    20px native checkbox had a visible ring; this pill did not. The fix draws
+    it on the sibling pill instead, keyed off the input's own `:focus-visible`
+    state (`.contribute-control input:focus-visible + .contribute-toggle`).
+
+    `.focus()` does not exercise this: Chromium only turns `:focus-visible` on
+    for a genuine keyboard walk, not a script calling `.focus()` on an element
+    directly (confirmed against this exact page before writing this test), so
+    the walk below is a real `Tab` from the skip link - the same construction
+    `test_the_capsule_shows_a_focus_ring_when_the_control_is_tabbed_to`
+    (`test_i18n_browser.py`) uses for the language chooser. The assertion is a
+    screenshot difference rather than a check that some CSS rule exists,
+    because a rule that exists but targets the wrong element, or draws an
+    outline `opacity: 0` still swallows, would satisfy the latter and fail a
+    real keyboard visitor exactly as before this fix.
+    """
+    page = _results_page(page_at)
+
+    resting = page.locator(".contribute-control").screenshot()
+
+    page.focus(".skip-link")
+    reached = False
+    for _ in range(40):
+        page.keyboard.press("Tab")
+        if page.evaluate("() => document.activeElement?.id") == "contribute":
+            reached = True
+            break
+    assert reached, "forty Tabs from the top of the page never reached #contribute"
+    assert page.evaluate(
+        "() => document.querySelector('#contribute').matches(':focus-visible')"
+    ) is True, "the control was reached but Chromium does not consider it focus-visible"
+
+    focused = page.locator(".contribute-control").screenshot()
+    assert focused != resting, (
+        "tabbing to the contribute control paints no different pixels - there is no "
+        "visible focus indicator on the one control that records a consent"
+    )
+
+
 #: 320, 390, 700, 938 and 1278 - the plan's own five widths - checked in German,
 #: the longest of the twenty catalogues shipped. Mirrors
 #: `DOWNLOAD_LAYOUT_WIDTHS`/`test_neither_download_button_overflows_in_german`

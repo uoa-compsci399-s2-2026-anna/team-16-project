@@ -817,7 +817,11 @@ export async function downloadPdf(state) {
  * The client's own ask (round three): "a long rounded button rather than a tick, a bit
  * cuter, perhaps a small flower animation on press" — built from five half-circles, the
  * brand's own supporting graphic (the logo's half-disc, at small scale in an odd-numbered
- * group), rotated around a shared centre. Renders only from `contributeBlock`, only while
+ * group), each offset out from a shared hub before it is rotated into place - meeting at
+ * the hub rather than at a single shared centre point, which is what keeps the five lobes
+ * readable as petals instead of tiling into a solid disc (five half-discs rotated about
+ * one point cover the circle completely, with no ground visible between them - a pie
+ * chart, not a flower). Renders only from `contributeBlock`, only while
  * `state.contributeCelebrating` is true, so it never plays on its own — see that flag's
  * note in `state.js` for why a re-render alone must not replay it, and
  * `contributeCalculation` below for what clears it.
@@ -827,9 +831,14 @@ export async function downloadPdf(state) {
  * `.contribute-status`'s own text.
  */
 function contributeFlower() {
+  // Each half-disc is drawn at the origin, same as before, then pushed outward by 7 units
+  // along its own local +x *before* the rotation places it around the hub (`translate`
+  // first, `rotate` second - SVG composes transforms right to left) - so its flat edge
+  // sits 7 units from the hub and its dome reaches to 16, leaving the hub itself clear and
+  // leaving ground visible between one dome tip and the next.
   const petal = (rotate, fill) =>
-    `<path d="M0,-9 A9,9 0 0 1 0,9 Z" fill="${fill}" transform="rotate(${rotate})"></path>`
-  return `<svg class="contribute-flower" width="34" height="34" viewBox="-17 -17 34 34" aria-hidden="true" focusable="false">${petal(0, 'var(--kai-pea)')}${petal(72, 'var(--kai-banana)')}${petal(144, 'var(--kai-pea)')}${petal(216, 'var(--kai-banana)')}${petal(288, 'var(--kai-pea)')}<circle r="3.4" fill="var(--kai-kale)"></circle></svg>`
+    `<path d="M0,-9 A9,9 0 0 1 0,9 Z" fill="${fill}" transform="rotate(${rotate}) translate(7,0)"></path>`
+  return `<svg class="contribute-flower" width="44" height="44" viewBox="-22 -22 44 44" aria-hidden="true" focusable="false">${petal(0, 'var(--kai-pea)')}${petal(72, 'var(--kai-banana)')}${petal(144, 'var(--kai-pea)')}${petal(216, 'var(--kai-banana)')}${petal(288, 'var(--kai-pea)')}<circle r="3.4" fill="var(--kai-kale)"></circle></svg>`
 }
 
 /**

@@ -80,11 +80,17 @@ class ExportPayload(PricingOptions):
     locale: str = Field(min_length=_LOCALE_MIN, max_length=_LOCALE_MAX)
 
 
-#: The filename every export answers with. One name rather than one derived
-#: from the request, because nothing in the payload is safe to put in a
-#: `Content-Disposition` header unescaped, and a fixed name is what every
-#: other download-shaped route in this API already does (`_csv_zip` in
-#: `api/router.py`).
+#: The filename this route's `Content-Disposition` header names — and, for the
+#: calculator itself, inert. `web/js/results.js`'s `downloadPdf` takes a `Blob`
+#: from a completed `fetch` rather than a navigation the browser could read a
+#: header from, and stamps its own name via `exportFilename()` on the `<a
+#: download>` it creates, so nothing under `web/` ever reads this constant. The
+#: route is POST-only — a `GET` answers 405 — so no browser ever navigates here
+#: directly either; the header only names the file for a caller that issues the
+#: POST itself and saves the response as-is (curl, say, or a future API
+#: consumer). Still one fixed name rather than one derived from the request,
+#: because nothing in the payload is safe to put in the header unescaped — the
+#: same reason `_csv_zip` in `api/router.py` uses a fixed name too.
 EXPORT_FILENAME = "kai-commitment-impact-calculator.pdf"
 
 

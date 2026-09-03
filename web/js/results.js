@@ -768,7 +768,7 @@ export function downloadResults(state) {
  *
  * **Stamped by `exportFilename`, the same helper the text export uses, not a constant.**
  * `EXPORT_FILENAME` in `api/export.py` still names the response's `Content-Disposition`
- * header, but that header is never what names this file: `exportPdf` (`api/js/api.js`)
+ * header, but that header is never what names this file: `exportPdf` (`web/js/api.js`)
  * returns a `Blob` from a completed `fetch`, not a navigation the browser could read a
  * header from, so the name a visitor sees has only ever been this `<a download>`'s own
  * attribute — a front-end fix, and not one the contract needs to record. A fixed name here

@@ -281,6 +281,25 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
     assert not failures, "; ".join(failures)
 
 
+def test_the_results_step_bar_has_no_primary_button(page_at):
+    """Task 3 gave `stepNav`'s `action` parameter a `null` case so the results
+    step's bar can omit the primary button entirely (`web/js/view.js`) — its
+    "download" action moved out to sit beside the PDF button instead. Neither
+    `test_results_export.py` nor the table above notices if that branch is
+    ever removed: `PRIMARY[5]` and both viewport sweeps above only assert
+    where the *back* action lands, and a `stepNav` that fell back to
+    rendering `data-action="continue"` here — a dead button with no step left
+    to continue to — would leave both green. This is the assertion that
+    actually counts what the bar's primary slot holds on that one step.
+    """
+    page = advance_to(page_at(1278, 983, 1.0), 5)
+    count = page.locator(".step-nav .button-primary").count()
+    assert count == 0, (
+        f"the results step-nav renders {count} primary button(s); its "
+        "primary slot should be empty (`stepNav({action: null})`)"
+    )
+
+
 def test_the_bar_is_sticky_and_not_fixed(page_at):
     """`position` alone does not prove `sticky` over `fixed` - both report a
     `position` string, and a single gap measurement at one scroll offset is

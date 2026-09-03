@@ -124,6 +124,24 @@ def build_state(*, is_mock: bool = True, with_comparison: bool = False) -> dict:
     return state
 
 
+def build_state_with_share(*, state: str, value: str | None) -> dict:
+    """`build_state`, with `totals.data_state.production_share_percent` and
+    `totals.production_share_percent` set explicitly - the fixture's own default
+    (`incomplete`, `null`) is exercised by `report` above, so the other two states
+    need their own response rather than a hand-edited copy per test."""
+    response = _fixture("calculate_response.json")
+    response["totals"] = dict(response["totals"])
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"], production_share_percent=state
+    )
+    response["totals"]["production_share_percent"] = value
+    return {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
+        "improvementResult": None,
+    }
+
+
 def report_for(tmp_path: Path, state: dict) -> str:
     harness = tmp_path / "harness.mjs"
     harness.write_text(HARNESS, encoding="utf-8")
@@ -248,21 +266,72 @@ def test_the_export_does_not_ask_for_a_figure_the_visitor_already_gave(report):
     """**Finding 2, in the file this time.**
 
     `#total-input` is collected on step 2 and persisted as `total_input_kg`, and
-    §4.5 states plainly that **no field of `MoneyResult` reads it**: waste as a
-    share of production has no consumer yet. The export's closing line said the
-    figure was unavailable "because total food handled data is required", a few
-    lines under a money block built from the very value that sentence asks for.
+    the export's closing line used to say the figure was unavailable "because
+    total food handled data is required", a few lines under a money block built
+    from the very value that sentence asked for.
 
-    §4.5 forbids deriving the share in the browser, so the figure stays
-    unavailable. What changes is that the file stops blaming its reader for it.
+    The engine now returns `production_share_percent`, and `report`'s fixture
+    supplies it for one entry and not the other - `incomplete`, not `not
+    available` - so the file no longer blames its reader for a figure it never
+    asked them to type twice.
     """
     assert "data is required" not in report, report
     assert re.search(
-        r"^Percentage waste: Not available\. This calculator does not report waste "
-        r"as a share of food handled yet\.$",
+        r"^Percentage waste: Data incomplete\. Some entries stated a production total "
+        r"and some did not, so a share of waste cannot be shown\.$",
         report,
         re.M,
     ), report
+
+
+# ------------------------------------- the percentage card's three states (§4.6)
+#
+# `productionShareText` backs both `summaryCards` (the on-screen card) and
+# `buildResultsReport` (this export) - the same function, so proving its three
+# branches here proves the card's wording too. Each test asserts what tells its
+# state apart from the *other two*, not just that its own sentence is present: a
+# card that always printed the same words would pass a test that only checked
+# the state it was pointed at.
+
+
+@node
+def test_the_export_states_the_percentage_when_every_entry_gave_one(tmp_path):
+    """`complete`: the number itself, and neither other state's wording."""
+    report = report_for(tmp_path, build_state_with_share(state="complete", value="50.00"))
+    assert re.search(r"^Percentage waste: 50\.00%$", report, re.M), report
+    assert "Data incomplete" not in report
+    assert "You did not say" not in report
+
+
+@node
+def test_the_export_says_incomplete_when_some_entries_answered_and_some_did_not(tmp_path):
+    """`incomplete`: named as incomplete - not silence, and not "not supplied",
+    which would claim nobody said anything when some entries did."""
+    report = report_for(tmp_path, build_state_with_share(state="incomplete", value=None))
+    assert re.search(
+        r"^Percentage waste: Data incomplete\. Some entries stated a production total "
+        r"and some did not, so a share of waste cannot be shown\.$",
+        report,
+        re.M,
+    ), report
+    assert "You did not say how much food this covered" not in report
+    assert not re.search(r"^Percentage waste: \d", report, re.M)
+
+
+@node
+def test_the_export_says_not_supplied_when_nobody_answered(tmp_path):
+    """`not_supplied`: worded about what the visitor typed, not about what the
+    calculator reports - and not "incomplete", which would imply somebody did
+    answer part of it."""
+    report = report_for(tmp_path, build_state_with_share(state="not_supplied", value=None))
+    assert re.search(
+        r"^Percentage waste: Not supplied\. You did not say how much food this covered, "
+        r"so a share of waste cannot be shown\.$",
+        report,
+        re.M,
+    ), report
+    assert "Data incomplete" not in report
+    assert not re.search(r"^Percentage waste: \d", report, re.M)
 
 
 # --------------------------------------------------------- the placeholder rule
@@ -1117,6 +1186,39 @@ def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
     state["result"]["totals"]["money"] = None
     report = report_for(tmp_path, state)
     assert not re.search(r"^The money$", report, re.M)
+
+
+@node
+def test_the_export_says_incomplete_for_a_money_figure_partial_coverage_gave_no_number(tmp_path):
+    """§4.6 extends the same three-state rule to `totals.money`: a field the
+    engine made `null` because coverage was partial says so in words, distinct
+    from `complete` (a number, on the row above) and from a field nobody
+    touched at all (`not_supplied` - no row at all, on the row below). One test
+    carrying all three is what proves the block tells them apart rather than
+    printing the same thing, or nothing, regardless of which one it is."""
+    state = build_state()
+    state["result"]["totals"]["money"] = {
+        "total_value_nzd": "120000.00",
+        "wasted_value_nzd": None,
+        "wasted_share_percent": None,
+        "saving_nzd": None,
+    }
+    state["result"]["totals"]["data_state"] = dict(
+        state["result"]["totals"]["data_state"],
+        wasted_value_nzd="incomplete",
+        wasted_share_percent="not_supplied",
+    )
+    report = report_for(tmp_path, state)
+    assert re.search(r"^  - Total value of food handled: NZ\$120,000\.00$", report, re.M), report
+    assert re.search(
+        r"^  - Value of food wasted: Not every entry supplied this figure, so it "
+        r"cannot be totalled\.$",
+        report,
+        re.M,
+    ), report
+    assert not re.search(r"^  - Share of value wasted: ", report, re.M), (
+        "a field nobody touched at all printed a row: " + report
+    )
 
 
 # ------------------------------------------------------------- the contribute control

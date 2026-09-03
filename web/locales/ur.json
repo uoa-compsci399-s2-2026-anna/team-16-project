@@ -340,13 +340,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "یہ اعداد اس ٹول میں تعاون کی گئی حسابات کے ایک خود منتخب نمونے کو بیان کرتے ہیں۔ یہ کوئی سروے یا پورے نیوزی لینڈ میں کھانے کے ضیاع کی تصویر نہیں ہیں۔",
     "Breakdowns of entries contributed to this tool": "اس ٹول میں تعاون کی گئی اندراجات کی تفصیلات",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s مجموعی مقدار جو اس ٹول میں تعاون کی گئی",
-    "This calculator does not report waste as a share of food handled yet.": "یہ کیلکولیٹر ابھی سنبھالے گئے کل کھانے کے تناسب سے ضیاع نہیں بتاتا۔",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "آپ کے اندراجات گمنام طور پر محفوظ کیے جاتے ہیں، اور وہ عوامی اعداد و شمار میں تبھی شامل ہوتے ہیں جب آپ انہیں دینے کا انتخاب کریں۔",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "کیلکولیٹر میں درج کیا گیا شعبہ، کھانے کا زمرہ اور مقداریں گمنام طور پر ریکارڈ کی جاتی ہیں۔ وہ رازداری سے محفوظ عوامی اعداد و شمار میں تبھی شامل ہوتی ہیں جب آپ انہیں دینے کا انتخاب کریں۔ ہم ایسی معلومات ریکارڈ نہیں کرتے جو آپ کی یا آپ کے کاروبار کی شناخت ظاہر کریں۔",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "یہ کیلکولیٹر درج کیا گیا شعبہ، کھانے کا زمرہ اور مقداریں محفوظ کرتا ہے۔ وہ عوامی اعداد و شمار میں تبھی شامل ہوتی ہیں جب آپ انہیں دینے کا انتخاب کریں، اور ایسی کوئی چیز محفوظ نہیں کی جاتی جو آپ کی یا آپ کے کاروبار کی شناخت ظاہر کرے۔",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment کے کھانے کے ضیاع کے اثر کے کیلکولیٹر کو دیے گئے حسابات کے گمنام، مجموعی اعداد و شمار دیکھیں۔",
     "Percentage": "فیصد",
     "Total mass": "کل وزن",
-    "Download PDF": "PDF ڈاؤن لوڈ کریں"
+    "Download PDF": "PDF ڈاؤن لوڈ کریں",
+    "Data incomplete": "ڈیٹا نامکمل ہے",
+    "Not every entry supplied this figure, so it cannot be totalled.": "ہر اندراج نے یہ عدد فراہم نہیں کیا، اس لیے اسے جمع نہیں کیا جا سکتا۔",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "کچھ اندراجات نے پیداوار کا مجموعہ بتایا اور کچھ نے نہیں، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "سنبھالے گئے خوراک کے حصے کے طور پر ضیاع آپ کے ٹائپ کیے گئے دو وزنوں کا تناسب ہے، نہ کہ کسی عامل پر مبنی عدد، اس لیے اوپر دیا گیا عارضی ڈیٹا اس پر اثر انداز نہیں ہوتا۔",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "آپ نے یہ نہیں بتایا کہ اس میں کتنی خوراک شامل تھی، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔"
   }
 }

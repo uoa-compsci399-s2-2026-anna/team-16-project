@@ -339,13 +339,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "이 수치는 이 도구에 기여된 계산이라는, 이용자가 스스로 선택한 표본을 나타냅니다. 조사 결과도 아니고 뉴질랜드 전체의 음식물 폐기물 실태도 아닙니다.",
     "Breakdowns of entries contributed to this tool": "이 도구에 기여된 내용의 내역",
     "%(mass)s cumulative quantity contributed to this tool": "이 도구에 기여된 누적 수량 %(mass)s",
-    "This calculator does not report waste as a share of food handled yet.": "이 계산기는 아직 취급한 음식 대비 폐기 비율을 제공하지 않습니다.",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "입력한 내용은 익명으로 기록되며, 제공하기를 선택한 경우에만 공개 통계에 포함됩니다.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "계산기에 입력한 업종, 음식 분류, 수량은 익명으로 기록됩니다. 제공하기를 선택한 경우에만 개인정보를 보호한 공개 통계에 포함됩니다. 이용자나 사업장을 식별할 수 있는 정보는 기록하지 않습니다.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "이 계산기는 입력한 업종, 음식 분류, 수량을 저장합니다. 제공하기를 선택한 경우에만 공개 통계에 포함되며, 이용자나 사업장을 식별할 수 있는 정보는 저장하지 않습니다.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment 음식물 폐기물 영향 계산기에 제공된 계산의 익명 집계 통계를 살펴보세요.",
     "Percentage": "백분율",
     "Total mass": "총 무게",
-    "Download PDF": "PDF 다운로드"
+    "Download PDF": "PDF 다운로드",
+    "Data incomplete": "데이터가 불완전합니다",
+    "Not every entry supplied this figure, so it cannot be totalled.": "모든 항목이 이 수치를 제공하지 않아 합계를 낼 수 없습니다.",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "일부 항목은 생산 총량을 입력했고 일부는 입력하지 않아 낭비 비율을 표시할 수 없습니다.",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "처리된 식품 대비 낭비 비율은 입력하신 두 질량의 비율이며 계수 기반 수치가 아니므로 위의 임시 데이터는 이 값에 영향을 주지 않습니다.",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "이 항목이 다루는 식품의 양을 입력하지 않으셨으므로 낭비 비율을 표시할 수 없습니다."
   }
 }

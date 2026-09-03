@@ -339,13 +339,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Эти цифры описывают самоотобранную выборку расчётов, переданных в этот инструмент. Это не опрос и не картина пищевых отходов по всей Новой Зеландии.",
     "Breakdowns of entries contributed to this tool": "Разбивки записей, переданных в этот инструмент",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s — суммарное количество, переданное в этот инструмент",
-    "This calculator does not report waste as a share of food handled yet.": "Этот калькулятор пока не показывает отходы как долю от объёма обработанных продуктов.",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Ваши записи сохраняются анонимно и попадают в общедоступную статистику, только если вы решите их предоставить.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "Отрасль, категория продуктов и количества, введённые в калькулятор, записываются анонимно. Они попадают в общедоступную статистику с защитой конфиденциальности, только если вы решите их предоставить. Мы не записываем сведения, позволяющие установить вас или ваш бизнес.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Этот калькулятор сохраняет указанные отрасль, категорию продуктов и количества. Они попадают в общедоступную статистику, только если вы решите их предоставить, и ничего, что позволяет установить вас или ваш бизнес, не сохраняется.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Изучите анонимную сводную статистику по расчётам, переданным в калькулятор воздействия пищевых отходов Kai Commitment.",
     "Percentage": "Процент",
     "Total mass": "Общая масса",
-    "Download PDF": "Скачать PDF"
+    "Download PDF": "Скачать PDF",
+    "Data incomplete": "Данные неполные",
+    "Not every entry supplied this figure, so it cannot be totalled.": "Эту цифру указали не все записи, поэтому её нельзя просуммировать.",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Некоторые записи указали общий объём производства, а некоторые нет, поэтому долю отходов показать нельзя.",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Доля отходов от переработанных продуктов — это отношение двух введённых вами масс, а не показатель, основанный на коэффициенте, поэтому приведённые выше условные данные на неё не влияют.",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "Вы не указали, какое количество продуктов это охватывает, поэтому долю отходов показать нельзя."
   }
 }

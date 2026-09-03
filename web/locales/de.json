@@ -339,13 +339,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Diese Zahlen beschreiben eine selbst ausgewählte Stichprobe von Berechnungen, die zu diesem Rechner beigetragen wurden. Sie sind keine Erhebung und kein Abbild der Lebensmittelabfälle in ganz Neuseeland.",
     "Breakdowns of entries contributed to this tool": "Aufschlüsselungen der zu diesem Rechner beigetragenen Eingaben",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s Gesamtmenge, die zu diesem Rechner beigetragen wurde",
-    "This calculator does not report waste as a share of food handled yet.": "Dieser Rechner weist Abfall noch nicht als Anteil der verarbeiteten Lebensmittelmenge aus.",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Ihre Eingaben werden anonym erfasst und gehen nur dann in die öffentliche Statistik ein, wenn Sie sie dafür freigeben.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "Der Sektor, die Lebensmittelkategorie und die im Rechner eingegebenen Mengen werden anonym erfasst. Sie gehen nur dann in die datenschutzgeschützte öffentliche Statistik ein, wenn Sie sie dafür freigeben. Wir erfassen keine Angaben, die Sie oder Ihren Betrieb identifizieren.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Dieser Rechner speichert den Sektor, die Lebensmittelkategorie und die eingegebenen Mengen. Sie gehen nur dann in die öffentliche Statistik ein, wenn Sie sie dafür freigeben, und es wird nichts gespeichert, was Sie oder Ihren Betrieb identifiziert.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Erkunden Sie anonymisierte, zusammengefasste Statistiken aus Berechnungen, die zum Kai Commitment Rechner für die Auswirkungen von Lebensmittelabfällen beigetragen wurden.",
     "Percentage": "Prozentsatz",
     "Total mass": "Gesamtmasse",
-    "Download PDF": "PDF herunterladen"
+    "Download PDF": "PDF herunterladen",
+    "Data incomplete": "Daten unvollständig",
+    "Not every entry supplied this figure, so it cannot be totalled.": "Nicht jeder Eintrag enthielt diese Zahl, daher kann sie nicht summiert werden.",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Einige Einträge gaben eine Produktionsmenge an und andere nicht, daher kann kein Anteil der Verschwendung angezeigt werden.",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Verschwendung als Anteil der verarbeiteten Lebensmittel ist ein Verhältnis der beiden von Ihnen eingegebenen Massen, keine faktorbasierte Zahl, daher haben die obigen Platzhalterdaten keinen Einfluss darauf.",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "Sie haben nicht angegeben, wie viel Lebensmittel dies betraf, daher kann kein Anteil der Verschwendung angezeigt werden."
   }
 }

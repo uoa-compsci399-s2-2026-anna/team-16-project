@@ -339,13 +339,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ตัวเลขเหล่านี้อธิบายกลุ่มตัวอย่างของการคำนวณที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้ ไม่ใช่ผลสำรวจ และไม่ใช่ภาพรวมของขยะอาหารทั่วนิวซีแลนด์",
     "Breakdowns of entries contributed to this tool": "รายละเอียดแยกตามรายการที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
     "%(mass)s cumulative quantity contributed to this tool": "ปริมาณสะสม %(mass)s ที่ผู้ใช้เลือกแบ่งปันในเครื่องมือนี้",
-    "This calculator does not report waste as a share of food handled yet.": "เครื่องคำนวณนี้ยังไม่แสดงขยะเป็นสัดส่วนของอาหารทั้งหมดที่จัดการ",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "รายการที่คุณกรอกจะถูกบันทึกแบบไม่ระบุตัวตน และจะรวมอยู่ในสถิติสาธารณะก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "ภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอกในเครื่องคำนวณจะถูกบันทึกแบบไม่ระบุตัวตน และจะรวมอยู่ในสถิติสาธารณะที่คุ้มครองความเป็นส่วนตัวก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น เราไม่บันทึกข้อมูลที่ระบุตัวคุณหรือธุรกิจของคุณ",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "เครื่องคำนวณนี้จะเก็บข้อมูลภาคธุรกิจ หมวดหมู่อาหาร และปริมาณที่กรอก ข้อมูลเหล่านี้จะรวมอยู่ในสถิติสาธารณะก็ต่อเมื่อคุณเลือกที่จะมอบให้เท่านั้น และไม่มีการเก็บสิ่งใดที่ระบุตัวคุณหรือธุรกิจของคุณ",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "สำรวจสถิติรวมแบบไม่ระบุตัวตนจากการคำนวณที่มอบให้แก่เครื่องคำนวณผลกระทบจากขยะอาหารของ Kai Commitment",
     "Percentage": "เปอร์เซ็นต์",
     "Total mass": "น้ำหนักรวม",
-    "Download PDF": "ดาวน์โหลด PDF"
+    "Download PDF": "ดาวน์โหลด PDF",
+    "Data incomplete": "ข้อมูลไม่ครบถ้วน",
+    "Not every entry supplied this figure, so it cannot be totalled.": "ไม่ใช่ทุกรายการที่ระบุตัวเลขนี้ จึงไม่สามารถรวมยอดได้",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "บางรายการระบุยอดรวมการผลิตและบางรายการไม่ได้ระบุ จึงไม่สามารถแสดงสัดส่วนของเสียได้",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "ของเสียในฐานะสัดส่วนของอาหารที่จัดการเป็นอัตราส่วนของมวลสองค่าที่คุณพิมพ์ ไม่ใช่ตัวเลขที่อิงตามค่าสัมประสิทธิ์ ดังนั้นข้อมูลตัวยึดตำแหน่งด้านบนจึงไม่มีผลต่อค่านี้",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "คุณไม่ได้ระบุว่ารายการนี้ครอบคลุมอาหารปริมาณเท่าใด จึงไม่สามารถแสดงสัดส่วนของเสียได้"
   }
 }

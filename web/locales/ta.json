@@ -339,13 +339,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "இந்த எண்கள், இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட கணக்கீடுகளின் தாமாக-தேர்ந்தெடுக்கப்பட்ட மாதிரியை மட்டுமே விவரிக்கின்றன. இவை ஒரு கணக்கெடுப்பு அல்ல; நியூசிலாந்து முழுவதிலுமான உணவுக் கழிவின் சித்திரமும் அல்ல.",
     "Breakdowns of entries contributed to this tool": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட பதிவுகளின் விவரங்கள்",
     "%(mass)s cumulative quantity contributed to this tool": "இந்தக் கருவிக்குப் பங்களிக்கப்பட்ட ஒட்டுமொத்த அளவு %(mass)s",
-    "This calculator does not report waste as a share of food handled yet.": "கையாளப்பட்ட உணவின் விகிதமாகக் கழிவை இந்தக் கால்குலேட்டர் இன்னும் காட்டவில்லை.",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "உங்கள் பதிவுகள் பெயர் குறிப்பிடாமல் சேமிக்கப்படுகின்றன; நீங்கள் வழங்கத் தேர்ந்தெடுத்தால் மட்டுமே அவை பொதுப் புள்ளிவிவரங்களில் சேர்க்கப்படும்.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "கால்குலேட்டரில் உள்ளிடப்பட்ட துறை, உணவு வகைப்பாடு மற்றும் அளவுகள் பெயர் குறிப்பிடாமல் பதிவு செய்யப்படுகின்றன. நீங்கள் வழங்கத் தேர்ந்தெடுத்தால் மட்டுமே அவை தனியுரிமை பாதுகாக்கப்பட்ட பொதுப் புள்ளிவிவரங்களில் சேர்க்கப்படும். உங்களையோ உங்கள் நிறுவனத்தையோ அடையாளம் காட்டும் தகவலை நாங்கள் பதிவு செய்வதில்லை.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "இந்தக் கால்குலேட்டர் நீங்கள் உள்ளிட்ட துறை, உணவு வகைப்பாடு மற்றும் அளவுகளைச் சேமிக்கிறது. நீங்கள் வழங்கத் தேர்ந்தெடுத்தால் மட்டுமே அவை பொதுப் புள்ளிவிவரங்களில் சேர்க்கப்படும்; உங்களையோ உங்கள் நிறுவனத்தையோ அடையாளம் காட்டும் எதுவும் சேமிக்கப்படுவதில்லை.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment உணவுக் கழிவு தாக்கக் கால்குலேட்டருக்கு வழங்கப்பட்ட கணக்கீடுகளின் அடையாளமற்ற, ஒட்டுமொத்தப் புள்ளிவிவரங்களை ஆராயுங்கள்.",
     "Percentage": "சதவீதம்",
     "Total mass": "மொத்த எடை",
-    "Download PDF": "PDF பதிவிறக்கவும்"
+    "Download PDF": "PDF பதிவிறக்கவும்",
+    "Data incomplete": "தரவு முழுமையற்றது",
+    "Not every entry supplied this figure, so it cannot be totalled.": "ஒவ்வொரு பதிவும் இந்த எண்ணைத் தரவில்லை, எனவே அதைச் சேர்க்க முடியாது.",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "சில பதிவுகள் உற்பத்தி மொத்தத்தைக் குறிப்பிட்டன, சில குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது.",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "கையாளப்பட்ட உணவின் பங்காக வீணாவது நீங்கள் தட்டச்சு செய்த இரண்டு நிறைகளின் விகிதமே, காரணி அடிப்படையிலான எண் அல்ல, எனவே மேலே உள்ள தற்காலிக தரவு இதைப் பாதிக்காது.",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "இது எவ்வளவு உணவை உள்ளடக்கியது என்று நீங்கள் குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது."
   }
 }

@@ -104,16 +104,22 @@ const hasValue = value => value !== null && value !== undefined
 // no factor and no formula anywhere in the division - so it is exactly as trustworthy
 // under the placeholder banner as it will be once real factors are supplied. The
 // methodology paragraph in `renderResults` says so in words a visitor can read.
-const INCOMPLETE_MONEY_NOTE = 'Not every entry supplied this figure, so it cannot be totalled.'
 
 // One field of `totals.money`, read against its own `data_state` entry (§4.6): `complete`
-// formats the value, `incomplete` returns the shared note above instead of nothing, and
+// formats the value, `incomplete` returns the shared note below instead of nothing, and
 // `not_supplied` - and any state this module has not learned - returns `null`, which the
 // caller reads as "print no row", the same rule `hasValue` gave every field here before
 // `data_state` existed.
+//
+// The note is a literal `t('...')` call, not a module-level constant passed by reference -
+// `tests/web/i18n_keys.py` only extracts a `t()` argument literally or from its own named
+// list of indirect constants, and this string is not on that list. An indirect reference
+// here would render in every language but the one the visitor chose, silently, with no
+// test able to catch it - the exact failure mode `_INDIRECT` exists to name deliberately
+// rather than let happen by accident.
 function moneyFieldText(money, dataState, field, format) {
   if (hasValue(money?.[field])) return format(money[field])
-  if (dataState?.[field] === 'incomplete') return t(INCOMPLETE_MONEY_NOTE)
+  if (dataState?.[field] === 'incomplete') return t('Not every entry supplied this figure, so it cannot be totalled.')
   return null
 }
 

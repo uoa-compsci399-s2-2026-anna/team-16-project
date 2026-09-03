@@ -339,13 +339,17 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Deze cijfers beschrijven een zelfgeselecteerde steekproef van berekeningen die aan deze rekentool zijn bijgedragen. Ze vormen geen onderzoek en geen beeld van het voedselafval in heel Nieuw-Zeeland.",
     "Breakdowns of entries contributed to this tool": "Uitsplitsingen van de invoer die aan deze rekentool is bijgedragen",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s totale hoeveelheid die aan deze rekentool is bijgedragen",
-    "This calculator does not report waste as a share of food handled yet.": "Deze rekentool geeft afval nog niet weer als aandeel van het verwerkte voedsel.",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Uw invoer wordt anoniem vastgelegd en komt alleen in de openbare statistieken als u ervoor kiest die aan te bieden.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "De sector, de voedselcategorie en de hoeveelheden die in de rekentool worden ingevoerd, worden anoniem vastgelegd. Ze komen alleen in de privacybeschermde openbare statistieken als u ervoor kiest die aan te bieden. Wij leggen geen gegevens vast waarmee u of uw bedrijf kan worden geïdentificeerd.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Deze rekentool bewaart de sector, de voedselcategorie en de ingevoerde hoeveelheden. Ze komen alleen in de openbare statistieken als u ervoor kiest die aan te bieden, en er wordt niets bewaard waarmee u of uw bedrijf kan worden geïdentificeerd.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Verken geanonimiseerde, geaggregeerde statistieken uit berekeningen die zijn bijgedragen aan de Kai Commitment rekentool voor het effect van voedselafval.",
     "Percentage": "Procenten",
     "Total mass": "Totale massa",
-    "Download PDF": "PDF downloaden"
+    "Download PDF": "PDF downloaden",
+    "Data incomplete": "Gegevens onvolledig",
+    "Not every entry supplied this figure, so it cannot be totalled.": "Niet elke invoer bevatte dit cijfer, dus het kan niet worden opgeteld.",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Sommige invoeren gaven een productietotaal op en andere niet, dus een aandeel van de verspilling kan niet worden getoond.",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Verspilling als aandeel van de verwerkte voeding is een verhouding tussen de twee massa's die u hebt ingevoerd, geen op factoren gebaseerd cijfer, dus de voorlopige gegevens hierboven zijn hier niet van invloed op.",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "U hebt niet aangegeven hoeveel voedsel dit betrof, dus een aandeel van de verspilling kan niet worden getoond."
   }
 }

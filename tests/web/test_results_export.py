@@ -1104,6 +1104,132 @@ def test_the_period_is_absent_when_it_was_not_stated(page_at):
     assert page.locator(".results-period").count() == 0
 
 
+# --------------------------------- the percentage card's three states, on screen
+#
+# The `@node` tests above (`test_the_export_states_the_percentage_when_every_entry_
+# gave_one` and its two siblings) prove `productionShareText` by calling
+# `buildResultsReport`, which is the text export's own call site - not
+# `summaryCards`', the card a visitor actually looks at. The two call the shared
+# helper independently (`results.js` lines ~236 and ~656), so a fault planted at
+# `summaryCards`' own call site - the branch forced unconditionally, the two
+# non-complete states swapped, or the card's number replaced with a constant -
+# changes nothing the export tests above can see. These render the real page
+# through `page_at` and read the card `summaryCards` actually built.
+
+
+def _share_response(*, state, value=None):
+    """A deep copy of `calculate_response.json` with `totals.production_share_
+    percent` and its `data_state` entry set explicitly - the on-screen
+    counterpart of `build_state_with_share` above, which drives the same three
+    states through the text export instead."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"], production_share_percent=state
+    )
+    response["totals"]["production_share_percent"] = value
+    return response
+
+
+def _results_page_with_share(page_at, *, state, value=None):
+    page = page_at(_share_response(state=state, value=value))
+    _submit_two_entries(page)
+    return page
+
+
+def _share_card(page):
+    """The one `.result-card` `summaryCards` labels "Percentage waste", among
+    the several it renders for a two-entry submission."""
+    card = page.locator('.result-card:has-text("Percentage waste")')
+    assert card.count() == 1, "no Percentage waste card on the results page"
+    return card
+
+
+@pytest.mark.browser
+def test_the_percentage_card_shows_the_number_when_every_entry_gave_one(page_at):
+    """`complete`: the card prints the percentage itself, and neither other
+    state's wording - kills a mutation that hardcodes the card's value (a
+    constant would not read `50.00` back) and a mutation that renders the
+    `complete` branch unconditionally regardless of `data_state` (it would
+    still say `50.00%` here, but fails the `incomplete` and `not_supplied`
+    tests below instead)."""
+    page = _results_page_with_share(page_at, state="complete", value="50.00")
+    text = _share_card(page).inner_text()
+    assert "50.00%" in text, f"the card does not show the supplied percentage: {text!r}"
+    assert "Data incomplete" not in text
+    assert "Not supplied" not in text
+
+
+@pytest.mark.browser
+def test_the_percentage_card_says_incomplete_when_some_entries_answered_and_some_did_not(page_at):
+    """`incomplete`: named as incomplete, not silence and not "not supplied" -
+    which would claim nobody said anything when some entries did. Kills a
+    mutation that swaps the `incomplete` and `not_supplied` wording at the
+    card's own call site (this response's state is `incomplete`; the swap
+    would print the `not_supplied` sentence here instead) and a mutation that
+    renders the `complete` branch unconditionally (it would print
+    `Not available%` here, not this sentence)."""
+    page = _results_page_with_share(page_at, state="incomplete")
+    text = _share_card(page).inner_text()
+    assert "Data incomplete" in text, text
+    assert (
+        "Some entries stated a production total and some did not, so a share "
+        "of waste cannot be shown."
+    ) in text, text
+    assert "Not supplied" not in text
+    assert "You did not say" not in text
+    assert not re.search(r"\d+\.\d+%", text), f"a number leaked into an incomplete card: {text!r}"
+
+
+@pytest.mark.browser
+def test_the_percentage_card_says_not_supplied_when_nobody_answered(page_at):
+    """`not_supplied`: worded about what the visitor typed, not "incomplete" -
+    which would imply somebody did answer part of it. Kills the same
+    call-site swap as the test above, from the other direction (this
+    response's state is `not_supplied`; the swap would print the `incomplete`
+    sentence here instead)."""
+    page = _results_page_with_share(page_at, state="not_supplied")
+    text = _share_card(page).inner_text()
+    assert "Not supplied" in text, text
+    assert "You did not say how much food this covered, so a share of waste cannot be shown." in text, text
+    assert "Data incomplete" not in text
+    assert not re.search(r"\d+\.\d+%", text), f"a number leaked into a not_supplied card: {text!r}"
+
+
+@pytest.mark.browser
+def test_the_money_block_shows_the_incomplete_note_on_screen(page_at):
+    """The on-screen counterpart of `test_the_export_says_incomplete_for_a_
+    money_figure_partial_coverage_gave_no_number` below: that test only proves
+    `moneyFieldText`, never `moneySummary`'s own call site, so a card that
+    ignored `data_state` and simply hid every `null` field (the pre-§4.6
+    behaviour) would still pass every export test while showing a visitor an
+    incomplete row exactly as if nobody had touched it at all.
+
+    One field complete (a number, its own row), one `incomplete` (the shared
+    note, its own row), one `not_supplied` (no row) - the same three-way split
+    the export test below carries, read from the screen instead of the file.
+    """
+    response = _money_response(total="120000.00", wasted=None, share=None)
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"],
+        wasted_value_nzd="incomplete",
+        wasted_share_percent="not_supplied",
+    )
+    page = page_at(response)
+    _submit_two_entries(page)
+
+    summary = page.locator(".money-summary")
+    assert summary.count() == 1, "no money section on a response carrying a total"
+    text = summary.inner_text()
+    assert "120,000.00" in text, f"the supplied figure is not shown: {text!r}"
+    assert "Not every entry supplied this figure, so it cannot be totalled." in text, (
+        f"the incomplete note is missing from the money block: {text!r}"
+    )
+    assert summary.locator(".money-row").count() == 2, (
+        "expected one complete row and one incomplete-note row, and no row at "
+        f"all for the not_supplied field: {text!r}"
+    )
+
+
 @node
 def test_the_export_carries_the_money_and_the_period(tmp_path):
     """§7.3a: the file named "results" carries the results. The money figures and

@@ -139,16 +139,28 @@ def test_the_statistics_page_describes_contributed_calculations():
 
 def test_the_page_no_longer_asks_for_data_the_visitor_already_gave():
     """**Finding 2.** `#total-input` is collected on step 2 (§6.2's
-    `total_input_kg`) and persisted, and §4.5 says plainly that **no field of
-    `MoneyResult` reads it** — waste as a share of production has no consumer
-    yet. So the results page printed "Total food handled data is required."
-    directly above a money block visibly consuming the value that visitor had
-    just typed.
+    `total_input_kg`) and persisted. At the time this test was written the
+    engine had no consumer for it, so the results page printed "Total food
+    handled data is required." directly above a money block visibly consuming
+    the value that visitor had just typed, and the fix's replacement sentence
+    said the share was not reported *yet* — true then, false now.
 
-    §4.5 forbids deriving the share in the browser, so the figure stays
-    unavailable; what changes is that the page stops blaming the visitor for it.
+    The engine has since grown `totals.production_share_percent`, computed
+    from the two masses the visitor typed (§4.6), so the "yet" sentence is
+    itself now a retired claim rather than the fix: this asserts it is gone
+    the same way `test_no_page_still_carries_a_retired_sentence` above asserts
+    the other three are, and asserts the sentence that actually replaced it —
+    describing the share as a ratio the placeholder factors do not touch — is
+    the one on the page instead.
     """
     corpus = "\n".join(sorted(i18n_keys.source_strings())).lower()
     assert "total food handled data is required" not in corpus
     assert "until total food handled data is supplied" not in corpus
-    assert "this calculator does not report waste as a share of food handled yet." in corpus
+    assert "this calculator does not report waste as a share of food handled yet." not in corpus, (
+        "the page still claims the share is not reported, and it now is"
+    )
+    assert (
+        "waste as a share of food handled is a ratio of the two masses you "
+        "typed, not a factor-based figure, so the placeholder data above "
+        "does not affect it."
+    ) in corpus, "the sentence that replaced the retired claim is missing"

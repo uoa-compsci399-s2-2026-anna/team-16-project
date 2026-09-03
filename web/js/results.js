@@ -86,7 +86,62 @@ const periodLine = timeFrame => {
 // currency notation, not a phrase, so it is not passed through `t()` - the same
 // reasoning `kg` throughout this file is written in and never translated (§7.7.7).
 const nzd = value => `NZ$${formatNumber(number(value), 2)}`
+const percentText = value => `${formatNumber(number(value), 2)}%`
 const hasValue = value => value !== null && value !== undefined
+
+// §4.6: every figure this card and the money block below it carry now travels with a
+// `data_state` entry, and `null` alone cannot tell "nobody typed one" from "some entries
+// did and some did not" - that is the whole reason the engine grew a third state rather
+// than leaving the figure `None`-or-a-value. A partially answered figure used to arrive
+// as a wrong number (a sum with a silently short denominator) and, since Task 1, arrives
+// as `null` instead - silence is the honest fallback but it is not the best one available,
+// so `incomplete` gets its own sentence rather than being folded into "nobody said".
+//
+// One field a reader of this comment should not miss: `production_share_percent` is the
+// one figure on this page the mock-factor warning does not describe. Every other card is
+// `qty_kg * factor`, and the factor set is mock (open item O-1) until real ones arrive.
+// This card is `current.total_kg / total_input_kg` - two masses the visitor typed, with
+// no factor and no formula anywhere in the division - so it is exactly as trustworthy
+// under the placeholder banner as it will be once real factors are supplied. The
+// methodology paragraph in `renderResults` says so in words a visitor can read.
+const INCOMPLETE_MONEY_NOTE = 'Not every entry supplied this figure, so it cannot be totalled.'
+
+// One field of `totals.money`, read against its own `data_state` entry (§4.6): `complete`
+// formats the value, `incomplete` returns the shared note above instead of nothing, and
+// `not_supplied` - and any state this module has not learned - returns `null`, which the
+// caller reads as "print no row", the same rule `hasValue` gave every field here before
+// `data_state` existed.
+function moneyFieldText(money, dataState, field, format) {
+  if (hasValue(money?.[field])) return format(money[field])
+  if (dataState?.[field] === 'incomplete') return t(INCOMPLETE_MONEY_NOTE)
+  return null
+}
+
+/**
+ * The "Percentage waste" card's own three states (§4.6), read and not derived: the engine
+ * divides `current.total_kg` by the summed `total_input_kg` and this only formats what
+ * comes back. `complete` prints the percentage; `incomplete` says the coverage was partial
+ * rather than showing nothing where a wrong number used to sit; `not_supplied` - and
+ * anything this module has not learned the name of yet, the same forward-compatible
+ * fallback `hasValue` already gives every other absent figure - says nobody stated it, in
+ * words about what the visitor typed rather than about what the calculator can report.
+ */
+function productionShareText(totals) {
+  const state = totals.data_state?.production_share_percent
+  if (state === 'complete' && hasValue(totals.production_share_percent)) {
+    return { value: `${formatNumber(number(totals.production_share_percent), 2)}%`, note: '' }
+  }
+  if (state === 'incomplete') {
+    return {
+      value: t('Data incomplete'),
+      note: t('Some entries stated a production total and some did not, so a share of waste cannot be shown.'),
+    }
+  }
+  return {
+    value: t('Not supplied'),
+    note: t('You did not say how much food this covered, so a share of waste cannot be shown.'),
+  }
+}
 
 /**
  * §4.5's money block, rendered beside `summaryCards()` inside the same "Impact
@@ -113,26 +168,37 @@ const hasValue = value => value !== null && value !== undefined
  * export by `comparisonLines` below, under the same heading as that comparison.
  * Teaching this block to read a second response would have put a figure about the
  * improved scenario inside a section describing the current one.
+ *
+ * §4.6 gave each of these three fields its own `data_state`, on the same terms as the
+ * percentage card above. Task 1 turned a partial sum into `null` — a two-entry submission
+ * that priced one entry no longer reports that entry's figure as the whole submission's
+ * total — and a block that only checked `hasValue` would now render nothing for that row,
+ * which is honest but not the most it can say: `moneyFieldText` prints the shared
+ * incomplete note instead, and stays silent only for a field nobody touched at all.
  */
 function moneySummary(totals) {
   const money = totals.money
   if (!money) return ''
+  const dataState = totals.data_state
   const rows = []
-  if (hasValue(money.total_value_nzd)) {
-    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Total value of food handled'))}</span><span class="money-value">${nzd(money.total_value_nzd)}</span></div>`)
+  const total = moneyFieldText(money, dataState, 'total_value_nzd', nzd)
+  if (total !== null) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Total value of food handled'))}</span><span class="money-value">${escapeHtml(total)}</span></div>`)
   }
-  if (hasValue(money.wasted_value_nzd)) {
-    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Value of food wasted'))}</span><span class="money-value">${nzd(money.wasted_value_nzd)}</span></div>`)
+  const wasted = moneyFieldText(money, dataState, 'wasted_value_nzd', nzd)
+  if (wasted !== null) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Value of food wasted'))}</span><span class="money-value">${escapeHtml(wasted)}</span></div>`)
   }
-  if (hasValue(money.wasted_share_percent)) {
-    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${formatNumber(number(money.wasted_share_percent), 2)}%</span></div>`)
+  const share = moneyFieldText(money, dataState, 'wasted_share_percent', percentText)
+  if (share !== null) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${escapeHtml(share)}</span></div>`)
   }
   if (!rows.length) return ''
   return `<div class="money-summary"><h3>${escapeHtml(t('The money'))}</h3><p class="result-note">${escapeHtml(t("Figures the calculator did not derive: what you typed for value, summed by the calculation service."))}</p><div class="money-rows">${rows.join('')}</div></div>`
 }
 
 // `moneySummary`'s figures, in text, worded to match the rows on screen rather than
-// re-deriving them: same three fields, same `null`-means-absent rule. Returns `[]` (no
+// re-deriving them: same three fields, same `data_state` rule. Returns `[]` (no
 // heading printed) when the block is `null` or carries nothing - a heading over an empty
 // list is the "—" this module exists to avoid. The saving is not here for the reason it
 // is not on screen here either: it belongs to the comparison, and `savingLines` below
@@ -140,10 +206,14 @@ function moneySummary(totals) {
 function moneyLines(totals) {
   const money = totals.money
   if (!money) return []
+  const dataState = totals.data_state
   const lines = []
-  if (hasValue(money.total_value_nzd)) lines.push(`  - ${t('Total value of food handled')}: ${nzd(money.total_value_nzd)}`)
-  if (hasValue(money.wasted_value_nzd)) lines.push(`  - ${t('Value of food wasted')}: ${nzd(money.wasted_value_nzd)}`)
-  if (hasValue(money.wasted_share_percent)) lines.push(`  - ${t('Share of value wasted')}: ${formatNumber(number(money.wasted_share_percent), 2)}%`)
+  const total = moneyFieldText(money, dataState, 'total_value_nzd', nzd)
+  if (total !== null) lines.push(`  - ${t('Total value of food handled')}: ${total}`)
+  const wasted = moneyFieldText(money, dataState, 'wasted_value_nzd', nzd)
+  if (wasted !== null) lines.push(`  - ${t('Value of food wasted')}: ${wasted}`)
+  const share = moneyFieldText(money, dataState, 'wasted_share_percent', percentText)
+  if (share !== null) lines.push(`  - ${t('Share of value wasted')}: ${share}`)
   if (!lines.length) return []
   return ['', t('The money'), ...lines]
 }
@@ -157,7 +227,9 @@ function summaryCards(totals, taxonomy) {
     return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
   }).join('')
   const totalKg = number(totals.total_kg)
-  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(t('Not available'))}</p><p class="result-note">${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></article>`
+  const share = productionShareText(totals)
+  const shareNote = share.note ? `<p class="result-note">${escapeHtml(share.note)}</p>` : ''
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}</article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and
@@ -573,6 +645,9 @@ export function buildResultsReport(state) {
   // Item ⑦: a label, printed once near the top of the file, same as on screen — no
   // figure below it is scaled by the period (contract v1.48).
   const period = periodLine(state.timeFrame)
+  // §4.6: the same three states `summaryCards` renders as the card, worded the same way,
+  // so a visitor reading the page and the file downloaded from it sees the same sentence.
+  const share = productionShareText(totals)
   return [
     t('Food Waste Impact Calculator — Results'),
     '',
@@ -591,7 +666,7 @@ export function buildResultsReport(state) {
     ...entryLines,
     `${t('Factor version')}: ${state.result?.factor_set?.version_label || t('Not supplied')}`,
     ...notice,
-    `${t('Percentage waste')}: ${t('Not available')}. ${t('This calculator does not report waste as a share of food handled yet.')}`,
+    `${t('Percentage waste')}: ${share.value}${share.note ? `. ${share.note}` : ''}`,
     ...translationNotice,
   ].join('\n')
 }
@@ -786,7 +861,7 @@ export function renderResults(state) {
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
-    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></div></details></section>
+    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
     <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><button class="button button-secondary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}

@@ -169,7 +169,10 @@ def _totals(totals: Any) -> dict[str, Any]:
 
 
 def _data_state(state: Any) -> dict[str, str]:
-    """§4.6's three-state discriminant, one entry per totals-level figure.
+    """§4.6's four-state discriminant (v1.51 added the fourth, `undefined`
+    -- see `engine/types.py::DataState`), one entry per totals-level
+    figure. Passed straight through as strings, so a new state value needs
+    no change here: this function has never named one.
 
     **Additive, and deliberately not a change to the figures' own shape.**
     Every value above stays the decimal string §1.2 requires, so a caller

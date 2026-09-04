@@ -103,11 +103,12 @@
     <span class="summary__label">{{ doc.labels.total_mass }}</span>
     <span class="summary__value">{{ doc.total_kg }} kg</span>
   </div>
-  {#- §4.6's totals-level share of production, in its own three states -
+  {#- §4.6's totals-level share of production, in its own four states (the
+      fourth, `undefined`, added at v1.51) -
       `api/pdf_render.py::_production_share_context` decides which of
-      `complete`, `incomplete` and `not_supplied` applies and this only
-      prints what it returns. The note explains an `incomplete` or
-      `not_supplied` value; a `complete` percentage carries none. -#}
+      `complete`, `incomplete`, `undefined` and `not_supplied` applies and
+      this only prints what it returns. The note explains anything but a
+      `complete` percentage, which carries none. -#}
   <div class="summary__item">
     <span class="summary__label">{{ doc.labels.production_share }}</span>
     <span class="summary__value">{{ doc.production_share.value }}</span>

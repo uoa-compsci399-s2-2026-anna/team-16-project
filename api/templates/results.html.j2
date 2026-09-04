@@ -64,13 +64,40 @@
 </aside>
 {% endif %}
 
-<h1>{{ doc.title }}</h1>
-<p class="subtitle">{{ doc.subtitle }}</p>
+{#- THE TITLE BLOCK (Task 5). What it is (the heading), who produced it, when
+    it was generated, and the factor-set version it used - the client's own
+    words were that the document "lacks brand character", and this is the
+    fix: a masthead rather than a bare heading. `.cover__mark` is the brand's
+    half-circle, used singly at large scale per the guideline's own wording;
+    `results.css` draws it as a flex sibling of the text so no title in any
+    of the twenty-one languages can run under it. Every word here is either
+    already a catalogue key the front end asks for elsewhere (§7.6's own
+    constraint - see `api/pdf_render.py`'s `_LABELS` comment) or a value with
+    no language of its own: the generated stamp is ISO-8601-shaped and the
+    factor-set token is `GWP100`, for the same reason neither needs a
+    dictionary entry. -#}
+<header class="cover">
+  <div class="cover__mark" aria-hidden="true"></div>
+  <div class="cover__body">
+    <h1>{{ doc.title }}</h1>
+    <p class="subtitle">{{ doc.subtitle }}</p>
+    <p class="cover__meta">{{ doc.produced_by }} &middot; {{ doc.generated_at }} &middot; {{ doc.factor_set }}</p>
+  </div>
+</header>
 
 <div class="summary">
   <div class="summary__item">
     <span class="summary__label">{{ doc.labels.total_mass }}</span>
     <span class="summary__value">{{ doc.total_kg }} kg</span>
+  </div>
+  {#- §4.6's totals-level share of production, in its own three states -
+      `api/pdf_render.py::_production_share_context` decides which of
+      `complete`, `incomplete` and `not_supplied` applies and this only
+      prints what it returns. The note explains an `incomplete` or
+      `not_supplied` value; a `complete` percentage carries none. -#}
+  <div class="summary__item">
+    <span class="summary__label">{{ doc.labels.production_share }}</span>
+    <span class="summary__value">{{ doc.production_share.value }}</span>
   </div>
   {#- The factor set and the methane horizon in one tile. No catalogue key
       names the horizon, and one English label in a Tamil report is worse than
@@ -81,6 +108,9 @@
     <span class="summary__value">{{ doc.factor_set }}</span>
   </div>
 </div>
+{% if doc.production_share.note %}
+<p class="summary-note">{{ doc.production_share.note }}</p>
+{% endif %}
 
 <h2>{{ doc.labels.totals }}</h2>
 <table>
@@ -133,7 +163,15 @@
     {% for row in doc.money %}
     <tr>
       <td>{{ row.name }}</td>
+      {#- §4.6: a field can carry a translated sentence rather than a figure
+          (partial coverage - see `api/pdf_render.py::_money_rows`), and that
+          sentence must wrap like ordinary text rather than being held to
+          `.figure`'s `white-space: nowrap`, which exists for numbers. -#}
+      {% if row.is_note %}
+      <td class="money-note">{{ row.value }}</td>
+      {% else %}
       <td class="figure">{{ row.value }}</td>
+      {% endif %}
     </tr>
     {% endfor %}
   </tbody>

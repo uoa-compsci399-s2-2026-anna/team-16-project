@@ -52,6 +52,7 @@ from __future__ import annotations
 
 import mimetypes
 import unicodedata
+from datetime import datetime, timezone
 from decimal import Decimal, ROUND_HALF_UP
 from pathlib import Path
 from typing import Any
@@ -59,6 +60,7 @@ from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
 from api import i18n
+from engine.types import DATA_COMPLETE, DATA_INCOMPLETE
 
 # --------------------------------------------------------------------------
 # Where the document's own files live.
@@ -379,7 +381,42 @@ _LABELS = {
     "money": "The money",
     "equivalences": "Tangible equivalents",
     "entries": "Added entries",
+    #: §4.6. Reuses the exact key `web/js/results.js`'s "Percentage waste"
+    #: card renders (see the module docstring for why nothing here is
+    #: invented rather than reused: a heading coined only for this file would
+    #: mean twenty unreviewed machine translations and would fail
+    #: `test_no_catalogue_carries_a_key_the_front_end_never_asks_for`, which
+    #: checks the catalogues against what the front end actually calls `t()`
+    #: with).
+    "production_share": "Percentage waste",
 }
+
+#: §4.6's three states for a totals-level figure, worded to match
+#: `web/js/results.js::productionShareText` and `::moneyFieldText` exactly -
+#: literally the same catalogue keys, not a rephrasing of them - so the card,
+#: the text export and this document say the same thing about the same
+#: submission. Every one of these five strings is already something the front
+#: end asks for; see `_LABELS["production_share"]`'s comment for why that is
+#: a constraint here rather than a coincidence.
+_DATA_INCOMPLETE_VALUE = "Data incomplete"
+_DATA_NOT_SUPPLIED_VALUE = "Not supplied"
+_PRODUCTION_SHARE_INCOMPLETE_NOTE = (
+    "Some entries stated a production total and some did not, so a share of "
+    "waste cannot be shown."
+)
+_PRODUCTION_SHARE_NOT_SUPPLIED_NOTE = (
+    "You did not say how much food this covered, so a share of waste cannot "
+    "be shown."
+)
+_MONEY_INCOMPLETE_NOTE = (
+    "Not every entry supplied this figure, so it cannot be totalled."
+)
+
+#: The title block's byline (§4.2/Task 5). "Who produced it" - `home.js`
+#: already renders this exact sentence as a news article's byline, so reusing
+#: it here says the same thing about the same organisation in the same words,
+#: rather than coining a second way to say "Kai Commitment made this".
+_PRODUCED_BY = "From Kai Commitment"
 
 #: `§4.5`'s money block. The unit annotations the English-only draft carried in
 #: the label - "(NZD)", "(%)" - are gone rather than translated: a currency
@@ -402,6 +439,12 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     _COLOPHON,
     MOCK_WARNING_FLAG,
     MOCK_WARNING_BODY,
+    _PRODUCED_BY,
+    _DATA_INCOMPLETE_VALUE,
+    _DATA_NOT_SUPPLIED_VALUE,
+    _PRODUCTION_SHARE_INCOMPLETE_NOTE,
+    _PRODUCTION_SHARE_NOT_SUPPLIED_NOTE,
+    _MONEY_INCOMPLETE_NOTE,
     *_LABELS.values(),
     *(key for _attribute, key in _MONEY_LABELS),
 )
@@ -476,13 +519,24 @@ def _destination_rows(totals: Any, names: _Taxonomy) -> list[dict[str, str]]:
     ]
 
 
-def _money_rows(money: Any, translate: Any) -> list[dict[str, str]]:
+def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, Any]]:
     """Section 4.5's money block, when the visitor supplied one.
 
     Every field is optional and `None` means nobody supplied what it derives
-    from - never zero, which would be a claim. A field that is `None` is left
-    out of the table rather than printed as a dash, and a block in which every
-    field is `None` produces no table at all.
+    from - never zero, which would be a claim. §4.6 gave each field its own
+    `data_state`, on the same terms as `production_share_percent`, and this
+    reads it on the same rule `web/js/results.js::moneyFieldText` uses: a
+    `complete` field prints its figure, an `incomplete` field prints the
+    shared note instead of nothing (Task 1 turned a partial sum into `None`,
+    and a block that only checked "is this `None`" would render nothing for
+    that row, which is honest but not the most it can say), and a
+    `not_supplied` field - or any state this function has not learned the
+    name of - is left off the table entirely, exactly as before §4.6 existed.
+
+    `is_note` marks a row whose value is a translated sentence rather than a
+    formatted figure, so `results.html.j2` can leave `.figure`'s
+    `white-space: nowrap` off it - the whole reason that flag exists rather
+    than reusing `_figure`'s own absent marker for this case.
 
     `translate` is the document language's `gettext`; the labels are catalogue
     keys, and it raises rather than returning English for a language that has
@@ -490,19 +544,83 @@ def _money_rows(money: Any, translate: Any) -> list[dict[str, str]]:
     """
     if money is None:
         return []
-    rows = []
+    rows: list[dict[str, Any]] = []
     for attribute, label in _MONEY_LABELS:
         value = getattr(money, attribute, None)
         if value is not None:
-            rows.append({"name": translate(label), "value": _figure(value, 2)})
+            rows.append({"name": translate(label), "value": _figure(value, 2), "is_note": False})
+            continue
+        state = getattr(data_state, attribute, None) if data_state is not None else None
+        if state == DATA_INCOMPLETE:
+            rows.append(
+                {"name": translate(label), "value": translate(_MONEY_INCOMPLETE_NOTE), "is_note": True}
+            )
     return rows
 
 
-def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
+def _production_share_context(totals: Any, translate: Any) -> dict[str, str]:
+    """§4.6's totals-level production share, and its own three states -
+    mirrors `web/js/results.js::productionShareText` word for word (see the
+    comment above `_DATA_INCOMPLETE_VALUE`), so the on-screen card, the text
+    export and this document tell the same story about the same submission.
+
+    `complete` prints the percentage; `incomplete` says the coverage was
+    partial rather than showing nothing where a wrong number used to sit;
+    `not_supplied` - and any state this function has not learned the name of,
+    the same forward-compatible fallback the rest of this module gives every
+    other absent figure - says nobody stated it.
+    """
+    data_state = getattr(totals, "data_state", None)
+    state = getattr(data_state, "production_share_percent", None) if data_state is not None else None
+    value = getattr(totals, "production_share_percent", None)
+    if state == DATA_COMPLETE and value is not None:
+        return {"value": f"{_figure(value, 2)}%", "note": ""}
+    if state == DATA_INCOMPLETE:
+        return {
+            "value": translate(_DATA_INCOMPLETE_VALUE),
+            "note": translate(_PRODUCTION_SHARE_INCOMPLETE_NOTE),
+        }
+    return {
+        "value": translate(_DATA_NOT_SUPPLIED_VALUE),
+        "note": translate(_PRODUCTION_SHARE_NOT_SUPPLIED_NOTE),
+    }
+
+
+def _generated_at_text(generated_at: Any) -> str:
+    """When this document was produced, in a form that needs no translation.
+
+    ISO-8601-shaped rather than run through a per-locale month-name table -
+    the same reasoning `factor_set` above relies on for `GWP100`: digits are
+    the same in every language, so a stamp in this shape reads correctly in
+    all twenty-one without this file owning a calendar dictionary it has no
+    business owning.
+
+    **`generated_at` is a parameter, not `datetime.now()` called in here.**
+    Every other function in this module is a pure read of `result` and
+    `taxonomy`; this is the one fact about a rendered document that
+    legitimately depends on the wall clock, and the dependency is kept at the
+    caller (`api/export.py`'s route, which has a clock to read) rather than
+    buried in a render function no test could pin to a fixed instant. The
+    fallback below exists only for a caller that does not care - most of the
+    tests in `tests/api/test_pdf_render.py` predate this field and pass none.
+    """
+    moment = generated_at if generated_at is not None else datetime.now(timezone.utc)
+    if moment.tzinfo is not None:
+        moment = moment.astimezone(timezone.utc)
+    return moment.strftime("%Y-%m-%d %H:%M UTC")
+
+
+def build_context(
+    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+) -> dict[str, Any]:
     """The template's whole input, in the language that was asked for.
 
     Public so a test can assert on it directly rather than only through a
     rendered PDF.
+
+    `generated_at` is the one exception to "this module reads no clock" - see
+    `_generated_at_text` for why it is threaded through as a value rather than
+    read here.
 
     **`lang` is the language the document is actually written in, not the tag
     the caller sent.** `api/i18n.resolve` turns `zh-TW` into `zh-Hant` and
@@ -560,6 +678,13 @@ def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
         "factor_set": f"{result.factor_set_version} · GWP{result.gwp_horizon}",
         "total_kg": _figure(totals.current.total_kg, 3),
         "labels": {slot: translate(key) for slot, key in _LABELS.items()},
+        # The title block (Task 5): what it is (`title`, above), who produced
+        # it, when, and the factor-set version it used (`factor_set`, above -
+        # printed a second time here so it sits in the block itself and not
+        # only in the summary grid below it).
+        "produced_by": translate(_PRODUCED_BY),
+        "generated_at": _generated_at_text(generated_at),
+        "production_share": _production_share_context(totals, translate),
         "totals": _metric_rows(
             totals.current,
             getattr(totals, "alternative", None),
@@ -567,7 +692,7 @@ def build_context(result: Any, taxonomy: Any, locale: str) -> dict[str, Any]:
             names,
         ),
         "destinations": _destination_rows(totals, names),
-        "money": _money_rows(getattr(totals, "money", None), translate),
+        "money": _money_rows(getattr(totals, "money", None), getattr(totals, "data_state", None), translate),
         "equivalences": [item.label for item in totals.current.equivalences],
         "entries": entries,
         "colophon": translate(_COLOPHON),
@@ -749,11 +874,13 @@ def _assert_mock_warning_present(
             )
 
 
-def render_html(result: Any, taxonomy: Any, locale: str) -> str:
+def render_html(
+    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+) -> str:
     """The document as HTML, warning already verified. Separated from the PDF
     call so that a test - and a developer debugging a layout - can look at what
     WeasyPrint was given without needing WeasyPrint installed."""
-    return _html(build_context(result, taxonomy, locale))
+    return _html(build_context(result, taxonomy, locale, generated_at))
 
 
 def _html(context: dict[str, Any]) -> str:
@@ -887,7 +1014,9 @@ def assert_every_character_is_drawable(context: Any) -> None:
         )
 
 
-def render_document(result: Any, taxonomy: Any, locale: str) -> Any:
+def render_document(
+    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+) -> Any:
     """The laid-out document, one step before it becomes bytes.
 
     `render_results_pdf` is this plus `write_pdf()`, and the split exists for
@@ -905,7 +1034,7 @@ def render_document(result: Any, taxonomy: Any, locale: str) -> Any:
     from weasyprint import CSS, HTML
     from weasyprint.text.fonts import FontConfiguration
 
-    context = build_context(result, taxonomy, locale)
+    context = build_context(result, taxonomy, locale, generated_at)
     html = _html(context)
     # Checked here rather than in `render_html` because it is a question about
     # glyphs, and because `fontTools` is WeasyPrint's own dependency: a host
@@ -930,17 +1059,22 @@ def render_document(result: Any, taxonomy: Any, locale: str) -> Any:
     ).render(stylesheets=[stylesheet], font_config=fonts)
 
 
-def render_results_pdf(result: Any, taxonomy: Any, locale: str) -> bytes:
+def render_results_pdf(
+    result: Any, taxonomy: Any, locale: str, generated_at: Any = None
+) -> bytes:
     """`CalculationResult` -> a PDF, in the brand's type, at A4.
 
     `result` is what the engine returned for this request; `taxonomy` is the
     `TaxonomySnapshot` that turns its codes into staff-typed names; `locale`
     decides the document's base direction and its `lang` (which is also what
     lets Pango pick a script-appropriate face and Pyphen a hyphenation
-    dictionary).
+    dictionary). `generated_at` is the moment the title block reports as when
+    the document was produced (a `datetime`, ideally timezone-aware) - see
+    `_generated_at_text` for why this function still does not read the clock
+    itself.
 
-    This function reads no clock, opens no socket and touches no database -
-    `db/repository.py` is the only module that may do the last of those, and
-    the caller has already loaded everything this needs.
+    This function opens no socket and touches no database - `db/repository.py`
+    is the only module that may do the last of those, and the caller has
+    already loaded everything else this needs.
     """
-    return render_document(result, taxonomy, locale).write_pdf()
+    return render_document(result, taxonomy, locale, generated_at).write_pdf()

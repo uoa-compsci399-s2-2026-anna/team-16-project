@@ -108,3 +108,36 @@ the characters and this file. **A loud failure, not tofu** — which is the whol
 point of the exercise. If it ever fires in earnest, the fix is to re-cut the
 face concerned with the extra characters, or to ship the whole 10.9 MiB face
 for that language and accept the weight.
+
+## Re-cut, 2026-09-04
+
+The four CJK subsets had drifted from "the characters the four catalogues
+actually contain": `ja.json`, `ko.json`, `zh.json` and `zh-Hant.json` had each
+grown at least one string since the faces were last cut, and six characters
+across the four catalogues (`及` `涉` `率` `笔` `部` and one Hangul syllable)
+had no glyph in any embedded face — a fact `test_no_character_in_any_catalogue_
+would_print_as_a_box` had been failing on for some time without anything
+actually asking a CJK document to print one of them. Task 5's title block did:
+the Traditional Chinese "not supplied" sentence contains `涉`, and rendering it
+raised `UndrawableCharacterError` rather than shipping a box.
+
+Re-cut inside the running `api` container (already `debian:bookworm`-based
+with Pango/HarfBuzz installed) rather than a fresh build, following the same
+recipe as the table above:
+
+```sh
+apt-get install --no-install-recommends fonts-noto-cjk   # fonttools + brotli already present
+fonttools subset /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc \
+  --font-number=<0|1|2|3> --text-file=<catalogue's own characters, plus ASCII and Latin-1> \
+  --flavor=woff2 --output-file=<NotoSansCJK{jp,kr,sc,tc}-Regular.woff2> \
+  --layout-features=* --glyph-names --symbol-cmap --legacy-cmap \
+  --notdef-glyph --notdef-outline --recommended-glyphs --name-legacy
+```
+
+Each face is cut from its own language's *current* `web/locales/*.json` (`ja`
+→ face 0, `ko` → face 1, `zh` → face 2, `zh-Hant` → face 3), read fresh rather
+than from the character list the previous cut used — a list frozen at the last
+cut is exactly how this drifted the first time. New sizes: jp 228,224 B (was
+208,076), kr 79,916 B (was 72,968), sc 200,708 B (was 188,332), tc 261,024 B
+(was 243,356) — a few kilobytes each for the characters that were missing,
+still two orders of magnitude under the 10.9 MiB whole face.

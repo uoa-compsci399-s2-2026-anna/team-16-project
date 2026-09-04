@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import zipfile
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -315,7 +316,10 @@ def export_pdf(payload: ExportPayload, request: Request) -> Response:
     except Exception as exc:
         raise engine_problem(exc, authenticated_dry_run=False) from exc
 
-    pdf_bytes = render_export_pdf(result, payload, taxonomy)
+    # Read once, here, and passed down rather than read inside the renderer -
+    # see `render_results_pdf`'s docstring for why that function still does
+    # not touch the clock itself.
+    pdf_bytes = render_export_pdf(result, payload, taxonomy, datetime.now(timezone.utc))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

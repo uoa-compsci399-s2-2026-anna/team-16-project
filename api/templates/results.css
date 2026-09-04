@@ -244,6 +244,62 @@ p { margin: 0 0 2mm 0; }
   margin-block-end: 4mm;
 }
 
+/* ------------------------------------------------------------------- cover */
+/* THE TITLE BLOCK. The client's own complaint was that the export "lacks
+ * brand character" - what it is (the heading), who produced it, when it was
+ * generated and the factor-set version it used now sit together as a
+ * masthead rather than a bare <h1>. `api/pdf_render.py::build_context` is
+ * where all four facts are decided; nothing here computes any of them.
+ *
+ * A FLEX ROW, NOT AN OVERLAY. The mark sits beside the text as its own flex
+ * item rather than positioned behind it, so a long title in any of the
+ * twenty-one languages - the German compound `test_no_text_runs_off_the_page`
+ * exists for - simply wraps in its own column and never runs under the
+ * graphic. `flex-direction: row` follows the box's own direction, so under
+ * `dir="rtl"` the mark swaps to the other end for free; nothing below names a
+ * physical side. */
+.cover {
+  display: flex;
+  align-items: flex-start;
+  gap: 6mm;
+  padding-block-end: 3mm;
+  margin-block-end: 4mm;
+  border-block-end: 1.5pt solid var(--kale);
+  break-inside: avoid;
+}
+
+.cover__body {
+  flex: 1 1 auto;
+  min-inline-size: 0;
+}
+
+/* THE BRAND'S HALF-CIRCLE, SINGLY, AT LARGE SCALE - the guideline's own
+ * words. Same construction as `web/css/styles.css`'s
+ * `.site-drawer__handle::before`: `100% 50%` on both reading-end corners is a
+ * half-disc bulging from the box's own inline-end edge at any size, so it
+ * mirrors under `dir="rtl"` with no rule written twice. */
+.cover__mark {
+  flex: 0 0 auto;
+  inline-size: 26mm;
+  block-size: 26mm;
+  margin-block-start: 1mm;
+  background: var(--pea);
+  border-start-end-radius: 100% 50%;
+  border-end-end-radius: 100% 50%;
+}
+
+.cover__meta {
+  margin: 2.5mm 0 0 0;
+  font-size: 8.5pt;
+  color: #4A6660;
+}
+
+.summary-note {
+  margin: -1.5mm 0 4mm 0;
+  font-size: 8.5pt;
+  color: #4A6660;
+}
+
 /* ---------------------------------------------------------- mock warning */
 /* DEFECT-PROOFING, NOT DECORATION. Section 2.2 makes the placeholder banner
  * mandatory and non-dismissible on every results view and export while the
@@ -348,6 +404,18 @@ td.figure, th.figure {
 }
 
 .unit { color: #4A6660; font-size: 8.5pt; }
+
+/* §4.6's incomplete-coverage note, printed in a money row in place of a
+ * figure (`api/pdf_render.py::_money_rows`, `row.is_note`). Deliberately NOT
+ * `.figure`: that class sets `white-space: nowrap` for tabular digits, and a
+ * translated sentence held to one line would be exactly the defect this
+ * export exists to close, one column narrower. */
+.money-note {
+  text-align: start;
+  white-space: normal;
+  font-style: italic;
+  color: #4A6660;
+}
 
 tr.net td { border-block-end: 1pt solid var(--kale); }
 

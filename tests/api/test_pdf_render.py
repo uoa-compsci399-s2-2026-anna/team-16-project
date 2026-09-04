@@ -27,6 +27,7 @@ from __future__ import annotations
 import hashlib
 import re
 import unicodedata
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -50,9 +51,12 @@ from db.types import (
     TaxonomySnapshot,
 )
 from engine.types import (
+    DATA_COMPLETE,
+    DATA_INCOMPLETE,
     BreakdownRow,
     CalculationResult,
     CalculationTotals,
+    DataState,
     EntryResult,
     EquivalenceResult,
     MetricResult,
@@ -291,11 +295,15 @@ def test_the_warning_cannot_be_switched_off_by_a_caller():
     """There is no parameter, keyword or flag that suppresses it: `is_mock` is
     read off the engine's own result and nothing else decides. Asserted against
     the renderer's public signature so that adding such a parameter later fails
-    here rather than passing review."""
+    here rather than passing review.
+
+    `generated_at` (Task 5) is on the allow-list: it decides a date in the
+    title block, never whether the warning is drawn - `is_mock` is still read
+    unconditionally off `result`, asserted on the line below."""
     import inspect
 
     names = set(inspect.signature(render_results_pdf).parameters)
-    assert names == {"result", "taxonomy", "locale"}
+    assert names == {"result", "taxonomy", "locale", "generated_at"}
     assert build_context(_result(), _taxonomy(), "en")["is_mock"] is True
 
 
@@ -845,10 +853,23 @@ def test_no_locale_falls_back_to_english(locale):
     element would leave this green, which is what
     `test_every_locale_renders_as_extractable_text` and
     `test_the_mock_warning_is_in_the_pdf_text` cover from the other side.
+
+    **Two renders, not one, since §4.6.** `production_share_percent` and each
+    money field are in exactly one of three states per render - `complete`,
+    `incomplete` or `not_supplied` - so "Data incomplete" and its money
+    counterpart can never appear in the *same* document as a `complete`
+    percentage or a fully-priced money block. `_result()` alone (all
+    `not_supplied`) cannot reach the `incomplete` sentences at all, and
+    DOCUMENT_STRINGS is deliberately every string the document CAN print,
+    not every string one render prints - so this concatenates the default
+    render with one built to hit `incomplete` on every §4.6 field, and checks
+    each catalogue string reached at least one of the two.
     """
     from markupsafe import escape
 
-    html = render_html(_result(), _taxonomy(), locale)
+    html = render_html(_result(), _taxonomy(), locale) + render_html(
+        _incomplete_totals_result(), _taxonomy(), locale
+    )
     catalogue = i18n.catalogue(locale)
 
     for source in DOCUMENT_STRINGS:
@@ -1271,3 +1292,235 @@ def test_the_stylesheet_names_every_embedded_face():
         if name.startswith("noto/")
     }
     assert on_disk == declared
+
+
+# --------------------------------------------------------------------------
+# Task 5: the title block, and the three states §4.6 gave the totals-level
+# figures - the review finding this task closes. `api/pdf_render.py` used to
+# know nothing about `data_state`: it printed a percentage when one existed
+# and nothing otherwise, which is the two-state behaviour the results page
+# had before Task 1 - not wrong exactly, but silently disagreeing with the
+# page and the text export about a submission that answered *some* of its
+# entries. The tests below are written against the three-state contract, not
+# the two it replaces.
+# --------------------------------------------------------------------------
+
+
+def _result_with_totals_extras(
+    *,
+    production_share_percent=None,
+    data_state=None,
+    money=None,
+    keep_default_money=True,
+) -> CalculationResult:
+    """`_result()`'s shape, with the §4.6 totals-level fields threaded
+    through. `_result()` alone leaves them at `DataState()`'s default -
+    `not_supplied` for all four - which is only one of the three states and
+    not enough on its own to prove the other two render correctly."""
+    base = _result()
+    totals = base.totals
+    return CalculationResult(
+        factor_set_version=base.factor_set_version,
+        is_mock=base.is_mock,
+        gwp_horizon=base.gwp_horizon,
+        totals=CalculationTotals(
+            current=totals.current,
+            alternative=totals.alternative,
+            net_benefit=totals.net_benefit,
+            money=totals.money if keep_default_money else money,
+            production_share_percent=production_share_percent,
+            data_state=data_state or DataState(),
+        ),
+        entries=base.entries,
+    )
+
+
+def _incomplete_totals_result() -> CalculationResult:
+    """A submission with every §4.6 totals-level figure in its `incomplete`
+    state - not a shape a real submission usually takes, but the one render
+    `test_no_locale_falls_back_to_english` needs to reach `Data incomplete`
+    and its money counterpart, which the all-`not_supplied` default fixture
+    never touches."""
+    partial_money = MoneyResult(
+        total_value_nzd=None,
+        wasted_value_nzd=None,
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    return _result_with_totals_extras(
+        keep_default_money=False,
+        money=partial_money,
+        data_state=DataState(
+            production_share_percent=DATA_INCOMPLETE,
+            total_value_nzd=DATA_INCOMPLETE,
+            wasted_value_nzd=DATA_INCOMPLETE,
+            wasted_share_percent=DATA_INCOMPLETE,
+            saving_nzd=DATA_INCOMPLETE,
+        ),
+    )
+
+
+# --------------------------------------------------------------------------
+# Part B: the title block.
+# --------------------------------------------------------------------------
+
+
+def test_build_context_carries_the_title_block_fields():
+    """The four facts the brief asks for, read straight off the context - not
+    through a rendered PDF, so this fails for the right reason before
+    WeasyPrint is even in the picture."""
+    generated_at = datetime(2026, 8, 31, 14, 32, tzinfo=timezone.utc)
+    context = build_context(_result(), _taxonomy(), "en", generated_at)
+    assert context["title"] == "Food Waste Impact Calculator — Results"  # what it is
+    assert context["produced_by"] == "From Kai Commitment"  # who produced it
+    assert context["generated_at"] == "2026-08-31 14:32 UTC"  # when
+    assert context["factor_set"] == "MOCK-v0 · GWP100"  # the factor-set version
+
+
+def test_generated_at_defaults_to_the_wall_clock_rather_than_raising():
+    """Most of this file's existing tests predate `generated_at` and call
+    `build_context`/`render_results_pdf` with three arguments. Those must
+    keep working - `_generated_at_text` reads the wall clock exactly when the
+    caller does not care, which is the one place in this module that is
+    allowed to."""
+    before = datetime.now(timezone.utc)
+    stamp_text = build_context(_result(), _taxonomy(), "en")["generated_at"]
+    after = datetime.now(timezone.utc)
+    stamp = datetime.strptime(stamp_text, "%Y-%m-%d %H:%M UTC").replace(tzinfo=timezone.utc)
+    assert before - timedelta(minutes=1) <= stamp <= after + timedelta(minutes=1)
+
+
+@requires_weasyprint
+def test_the_document_carries_a_title_block_in_the_visitors_locale():
+    """Part B, on the paper, in a language that is not English - so this also
+    proves the title block is not an English-only afterthought bolted onto a
+    translated body."""
+    generated_at = datetime(2026, 8, 31, 14, 32, tzinfo=timezone.utc)
+    pdf = render_results_pdf(_result(), _taxonomy(), "de", generated_at)
+    text = extract_text(pdf)
+    assert "Ergebnisse" in text  # "...Results", translated
+    assert "Kai Commitment" in text  # who produced it
+    assert "2026-08-31 14:32 UTC" in text  # when it was generated
+    assert "MOCK-v0" in text and "GWP100" in text  # the factor-set version
+
+
+def test_the_factor_set_version_is_in_the_title_block_itself():
+    """**Mutation target.** `.summary` already carried the factor-set version
+    before this task; a bare substring check on the whole document would stay
+    green even if the title block's own copy were deleted and only that
+    older, unrelated tile survived. This reads the `<header class="cover">`
+    region specifically, so it fails for the version that actually matters
+    here."""
+    html = render_html(_result(), _taxonomy(), "en")
+    match = re.search(r'<header class="cover">.*?</header>', html, re.S)
+    assert match, 'no <header class="cover"> in the rendered document'
+    assert "MOCK-v0" in match.group(0)
+    assert "GWP100" in match.group(0)
+    assert "From Kai Commitment" in match.group(0)
+
+
+def test_deleting_the_cover_from_the_template_loses_the_title_block(tmp_path, monkeypatch):
+    """The mutation named in the brief, automated: delete the `.cover` block
+    from the template and the title-block test above must fail."""
+    source = pdf_render._TEMPLATE_DIR / pdf_render._TEMPLATE_NAME
+    original = source.read_text(encoding="utf-8")
+    mutated = re.sub(r'<header class="cover">.*?</header>', "", original, flags=re.S)
+    assert mutated != original, "the cover block was not found to remove"
+    monkeypatch.setattr(pdf_render, "_TEMPLATE_DIR", tmp_path)
+    (tmp_path / pdf_render._TEMPLATE_NAME).write_text(mutated, encoding="utf-8")
+    html = render_html(_result(), _taxonomy(), "en")
+    assert re.search(r'<header class="cover">.*?</header>', html, re.S) is None
+
+
+# --------------------------------------------------------------------------
+# Part A: the three states, on the paper.
+# --------------------------------------------------------------------------
+
+
+@requires_weasyprint
+def test_the_production_share_prints_when_every_entry_answered():
+    result = _result_with_totals_extras(
+        production_share_percent=Decimal("25.00"),
+        data_state=DataState(production_share_percent=DATA_COMPLETE),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "25.00%" in text
+
+
+@requires_weasyprint
+def test_the_production_share_says_incomplete_rather_than_not_supplied():
+    """§4.6's third state, worded to match
+    `web/js/results.js::productionShareText` exactly: some entries answered
+    and some did not, so the totals-level figure is withheld - a different
+    sentence from nobody having said anything at all.
+
+    **Mutation target: collapsing `incomplete` into `not_supplied` in the
+    PDF.** That mutation makes this print "Not supplied" instead, which the
+    last assertion below catches directly.
+    """
+    result = _result_with_totals_extras(
+        data_state=DataState(production_share_percent=DATA_INCOMPLETE),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Data incomplete" in text
+    assert "Some entries stated a production total" in text
+    assert "Not supplied" not in text
+
+
+@requires_weasyprint
+def test_the_production_share_says_not_supplied_when_nobody_answered():
+    result = _result_with_totals_extras()  # DataState() default: not_supplied
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Not supplied" in text
+    assert "You did not say how much food this covered" in text
+    assert "Data incomplete" not in text
+
+
+@requires_weasyprint
+def test_money_block_shows_the_incomplete_note_rather_than_a_partial_sum():
+    """The defect Task 1 closed for the on-screen card and the text export,
+    closed here too: a partially priced submission used to be able to report
+    a short sum as though it were the whole submission's total.
+    `saving_nzd` is supplied and prints normally beside the three withheld
+    fields, so this also proves a `complete` field is not swept into the
+    same sentence as its `incomplete` neighbours.
+    """
+    partial = MoneyResult(
+        total_value_nzd=None,
+        wasted_value_nzd=None,
+        wasted_share_percent=None,
+        saving_nzd=Decimal("2400.00"),
+    )
+    result = _result_with_totals_extras(
+        keep_default_money=False,
+        money=partial,
+        data_state=DataState(
+            total_value_nzd=DATA_INCOMPLETE,
+            wasted_value_nzd=DATA_INCOMPLETE,
+            wasted_share_percent=DATA_INCOMPLETE,
+        ),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Not every entry supplied this figure, so it cannot be totalled." in text
+    assert "2,400.00" in text
+
+
+@requires_weasyprint
+def test_money_block_omits_a_field_nobody_touched_at_all():
+    """`not_supplied` stays silence, exactly as it was before §4.6 - only
+    `incomplete` earns a sentence, so a field nobody answered must not print
+    the incomplete note and must not grow a row for nothing."""
+    partial = MoneyResult(
+        total_value_nzd=None,
+        wasted_value_nzd=Decimal("3600.00"),
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    result = _result_with_totals_extras(
+        keep_default_money=False,
+        money=partial,
+        data_state=DataState(wasted_value_nzd=DATA_COMPLETE),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "3,600.00" in text
+    assert "Not every entry supplied this figure" not in text

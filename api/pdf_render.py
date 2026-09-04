@@ -421,13 +421,33 @@ _PRODUCED_BY = "From Kai Commitment"
 #: `§4.5`'s money block. The unit annotations the English-only draft carried in
 #: the label - "(NZD)", "(%)" - are gone rather than translated: a currency
 #: code is not language and gluing it into a translatable string would have
-#: made four more keys that no catalogue has.
+#: made four more keys that no catalogue has. The third element is the same
+#: distinction `web/js/results.js`'s `nzd` / `percentText` draw on the
+#: *value* rather than the label - "NZ$" and "%" are currency notation, not
+#: phrases, so `_money_figure` below glues them onto the formatted number the
+#: same way, never through `translate()`.
 _MONEY_LABELS = (
-    ("total_value_nzd", "Total value of food handled"),
-    ("wasted_value_nzd", "Value of food wasted"),
-    ("wasted_share_percent", "Share of value wasted"),
-    ("saving_nzd", "Value of food not wasted at all"),
+    ("total_value_nzd", "Total value of food handled", "currency"),
+    ("wasted_value_nzd", "Value of food wasted", "currency"),
+    ("wasted_share_percent", "Share of value wasted", "percent"),
+    ("saving_nzd", "Value of food not wasted at all", "currency"),
 )
+
+
+def _money_figure(value: Any, kind: str) -> str:
+    """A money-block value, with the unit `_figure` alone does not carry.
+
+    `_figure` is shared with every other table in this document - metric
+    totals, destination masses - none of which take a currency or a percent
+    sign, so the sign belongs here rather than in `_figure` itself. Mirrors
+    `web/js/results.js`'s `nzd` (`` `NZ$${formatNumber(...)}` ``) and
+    `percentText` (`` `${formatNumber(...)}%` ``) exactly, so a figure reads
+    the same amount with the same unit on the page, in the text export and in
+    this document - the defect this function exists to close was the PDF
+    printing `45,000.00` where the other two surfaces print `NZ$45,000.00`.
+    """
+    figure = _figure(value, 2)
+    return f"NZ${figure}" if kind == "currency" else f"{figure}%"
 
 #: Every translatable string the document can print, in one tuple, so that a
 #: test can assert all twenty catalogues carry all of them **without rendering
@@ -446,7 +466,7 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     _PRODUCTION_SHARE_NOT_SUPPLIED_NOTE,
     _MONEY_INCOMPLETE_NOTE,
     *_LABELS.values(),
-    *(key for _attribute, key in _MONEY_LABELS),
+    *(key for _attribute, key, _kind in _MONEY_LABELS),
 )
 
 
@@ -545,10 +565,12 @@ def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, A
     if money is None:
         return []
     rows: list[dict[str, Any]] = []
-    for attribute, label in _MONEY_LABELS:
+    for attribute, label, kind in _MONEY_LABELS:
         value = getattr(money, attribute, None)
         if value is not None:
-            rows.append({"name": translate(label), "value": _figure(value, 2), "is_note": False})
+            rows.append(
+                {"name": translate(label), "value": _money_figure(value, kind), "is_note": False}
+            )
             continue
         state = getattr(data_state, attribute, None) if data_state is not None else None
         if state == DATA_INCOMPLETE:

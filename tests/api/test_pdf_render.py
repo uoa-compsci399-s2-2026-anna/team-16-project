@@ -1502,7 +1502,7 @@ def test_money_block_shows_the_incomplete_note_rather_than_a_partial_sum():
     )
     text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
     assert "Not every entry supplied this figure, so it cannot be totalled." in text
-    assert "2,400.00" in text
+    assert "NZ$2,400.00" in text
 
 
 @requires_weasyprint
@@ -1522,5 +1522,26 @@ def test_money_block_omits_a_field_nobody_touched_at_all():
         data_state=DataState(wasted_value_nzd=DATA_COMPLETE),
     )
     text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
-    assert "3,600.00" in text
+    assert "NZ$3,600.00" in text
     assert "Not every entry supplied this figure" not in text
+
+
+@requires_weasyprint
+def test_the_money_block_carries_its_unit_per_field():
+    """**v1.50 review, item 2 - mutation target.** The page and the text
+    export print `NZ$45,000.00` and `15.00%`; this document used to print
+    `45,000.00` and `15.00` - a share of value with no `%` and a dollar
+    figure with no currency, in a document that leaves the browser and is
+    read by someone who never saw the page it came from.
+
+    `_result()`'s own `_money()` fixture (§4.5's four fields, all
+    `complete`) gives one exact figure per field, so each assertion below
+    fails on the specific field that lost its unit rather than on the
+    money block in general. Strip `_money_figure`'s prefix/suffix back to a
+    bare `_figure` call and every one of these four fails.
+    """
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert "NZ$18,000.00" in text  # total_value_nzd
+    assert "NZ$3,600.00" in text  # wasted_value_nzd
+    assert "20.00%" in text  # wasted_share_percent
+    assert "NZ$2,400.00" in text  # saving_nzd

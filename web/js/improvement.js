@@ -190,8 +190,22 @@ export function resetImprovement(state) {
 // `headroom = 100 - allocationTotal(...)` — so dragging one destination to its own limit
 // leaves every other destination's slider unable to move at all. Recomputed after every
 // change, here and in the row template's first render, from the same two numbers.
+//
+// **The result is never less than `value` itself, and that floor is not decoration.** The
+// bare `Math.round((value + headroom) * 100) / 100` this replaced can round *down* past
+// `value` when `value` itself carries more than two decimal places, and `headroom` is at or
+// near zero. `max` on an `<input type="range">` is not a suggestion: the browser clamps
+// `.value` the instant a lower `max` is assigned, silently, with no event fired for anything
+// to react to. So a slider nobody had touched would sit at a different number the moment
+// any OTHER row's edit forced this recomputation — visible on screen as one destination
+// "chasing" another, which is what the client reported as sliders dragging each other
+// around. It was never the recomputation itself: two sliders sharing one 100% ARE meant to
+// shrink each other's headroom, on purpose, and that coupling stays. It was this rounding
+// occasionally handing an *untouched* row a ceiling below the value it already held. The
+// fix is the floor, not removing the recomputation.
 function sliderMax(value, headroom) {
-  return Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)
+  const numericValue = typed(value)
+  return Math.max(numericValue, Math.round((numericValue + headroom) * 100) / 100, 0)
 }
 
 // The pointer-drag granularity: half a percentage point of the mass being redistributed,
@@ -239,6 +253,20 @@ function rangeStep(mode, totalKg) {
  * step, an exact mirror lands exactly; a drag, which still has to land on a nameable
  * number, is rounded here instead, to `rangeStep`'s own coarseness, only when `control`
  * is the range itself.
+ *
+ * **The one coupling the client asked for — an upper bound, on the SLIDER only.** A
+ * number box has always been allowed to hold a figure `improvementValidation` will refuse
+ * — that is what disables Compare and shows the message, and rewriting it here would take
+ * away the number a visitor typed the moment it went out of range, which is a different
+ * defect `test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number`
+ * exists to catch (a clamp is exactly the "rewrite the number" that guard may not do). A
+ * range control has no such freedom to begin with — `<input type="range">` cannot represent
+ * a value outside its own `min`/`max` at all — so `ceiling` here only ever tightens what a
+ * DRAG (never a typed figure) can request, for the row being dragged, before the browser's
+ * own clamp would otherwise land on whatever the coarse `rangeStep` snap rounded to. This
+ * is not what stops one destination's edit from moving ANOTHER destination's slider —
+ * `sliderMax`'s own floor (see its comment) is the whole reason that stopped — this is
+ * only the affirmative half, restated for the control the client actually dragged.
  */
 export function updateImprovementInput(control, state) {
   const code = control.dataset.improvementCode
@@ -255,15 +283,36 @@ export function updateImprovementInput(control, state) {
       control.value = raw
     }
   }
-  const percentage = raw === '' ? '' : (mode === 'kilograms' ? kgToPercentage(raw, totalKg) : raw)
+  let percentage = raw === '' ? '' : (mode === 'kilograms' ? kgToPercentage(raw, totalKg) : raw)
+  // The ceiling below is a RANGE-only guard — see the docstring's note on why a number
+  // box's out-of-range figure is refused by `improvementValidation`, never rewritten here.
+  if (control.type === 'range' && percentage !== '') {
+    const numericPercentage = Number(percentage)
+    if (Number.isFinite(numericPercentage)) {
+      const othersTotal = allocationTotal(state.improvedAllocations) - typed(state.improvedAllocations[code])
+      const ceiling = Math.max(0, 100 - othersTotal)
+      const clamped = Math.min(Math.max(0, numericPercentage), ceiling)
+      if (clamped !== numericPercentage) {
+        // Rounded to the same two decimal places `sliderMax` already rounds a
+        // headroom-derived ceiling to: `othersTotal` is a running sum of floats, so
+        // `ceiling` routinely lands a few units of float dust away from the clean
+        // figure it means (`1.7999999999999998`, not `1.8`) — displaying that dust
+        // on the control the visitor is looking at would read as a new, unexplained
+        // bug the moment anyone dragged past their own headroom.
+        percentage = Math.round(clamped * 100) / 100
+        raw = mode === 'kilograms' ? displayKg(percentage, totalKg).toFixed(2) : String(percentage)
+        control.value = raw
+      }
+    }
+  }
   state.improvedAllocations = { ...state.improvedAllocations, [code]: percentage }
   state.improvementResult = null
   state.improvementError = null
   // Mirrors the *raw* value, not the percentage just computed: every control sharing this
   // code is rendered in the same mode (§ `ImprovementScenario`), so the slider and the
   // number box always agree on which unit `.value` is in and a straight copy is correct.
-  // `raw` rather than `control.value` so a range's own drag mirrors its *rounded* figure,
-  // not the pointer position that produced it.
+  // `raw` rather than `control.value` so a range's own drag mirrors its *rounded* (and, if
+  // it applied, *clamped*) figure, not the pointer position that produced it.
   document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
     if (input !== control) input.value = raw
   })

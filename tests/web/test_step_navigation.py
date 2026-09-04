@@ -1218,6 +1218,186 @@ def test_a_slider_cannot_be_dragged_past_what_is_left(page_at):
     )
 
 
+def test_dragging_one_destination_does_not_move_another(page_at):
+    """**The client's own report:** "我推动一个剩下的几个会跟着进退" - dragging
+    ReFED Donations from 1.70 to 3.20 kg made ReFED Prevention fall from 7.80
+    to 2.80 kg on its own.
+
+    Reproduced by the route that actually triggers it: `sliderMax` recomputed
+    every OTHER destination's `max` from a shared `headroom`, and assigning a
+    `max` below an `<input type="range">`'s current `value` silently clamps
+    that value - so a destination nobody touched changed. Six destinations are
+    set up close to 100% (as a visitor typing several figures in a row would
+    arrive at), then ONE is pushed past the 0.10% actually left; every OTHER
+    destination's own figure, box and slider both, must read exactly what it
+    read before.
+
+    Confirmed against the real defect first: before this fix, this same drag
+    left ReFED Prevention's slider reading `6.4` (its box stayed at `7.80`,
+    which is itself the two-controls-disagreeing half of the same defect).
+
+    Mutation to confirm this test would catch the regression: restore
+    `sliderMax`'s body in `web/js/improvement.js` to
+    `Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)` (drop the
+    `numericValue` floor) and watch this fail.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    assert boxes.count() >= 6, "need six destinations to set up a tight allocation"
+
+    #: prevention, refed_prevention, refed_donations, refed_animal_feed,
+    #: refed_composting, refed_anaerobic_digestion, in the taxonomy's own
+    #: sort order - summing to 99.90%, leaving 0.10% of headroom.
+    for index, value in enumerate(["20", "7.80", "1.70", "30", "25", "15.4"]):
+        boxes.nth(index).fill(value)
+        page.wait_for_timeout(40)
+
+    total_before = page.locator("#improvement-total-value").inner_text()
+    assert total_before == "99.90%", f"the setup no longer leaves 0.10% headroom: {total_before!r}"
+
+    other_box_before = boxes.nth(1).input_value()
+    other_range_before = sliders.nth(1).input_value()
+    assert other_box_before == "7.80"
+
+    #: The push that reproduces the client's report: destination index 2
+    #: ("1.70") is asked for 3.20, 1.50 more than the 0.10% actually left.
+    boxes.nth(2).fill("3.20")
+    page.wait_for_timeout(80)
+
+    assert boxes.nth(1).input_value() == other_box_before, (
+        f"an untouched destination's box changed from {other_box_before!r} to "
+        f"{boxes.nth(1).input_value()!r} when a DIFFERENT destination was edited"
+    )
+    assert sliders.nth(1).input_value() == other_range_before, (
+        f"an untouched destination's SLIDER changed from {other_range_before!r} to "
+        f"{sliders.nth(1).input_value()!r} when a DIFFERENT destination was edited - "
+        "this is the exact shape of the client's report even when the box beside it "
+        "does not move"
+    )
+
+
+def test_no_destination_can_be_increased_once_the_allocation_reaches_one_hundred_percent(page_at):
+    """**The one coupling item 2 keeps, on the control the client actually
+    dragged.** Once every destination's shares sum to 100%, no single
+    destination's SLIDER may be dragged any higher — `<input type="range">`
+    cannot represent a value outside its own `max`, and `max` is this
+    destination's own share plus whatever is left, which is nothing once the
+    total is 100%. This is an upper bound only: below 100% the panel stays
+    exactly as editable as it always was, in either direction, on both
+    controls.
+
+    **The number box is deliberately not asserted the same way.** It has
+    always been allowed to hold a figure `improvementValidation` refuses —
+    that is what disables Compare — and rewriting it here would be the same
+    defect `test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number`
+    exists to catch. So the box half of this test asserts the REFUSAL, not a
+    clamp: Compare stays disabled and the box keeps exactly what was typed.
+
+    **This test states the requirement; it is not what proves the fix.** With
+    only two destinations at exactly 100%, `sliderMax` returns the same figure
+    with or without its own floor (`headroom` is `0`, never negative, so
+    rounding has nothing to floor), so a mutation there does not fail this
+    specific test — confirmed by running it. The floor itself is what
+    `test_dragging_one_destination_does_not_move_another` exercises (three or
+    more destinations, one edit pushed past the headroom actually left), and
+    the box/slider agreement under a coarse drag is what
+    `test_a_coarse_drag_near_the_ceiling_does_not_leave_the_box_and_slider_disagreeing`
+    exercises. This test is the plain, affirmative statement of the rule those
+    two guard the mechanism of.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    compare = page.locator('[data-action="compare-improvement"]')
+    assert boxes.count() >= 2, "need two destinations to reach 100%"
+
+    boxes.nth(0).fill("60")
+    boxes.nth(1).fill("40")
+    page.wait_for_timeout(80)
+    assert page.locator("#improvement-total-value").inner_text() == "100.00%"
+    assert compare.is_enabled()
+
+    #: Dragging straight past the ceiling: the range cannot hold a value
+    #: above its own `max`, so the browser refuses the assignment outright.
+    sliders.nth(0).evaluate("el => { el.value = '100'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+    assert float(sliders.nth(0).input_value()) <= 60.0001, (
+        f"a destination's SLIDER was increased past the 100% ceiling by dragging: "
+        f"{sliders.nth(0).input_value()!r}"
+    )
+    assert boxes.nth(0).input_value() == sliders.nth(0).input_value(), (
+        "the box and the slider disagree after the drag was capped"
+    )
+    assert page.locator("#improvement-total-value").inner_text() == "100.00%"
+    assert compare.is_enabled(), "capping the drag should not itself invalidate the allocation"
+
+    #: Typing straight past the ceiling: the box keeps the figure verbatim,
+    #: and `improvementValidation` is what refuses it.
+    boxes.nth(0).fill("90")
+    page.wait_for_timeout(80)
+    assert boxes.nth(0).input_value() == "90", (
+        "the number box rewrote a figure past the ceiling instead of the validation refusing it"
+    )
+    assert compare.is_disabled(), (
+        "an allocation totalling well over 100% left Compare Impact enabled"
+    )
+
+    #: Below 100%, the panel stays editable in the ordinary direction, on both controls.
+    boxes.nth(0).fill("50")
+    page.wait_for_timeout(80)
+    assert boxes.nth(0).input_value() == "50"
+    assert page.locator("#improvement-total-value").inner_text() == "90.00%"
+    assert compare.is_disabled(), "90% total should still fail the exactly-100 rule"
+
+
+def test_a_coarse_drag_near_the_ceiling_does_not_leave_the_box_and_slider_disagreeing(page_at):
+    """**The mechanism the test above cannot exercise on its own.** A drag is
+    rounded to `rangeStep`'s coarseness (half a percentage point) before it is
+    stored, and that rounding can land ABOVE a destination's own ceiling even
+    though the raw pointer position was inside it - 0.29% rounds to 0.5% at a
+    0.5-point step, which overshoots a ceiling of 0.3%. The browser silently
+    clamps the range's own `.value` back to its `max` the instant that
+    happens; without a matching clamp on the figure this module goes on to
+    store and mirror, the sibling number box - and the allocation total - keep
+    the OVERSHOT figure regardless, so the two controls for one destination
+    read two different numbers and the total reads over 100%.
+
+    Confirmed against the real defect first: before this fix, dragging to
+    0.29% here left the range at `0.3` and the box at `0.5`, with the total
+    reading `100.20%`.
+
+    Mutation to confirm this test would catch the regression: in
+    `updateImprovementInput` (`web/js/improvement.js`), disable the
+    RANGE-only ceiling block (`if (control.type === 'range' && percentage !==
+    '') { ... }`) and watch this fail.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    #: 99.7% to the first destination leaves the second exactly 0.3% of
+    #: headroom - inside one `rangeStep` (0.5) of overshooting on a drag.
+    boxes.nth(0).fill("99.7")
+    page.wait_for_timeout(80)
+    assert sliders.nth(1).get_attribute("max") == "0.3"
+
+    sliders.nth(1).evaluate("el => { el.value = '0.29'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert sliders.nth(1).input_value() == "0.3", (
+        f"the drag did not land on the expected step: {sliders.nth(1).input_value()!r}"
+    )
+    assert boxes.nth(1).input_value() == "0.3", (
+        f"the box shows {boxes.nth(1).input_value()!r} while the slider shows "
+        f"{sliders.nth(1).input_value()!r} for the same destination - the coarse drag "
+        "overshot the ceiling and only the slider was clamped"
+    )
+    assert page.locator("#improvement-total-value").inner_text() == "100.00%", (
+        "a coarse drag pushed the allocation's own total past 100%"
+    )
+
+
 def test_the_sliders_start_at_zero_and_the_total_says_so(page_at):
     """The client asked for "所有滑块默认都是 0".
 

@@ -46,6 +46,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 RESULTS_JS = ROOT / "web" / "js" / "results.js"
+IMPROVEMENT_JS = ROOT / "web" / "js" / "improvement.js"
 
 #: Node is not a dependency of this project and never becomes one — `web/` has no
 #: build step and `docs/architecture.md` §3 rules Node out of the stack. It is
@@ -68,6 +69,60 @@ const { buildResultsReport } = await import(process.argv[2])
 const state = JSON.parse(readFileSync(process.argv[3], 'utf8'))
 writeFileSync(process.argv[4], buildResultsReport(state), 'utf8')
 """
+
+
+#: **The agreement harness (v1.50 review, item 1).** `HARNESS` above proves
+#: `results.js`'s own text export; this proves it *alongside*
+#: `improvement.js`'s HTML comparison, from the **one** state object, in the
+#: **one** Node process — so a fix that only reaches one of `savingLines` and
+#: `comparisonSaving` shows up here as a disagreement rather than as two green
+#: test files that each checked their own surface in isolation and never
+#: compared notes. `improvement.js`'s `ComparisonResults` is exported for the
+#: screen already (`web/js/results.js` renders it into the results page); this
+#: calls it directly rather than through a browser; nothing here needs a DOM.
+HARNESS_BOTH = """
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { buildResultsReport } = await import(process.argv[2])
+const { ComparisonResults } = await import(process.argv[3])
+const state = JSON.parse(readFileSync(process.argv[4], 'utf8'))
+const out = {
+  report: buildResultsReport(state),
+  html: ComparisonResults(state),
+}
+writeFileSync(process.argv[5], JSON.stringify(out), 'utf8')
+"""
+
+
+def both_surfaces_for(tmp_path: Path, state: dict) -> dict:
+    """`{"report": <text export>, "html": <the comparison screen's markup>}`,
+    both built from the same `state` in the same Node process — see
+    `HARNESS_BOTH`."""
+    harness = tmp_path / "harness_both.mjs"
+    harness.write_text(HARNESS_BOTH, encoding="utf-8")
+    state_file = tmp_path / "state_both.json"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    out = tmp_path / "both.json"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            RESULTS_JS.as_uri(),
+            IMPROVEMENT_JS.as_uri(),
+            str(state_file),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not build both surfaces:\n{completed.stdout}\n{completed.stderr}"
+    )
+    return json.loads(out.read_text(encoding="utf-8"))
 
 
 def _fixture(name: str) -> dict:
@@ -140,6 +195,29 @@ def build_state_with_share(*, state: str, value: str | None) -> dict:
         "taxonomy": _fixture("taxonomy.json"),
         "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
         "improvementResult": None,
+    }
+
+
+#: **v1.50 review, item 3.** Neither `calculate_response.json` (`complete` in
+#: all four money fields, `incomplete` share) nor `calculate_response_single.
+#: json` (`not_supplied` throughout) ever gives a money field `incomplete` or
+#: the share `complete` — the exact state §4.5's rewrite exists for. This
+#: fixture does, and it is not hand-typed: `docs/interfaces.md` §10 and
+#: `tests/api/test_fixture_consistency.py` both record it as
+#: `engine.calculate.calculate`'s own output for a two-entry request in which
+#: entry 2 supplies a production total but no money figures.
+def build_state_partial_coverage() -> dict:
+    """`build_state`'s shape, fed by `calculate_response_partial_coverage.
+    json` on both `result` and `improvementResult` — the same doubling
+    `build_state(with_comparison=True)` already does for the canonical
+    fixture, needed here because `savingLines` reads `improvementResult` and
+    `moneyLines` / `productionShareText` read `result`, and this fixture is
+    the one response in the tree where all three are worth reading at once."""
+    response = _fixture("calculate_response_partial_coverage.json")
+    return {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
+        "improvementResult": response,
     }
 
 
@@ -1351,6 +1429,77 @@ def test_the_export_says_incomplete_for_a_money_figure_partial_coverage_gave_no_
     assert not re.search(r"^  - Share of value wasted: ", report, re.M), (
         "a field nobody touched at all printed a row: " + report
     )
+
+
+# -------------------------------------------- the three surfaces agree (v1.50 review)
+#
+# The review that closed this task found `saving_nzd` on different terms in the
+# text export and the comparison screen than in the PDF: a bare `hasValue`
+# printed *nothing* for an `incomplete` submission on both browser surfaces,
+# while `api/pdf_render.py::_money_rows` printed the shared "Not every entry
+# supplied this figure, so it cannot be totalled." sentence — directly against
+# v1.50's own change-log item 4, "the three surfaces cannot disagree about one
+# submission." The tests below assert the two browser surfaces against *each
+# other*, from one fixture-derived state, in one Node process — not each
+# against its own expectation, which is what let the disagreement through in
+# the first place.
+
+
+@node
+def test_the_saving_says_incomplete_in_the_export_when_the_comparison_did_not_price_every_entry(
+    tmp_path,
+):
+    """`calculate_response_partial_coverage.json`'s `saving_nzd` is
+    `incomplete` (one entry priced, one did not, both carry an alternative) —
+    the state a bare `hasValue` used to render as nothing at all in the text
+    export, silently disagreeing with the PDF beside it."""
+    report = report_for(tmp_path, build_state_partial_coverage())
+    improved = report.split("Improved scenario (Current", 1)
+    assert len(improved) == 2, f"no comparison section in the export: {report}"
+    assert re.search(
+        r"^  - Value of food not wasted at all: Not every entry supplied this "
+        r"figure, so it cannot be totalled\.$",
+        improved[1],
+        re.M,
+    ), improved[1]
+    # The nominal-rate caveat is a claim about a *figure*; the row above carries
+    # a sentence instead, so the caveat must not ride along with it here the
+    # way it does beside an actual number (`test_the_saving_reaches_the_export_
+    # from_the_comparison` above).
+    assert "assumes an even value per kilogram" not in improved[1]
+
+
+@node
+def test_the_text_export_and_the_comparison_screen_agree_about_an_incomplete_saving(
+    tmp_path,
+):
+    """**The agreement test.** Built from `calculate_response_partial_
+    coverage.json` through `HARNESS_BOTH`, so the text export
+    (`buildResultsReport`, `web/js/results.js`) and the comparison screen's own
+    markup (`ComparisonResults`, `web/js/improvement.js`) are two outputs of
+    the *same* Node process reading the *same* state — not two test files each
+    checking their own surface against a hand-typed expectation, which is
+    exactly what let the two surfaces drift apart from each other undetected.
+
+    **Mutation target.** Revert either `savingLines` (`results.js`) or
+    `comparisonSaving` (`improvement.js`) to a bare `hasValue` check and this
+    fails: the reverted surface prints nothing for `saving_nzd`, the other
+    still prints the sentence, and the assertion below - which requires the
+    *same* sentence in *both* outputs - catches whichever one went quiet
+    without needing to know in advance which surface regressed.
+    """
+    both = both_surfaces_for(tmp_path, build_state_partial_coverage())
+    sentence = "Not every entry supplied this figure, so it cannot be totalled."
+    assert sentence in both["report"], (
+        f"the text export does not carry the incomplete sentence: {both['report']!r}"
+    )
+    assert sentence in both["html"], (
+        f"the comparison screen does not carry the incomplete sentence: {both['html']!r}"
+    )
+    # And neither surface is silent about the field instead - the specific
+    # failure mode a bare `hasValue` produced on both of them at once.
+    assert "not wasted at all" in both["report"].lower()
+    assert "not wasted at all" in both["html"].lower()
 
 
 # ------------------------------------------------------------- the contribute control

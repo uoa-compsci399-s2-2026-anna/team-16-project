@@ -512,18 +512,25 @@ const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario,
 /**
  * §4.5's saving, in text, in the two lines the comparison screen shows it in.
  *
- * Same fields and the same `null`-means-absent rule as `moneyLines`, and the caveat
- * travels with the figure here exactly as it does on screen: the rate is nominal —
- * `wasted_value_nzd ÷ that entry's current mass` — so a sentence saying so has to be
- * as hard to crop away in a text file as it is in a screenshot.
+ * Same fields and the same `null`-means-absent rule as `moneyLines` — **on the same
+ * three-state terms as `moneyFieldText` gives every other money field, not a bare
+ * `hasValue` check.** `saving_nzd` used to be tested with `hasValue` alone, which
+ * printed nothing at all when the state was `incomplete`, while the PDF (`api/
+ * pdf_render.py::_money_rows`, which reads the same `data_state.saving_nzd`) printed
+ * the shared "Not every entry supplied this figure, so it cannot be totalled."
+ * sentence — the exact disagreement v1.50's own change-log item 4 rules out. The
+ * caveat about the nominal rate only makes sense beside an actual figure, so it is
+ * appended only when the state produced one, not when it produced the sentence.
  */
 function savingLines(totals) {
   const saving = totals?.money?.saving_nzd
-  if (!hasValue(saving)) return []
-  return [
-    `  - ${t('Value of food not wasted at all')}: ${nzd(saving)}`,
-    `    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`,
-  ]
+  const text = moneyFieldText(totals?.money, totals?.data_state, 'saving_nzd', nzd)
+  if (text === null) return []
+  const lines = [`  - ${t('Value of food not wasted at all')}: ${text}`]
+  if (hasValue(saving)) {
+    lines.push(`    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`)
+  }
+  return lines
 }
 
 // The comparison screen, in text, and only when one was run. `net_benefit` is read from the

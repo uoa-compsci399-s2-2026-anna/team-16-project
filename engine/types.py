@@ -150,10 +150,10 @@ class EntryResult:
     production_share_percent: Decimal | None = None
 
 
-#: §4.5/§4.6's three states, and the reason `Decimal | None` alone cannot
-#: carry them. A totals-level figure here is a roll-up of a **per-entry
-#: optional input**, and a submission may answer it on some entries and not
-#: others. That leaves three different things to say, not two:
+#: §4.5/§4.6's states, and the reason `Decimal | None` alone cannot carry
+#: them. A totals-level figure here is a roll-up of a **per-entry optional
+#: input**, and a submission may answer it on some entries and not others.
+#: That leaves three different things to say about *coverage*, not two:
 #:
 #:   complete      every entry supplied the input; the figure is the figure.
 #:   incomplete    some entries supplied it and some did not. The value is
@@ -164,12 +164,31 @@ class EntryResult:
 #:                 A stated gap is better than a number that is quietly wrong.
 #:   not_supplied  no entry supplied it. Nobody answered the question.
 #:
-#: `None` conflates the last two, which is exactly the defect the results
-#: page shipped with: one card said "Not available" whether the visitor had
-#: skipped the field or filled it in on half their rows.
+#: A fourth state (v1.51) answers a different question -- not "did everybody
+#: answer" but "is the arithmetic defined once they did":
+#:
+#:   undefined     every entry answered, and the ratio has no defined value
+#:                 because what they answered summed to zero -- a
+#:                 submission whose every entry typed a production total of
+#:                 zero, or a total value of zero. A stated answer, an
+#:                 undefined question.
+#:
+#: `production_share_percent` and `wasted_share_percent` are the two figures
+#: that can reach it -- both are `part / whole` over a whole every entry
+#: supplied, and `engine/calculate.py::_share_state` is the one place that
+#: decides it, so `complete` and `None` never pair on those two figures by
+#: accident (before v1.51 they did: a zero production total read back as
+#: "you did not say how much food this covered", which was false).
+#:
+#: `None` conflates all three of `incomplete`, `not_supplied` and
+#: `undefined`, which is exactly the defect the results page shipped with:
+#: one card said "Not available" whether the visitor had skipped the field,
+#: filled it in on half their rows, or answered every row with a total of
+#: zero.
 DATA_COMPLETE = "complete"
 DATA_INCOMPLETE = "incomplete"
 DATA_NOT_SUPPLIED = "not_supplied"
+DATA_UNDEFINED = "undefined"
 
 
 @dataclass(frozen=True)
@@ -185,9 +204,15 @@ class DataState:
     non-complete states -- so a caller that forgets to read the state renders
     a blank, never a wrong number. Both failure modes are honest.
 
-    **One direction only.** A non-complete state implies a `None` value; a
-    `complete` state does not guarantee one, because the arithmetic can still
-    be undefined (a share whose denominator every entry supplied as zero).
+    **One direction only.** A non-complete state (`incomplete`,
+    `not_supplied`, `undefined`) always implies a `None` value. For
+    `production_share_percent` and `wasted_share_percent`, `complete` now
+    always implies a value too (v1.51) -- the one case that used to break
+    that, a denominator every entry answered as zero, is named `undefined`
+    instead of being left `complete` with nothing to show for it. `saving_nzd`
+    is the one field this class carries where `complete` still does not fully
+    guarantee a value; see the comment beside its computation in
+    `engine/calculate.py::_money`.
     """
 
     production_share_percent: str = DATA_NOT_SUPPLIED

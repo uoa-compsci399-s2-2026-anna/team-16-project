@@ -158,6 +158,25 @@ _PROVENANCE = {
         "the only golden case in which any of the five figures carries a "
         "number."
     ),
+    "case_12_disagreeing_data_states": (
+        "Hand-designed, engine-computed (the same discipline case_10/11 were "
+        "built with): pins the precedence `_combined_state` decides between "
+        "two non-complete states, which no case before it exercised -- every "
+        "existing money case moved `total_value_nzd` and `wasted_value_nzd` "
+        "together. Three entries share case_10's bundle: the first two "
+        "answer `total_input_kg` and only the second prices `total_value_nzd`; "
+        "no entry answers `wasted_value_nzd` at all. `production_share_percent`"
+        "'s coverage lands on `incomplete` (two of three entries answered) "
+        "and `wasted_share_percent`'s on `not_supplied` (`total_value_nzd` is "
+        "`incomplete`, `wasted_value_nzd` is `not_supplied`, and the correct "
+        "precedence is `not_supplied` wins) -- one figure `incomplete` and "
+        "another `not_supplied` in the same response, from entries that "
+        "disagree in exactly that way. Reversing `_combined_state`'s two "
+        "guards changes `wasted_share_percent`'s state to `incomplete` and "
+        "this case catches it; see `engine/calculate.py::_combined_state`'s "
+        "own docstring and `tests/test_calculator.py::"
+        "test_incomplete_and_not_supplied_together_favour_not_supplied`."
+    ),
     "case_08_mixed_alternative_rollup": (
         "Hand-computed. §3 rule 3: one entry with an alternative and one "
         "without. The entry without contributes its *current* figures to "

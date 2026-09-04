@@ -50,6 +50,7 @@ from engine.types import (
     DATA_COMPLETE,
     DATA_INCOMPLETE,
     DATA_NOT_SUPPLIED,
+    DATA_UNDEFINED,
     BreakdownRow,
     CalculationRequest,
     CalculationResult,
@@ -368,6 +369,11 @@ def _totals(
         entry.total_input_kg for entry in request_entries
     )
     production_share_percent = _share_percent(current.total_kg, production_kg)
+    # v1.51: every entry answered (production_state is already DATA_COMPLETE)
+    # is not the same claim as "the share is a number" -- a submission whose
+    # entries all typed zero answers the question and still has no defined
+    # ratio. See `_share_state`.
+    production_state = _share_state(production_state, production_share_percent)
 
     return CalculationTotals(
         current=current,
@@ -453,6 +459,10 @@ def _money(
         if share_state == DATA_COMPLETE
         else None
     )
+    # v1.51: the same distinction production_share_percent draws. Both
+    # entries answering `total_value_nzd` as zero is a real answer -- and a
+    # meaningless denominator. See `_share_state`.
+    share_state = _share_state(share_state, wasted_share_percent)
 
     saving_nzd = None
     has_alternative = any(entry.alternative is not None for entry in entries)
@@ -460,7 +470,14 @@ def _money(
     # this entry's diverted mass), so an entry nobody priced contributes
     # nothing -- which understates a submission-wide figure exactly the way a
     # short denominator does. Coverage of `wasted_value_nzd` therefore decides
-    # it too. "No alternative scenario" is `not_supplied` rather than
+    # it too. `saving_state` is not passed through `_share_state`: unlike the
+    # two ratios above, a submission where every priced entry reports zero of
+    # its own current mass is a contradiction (a wasted value stated against
+    # no waste), not the ordinary "nobody answered" zero this function names
+    # -- it is not the case v1.51 closes, and `saving_nzd` can still come
+    # back `None` at `DATA_COMPLETE` there. Left as found; see the branch
+    # review, §5.
+    # "No alternative scenario" is `not_supplied` rather than
     # `incomplete`: an alternative is one of this figure's inputs, and nobody
     # supplied one.
     saving_state = (
@@ -471,9 +488,15 @@ def _money(
     if saving_state == DATA_COMPLETE:
         saving_total = Decimal("0")
         any_entry_priced = False
+        # No `if entry.wasted_value_nzd is None: continue` here -- entering
+        # this branch at all already means `wasted_state` was `DATA_COMPLETE`,
+        # which by `_across_entries`'s own definition means every entry in
+        # `entries` supplied `wasted_value_nzd`. A per-entry None check would
+        # be dead on every path that reaches it; the two tests that give the
+        # rate a genuinely missing price never reach `DATA_COMPLETE` at all
+        # (`test_a_saving_is_withheld_when_an_entry_nobody_priced_diverts_
+        # mass` stops at `DATA_INCOMPLETE`, above this branch entirely).
         for entry in entries:
-            if entry.wasted_value_nzd is None:
-                continue
             entry_current_kg = sum(
                 (line.qty_kg for line in entry.current), Decimal("0")
             )
@@ -574,12 +597,54 @@ def _combined_state(*states: str) -> str:
     """A figure derived from several inputs is as complete as its least
     complete input, and an input nobody supplied at all outranks a partial
     one: a share with no denominator anywhere was never asked, not
-    half-answered."""
+    half-answered.
+
+    **The precedence, stated once for the one place it is decided.**
+    `not_supplied` beats `incomplete` beats `complete`, in that order,
+    regardless of which argument carries which state -- membership in
+    `states`, not position, is what this function reads, so `(incomplete,
+    not_supplied)` and `(not_supplied, incomplete)` are the same call. The
+    only input pair the two orderings could ever disagree on is exactly this
+    one -- a submission where `total_value_nzd` is `incomplete` and
+    `wasted_value_nzd` is `not_supplied` (or the other way round) -- and
+    `tests/test_calculator.py::
+    test_incomplete_and_not_supplied_together_favour_not_supplied` and
+    `tests/golden/case_12_disagreeing_data_states` both pin the answer at
+    `not_supplied`: a share with no denominator anywhere was never asked at
+    all, which outranks a share half its submission tried to answer. Reverse
+    the two `if`s below and both fail.
+    """
     if DATA_NOT_SUPPLIED in states:
         return DATA_NOT_SUPPLIED
     if DATA_INCOMPLETE in states:
         return DATA_INCOMPLETE
     return DATA_COMPLETE
+
+
+def _share_state(coverage_state: str, value: Decimal | None) -> str:
+    """A ratio's state answers two different questions, and `coverage_state`
+    (from `_across_entries` or `_combined_state`) only answers the first:
+    *did every entry that mattered answer*. `complete` says yes. It does not
+    say the ratio itself is a number -- a submission whose entries all typed
+    zero for the denominator answered in full and still divides by zero.
+
+    `not_supplied` would tell that visitor they had typed nothing, which is
+    false; leaving `coverage_state` at `complete` while `value` is `None`
+    would break the one rule every other state pair keeps, the exact
+    combination that let a zero-production submission read "you did not say
+    how much food this covered" (v1.51). `undefined` is the fourth state
+    (§4.6) that says the true thing instead: every entry answered, and the
+    arithmetic has no defined value because what they answered summed to
+    zero.
+
+    Only ever promotes `complete` to `undefined`, never the reverse and never
+    any other state -- an `incomplete` or `not_supplied` figure's value is
+    already `None` for the ordinary reason and this function has nothing to
+    add.
+    """
+    if coverage_state == DATA_COMPLETE and value is None:
+        return DATA_UNDEFINED
+    return coverage_state
 
 
 def _share_percent(part: Decimal | None, whole: Decimal | None) -> Decimal | None:

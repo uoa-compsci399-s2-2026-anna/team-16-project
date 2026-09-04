@@ -31,6 +31,7 @@ from engine.types import (
     DATA_COMPLETE,
     DATA_INCOMPLETE,
     DATA_NOT_SUPPLIED,
+    DATA_UNDEFINED,
     CalculationRequest,
     EntryInput,
     ScenarioLine,
@@ -1429,7 +1430,15 @@ def test_the_share_rounds_half_away_from_zero():
 def test_a_production_total_of_zero_is_not_a_division():
     """`total_input_kg` is `ge=0` on the wire, so nothing stops a visitor
     typing zero. A share of nothing is undefined -- not zero, not infinity --
-    and `Decimal` raises rather than answering."""
+    and `Decimal` raises rather than answering.
+
+    **v1.51: the state has to say so too, or this reads as "not supplied".**
+    A submission answered `0` still answered -- `data_state` used to stay
+    `complete` here, which paired with a `None` value the same way
+    `not_supplied` does, and every surface fell through to "you did not say
+    how much food this covered" for a visitor who said none. `undefined` is
+    the fourth state that tells the true story: the question was answered,
+    and the answer makes the ratio meaningless."""
     bundle = _bundle_with_two_sectors_sharing_a_destination()
     request = CalculationRequest(entries=(
         _entry("farm", [("landfill", "250.000")], total_input_kg="0.000"),
@@ -1438,7 +1447,60 @@ def test_a_production_total_of_zero_is_not_a_division():
     result = calculate(request, bundle)
 
     assert result.totals.production_share_percent is None
+    assert result.totals.data_state.production_share_percent == DATA_UNDEFINED
+    assert result.totals.data_state.production_share_percent != DATA_NOT_SUPPLIED, (
+        "a visitor who typed zero was answered, not asked again"
+    )
     assert result.entries[0].production_share_percent is None
+
+
+def test_a_stated_total_value_of_zero_makes_the_share_undefined_not_unanswered():
+    """The money block's own version of the test above. Every entry answered
+    `total_value_nzd` -- as zero -- so `wasted_share_percent`'s coverage is
+    `complete`, and the ratio it feeds is still nothing divided by nothing.
+    `total_value_nzd` and `wasted_value_nzd` themselves stay real, present
+    zeros (`hasValue` on the front end already tells a computed zero from a
+    withheld one); only the ratio built from them is undefined."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")],
+               total_value_nzd=Decimal("0.00"), wasted_value_nzd=Decimal("0.00")),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.money.total_value_nzd == Decimal("0.00")
+    assert result.totals.money.wasted_value_nzd == Decimal("0.00")
+    assert result.totals.money.wasted_share_percent is None
+    assert result.totals.data_state.total_value_nzd == DATA_COMPLETE
+    assert result.totals.data_state.wasted_value_nzd == DATA_COMPLETE
+    assert result.totals.data_state.wasted_share_percent == DATA_UNDEFINED
+
+
+def test_incomplete_and_not_supplied_together_favour_not_supplied():
+    """**The precedence `_combined_state` decides, pinned.** No fixture
+    before v1.51 ever gave the two money inputs *different* non-complete
+    states -- every existing case moved both money fields together -- so the
+    only place this function does any real work went untested. farm prices
+    its total but not its waste; retail answers neither. `total_value_nzd`'s
+    coverage is `incomplete`; `wasted_value_nzd`'s is `not_supplied`; and
+    `wasted_share_percent`'s ratio was never asked at all, which outranks a
+    ratio half its submission tried to answer. Swap `_combined_state`'s two
+    `if`s -- `incomplete` checked before `not_supplied` -- and this fails,
+    reporting `incomplete` and printing "Not every entry supplied this
+    figure" where every surface should say nothing."""
+    bundle = _bundle_with_two_sectors_sharing_a_destination()
+    request = CalculationRequest(entries=(
+        _entry("farm", [("landfill", "250.000")], total_value_nzd=Decimal("1000.00")),
+        _entry("retail", [("landfill", "900.000")]),
+    ))
+
+    result = calculate(request, bundle)
+
+    assert result.totals.data_state.total_value_nzd == DATA_INCOMPLETE
+    assert result.totals.data_state.wasted_value_nzd == DATA_NOT_SUPPLIED
+    assert result.totals.data_state.wasted_share_percent == DATA_NOT_SUPPLIED
+    assert result.totals.money.wasted_share_percent is None
 
 
 def test_the_money_block_marks_a_partly_priced_submission_incomplete():

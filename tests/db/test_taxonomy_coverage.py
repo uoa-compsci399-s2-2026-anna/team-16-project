@@ -43,7 +43,7 @@ from db.models import (
     Sector,
     UnitPreset,
 )
-from db.repository import get_taxonomy, get_taxonomy_for_bundle
+from db.repository import get_taxonomy, get_taxonomy_for_bundle, get_taxonomy_for_naming
 
 
 def codes(rows):
@@ -548,6 +548,39 @@ def test_the_bundle_taxonomy_is_not_narrowed(seeded_session):
     assert {row["code"] for row in bundle["sectors"]} >= {
         "processing", "primary_production", "consumer_hospitality"
     }
+
+
+def test_the_naming_taxonomy_is_not_narrowed(seeded_session):
+    """`get_taxonomy_for_naming` (§10, v1.50 review) is `get_taxonomy`'s
+    unnarrowed sibling, and its one caller is `POST /export/pdf`.
+
+    `anaerobic_digestion` is this module's own running example of a
+    destination `seeded_session`'s published `MOCK-v0` does not cover — see
+    `test_the_bundle_taxonomy_is_not_narrowed` above, which asserts the same
+    code survives `get_taxonomy_for_bundle`'s narrowing for the same reason.
+    A visitor's submission is free to name it regardless of what the
+    published set prices, and the document has to say "Anaerobic digestion"
+    for it — not print the code back, which is what `get_taxonomy`'s
+    narrowed answer forced `api/pdf_render.py::_Taxonomy` to do before this
+    function existed.
+    """
+    assert "anaerobic_digestion" not in codes(get_taxonomy(seeded_session).destinations), (
+        "the fixture assumption changed: this must stay uncovered by MOCK-v0 "
+        "for the test below to prove anything"
+    )
+    naming = get_taxonomy_for_naming(seeded_session)
+    assert {row.code for row in naming.destinations} >= {
+        "prevention", "landfill", "animal_feed", "compost", "anaerobic_digestion",
+        "not_harvested",
+    }
+    assert {row.code for row in naming.sectors} >= {
+        "processing", "primary_production", "consumer_hospitality"
+    }
+    # And the names travel, not just the codes - a mapping keyed by code with
+    # an empty name would pass a membership check and still print nothing
+    # useful.
+    by_code = {row.code: row.name for row in naming.destinations}
+    assert by_code["anaerobic_digestion"] == "Anaerobic digestion"
 
 
 def test_the_filter_is_one_functions_and_not_the_tables(seeded_session):

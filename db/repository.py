@@ -420,6 +420,92 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
     )
 
 
+def get_taxonomy_for_naming(session: Session) -> TaxonomySnapshot:
+    """Every active taxonomy row, **not** narrowed to what the published set
+    covers — `get_taxonomy`'s superset, in `get_taxonomy`'s own shape.
+
+    Exists for exactly one caller: `POST /export/pdf` (`api/router.py`),
+    which uses a taxonomy snapshot only to turn a `code` a computed result
+    already carries into the name a reader can recognise
+    (`api/pdf_render.py::_Taxonomy`). `get_taxonomy`'s narrowing is a rule
+    about a *form* — do not offer, as a choice, a destination the published
+    set prices at nothing — and a rendered document is not a form: a
+    submission is free to name a destination the currently published set
+    does not price (its downstream factor was a silent zero, not a refusal),
+    and `entry_rule_problems` validates the request against the wider
+    vocabulary `get_taxonomy_for_bundle` speaks for, not against this
+    function's narrowed sibling. Handing that same narrowed snapshot to the
+    renderer meant a perfectly valid destination code fell through
+    `_Taxonomy`'s "tolerant of a code the snapshot does not carry" fallback
+    and printed as itself — `anaerobic_digestion` rather than "Anaerobic
+    digestion" — the moment the published set stopped pricing it, which nothing
+    about the request or the calculation did anything wrong to cause.
+
+    Same active-row queries as `get_taxonomy_for_bundle` (§10.3's engine-facing
+    superset), returned as a `TaxonomySnapshot` instead of that function's
+    plain dicts because `_Taxonomy` reads dataclass attributes. `unit_presets`
+    is left empty and `factor_set_version` / `factor_set_is_mock` are read off
+    the published row only to satisfy the dataclass's own required fields —
+    `_Taxonomy` reads neither; the renderer takes both from the engine
+    `CalculationResult` it already has.
+    """
+    published = _published(session)
+    groups = session.scalars(
+        select(DestinationGroup)
+        .where(DestinationGroup.active.is_(True))
+        .order_by(DestinationGroup.sort_order, DestinationGroup.code)
+    ).all()
+    sectors = session.scalars(
+        select(Sector).where(Sector.active.is_(True)).order_by(Sector.sort_order, Sector.code)
+    ).all()
+    foods = session.scalars(
+        select(FoodCategory)
+        .where(FoodCategory.active.is_(True))
+        .order_by(FoodCategory.sort_order, FoodCategory.code)
+    ).all()
+    metrics = session.scalars(
+        select(Metric).where(Metric.active.is_(True)).order_by(Metric.sort_order, Metric.code)
+    ).all()
+    destinations = session.execute(
+        select(Destination, DestinationGroup.code)
+        .join(DestinationGroup, Destination.group_id == DestinationGroup.id)
+        .where(Destination.active.is_(True), DestinationGroup.active.is_(True))
+        .order_by(Destination.sort_order, Destination.code)
+    ).all()
+    return TaxonomySnapshot(
+        sectors=tuple(SectorSpec(x.code, x.name, x.description, x.sort_order) for x in sectors),
+        food_categories=tuple(
+            FoodCategorySpec(x.code, x.name, x.is_standard_mix, x.sort_order)
+            for x in foods
+        ),
+        destination_groups=tuple(
+            DestinationGroupSpec(x.code, x.name, x.is_waste, x.sort_order)
+            for x in groups
+        ),
+        destinations=tuple(
+            DestinationSpec(
+                x.code, x.name, group_code, x.description, x.sort_order,
+                x.is_prevention,
+            )
+            for x, group_code in destinations
+        ),
+        metrics=tuple(
+            MetricSpec(
+                x.code,
+                x.name,
+                x.unit,
+                x.display_unit,
+                x.display_precision,
+                x.sort_order,
+            )
+            for x in metrics
+        ),
+        unit_presets=(),
+        factor_set_version=published.version_label,
+        factor_set_is_mock=published.is_mock,
+    )
+
+
 def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
     """One projection, two consumers: §10.2's `bundle.json` and §6.3's export.
 

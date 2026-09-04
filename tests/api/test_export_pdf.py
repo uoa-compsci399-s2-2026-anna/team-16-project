@@ -14,7 +14,7 @@ from httpx import ASGITransport, AsyncClient
 from sqlalchemy import func, select
 
 from db.models import Submission
-from tests.support.pdf import requires_weasyprint
+from tests.support.pdf import extract_text, requires_weasyprint
 
 FIXTURES = Path(__file__).resolve().parents[1] / "fixtures"
 
@@ -80,6 +80,35 @@ async def test_the_export_answers_a_pdf(app):
     # the text - the export this route replaced produced a perfectly valid PDF
     # that said `K?mara`. This test is about the ROUTE: status, content type,
     # and that the renderer was reached at all.
+
+
+@requires_weasyprint
+async def test_the_document_names_a_destination_the_published_set_does_not_price(app):
+    """**The one thing `tests/api/test_pdf_render.py` cannot exercise**, and
+    the reason this test breaks `test_the_export_answers_a_pdf`'s own rule
+    that document text belongs there: `test_pdf_render.py` builds a
+    `TaxonomySnapshot` directly and can never see `api/router.py`'s choice of
+    *which* snapshot to load, which is where the review's `anaerobic_
+    digestion` defect actually lived (`db.repository.get_taxonomy_for_
+    naming`, not `api/pdf_render.py`).
+
+    `export_pdf_request.json`'s entries (§6.2.3, shared with `calculate_
+    request.json`) name `animal_feed` and `anaerobic_digestion`, and this
+    fixture's seeded `MOCK-v0` prices only `landfill` and `prevention` — see
+    `tests/support/sqlite.py::seed`, the same asymmetry `tests/db/test_
+    taxonomy_coverage.py` documents against the real repository. `GET
+    /api/v1/taxonomy` would correctly narrow both destinations off the form;
+    a downloaded document describing a submission that already used them
+    must still say their names.
+    """
+    async with await _client(app) as client:
+        response = await client.post("/api/v1/export/pdf", json=_valid_payload())
+    assert response.status_code == 200, response.text
+    text = extract_text(response.content)
+    assert "Animal feed" in text
+    assert "Anaerobic digestion" in text
+    assert "animal_feed" not in text, "a raw code reached the document"
+    assert "anaerobic_digestion" not in text, "a raw code reached the document"
 
 
 async def test_a_prevention_destination_is_refused_in_a_current_scenario(app):

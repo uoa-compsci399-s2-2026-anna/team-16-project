@@ -83,8 +83,17 @@ export const state = {
   improvementChartExpanded: false,
   // Item ⑧'s toggle. `improvedAllocations` stays percentages in every mode — see the note
   // on `updateImprovementInput` in `improvement.js` — so this only ever decides which unit
-  // the sliders and boxes *display*, never what they store.
+  // the sliders and boxes *display*, never what they store. `'percentage'` or `'unit'`;
+  // renamed from `'kilograms'` when the second mode grew a per-row unit choice instead of
+  // being kilograms specifically.
   improvementMode: 'percentage',
+  // Item ⑧'s per-row unit, in unit mode only: destination `code` -> `'kilograms'`,
+  // `'tonnes'`, or `preset:<unit_preset.code>` — the same value space a step-4 row's own
+  // unit uses. A destination with no entry here falls back to kilograms (`rowUnitFor` in
+  // `improvement.js`), so this only ever needs a key once a visitor changes a row away
+  // from the default. Nothing here changes what `improvedAllocations` means; it decides
+  // only how one row's own share is *displayed*.
+  improvementRowUnits: {},
   improvementResult: null,
   improvementLoading: false,
   improvementError: null,
@@ -199,6 +208,7 @@ export function resetCalculator() {
     improvedAllocations: {},
     improvementChartExpanded: false,
     improvementMode: 'percentage',
+    improvementRowUnits: {},
     improvementResult: null,
     improvementLoading: false,
     improvementError: null,

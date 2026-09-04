@@ -904,6 +904,34 @@ tbody th { font-weight: 700; }
 .improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }
 .percentage-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
 .percentage-input input { min-width: 0; }
+/* Item ⑧'s per-row unit `<select>` (tonnes, or a staff-named container, alongside
+   kilograms) replaces the plain `%`/`kg` suffix in unit mode. Its text is a translated
+   word or a staff-typed container label, either of which can run well past one
+   character - German's own "Kilogramm" already does - so a row offering the choice
+   gets more room, and the choice among range / number / select is one flat split
+   rather than two grids nested inside one another.
+
+   **`display: contents` on `.percentage-input`, only in unit mode.** Nesting a
+   nested `grid-template-columns` for the number+select pair inside `.improvement-control-unit`'s
+   own two columns split one width budget twice, and the second split always lost:
+   measured 28px for a box reading "0.00590" at a 700px viewport, where the ROW's own
+   two-column split (label | control) - unchanged by item ⑧ - already leaves `.improvement-control`
+   only ~230px, not the 320px this might suggest. `display: contents` removes `.percentage-input`
+   from layout entirely, so its two children become items of `.improvement-control-unit`'s
+   own grid directly - one budget, three tracks, sized together instead of in two
+   uncoordinated passes. Percentage mode is untouched: its own `.percentage-input` still
+   pairs a number box with a plain `%` span, in its own right.
+
+   **`:has()` on the row is what recovers enough total width to make that budget workable
+   at every measured breakpoint.** `.improvement-allocation-row`'s label/control split
+   predates item ⑧ and was already tight for two columns (a number box and a fixed 108px
+   suffix); the same split for three left too little for all three even after flattening
+   the nested grid. Already used elsewhere in this file (`.main-content:has(.hero)`), so
+   this is the same tool, not a new dependency. */
+.improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(120px, 0.55fr) minmax(260px, 1.45fr); }
+.improvement-control-unit { grid-template-columns: minmax(50px, 1fr) minmax(55px, 100px) minmax(85px, 170px); gap: 8px; }
+.improvement-control-unit .percentage-input { display: contents; }
+.improvement-row-unit { max-width: 100%; min-width: 0; font: inherit; }
 .improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
 .improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
@@ -1048,7 +1076,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
   .improvement-editor { grid-template-columns: 1fr; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
+  /* `:has()` gives the unit-mode row a higher specificity than the plain selector
+     above, so it needs restating here rather than inheriting the stack this rule
+     already sets - a later, lower-specificity rule cannot override an earlier,
+     more specific one just by coming second in the file. */
+  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: 1fr; }
   .improvement-control { grid-template-columns: 1fr; }
+  .improvement-control-unit { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }
   .comparison-values { grid-template-columns: 1fr; }
   .comparison-arrow { transform: rotate(90deg); justify-self: start; }

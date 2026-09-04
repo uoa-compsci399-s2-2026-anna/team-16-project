@@ -1438,40 +1438,50 @@ def test_the_compare_button_is_still_gated_on_exactly_one_hundred(page_at):
     assert page.locator('[data-action="compare-improvement"]').is_enabled()
 
 
-def test_the_improvement_panel_can_be_driven_in_kilograms(page_at):
+def test_the_improvement_panel_can_be_driven_in_unit_mode(page_at):
     """Item ⑧. A toggle, and kilograms are the quantity the panel already
     works in underneath: `improvedLines` computes
     `totalKg * percentage / 100` before it sends anything.
 
     So this is a display and entry mode, not a second calculation - which is
-    also why the toggle cannot change what is sent.
+    also why the toggle cannot change what is sent. The second mode is named
+    "Unit" rather than "kilograms" because it no longer only offers kilograms:
+    each row has its own `<select>` (kilograms, tonnes, or a container), so the
+    assertion is on that per-row control rather than on a static suffix span.
     """
     page = _improvement_panel(page_at)
 
     toggle = page.locator("#improvement-mode")
-    assert toggle.count() == 1, "no percentage/kilograms toggle"
+    assert toggle.count() == 1, "no percentage/unit toggle"
 
-    page.select_option("#improvement-mode", "kilograms")
+    page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(80)
 
-    unit = page.locator(".percentage-input span").nth(0).inner_text()
-    assert "kg" in unit.lower(), f"the unit beside the box did not change: {unit!r}"
+    row_unit = page.locator("select.improvement-row-unit").nth(0)
+    assert row_unit.count() == 1, "no per-row unit selector in unit mode"
+    assert row_unit.input_value() == "kilograms", (
+        "a row with no choice made yet should default to kilograms"
+    )
+    options = row_unit.locator("option").all_inner_texts()
+    assert "kilograms" in options and "tonnes" in options, (
+        f"the row's own unit selector is missing a weight option: {options!r}"
+    )
 
 
-def test_the_accessible_names_switch_to_kilograms_too(page_at):
+def test_the_accessible_names_switch_to_the_row_s_own_unit(page_at):
     """The follow-up the coordinator raised on fix round 1.
 
     An `aria-label` is the only message a screen-reader visitor gets for a
     control - there is no visible text to fall back on. The range and the
     number box both carried `aria-label="Improved <destination> percentage"`
-    / `"... percentage value"` unconditionally, so a visitor typing kilograms
-    was told, on the one channel they could hear it, that the field wanted a
-    percentage. Same defect as the validation message fixed alongside it,
-    one layer further from what a sighted visitor notices.
+    / `"... percentage value"` unconditionally, so a visitor working in unit
+    mode was told, on the one channel they could hear it, that the field
+    wanted a percentage. Same defect as the validation message fixed
+    alongside it, one layer further from what a sighted visitor notices.
     """
     page = _improvement_panel(page_at)
 
-    page.select_option("#improvement-mode", "kilograms")
+    page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(80)
 
     range_label = page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("aria-label")
@@ -1480,17 +1490,18 @@ def test_the_accessible_names_switch_to_kilograms_too(page_at):
     for label, name in ((range_label, "range"), (box_label, "number box")):
         assert label is not None, f"the {name} lost its accessible name entirely"
         assert "percentage" not in label.lower(), (
-            f"the {name}'s accessible name still says percentage in kilogram mode: {label!r}"
+            f"the {name}'s accessible name still says percentage in unit mode: {label!r}"
         )
         assert "kilogram" in label.lower(), (
-            f"the {name}'s accessible name does not name kilograms in kilogram mode: {label!r}"
+            f"the {name}'s accessible name does not name the row's own unit (kilograms, "
+            f"the default) in unit mode: {label!r}"
         )
 
 
 def test_switching_mode_preserves_the_allocation(page_at):
     """**The assertion that makes this a view and not a reset.**
 
-    A visitor who has allocated 60/40 and switches to kilograms must see the
+    A visitor who has allocated 60/40 and switches to unit mode must see the
     same allocation expressed differently - not two empty boxes. Rebuilding
     the panel on toggle is the obvious implementation and it silently throws
     away their work.
@@ -1504,7 +1515,7 @@ def test_switching_mode_preserves_the_allocation(page_at):
 
     total_kg = float(page.locator("#improvement-total-kg").inner_text().replace(",", ""))
 
-    page.select_option("#improvement-mode", "kilograms")
+    page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(80)
 
     boxes = page.locator('.percentage-input input[type="number"]').evaluate_all(
@@ -1536,7 +1547,7 @@ def test_the_request_is_unchanged_by_the_mode(page_at):
     page.click('[data-action="compare-improvement"]')
     page.wait_for_timeout(400)
 
-    page.select_option("#improvement-mode", "kilograms")
+    page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(80)
     page.click('[data-action="compare-improvement"]')
     page.wait_for_timeout(400)
@@ -1562,9 +1573,12 @@ def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
     only where it is displayed - drifts the total by two hundredths of a
     percentage point in the same direction on every one of the four, which
     is comfortably past `improvementValidation`'s own 0.01 tolerance.
+
+    Every row defaults to kilograms in unit mode, so this still exercises the
+    kilogram path exactly as it did before the mode grew a per-row choice.
     """
     page = _improvement_panel(page_at)
-    page.select_option("#improvement-mode", "kilograms")
+    page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(80)
 
     boxes = page.locator('.percentage-input input[type="number"]')
@@ -1581,17 +1595,77 @@ def test_a_kilogram_split_that_loses_a_digit_still_totals_exactly_100(page_at):
     assert "invalid" not in classes, f"a valid allocation was flagged invalid: {classes!r}"
     assert page.locator('[data-action="compare-improvement"]').is_enabled()
 
-    # **The seam with the kilogram/percentage toggle itself.** `sliderMax` returns a
+    # **The seam with the unit/percentage toggle itself.** `sliderMax` returns a
     # PERCENTAGE ceiling (`maxPercent`, at most 100 on any entry); `updateImprovementInput`
-    # has to convert that through `displayKg` before it lands on a kilogram slider's `max`
-    # attribute, or every kilogram slider is capped at a number sized for percentage points
-    # - `100` kg on this 1,000 kg entry - long before its real headroom. The first
+    # has to convert that through `displayAmount` before it lands on a unit-mode slider's
+    # `max` attribute, or every such slider is capped at a number sized for percentage
+    # points - `100` kg on this 1,000 kg entry - long before its real headroom. The first
     # destination's own share here is ~100.05 kg, comfortably past that percentage-sized
     # ceiling, so a `max` at or below 100 proves the conversion was skipped.
     first_max = float(page.locator('input[type="range"][data-improvement-code]').nth(0).get_attribute("max"))
     assert first_max > 100, (
-        f"the kilogram slider's ceiling is percentage-sized ({first_max!r}); "
-        "updateImprovementInput must read it back through displayKg"
+        f"the unit-mode slider's ceiling is percentage-sized ({first_max!r}); "
+        "updateImprovementInput must read it back through displayAmount"
+    )
+
+
+def test_changing_one_row_s_unit_converts_the_figure_rather_than_reinterpreting_it(page_at):
+    """**The one rule item 1 must not get wrong.** Switching a row from
+    kilograms to tonnes must restate the same mass, not multiply it by a
+    thousand: a row holding 5.90 kg becomes 0.00590 t, never `5.90` t.
+
+    Mutation to confirm this test would catch a reinterpretation: change
+    `kgToUnitAmount`'s `unit === 'tonnes'` branch in `web/js/units.js` from
+    `kg / 1000` to `kg` (a no-op "conversion") and watch this fail with the
+    box reading `5.90` instead of `0.00590`.
+    """
+    page = _improvement_panel(page_at)
+    page.select_option("#improvement-mode", "unit")
+    page.wait_for_timeout(80)
+
+    box = page.locator('.percentage-input input[type="number"]').nth(0)
+    box.fill("5.90")
+    page.wait_for_timeout(60)
+
+    row_unit = page.locator("select.improvement-row-unit").nth(0)
+    row_unit.select_option("tonnes")
+    page.wait_for_timeout(120)
+
+    converted = float(box.input_value())
+    assert abs(converted - 0.0059) < 0.0001, (
+        f"5.90 kg switched to tonnes should read about 0.0059, not {box.input_value()!r} - "
+        "a value near 5.90 would mean the figure was reinterpreted rather than converted"
+    )
+
+
+def test_changing_one_row_s_unit_does_not_change_another_row_s(page_at):
+    """The unit selector is per row - `data-improvement-unit-code` on each
+    `<select>`, read by its own `code` in the `change` handler - so switching
+    one destination's display unit must leave every other destination's own
+    unit, and its own figure, exactly where they were.
+    """
+    page = _improvement_panel(page_at)
+    page.select_option("#improvement-mode", "unit")
+    page.wait_for_timeout(80)
+
+    boxes = page.locator('.percentage-input input[type="number"]')
+    row_units = page.locator("select.improvement-row-unit")
+    assert boxes.count() >= 2 and row_units.count() >= 2
+
+    boxes.nth(1).fill("12.00")
+    page.wait_for_timeout(60)
+    before_other_value = boxes.nth(1).input_value()
+    before_other_unit = row_units.nth(1).input_value()
+
+    row_units.nth(0).select_option("tonnes")
+    page.wait_for_timeout(120)
+
+    assert row_units.nth(1).input_value() == before_other_unit == "kilograms", (
+        "changing one row's unit selector changed a sibling row's own unit"
+    )
+    assert boxes.nth(1).input_value() == before_other_value, (
+        f"an untouched row's figure changed from {before_other_value!r} to "
+        f"{boxes.nth(1).input_value()!r} when a DIFFERENT row's unit was switched"
     )
 
 

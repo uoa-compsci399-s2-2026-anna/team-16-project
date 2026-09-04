@@ -806,6 +806,48 @@ def test_step_three_asks_what_the_stage_put_through(page_at):
     assert box["y"] < page.evaluate("window.innerHeight")
 
 
+def test_step_three_controls_share_a_baseline_when_copy_wraps(page_at):
+    """The three primary controls are one row even when their copy is not.
+
+    At this width ``Waste amount`` has a one-line label and hint while the
+    production-total label and the unit hint wrap. Normal document flow put
+    the three controls on three different baselines, which is the misalignment
+    the client and professor reported. Shared grid rows let the copy take the
+    space it needs while keeping the controls together.
+
+    The container case is measured separately because it adds live feedback
+    below the amount input. A layout that aligns only the initial three-child
+    fields moves that control again as soon as a visitor chooses a bin.
+
+    Mutation: set these fields back to ``display: block`` and both measurements
+    spread by more than one line-height.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    def control_tops():
+        return page.locator("#total-waste, #unit-count, #total-unit, #total-input").evaluate_all(
+            "controls => controls.map(control => Math.round(control.getBoundingClientRect().top))"
+        )
+
+    initial = control_tops()
+    assert max(initial) - min(initial) <= 1, (
+        f"step 3 controls do not share a baseline: {initial}"
+    )
+
+    preset = page.locator("#total-unit option").evaluate_all(
+        "options => options.map(option => option.value).find(value => value.startsWith('preset:'))"
+    )
+    assert preset, "step 3 offers no container preset"
+    page.select_option("#total-unit", preset)
+    page.wait_for_selector("#unit-count")
+
+    with_container_feedback = control_tops()
+    assert max(with_container_feedback) - min(with_container_feedback) <= 1, (
+        "container feedback moved the amount control off the shared baseline: "
+        f"{with_container_feedback}"
+    )
+
+
 def test_the_production_total_names_its_unit_and_is_cleared_when_the_unit_changes(page_at):
     """`#total-input` is a mass in `state.totalUnit`, and `#total-unit` is the
     control that says which unit that is - so before this, changing the select

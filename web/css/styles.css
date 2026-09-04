@@ -973,6 +973,18 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      pushed a step that used to fit `1278x983` into a scrollbar - the layout a
      step-3 field must not cause, per `amountStep()`'s own docstring. */
   .amount-grid { grid-template-columns: 1fr 1fr 1fr; }
+  /* Each field borrows the same four row tracks from its parent: label, hint,
+     control, then validation/container feedback. The longest label or hint
+     therefore grows that row for all three columns and the controls keep one
+     baseline without a language-specific min-height or one-off margin. The
+     fourth track also keeps a container total or field error below the control
+     instead of letting feedback move that one control out of line. */
+  .amount-grid > .form-field,
+  .amount-grid .money-fields > .form-field {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 4;
+  }
   /* The pair spans the whole row rather than taking one of the three tracks
      above and leaving the other two empty - a full-width row split evenly in
      two, not a ragged one-of-three. */

@@ -448,7 +448,7 @@ def test_the_prevention_lines_of_the_response_draw_no_upstream(response_fixture)
 
 
 @pytest.mark.parametrize(
-    "name", ["calculate_response.json", "calculate_response_single.json"]
+    "name", ["calculate_response.json", "calculate_response_single.json", "calculate_response_partial_coverage.json"]
 )
 def test_a_destinations_factors_do_not_change_between_scenarios(name):
     """The defect that made the old response body impossible.
@@ -492,7 +492,7 @@ def test_a_destinations_factors_do_not_change_between_scenarios(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["calculate_response.json", "calculate_response_single.json"]
+    "name", ["calculate_response.json", "calculate_response_single.json", "calculate_response_partial_coverage.json"]
 )
 def test_the_response_arithmetic_closes(name):
     """Lines sum to metric totals, entries sum to the roll-up, and
@@ -570,7 +570,7 @@ def test_the_response_arithmetic_closes(name):
 
 
 @pytest.mark.parametrize(
-    "name", ["calculate_response.json", "calculate_response_single.json"]
+    "name", ["calculate_response.json", "calculate_response_single.json", "calculate_response_partial_coverage.json"]
 )
 def test_every_line_is_its_formula_applied_to_the_published_factors(
     name, taxonomy, factors
@@ -652,7 +652,7 @@ def test_every_line_is_its_formula_applied_to_the_published_factors(
 
 
 @pytest.mark.parametrize(
-    "name", ["calculate_response.json", "calculate_response_single.json"]
+    "name", ["calculate_response.json", "calculate_response_single.json", "calculate_response_partial_coverage.json"]
 )
 def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, factors):
     """§4.2. An equivalence is computed **from the rolled-up metric total**,
@@ -814,6 +814,8 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
         "calculate_request.json",
         "calculate_response.json",
         "calculate_response_single.json",
+        "calculate_request_partial_coverage.json",
+        "calculate_response_partial_coverage.json",
         "export_pdf_request.json",
         "factors.json",
         "stats.json",
@@ -832,7 +834,7 @@ def test_the_codes_the_fixtures_calculate_with_are_shipped_codes():
 
 
 @pytest.mark.parametrize(
-    "name", ["calculate_response.json", "calculate_response_single.json"]
+    "name", ["calculate_response.json", "calculate_response_single.json", "calculate_response_partial_coverage.json"]
 )
 def test_the_response_only_names_codes_the_taxonomy_defines(name, taxonomy):
     fixture = load(name)
@@ -875,6 +877,99 @@ def test_prevention_is_only_ever_an_alternative_destination(request_fixture):
         for line in (entry["alternative"] or [])
     }
     assert "prevention" in used, "the canonical request must demonstrate the offset"
+
+
+# ------------------------------------------ the partial-coverage pair (v1.50)
+#
+# `calculate_request_partial_coverage.json` / `calculate_response_partial_
+# coverage.json` exist because neither existing response fixture reaches the
+# two §4.6 states that matter most for the money block's own rewrite:
+# `calculate_response.json`'s `totals.money` is `complete` in all four fields
+# and its share is `incomplete`; `calculate_response_single.json` is
+# `not_supplied` throughout. Nobody's money field was ever `incomplete` and
+# nobody's share was ever `complete` — the exact state §4.5's rewrite exists
+# for (a submission that priced one entry and not the other) went
+# unexercised by every fixture-driven test in the tree, which is how a PDF
+# and two on-screen surfaces could disagree about `saving_nzd` and nothing
+# here noticed.
+#
+# This pair is not hand-typed: it is `engine.calculate.calculate`'s own
+# output for a two-entry request in which entry 2 supplies a production
+# total but no money figures — the same discipline `calculate_response.json`
+# and `calculate_response_single.json` were built with, recorded in
+# `docs/interfaces.md` §10's fixture table.
+
+
+def test_the_partial_coverage_pair_describes_the_same_calculation():
+    """The same correspondence `test_the_request_and_the_response_describe_
+    the_same_calculation` checks for the canonical pair, checked here for
+    this one too — a saved fixture is exactly the kind of file that can
+    silently drift from the request that was supposed to produce it."""
+    request_fixture = load("calculate_request_partial_coverage.json")
+    response_fixture = load("calculate_response_partial_coverage.json")
+    assert response_fixture["gwp_horizon"] == request_fixture["gwp_horizon"]
+    assert len(response_fixture["entries"]) == len(request_fixture["entries"])
+    for index, (sent, got) in enumerate(
+        zip(request_fixture["entries"], response_fixture["entries"])
+    ):
+        where = f"entries[{index}]"
+        assert got["sector"] == sent["sector"], where
+        assert got["food_category"] == sent["food_category"], where
+        for scenario in ("current", "alternative"):
+            expected = [
+                (line["destination"], Decimal(line["qty_kg"])) for line in sent[scenario]
+            ]
+            for metric_code, metric in got[scenario]["metrics"].items():
+                assert lines_of({"metrics": {metric_code: metric}}) == expected, (
+                    f"{where}.{scenario}.metrics.{metric_code}.by_destination "
+                    "does not match the lines the request carried"
+                )
+
+
+def test_the_partial_coverage_pair_is_what_its_name_promises():
+    """Not a shape check — the two specific facts this fixture exists to
+    supply. A regeneration that (say) also priced entry 2 would still be a
+    valid response and would silently stop testing what this file is for."""
+    response = load("calculate_response_partial_coverage.json")
+    totals = response["totals"]
+    assert totals["data_state"]["production_share_percent"] == "complete"
+    assert totals["production_share_percent"] is not None
+    for field in (
+        "total_value_nzd", "wasted_value_nzd", "wasted_share_percent", "saving_nzd",
+    ):
+        assert totals["data_state"][field] == "incomplete", field
+        assert totals["money"][field] is None, field
+
+
+_DATA_STATE_FIELDS = (
+    "production_share_percent",
+    "total_value_nzd",
+    "wasted_value_nzd",
+    "wasted_share_percent",
+    "saving_nzd",
+)
+
+
+def test_every_data_state_value_is_exercised_somewhere_in_the_fixtures():
+    """§4.6's rule is three states, and a suite that only ever fixtures two of
+    them is not testing the rule — it is testing the two states that happen
+    to be convenient. This asserts the property directly, across whichever
+    `calculate_response*.json` files exist, so it fails again on its own if a
+    future edit narrows the coverage back down rather than only when someone
+    remembers to check by hand."""
+    seen = {field: set() for field in _DATA_STATE_FIELDS}
+    for name in (
+        "calculate_response.json",
+        "calculate_response_single.json",
+        "calculate_response_partial_coverage.json",
+    ):
+        state = load(name)["totals"]["data_state"]
+        for field in _DATA_STATE_FIELDS:
+            seen[field].add(state[field])
+    for field in _DATA_STATE_FIELDS:
+        assert seen[field] == {"complete", "incomplete", "not_supplied"}, (
+            f"{field}: only {sorted(seen[field])} appear across the fixtures"
+        )
 
 
 # ---------------------------------------------------------------- statistics

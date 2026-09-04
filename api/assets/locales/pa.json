@@ -352,6 +352,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "ਹਰ ਐਂਟਰੀ ਨੇ ਇਹ ਅੰਕੜਾ ਨਹੀਂ ਦਿੱਤਾ, ਇਸ ਲਈ ਇਸਦਾ ਜੋੜ ਨਹੀਂ ਕੀਤਾ ਜਾ ਸਕਦਾ।",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "ਕੁਝ ਐਂਟਰੀਆਂ ਨੇ ਉਤਪਾਦਨ ਦਾ ਕੁੱਲ ਜੋੜ ਦੱਸਿਆ ਅਤੇ ਕੁਝ ਨੇ ਨਹੀਂ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "ਸੰਭਾਲੇ ਗਏ ਭੋਜਨ ਦੇ ਹਿੱਸੇ ਵਜੋਂ ਬਰਬਾਦੀ ਤੁਹਾਡੇ ਦੁਆਰਾ ਟਾਈਪ ਕੀਤੇ ਦੋ ਭਾਰਾਂ ਦਾ ਅਨੁਪਾਤ ਹੈ, ਨਾ ਕਿ ਕਿਸੇ ਫੈਕਟਰ-ਆਧਾਰਿਤ ਅੰਕੜਾ, ਇਸ ਲਈ ਉੱਪਰ ਦਿੱਤਾ ਪਲੇਸਹੋਲਡਰ ਡਾਟਾ ਇਸ ਨੂੰ ਪ੍ਰਭਾਵਿਤ ਨਹੀਂ ਕਰਦਾ।",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "ਤੁਸੀਂ ਇਹ ਨਹੀਂ ਦੱਸਿਆ ਕਿ ਇਸ ਵਿੱਚ ਕਿੰਨਾ ਭੋਜਨ ਸ਼ਾਮਲ ਸੀ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।"
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "ਤੁਸੀਂ ਇਹ ਨਹੀਂ ਦੱਸਿਆ ਕਿ ਇਸ ਵਿੱਚ ਕਿੰਨਾ ਭੋਜਨ ਸ਼ਾਮਲ ਸੀ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।",
+    "Undefined": "ਅਪਰਿਭਾਸ਼ਿਤ",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ਤੁਸੀਂ ਦੱਸਿਆ ਕਿ ਇਸ ਵਿੱਚ ਕੁੱਲ 0 ਕਿਲੋਗ੍ਰਾਮ ਸ਼ਾਮਲ ਸੀ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।",
+    "The total value was zero, so this cannot be calculated.": "ਕੁੱਲ ਮੁੱਲ ਸਿਫ਼ਰ ਸੀ, ਇਸ ਲਈ ਇਸਦੀ ਗਣਨਾ ਨਹੀਂ ਕੀਤੀ ਜਾ ਸਕਦੀ।"
   }
 }

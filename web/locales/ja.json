@@ -350,6 +350,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "すべての項目でこの数値が入力されていないため、合計できません。",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "一部の項目では生産量の合計が入力され、一部では入力されていないため、廃棄割合を表示できません。",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "取り扱った食品に対する廃棄の割合は、入力された2つの重量の比率であり、係数に基づく数値ではないため、上記の仮データはこの値に影響しません。",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "対象となる食品の量が入力されていないため、廃棄割合を表示できません。"
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "対象となる食品の量が入力されていないため、廃棄割合を表示できません。",
+    "Undefined": "未定義",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "合計0kgと入力されたため、廃棄割合を表示できません。",
+    "The total value was zero, so this cannot be calculated.": "合計金額が0だったため、この値は計算できません。"
   }
 }

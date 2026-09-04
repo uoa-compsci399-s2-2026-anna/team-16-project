@@ -351,6 +351,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "Hindi ibinigay ng bawat entry ang bilang na ito, kaya hindi ito matotolatal.",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Ibinigay ng ilang entry ang kabuuang produksyon at may hindi nagbigay, kaya hindi maipapakita ang bahagi ng basura.",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Ang basura bilang bahagi ng pagkaing hinawakan ay ratio ng dalawang timbang na iyong itinype, hindi isang bilang na batay sa factor, kaya hindi ito naaapektuhan ng placeholder data sa itaas.",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "Hindi mo sinabi kung gaano karaming pagkain ang saklaw nito, kaya hindi maipapakita ang bahagi ng basura."
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "Hindi mo sinabi kung gaano karaming pagkain ang saklaw nito, kaya hindi maipapakita ang bahagi ng basura.",
+    "Undefined": "Hindi tiyak",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Sinabi mong 0 kg lang ang kabuuang saklaw nito, kaya hindi maipapakita ang bahagi ng basura.",
+    "The total value was zero, so this cannot be calculated.": "Zero ang kabuuang halaga, kaya hindi ito makukuwenta."
   }
 }

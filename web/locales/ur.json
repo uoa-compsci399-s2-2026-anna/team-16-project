@@ -351,6 +351,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "ہر اندراج نے یہ عدد فراہم نہیں کیا، اس لیے اسے جمع نہیں کیا جا سکتا۔",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "کچھ اندراجات نے پیداوار کا مجموعہ بتایا اور کچھ نے نہیں، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "سنبھالے گئے خوراک کے حصے کے طور پر ضیاع آپ کے ٹائپ کیے گئے دو وزنوں کا تناسب ہے، نہ کہ کسی عامل پر مبنی عدد، اس لیے اوپر دیا گیا عارضی ڈیٹا اس پر اثر انداز نہیں ہوتا۔",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "آپ نے یہ نہیں بتایا کہ اس میں کتنی خوراک شامل تھی، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔"
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "آپ نے یہ نہیں بتایا کہ اس میں کتنی خوراک شامل تھی، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔",
+    "Undefined": "غیر متعین",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "آپ نے بتایا کہ اس میں کل 0 کلوگرام شامل تھا، اس لیے ضائع ہونے کا حصہ نہیں دکھایا جا سکتا۔",
+    "The total value was zero, so this cannot be calculated.": "کل قدر صفر تھی، اس لیے اس کا حساب نہیں لگایا جا سکتا۔"
   }
 }

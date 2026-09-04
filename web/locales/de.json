@@ -350,6 +350,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "Nicht jeder Eintrag enthielt diese Zahl, daher kann sie nicht summiert werden.",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Einige Einträge gaben eine Produktionsmenge an und andere nicht, daher kann kein Anteil der Verschwendung angezeigt werden.",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Verschwendung als Anteil der verarbeiteten Lebensmittel ist ein Verhältnis der beiden von Ihnen eingegebenen Massen, keine faktorbasierte Zahl, daher haben die obigen Platzhalterdaten keinen Einfluss darauf.",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "Sie haben nicht angegeben, wie viel Lebensmittel dies betraf, daher kann kein Anteil der Verschwendung angezeigt werden."
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "Sie haben nicht angegeben, wie viel Lebensmittel dies betraf, daher kann kein Anteil der Verschwendung angezeigt werden.",
+    "Undefined": "Undefiniert",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Sie haben angegeben, dass dies insgesamt 0 kg betraf, daher kann kein Anteil der Verschwendung angezeigt werden.",
+    "The total value was zero, so this cannot be calculated.": "Der Gesamtwert betrug null, daher kann dies nicht berechnet werden."
   }
 }

@@ -351,6 +351,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "لم يقدّم كل إدخال هذا الرقم، لذا لا يمكن جمعه.",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "ذكرت بعض الإدخالات إجمالي الإنتاج ولم تذكره أخرى، لذا لا يمكن عرض نسبة الهدر.",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "الهدر كنسبة من الطعام المتعامل معه هو نسبة بين الكتلتين اللتين أدخلتهما، وليس رقمًا مبنيًا على عامل، لذا لا تؤثر البيانات المؤقتة أعلاه عليه.",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "لم تذكر كمية الطعام التي يغطيها هذا، لذا لا يمكن عرض نسبة الهدر."
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "لم تذكر كمية الطعام التي يغطيها هذا، لذا لا يمكن عرض نسبة الهدر.",
+    "Undefined": "غير محدد",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ذكرت أن هذا يغطي 0 كجم إجمالاً، لذا لا يمكن عرض نسبة الهدر.",
+    "The total value was zero, so this cannot be calculated.": "كانت القيمة الإجمالية صفراً، لذا لا يمكن حساب هذا."
   }
 }

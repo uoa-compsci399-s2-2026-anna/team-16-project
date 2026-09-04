@@ -350,6 +350,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "Nie elke inskrywing het hierdie syfer verskaf nie, dus kan dit nie getotaliseer word nie.",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Sommige inskrywings het 'n produksietotaal aangedui en sommige nie, dus kan 'n aandeel van vermorsing nie gewys word nie.",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Vermorsing as 'n aandeel van hanteerde voedsel is 'n verhouding van die twee massas wat jy ingetik het, nie 'n faktor-gebaseerde syfer nie, dus raak die plekhouerdata hierbo dit nie.",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "Jy het nie gesê hoeveel voedsel dit gedek het nie, dus kan 'n aandeel van vermorsing nie gewys word nie."
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "Jy het nie gesê hoeveel voedsel dit gedek het nie, dus kan 'n aandeel van vermorsing nie gewys word nie.",
+    "Undefined": "Onbepaald",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "U het aangedui dat dit 0 kg in totaal gedek het, dus kan 'n aandeel van vermorsing nie gewys word nie.",
+    "The total value was zero, so this cannot be calculated.": "Die totale waarde was nul, dus kan dit nie bereken word nie."
   }
 }

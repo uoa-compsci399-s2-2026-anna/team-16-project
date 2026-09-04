@@ -181,3 +181,25 @@ regression a test watches for:
   reads the same key for the same reason. Pre-existing, unrelated to this
   re-cut, and left exactly as they were rather than added to a subset for
   characters nothing prints.
+
+## Re-cut, 2026-09-04 (v1.51, second re-cut this day)
+
+v1.51 gave `production_share_percent` and `wasted_share_percent` a fourth
+`data_state`, `undefined`, and three new strings reach the twenty catalogues
+for it — `Undefined`, and one note each for the production-share card and the
+money block. `ja`, `zh` and `zh-Hant`'s translations of the one-word value
+all draw on `義`/`义`, "meaning" — `U+7FA9` in Traditional, `U+4E49` in
+Simplified — and neither had a glyph in the June re-cut's subsets, which had
+been cut from the catalogues as they stood before this task.
+`test_no_character_in_any_catalogue_would_print_as_a_box` caught it before
+anything asked a document to print the new string, the same way it caught
+the six-character gap above.
+
+Re-cut with `recut_cjk_subsets.py`, run inside the `api` container after
+rebuilding it with the new catalogues baked in — `fonts-noto-cjk` installed
+fresh (the base image carries no state between builds), `fonttools` and
+`brotli` already present as `weasyprint`'s own dependencies. `ko`'s subset is
+untouched (`정의되지 않음`, the Korean translation of `Undefined`, composes
+entirely from syllables the existing subset already drew); the other three
+grew a handful of characters each: jp 228,432 B (was 228,224), sc 201,112 B
+(was 200,708), tc 261,488 B (was 261,024).

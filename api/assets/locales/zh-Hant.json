@@ -353,6 +353,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "並非每筆記錄都提供了此數值，因此無法加總。",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "部分記錄填寫了生產總量，部分未填寫，因此無法顯示浪費佔比。",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "浪費佔處理食物的比例是您輸入的兩個質量之比，並非基於係數計算得出，因此上方的佔位資料不會影響該數值。",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "您未說明此次記錄涉及的食物總量，因此無法顯示浪費佔比。"
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "您未說明此次記錄涉及的食物總量，因此無法顯示浪費佔比。",
+    "Undefined": "未定義",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "您表示此次記錄合計涉及 0 公斤，因此無法顯示浪費佔比。",
+    "The total value was zero, so this cannot be calculated.": "總價值為零，因此無法計算此數值。"
   }
 }

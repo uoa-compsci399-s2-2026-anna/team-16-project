@@ -350,6 +350,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "ஒவ்வொரு பதிவும் இந்த எண்ணைத் தரவில்லை, எனவே அதைச் சேர்க்க முடியாது.",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "சில பதிவுகள் உற்பத்தி மொத்தத்தைக் குறிப்பிட்டன, சில குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது.",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "கையாளப்பட்ட உணவின் பங்காக வீணாவது நீங்கள் தட்டச்சு செய்த இரண்டு நிறைகளின் விகிதமே, காரணி அடிப்படையிலான எண் அல்ல, எனவே மேலே உள்ள தற்காலிக தரவு இதைப் பாதிக்காது.",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "இது எவ்வளவு உணவை உள்ளடக்கியது என்று நீங்கள் குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது."
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "இது எவ்வளவு உணவை உள்ளடக்கியது என்று நீங்கள் குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது.",
+    "Undefined": "வரையறுக்கப்படாதது",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "இது மொத்தம் 0 கிலோ என்று நீங்கள் குறிப்பிட்டீர்கள், எனவே வீணான பங்கைக் காட்ட முடியாது.",
+    "The total value was zero, so this cannot be calculated.": "மொத்த மதிப்பு பூஜ்ஜியமாக இருந்தது, எனவே இதைக் கணக்கிட முடியாது."
   }
 }

@@ -350,6 +350,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "દરેક એન્ટ્રીએ આ આંકડો આપ્યો નથી, તેથી તેનો સરવાળો કરી શકાતો નથી.",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "કેટલીક એન્ટ્રીઓએ ઉત્પાદન કુલ જણાવ્યું અને કેટલીકે નહીં, તેથી બગાડનો હિસ્સો બતાવી શકાતો નથી.",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "સંભાળેલા ખોરાકના હિસ્સા તરીકે બગાડ એ તમે ટાઈપ કરેલા બે વજનનો ગુણોત્તર છે, ફેક્ટર-આધારિત આંકડો નથી, તેથી ઉપરનો પ્લેસહોલ્ડર ડેટા તેને અસર કરતો નથી.",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "તમે આમાં કેટલો ખોરાક સામેલ હતો તે જણાવ્યું નથી, તેથી બગાડનો હિસ્સો બતાવી શકાતો નથી."
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "તમે આમાં કેટલો ખોરાક સામેલ હતો તે જણાવ્યું નથી, તેથી બગાડનો હિસ્સો બતાવી શકાતો નથી.",
+    "Undefined": "અવ્યાખ્યાયિત",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "તમે જણાવ્યું કે આમાં કુલ 0 કિગ્રા સામેલ હતું, તેથી બગાડનો હિસ્સો બતાવી શકાતો નથી.",
+    "The total value was zero, so this cannot be calculated.": "કુલ મૂલ્ય શૂન્ય હતું, તેથી આની ગણતરી કરી શકાતી નથી."
   }
 }

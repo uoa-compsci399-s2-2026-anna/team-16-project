@@ -350,6 +350,9 @@
     "Not every entry supplied this figure, so it cannot be totalled.": "ไม่ใช่ทุกรายการที่ระบุตัวเลขนี้ จึงไม่สามารถรวมยอดได้",
     "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "บางรายการระบุยอดรวมการผลิตและบางรายการไม่ได้ระบุ จึงไม่สามารถแสดงสัดส่วนของเสียได้",
     "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "ของเสียในฐานะสัดส่วนของอาหารที่จัดการเป็นอัตราส่วนของมวลสองค่าที่คุณพิมพ์ ไม่ใช่ตัวเลขที่อิงตามค่าสัมประสิทธิ์ ดังนั้นข้อมูลตัวยึดตำแหน่งด้านบนจึงไม่มีผลต่อค่านี้",
-    "You did not say how much food this covered, so a share of waste cannot be shown.": "คุณไม่ได้ระบุว่ารายการนี้ครอบคลุมอาหารปริมาณเท่าใด จึงไม่สามารถแสดงสัดส่วนของเสียได้"
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "คุณไม่ได้ระบุว่ารายการนี้ครอบคลุมอาหารปริมาณเท่าใด จึงไม่สามารถแสดงสัดส่วนของเสียได้",
+    "Undefined": "ไม่ได้กำหนด",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "คุณระบุว่ารายการนี้ครอบคลุมอาหารรวม 0 กก. จึงไม่สามารถแสดงสัดส่วนของเสียได้",
+    "The total value was zero, so this cannot be calculated.": "มูลค่ารวมเป็นศูนย์ จึงไม่สามารถคำนวณค่านี้ได้"
   }
 }

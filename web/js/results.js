@@ -107,11 +107,17 @@ const hasValue = value => value !== null && value !== undefined
 
 // §4.6: every figure this card and the money block below it carry now travels with a
 // `data_state` entry, and `null` alone cannot tell "nobody typed one" from "some entries
-// did and some did not" - that is the whole reason the engine grew a third state rather
-// than leaving the figure `None`-or-a-value. A partially answered figure used to arrive
-// as a wrong number (a sum with a silently short denominator) and, since Task 1, arrives
-// as `null` instead - silence is the honest fallback but it is not the best one available,
-// so `incomplete` gets its own sentence rather than being folded into "nobody said".
+// did and some did not" from "everybody typed one and the ratio is still undefined" -
+// that is the whole reason the engine grew a fourth state rather than leaving the figure
+// `None`-or-a-value. A partially answered figure used to arrive as a wrong number (a sum
+// with a silently short denominator) and, since Task 1, arrives as `null` instead -
+// silence is the honest fallback but it is not the best one available, so `incomplete`
+// gets its own sentence rather than being folded into "nobody said".
+//
+// `undefined` (v1.51) is the fourth: every entry answered, and the ratio built from what
+// they answered has no defined value because it summed to zero — a production total of
+// zero is not the same claim as "nobody said", and reading it that way is exactly the
+// defect v1.51 closed. See `engine/calculate.py::_share_state`.
 //
 // One field a reader of this comment should not miss: `production_share_percent` is the
 // one figure on this page the mock-factor warning does not describe. Every other card is
@@ -122,12 +128,14 @@ const hasValue = value => value !== null && value !== undefined
 // methodology paragraph in `renderResults` says so in words a visitor can read.
 
 // One field of `totals.money`, read against its own `data_state` entry (§4.6): `complete`
-// formats the value, `incomplete` returns the shared note below instead of nothing, and
-// `not_supplied` - and any state this module has not learned - returns `null`, which the
-// caller reads as "print no row", the same rule `hasValue` gave every field here before
-// `data_state` existed.
+// formats the value, `incomplete` returns the shared note below instead of nothing,
+// `undefined` (v1.51 - reachable only by `wasted_share_percent`, the one ratio among the
+// four money fields) returns its own note rather than either of the other two sentences,
+// and `not_supplied` - and any state this module has not learned - returns `null`, which
+// the caller reads as "print no row", the same rule `hasValue` gave every field here
+// before `data_state` existed.
 //
-// The note is a literal `t('...')` call, not a module-level constant passed by reference -
+// Both notes are literal `t('...')` calls, not module-level constants passed by reference -
 // `tests/web/i18n_keys.py` only extracts a `t()` argument literally or from its own named
 // list of indirect constants, and this string is not on that list. An indirect reference
 // here would render in every language but the one the visitor chose, silently, with no
@@ -136,17 +144,21 @@ const hasValue = value => value !== null && value !== undefined
 function moneyFieldText(money, dataState, field, format) {
   if (hasValue(money?.[field])) return format(money[field])
   if (dataState?.[field] === 'incomplete') return t('Not every entry supplied this figure, so it cannot be totalled.')
+  if (dataState?.[field] === 'undefined') return t('The total value was zero, so this cannot be calculated.')
   return null
 }
 
 /**
- * The "Percentage waste" card's own three states (§4.6), read and not derived: the engine
- * divides `current.total_kg` by the summed `total_input_kg` and this only formats what
- * comes back. `complete` prints the percentage; `incomplete` says the coverage was partial
- * rather than showing nothing where a wrong number used to sit; `not_supplied` - and
- * anything this module has not learned the name of yet, the same forward-compatible
- * fallback `hasValue` already gives every other absent figure - says nobody stated it, in
- * words about what the visitor typed rather than about what the calculator can report.
+ * The "Percentage waste" card's own four states (§4.6, v1.51), read and not derived: the
+ * engine divides `current.total_kg` by the summed `total_input_kg` and this only formats
+ * what comes back. `complete` prints the percentage; `incomplete` says the coverage was
+ * partial rather than showing nothing where a wrong number used to sit; `undefined` says
+ * every entry answered and the total came to zero, so the share itself has no value -
+ * distinct from `not_supplied` because "nobody said" and "the answer was zero" are not the
+ * same claim, and conflating them is the defect v1.51 closed; `not_supplied` - and anything
+ * this module has not learned the name of yet, the same forward-compatible fallback
+ * `hasValue` already gives every other absent figure - says nobody stated it, in words
+ * about what the visitor typed rather than about what the calculator can report.
  */
 function productionShareText(totals) {
   const state = totals.data_state?.production_share_percent
@@ -157,6 +169,12 @@ function productionShareText(totals) {
     return {
       value: t('Data incomplete'),
       note: t('Some entries stated a production total and some did not, so a share of waste cannot be shown.'),
+    }
+  }
+  if (state === 'undefined') {
+    return {
+      value: t('Undefined'),
+      note: t('You said this covered 0 kg in total, so a share of waste cannot be shown.'),
     }
   }
   return {

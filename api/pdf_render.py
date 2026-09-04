@@ -60,7 +60,7 @@ from urllib.parse import unquote, urlparse
 from urllib.request import url2pathname
 
 from api import i18n
-from engine.types import DATA_COMPLETE, DATA_INCOMPLETE
+from engine.types import DATA_COMPLETE, DATA_INCOMPLETE, DATA_UNDEFINED
 
 # --------------------------------------------------------------------------
 # Where the document's own files live.
@@ -391,15 +391,19 @@ _LABELS = {
     "production_share": "Percentage waste",
 }
 
-#: §4.6's three states for a totals-level figure, worded to match
+#: §4.6's four states for a totals-level figure, worded to match
 #: `web/js/results.js::productionShareText` and `::moneyFieldText` exactly -
 #: literally the same catalogue keys, not a rephrasing of them - so the card,
 #: the text export and this document say the same thing about the same
-#: submission. Every one of these five strings is already something the front
-#: end asks for; see `_LABELS["production_share"]`'s comment for why that is
-#: a constraint here rather than a coincidence.
+#: submission. Every one of these seven strings is already something the
+#: front end asks for; see `_LABELS["production_share"]`'s comment for why
+#: that is a constraint here rather than a coincidence.
 _DATA_INCOMPLETE_VALUE = "Data incomplete"
 _DATA_NOT_SUPPLIED_VALUE = "Not supplied"
+#: v1.51's fourth state's own value string - distinct from both of the above
+#: because "every entry answered and the ratio is undefined" is neither "some
+#: did and some did not" nor "nobody said".
+_DATA_UNDEFINED_VALUE = "Undefined"
 _PRODUCTION_SHARE_INCOMPLETE_NOTE = (
     "Some entries stated a production total and some did not, so a share of "
     "waste cannot be shown."
@@ -408,9 +412,13 @@ _PRODUCTION_SHARE_NOT_SUPPLIED_NOTE = (
     "You did not say how much food this covered, so a share of waste cannot "
     "be shown."
 )
+_PRODUCTION_SHARE_UNDEFINED_NOTE = (
+    "You said this covered 0 kg in total, so a share of waste cannot be shown."
+)
 _MONEY_INCOMPLETE_NOTE = (
     "Not every entry supplied this figure, so it cannot be totalled."
 )
+_MONEY_UNDEFINED_NOTE = "The total value was zero, so this cannot be calculated."
 
 #: The title block's byline (§4.2/Task 5). "Who produced it" - `home.js`
 #: already renders this exact sentence as a news article's byline, so reusing
@@ -462,9 +470,12 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     _PRODUCED_BY,
     _DATA_INCOMPLETE_VALUE,
     _DATA_NOT_SUPPLIED_VALUE,
+    _DATA_UNDEFINED_VALUE,
     _PRODUCTION_SHARE_INCOMPLETE_NOTE,
     _PRODUCTION_SHARE_NOT_SUPPLIED_NOTE,
+    _PRODUCTION_SHARE_UNDEFINED_NOTE,
     _MONEY_INCOMPLETE_NOTE,
+    _MONEY_UNDEFINED_NOTE,
     *_LABELS.values(),
     *(key for _attribute, key, _kind in _MONEY_LABELS),
 )
@@ -549,8 +560,10 @@ def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, A
     `complete` field prints its figure, an `incomplete` field prints the
     shared note instead of nothing (Task 1 turned a partial sum into `None`,
     and a block that only checked "is this `None`" would render nothing for
-    that row, which is honest but not the most it can say), and a
-    `not_supplied` field - or any state this function has not learned the
+    that row, which is honest but not the most it can say), an `undefined`
+    field (v1.51 - reachable only by `wasted_share_percent`, the one ratio
+    among the four) prints its own note rather than either of the others, and
+    a `not_supplied` field - or any state this function has not learned the
     name of - is left off the table entirely, exactly as before §4.6 existed.
 
     `is_note` marks a row whose value is a translated sentence rather than a
@@ -577,20 +590,26 @@ def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, A
             rows.append(
                 {"name": translate(label), "value": translate(_MONEY_INCOMPLETE_NOTE), "is_note": True}
             )
+        elif state == DATA_UNDEFINED:
+            rows.append(
+                {"name": translate(label), "value": translate(_MONEY_UNDEFINED_NOTE), "is_note": True}
+            )
     return rows
 
 
 def _production_share_context(totals: Any, translate: Any) -> dict[str, str]:
-    """§4.6's totals-level production share, and its own three states -
+    """§4.6's totals-level production share, and its own four states (v1.51) -
     mirrors `web/js/results.js::productionShareText` word for word (see the
     comment above `_DATA_INCOMPLETE_VALUE`), so the on-screen card, the text
     export and this document tell the same story about the same submission.
 
     `complete` prints the percentage; `incomplete` says the coverage was
     partial rather than showing nothing where a wrong number used to sit;
-    `not_supplied` - and any state this function has not learned the name of,
-    the same forward-compatible fallback the rest of this module gives every
-    other absent figure - says nobody stated it.
+    `undefined` says every entry answered and the total came to zero, so the
+    ratio itself has no value - distinct from `not_supplied`, which - along
+    with any state this function has not learned the name of, the same
+    forward-compatible fallback the rest of this module gives every other
+    absent figure - says nobody stated it.
     """
     data_state = getattr(totals, "data_state", None)
     state = getattr(data_state, "production_share_percent", None) if data_state is not None else None
@@ -601,6 +620,11 @@ def _production_share_context(totals: Any, translate: Any) -> dict[str, str]:
         return {
             "value": translate(_DATA_INCOMPLETE_VALUE),
             "note": translate(_PRODUCTION_SHARE_INCOMPLETE_NOTE),
+        }
+    if state == DATA_UNDEFINED:
+        return {
+            "value": translate(_DATA_UNDEFINED_VALUE),
+            "note": translate(_PRODUCTION_SHARE_UNDEFINED_NOTE),
         }
     return {
         "value": translate(_DATA_NOT_SUPPLIED_VALUE),

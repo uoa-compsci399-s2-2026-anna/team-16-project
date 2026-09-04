@@ -53,6 +53,8 @@ from db.types import (
 from engine.types import (
     DATA_COMPLETE,
     DATA_INCOMPLETE,
+    DATA_NOT_SUPPLIED,
+    DATA_UNDEFINED,
     BreakdownRow,
     CalculationResult,
     CalculationTotals,
@@ -882,21 +884,24 @@ def test_no_locale_falls_back_to_english(locale):
     `test_every_locale_renders_as_extractable_text` and
     `test_the_mock_warning_is_in_the_pdf_text` cover from the other side.
 
-    **Two renders, not one, since §4.6.** `production_share_percent` and each
-    money field are in exactly one of three states per render - `complete`,
-    `incomplete` or `not_supplied` - so "Data incomplete" and its money
-    counterpart can never appear in the *same* document as a `complete`
-    percentage or a fully-priced money block. `_result()` alone (all
-    `not_supplied`) cannot reach the `incomplete` sentences at all, and
-    DOCUMENT_STRINGS is deliberately every string the document CAN print,
-    not every string one render prints - so this concatenates the default
-    render with one built to hit `incomplete` on every §4.6 field, and checks
-    each catalogue string reached at least one of the two.
+    **Three renders, not one, since v1.51.** `production_share_percent` and
+    each money field are in exactly one of four states per render -
+    `complete`, `incomplete`, `undefined` or `not_supplied` - so "Data
+    incomplete" and its money counterpart can never appear in the *same*
+    document as "Undefined" or a `complete` percentage. `_result()` alone
+    (all `not_supplied`) cannot reach the `incomplete` or `undefined`
+    sentences at all, and DOCUMENT_STRINGS is deliberately every string the
+    document CAN print, not every string one render prints - so this
+    concatenates the default render with one built to hit `incomplete` on
+    every §4.6 field and one built to hit `undefined` on both ratios, and
+    checks each catalogue string reached at least one of the three.
     """
     from markupsafe import escape
 
-    html = render_html(_result(), _taxonomy(), locale) + render_html(
-        _incomplete_totals_result(), _taxonomy(), locale
+    html = (
+        render_html(_result(), _taxonomy(), locale)
+        + render_html(_incomplete_totals_result(), _taxonomy(), locale)
+        + render_html(_undefined_totals_result(), _taxonomy(), locale)
     )
     catalogue = i18n.catalogue(locale)
 
@@ -1388,6 +1393,34 @@ def _incomplete_totals_result() -> CalculationResult:
     )
 
 
+def _undefined_totals_result() -> CalculationResult:
+    """v1.51's fourth state, which the two fixtures above cannot reach:
+    `_result()` is all `not_supplied` and `_incomplete_totals_result()` is
+    all `incomplete`, and neither ever puts a figure at `complete` with a
+    `None` value. `total_value_nzd` and `wasted_value_nzd` are real, present
+    zeros here (`complete`, not withheld) - every entry answered - and it is
+    exactly that shape that makes the ratio built from them `undefined`
+    rather than `not_supplied`, the same shape `production_share_percent`
+    takes when every entry's own production total was zero."""
+    undefined_money = MoneyResult(
+        total_value_nzd=Decimal("0.00"),
+        wasted_value_nzd=Decimal("0.00"),
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    return _result_with_totals_extras(
+        keep_default_money=False,
+        money=undefined_money,
+        data_state=DataState(
+            production_share_percent=DATA_UNDEFINED,
+            total_value_nzd=DATA_COMPLETE,
+            wasted_value_nzd=DATA_COMPLETE,
+            wasted_share_percent=DATA_UNDEFINED,
+            saving_nzd=DATA_NOT_SUPPLIED,
+        ),
+    )
+
+
 # --------------------------------------------------------------------------
 # Part B: the title block.
 # --------------------------------------------------------------------------
@@ -1505,6 +1538,28 @@ def test_the_production_share_says_not_supplied_when_nobody_answered():
 
 
 @requires_weasyprint
+def test_the_production_share_says_undefined_rather_than_not_supplied():
+    """v1.51's fourth state. Every entry answered a production total of
+    zero — `data_state` is `complete`, not `not_supplied` — and the ratio
+    built from what they answered is still undefined. Before v1.51 this
+    printed "Not supplied" and "You did not say how much food this covered",
+    which was false: the visitor had said none.
+
+    **Mutation target: collapsing `undefined` into `not_supplied` in the
+    PDF.** That mutation makes this print the wrong sentence, which the last
+    two assertions below catch directly.
+    """
+    result = _result_with_totals_extras(
+        data_state=DataState(production_share_percent=DATA_UNDEFINED),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "Undefined" in text
+    assert "You said this covered 0 kg in total" in text
+    assert "Not supplied" not in text
+    assert "You did not say how much food this covered" not in text
+
+
+@requires_weasyprint
 def test_money_block_shows_the_incomplete_note_rather_than_a_partial_sum():
     """The defect Task 1 closed for the on-screen card and the text export,
     closed here too: a partially priced submission used to be able to report
@@ -1551,6 +1606,35 @@ def test_money_block_omits_a_field_nobody_touched_at_all():
     )
     text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
     assert "NZ$3,600.00" in text
+    assert "Not every entry supplied this figure" not in text
+
+
+@requires_weasyprint
+def test_money_block_shows_the_undefined_note_for_a_zero_total():
+    """v1.51's fourth state, reachable only by `wasted_share_percent`: every
+    entry answered `total_value_nzd` as zero, which is `complete` (a real
+    zero, not withheld) and makes the ratio built from it undefined. The two
+    sums either side print normally as `NZ$0.00`; only the ratio prints the
+    "cannot be calculated" sentence, and it must not be the `incomplete`
+    sentence, which is a different claim about a different kind of gap."""
+    zero_total = MoneyResult(
+        total_value_nzd=Decimal("0.00"),
+        wasted_value_nzd=Decimal("0.00"),
+        wasted_share_percent=None,
+        saving_nzd=None,
+    )
+    result = _result_with_totals_extras(
+        keep_default_money=False,
+        money=zero_total,
+        data_state=DataState(
+            total_value_nzd=DATA_COMPLETE,
+            wasted_value_nzd=DATA_COMPLETE,
+            wasted_share_percent=DATA_UNDEFINED,
+        ),
+    )
+    text = extract_text(render_results_pdf(result, _taxonomy(), "en"))
+    assert "NZ$0.00" in text
+    assert "The total value was zero, so this cannot be calculated." in text
     assert "Not every entry supplied this figure" not in text
 
 

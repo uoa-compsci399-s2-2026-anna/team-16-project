@@ -221,6 +221,22 @@ def build_state_partial_coverage() -> dict:
     }
 
 
+#: **v1.51.** Neither fixture above ever gives `production_share_percent` or
+#: `wasted_share_percent` the fourth state: every entry answered a production
+#: total, a total value and a wasted value of zero, so both ratios are
+#: `complete`-coverage and still undefined. Not hand-typed — the same
+#: discipline `build_state_partial_coverage` above documents —
+#: `tests/api/test_fixture_consistency.py::test_the_zero_totals_pair_is_what_
+#: its_name_promises` pins the same fixture's shape from the API side.
+def build_state_zero_totals() -> dict:
+    response = _fixture("calculate_response_zero_totals.json")
+    return {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
+        "improvementResult": None,
+    }
+
+
 def report_for(tmp_path: Path, state: dict) -> str:
     harness = tmp_path / "harness.mjs"
     harness.write_text(HARNESS, encoding="utf-8")
@@ -411,6 +427,42 @@ def test_the_export_says_not_supplied_when_nobody_answered(tmp_path):
     ), report
     assert "Data incomplete" not in report
     assert not re.search(r"^Percentage waste: \d", report, re.M)
+
+
+@node
+def test_the_export_says_undefined_when_every_entry_answered_zero(tmp_path):
+    """v1.51's fourth state: every entry answered `total_input_kg` — as
+    zero — so the coverage is `complete`, and the ratio built from what they
+    answered is still undefined. Distinct from `not_supplied` (the visitor
+    said none, not nothing) and from `incomplete` (nobody left a gap)."""
+    report = report_for(tmp_path, build_state_with_share(state="undefined", value=None))
+    assert re.search(
+        r"^Percentage waste: Undefined\. You said this covered 0 kg in total, "
+        r"so a share of waste cannot be shown\.$",
+        report,
+        re.M,
+    ), report
+    assert "Data incomplete" not in report
+    assert "You did not say how much food this covered" not in report
+    assert not re.search(r"^Percentage waste: \d", report, re.M)
+
+
+@node
+def test_the_export_says_undefined_for_a_money_share_of_a_zero_total(tmp_path):
+    """The money block's own fourth state, off the real fixture rather than a
+    hand-built one: both `total_value_nzd` and `wasted_value_nzd` print as
+    real `NZ$0.00` figures — `complete`, not withheld — and only the ratio
+    built from them says it cannot be calculated."""
+    report = report_for(tmp_path, build_state_zero_totals())
+    assert re.search(r"^\s*- Total value of food handled: NZ\$0\.00$", report, re.M), report
+    assert re.search(r"^\s*- Value of food wasted: NZ\$0\.00$", report, re.M), report
+    assert re.search(
+        r"^\s*- Share of value wasted: The total value was zero, so this "
+        r"cannot be calculated\.$",
+        report,
+        re.M,
+    ), report
+    assert "Not every entry supplied this figure" not in report
 
 
 # --------------------------------------------------------- the placeholder rule
@@ -1280,6 +1332,24 @@ def test_the_percentage_card_says_not_supplied_when_nobody_answered(page_at):
 
 
 @pytest.mark.browser
+def test_the_percentage_card_says_undefined_when_every_entry_answered_zero(page_at):
+    """v1.51's fourth state, on screen: every entry answered `total_input_kg`
+    as zero, so `data_state` is `complete` and `production_share_percent`
+    is still `null`. Before v1.51 this state did not exist and the card fell
+    through to `not_supplied`'s branch, telling a visitor who typed zero on
+    every row that they had typed nothing. Kills a mutation that collapses
+    `undefined` into either of the other two non-complete branches."""
+    page = _results_page_with_share(page_at, state="undefined")
+    text = _share_card(page).inner_text()
+    assert "Undefined" in text, text
+    assert "You said this covered 0 kg in total, so a share of waste cannot be shown." in text, text
+    assert "Not supplied" not in text
+    assert "You did not say" not in text
+    assert "Data incomplete" not in text
+    assert not re.search(r"\d+\.\d+%", text), f"a number leaked into an undefined card: {text!r}"
+
+
+@pytest.mark.browser
 def test_the_money_block_shows_the_incomplete_note_on_screen(page_at):
     """The on-screen counterpart of `test_the_export_says_incomplete_for_a_
     money_figure_partial_coverage_gave_no_number` below: that test only proves
@@ -1311,6 +1381,36 @@ def test_the_money_block_shows_the_incomplete_note_on_screen(page_at):
     assert summary.locator(".money-row").count() == 2, (
         "expected one complete row and one incomplete-note row, and no row at "
         f"all for the not_supplied field: {text!r}"
+    )
+
+
+@pytest.mark.browser
+def test_the_money_block_shows_the_undefined_note_on_screen(page_at):
+    """v1.51's fourth state, on screen. Both sums answered as real zeros
+    (`complete`, not withheld) print their own rows as `NZ$0.00`; the ratio
+    built from them prints its own "cannot be calculated" sentence, which
+    must not be the `incomplete` sentence above — a different claim about a
+    different kind of gap."""
+    response = _money_response(total="0.00", wasted="0.00", share=None)
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"],
+        total_value_nzd="complete",
+        wasted_value_nzd="complete",
+        wasted_share_percent="undefined",
+    )
+    page = page_at(response)
+    _submit_two_entries(page)
+
+    summary = page.locator(".money-summary")
+    assert summary.count() == 1, "no money section on a response carrying real zeros"
+    text = summary.inner_text()
+    assert "NZ$0.00" in text, f"the two zero sums are not shown: {text!r}"
+    assert "The total value was zero, so this cannot be calculated." in text, (
+        f"the undefined note is missing from the money block: {text!r}"
+    )
+    assert "Not every entry supplied this figure" not in text, text
+    assert summary.locator(".money-row").count() == 3, (
+        f"expected two complete rows and one undefined-note row: {text!r}"
     )
 
 

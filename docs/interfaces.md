@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-08-29 (v1.49 draft)"
+date: "2026-09-04 (v1.50 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,22 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.50 — 2026-09-04 (waste as a share of production, in three states; the export gains a title block; affects A, B, C, D)
+
+The client's third round: the results page was still saying "Percentage waste / Not available" unconditionally — `total_input_kg` had been stored since v1.48 and read by nothing (v1.48's own note said so). Closing that exposed a live defect in the money block it sits beside, which this revision closes at the same time.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **New: `totals.production_share_percent`, and the same field per entry.** `entries[].production_share_percent` is `this entry's current mass ÷ this entry's own total_input_kg × 100`, present whenever that one entry supplied a production total, independent of its neighbours. `totals.production_share_percent` is `Σ current mass ÷ Σ total_input_kg`, computed only when **every** entry supplied one — summing the mass side against a denominator only some entries answered would silently exclude part of the submission, and averaging the per-entry percentages would weight a 10 kg entry equally with a 10 t one. Two places, `ROUND_HALF_UP`. **This is the one figure on the results page that O-1's mock-factor warning does not describe**: it is arithmetic on two masses the visitor typed, with no factor and no formula anywhere in the division, so it is exactly as trustworthy under the placeholder banner as it will be once real factors arrive | §3, §4.6, §6.2 |
+| 2 | **New: `CalculationTotals.data_state`, one entry per totals-level figure that can now be `null` for more than one reason.** `production_share_percent` and each of the four §4.5 money fields go `"complete"` \| `"incomplete"` \| `"not_supplied"`. A bare `null` could not tell "nobody typed one" from "some entries did and some did not", and the results page, the text export and the PDF each need to say the second of those in words — "the data is incomplete" — rather than the first — "not supplied". `entries[].production_share_percent` carries no state of its own: one entry cannot be incomplete | §3, §4.6, §6.2 |
+| 3 | **Behaviour change, not an addition, in the four §4.5 money fields.** `total_value_nzd`, `wasted_value_nzd`, `wasted_share_percent` and `saving_nzd` used to sum whichever entries answered and report the result as the whole submission's figure — a two-entry submission with one priced returned `total_value_nzd="120000.00"` and `wasted_share_percent="3.75%"` as if they described the entire calculation, when the true total was unknowable from what one entry said. **Every one of the four is now `null` unless the entries it needs all answered**, exactly on item 1's rule, and `data_state` says why. This is a corrected response, not a new one: a request built against v1.49 that used to receive a real-looking, wrong figure now receives `null` and an `"incomplete"` state instead — a client reading only `hasValue`-style presence is now shown less than before, deliberately | §4.5, §4.6, §6.2 |
+| 4 | **The export document (§6.2.3, v1.49) gains a title block**, addressing the second-round feedback that it "lacks brand character": what the document is, who produced it, when it was rendered, and the factor-set version it used, set in the brand's own type with the half-circle as the single large supporting graphic the brand guideline calls for. The three §4.6 states reach the PDF on the same terms as the screen and the text export — an `"incomplete"` money field prints the shared explanatory sentence rather than nothing, and the production-share tile prints its own three states — so the three surfaces cannot disagree about one submission | §6.2.3 |
+| 5 | **All four CJK script fallback faces (v1.49) had drifted from their own catalogues and are re-cut.** `test_no_character_in_any_catalogue_would_print_as_a_box` had been failing since before this revision without anything asking a CJK document to draw one of the missing characters; item 1's new strings did, on the Traditional Chinese "not supplied" sentence, and the render raised `UndrawableCharacterError` rather than shipping a box. Re-cut from each catalogue's *current* content — `api/assets/fonts/noto/PROVENANCE.md` records the exact recipe and the new sizes | — |
+
+> **Item 1 does not touch a formula, and that is deliberate.** The expression language is per-line over `(qty_kg, upstream, downstream, const_*)` (§4.3); a share of production is arithmetic on two masses a visitor typed, computed once at the totals level and once per entry, and neither is a metric. It joins §4.5's money block as the second thing on `CalculationTotals` that is not derived from a factor or a formula.
+>
+> **Still open, unchanged by this revision.** O-1 remains the hard blocker for every other figure in a response. §6.2's request shape is unchanged — `total_input_kg` was already accepted, validated and persisted from v1.48; this revision is entirely about what the response now does with it.
 
 ### v1.49 — 2026-08-29 (a server-rendered PDF, replacing a hand-rolled one; affects B, C, D, E)
 
@@ -1523,6 +1539,12 @@ class EntryResult:
     current: ScenarioResult
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
+    # v1.50, §4.6. This entry's own current mass over its own total_input_kg,
+    # 2 places. None whenever THIS entry supplied no production total --
+    # permanent and independent of its neighbours, so an entry that answered
+    # keeps its own figure even when the totals-level roll-up has to say the
+    # submission's coverage is incomplete. Not derived from a factor: see 4.6.
+    production_share_percent: Decimal | None = None
 
 @dataclass(frozen=True)
 class MoneyResult:
@@ -1530,11 +1552,35 @@ class MoneyResult:
 
     Not a metric, and that is a decision rather than an omission -- see 4.5.
     Every field is optional because every input is: None means nobody supplied
-    what it is derived from, never zero, which is a claim."""
-    total_value_nzd: Decimal | None          # summed across entries
-    wasted_value_nzd: Decimal | None         # summed across entries
+    what it is derived from, never zero, which is a claim. Since v1.50, None
+    also covers a THIRD case -- some entries supplied it and some did not --
+    which CalculationTotals.data_state is what tells apart from the first."""
+    total_value_nzd: Decimal | None          # None unless every entry answered
+    wasted_value_nzd: Decimal | None         # None unless every entry answered
     wasted_share_percent: Decimal | None     # wasted / total * 100, 2 places
     saving_nzd: Decimal | None               # per-entry rate x diverted mass
+
+#: v1.50, §4.6. Which of three things is true of one totals-level figure.
+#: A bare `Decimal | None` cannot tell "nobody answered" from "some entries
+#: answered and some did not" -- both are None -- and the difference is the
+#: whole reason this type exists rather than a second None-or-zero pass.
+DATA_COMPLETE = "complete"        # every entry that mattered answered
+DATA_INCOMPLETE = "incomplete"    # some did, some did not -- value withheld
+DATA_NOT_SUPPLIED = "not_supplied"  # nobody answered at all
+
+@dataclass(frozen=True)
+class DataState:
+    """v1.50, §4.6. One field per totals-level figure that can be `None` for
+    more than one reason: `production_share_percent` and MoneyResult's four.
+
+    A non-complete state always pairs with a `None` value; a `complete` state
+    does not guarantee a non-None one -- the arithmetic can still be
+    undefined (every entry reporting zero production, say)."""
+    production_share_percent: str = DATA_NOT_SUPPLIED
+    total_value_nzd: str = DATA_NOT_SUPPLIED
+    wasted_value_nzd: str = DATA_NOT_SUPPLIED
+    wasted_share_percent: str = DATA_NOT_SUPPLIED
+    saving_nzd: str = DATA_NOT_SUPPLIED
 
 @dataclass(frozen=True)
 class CalculationTotals:
@@ -1543,6 +1589,12 @@ class CalculationTotals:
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
     money: MoneyResult | None               # v1.48; None when nobody typed one
+    # v1.50, §4.6. Σ current mass ÷ Σ total_input_kg, 2 places -- computed
+    # only when every entry supplied a production total; None otherwise.
+    production_share_percent: Decimal | None = None
+    # v1.50, §4.6. Always present -- a caller never has to infer a state
+    # from an absent object.
+    data_state: DataState = DataState()
 
 @dataclass(frozen=True)
 class CalculationResult:
@@ -1553,7 +1605,7 @@ class CalculationResult:
     entries: tuple[EntryResult, ...]        # request order, one per EntryInput
 ```
 
-**Six rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
+**Seven rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
 
 1. **`entries` preserves request order.** §6.2 states it, and `submission_entry.sort_order` (§2.3) exists to persist it. It is what lets C pair a result with the row the user typed.
 2. **`by_destination` is populated per entry, and at the totals level it is populated per metric with the additive fields only (amended in v1.48).** This rule used to say the tuple was empty at the totals level, on the grounds that "a cross-entry destination breakdown has no single correct aggregation rule". **Half of that reasoning was right and is kept; half of it was wrong and is what changed.**
@@ -1568,6 +1620,7 @@ class CalculationResult:
 4. **When *no* entry carries an alternative, `totals.alternative` and `totals.net_benefit` are both `None`,** and so is every `EntryResult.alternative` / `EntryResult.net_benefit`.
 5. **`EquivalenceResult.label` interpolates `{value}` in exactly one format**, defined below. Until v1.4 it was defined nowhere, and §6.2's samples were the only evidence of it.
 6. **`CalculationTotals.money` is `None` when no entry supplied a money figure, and each of its own fields is `None` unless everything that field derives from was supplied** (v1.48, §4.5). It is the one field on this type not derived from a metric or a formula, and it is a `None`-or-a-value rather than a zero throughout, because "nobody said" and "the answer is zero" are different claims and only a value actually seen can tell them apart.
+7. **`CalculationTotals.production_share_percent` and every field of `CalculationTotals.money` are computed only when every entry the figure needs supplied its input, and `data_state` says which of `complete` / `incomplete` / `not_supplied` applies** (v1.50, §4.6). Summing over only the entries that answered — what this contract did before v1.50 — produces a real-looking figure whose denominator silently excludes part of the submission; averaging per-entry percentages weights a small entry equally with a large one. Both are wrong in the same way a rolled-up rate would be (rule 2), and both are refused for it. `EntryResult.production_share_percent` carries no state, because a single entry cannot be "incomplete" — it either answered or it did not.
 
 > **`EquivalenceResult.label`: the interpolation rule.**
 >
@@ -1876,10 +1929,12 @@ class MoneyResult:
 
 | Field | Rule |
 | --- | --- |
-| `total_value_nzd` | Σ of each entry's `total_value_nzd`, over the entries that supplied one. `None` when no entry did |
-| `wasted_value_nzd` | Σ of each entry's `wasted_value_nzd`, on the same terms |
-| `wasted_share_percent` | `wasted_value_nzd ÷ total_value_nzd × 100`. `None` when either side is absent **or when the total is zero** |
-| `saving_nzd` | Σ over entries of `(entry.wasted_value_nzd ÷ entry current mass) × (entry's diverted mass)`. **Two rules, both the client's** (O-12, closed 2026-08-27): **each entry's own value per kilogram applies to its own diverted mass**, and **an entry that supplied no value contributes nothing** rather than borrowing a neighbour's rate. `None` when no entry carries an alternative, and `None` when no entry supplied a wasted value at all. An entry whose current mass is zero is skipped rather than divided by — it has no rate, and it contributes nothing either way |
+| `total_value_nzd` | Σ of each entry's `total_value_nzd`, computed **only when every entry supplied one**; `None` otherwise, and `data_state.total_value_nzd` says whether that is because nobody did (`not_supplied`) or some did and some did not (`incomplete`) |
+| `wasted_value_nzd` | Σ of each entry's `wasted_value_nzd`, on the same all-or-nothing terms |
+| `wasted_share_percent` | `wasted_value_nzd ÷ total_value_nzd × 100`, computed only when both sides are `complete`; `None` otherwise (including **when the total is zero**, division by zero being its own reason regardless of coverage) |
+| `saving_nzd` | Σ over entries of `(entry.wasted_value_nzd ÷ entry current mass) × (entry's diverted mass)`, computed only when every entry that carries an alternative also supplied `wasted_value_nzd` — its coverage state is `wasted_value_nzd`'s. **Two further rules, both the client's** (O-12, closed 2026-08-27): **each entry's own value per kilogram applies to its own diverted mass**, and prevention mass is excluded from both sides of the diversion subtraction. `None` when no entry carries an alternative at all (`not_supplied`), and `None` on incomplete `wasted_value_nzd` coverage even where a partial sum could technically be produced — see the callout below |
+
+> **Behaviour change, v1.50, not an addition.** Before this revision, all four fields above summed whichever entries answered and reported the result as if it described the whole submission — a two-entry submission with one entry priced at $4.50/kg and 1,000 kg current mass returned `total_value_nzd="4500.00"` and `wasted_share_percent` computed against it, with nothing on the wire distinguishing that response from one where every entry had answered. **That is a wrong figure, not a partial one**: a reader has no way to tell "the whole submission is worth $4,500" from "one entry of several is worth $4,500, the calculator does not know about the rest". **Every one of the four fields now goes `null` unless the entries it needs all answered**, and `data_state` (§4.6) names why. A client built against v1.49 that read only `total_value_nzd`'s presence — never checking a companion state field, because there was none to check — now receives `null` in exactly the cases that used to carry a short-denominator figure; there is no request shape for which this revision returns a *smaller* set of correct figures, only fewer wrong ones.
 
 `MoneyResult` itself is `None` when neither money figure was supplied by any entry. All four figures carry **two decimal places** — New Zealand dollars and cents — not the ten every metric value carries (§1.2). The scale is applied in the engine rather than at the wire edge, because §6.2's `decimal_places=2` is an upper bound rather than an exact scale: a request carrying `"120000"` arrives as `Decimal("120000")` and would otherwise travel verbatim, which is the wrong-scale defect this contract already had once in the rolled-up rates.
 
@@ -1919,7 +1974,61 @@ An entry with no alternative substitutes its own `current` lines for the alterna
 
 > **Money quantises `ROUND_HALF_UP`, explicitly, and that is not a stray.** Every other quantise in this tree leaves the rounding mode implicit, which means `Decimal`'s default of half-to-even. Money rounds half up — 2.5 cents is 3 cents — and metric values do not. Both are correct in their own place; the explicit argument on the money path is written down here so the next reader does not "tidy" it into consistency with the metrics.
 
-> **`total_input_kg` is carried on `EntryInput` and persisted, and no field of `MoneyResult` reads it.** The share above is a share of **value**, not of mass. Waste as a share of production is a stage-two figure with no consumer today; the column and the field exist so that the number a visitor types is not thrown away while its consumer is built.
+> **`total_input_kg` is carried on `EntryInput` and persisted, and no field of `MoneyResult` reads it.** The share above (`wasted_share_percent`) is a share of **value**, not of mass. **Until v1.50 this was also true of every other field in the response — `total_input_kg` was stored and read by nothing.** §4.6 is now its consumer: waste as a share of **production** is a different figure from this one, computed from mass alone, with no factor and no formula anywhere in it.
+
+---
+
+## 4.6 Waste as a Share of Production, and the Three-State Figure (owner: A, v1.50)
+
+The card the results page has carried since it shipped — "Percentage waste" — read `total_input_kg` from no response field, because none existed: it said "Not available" whether the visitor had left the field blank or filled it in on every entry. This closes that, and in closing it corrects a live defect the money block (§4.5) shipped with.
+
+**Two figures, one at each of the two levels this contract already has.**
+
+```python
+@dataclass(frozen=True)
+class EntryResult:
+    ...
+    production_share_percent: Decimal | None = None   # this entry, alone
+
+@dataclass(frozen=True)
+class CalculationTotals:
+    ...
+    production_share_percent: Decimal | None = None   # every entry, together
+    data_state: DataState = DataState()
+```
+
+| Level | Formula | Present when |
+| --- | --- | --- |
+| `entries[].production_share_percent` | `this entry's current.total_kg ÷ this entry's total_input_kg × 100` | this one entry supplied a production total. Independent of every other entry — **permanent**, in the sense that it does not disappear because a neighbouring entry left the field blank |
+| `totals.production_share_percent` | `Σ current.total_kg ÷ Σ total_input_kg × 100` | **every** entry supplied a production total |
+
+Both at **two decimal places**, `ROUND_HALF_UP`, the same scale and rounding mode §4.5's `wasted_share_percent` already uses. `None` on division by zero (every entry reporting zero production) on the same terms as §4.5's share.
+
+**Sum over sum, never a mean of the per-entry percentages, and never a sum over only the entries that answered.** These are the two shortcuts §3 rule 7 refuses, for the reason it refuses them there: averaging weights a 10 kg entry the same as a 10 t one, and summing only the answerers produces a real-looking ratio with a silently short denominator — precisely the defect item 3 of this revision's change-log entry closes in §4.5. `_across_entries` (`engine/calculate.py`) is the one function that decides a totals-level figure and its state together, so the two cannot be built to disagree.
+
+**`data_state` is the discriminant a bare `Decimal | None` cannot express**, because `None` already meant one thing — nobody supplied it — and now has to mean two:
+
+```python
+DATA_COMPLETE = "complete"
+DATA_INCOMPLETE = "incomplete"
+DATA_NOT_SUPPLIED = "not_supplied"
+
+@dataclass(frozen=True)
+class DataState:
+    production_share_percent: str = DATA_NOT_SUPPLIED
+    total_value_nzd: str = DATA_NOT_SUPPLIED
+    wasted_value_nzd: str = DATA_NOT_SUPPLIED
+    wasted_share_percent: str = DATA_NOT_SUPPLIED
+    saving_nzd: str = DATA_NOT_SUPPLIED
+```
+
+`CalculationTotals.data_state` is **always present** — never `None` — so a caller never has to infer a state from an absent object. Each of its five fields governs the totals-level figure of the same name (four on `MoneyResult`, one on `CalculationTotals` itself), and the rule is one direction only: a non-`complete` state guarantees the paired value is `None`; a `complete` state does not guarantee the value is non-`None` (the arithmetic can still be undefined, as above). `EntryResult.production_share_percent` carries no state of its own — a single entry cannot be "incomplete", it either answered or it did not, and the value already says which.
+
+> **Three states, and a reader who only checks `hasValue` sees two of them the same way — which is the honest fallback, not the best one available.** `complete` and a `Decimal` present is the figure. `not_supplied` and `incomplete` both leave the value `None`, and a consumer that stops at "is it `None`" cannot tell "the calculator was never asked" from "the calculator was asked and the answer is unknowable from a partial submission" — which is worth a different sentence on every surface that shows the figure. `web/js/results.js`, the plain-text export it also writes, and `api/pdf_render.py`'s PDF (§6.2.3) all render the same three sentences, off the same catalogue keys, so a visitor who reads the page and then downloads either export meets one story about their submission rather than three.
+
+> **This is the one figure on the results page that open item O-1 does not describe, and it is worth saying in words a visitor can read, not only here.** Every other number in a response is `qty_kg × a factor`, and the factor set is mock (§2.2) until the client supplies real ones. `production_share_percent` is `current.total_kg ÷ total_input_kg` — two masses the visitor typed, with no factor and no formula anywhere in the division — so it is exactly as trustworthy under the mandatory placeholder banner as it will be once real factors arrive. A reader who distrusts it *because of* the banner is distrusting the one number the banner was never about.
+
+> **Why this is A's to compute and not a front-end division.** §7.6 rule 1 leaves the browser no calculation but unit conversion; a share of two masses is arithmetic, and the golden suite (§10.1) is the only evidence this contract has that a calculation is right. Computing it in the engine also means a stage-two consumer other than the results page — the PDF, a future statistics breakdown — reads the same figure rather than re-deriving it and risking a second, silently different one.
 
 ---
 
@@ -2410,7 +2519,7 @@ Called once on page load to build every dropdown and input row.
 | `entries` | array | Yes | At least one entry |
 | `entries[].sector` | string | Yes | Must exist in the taxonomy |
 | `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
-| `entries[].total_input_kg` | decimal-string \| null | No | **v1.48.** What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. *At most*, not exactly: `"50000"` and `"50000.000"` are the same figure and both are accepted, so trailing zeros are not required — `calculate_request.json` shows the padded spelling because it is one valid example, not the mandated one. Stored (§2.3); **no response field is derived from it yet** — see §4.5 |
+| `entries[].total_input_kg` | decimal-string \| null | No | **v1.48**, response field since **v1.50**. What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. *At most*, not exactly: `"50000"` and `"50000.000"` are the same figure and both are accepted, so trailing zeros are not required — `calculate_request.json` shows the padded spelling because it is one valid example, not the mandated one. Stored (§2.3); feeds `entries[].production_share_percent` and, when every entry supplies one, `totals.production_share_percent` — see §4.6 |
 | `entries[].total_value_nzd` | decimal-string \| null | No | **v1.48.** `>= 0`, at most 2 decimal places, `<= 14` digits. Feeds §4.5's money block and nothing else |
 | `entries[].wasted_value_nzd` | decimal-string \| null | No | **v1.48.** Same bounds. Feeds §4.5's money block and nothing else |
 | `entries[].current` | array | Yes | At least one line |
@@ -2548,6 +2657,14 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
       "wasted_value_nzd": "10750.00",
       "wasted_share_percent": "21.50",
       "saving_nzd": "4000.00"
+    },
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "incomplete",
+      "total_value_nzd": "complete",
+      "wasted_value_nzd": "complete",
+      "wasted_share_percent": "complete",
+      "saving_nzd": "complete"
     }
   },
   "entries": [
@@ -2574,7 +2691,8 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
         ]
       },
       "alternative": { "… same shape as current …" },
-      "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" }
+      "net_benefit": { "co2e": "2100.0000000000", "water": "0.0000000000" },
+      "production_share_percent": "15.00"
     }
   ]
 }
@@ -2584,7 +2702,7 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
 
 **`totals.current.metrics[code].by_destination` is populated from v1.48, per metric, and its two rate fields are zero** (§3 rule 2). `qty_kg` and `value` are summed across the entries that used that destination, so the rows partition the metric total they sit beside exactly. `upstream` and `downstream` are `"0.0000000000"` — present, at full scale, and **meaningless as rates**: the entries sharing a destination draw different factors, and there is no single rate behind a rolled-up row. A front end that renders a rate column from `totals` is rendering zeros; the rates live in `entries[]`, which is where a rate has a meaning. The client asked for a cross-entry destination view, and this is it: a field the engine fills, not a loop in the browser.
 
-`totals.money` is §4.5's block. It is `null` when no entry supplied a money figure, and each of its own four fields is `null` unless what it derives from was supplied. **It carries two decimal places, not ten** — it is dollars and cents, not a metric value.
+`totals.money` is §4.5's block. It is `null` when no entry supplied a money figure, and each of its own four fields is `null` unless every entry that field needs supplied it — **a behaviour change from v1.49, where a field could carry a sum over only the entries that answered and present it as the whole submission's figure.** `totals.data_state` (§4.6, v1.50) says which of `complete`, `incomplete` and `not_supplied` each of those four fields is in, alongside `production_share_percent`; `entries[].production_share_percent` carries the same figure per entry, with no state of its own. **It carries two decimal places, not ten** — it is dollars and cents, not a metric value.
 
 > **Still settled, and unchanged by the roll-up: the per-entry destination breakdown is rendered per entry, from `entries[]`.** This is no longer a live problem to rule on. `web/js/results.js`'s `breakdowns()` pushes **one section per entry**, each read straight from `entries[i].current.metrics[code].by_destination` and labelled with that entry's sector and food category — the single combined destination tab this ruling once described, built by looping over entries and adding `by_destination[].value` together in JavaScript, is gone from the code, and `web/js/improvement.js` records that the card it fed is gone with it. What follows is the reasoning that produced that rendering, kept for the record.
 >
@@ -2650,7 +2768,7 @@ No other key is accepted. The body is `extra="forbid"`, as every request body in
 
 > **What the front end must do with it (owners: C and D, stage two).** The offer belongs on the results screen, where the visitor can see what they would be contributing and while the token is still live. It is an **opt-in**: nothing is contributed by default, and a visitor who ignores the control has answered "no" by doing nothing, which is the answer a consent design has to make free. The wording is the client's to approve; what this contract fixes is that the calculation is recorded either way and only the public aggregate turns on the answer.
 
-## 6.2.3 `POST /api/v1/export/pdf` (v1.49)
+## 6.2.3 `POST /api/v1/export/pdf` (v1.49, title block v1.50)
 
 **The document a visitor downloads and forwards, not a JSON body.** Numbered under §6.2 for the same reason §6.2.2 is — it shares §6.2's request shape and its engine call, not because it continues an existing submission. `api/export.py` defines the request; `api/pdf_render.py` is the WeasyPrint invocation behind it. It replaces a hand-rolled, browser-side export that never reached `main` (v1.49's changelog entry).
 
@@ -2698,6 +2816,19 @@ No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather t
 **The document renders in the resolved locale, and one thing inside it never does.** The chrome — headings, unit labels, the mock-data warning banner, and the running header and footer on every page — is drawn from the same catalogues that serve the page, a byte-identical copy of `web/locales/*.json` under `api/assets/locales/` (a hash-comparison test holds the two in step). A Tamil-reading visitor therefore reads the document in Tamil. **The taxonomy names printed inside it — sector, food category and destination labels — are staff-typed database rows, supplied by `db/repository.get_taxonomy`, and are never translated in any locale: they are printed exactly as staff typed them.** Unlike the page, a missing catalogue key is not silently rendered in its English source here — `api/i18n.py`'s `Catalogue.gettext` raises rather than falling back, because a document read later by someone who cannot ask a follow-up is the one place a silently half-English render is worse than a failed request.
 
 **The placeholder-data warning is mandatory here on the same terms as everywhere else (§2.2).** `render_export_pdf` reads `result.is_mock` unconditionally — there is no parameter, keyword or locale that suppresses it — and the renderer re-reads its own rendered output and refuses to produce a document that is missing the banner, rather than shipping one silently without it.
+
+**The document opens with a title block (v1.50), addressing the client's second-round feedback that it "lacks brand character".** Four facts, in the resolved locale, ahead of every figure:
+
+| Fact | Source |
+| --- | --- |
+| What it is | The document's own title, the same translated string the results page's methodology text uses |
+| Who produced it | The client's own byline — the same sentence a news article on the home page carries when it is theirs, reused rather than a second way of saying "Kai Commitment made this" |
+| When it was rendered | An ISO-8601-shaped timestamp — `2026-09-04 14:32 UTC` — read off the server's own clock at the moment the request was served, **passed into the renderer rather than read inside it**, so the renderer itself stays a pure function of its arguments and a test can pin the moment to something fixed. Not run through a per-locale date format, on the same reasoning `GWP100` (below) is not: digits are the same in every language |
+| The factor-set version it used | `result.factor_set_version`, joined with the methane horizon exactly as the summary tile below it already does — `MOCK-v0 · GWP100` |
+
+Set in the brand's own type (Geologica Bold for the heading, Kumbh Sans Regular for the rest, both already self-hosted for the document — §7.6 rule 7), with the half-circle derived from the logo as the single large supporting graphic the brand guideline calls for, drawn once beside the title block and nowhere else in the document. Built with CSS flow layout, not a position computed in Python — `api/pdf_render.py`'s own rule, stated in its module docstring, is that a layout problem is answered in `api/templates/results.css`, never with arithmetic in the renderer.
+
+**The three §4.6 states reach the document on the same terms as the screen and the plain-text export.** The summary grid carries a "Percentage waste" tile with its own three states — a `complete` percentage, an `incomplete` submission's explanatory sentence, or a `not_supplied` submission's — worded identically to `web/js/results.js`'s card because both read the same catalogue keys. `totals.money`'s table does the same per field: a `complete` field prints its figure, an `incomplete` field prints the shared "not every entry supplied this figure" sentence in place of a number, and a `not_supplied` field is left off the table, exactly as it was before v1.50. A visitor who reads the page and then downloads either export meets one story about their submission, not three.
 
 **Error codes it can answer**
 
@@ -3328,8 +3459,10 @@ export function renderResults(state);
  *  totals.net_benefit, when one was run; then per entry, the inputs the user
  *  typed, that entry's own metric totals and each destination's
  *  by_destination[].value; then the factor version, the placeholder notice
- *  when and only when factor_set.is_mock (§7.6.2), and the percentage-waste
- *  limitation. No figure is summed, differenced or re-scaled here (§7.6.1).
+ *  when and only when factor_set.is_mock (§7.6.2), and the "Percentage waste"
+ *  line in its own §4.6 three-state wording (v1.50) — a figure when the
+ *  submission's coverage is complete, an explanatory sentence otherwise.
+ *  No figure is summed, differenced or re-scaled here (§7.6.1).
  *  @returns {string} */
 export function buildResultsReport(state);
 

@@ -141,3 +141,43 @@ cut is exactly how this drifted the first time. New sizes: jp 228,224 B (was
 208,076), kr 79,916 B (was 72,968), sc 200,708 B (was 188,332), tc 261,024 B
 (was 243,356) — a few kilobytes each for the characters that were missing,
 still two orders of magnitude under the 10.9 MiB whole face.
+
+**The character-extraction step above was prose, not a committed script, and
+that gap is now closed.** `recut_cjk_subsets.py`, beside this file, is the
+`--text-file` step: it reads each language's own `web/locales/*.json`
+`strings` values (the same collection `assert_every_character_is_drawable`
+checks a render against), adds printable ASCII and the printable half of
+Latin-1 Supplement, and drives `fontTools.subset` with the flags above.
+Re-cutting all four faces from the current catalogues is `apt-get install
+fonts-noto-cjk` followed by `py -3.12
+api/assets/fonts/noto/recut_cjk_subsets.py` — no longer a paragraph a future
+maintainer has to reconstruct into a `--text-file` by hand, which is the same
+drift that produced the gap this section exists to record.
+
+### What the review that closed this task found
+
+The re-cut's six-character gap (`及` `涉` `率` `笔` `部` and one Hangul
+syllable) was confirmed genuinely pre-existing — present against the parent
+commit's fonts, absent against these — and closed by this re-cut. Two things
+the re-cut itself changed, neither caught by any test because neither is a
+regression a test watches for:
+
+* **`U+5360` (`占`) is gone from the Traditional Chinese face.** It was in the
+  face this re-cut replaced and is not in the one it produced, because
+  `zh-Hant.json`'s current strings no longer contain it — the previous cut was
+  frozen at an older catalogue and this one reads fresh, exactly as designed.
+  Benign: the Simplified Chinese face still carries `U+5360` for `zh`, and
+  `zh-Hant` never asks for it. Recorded because a *harmful* drop would look
+  identical to this one from the outside — same silent size change, same
+  "still all green" test run — and nothing before this line distinguished
+  them from each other.
+* **`U+672C` (`本`, in `ja`) and `U+AD6D` (`국`, in `ko`) are not covered by
+  any embedded face, and are not a gap.** Both live only in their catalogue's
+  top-level `endonym` field ("日本語", "한국어" — the language's own name for
+  itself), which sits beside `strings` in the JSON file, not inside it.
+  `i18n.Catalogue.strings` is built from the `strings` key alone, so neither
+  character ever reaches `gettext`, `assert_every_character_is_drawable`, or
+  the rendered document — `recut_cjk_subsets.py`'s `catalogue_characters`
+  reads the same key for the same reason. Pre-existing, unrelated to this
+  re-cut, and left exactly as they were rather than added to a subset for
+  characters nothing prints.

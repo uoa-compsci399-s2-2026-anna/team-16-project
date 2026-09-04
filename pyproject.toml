@@ -203,6 +203,18 @@ api = [
     "assets/fonts/noto/*.txt",
     "assets/fonts/noto/*.md",
     "assets/locales/*.json",
+    # The title block's logo (v1.50 review). Same wall as the fonts above -
+    # `web/assets/` is not in this package and not in docker/api.Dockerfile's
+    # build context - and the same failure mode: a wheel built without this
+    # line ships a renderer whose `<img src="kai-commitment-logo.png">`
+    # resolves to nothing, `_local_url_fetcher` reads a file that is not
+    # there, and WeasyPrint logs a failed image load rather than raising, so
+    # the omission is invisible on a checkout and silent in the built image
+    # too - no test failure, just a masthead with no logo in it, the exact
+    # defect this line exists to close. `test_the_embedded_logo_matches_the_
+    # public_one` hash-compares the two copies the way the fonts' own test
+    # does.
+    "assets/*.png",
 ]
 admin = [
     "templates/*.html",

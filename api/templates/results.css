@@ -273,6 +273,21 @@ p { margin: 0 0 2mm 0; }
   min-inline-size: 0;
 }
 
+/* THE LOGO. `kai-commitment-logo.png` is 670x195 (≈3.44:1); fixed to the
+ * mark's own block-size and `auto` inline-size keeps that ratio, so nothing
+ * here stretches, crops or recolours it - the brand guideline's one rule
+ * about the mark. A flex sibling of `.cover__mark`, in source order before
+ * it, so `flex-direction: row` (the default `.cover` already sets) carries
+ * it to the reading-start edge in every language and swaps it under
+ * `dir="rtl"` with `.cover__mark` for free, the same way `.cover__mark`
+ * itself already does. */
+.cover__logo {
+  flex: 0 0 auto;
+  block-size: 14mm;
+  inline-size: auto;
+  margin-block-start: 1mm;
+}
+
 /* THE BRAND'S HALF-CIRCLE, SINGLY, AT LARGE SCALE - the guideline's own
  * words. Same construction as `web/css/styles.css`'s
  * `.site-drawer__handle::before`: `100% 50%` on both reading-end corners is a

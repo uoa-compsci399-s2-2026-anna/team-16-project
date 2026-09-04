@@ -540,6 +540,34 @@ def test_the_embedded_faces_match_the_public_ones():
         assert hashlib.sha256(embedded).hexdigest() == hashlib.sha256(served).hexdigest(), name
 
 
+def test_the_embedded_logo_matches_the_public_one():
+    """The same discipline as `test_the_embedded_faces_match_the_public_ones`,
+    for the one brand asset added in the v1.50 review: `api/assets/kai-
+    commitment-logo.png` is a third copy of the same file `web/home.html`,
+    `web/methodology.html` and `web/stats.html` already print, not a
+    recompressed, recoloured or resized one - the brand guideline's rule that
+    the logo may not be altered applies to this copy exactly as it does to
+    the one nginx serves."""
+    served = (ROOT / "web" / "assets" / "kai-commitment-logo.png").read_bytes()
+    embedded = (ROOT / "api" / "assets" / "kai-commitment-logo.png").read_bytes()
+    assert hashlib.sha256(embedded).hexdigest() == hashlib.sha256(served).hexdigest()
+
+
+def test_the_logo_is_in_the_title_block_itself():
+    """**Mutation target**, the same shape as `test_the_factor_set_version_is_
+    in_the_title_block_itself` above and for the same reason: a bare
+    whole-document substring check for `kai-commitment-logo.png` would stay
+    green even if the `<img>` moved outside `<header class="cover">`
+    entirely, so this reads that region specifically. The review's own
+    finding was that the mark and six words of byline carried the whole
+    identity with no actual logo anywhere in the document; this is what
+    closes it."""
+    html = render_html(_result(), _taxonomy(), "en")
+    match = re.search(r'<header class="cover">.*?</header>', html, re.S)
+    assert match, 'no <header class="cover"> in the rendered document'
+    assert 'src="kai-commitment-logo.png"' in match.group(0)
+
+
 @requires_weasyprint
 def test_the_brand_faces_are_embedded_in_the_pdf():
     """**That the fonts actually loaded, read back out of the file.**

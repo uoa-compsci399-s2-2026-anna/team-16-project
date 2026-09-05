@@ -43,6 +43,11 @@ from pathlib import Path
 
 import pytest
 
+pytest.importorskip(
+    "playwright.sync_api",
+    reason="the export is asserted by driving a real browser, not by reading source",
+)
+
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 RESULTS_JS = ROOT / "web" / "js" / "results.js"

@@ -158,6 +158,58 @@ def page_at(browser):
         ctx.close()
 
 
+#: Playwright's `locale=` context option and the `?lang=` one-request override
+#: (see `_english` above) both have to agree, for the same reason `page_at`
+#: pins both to English - a mismatch lets the browser's own negotiation win.
+#: `ar` is the one RTL language this project ships, and both are exercised at
+#: the same five widths `page_at`'s own tests use so a layout finding
+#: (clipping, in particular) is measured against the same breakpoints in
+#: every direction and every script this file cares about.
+_CONTEXT_LOCALE = {"de": "de-DE", "ar": "ar-SA"}
+
+
+@pytest.fixture
+def page_at_locale(browser):
+    """`page_at`, parameterised by language rather than pinned to English.
+
+    A second fixture rather than an optional parameter on `page_at` itself -
+    every other test in this file calls `page_at(width, height, dpr)` and
+    must keep measuring the English copy it was calibrated against; adding a
+    silently-defaulted fourth argument there is exactly the kind of change
+    that would make a future English-only test pass in some other language by
+    a typo, undetected until it started failing on layout it never touched.
+    """
+    contexts = []
+
+    def open_page(width, height, dpr, lang):
+        ctx = browser.new_context(
+            viewport={"width": width, "height": height},
+            device_scale_factor=dpr,
+            locale=_CONTEXT_LOCALE[lang],
+            bypass_csp=True,
+        )
+        contexts.append(ctx)
+        page = ctx.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(status=200, content_type="application/json", body=json.dumps(FIXTURE)),
+        )
+        url = BASE + ("&" if "?" in BASE else "?") + f"lang={lang}"
+        try:
+            page.goto(url, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {BASE}: {error}")
+        page.add_style_tag(content=FORCE_AUTO)
+        if MUTATION_CSS:
+            page.add_style_tag(content=MUTATION_CSS)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        return page
+
+    yield open_page
+    for ctx in contexts:
+        ctx.close()
+
+
 def walk(page):
     """Drive the wizard as a visitor would, yielding the step index *on arrival*
     at each screen — intro, 0..4, then results (5).
@@ -1726,16 +1778,48 @@ def test_a_box_typed_past_its_own_ceiling_does_not_leave_its_own_slider_stuck_be
     )
 
 
-@pytest.mark.parametrize("width,height,dpr", [(700, 900, 1.0), (938, 898, 1.5), (1278, 983, 1.25)])
-def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at, width, height, dpr):
-    """**Item ⑨'s layout half.** The client's screenshot showed the unit
-    select wide enough to truncate a container's name while the slider - the
-    control actually manipulated - was squeezed to a stub. The select is a
-    choice made once and does not need to out-compete the range for room, at
-    any of the widths where the row does not simply stack (below ~480px every
-    control is full-width and this comparison does not apply).
+#: width, height, dpr - the same five breakpoints `page_at`'s own layout
+#: tests use (320/390 stacked, 700/938/1278 not), each paired with a height
+#: and dpr already established elsewhere in this file for that width.
+_FIVE_WIDTHS = [
+    pytest.param(320, 700, 3.0, id="320"),
+    pytest.param(390, 700, 3.0, id="390"),
+    pytest.param(700, 900, 1.0, id="700"),
+    pytest.param(938, 898, 1.5, id="938"),
+    pytest.param(1278, 983, 1.25, id="1278"),
+]
+
+#: Not stacked below ~480px, per this test's own docstring - the width at
+#: and above which the range/select/box comparison is meaningful at all.
+_STACKING_BREAKPOINT = 480
+
+
+@pytest.mark.parametrize("lang", ["de", "ar"])
+@pytest.mark.parametrize("width,height,dpr", _FIVE_WIDTHS)
+def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at_locale, width, height, dpr, lang):
+    """**Item ⑨'s layout half, now measured in German and Arabic at all five
+    of this file's own breakpoints, not only in English at three of them.**
+
+    The client's screenshot showed the unit select wide enough to truncate a
+    container's name while the slider - the control actually manipulated -
+    was squeezed to a stub. The select is a choice made once and does not
+    need to out-compete the range for room, at any of the widths where the
+    row does not simply stack (below `_STACKING_BREAKPOINT` every control is
+    full-width and this specific comparison does not apply, though the
+    containing-block check below still runs there).
+
+    **Round three found this assertion checked only the left edge, in an
+    LTR locale** (`select_box["x"] >= list_box["x"] - 1`) - which passes at
+    700px even when 65% of the select is cut off the *right* edge, because
+    nothing here ever looked at the right edge or ran in a locale where the
+    left edge is the one that stays clean. Checking full containment - both
+    edges, against the list's own box - catches a clip off either edge, in
+    either direction: the same one assertion now does for Arabic's RTL clip
+    (off the left) what it always did for a left-edge overflow, and would
+    have caught German's own right-edge clip at 700px, which the old,
+    left-only, LTR-only version could not.
     """
-    page = advance_to(page_at(width, height, dpr), 5)
+    page = advance_to(page_at_locale(width, height, dpr, lang), 5)
     page.click('[data-action="explore-improvements"]')
     page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(120)
@@ -1745,22 +1829,34 @@ def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at, width, h
     select_box = row.locator("select.improvement-row-unit").bounding_box()
     box_box = row.locator('.percentage-input input[type="number"]').bounding_box()
 
-    assert range_box["width"] > select_box["width"], (
-        f"at {width}px the range ({range_box['width']}px) is not wider than the select "
-        f"({select_box['width']}px) - the control the visitor drags should get the room"
-    )
-    assert range_box["width"] >= box_box["width"], (
-        f"at {width}px the range ({range_box['width']}px) is narrower than the number box "
-        f"({box_box['width']}px)"
-    )
+    if width >= _STACKING_BREAKPOINT:
+        assert range_box["width"] > select_box["width"], (
+            f"[{lang}@{width}px] the range ({range_box['width']}px) is not wider than the "
+            f"select ({select_box['width']}px) - the control the visitor drags should get "
+            "the room"
+        )
+        assert range_box["width"] >= box_box["width"], (
+            f"[{lang}@{width}px] the range ({range_box['width']}px) is narrower than the "
+            f"number box ({box_box['width']}px)"
+        )
+
     #: The panel must not silently clip past its own list container
     #: (`.improvement-allocation-list` has `overflow: hidden`) - a control
-    #: with a negative or over-the-edge origin is being cut off rather than
-    #: merely narrow.
+    #: whose box is not **fully contained** by the list's own box is being cut
+    #: off rather than merely narrow. Checked on both edges: a left-edge-only
+    #: check is exactly what let a 40px right-edge clip through in German at
+    #: 700px, and would equally have missed a right-edge-only check catching
+    #: Arabic's left-edge clip at the same width.
     list_box = page.locator(".improvement-allocation-list").bounding_box()
     assert select_box["x"] >= list_box["x"] - 1, (
-        f"the select's own left edge ({select_box['x']}) sits outside its list "
-        f"container's own left edge ({list_box['x']}) - it is being clipped, not "
+        f"[{lang}@{width}px] the select's own left/start edge ({select_box['x']}) sits "
+        f"outside its list container's own left edge ({list_box['x']}) - it is being "
+        "clipped, not merely narrow"
+    )
+    assert select_box["x"] + select_box["width"] <= list_box["x"] + list_box["width"] + 1, (
+        f"[{lang}@{width}px] the select's own right/end edge "
+        f"({select_box['x'] + select_box['width']}) sits outside its list container's own "
+        f"right edge ({list_box['x'] + list_box['width']}) - it is being clipped, not "
         "merely narrow"
     )
 

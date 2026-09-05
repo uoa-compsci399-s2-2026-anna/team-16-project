@@ -874,7 +874,32 @@ tbody th { font-weight: 700; }
 .explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
-.improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(250px, 0.72fr) minmax(380px, 1.28fr); gap: 24px; align-items: start; }
+/* **The list column's own minimum has to cover what the row inside it actually needs,
+   not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
+   for its control column alone; add the row's label column (120px min), the gap between
+   them (20px) and the row's own padding (18px each side, 36px total - `box-sizing:
+   border-box` counts it inside the row's width) and the row needs at least 436px to lay
+   out without its own tracks being compressed below their stated minimums. The list
+   column's old minimum (380px) was less than that by 56px, so at any viewport narrow
+   enough to hold this editor to its bare minimums - 700px measured, but really the whole
+   band from the 480px mobile stack up to where the two-column split stops being
+   squeezed - the row was compressed well past what its own CSS says it is entitled to,
+   and the select (the row's last, narrowest track) was what ran out of room first:
+   `.improvement-allocation-list`'s `overflow: hidden` then clipped it rather than
+   showing an overflow nobody could scroll to. Not RTL-only - the clip is symmetric, off
+   whichever edge is the inline end.
+
+   **Fixed by giving both of this grid's own columns a minimum that actually adds up.**
+   At 700px this editor is given 608px total (measured, both directions, both English and
+   German - the split is pixel-based, not text-based, so it does not move with the
+   language); 144px (pie) + 440px (list) + 24px gap is exactly that, with 4px of the
+   list's own slack carried over from the row's `:has()` floor below. The pie column
+   does end up narrower at this one width than it was before this fix - there was never
+   a way to give the row what it needs inside a fixed 608px budget without taking it from
+   somewhere, and the select is exactly what this round was told not to shave further.
+   Above roughly 900px there is room for both columns past their minimums and the split
+   returns to its usual proportions. */
+.improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: start; }
 .improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
 .improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .improvement-pie-chart path { stroke: #fff; stroke-width: 2; }

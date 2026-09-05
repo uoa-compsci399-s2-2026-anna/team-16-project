@@ -907,6 +907,99 @@ def test_the_production_total_is_optional_and_continue_still_works(page_at):
     )
 
 
+def test_a_wasted_value_greater_than_the_total_value_is_refused_at_entry(page_at):
+    """**The client's own report: a money block reading "wasted share 102.17%".**
+    The wasted food is a subset of the food handled, so its value cannot exceed
+    the value of the whole - refused here, at the field, rather than only
+    printed unclamped on the results page (`moneySummary` in `results.js`
+    deliberately does not clamp `wasted_share_percent`, on the theory that a
+    contradiction reaching it is the visitor's own typo showing through; this
+    is the fix that stops the typo reaching it at all).
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1000")
+    page.fill("#total-value", "46.00")
+    page.fill("#wasted-value", "47.00")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    assert page.locator("#amount-title").count() == 1, (
+        "the contradiction did not keep the visitor on the amount step"
+    )
+    assert page.locator(".destination-row").count() == 0, (
+        "the step advanced despite the wasted value exceeding the total value"
+    )
+    #: Attached to `#wasted-value` specifically - the figure the message is
+    #: actually about - not the waste-amount field, and not a generic banner.
+    field = page.locator("#wasted-value")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert field.get_attribute("aria-describedby") == "wasted-value-error"
+    message_el = page.locator("#wasted-value-error")
+    assert message_el.count() == 1, "no message was shown against #wasted-value"
+    assert message_el.get_attribute("role") == "alert"
+    message = message_el.inner_text()
+    assert "waste" in message.lower() and "production" in message.lower(), (
+        f"the message does not say which figure is the problem: {message!r}"
+    )
+    #: Not also duplicated against the waste-amount field, which this
+    #: contradiction is not about.
+    assert page.locator("#amount-error").count() == 0, (
+        "the money contradiction was ALSO attached to the waste-amount field"
+    )
+
+    #: The affirmative half: pulling the wasted figure back under the total
+    #: lets the visitor continue, exactly as editable as it always was.
+    page.fill("#wasted-value", "45.00")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+    assert page.locator(".destination-row").count() > 0, (
+        "a wasted value under the total was still refused"
+    )
+
+
+def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(page_at):
+    """**The same contradiction, one dimension over.** The waste amount is a
+    subset of the production total beside it, so the same rule applies to the
+    two masses as to the two money figures above - and the same server-side
+    ratio (`production_share_percent`, §4.6) would otherwise print a share
+    past 100% for the same reason the money share could.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1500")
+    page.fill("#total-input", "1000")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    assert page.locator("#amount-title").count() == 1, (
+        "the contradiction did not keep the visitor on the amount step"
+    )
+    assert page.locator(".destination-row").count() == 0, (
+        "the step advanced despite the waste amount exceeding the production total"
+    )
+    #: Attached to the waste-amount field itself - the mass contradiction's
+    #: own subject, unlike the money one above.
+    field = page.locator("#total-waste")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert field.get_attribute("aria-describedby") == "amount-error"
+    message_el = page.locator("#amount-error")
+    assert message_el.count() == 1, "no message was shown against #total-waste"
+    assert message_el.get_attribute("role") == "alert"
+    message = message_el.inner_text()
+    assert "waste" in message.lower() and "produced" in message.lower(), (
+        f"the message does not say which figure is the problem: {message!r}"
+    )
+
+    #: The affirmative half.
+    page.fill("#total-input", "2000")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+    assert page.locator(".destination-row").count() > 0, (
+        "a waste amount under the production total was still refused"
+    )
+
+
 def test_step_three_asks_for_the_two_money_figures(page_at):
     """Item ⑤. Both optional, both in New Zealand dollars, and both
     STATISTICS ONLY - the client's ruling on open item O-2 is that the value
@@ -1046,13 +1139,21 @@ def test_the_four_new_values_reach_the_request_body(page_at):
             #: **Tonnes, and that is the whole point of this line.** Filled while the
             #: entry unit was kilograms, the conversion on `total_input_kg` is the
             #: identity - so deleting it outright left this test green while claiming in
-            #: its own comment to assert the conversion happened. 50 tonnes is 50,000 kg
-            #: and no other reading of the field produces that number. The unit is
-            #: selected before the field is filled because changing it clears the field.
+            #: its own comment to assert the conversion happened. 5000 tonnes is
+            #: 5,000,000 kg and no other reading of the field produces that number. The
+            #: unit is selected before the field is filled because changing it clears
+            #: the field.
+            #:
+            #: **Larger than `#total-waste`, which `walk()`'s own step-2 fill sets to
+            #: "1000" in whatever unit is active - here, tonnes - immediately after
+            #: this block runs.** A production total smaller than that would trip the
+            #: item-①-round-two guard in `validateCurrentStep` (waste cannot exceed
+            #: production) and refuse to advance past step 2 at all, which is a
+            #: different test's subject, not this one's.
             page.select_option("#total-unit", "tonnes")
             page.wait_for_timeout(80)
             page.fill("#total-waste", "1")
-            page.fill("#total-input", "50")
+            page.fill("#total-input", "5000")
             page.fill("#total-value", "120000")
             page.fill("#wasted-value", "4500")
         elif arrived == 4:
@@ -1064,14 +1165,14 @@ def test_the_four_new_values_reach_the_request_body(page_at):
     assert sent, "no request was made"
     assert sent["time_frame"] == "one_month"
     entry = sent["entries"][0]
-    #: 50 tonnes is 50,000 kg. §1.2: decimals travel as strings because
+    #: 5000 tonnes is 5,000,000 kg. §1.2: decimals travel as strings because
     #: JavaScript's Number is a double.
     #:
-    #: **Exactly `"50000"`, with no invented decimal places.** The send path
+    #: **Exactly `"5000000"`, with no invented decimal places.** The send path
     #: ended in `.toFixed(3)`, which also *rounded* - a typed `1.2345` became
     #: `"1.234"`, the very rewrite the round-one fix refused to perform on the
     #: money fields two lines below. The two families now apply one rule.
-    assert entry["total_input_kg"] == "50000"
+    assert entry["total_input_kg"] == "5000000"
     #: The two money fields are **not** reformatted - Fix round 1 found
     #: `Number(value).toFixed(2)` silently padding (and, for a third typed
     #: decimal, rounding) a figure nobody asked to have rewritten. "120000"
@@ -1182,11 +1283,22 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
     `.toFixed(3)`, which rounded `1.2345` to `1.234`.
 
     **`CalculatePayload.model_validate` is deliberately not run on the kilogram
-    body.** `1.2345` kg is four decimal places, so §6.2 refuses it - and that is
-    the honest outcome the round-one money fix chose over rewriting the figure:
-    the ceiling is enforced at the keystroke, and anything that gets past it goes
-    to the server as written rather than being quietly made acceptable. The
-    tonnes body is valid and is checked.
+    body.** `5000.1234` kg is four decimal places, so §6.2 refuses it - and that
+    is the honest outcome the round-one money fix chose over rewriting the
+    figure: the ceiling is enforced at the keystroke, and anything that gets
+    past it goes to the server as written rather than being quietly made
+    acceptable. The tonnes body is valid and is checked.
+
+    **The production figure is larger than the waste amount, on purpose.**
+    `walk()`'s own step-2 fill (`#total-waste` -> `"1000"`) runs immediately
+    after this function's own custom fill, in whatever unit `#total-unit` was
+    just set to - so the waste amount here is always "1000" in that unit,
+    regardless of which branch is under test. A production total *smaller*
+    than that would trip the item-①-round-two guard added to
+    `validateCurrentStep` (waste cannot exceed production, the mass-dimension
+    twin of the money contradiction the client reported), which refuses to
+    advance past step 2 at all - and this test is about what reaches the wire,
+    not about that refusal.
     """
 
     def sent_body(unit, typed):
@@ -1209,15 +1321,16 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
         assert body, "no request was made"
         return body
 
-    kilograms = sent_body("kilograms", "1.2345")
-    assert kilograms["entries"][0]["total_input_kg"] == "1.2345", (
+    kilograms = sent_body("kilograms", "5000.1234")
+    assert kilograms["entries"][0]["total_input_kg"] == "5000.1234", (
         "the production total was rounded on its way to the wire"
     )
 
-    tonnes = sent_body("tonnes", "1.2345")
-    #: 1.2345 t is 1234.5 kg exactly - the conversion gains three decimal places,
-    #: so nothing is rounded here either, and the result is inside §6.2's three.
-    assert tonnes["entries"][0]["total_input_kg"] == "1234.5"
+    tonnes = sent_body("tonnes", "5000.1234")
+    #: 5000.1234 t is 5,000,123.4 kg exactly - the conversion gains three
+    #: decimal places, so nothing is rounded here either, and the result is
+    #: inside §6.2's three.
+    assert tonnes["entries"][0]["total_input_kg"] == "5000123.4"
     CalculatePayload.model_validate(tonnes)
 
 

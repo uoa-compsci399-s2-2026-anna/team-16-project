@@ -394,23 +394,37 @@ function amountStep() {
     ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
     : t('Use up to two decimal places.')
   const amountValue = container ? state.unitCount : state.totalAmount
-  // `state.error` is reused for two different things on this step, and only one of them
-  // belongs beside `amountId`. `validateCurrentStep`'s own message about `amountId` never
-  // sets `errorCode` — that check never touches the network — while a rejected
-  // `total_input_kg`/`total_value_nzd`/`wasted_value_nzd` is a server VALIDATION_ERROR that
-  // now lands on this step (see `detailStep` below) with `errorCode` set. Painting the
-  // second one next to `amountId` would mislabel somebody else's field as this one's — the
-  // exact defect this step exists to fix, one field over.
+  // `state.error` is reused for three different things on this step now, and each
+  // belongs beside a different field. `amountOnlyValidation` and
+  // `massContradictionValidation`'s messages are both about `amountId` (the waste
+  // amount is the mass contradiction's own subject); `moneyContradictionValidation`'s
+  // is about `#wasted-value` instead, never `amountId`; a server `VALIDATION_ERROR`
+  // naming `total_input_kg`/`total_value_nzd`/`wasted_value_nzd` (see `detailStep`
+  // below) is neither, and carries `errorCode`, which none of the three client
+  // checks ever set. Recomputing all three client checks fresh, rather than
+  // trusting `state.error`'s own history, is what lets this tell them apart: none
+  // of `amountOnlyValidation`/`moneyContradictionValidation`/`massContradictionValidation`
+  // reads `state.error` itself, so whichever one currently agrees with it is the one
+  // that produced it - stale text from an already-fixed field naturally attributes
+  // to none of them instead of mislabelling whatever else is on screen.
   const isApiError = state.errorCode === 'VALIDATION_ERROR'
-  const amountFieldError = isApiError ? null : state.error
+  const isClientError = !isApiError && Boolean(state.error)
+  const amountFieldError = isClientError && (state.error === amountOnlyValidation() || state.error === massContradictionValidation())
+    ? state.error
+    : null
+  const moneyContradictionError = isClientError && state.error === moneyContradictionValidation() ? state.error : null
   const bannerError = isApiError ? state.error : null
   // The three round-two scalar fields' own per-field errors, keyed the same way
   // `destinationRows` keys a line's — `state.fieldErrors`, by the exact path the server
   // named (`entries[N].<key>`, always the draft entry's: see `ENTRY_SCALAR_FIELD_STEP`).
+  //
+  // **`wastedValueError` also carries the client-side money contradiction**, the one
+  // check on this step that is not about `amountId` and has nowhere else on screen to
+  // attach to but the figure it actually names.
   const scalarError = key => state.fieldErrors[`entries[${state.entries.length}].${key}`]
   const totalInputError = scalarError('total_input_kg')
   const totalValueError = scalarError('total_value_nzd')
-  const wastedValueError = scalarError('wasted_value_nzd')
+  const wastedValueError = scalarError('wasted_value_nzd') || moneyContradictionError
   return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="form-panel amount-grid"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${amountFieldError ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="total-input">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(state.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(state.totalInputKg)}" ${totalInputError ? 'aria-invalid="true" aria-describedby="total-input-error"' : ''}>${totalInputError ? `<p class="field-error" id="total-input-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div><div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}" ${totalValueError ? 'aria-invalid="true" aria-describedby="total-value-error"' : ''}>${totalValueError ? `<p class="field-error" id="total-value-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}" ${wastedValueError ? 'aria-invalid="true" aria-describedby="wasted-value-error"' : ''}>${wastedValueError ? `<p class="field-error" id="wasted-value-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
 }
 
@@ -539,9 +553,21 @@ function reviewStep() {
     })}</section>`
 }
 
-function validateCurrentStep() {
-  if (state.step === 0 && !state.sector) return t('Select where in the food supply chain the waste occurred.')
-  if (state.step === 2 && state.measureMode === 'container') {
+/**
+ * Step 2's own two rules about the amount/count field itself — everything
+ * `amountFieldError` (`amountStep`, below) is entitled to show beside `amountId`.
+ *
+ * **Pulled out of `validateCurrentStep` so the render path can ask the identical
+ * question `validateCurrentStep` just asked**, rather than re-reading `state.error`
+ * (last set whenever Continue was last pressed, which may no longer be true of
+ * what is typed now) or guessing from the message text which field it is about.
+ * A single source for "is amountId itself wrong" is what lets the two new
+ * cross-field checks below — the money and mass contradictions — share this
+ * step's Continue-blocking without ALSO being mislabelled as a fault in
+ * `amountId`, the one field they are never about.
+ */
+function amountOnlyValidation() {
+  if (state.measureMode === 'container') {
     // **The two-decimal rule applies to the count, which is what the visitor typed.** It
     // is an input rule about typing, not a property of the total: `toKg` returns three
     // decimals because that is what §6.2 accepts, and a total of "139.200" is not a
@@ -564,21 +590,84 @@ function validateCurrentStep() {
     // containers." — a sentence about the visitor's typing for a fault in the taxonomy.
     if (!state.unitPreset || containerTotal(state) === '') return t('That container is no longer available. Choose another.')
     if (Number(state.unitCount) > containerLimit()) return t('Enter no more than %(limit)s containers.', { limit: formatNumber(containerLimit(), 0) })
+    return ''
   }
-  if (state.step === 2 && state.measureMode !== 'container') {
-    if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')
-    if (!isPlainDecimal(state.totalAmount)) return t('Write the number out in full, using digits only.')
-    if (!decimalPattern.test(state.totalAmount)) return t('Enter no more than two decimal places.')
-    // **`null` is over the ceiling, not under it.** `massToKg` answers `null` when there
-    // is no finite mass, and `null > MAX` is `false` — so a bare comparison lets the one
-    // case the whole guard exists for straight through. It is reachable: 308 nines is the
-    // longest run a number input keeps (309 is outside a double's range and the browser
-    // blanks it), it is a plain decimal, it passes the two-decimal rule, and *as tonnes*
-    // it is `Infinity` kilograms.
-    const kilograms = totalKilograms(state)
-    if (kilograms === null || kilograms > MAX_SCENARIO_KG) {
-      return t('Enter no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_SCENARIO_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
-    }
+  if (!state.totalAmount || Number(state.totalAmount) <= 0) return t('Waste amount must be greater than zero.')
+  if (!isPlainDecimal(state.totalAmount)) return t('Write the number out in full, using digits only.')
+  if (!decimalPattern.test(state.totalAmount)) return t('Enter no more than two decimal places.')
+  // **`null` is over the ceiling, not under it.** `massToKg` answers `null` when there
+  // is no finite mass, and `null > MAX` is `false` — so a bare comparison lets the one
+  // case the whole guard exists for straight through. It is reachable: 308 nines is the
+  // longest run a number input keeps (309 is outside a double's range and the browser
+  // blanks it), it is a plain decimal, it passes the two-decimal rule, and *as tonnes*
+  // it is `Infinity` kilograms.
+  const kilograms = totalKilograms(state)
+  if (kilograms === null || kilograms > MAX_SCENARIO_KG) {
+    return t('Enter no more than %(limit)s %(unit)s.', { limit: formatNumber(limitIn(MAX_SCENARIO_KG, state.totalUnit), 0), unit: unitLabel(state.totalUnit) })
+  }
+  return ''
+}
+
+/**
+ * **The client's own report: a wasted share of 102.17%.** The value of food wasted
+ * cannot exceed the value of food handled, because the wasted food is a subset of the
+ * food handled — the same reasoning §4.5's money block is built on. Refused here, at
+ * entry, rather than only clamped on the results page: `moneySummary` (`results.js`)
+ * prints `wasted_share_percent` exactly as the service returns it, deliberately
+ * unclamped, because a contradiction that reaches it is meant to read as the visitor's
+ * own typo rather than be quietly smoothed over — so the honest fix is to stop the typo
+ * here, the same way `exceedsTotal` below stops an over-allocated destination total
+ * rather than letting the summary print a number past what was produced.
+ *
+ * Both fields are optional (§4.5) and this is a comparison between the two, not a
+ * format rule on either — a non-numeric or blank figure fails `Number.isFinite` and
+ * falls through to the server's own validation, exactly as it did before this check.
+ *
+ * **A function of its own, not folded into `amountOnlyValidation`, because it is
+ * never a fault in `amountId`** — `amountStep` (below) attaches this message to
+ * `#wasted-value`'s own error slot rather than the waste-amount field's, and needs
+ * to ask this exact question, independent of `state.error`'s stale history, to know
+ * whether that is what is currently wrong.
+ */
+function moneyContradictionValidation() {
+  if (state.totalValueNzd === '' || state.wastedValueNzd === '') return ''
+  const totalValue = Number(state.totalValueNzd)
+  const wastedValue = Number(state.wastedValueNzd)
+  if (!Number.isFinite(totalValue) || !Number.isFinite(wastedValue) || !exceedsTotal(wastedValue, totalValue)) return ''
+  return t('Value of the waste exceeds value of production by NZ$%(excess)s.', { excess: (wastedValue - totalValue).toFixed(2) })
+}
+
+/**
+ * **The same contradiction, one dimension over.** The waste amount is the mass being
+ * measured on this entry, and `total-input` beside it is the whole this entry is a part
+ * of, so the subset rule applies here too — and the same server-side ratio
+ * (`production_share_percent`) would otherwise print a share past 100% for the same
+ * reason the money share could (§4.6). `massToKg` reads `total-input` in `state.totalUnit`,
+ * the same unit `#total-input` is labelled and typed in for every measure mode, including
+ * container mode, where it is pinned to kilograms alongside the total itself.
+ *
+ * **This one names `amountId` (the waste amount) as its subject, so it is treated as
+ * an `amountFieldError` in `amountStep` alongside `amountOnlyValidation`'s own
+ * messages** — unlike the money contradiction above, there is no other field on this
+ * screen a mass contradiction could belong to instead.
+ */
+function massContradictionValidation() {
+  if (state.totalInputKg === '') return ''
+  const producedKg = massToKg(state.totalInputKg, state.totalUnit)
+  const wasteKg = totalKilograms(state)
+  if (producedKg === null || wasteKg === null || !exceedsTotal(wasteKg, producedKg)) return ''
+  return t('Waste amount exceeds total amount produced by %(excess)s %(unit)s.', { excess: formatNumber(limitIn(wasteKg - producedKg, state.totalUnit), 2), unit: unitLabel(state.totalUnit) })
+}
+
+function validateCurrentStep() {
+  if (state.step === 0 && !state.sector) return t('Select where in the food supply chain the waste occurred.')
+  if (state.step === 2) {
+    const amountError = amountOnlyValidation()
+    if (amountError) return amountError
+    const moneyError = moneyContradictionValidation()
+    if (moneyError) return moneyError
+    const massError = massContradictionValidation()
+    if (massError) return massError
   }
   if (state.step === 3) {
     const total = totalNumber(state)
@@ -1087,9 +1176,19 @@ export function bindCalculator(main, retryTaxonomy) {
       state.totalAmount = target.value
       state.error = null
     }
-    if (target.id === 'total-input') state.totalInputKg = target.value
-    if (target.id === 'total-value') state.totalValueNzd = target.value
-    if (target.id === 'wasted-value') state.wastedValueNzd = target.value
+    // **The three round-two scalar fields now clear `state.error` on keystroke too,
+    // the same way `#total-waste` already did above.** Before item ①'s two
+    // cross-field checks, a keystroke in any of these three had nothing of
+    // `state.error`'s to clear — only a server `VALIDATION_ERROR` ever named
+    // them, and that lives in `state.fieldErrors`, reset elsewhere. Now that
+    // `moneyContradictionValidation`/`massContradictionValidation` can set
+    // `state.error` from figures typed in these boxes, leaving a stale
+    // contradiction message on screen after the visitor has already fixed one
+    // side of it would be exactly the defect `#total-waste`'s own clear exists
+    // to avoid, one field over.
+    if (target.id === 'total-input') { state.totalInputKg = target.value; state.error = null }
+    if (target.id === 'total-value') { state.totalValueNzd = target.value; state.error = null }
+    if (target.id === 'wasted-value') { state.wastedValueNzd = target.value; state.error = null }
     if (target.id === 'unit-count') updateContainerCount(target)
     if (target.matches('[data-line-field="amount"]')) {
       // `beforeinput` cannot always be the whole story. A lone "-" leaves

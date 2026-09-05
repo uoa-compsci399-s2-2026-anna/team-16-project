@@ -355,6 +355,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "ਤੁਸੀਂ ਇਹ ਨਹੀਂ ਦੱਸਿਆ ਕਿ ਇਸ ਵਿੱਚ ਕਿੰਨਾ ਭੋਜਨ ਸ਼ਾਮਲ ਸੀ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।",
     "Undefined": "ਅਪਰਿਭਾਸ਼ਿਤ",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ਤੁਸੀਂ ਦੱਸਿਆ ਕਿ ਇਸ ਵਿੱਚ ਕੁੱਲ 0 ਕਿਲੋਗ੍ਰਾਮ ਸ਼ਾਮਲ ਸੀ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।",
-    "The total value was zero, so this cannot be calculated.": "ਕੁੱਲ ਮੁੱਲ ਸਿਫ਼ਰ ਸੀ, ਇਸ ਲਈ ਇਸਦੀ ਗਣਨਾ ਨਹੀਂ ਕੀਤੀ ਜਾ ਸਕਦੀ।"
+    "The total value was zero, so this cannot be calculated.": "ਕੁੱਲ ਮੁੱਲ ਸਿਫ਼ਰ ਸੀ, ਇਸ ਲਈ ਇਸਦੀ ਗਣਨਾ ਨਹੀਂ ਕੀਤੀ ਜਾ ਸਕਦੀ।",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "ਬਰਬਾਦੀ ਦਾ ਮੁੱਲ ਉਤਪਾਦਨ ਦੇ ਮੁੱਲ ਨਾਲੋਂ NZ$%(excess)s ਵੱਧ ਹੈ।",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "ਬਰਬਾਦੀ ਦੀ ਮਾਤਰਾ ਪੈਦਾ ਕੀਤੀ ਕੁੱਲ ਮਾਤਰਾ ਨਾਲੋਂ %(excess)s %(unit)s ਵੱਧ ਹੈ।"
   }
 }

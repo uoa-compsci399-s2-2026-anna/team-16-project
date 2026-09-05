@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "No indicó cuánta comida abarcaba esto, por lo que no se puede mostrar una proporción de desperdicio.",
     "Undefined": "Indefinido",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Indicó que esto abarcaba 0 kg en total, por lo que no se puede mostrar una proporción de desperdicio.",
-    "The total value was zero, so this cannot be calculated.": "El valor total fue cero, por lo que esto no se puede calcular."
+    "The total value was zero, so this cannot be calculated.": "El valor total fue cero, por lo que esto no se puede calcular.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "El valor del desperdicio supera el valor de la producción en NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "La cantidad de residuos supera la cantidad total producida en %(excess)s %(unit)s."
   }
 }

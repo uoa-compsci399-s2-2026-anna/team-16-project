@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "Вы не указали, какое количество продуктов это охватывает, поэтому долю отходов показать нельзя.",
     "Undefined": "Не определено",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Вы указали, что это охватывает в общей сложности 0 кг, поэтому долю отходов показать нельзя.",
-    "The total value was zero, so this cannot be calculated.": "Общая стоимость составила ноль, поэтому это нельзя рассчитать."
+    "The total value was zero, so this cannot be calculated.": "Общая стоимость составила ноль, поэтому это нельзя рассчитать.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "Стоимость отходов превышает стоимость произведённого на NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Объём отходов превышает общее произведённое количество на %(excess)s %(unit)s."
   }
 }

@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "คุณไม่ได้ระบุว่ารายการนี้ครอบคลุมอาหารปริมาณเท่าใด จึงไม่สามารถแสดงสัดส่วนของเสียได้",
     "Undefined": "ไม่ได้กำหนด",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "คุณระบุว่ารายการนี้ครอบคลุมอาหารรวม 0 กก. จึงไม่สามารถแสดงสัดส่วนของเสียได้",
-    "The total value was zero, so this cannot be calculated.": "มูลค่ารวมเป็นศูนย์ จึงไม่สามารถคำนวณค่านี้ได้"
+    "The total value was zero, so this cannot be calculated.": "มูลค่ารวมเป็นศูนย์ จึงไม่สามารถคำนวณค่านี้ได้",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "มูลค่าของเสียเกินมูลค่าการผลิตอยู่ NZ$%(excess)s",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "ปริมาณขยะเกินปริมาณรวมที่ผลิตได้อยู่ %(excess)s %(unit)s"
   }
 }

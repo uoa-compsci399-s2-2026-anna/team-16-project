@@ -108,7 +108,12 @@ def to_review_and_calculate(page):
     page.fill("#total-waste", "1000")
     # Typed, not pasted: three decimal places on a field with no ceiling of its own.
     # Only `#total-value` is driven past the guard — this is the field under test.
-    page.fill("#total-input", "500")
+    #
+    # **At least the waste amount, not less.** A production total smaller than
+    # `#total-waste` trips the item-①-round-two guard in `validateCurrentStep`
+    # (waste cannot exceed production) and refuses to advance past step 2 for a
+    # different reason than the one this test is driving at.
+    page.fill("#total-input", "1500")
     paste_into(page, "#total-value", "1.234")
     page.wait_for_timeout(80)
     page.click('.step-nav [data-action="continue"]')

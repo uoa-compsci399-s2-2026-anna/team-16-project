@@ -354,6 +354,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "لم تذكر كمية الطعام التي يغطيها هذا، لذا لا يمكن عرض نسبة الهدر.",
     "Undefined": "غير محدد",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ذكرت أن هذا يغطي 0 كجم إجمالاً، لذا لا يمكن عرض نسبة الهدر.",
-    "The total value was zero, so this cannot be calculated.": "كانت القيمة الإجمالية صفراً، لذا لا يمكن حساب هذا."
+    "The total value was zero, so this cannot be calculated.": "كانت القيمة الإجمالية صفراً، لذا لا يمكن حساب هذا.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "قيمة الهدر تتجاوز قيمة الإنتاج بمقدار NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "كمية الهدر تتجاوز إجمالي الكمية المنتجة بمقدار %(excess)s %(unit)s."
   }
 }

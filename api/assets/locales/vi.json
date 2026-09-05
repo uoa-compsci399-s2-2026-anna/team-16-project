@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "Bạn chưa cho biết mục này bao gồm bao nhiêu thực phẩm, nên không thể hiển thị tỷ lệ lãng phí.",
     "Undefined": "Không xác định",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Bạn đã cho biết mục này bao gồm tổng cộng 0 kg, nên không thể hiển thị tỷ lệ lãng phí.",
-    "The total value was zero, so this cannot be calculated.": "Tổng giá trị bằng không, nên không thể tính giá trị này."
+    "The total value was zero, so this cannot be calculated.": "Tổng giá trị bằng không, nên không thể tính giá trị này.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "Giá trị lượng lãng phí vượt quá giá trị sản xuất NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Lượng bỏ đi vượt quá tổng lượng sản xuất %(excess)s %(unit)s."
   }
 }

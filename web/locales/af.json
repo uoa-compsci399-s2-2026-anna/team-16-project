@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "Jy het nie gesê hoeveel voedsel dit gedek het nie, dus kan 'n aandeel van vermorsing nie gewys word nie.",
     "Undefined": "Onbepaald",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "U het aangedui dat dit 0 kg in totaal gedek het, dus kan 'n aandeel van vermorsing nie gewys word nie.",
-    "The total value was zero, so this cannot be calculated.": "Die totale waarde was nul, dus kan dit nie bereken word nie."
+    "The total value was zero, so this cannot be calculated.": "Die totale waarde was nul, dus kan dit nie bereken word nie.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "Waarde van die vermorsing oorskry waarde van produksie met NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Die afvalhoeveelheid oorskry die totale hoeveelheid geproduseer met %(excess)s %(unit)s."
   }
 }

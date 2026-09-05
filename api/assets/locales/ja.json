@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "対象となる食品の量が入力されていないため、廃棄割合を表示できません。",
     "Undefined": "未定義",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "合計0kgと入力されたため、廃棄割合を表示できません。",
-    "The total value was zero, so this cannot be calculated.": "合計金額が0だったため、この値は計算できません。"
+    "The total value was zero, so this cannot be calculated.": "合計金額が0だったため、この値は計算できません。",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "廃棄物の価値が生産の価値を NZ$%(excess)s 上回っています。",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "廃棄量が生産された総量を %(excess)s %(unit)s 上回っています。"
   }
 }

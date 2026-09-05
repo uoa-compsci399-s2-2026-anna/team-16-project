@@ -354,6 +354,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "Hindi mo sinabi kung gaano karaming pagkain ang saklaw nito, kaya hindi maipapakita ang bahagi ng basura.",
     "Undefined": "Hindi tiyak",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Sinabi mong 0 kg lang ang kabuuang saklaw nito, kaya hindi maipapakita ang bahagi ng basura.",
-    "The total value was zero, so this cannot be calculated.": "Zero ang kabuuang halaga, kaya hindi ito makukuwenta."
+    "The total value was zero, so this cannot be calculated.": "Zero ang kabuuang halaga, kaya hindi ito makukuwenta.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "Lumampas ang halaga ng basura sa halaga ng produksyon ng NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Lumampas ang dami ng basura sa kabuuang dami na nagawa ng %(excess)s %(unit)s."
   }
 }

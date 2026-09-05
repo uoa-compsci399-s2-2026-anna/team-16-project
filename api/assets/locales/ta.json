@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "இது எவ்வளவு உணவை உள்ளடக்கியது என்று நீங்கள் குறிப்பிடவில்லை, எனவே வீணான பங்கைக் காட்ட முடியாது.",
     "Undefined": "வரையறுக்கப்படாதது",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "இது மொத்தம் 0 கிலோ என்று நீங்கள் குறிப்பிட்டீர்கள், எனவே வீணான பங்கைக் காட்ட முடியாது.",
-    "The total value was zero, so this cannot be calculated.": "மொத்த மதிப்பு பூஜ்ஜியமாக இருந்தது, எனவே இதைக் கணக்கிட முடியாது."
+    "The total value was zero, so this cannot be calculated.": "மொத்த மதிப்பு பூஜ்ஜியமாக இருந்தது, எனவே இதைக் கணக்கிட முடியாது.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "விரயத்தின் மதிப்பு, உற்பத்தியின் மதிப்பை விட NZ$%(excess)s அதிகமாக உள்ளது.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "கழிவின் அளவு, உற்பத்தி செய்யப்பட்ட மொத்த அளவை விட %(excess)s %(unit)s அதிகமாக உள்ளது."
   }
 }

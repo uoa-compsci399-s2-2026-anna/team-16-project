@@ -353,6 +353,8 @@
     "You did not say how much food this covered, so a share of waste cannot be shown.": "ഇത് എത്ര ഭക്ഷണം ഉൾക്കൊള്ളുന്നു എന്ന് നിങ്ങൾ പറഞ്ഞില്ല, അതിനാൽ പാഴാക്കലിന്റെ പങ്ക് കാണിക്കാൻ കഴിയില്ല.",
     "Undefined": "നിർവചിക്കപ്പെടാത്തത്",
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ഇത് ആകെ 0 കി.ഗ്രാം ഉൾക്കൊള്ളുന്നു എന്ന് നിങ്ങൾ പറഞ്ഞു, അതിനാൽ പാഴാക്കലിന്റെ പങ്ക് കാണിക്കാൻ കഴിയില്ല.",
-    "The total value was zero, so this cannot be calculated.": "ആകെ മൂല്യം പൂജ്യമായിരുന്നു, അതിനാൽ ഇത് കണക്കാക്കാൻ കഴിയില്ല."
+    "The total value was zero, so this cannot be calculated.": "ആകെ മൂല്യം പൂജ്യമായിരുന്നു, അതിനാൽ ഇത് കണക്കാക്കാൻ കഴിയില്ല.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "പാഴാക്കലിന്റെ മൂല്യം ഉൽപ്പാദനത്തിന്റെ മൂല്യത്തെക്കാൾ NZ$%(excess)s കൂടുതലാണ്.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "മാലിന്യത്തിന്റെ അളവ് ഉൽപ്പാദിപ്പിച്ച ആകെ അളവിനെക്കാൾ %(excess)s %(unit)s കൂടുതലാണ്."
   }
 }

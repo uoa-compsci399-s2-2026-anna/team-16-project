@@ -320,7 +320,7 @@ uses for `other_recovery`'s co2e/water fill, extended to cover every
 destination: an unweighted mean across every published (sector, food
 category) row ReFED carries for that destination.
 
-| Our destination | ReFED destination | `ch4` (mean) |
+| Our destination | ReFED destination | `ch4` |
 | --- | --- | --- |
 | `food_redistribution` | Donations | 0.0000001343 |
 | `animal_feed` | Animal Feed | -0.0004394564 |
@@ -334,18 +334,40 @@ category) row ReFED carries for that destination.
 | `landfill` | Landfill | 0.0320905540 |
 | `refuse_discard` | Dumping | -0.0000287599 |
 | `sewer` | Sewer | 0.1332824899 |
+| `upcycling` | *(no match -- STAND-IN, see below)* | -0.0002196610 |
 | `prevention` | *(none -- zero override)* | 0.0000000000 |
 
 **`bioprocessing` and `other_recovery` deliberately share one ReFED figure**
 (Industrial Uses): both are the nearest recycle_recovery-shaped ReFED
 destination to either of ours, the same reasoning §4.2 already applies to
-`other_recovery`'s co2e/water fill. **`upcycling` gets no `ch4` row at all --
-a reported gap, not a zero.** ReFED's own `reuse`-equivalent destinations are
-only Donations and Animal Feed; nothing it publishes matches "Upcycling to
-other food products" by shape, and forcing one of those two onto it would be
-exactly the kind of same-sounding-name match §4.2 already declines for
-`other_recovery`/"Other Food Waste". Reported alongside `eggs`, not silently
-zeroed -- see §6.
+`other_recovery`'s co2e/water fill.
+
+**`upcycling` has no matching ReFED destination, and is filled with an
+explicit stand-in rather than left a silent zero.** Two tests were applied,
+both negative: by name, ReFED publishes no "Upcycling" or "Repurposed"
+destination at all; by our own destination-group classification
+(`admin/seed.py` puts `upcycling` in the `reuse` group), ReFED's own
+`reuse`-equivalent destinations are only Donations and Animal Feed.
+"Industrial Uses" (already used twice above) was considered and rejected: it
+sits in ReFED's own `recycle_recovery`-equivalent group, not `reuse`, and it
+produces non-food industrial output ("Other recovery, including biodiesel"),
+not "another food product" -- using it here would blur the food/non-food
+distinction this document relies on elsewhere to keep `other_recovery`
+itself separate from disposal (§4.2 above).
+
+A zero on screen is indistinguishable from a real measurement of none, and
+that is the defect this whole revision exists to remove -- so `upcycling`
+does not get one. Instead it draws a **stated derivation from the closest
+available ReFED pathway by destination-group**: an unweighted mean pooling
+every (sector, food category) row ReFED publishes across *both* of its real
+reuse-group destinations, Donations (39 rows) and Animal Feed (39 rows) --
+78 rows total, mean **-0.0002196610 kg CH4/kg**. This is explicitly a
+**STAND-IN, not a measurement** of upcycling itself, tagged
+`data_quality = "derived-refed-reuse-standin"` so it reads
+differently in the audit trail from a cell that found an actual matching
+ReFED destination, and is the first row that should be replaced the moment
+a better source exists. `eggs` remains the one genuine unseeded gap in this
+draft -- see §3.2.
 
 **Negative values are genuine ReFED figures, not a defect.** `factor_
 downstream.value_per_kg` already permits negative values by design (§4.2 of
@@ -718,8 +740,6 @@ floor.
   `docs/architecture.md`, "metrics are data, not code" and "the engine
   iterates every active row"). That decision belongs to the owner, and is
   not taken here.
-- **`upcycling`'s `ch4`** -- no ReFED destination matches its shape (§4.4).
-  A reported gap, like `eggs`, not a zero-by-choice.
 - **The waste levy's own "disposal cost" component beyond the statutory
   levy itself** -- landfill gate fees vary by facility and contract and no
   New-Zealand-wide public figure was found for them, so `cost` in this
@@ -733,18 +753,32 @@ floor.
   sector"), matching how the New Zealand mock set's own downstream rows are
   already built. This includes every ReFED-filled row added across both
   revisions of this draft (`other_recovery`, `combustion`'s water, and now
-  `ch4` for twelve of fourteen destinations and `cost` for two): all are
+  `ch4` for all fourteen destinations and `cost` for two): all are
   unweighted means/direct reads across everything ReFED (or, for the levy,
   the government's own published rate) gives, for the same reason.
 
 **`ch4` and `cost`, both previously entirely absent, are as of this revision
-seeded for most food categories/destinations** -- see §4.4, §4.5 and §5.7
-for the full construction. What remains genuinely unfilled after this
-revision: `land` (no metric exists), `upcycling`'s `ch4` (no ReFED shape
-match), gate fees beyond the statutory levy (no public source found), and
-`eggs`/`staples`' still-unresolved status as noted in §3.2 (`staples` itself
-*is* seeded, from ReFED alone, per the owner's ruling; `eggs` remains an
-unseeded gap pending a taxonomy or client decision).
+seeded for every food category and every destination** -- see §4.4, §4.5 and
+§5.7 for the full construction. `upcycling`'s `ch4` is not a gap: it draws a
+stated stand-in, pooled from ReFED's two real reuse-group destinations,
+tagged `derived-refed-reuse-standin` so it is never mistaken for a
+cell that found an actual matching ReFED destination (§4.4).
+**Completeness is asserted mechanically, not merely narrated**:
+`_assert_completeness()` in `build_upstream_factors_draft.py` checks that
+every one of the ten food categories carries a generic AND a
+prevention-override upstream row, for every one of the six sectors, for
+`co2e`, `water` and `ch4`; and that every one of the fourteen destinations
+carries exactly one downstream row for `co2e`, `water`, `ch4` and `cost`
+(`mass` is exempt -- its formula needs no factor lookup at all, matching the
+live/mock set). It raises `SystemExit` naming the exact missing (or
+duplicated) cell if a future edit ever drops one -- this is what closed the
+`upcycling`/`ch4` gap this section used to describe: it was found by a
+by-hand row count, and this check is what stops that class of defect coming
+back silently. What remains genuinely unfilled after this revision: `land`
+(no metric exists), gate fees beyond the statutory levy (no public source
+found), and `eggs`/`staples`' still-unresolved status as noted in §3.2
+(`staples` itself *is* seeded, from ReFED alone, per the owner's ruling;
+`eggs` remains an unseeded gap pending a taxonomy or client decision).
 
 ## 7. The traxie data directory
 

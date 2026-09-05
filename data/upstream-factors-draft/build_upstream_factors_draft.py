@@ -270,9 +270,20 @@ destinations legitimately share one ReFED destination (`bioprocessing` and
 recycle_recovery-shaped destination to either of them) and one has no
 comparably-shaped ReFED destination at all: `upcycling` ("Upcycling to other
 food products") matches nothing ReFED publishes under its own `reuse`-
-equivalent destinations (`Donations`, `Animal Feed` only) and is left an
-unseeded gap rather than a forced, weakly-justified match -- reported, like
-`eggs`, not silently zeroed.
+equivalent destinations (`Donations`, `Animal Feed` only), and the
+process-based alternative (`Industrial Uses`, already used twice above) is
+in ReFED's `recycle_recovery`-equivalent group and produces non-food
+industrial output, not "another food product" -- using it here would blur
+the food/non-food distinction this document relies on elsewhere. Rather
+than leave this one destination priced at a silent zero -- indistinguishable
+on screen from a real measurement of none, the defect this whole revision
+exists to remove -- `upcycling` draws an explicit STAND-IN: an unweighted
+mean pooling every row ReFED publishes across its two real reuse-group
+destinations (`REFED_UPCYCLING_STANDIN_DESTINATIONS`), carrying its own
+`data_quality` tag (`derived-refed-reuse-standin`) so it reads
+differently from a cell that found an actual matching ReFED destination.
+`eggs` remains the one genuine unseeded gap in this draft -- see §3.2 of the
+provenance document.
 
 COST: THE NEW ZEALAND WASTE DISPOSAL LEVY, DOWNSTREAM ONLY
 ----------------------------------------------------------
@@ -324,8 +335,8 @@ WHAT IS NOT REPRESENTED
     system has no `land` metric to receive it. Adding one is a metric-table
     change with system-wide effect (every existing result would gain a
     `land` line at zero); left for the owner to decide, not done here.
-  * `upcycling`'s `ch4` -- no ReFED destination matches its shape; see
-    "CH4" above. A genuine gap, not a zero-by-choice.
+  * `upcycling`'s `ch4` -- no ReFED destination matches its shape; filled
+    with a stated stand-in rather than left a gap; see "CH4" above.
   * The waste levy's own "disposal cost" component beyond the statutory levy
     itself (landfill gate fees vary by facility and contract and no
     NZ-wide public figure was found) -- `cost` here is the levy only, stated
@@ -480,6 +491,19 @@ NZ_DESTINATION_SOURCES: dict[str, list[str]] = {
     # "prevention": the mandatory 100% offset. Never given a client value.
 }
 
+#: The canonical fourteen -- must be kept in sync with `admin/seed.py`'s
+#: `DESTINATIONS` by hand, since this script does not import admin.seed (it
+#: must not import SQLAlchemy -- see `docs/architecture.md`'s "db/repository.py
+#: is the only code that may touch the database" invariant). Used only by
+#: `_assert_completeness` below, to fail loudly if a future edit drops a row
+#: for one of them rather than quietly pricing it at zero.
+ALL_NZ_DESTINATIONS = (
+    "prevention", "food_redistribution", "upcycling", "animal_feed",
+    "compost", "anaerobic_digestion", "land_application", "not_harvested",
+    "bioprocessing", "other_recovery",
+    "combustion", "landfill", "refuse_discard", "sewer",
+)
+
 # ReFED's own destination code for `other_recovery`'s fill, and for
 # `combustion`'s water fill -- see the module docstring.
 REFED_OTHER_RECOVERY_DESTINATION = "refed_industrial_uses"
@@ -493,10 +517,35 @@ REFED_INCINERATION_DESTINATION = "refed_incineration"
 # to draw the mapping from. `bioprocessing` and `other_recovery` deliberately
 # share `refed_industrial_uses` (both are the nearest recycle_recovery-shaped
 # ReFED destination to either of them; the same reasoning already used for
-# `other_recovery`'s co2e/water fill, above). `upcycling` has no entry: no
-# ReFED destination matches its shape (ReFED's own reuse-equivalent group has
-# only Donations and Animal Feed) -- see module docstring. `prevention` is
-# never given a value here; it keeps the standard zero-by-definition override.
+# `other_recovery`'s co2e/water fill, above).
+#
+# `upcycling` ("Upcycling to other food products", client row "Upcycled",
+# life cycle "Bin to Product" -- the only client row with that wording) has
+# no ReFED destination that matches it, checked two ways: by name (ReFED
+# publishes no "Upcycling" or "Repurposed" destination at all) and by our own
+# destination-group classification (`admin/seed.py` puts `upcycling` in the
+# `reuse` group; ReFED's own DESTINATIONS table -- build_refed_benchmark.py
+# -- puts only Prevention, Donations and Animal Feed in that group).
+# `refed_industrial_uses` was considered and rejected for this row even
+# though it is already used twice above: it is explicitly in ReFED's own
+# recycle_recovery-equivalent group, not reuse, and it produces non-food
+# industrial output, not "other food products" -- using it here would blur
+# the food/non-food distinction this document already relies on to keep
+# `other_recovery` itself separate from disposal (§4.2 of the provenance
+# document). Left with no single ReFED destination that matches by either
+# test, `upcycling` draws a STAND-IN, not a measurement: an unweighted mean
+# pooling every (sector, food_category) row ReFED publishes for its two real
+# reuse-group destinations, Donations and Animal Feed
+# (`REFED_UPCYCLING_STANDIN_DESTINATIONS`, below) -- the closest available
+# ReFED pathway by our own group classification, not by name or process.
+# `data_quality = "derived-refed-reuse-standin"` marks this row so a
+# reader (and a future edit) can tell it apart from every other
+# `derived-refed` cell in this table, which reads an actual matching ReFED
+# destination rather than an average standing in for one that does not
+# exist.
+#
+# `prevention` is never given a value here; it keeps the standard
+# zero-by-definition override.
 # ---------------------------------------------------------------------------
 REFED_DESTINATION_FOR_NZ_DESTINATION: dict[str, str] = {
     "food_redistribution": "refed_donations",
@@ -511,10 +560,14 @@ REFED_DESTINATION_FOR_NZ_DESTINATION: dict[str, str] = {
     "landfill": "refed_landfill",
     "refuse_discard": "refed_dumping",
     "sewer": "refed_sewer",
-    # "upcycling": no ReFED destination matches this shape -- reported as a
-    # gap in the module docstring and the provenance document, not seeded.
+    # "upcycling": no single ReFED destination matches -- see
+    # REFED_UPCYCLING_STANDIN_DESTINATIONS and build_ch4_downstream(), below.
     # "prevention": the mandatory 100% offset. Never given a ReFED value.
 }
+
+#: `upcycling`'s ch4 stand-in: ReFED's two real reuse-group destinations
+#: (excluding Prevention), pooled -- see the comment above.
+REFED_UPCYCLING_STANDIN_DESTINATIONS = ("refed_donations", "refed_animal_feed")
 
 # ---------------------------------------------------------------------------
 # `cost`: the New Zealand waste disposal levy, downstream only. See module
@@ -1067,6 +1120,85 @@ def _build_ch4_upstream_rows(refed_upstream: dict[tuple[str, str, str], Decimal]
     return rows
 
 
+#: Metrics that carry factor rows at all in this draft. `mass` never does --
+#: its formula (`qty_kg`) needs no upstream/downstream lookup, matching the
+#: live/mock set -- so it is deliberately excluded from both checks below.
+UPSTREAM_METRICS = ("co2e", "water", "ch4")
+#: `cost` has no upstream row anywhere (see module docstring, "COST" -- it
+#: is a downstream-only figure), so it is absent from UPSTREAM_METRICS but
+#: present here.
+DOWNSTREAM_METRICS = ("co2e", "water", "ch4", "cost")
+
+
+def _assert_completeness(data: dict) -> None:
+    """Fail loudly if any row this factor set must carry is missing.
+
+    This is the mechanical guarantee the module docstring's per-section
+    narrative only *describes*: every one of the ten New Zealand food
+    categories has a generic (destination=None) upstream row AND a
+    prevention-override row, for every one of the six sectors, for every
+    metric in UPSTREAM_METRICS; and every one of the fourteen destinations
+    has exactly one downstream row for every metric in DOWNSTREAM_METRICS.
+    A future edit that drops a row -- a refactor that narrows a loop, a
+    merge that drops a dict entry -- fails here instead of quietly pricing
+    something at zero, which is indistinguishable on screen from a real
+    measurement of none. This is what closed the `upcycling`/`ch4` gap this
+    check itself was written to catch: the coordinator found it by counting
+    rows by hand; this makes that count part of the build.
+    """
+    upstream_generic: dict[tuple[str, str, str], int] = {}
+    upstream_prevention: dict[tuple[str, str, str], int] = {}
+    for row in data["upstream"]:
+        if row["metric"] not in UPSTREAM_METRICS:
+            continue
+        key = (row["food_category"], row["sector"], row["metric"])
+        if row["destination"] is None:
+            upstream_generic[key] = upstream_generic.get(key, 0) + 1
+        elif row["destination"] == "prevention":
+            upstream_prevention[key] = upstream_prevention.get(key, 0) + 1
+
+    missing: list[str] = []
+    for nz_food in NZ_TO_REFED_FOOD_SHAPE:  # the canonical ten -- see module docstring
+        for nz_sector in ALL_NZ_SECTORS:
+            for metric in UPSTREAM_METRICS:
+                key = (nz_food, nz_sector, metric)
+                if upstream_generic.get(key, 0) != 1:
+                    missing.append(
+                        f"upstream generic {nz_food}/{nz_sector}/{metric}: "
+                        f"found {upstream_generic.get(key, 0)}, expected 1"
+                    )
+                if upstream_prevention.get(key, 0) != 1:
+                    missing.append(
+                        f"upstream prevention-override {nz_food}/{nz_sector}/"
+                        f"{metric}: found {upstream_prevention.get(key, 0)}, "
+                        "expected 1"
+                    )
+
+    downstream_counts: dict[tuple[str, str], int] = {}
+    for row in data["downstream"]:
+        if row["metric"] not in DOWNSTREAM_METRICS:
+            continue
+        key = (row["destination"], row["metric"])
+        downstream_counts[key] = downstream_counts.get(key, 0) + 1
+
+    for nz_dest in ALL_NZ_DESTINATIONS:
+        for metric in DOWNSTREAM_METRICS:
+            key = (nz_dest, metric)
+            if downstream_counts.get(key, 0) != 1:
+                missing.append(
+                    f"downstream {nz_dest}/{metric}: found "
+                    f"{downstream_counts.get(key, 0)}, expected 1"
+                )
+
+    if missing:
+        raise SystemExit(
+            "Completeness check failed -- this factor set is missing (or "
+            "duplicates) rows a submission could actually need, which "
+            "would price silently at zero rather than fail:\n  "
+            + "\n  ".join(missing)
+        )
+
+
 def build_upstream(refed_upstream) -> list[dict]:
     rows: list[dict] = []
     for nz_food, client_foods in NZ_FOOD_CATEGORY_SOURCES.items():
@@ -1282,6 +1414,59 @@ def build_ch4_downstream() -> list[dict]:
             "data_quality": "derived-refed",
         })
 
+    # `upcycling`: no single ReFED destination matches by name or by our own
+    # destination-group classification -- see module docstring and the
+    # comment above REFED_DESTINATION_FOR_NZ_DESTINATION. A STAND-IN, not a
+    # measurement: an unweighted mean pooling every (sector, food_category)
+    # row ReFED publishes across BOTH of its real reuse-group destinations
+    # (Donations, Animal Feed), flattened into one list rather than averaging
+    # two already-computed means -- the same pooling convention every other
+    # multi-source mean in this draft uses.
+    standin_values: list[Decimal] = []
+    standin_counts: dict[str, int] = {}
+    for refed_dest in REFED_UPCYCLING_STANDIN_DESTINATIONS:
+        values = load_refed_downstream_values(refed_dest)["ch4"]
+        if not values:
+            raise SystemExit(
+                f"No ReFED ch4 values found for {refed_dest!r}, needed for "
+                "upcycling's stand-in."
+            )
+        standin_counts[refed_dest] = len(values)
+        standin_values.extend(values)
+    standin_mean = mean(standin_values)
+    rows.append({
+        "destination": "upcycling",
+        "sector": None,
+        "food_category": None,
+        "metric": "ch4",
+        "value_per_kg": q(standin_mean),
+        "source_note": (
+            "STAND-IN, NOT A MEASUREMENT of 'upcycling to other food "
+            "products' (client row 'Upcycled', life cycle 'Bin to Product' "
+            "-- the only client row with that wording). No client (Rawtec) "
+            "ch4 column exists at all, and no ReFED destination matches "
+            "this one: not by name (ReFED publishes no 'Upcycling' or "
+            "'Repurposed' destination) and not by our own destination-group "
+            "classification (admin/seed.py puts upcycling in the 'reuse' "
+            "group; ReFED's own DESTINATIONS table puts only Prevention, "
+            "Donations and Animal Feed there). 'Industrial Uses' (already "
+            "used for bioprocessing/other_recovery, above) was considered "
+            "and rejected: it is in ReFED's recycle_recovery-equivalent "
+            "group, not reuse, and produces non-food industrial output, not "
+            "another food product. Absent a destination that matches by "
+            "either test, this cell pools every (sector, food category) row "
+            "ReFED publishes across its two real reuse-group destinations "
+            f"instead -- Donations ({standin_counts['refed_donations']} rows) "
+            f"and Animal Feed ({standin_counts['refed_animal_feed']} rows), "
+            f"{len(standin_values)} rows total, unweighted mean "
+            f"{standin_mean}. This is a stated derivation from the closest "
+            "available ReFED pathway by destination-group, not a "
+            "measurement of upcycling itself, and should be replaced the "
+            "moment a better source exists."
+        ),
+        "data_quality": "derived-refed-reuse-standin",
+    })
+
     rows.append({
         "destination": "prevention",
         "sector": None,
@@ -1364,7 +1549,7 @@ def build() -> dict:
     upstream = build_upstream(refed_upstream)
     downstream = build_downstream() + build_ch4_downstream() + build_cost_downstream()
 
-    return {
+    data = {
         "version_label": (
             "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, "
             "plus ch4 and cost) - NOT PUBLISHED"
@@ -1388,7 +1573,10 @@ def build() -> dict:
             "client's total, which understated every consumer-stage factor "
             "roughly fourfold; see docs/upstream-factors-draft.md. As of "
             "this revision, ch4 (raw methane mass, ReFED-only, every food "
-            "category and twelve of fourteen destinations) and cost (the "
+            "category and all fourteen destinations -- thirteen matched "
+            "directly to a ReFED destination, upcycling as a stated "
+            "stand-in pooling ReFED's two reuse-group destinations) and "
+            "cost (the "
             "New Zealand waste disposal levy at the rate in force "
             "2026-09-05, landfill and refuse_discard only) are also seeded "
             "-- neither client table carries either column, so both are "
@@ -1435,8 +1623,11 @@ def build() -> dict:
                  "-- see data/upstream-factors-draft/"
                  "build_upstream_factors_draft.py, 'CH4'. Upstream and "
                  "downstream ch4 rows now exist for every food category and "
-                 "twelve of fourteen destinations (upcycling excluded, no "
-                 "ReFED shape match)."
+                 "all fourteen destinations -- upcycling has no matching "
+                 "ReFED destination and carries a stated stand-in instead "
+                 "(data_quality='derived-refed-reuse-standin'), not a "
+                 "silent zero. _assert_completeness() enforces this "
+                 "mechanically at build time."
              )},
             {"metric": "water", "expression": "qty_kg * (upstream + downstream)",
              "notes": "Same expression as the live/mock set."},
@@ -1454,10 +1645,13 @@ def build() -> dict:
             {"metric": "mass", "expression": "qty_kg",
              "notes": "Same expression as the live/mock set."},
         ],
-        "upstream": upstream,
-        "downstream": downstream,
-        "equivalences": [],
     }
+    data["upstream"] = upstream
+    data["downstream"] = downstream
+    data["equivalences"] = []
+
+    _assert_completeness(data)
+    return data
 
 
 def main() -> int:
@@ -1466,13 +1660,17 @@ def main() -> int:
     out_path.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")
     n_food = len(NZ_FOOD_CATEGORY_SOURCES) + 1  # + staples
     n_sector = len(ALL_NZ_SECTORS)
+    n_ch4_matched = len(REFED_DESTINATION_FOR_NZ_DESTINATION)
     print(
         f"{out_path.name}: {len(data['upstream'])} upstream rows "
         f"({n_food} food categories x {n_sector} sectors x 2 metrics "
         f"(co2e, water) + ch4 (unanchored), plus prevention overrides), "
         f"{len(data['downstream'])} downstream rows "
-        f"({len(REFED_DESTINATION_FOR_NZ_DESTINATION)} destinations get ch4, "
-        f"{len(LEVY_CARRYING_DESTINATIONS)} get a nonzero cost)."
+        f"({n_ch4_matched} destinations matched directly to a ReFED "
+        f"destination for ch4, 1 (upcycling) a stated stand-in, "
+        f"{len(LEVY_CARRYING_DESTINATIONS)} get a nonzero cost). "
+        f"Completeness asserted for all {len(ALL_NZ_DESTINATIONS)} "
+        f"destinations and {n_food} food categories x {n_sector} sectors."
     )
     return 0
 

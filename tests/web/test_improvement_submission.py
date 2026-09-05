@@ -340,24 +340,25 @@ def test_matching_the_current_allocation_puts_equal_rows_at_equal_shares(page):
     )
 
 
-def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_kilograms(page):
-    """The repair above, in the other mode of the kilogram/percentage toggle.
+def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_unit_mode(page):
+    """The repair above, in the other mode of the unit/percentage toggle.
 
     `state.improvedAllocations` holds percentages whichever mode is showing, and
-    kilograms are a display conversion only. That is what lets "Match the current
-    allocation" enable Compare Impact in either mode - and it is worth an
-    assertion, because storing kilograms instead would turn the exactly-100 rule
-    in `improvementValidation` into a floating-point comparison against a mass
-    and start refusing allocations that are correct.
+    a row's own unit is a display conversion only. That is what lets "Match the
+    current allocation" enable Compare Impact in either mode - and it is worth
+    an assertion, because storing a mass instead would turn the exactly-100
+    rule in `improvementValidation` into a floating-point comparison against a
+    mass and start refusing allocations that are correct.
 
     1,000 kg is allocated across the two rows, so equal shares are 500 kg each -
-    the boxes read 500, not 50, and that difference is the evidence the mode
-    really did change rather than the label alone.
+    every row defaults to kilograms in unit mode, so the boxes read 500, not
+    50, and that difference is the evidence the mode really did change rather
+    than the label alone.
     """
     calculate(page)
     page.click('[data-action="explore-improvements"]')
     page.wait_for_selector("#improvement-mode")
-    page.select_option("#improvement-mode", "kilograms")
+    page.select_option("#improvement-mode", "unit")
     page.wait_for_timeout(120)
 
     page.click('[data-action="reset-improvement"]')
@@ -369,12 +370,12 @@ def test_matching_the_current_allocation_also_satisfies_the_mass_rule_in_kilogra
               .filter(value => value > 0)"""
     )
     assert len(shown) == 2 and all(abs(value - 500) < 0.01 for value in shown), (
-        f"kilogram mode should show the two equal rows as 500 kg each: {shown}"
+        f"unit mode should show the two equal rows as 500 kg each: {shown}"
     )
 
     button = page.locator('[data-action="compare-improvement"]')
     assert button.is_enabled(), (
-        "Compare Impact stayed disabled in kilogram mode on an allocation that is "
+        "Compare Impact stayed disabled in unit mode on an allocation that is "
         "valid in percentage mode - the stored allocation is unit-dependent, which "
         "it must not be"
     )

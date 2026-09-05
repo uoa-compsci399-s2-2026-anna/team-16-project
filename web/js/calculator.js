@@ -1118,12 +1118,23 @@ export function bindCalculator(main, retryTaxonomy) {
     // the flag, and the box is disabled the moment it is checked, so there is nothing
     // an untick could mean here anyway.
     if (target.id === 'contribute' && target.checked) contributeCalculation(state, publicError)
-    // Item ⑧'s percentage/kilogram toggle. A discrete choice like every other `<select>`
+    // Item ⑧'s percentage/unit toggle. A discrete choice like every other `<select>`
     // on this page, so it goes through `setState` and a full re-render rather than the
     // keystroke-preserving patch `updateImprovementInput` uses — there is no caret in a
     // `<select>` to lose. `improvement.js` reads `state.improvementMode` to decide what
     // each row displays; the allocation itself, in `improvedAllocations`, is untouched.
     if (target.id === 'improvement-mode') setState({ improvementMode: target.value })
+    // One destination row's own DISPLAY unit in unit mode — kilograms, tonnes, or a
+    // container — changed without touching any other row's, the same discipline
+    // `data-line-field="unit"` above follows and for the same reason: a shared value
+    // read by several `<select>`s is how one CSS selector ends up describing all of
+    // them. `state.improvementRowUnits` holds nothing the allocation depends on;
+    // `improvedAllocations` stays the percentage it always was (see the note on
+    // `updateImprovementInput`), so changing what a row is SHOWN in can never change
+    // what it MEANS.
+    if (target.matches('[data-improvement-unit-code]')) {
+      setState({ improvementRowUnits: { ...state.improvementRowUnits, [target.dataset.improvementUnitCode]: target.value } })
+    }
   })
 
   /**

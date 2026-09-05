@@ -987,7 +987,32 @@ tbody th { font-weight: 700; }
 .explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
-.improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(250px, 0.72fr) minmax(380px, 1.28fr); gap: 24px; align-items: start; }
+/* **The list column's own minimum has to cover what the row inside it actually needs,
+   not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
+   for its control column alone; add the row's label column (120px min), the gap between
+   them (20px) and the row's own padding (18px each side, 36px total - `box-sizing:
+   border-box` counts it inside the row's width) and the row needs at least 436px to lay
+   out without its own tracks being compressed below their stated minimums. The list
+   column's old minimum (380px) was less than that by 56px, so at any viewport narrow
+   enough to hold this editor to its bare minimums - 700px measured, but really the whole
+   band from the 480px mobile stack up to where the two-column split stops being
+   squeezed - the row was compressed well past what its own CSS says it is entitled to,
+   and the select (the row's last, narrowest track) was what ran out of room first:
+   `.improvement-allocation-list`'s `overflow: hidden` then clipped it rather than
+   showing an overflow nobody could scroll to. Not RTL-only - the clip is symmetric, off
+   whichever edge is the inline end.
+
+   **Fixed by giving both of this grid's own columns a minimum that actually adds up.**
+   At 700px this editor is given 608px total (measured, both directions, both English and
+   German - the split is pixel-based, not text-based, so it does not move with the
+   language); 144px (pie) + 440px (list) + 24px gap is exactly that, with 4px of the
+   list's own slack carried over from the row's `:has()` floor below. The pie column
+   does end up narrower at this one width than it was before this fix - there was never
+   a way to give the row what it needs inside a fixed 608px budget without taking it from
+   somewhere, and the select is exactly what this round was told not to shave further.
+   Above roughly 900px there is room for both columns past their minimums and the split
+   returns to its usual proportions. */
+.improvement-editor { margin-top: 24px; display: grid; grid-template-columns: minmax(144px, 0.72fr) minmax(440px, 1.28fr); gap: 24px; align-items: start; }
 .improvement-pie-wrap { padding: 12px; border-radius: 14px; background: #fff; }
 .improvement-pie-chart { display: block; width: 100%; height: auto; overflow: visible; }
 .improvement-pie-chart path { stroke: #fff; stroke-width: 2; }
@@ -1017,6 +1042,65 @@ tbody th { font-weight: 700; }
 .improvement-control input[type="range"] { width: 100%; accent-color: var(--kai-kale); }
 .percentage-input { display: grid; grid-template-columns: 1fr auto; align-items: center; gap: 7px; }
 .percentage-input input { min-width: 0; }
+/* Item ⑧'s per-row unit `<select>` (tonnes, or a staff-named container, alongside
+   kilograms) replaces the plain `%`/`kg` suffix in unit mode. Its text is a translated
+   word or a staff-typed container label, either of which can run well past one
+   character - German's own "Kilogramm" already does - so a row offering the choice
+   gets more room, and the choice among range / number / select is one flat split
+   rather than two grids nested inside one another.
+
+   **`display: contents` on `.percentage-input`, only in unit mode.** Nesting a
+   nested `grid-template-columns` for the number+select pair inside `.improvement-control-unit`'s
+   own two columns split one width budget twice, and the second split always lost:
+   measured 28px for a box reading "0.00590" at a 700px viewport, where the ROW's own
+   two-column split (label | control) - unchanged by item ⑧ - already leaves `.improvement-control`
+   only ~230px, not the 320px this might suggest. `display: contents` removes `.percentage-input`
+   from layout entirely, so its two children become items of `.improvement-control-unit`'s
+   own grid directly - one budget, three tracks, sized together instead of in two
+   uncoordinated passes. Percentage mode is untouched: its own `.percentage-input` still
+   pairs a number box with a plain `%` span, in its own right.
+
+   **`:has()` on the row is what recovers enough total width to make that budget workable
+   at every measured breakpoint.** `.improvement-allocation-row`'s label/control split
+   predates item ⑧ and was already tight for two columns (a number box and a fixed 108px
+   suffix); the same split for three left too little for all three even after flattening
+   the nested grid. Already used elsewhere in this file (`.main-content:has(.hero)`), so
+   this is the same tool, not a new dependency. */
+.improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(120px, 0.55fr) minmax(260px, 1.45fr); }
+/* Item ⑨: the range is the control a visitor actually drags; the select is a choice made
+   once and does not need to compete with it for room. The three tracks were `1fr / 100px /
+   170px` - the select's own upper bound (170px) wider than the box's, and the range's lower
+   bound (50px) low enough to leave it a stub once the other two claimed their own space, which
+   is what the client's screenshot showed ("23 L kerbside foo…" next to a squeezed thumb). The
+   range now carries a real minimum of its own and the select's own ceiling is lower than the
+   range's - the range still grows into whatever the row has left (`1fr`), the select does not
+   grow past a sensible width for a closed control, and a name too long for that width relies on
+   the select's own `title` (see `DestinationAllocationRow`), not on the track widening for it.
+
+   **The three minimums must sum to no more than the row's own `:has()` floor above (260px),
+   gaps included, or the row silently overflows its own `.improvement-allocation-list`
+   (`overflow: hidden`) the moment that floor is the width actually on offer - which is every
+   viewport from the mobile stack (480px) up to where `.improvement-editor`'s two-column split
+   stops squeezing it (roughly 900px), not merely one measured breakpoint.** A first pass here
+   used `140/55/80` - 291px including gaps, 31px over the 260px floor - which fit in English
+   only by coincidence of where the row happened to sit; in `dir="rtl"` the overflow was real
+   and clipped the select half off the left edge, invisibly, because clipped content raises no
+   scrollbar.
+
+   **A track's growth past its own minimum is not "whatever's left goes to the `1fr` track
+   first" - grid fills every `minmax(min, <length>)` track up to its own fixed ceiling BEFORE
+   a `1fr` track gets anything at all** (the spec's own "Maximize Tracks" step runs before
+   "Expand Flexible Tracks"). A first pass at `110/55/65` with box/select ceilings of `90/130`
+   spent the tightest budget's entire few pixels of slack on the box and select, leaving the
+   range sitting at its bare minimum while the other two grew past theirs - the opposite of
+   the stated goal. Fixed by giving the range a minimum that is already the majority of the
+   260px floor on its own (130 of 244 available past gaps), so the outcome does not depend on
+   which track the grid algorithm happens to feed first, and by lowering the box's and
+   select's own ceilings (90/100, down from 90/130) so they stop growing sooner at wider
+   viewports too, leaving the surplus for the range rather than the select. */
+.improvement-control-unit { grid-template-columns: minmax(130px, 1fr) minmax(50px, 90px) minmax(60px, 100px); gap: 8px; }
+.improvement-control-unit .percentage-input { display: contents; }
+.improvement-row-unit { max-width: 100%; min-width: 0; font: inherit; }
 .improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
 .improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
@@ -1180,7 +1264,13 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
   .improvement-editor { grid-template-columns: 1fr; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }
+  /* `:has()` gives the unit-mode row a higher specificity than the plain selector
+     above, so it needs restating here rather than inheriting the stack this rule
+     already sets - a later, lower-specificity rule cannot override an earlier,
+     more specific one just by coming second in the file. */
+  .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: 1fr; }
   .improvement-control { grid-template-columns: 1fr; }
+  .improvement-control-unit { grid-template-columns: 1fr; }
   .improvement-actions { flex-direction: column; }
   .comparison-values { grid-template-columns: 1fr; }
   .comparison-arrow { transform: rotate(90deg); justify-self: start; }

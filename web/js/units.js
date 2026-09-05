@@ -288,6 +288,95 @@ export function rowKgString(qtyInput, unit, presets) {
 }
 
 /**
+ * `rowKgString`'s inverse, for the improvement panel's per-row unit selector.
+ *
+ * **Display only, like `percentageToKg`/`kgToPercentage` beside it — nothing this
+ * returns reaches the wire.** The improvement panel stores every allocation as a
+ * percentage regardless of which unit a row is *shown* in (see the note on
+ * `updateImprovementInput` in `improvement.js`), so a keystroke against a row set to
+ * tonnes or a container preset is converted here, to kilograms, and then to a
+ * percentage of the total the same way a kilogram keystroke always was — one more
+ * unit joining a conversion that already existed, not a second one.
+ *
+ * `massToKg` already does the kilograms/tonnes half exactly; the one thing it does
+ * not know is a container preset, which is why this exists rather than a call to
+ * `massToKg` at each of its two call sites.
+ *
+ * @param {string|number} amount  what the visitor typed, in `unit`
+ * @param {string} unit           `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+ * @param {Array} presets         taxonomy.unit_presets
+ * @returns {number} `NaN` when `amount` is not a finite number or `unit` names a
+ *   preset the taxonomy no longer carries (§6.1) — never thrown, because both
+ *   callers run this inside a render
+ */
+export function unitAmountToKg(amount, unit, presets) {
+  if (isPresetUnit(unit)) {
+    const preset = (presets || []).find(item => item.code === presetUnitCode(unit))
+    const perUnit = preset ? Number(preset.kg_per_unit) : Number.NaN
+    const numeric = Number(amount)
+    return Number.isFinite(numeric) && Number.isFinite(perUnit) ? numeric * perUnit : Number.NaN
+  }
+  const kg = massToKg(amount, unit)
+  return kg === null ? Number.NaN : kg
+}
+
+/**
+ * `unitAmountToKg`'s inverse: a mass in kilograms, restated in an arbitrary row
+ * unit — **display only**, the same reservation `percentageToKg` carries. A
+ * destination row showing tonnes or a container preset still allocates the
+ * percentage it always did; this only decides what number is printed beside it.
+ *
+ * @param {number} kg      a mass in kilograms
+ * @param {string} unit    `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {number} `NaN` when `kg` is not finite, or when `unit` names a preset
+ *   the taxonomy no longer carries or whose `kg_per_unit` is not usable
+ */
+export function kgToUnitAmount(kg, unit, presets) {
+  if (!Number.isFinite(kg)) return Number.NaN
+  if (isPresetUnit(unit)) {
+    const preset = (presets || []).find(item => item.code === presetUnitCode(unit))
+    const perUnit = preset ? Number(preset.kg_per_unit) : Number.NaN
+    return Number.isFinite(perUnit) && perUnit > 0 ? kg / perUnit : Number.NaN
+  }
+  return unit === 'tonnes' ? kg / 1000 : kg
+}
+
+/**
+ * How many decimal places a row's own unit needs so that rounding it for display
+ * never throws away more than the two decimal places `improvement.js`'s own mass
+ * check, `MASS_TOLERANCE_KG`, already works in.
+ *
+ * **This is the fix for the mistake item ⑧'s per-row unit exists to prevent.**
+ * Kilograms are shown to two decimal places, which is 0.01 kg of resolution.
+ * Tonnes are the identical mass three orders of magnitude smaller a number, so
+ * printing a tonnes row to the same two places throws away everything below one
+ * kilogram — a row holding 5.90 kg would print `"0.01"` t, indistinguishable from
+ * a row holding anywhere from 5 to 15 kg, on a page whose whole point is that a
+ * unit change must restate a figure, not blur it. Five places keeps the same
+ * 0.01 kg underneath a tonnes figure that a visitor did not type to begin with.
+ *
+ * A container preset scales by whatever one of it weighs: a 1,100 L bin holding
+ * hundreds of kilograms needs more than two decimal places of *count* to still
+ * distinguish 0.01 kg, the same reasoning as tonnes; a preset lighter than a
+ * kilogram needs no more than the two places every mass is already shown to.
+ *
+ * @param {string} unit    `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {number} a whole number of decimal places, never fewer than 2
+ */
+export function unitDisplayPrecision(unit, presets) {
+  if (unit === 'tonnes') return 5
+  if (isPresetUnit(unit)) {
+    const preset = (presets || []).find(item => item.code === presetUnitCode(unit))
+    const perUnit = preset ? Number(preset.kg_per_unit) : Number.NaN
+    if (Number.isFinite(perUnit) && perUnit > 0.01) return Math.max(2, Math.ceil(Math.log10(perUnit / 0.01)))
+    return 2
+  }
+  return 2
+}
+
+/**
  * A percentage share of a total mass, as kilograms — **display only**.
  *
  * The improvement panel's kilogram mode shows this instead of the percentage

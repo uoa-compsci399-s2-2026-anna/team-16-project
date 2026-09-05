@@ -366,15 +366,17 @@ export function updateImprovementInput(control, state) {
   state.improvedAllocations = { ...state.improvedAllocations, [code]: percentage }
   state.improvementResult = null
   state.improvementError = null
-  // Mirrors the *raw* value, not the percentage just computed: every control sharing this
-  // code is rendered in the same mode and the same row unit (§ `ImprovementScenario`), so
-  // the slider and the number box always agree on which unit `.value` is in and a straight
-  // copy is correct. `raw` rather than `control.value` so a range's own drag mirrors its
-  // *rounded* (and, if it applied, *clamped*) figure, not the pointer position that
-  // produced it.
-  document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
-    if (input !== control) input.value = raw
-  })
+  // **The `max` loop runs BEFORE the mirror loop, and the order is load-bearing.** Both
+  // read only `state.improvedAllocations` (just assigned above) and neither reads the
+  // other's DOM writes, so nothing about what either loop computes depends on which goes
+  // first — but a row's own box can hold a figure past its OWN old ceiling (typing past
+  // the ceiling is allowed on the box; see the docstring above), and that is exactly the
+  // `raw` value the mirror loop is about to assign to that row's *slider*. Mirroring it
+  // onto a slider whose `max` has not been raised yet triggers the same silent
+  // browser clamp `sliderMax`'s own floor exists to stop — a slider that had nothing to
+  // do with the drag being latched at its stale ceiling (box `8.20`, thumb `1.75`, `max`
+  // stuck at `1.75` until the max loop ran). Raising every slider's `max` first means the
+  // mirror loop's assignment always lands inside the ceiling that is about to admit it.
   const total = allocationTotal(state.improvedAllocations)
   const headroom = 100 - total
   document.querySelectorAll('input[type="range"][data-improvement-code]').forEach(slider => {
@@ -386,6 +388,15 @@ export function updateImprovementInput(control, state) {
     } else {
       slider.max = String(maxPercent)
     }
+  })
+  // Mirrors the *raw* value, not the percentage just computed: every control sharing this
+  // code is rendered in the same mode and the same row unit (§ `ImprovementScenario`), so
+  // the slider and the number box always agree on which unit `.value` is in and a straight
+  // copy is correct. `raw` rather than `control.value` so a range's own drag mirrors its
+  // *rounded* (and, if it applied, *clamped*) figure, not the pointer position that
+  // produced it.
+  document.querySelectorAll(`[data-improvement-code="${CSS.escape(code)}"]`).forEach(input => {
+    if (input !== control) input.value = raw
   })
   const error = improvementValidation(state)
   const totalPanel = document.querySelector('.improvement-total')

@@ -1398,6 +1398,61 @@ def test_a_coarse_drag_near_the_ceiling_does_not_leave_the_box_and_slider_disagr
     )
 
 
+def test_a_box_typed_past_its_own_ceiling_does_not_leave_its_own_slider_stuck_below_it(page_at):
+    """**A cosmetic desynchronisation, not the client's own report, but the same
+    silent-clamp mechanism in one narrower case.** A number box has always been
+    allowed to hold a figure past its own row's ceiling - that is what disables
+    Compare, and it is deliberate (see the docstring on `updateImprovementInput`).
+    What is not deliberate is what its OWN slider ends up showing.
+
+    `updateImprovementInput` used to mirror the typed figure onto the sibling
+    slider BEFORE recomputing every slider's own `max`. Mirroring a value past
+    the slider's still-stale `max` triggers the same silent browser clamp
+    `sliderMax`'s floor exists to stop elsewhere - so a row's own slider could
+    end up reading its OLD ceiling while its box read the new, out-of-range
+    figure and its `max` (raised a moment later) read the new figure too:
+    box `8.20`, thumb `1.75`, `max="8.20"`. Nothing is lost - the allocation is
+    already invalid and Compare is already disabled - but the two controls for
+    ONE destination disagree.
+
+    The `max` loop now runs before the mirror loop (both read only
+    `state.improvedAllocations`, already assigned by the time either runs, so
+    neither depends on the other's DOM writes) - so every slider's ceiling is
+    already wide enough by the time a value is mirrored onto it.
+
+    Mutation to confirm this test would catch the regression: swap the two
+    loops in `updateImprovementInput` back (mirror loop before the `max` loop)
+    and watch the slider assertion below fail.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    assert boxes.count() >= 2, "need two destinations for one to hold all the headroom"
+
+    boxes.nth(0).fill("50")
+    boxes.nth(1).fill("50")
+    page.wait_for_timeout(80)
+    assert page.locator("#improvement-total-value").inner_text() == "100.00%"
+    assert sliders.nth(1).get_attribute("max") == "50"
+
+    #: Typed straight past this row's own ceiling (50, since headroom is
+    #: already zero) - allowed on the box, refused nowhere until Compare.
+    boxes.nth(1).fill("90")
+    page.wait_for_timeout(80)
+
+    assert boxes.nth(1).input_value() == "90", (
+        "the box itself should hold exactly what was typed, unclamped"
+    )
+    assert sliders.nth(1).get_attribute("max") == "90", (
+        f"the slider's own max did not follow the new figure: {sliders.nth(1).get_attribute('max')!r}"
+    )
+    assert sliders.nth(1).input_value() == "90", (
+        f"the slider reads {sliders.nth(1).input_value()!r} while its own box reads '90' - "
+        "the mirror loop assigned the new value before the max loop widened the ceiling "
+        "that was meant to admit it"
+    )
+
+
 def test_the_sliders_start_at_zero_and_the_total_says_so(page_at):
     """The client asked for "所有滑块默认都是 0".
 

@@ -1398,6 +1398,104 @@ def test_a_coarse_drag_near_the_ceiling_does_not_leave_the_box_and_slider_disagr
     )
 
 
+def test_a_retreat_after_being_driven_down_does_not_survive_the_next_touch(page_at):
+    """**The client's own failure sequence, not only the recomputation defect
+    it starts from.** The client's report was reproduced by the code review at
+    exactly this allocation: 20 kg, rows 5.90 / 7.80 / 1.70 / 4.55 kg (99.75%
+    of the total), in the taxonomy's own sort order (prevention,
+    refed_prevention, refed_donations, refed_animal_feed). `state.improvedAllocations`
+    is a percentage in every mode (§7.3), so those four kilogram figures are
+    entered here as the percentages of 20 kg they are - 29.50 / 39.00 / 8.50 /
+    22.75, the same allocation, so the setup does not depend on switching the
+    panel into unit mode first.
+
+    It is three steps, not one, and the loss only appears on the third:
+
+    1. Push Donations from 1.70 kg (8.50%) to 8.20 kg (41.00%) - 32.50 points
+       past the 0.25% actually left. Every untouched destination's THUMB is
+       driven down by the unfloored `sliderMax`, while the number boxes
+       (never touched) stay put.
+    2. Pull Donations back to 1.70 kg (8.50%) - the maxima recover, but on the
+       unfixed code the driven-down THUMBS stay latched at wherever they were
+       pushed to; the boxes still read what they always read.
+    3. One ArrowDown then one ArrowUp on refed_prevention's OWN slider - net
+       zero on a slider that never should have drifted. On the unfixed code
+       this reads the LATCHED thumb position, not the figure the box beside
+       it displays, and stores it: refed_prevention's box and
+       `state.improvedAllocations` collapse from 39.00% (7.80 kg) towards the
+       latched figure, and the total falls out of its 99.75% agreement. **This
+       is the client's five-kilogram loss** - `test_dragging_one_destination_does_not_move_another`
+       asserts the box before the slider and dies on the SLIDER assertion
+       under the un-floored mutation, so the box never gets exercised and
+       this exact sequence had no test.
+
+    At HEAD, `sliderMax`'s floor means no thumb is ever driven below its own
+    value in step 1, so there is nothing for step 2 to fail to restore and
+    nothing for step 3 to latch onto - every assertion below holds unchanged.
+
+    Mutation to confirm this test would catch the regression: restore
+    `sliderMax`'s body in `web/js/improvement.js` to
+    `Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)` (drop
+    the `numericValue` floor) and watch the BOX assertion below fail, not
+    only a slider one.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    assert boxes.count() >= 4, "need four destinations to set up the client's own allocation"
+
+    #: prevention, refed_prevention, refed_donations, refed_animal_feed -
+    #: 5.90 / 7.80 / 1.70 / 4.55 kg of 20, i.e. 29.50 / 39.00 / 8.50 / 22.75%,
+    #: summing to 99.75%, the exact allocation the client held when this
+    #: happened to them.
+    for index, value in enumerate(["29.50", "39.00", "8.50", "22.75"]):
+        boxes.nth(index).fill(value)
+        page.wait_for_timeout(40)
+
+    total_before = page.locator("#improvement-total-value").inner_text()
+    assert total_before == "99.75%", f"the setup no longer matches the client's own allocation: {total_before!r}"
+
+    #: Step 1: push Donations (index 2, 1.70 kg) to 8.20 kg, i.e. 8.50% to
+    #: 41.00% - 32.50 points past the 0.25% actually left.
+    boxes.nth(2).fill("41.00")
+    page.wait_for_timeout(80)
+
+    #: Step 2: pull Donations back to 1.70 kg, i.e. 8.50%.
+    boxes.nth(2).fill("8.50")
+    page.wait_for_timeout(80)
+
+    box_before_touch = boxes.nth(1).input_value()
+    assert box_before_touch == "39.00", (
+        f"refed_prevention's own box already changed to {box_before_touch!r} before it was "
+        "ever touched, on steps 1-2 alone"
+    )
+
+    #: Step 3: the client's own loss. ONE ArrowDown then ONE ArrowUp on
+    #: refed_prevention's OWN slider - a round trip on a control nobody
+    #: dragged and whose value never should have moved.
+    sliders.nth(1).press("ArrowDown")
+    page.wait_for_timeout(40)
+    sliders.nth(1).press("ArrowUp")
+    page.wait_for_timeout(80)
+
+    #: ArrowDown/ArrowUp is a native round trip that may restate the figure
+    #: without its trailing zeroes (percentage mode prints `improved` exactly
+    #: as stored, with no forced two decimal places - see `DestinationAllocationRow`),
+    #: so the box is compared numerically. What matters is that the FIGURE
+    #: itself did not move, not its string formatting.
+    box_after = boxes.nth(1).input_value()
+    assert abs(float(box_after) - 39.00) < 1e-9, (
+        f"refed_prevention's BOX collapsed to {box_after!r} after a single "
+        "ArrowDown/ArrowUp round trip on its OWN slider - the client's own five-kilogram loss, "
+        "read out of the number the visitor actually looks at rather than the thumb position"
+    )
+    total_after = page.locator("#improvement-total-value").inner_text()
+    assert total_after == "99.75%", (
+        f"the total moved to {total_after!r} even though every box reads what it read before "
+        "step 3 - the allocation itself, not merely the slider, was lost"
+    )
+
+
 def test_a_box_typed_past_its_own_ceiling_does_not_leave_its_own_slider_stuck_below_it(page_at):
     """**A cosmetic desynchronisation, not the client's own report, but the same
     silent-clamp mechanism in one narrower case.** A number box has always been

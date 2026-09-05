@@ -1,7 +1,7 @@
 {
-  "version_label": "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, corrected) - NOT PUBLISHED",
+  "version_label": "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, plus ch4 and cost) - NOT PUBLISHED",
   "is_mock": true,
-  "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination). Upstream figures are built as a CUMULATIVE footprint per sector -- ReFED's own per-sector shape (tests/benchmark/refed/refed-benchmark-factors.json), anchored so the sector matching the client's own 'Life cycle covered' wording equals the client's own total exactly, with the client's farm stage for five categories ReFED does not publish one for filled from Poore & Nemecek (2018) via Our World in Data (co2e) or a stated assumption (water) -- see data/upstream-factors-draft/public_farm_share_source_data.py. This replaces an earlier construction (commit ba7fe93) that read ReFED's per-sector values as shares summing to the client's total, which understated every consumer-stage factor roughly fourfold; see docs/upstream-factors-draft.md. is_mock stays true: these values are derived, not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. This set is a DRAFT and must never be published: doing so would archive whatever New Zealand set is currently live. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
+  "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination). Upstream figures are built as a CUMULATIVE footprint per sector -- ReFED's own per-sector shape (tests/benchmark/refed/refed-benchmark-factors.json), anchored so the sector matching the client's own 'Life cycle covered' wording equals the client's own total exactly, with the client's farm stage for five categories ReFED does not publish one for filled from Poore & Nemecek (2018) via Our World in Data (co2e) or a stated assumption (water) -- see data/upstream-factors-draft/public_farm_share_source_data.py. This replaces an earlier construction (commit ba7fe93) that read ReFED's per-sector values as shares summing to the client's total, which understated every consumer-stage factor roughly fourfold; see docs/upstream-factors-draft.md. As of this revision, ch4 (raw methane mass, ReFED-only, every food category and twelve of fourteen destinations) and cost (the New Zealand waste disposal levy at the rate in force 2026-09-05, landfill and refuse_discard only) are also seeded -- neither client table carries either column, so both are built entirely from ReFED or public New Zealand government sources; see docs/upstream-factors-draft.md. is_mock stays true: these values are derived, not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. This set is a DRAFT and must never be published: doing so would archive whatever New Zealand set is currently live. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
   "constants": [
     {
       "code": "GWP_CH4_100",
@@ -31,7 +31,7 @@
     {
       "metric": "ch4",
       "expression": "qty_kg * (upstream + downstream)",
-      "notes": "No ch4 upstream or downstream row exists in this draft; the term is zero throughout."
+      "notes": "Same expression as the live/mock set: no const_GWP_CH4 term, matching the ch4 metric's own unit (kg CH4, not kg CO2e). ReFED's own ch4 figures are raw methane mass, confirmed against build_refed_benchmark.py's unit-conversion table, and are seeded directly for that reason -- see data/upstream-factors-draft/build_upstream_factors_draft.py, 'CH4'. Upstream and downstream ch4 rows now exist for every food category and twelve of fourteen destinations (upcycling excluded, no ReFED shape match)."
     },
     {
       "metric": "water",
@@ -41,7 +41,7 @@
     {
       "metric": "cost",
       "expression": "qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)",
-      "notes": "No cost upstream or downstream row exists in this draft; the term is zero throughout."
+      "notes": "Same expression as the live/mock set; const_FOOD_VALUE_PER_KG stays zero per O-2. Downstream cost rows now exist for every destination: the New Zealand waste disposal levy ($70/tonne, the rate in force 2026-09-05) for landfill and refuse_discard, an explicit stated-reason zero for every other destination. No upstream cost row exists anywhere -- cost is a downstream-only figure here (see 'COST' in the module docstring); the upstream term is zero throughout."
     },
     {
       "metric": "mass",
@@ -2209,6 +2209,1086 @@
       "value_per_kg": "0.0000000000",
       "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
       "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "fruit",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0008140063",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_farm stage = 0.0008140063.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "fruit",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0028094187",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_manufacturing stage = 0.0028094187.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "fruit",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0047158881",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_retail stage = 0.0047158881.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "fruit",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0067383152",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_residential stage = 0.0067383152.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "fruit",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0056488233",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_foodservice stage = 0.0056488233.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "fruit",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0056488233",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_foodservice stage = 0.0056488233.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0008140063",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_farm stage = 0.0008140063.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0028094187",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_manufacturing stage = 0.0028094187.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0047158881",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_retail stage = 0.0047158881.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0067383152",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_residential stage = 0.0067383152.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0056488233",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_foodservice stage = 0.0056488233.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "vegetables",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0056488233",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_produce refed_foodservice stage = 0.0056488233.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "nuts_seeds",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0075282276",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_farm stage = 0.0075282276.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0080761003",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_manufacturing stage = 0.0080761003.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "nuts_seeds",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0142371425",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_retail stage = 0.0142371425.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "nuts_seeds",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0164156786",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_residential stage = 0.0164156786.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "nuts_seeds",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0142371425",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_foodservice stage = 0.0102794612. CLAMPED to 0.0142371425 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0102794612) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "nuts_seeds",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0142371425",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_foodservice stage = 0.0102794612. CLAMPED to 0.0142371425 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0102794612) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "meat",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1679408876",
+      "source_note": "No client (Rawtec) ch4 column exists at all, and no ReFED Farm-stage methane value is published for refed_fresh_meat_seafood (the same structural gap ReFED leaves for co2e, but here with no public farm-share source to fill it -- see module docstring). primary_production is floored at processing's own resolved value (0.1679408876) -- the highest figure the non-decreasing invariant permits without inventing a number no source gives. LIKELY AN UNDERSTATEMENT for meat- and dairy-adjacent categories, where on-farm enteric methane is typically the dominant term; flagged, not measured.",
+      "data_quality": "derived-refed-no-farm-floor"
+    },
+    {
+      "sector": "processing",
+      "food_category": "meat",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1679408876",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_manufacturing stage = 0.1679408876.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "meat",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1816944075",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_retail stage = 0.1816944075.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "meat",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1827416355",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_residential stage = 0.1827416355.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "meat",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1953242898",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_foodservice stage = 0.1953242898.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "meat",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1953242898",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_foodservice stage = 0.1953242898.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "seafood",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1679408876",
+      "source_note": "No client (Rawtec) ch4 column exists at all, and no ReFED Farm-stage methane value is published for refed_fresh_meat_seafood (the same structural gap ReFED leaves for co2e, but here with no public farm-share source to fill it -- see module docstring). primary_production is floored at processing's own resolved value (0.1679408876) -- the highest figure the non-decreasing invariant permits without inventing a number no source gives. LIKELY AN UNDERSTATEMENT for meat- and dairy-adjacent categories, where on-farm enteric methane is typically the dominant term; flagged, not measured.",
+      "data_quality": "derived-refed-no-farm-floor"
+    },
+    {
+      "sector": "processing",
+      "food_category": "seafood",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1679408876",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_manufacturing stage = 0.1679408876.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "seafood",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1816944075",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_retail stage = 0.1816944075.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "seafood",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1827416355",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_residential stage = 0.1827416355.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "seafood",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1953242898",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_foodservice stage = 0.1953242898.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "seafood",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1953242898",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_fresh_meat_seafood refed_foodservice stage = 0.1953242898.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0440772809",
+      "source_note": "No client (Rawtec) ch4 column exists at all, and no ReFED Farm-stage methane value is published for refed_dairy_eggs (the same structural gap ReFED leaves for co2e, but here with no public farm-share source to fill it -- see module docstring). primary_production is floored at processing's own resolved value (0.0440772809) -- the highest figure the non-decreasing invariant permits without inventing a number no source gives. LIKELY AN UNDERSTATEMENT for meat- and dairy-adjacent categories, where on-farm enteric methane is typically the dominant term; flagged, not measured.",
+      "data_quality": "derived-refed-no-farm-floor"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0440772809",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dairy_eggs refed_manufacturing stage = 0.0440772809.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0480769779",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dairy_eggs refed_retail stage = 0.0480769779.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0496758764",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dairy_eggs refed_residential stage = 0.0496758764.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0617321061",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dairy_eggs refed_foodservice stage = 0.0617321061.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "dairy",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0617321061",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dairy_eggs refed_foodservice stage = 0.0617321061.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "bakery_grains",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0101927230",
+      "source_note": "No client (Rawtec) ch4 column exists at all, and no ReFED Farm-stage methane value is published for refed_breads_bakery (the same structural gap ReFED leaves for co2e, but here with no public farm-share source to fill it -- see module docstring). primary_production is floored at processing's own resolved value (0.0101927230) -- the highest figure the non-decreasing invariant permits without inventing a number no source gives. LIKELY AN UNDERSTATEMENT for meat- and dairy-adjacent categories, where on-farm enteric methane is typically the dominant term; flagged, not measured.",
+      "data_quality": "derived-refed-no-farm-floor"
+    },
+    {
+      "sector": "processing",
+      "food_category": "bakery_grains",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0101927230",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_breads_bakery refed_manufacturing stage = 0.0101927230.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "bakery_grains",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0101927230",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_breads_bakery refed_retail stage = 0.0086669931. CLAMPED to 0.0101927230 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0086669931) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "bakery_grains",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0113109546",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_breads_bakery refed_residential stage = 0.0113109546.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "bakery_grains",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0101927230",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_breads_bakery refed_foodservice stage = 0.0056502512. CLAMPED to 0.0101927230 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0056502512) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "bakery_grains",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0101927230",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_breads_bakery refed_foodservice stage = 0.0056502512. CLAMPED to 0.0101927230 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0056502512) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "bakery_grains",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "bakery_grains",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "bakery_grains",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "bakery_grains",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "bakery_grains",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "bakery_grains",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "beverages",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0059509972",
+      "source_note": "No client (Rawtec) ch4 column exists at all, and no ReFED Farm-stage methane value is published for refed_ready_to_drink_beverages (the same structural gap ReFED leaves for co2e, but here with no public farm-share source to fill it -- see module docstring). primary_production is floored at processing's own resolved value (0.0059509972) -- the highest figure the non-decreasing invariant permits without inventing a number no source gives. LIKELY AN UNDERSTATEMENT for meat- and dairy-adjacent categories, where on-farm enteric methane is typically the dominant term; flagged, not measured.",
+      "data_quality": "derived-refed-no-farm-floor"
+    },
+    {
+      "sector": "processing",
+      "food_category": "beverages",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0059509972",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_ready_to_drink_beverages refed_manufacturing stage = 0.0059509972.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "beverages",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0088489176",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_ready_to_drink_beverages refed_retail stage = 0.0088489176.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "beverages",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0110395864",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_ready_to_drink_beverages refed_residential stage = 0.0110395864.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "beverages",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0295534375",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_ready_to_drink_beverages refed_foodservice stage = 0.0295534375.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "beverages",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0295534375",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_ready_to_drink_beverages refed_foodservice stage = 0.0295534375.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "beverages",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "beverages",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "beverages",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "beverages",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "beverages",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "beverages",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0008804519",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_standard_mix refed_farm stage = 0.0008804519.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0412901324",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_standard_mix refed_manufacturing stage = 0.0412901324.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0412901324",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_standard_mix refed_retail stage = 0.0410993929. CLAMPED to 0.0412901324 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0410993929) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0412901324",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_standard_mix refed_residential stage = 0.0276832645. CLAMPED to 0.0412901324 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0276832645) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0440145668",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_standard_mix refed_foodservice stage = 0.0440145668.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "standard_mix",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0440145668",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_standard_mix refed_foodservice stage = 0.0440145668.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0075282276",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_farm stage = 0.0075282276.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0080761003",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_manufacturing stage = 0.0080761003.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0142371425",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_retail stage = 0.0142371425.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0164156786",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_residential stage = 0.0164156786.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0142371425",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_foodservice stage = 0.0102794612. CLAMPED to 0.0142371425 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0102794612) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0142371425",
+      "source_note": "No client (Rawtec) ch4 column exists. Filled entirely from ReFED's own absolute methane figures (no client total to anchor a scale factor against, so scale = 1, matching how 'staples' is built for co2e/water): ReFED refed_dry_goods refed_foodservice stage = 0.0102794612. CLAMPED to 0.0142371425 (forward running-maximum; see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (0.0102794612) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
     }
   ],
   "downstream": [
@@ -2462,6 +3542,249 @@
       "metric": "water",
       "value_per_kg": "0.0000000000",
       "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): waste that never happened has no downstream fate to price. Not a client figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "food_redistribution",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000001343",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_donations' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min 1.215E-7, max 1.350E-7, mean 1.343461538461538461538461538E-7.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "animal_feed",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "-0.0004394564",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_animal_feed' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min -0.0018729979, max 0E-10, mean -0.0004394563794871794871794871795.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "compost",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0024507901",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_composting' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min 0.0008043777, max 0.0059797283, mean 0.002450790089743589743589743590.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0042779307",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_anaerobic_digestion' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min 0.0014096623, max 0.0104349529, mean 0.004277930697435897435897435897.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "land_application",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "-0.0000287599",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_land_application' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min -0.0000975520, max 0.0000024697, mean -0.00002875986410256410256410256410.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "not_harvested",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_not_harvested' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 3 published (sector, food category) rows: min 0E-10, max 0E-10, mean 0E-10.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "bioprocessing",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "-0.0009280499",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_industrial_uses' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min -0.0089058600, max 0E-10, mean -0.0009280498820512820512820512821.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "-0.0009280499",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_industrial_uses' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min -0.0089058600, max 0E-10, mean -0.0009280498820512820512820512821.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "combustion",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000655859",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_incineration' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min -0.0009090862, max 0.0004200079, mean 0.00006558592051282051282051282051.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0320905540",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_landfill' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min 0.0105654475, max 0.0782922695, mean 0.03209055398717948717948717949.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "refuse_discard",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "-0.0000287599",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_dumping' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min -0.0000975520, max 0.0000024697, mean -0.00002875986410256410256410256410.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "sewer",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.1332824899",
+      "source_note": "No client (Rawtec) ch4 column exists in table 2 at all. Filled from ReFED's own 'refed_sewer' destination (matched by shape, not by client row -- see module docstring), an unweighted mean across all 39 published (sector, food category) rows: min 0.0438871396, max 0.3253621698, mean 0.1332824899.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "prevention",
+      "sector": null,
+      "food_category": null,
+      "metric": "ch4",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): waste that never happened has no downstream fate to price. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "destination": "landfill",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0700000000",
+      "source_note": "New Zealand waste disposal levy, Class 1 (municipal landfill), the rate in force as of 2026-09-05: $70.00/tonne effective 1 July 2026 = 0.0700000000 NZD/kg. The client's own cited $75.00/tonne takes effect 1 July 2027 and is NOT yet in force -- not seeded. food_category_id is left NULL: the levy is charged per tonne of waste regardless of food type. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "derived-public-nz-levy"
+    },
+    {
+      "destination": "refuse_discard",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0700000000",
+      "source_note": "New Zealand waste disposal levy, Class 1 (municipal landfill), the rate in force as of 2026-09-05: $70.00/tonne effective 1 July 2026 = 0.0700000000 NZD/kg. The client's own cited $75.00/tonne takes effect 1 July 2027 and is NOT yet in force -- not seeded. food_category_id is left NULL: the levy is charged per tonne of waste regardless of food type. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "derived-public-nz-levy"
+    },
+    {
+      "destination": "combustion",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Energy-from-waste/incineration facilities are not classified as a 'disposal facility' under New Zealand's Waste Minimisation Act and are excluded from the waste disposal levy (confirmed via an independent policy source, read 2026-09-05, not merely inferred from the name). Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "compost",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Composting is a recycle_recovery pathway, not disposal to a levied facility. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "anaerobic_digestion",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Anaerobic digestion is a recycle_recovery pathway, not disposal to a levied facility. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "land_application",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Land application is a recycle_recovery pathway, not disposal to a levied facility. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "not_harvested",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Not-harvested/ploughed-in waste never reaches a disposal facility at all. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "bioprocessing",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Processing into non-food items is a recycle_recovery pathway, not disposal to a levied facility. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Other recovery, including biodiesel, is a recycle_recovery pathway, not disposal to a levied facility. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "food_redistribution",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Food redistribution is a reuse pathway; the food is not disposed of at all. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "animal_feed",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Animal feed is a reuse pathway; the food is not disposed of at all. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "upcycling",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Upcycling to other food products is a reuse pathway; the food is not disposed of at all. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "sewer",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero, not a gap: Sewer/wastewater discharge is charged under trade-waste bylaws, a separate regime from the Waste Minimisation Act's disposal levy, and is not itself a 'disposal facility' the levy covers. Ministry for the Environment, 'Waste disposal levy expansion' (https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 (municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July 2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an independently dated report of the 1 July 2026 increase (Bin Bookings, 'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: '$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is therefore $70/tonne; the client's own cited $75/tonne is the rate that takes effect 1 July 2027 and is NOT yet in force.",
+      "data_quality": "not-applicable-nz-levy"
+    },
+    {
+      "destination": "prevention",
+      "sector": null,
+      "food_category": null,
+      "metric": "cost",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): waste that never happened has no disposal cost to price. Not a client or public figure.",
       "data_quality": "definitional"
     }
   ],

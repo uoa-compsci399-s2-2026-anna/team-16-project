@@ -35,18 +35,23 @@ WHAT THIS PRODUCES
 food_category, metric), covering the six New Zealand sectors
 (``admin/seed.py`` ``SECTORS``) and every food category for which the client
 supplied a usable total, **plus** ``staples`` (no client total exists for it
--- see "STAPLES", below), for ``co2e`` and ``water`` only (the client's table
-has no ``ch4`` or ``cost`` column, and its ``land`` column has no metric to
-attach to -- see "WHAT IS NOT REPRESENTED" below). Plus a zero override at
+-- see "STAPLES", below), for ``co2e``, ``water`` **and, as of this revision,
+``ch4``** (the client's table has no ``ch4`` column at all, so every food
+category's ``ch4`` is filled the unanchored way -- see "CH4: FILLED FROM
+REFED ALONE" below). ``cost`` has no upstream row (see "COST" below -- it is
+a downstream-only figure). The client's ``land`` column still has no metric
+to attach to -- see "WHAT IS NOT REPRESENTED" below. Plus a zero override at
 ``destination = prevention`` for every one of those rows, so the set is
 consistent with the other New Zealand-style sets in this repository even
 though it is never published (§O-7).
 
 ``factor_downstream`` -- one row per (our destination, metric), ``sector =
 null`` and ``food_category = null`` (the client's table 2 does not vary by
-either), for ``co2e`` and ``water`` where a value exists. Plus an explicit
-zero override at ``prevention``, matching the upstream override above and
-for the identical reason.
+either), for ``co2e`` and ``water`` where a value exists, **plus, as of this
+revision, ``ch4`` (filled from ReFED, see below) and ``cost`` (filled from
+the New Zealand waste disposal levy, see below)**. Plus an explicit zero
+override at ``prevention``, matching the upstream override above and for the
+identical reason.
 
 THE STAGE SPLIT IS A CUMULATIVE FOOTPRINT, NOT A SHARE OF A WHOLE
 ------------------------------------------------------------------
@@ -210,18 +215,121 @@ published (sector, food category) row, i.e. ReFED's own model assigns
 combustion-for-energy no process water at all. Adopted here as a real,
 sourced zero (§4.3 below), not a silent one.
 
+CH4: FILLED FROM REFED ALONE, FOR EVERY FOOD CATEGORY AND EVERY DESTINATION
+----------------------------------------------------------------------------
+Neither client table carries a `ch4` column at all -- table 1's "CO2-eq" is
+already a carbon-dioxide-equivalent figure, not decomposed into a separate
+methane mass, and table 2 has no methane column either. There is therefore no
+client total to anchor *any* food category to, so every one of the ten New
+Zealand food categories' `ch4` upstream rows is built the unanchored way
+§"STAPLES" already uses for `staples`' co2e/water: ReFED's own absolute
+per-stage methane figures, scale exactly 1, non-decreasing enforced by a
+forward running-maximum clamp. This reuses `NZ_TO_REFED_FOOD_SHAPE` and
+`REFED_SECTOR_FOR_NZ_SECTOR` exactly as already built for co2e/water --
+no second food-category or sector mapping is introduced for methane.
+
+**ReFED's own `ch4` figures are raw methane mass, not a CO2-equivalent.**
+Confirmed by reading `tests/benchmark/refed/build_refed_benchmark.py`'s own
+unit-conversion table: its `ch4` column is read from the CSV's
+`..._mtch4_footprint_per_ton` field (metric tons of CH4 itself) and converted
+by the *same* mass-based `1000 / 907.185` factor as `co2e`'s
+`..._mtco2e_footprint_per_ton` field, landing at `kg CH4/kg` -- a distinct
+unit from `co2e`'s `kg CO2e/kg`, not a GWP-multiplied version of it. This
+matches the `ch4` metric's own declared unit (`admin/seed.py` `METRICS`:
+`("ch4", "Methane", "kg CH4", ...)`) and this draft's own `ch4` formula
+(`qty_kg * (upstream + downstream)`, unchanged, no `const_GWP_CH4` term --
+identical to `docker/mock-factors.json`'s shipped formula). Seeding ReFED's
+methane figures directly, with no further GWP multiplication, is therefore
+correct: `const_GWP_CH4` (bound to `GWP_CH4_20`/`GWP_CH4_100`, 84/28) stays
+unreferenced by any formula in this draft, exactly as before this revision --
+multiplying by it here would overstate every methane figure by that same
+factor.
+
+Five of ReFED's own food categories publish no Farm-stage `ch4` value either
+(the identical structural gap as `co2e` -- see "FIVE OF REFED'S NINE FOOD
+CATEGORIES..." above -- affecting the same New Zealand categories: `meat`,
+`seafood`, `dairy`, `bakery_grains`, `beverages`). Unlike `co2e`, no public
+per-product *methane* farm-share source was found (Poore & Nemecek's own
+farm-share, used above, is a CO2e-equivalent share and does not carry over to
+methane, whose farm-stage share for livestock is typically much larger on
+account of enteric fermentation, not smaller). Rather than leave `primary_
+production` a silent gap -- implausible for meat and dairy, where on-farm
+methane is usually the dominant term -- it is floored at `processing`'s own
+resolved value: the highest figure the non-decreasing invariant permits
+without inventing a number no source gives. This is very likely still an
+**understatement** for those five categories and every affected row's
+`source_note` says so explicitly, as does the provenance document.
+
+Downstream, ReFED's own destination code is matched to each of our fourteen
+destinations by *shape* (`REFED_DESTINATION_FOR_NZ_DESTINATION` below),
+exactly the reasoning already used for `other_recovery`'s co2e/water fill
+above -- extended here to cover every destination because, again, the client
+supplies no methane column to draw a client-based mapping from. Two of our
+destinations legitimately share one ReFED destination (`bioprocessing` and
+`other_recovery` both draw ReFED's "Industrial Uses", the nearest
+recycle_recovery-shaped destination to either of them) and one has no
+comparably-shaped ReFED destination at all: `upcycling` ("Upcycling to other
+food products") matches nothing ReFED publishes under its own `reuse`-
+equivalent destinations (`Donations`, `Animal Feed` only) and is left an
+unseeded gap rather than a forced, weakly-justified match -- reported, like
+`eggs`, not silently zeroed.
+
+COST: THE NEW ZEALAND WASTE DISPOSAL LEVY, DOWNSTREAM ONLY
+----------------------------------------------------------
+Neither client table carries a cost column, and O-2's closure (contract
+v1.48, `docs/architecture.md`) already rules that `cost` is disposal cost and
+the waste levy only -- the value of the wasted food itself stays at zero via
+`FOOD_VALUE_PER_KG`, unchanged. `cost` is therefore a purely **downstream**
+figure here: it depends on where the waste goes, not what food it was, so no
+upstream `cost` row is written for any food category (the upstream term
+resolves to zero via the ordinary three-step lookup fallback, exactly as it
+did before this revision).
+
+**The rate seeded is the one in force today (2026-09-05), not the client's
+own cited figure.** Read directly (`WebFetch`, 2026-09-05) from the Ministry
+for the Environment's own "Waste disposal levy expansion" page
+(https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/
+waste-disposal-levy/expansion/), Class 1 (municipal landfill)'s own published
+schedule is 1 July 2025 $65/tonne, **1 July 2026 $70/tonne**, 1 July 2027
+$75/tonne -- cross-checked against an independently dated report of the same
+1 July 2026 increase (Bin Bookings, "The National Waste Levy Explained", 22
+June 2026, read 2026-09-05: "$70 per tonne... up from $65"). As of today the
+levy in force is **$70/tonne**; the client's own cited $75/tonne is the rate
+that takes effect 1 July 2027 and is **not yet in force** -- seeding it today
+would overstate every cost figure by roughly seven percent. `LEVY_SOURCE`
+below records both rates and both dates; only the current one is seeded.
+
+**Which destinations carry it.** The levy is charged at a "disposal
+facility" (a landfill of some class); it is not a general waste charge.
+`landfill` carries it directly. `refuse_discard` also carries it: its own
+client rows (`NZ_DESTINATION_SOURCES["refuse_discard"]`) are all published
+*Bin to Landfill*, the identical life cycle as `landfill` itself -- see §4.2
+of the provenance document -- so it is priced the same way. Every other
+destination gets an **explicit zero, with a stated reason** in its own
+`source_note` (`LEVY_EXCLUDED_WITH_REASON` below), never a silent absence:
+`combustion` (incineration/energy-from-waste is not classified as a
+"disposal facility" under New Zealand's waste levy regulations and is
+excluded -- confirmed by an independent policy source, read 2026-09-05, not
+merely inferred), every `recycle_recovery`-group destination (`compost`,
+`anaerobic_digestion`, `land_application`, `not_harvested`, `bioprocessing`,
+`other_recovery` -- none is a disposal facility), every `reuse`-group
+destination (`food_redistribution`, `animal_feed`, `upcycling` -- the food is
+not disposed of at all), and `sewer` (trade-waste discharge is charged under
+a separate regime, not the Waste Minimisation Act's disposal levy).
+`prevention` keeps its existing zero-by-definition override.
+
 WHAT IS NOT REPRESENTED
 -------------------------
   * `land` -- the client's table gives t/ha for every food row, and this
     system has no `land` metric to receive it. Adding one is a metric-table
     change with system-wide effect (every existing result would gain a
     `land` line at zero); left for the owner to decide, not done here.
-  * `ch4` -- the client's CO2-eq column is already a CO2-equivalent figure,
-    not decomposed into its methane component; no upstream or downstream
-    `ch4` row is written.
-  * `cost` -- the client's tables carry no cost column; the NZ landfill levy
-    ($75/tonne, `data-sources.md` item 3b) is a distinct figure this task
-    does not seed.
+  * `upcycling`'s `ch4` -- no ReFED destination matches its shape; see
+    "CH4" above. A genuine gap, not a zero-by-choice.
+  * The waste levy's own "disposal cost" component beyond the statutory levy
+    itself (landfill gate fees vary by facility and contract and no
+    NZ-wide public figure was found) -- `cost` here is the levy only, stated
+    as such in every row's `source_note`.
 """
 
 from __future__ import annotations
@@ -377,6 +485,87 @@ NZ_DESTINATION_SOURCES: dict[str, list[str]] = {
 REFED_OTHER_RECOVERY_DESTINATION = "refed_industrial_uses"
 REFED_INCINERATION_DESTINATION = "refed_incineration"
 
+# ---------------------------------------------------------------------------
+# `ch4` downstream: every one of our fourteen destinations mapped onto the
+# ReFED destination whose shape it matches (see module docstring, "CH4").
+# Neither client table carries a methane column, so unlike co2e/water above
+# this cannot be built from NZ_DESTINATION_SOURCES -- there is no client row
+# to draw the mapping from. `bioprocessing` and `other_recovery` deliberately
+# share `refed_industrial_uses` (both are the nearest recycle_recovery-shaped
+# ReFED destination to either of them; the same reasoning already used for
+# `other_recovery`'s co2e/water fill, above). `upcycling` has no entry: no
+# ReFED destination matches its shape (ReFED's own reuse-equivalent group has
+# only Donations and Animal Feed) -- see module docstring. `prevention` is
+# never given a value here; it keeps the standard zero-by-definition override.
+# ---------------------------------------------------------------------------
+REFED_DESTINATION_FOR_NZ_DESTINATION: dict[str, str] = {
+    "food_redistribution": "refed_donations",
+    "animal_feed": "refed_animal_feed",
+    "compost": "refed_composting",
+    "anaerobic_digestion": "refed_anaerobic_digestion",
+    "land_application": "refed_land_application",
+    "not_harvested": "refed_not_harvested",
+    "bioprocessing": REFED_OTHER_RECOVERY_DESTINATION,
+    "other_recovery": REFED_OTHER_RECOVERY_DESTINATION,
+    "combustion": REFED_INCINERATION_DESTINATION,
+    "landfill": "refed_landfill",
+    "refuse_discard": "refed_dumping",
+    "sewer": "refed_sewer",
+    # "upcycling": no ReFED destination matches this shape -- reported as a
+    # gap in the module docstring and the provenance document, not seeded.
+    # "prevention": the mandatory 100% offset. Never given a ReFED value.
+}
+
+# ---------------------------------------------------------------------------
+# `cost`: the New Zealand waste disposal levy, downstream only. See module
+# docstring, "COST". Both the rate in force today and the client's own cited
+# future rate are recorded; only the current one is seeded.
+# ---------------------------------------------------------------------------
+LEVY_CURRENT_NZD_PER_TONNE = Decimal("70.00")
+LEVY_CURRENT_EFFECTIVE = "1 July 2026"
+LEVY_NEXT_NZD_PER_TONNE = Decimal("75.00")
+LEVY_NEXT_EFFECTIVE = "1 July 2027"
+LEVY_SOURCE = (
+    "Ministry for the Environment, 'Waste disposal levy expansion' "
+    "(https://environment.govt.nz/what-government-is-doing/areas-of-work/"
+    "waste/waste-disposal-levy/expansion/, read 2026-09-05): Class 1 "
+    "(municipal landfill) rate schedule -- 1 July 2025 $65/tonne, 1 July "
+    "2026 $70/tonne, 1 July 2027 $75/tonne. Cross-checked against an "
+    "independently dated report of the 1 July 2026 increase (Bin Bookings, "
+    "'The National Waste Levy Explained', 22 June 2026, read 2026-09-05: "
+    "'$70 per tonne... up from $65'). As of 2026-09-05 the levy in force is "
+    "therefore $70/tonne; the client's own cited $75/tonne is the rate that "
+    "takes effect 1 July 2027 and is NOT yet in force."
+)
+#: Destinations that are 'Bin to Landfill' in the client's own life-cycle
+#: wording (§4.2 of the provenance document) and therefore carry the levy.
+LEVY_CARRYING_DESTINATIONS = ("landfill", "refuse_discard")
+#: Every other destination: an explicit zero, with the reason it does not
+#: carry the levy, never a silent absence.
+LEVY_EXCLUDED_WITH_REASON: dict[str, str] = {
+    "combustion": (
+        "Energy-from-waste/incineration facilities are not classified as a "
+        "'disposal facility' under New Zealand's Waste Minimisation Act and "
+        "are excluded from the waste disposal levy (confirmed via an "
+        "independent policy source, read 2026-09-05, not merely inferred "
+        "from the name)."
+    ),
+    "compost": "Composting is a recycle_recovery pathway, not disposal to a levied facility.",
+    "anaerobic_digestion": "Anaerobic digestion is a recycle_recovery pathway, not disposal to a levied facility.",
+    "land_application": "Land application is a recycle_recovery pathway, not disposal to a levied facility.",
+    "not_harvested": "Not-harvested/ploughed-in waste never reaches a disposal facility at all.",
+    "bioprocessing": "Processing into non-food items is a recycle_recovery pathway, not disposal to a levied facility.",
+    "other_recovery": "Other recovery, including biodiesel, is a recycle_recovery pathway, not disposal to a levied facility.",
+    "food_redistribution": "Food redistribution is a reuse pathway; the food is not disposed of at all.",
+    "animal_feed": "Animal feed is a reuse pathway; the food is not disposed of at all.",
+    "upcycling": "Upcycling to other food products is a reuse pathway; the food is not disposed of at all.",
+    "sewer": (
+        "Sewer/wastewater discharge is charged under trade-waste bylaws, a "
+        "separate regime from the Waste Minimisation Act's disposal levy, "
+        "and is not itself a 'disposal facility' the levy covers."
+    ),
+}
+
 
 def load_refed_generic_upstream() -> dict[tuple[str, str, str], Decimal]:
     """(refed_food_category, refed_sector, metric) -> generic upstream value.
@@ -389,7 +578,7 @@ def load_refed_generic_upstream() -> dict[tuple[str, str, str], Decimal]:
     for row in data["upstream"]:
         if row["destination"] is not None:
             continue
-        if row["metric"] not in ("co2e", "water"):
+        if row["metric"] not in ("co2e", "water", "ch4"):
             continue
         key = (row["food_category"], row["sector"], row["metric"])
         out[key] = Decimal(row["value_per_kg"])
@@ -399,11 +588,12 @@ def load_refed_generic_upstream() -> dict[tuple[str, str, str], Decimal]:
 def load_refed_downstream_values(destination: str) -> dict[str, list[Decimal]]:
     """Every published (sector, food_category) value for one ReFED
     destination, by metric -- used to fill `other_recovery` and
-    `combustion`'s water, both by an unweighted mean/direct read across
-    everything ReFED publishes for that destination (see module docstring).
+    `combustion`'s water (co2e/water), and every destination's `ch4` (see
+    module docstring), all by an unweighted mean/direct read across
+    everything ReFED publishes for that destination.
     """
     data = json.loads(REFED_FACTORS_PATH.read_text(encoding="utf-8"))
-    out: dict[str, list[Decimal]] = {"co2e": [], "water": []}
+    out: dict[str, list[Decimal]] = {"co2e": [], "water": [], "ch4": []}
     for row in data["downstream"]:
         if row["destination"] != destination:
             continue
@@ -743,11 +933,146 @@ def _build_staples_rows(refed_upstream: dict[tuple[str, str, str], Decimal]) -> 
     return rows
 
 
+def _build_ch4_upstream_rows(refed_upstream: dict[tuple[str, str, str], Decimal]) -> list[dict]:
+    """`ch4` upstream, all ten New Zealand food categories (nine plus
+    `staples`). See the module docstring, "CH4: FILLED FROM REFED ALONE...".
+
+    Neither client table carries a methane column, so there is no client
+    total to anchor *any* category to -- every one is built the unanchored
+    way already used for `staples`' co2e/water (`_build_staples_rows`):
+    ReFED's own absolute per-stage values, scale exactly 1, non-decreasing
+    enforced by a forward running-maximum clamp. Reuses
+    `NZ_TO_REFED_FOOD_SHAPE` and `REFED_SECTOR_FOR_NZ_SECTOR` exactly as
+    built for co2e/water -- no second mapping.
+    """
+    rows: list[dict] = []
+    metric = "ch4"
+
+    for nz_food, refed_food in NZ_TO_REFED_FOOD_SHAPE.items():
+        raw = {
+            nz_sector: refed_upstream.get((refed_food, refed_sector, metric))
+            for nz_sector, refed_sector in REFED_SECTOR_FOR_NZ_SECTOR.items()
+        }
+        for nz_sector in ("processing", "wholesale_retail", *CONSUMER_BRANCHES):
+            if raw[nz_sector] is None:
+                raise SystemExit(
+                    f"{nz_food}/{metric}/{nz_sector}: no ReFED value "
+                    "published; only primary_production is ever expected to "
+                    "be missing (see module docstring, 'FIVE OF REFED'S "
+                    "NINE FOOD CATEGORIES...')."
+                )
+
+        no_farm_data = raw["primary_production"] is None
+        final: dict[str, Decimal] = {}
+        clamped: dict[str, str | None] = {}
+
+        if no_farm_data:
+            final["processing"] = raw["processing"]
+            clamped["processing"] = None
+        else:
+            running = raw["primary_production"]
+            final["primary_production"] = running
+            clamped["primary_production"] = None
+            value = max(raw["processing"], running)
+            clamped["processing"] = "running-max" if value != raw["processing"] else None
+            final["processing"] = value
+
+        running = final["processing"]
+        value = max(raw["wholesale_retail"], running)
+        clamped["wholesale_retail"] = "running-max" if value != raw["wholesale_retail"] else None
+        final["wholesale_retail"] = value
+
+        if no_farm_data:
+            final["primary_production"] = final["processing"]
+            clamped["primary_production"] = "no-data-floor"
+
+        floor = final["wholesale_retail"]
+        for nz_sector in CONSUMER_BRANCHES:
+            candidate = raw[nz_sector]
+            value = max(candidate, floor)
+            clamped[nz_sector] = "running-max" if value != candidate else None
+            final[nz_sector] = value
+
+        _assert_non_decreasing(nz_food, metric, final)
+
+        for nz_sector, refed_sector in REFED_SECTOR_FOR_NZ_SECTOR.items():
+            value = final[nz_sector]
+            if value == 0:
+                raise SystemExit(
+                    f"{nz_food}/{metric}/{nz_sector}: resolved to zero; a "
+                    "gap must be filled from a source, never a silent zero."
+                )
+            if clamped[nz_sector] == "no-data-floor":
+                note = (
+                    f"No client (Rawtec) ch4 column exists at all, and no "
+                    f"ReFED Farm-stage methane value is published for "
+                    f"{refed_food} (the same structural gap ReFED leaves "
+                    f"for co2e, but here with no public farm-share source "
+                    f"to fill it -- see module docstring). primary_"
+                    f"production is floored at processing's own resolved "
+                    f"value ({value}) -- the highest figure the non-"
+                    f"decreasing invariant permits without inventing a "
+                    f"number no source gives. LIKELY AN UNDERSTATEMENT for "
+                    f"meat- and dairy-adjacent categories, where on-farm "
+                    f"enteric methane is typically the dominant term; "
+                    f"flagged, not measured."
+                )
+            else:
+                raw_value = raw[nz_sector]
+                note = (
+                    f"No client (Rawtec) ch4 column exists. Filled entirely "
+                    f"from ReFED's own absolute methane figures (no client "
+                    f"total to anchor a scale factor against, so scale = 1, "
+                    f"matching how 'staples' is built for co2e/water): "
+                    f"ReFED {refed_food} {refed_sector} stage = {raw_value}."
+                )
+                if clamped[nz_sector] == "running-max":
+                    note += (
+                        f" CLAMPED to {value} (forward running-maximum; see "
+                        "module docstring, 'ENFORCING THE NON-DECREASING "
+                        f"INVARIANT'): ReFED's own raw value ({raw_value}) "
+                        "was lower than an earlier stage's (or, for a "
+                        "consumer-stage sector, lower than wholesale_"
+                        "retail's) resolved value."
+                    )
+            rows.append({
+                "sector": nz_sector,
+                "food_category": nz_food,
+                "destination": None,
+                "metric": metric,
+                "value_per_kg": q(value),
+                "source_note": note,
+                "data_quality": (
+                    "derived-refed-no-farm-floor"
+                    if clamped[nz_sector] == "no-data-floor"
+                    else "derived-refed-unanchored"
+                ),
+            })
+
+        for nz_sector in ALL_NZ_SECTORS:
+            rows.append({
+                "sector": nz_sector,
+                "food_category": nz_food,
+                "destination": "prevention",
+                "metric": metric,
+                "value_per_kg": q(Decimal(0)),
+                "source_note": (
+                    "Zero by definition. 'prevention' is the mandatory "
+                    "100% offset (contract §O-7): food that was never "
+                    "produced in excess carries no upstream footprint. "
+                    "Not a client or ReFED figure."
+                ),
+                "data_quality": "definitional",
+            })
+    return rows
+
+
 def build_upstream(refed_upstream) -> list[dict]:
     rows: list[dict] = []
     for nz_food, client_foods in NZ_FOOD_CATEGORY_SOURCES.items():
         rows.extend(_build_category_rows(nz_food, client_foods, refed_upstream))
     rows.extend(_build_staples_rows(refed_upstream))
+    rows.extend(_build_ch4_upstream_rows(refed_upstream))
     return rows
 
 
@@ -921,15 +1246,128 @@ def build_downstream() -> list[dict]:
     return rows
 
 
+def build_ch4_downstream() -> list[dict]:
+    """`ch4` downstream, all fourteen destinations. See the module
+    docstring, "CH4...". Neither client table carries a methane column, so
+    this cannot be built from `NZ_DESTINATION_SOURCES` (there is no client
+    row to draw a mapping from) -- every destination is matched directly
+    onto a ReFED destination by shape (`REFED_DESTINATION_FOR_NZ_DESTINATION`),
+    an unweighted mean across every published (sector, food category) row
+    for that ReFED destination, the same technique already used for
+    `other_recovery`'s co2e/water fill above.
+    """
+    rows: list[dict] = []
+    for nz_dest, refed_dest in REFED_DESTINATION_FOR_NZ_DESTINATION.items():
+        values = load_refed_downstream_values(refed_dest)["ch4"]
+        if not values:
+            raise SystemExit(
+                f"No ReFED ch4 values found for {refed_dest!r} (mapped from "
+                f"{nz_dest!r})."
+            )
+        mean_value = mean(values)
+        rows.append({
+            "destination": nz_dest,
+            "sector": None,
+            "food_category": None,
+            "metric": "ch4",
+            "value_per_kg": q(mean_value),
+            "source_note": (
+                f"No client (Rawtec) ch4 column exists in table 2 at all. "
+                f"Filled from ReFED's own {refed_dest!r} destination "
+                f"(matched by shape, not by client row -- see module "
+                f"docstring), an unweighted mean across all {len(values)} "
+                f"published (sector, food category) rows: min "
+                f"{min(values)}, max {max(values)}, mean {mean_value}."
+            ),
+            "data_quality": "derived-refed",
+        })
+
+    rows.append({
+        "destination": "prevention",
+        "sector": None,
+        "food_category": None,
+        "metric": "ch4",
+        "value_per_kg": q(Decimal(0)),
+        "source_note": (
+            "Zero by definition. 'prevention' is the mandatory 100% offset "
+            "(contract §O-7): waste that never happened has no downstream "
+            "fate to price. Not a client or ReFED figure."
+        ),
+        "data_quality": "definitional",
+    })
+    return rows
+
+
+def build_cost_downstream() -> list[dict]:
+    """`cost` downstream, all fourteen destinations. See the module
+    docstring, "COST...". The New Zealand waste disposal levy, seeded at the
+    rate in force today (2026-09-05) -- not the client's own cited future
+    rate. No upstream `cost` row is written anywhere (cost is downstream-
+    only); the upstream term resolves to zero via the ordinary three-step
+    lookup fallback.
+    """
+    rows: list[dict] = []
+    levy_per_kg = qd(LEVY_CURRENT_NZD_PER_TONNE / Decimal(1000))
+
+    for nz_dest in LEVY_CARRYING_DESTINATIONS:
+        rows.append({
+            "destination": nz_dest,
+            "sector": None,
+            "food_category": None,
+            "metric": "cost",
+            "value_per_kg": q(levy_per_kg),
+            "source_note": (
+                f"New Zealand waste disposal levy, Class 1 (municipal "
+                f"landfill), the rate in force as of 2026-09-05: "
+                f"${LEVY_CURRENT_NZD_PER_TONNE}/tonne effective "
+                f"{LEVY_CURRENT_EFFECTIVE} = {levy_per_kg} NZD/kg. The "
+                f"client's own cited ${LEVY_NEXT_NZD_PER_TONNE}/tonne takes "
+                f"effect {LEVY_NEXT_EFFECTIVE} and is NOT yet in force -- "
+                f"not seeded. food_category_id is left NULL: the levy is "
+                f"charged per tonne of waste regardless of food type. "
+                f"{LEVY_SOURCE}"
+            ),
+            "data_quality": "derived-public-nz-levy",
+        })
+
+    for nz_dest, reason in LEVY_EXCLUDED_WITH_REASON.items():
+        rows.append({
+            "destination": nz_dest,
+            "sector": None,
+            "food_category": None,
+            "metric": "cost",
+            "value_per_kg": q(Decimal(0)),
+            "source_note": (
+                f"Zero, not a gap: {reason} {LEVY_SOURCE}"
+            ),
+            "data_quality": "not-applicable-nz-levy",
+        })
+
+    rows.append({
+        "destination": "prevention",
+        "sector": None,
+        "food_category": None,
+        "metric": "cost",
+        "value_per_kg": q(Decimal(0)),
+        "source_note": (
+            "Zero by definition. 'prevention' is the mandatory 100% offset "
+            "(contract §O-7): waste that never happened has no disposal "
+            "cost to price. Not a client or public figure."
+        ),
+        "data_quality": "definitional",
+    })
+    return rows
+
+
 def build() -> dict:
     refed_upstream = load_refed_generic_upstream()
     upstream = build_upstream(refed_upstream)
-    downstream = build_downstream()
+    downstream = build_downstream() + build_ch4_downstream() + build_cost_downstream()
 
     return {
         "version_label": (
             "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, "
-            "corrected) - NOT PUBLISHED"
+            "plus ch4 and cost) - NOT PUBLISHED"
         ),
         "is_mock": True,
         "notes": (
@@ -948,7 +1386,14 @@ def build() -> dict:
             "This replaces an earlier construction (commit ba7fe93) that "
             "read ReFED's per-sector values as shares summing to the "
             "client's total, which understated every consumer-stage factor "
-            "roughly fourfold; see docs/upstream-factors-draft.md. is_mock "
+            "roughly fourfold; see docs/upstream-factors-draft.md. As of "
+            "this revision, ch4 (raw methane mass, ReFED-only, every food "
+            "category and twelve of fourteen destinations) and cost (the "
+            "New Zealand waste disposal levy at the rate in force "
+            "2026-09-05, landfill and refuse_discard only) are also seeded "
+            "-- neither client table carries either column, so both are "
+            "built entirely from ReFED or public New Zealand government "
+            "sources; see docs/upstream-factors-draft.md. is_mock "
             "stays true: these values are derived, not yet the client's "
             "confirmed figures -- the placeholder banner must keep showing "
             "until the owner decides otherwise. This set is a DRAFT and "
@@ -981,11 +1426,31 @@ def build() -> dict:
             {"metric": "co2e", "expression": "qty_kg * (upstream + downstream)",
              "notes": "Same expression as the live/mock set."},
             {"metric": "ch4", "expression": "qty_kg * (upstream + downstream)",
-             "notes": "No ch4 upstream or downstream row exists in this draft; the term is zero throughout."},
+             "notes": (
+                 "Same expression as the live/mock set: no const_GWP_CH4 "
+                 "term, matching the ch4 metric's own unit (kg CH4, not kg "
+                 "CO2e). ReFED's own ch4 figures are raw methane mass, "
+                 "confirmed against build_refed_benchmark.py's unit-"
+                 "conversion table, and are seeded directly for that reason "
+                 "-- see data/upstream-factors-draft/"
+                 "build_upstream_factors_draft.py, 'CH4'. Upstream and "
+                 "downstream ch4 rows now exist for every food category and "
+                 "twelve of fourteen destinations (upcycling excluded, no "
+                 "ReFED shape match)."
+             )},
             {"metric": "water", "expression": "qty_kg * (upstream + downstream)",
              "notes": "Same expression as the live/mock set."},
             {"metric": "cost", "expression": "qty_kg * (upstream + downstream + const_FOOD_VALUE_PER_KG)",
-             "notes": "No cost upstream or downstream row exists in this draft; the term is zero throughout."},
+             "notes": (
+                 "Same expression as the live/mock set; const_FOOD_VALUE_PER_KG "
+                 "stays zero per O-2. Downstream cost rows now exist for "
+                 "every destination: the New Zealand waste disposal levy "
+                 "($70/tonne, the rate in force 2026-09-05) for landfill and "
+                 "refuse_discard, an explicit stated-reason zero for every "
+                 "other destination. No upstream cost row exists anywhere -- "
+                 "cost is a downstream-only figure here (see 'COST' in the "
+                 "module docstring); the upstream term is zero throughout."
+             )},
             {"metric": "mass", "expression": "qty_kg",
              "notes": "Same expression as the live/mock set."},
         ],
@@ -1003,8 +1468,11 @@ def main() -> int:
     n_sector = len(ALL_NZ_SECTORS)
     print(
         f"{out_path.name}: {len(data['upstream'])} upstream rows "
-        f"({n_food} food categories x {n_sector} sectors x 2 metrics, plus "
-        f"prevention overrides), {len(data['downstream'])} downstream rows."
+        f"({n_food} food categories x {n_sector} sectors x 2 metrics "
+        f"(co2e, water) + ch4 (unanchored), plus prevention overrides), "
+        f"{len(data['downstream'])} downstream rows "
+        f"({len(REFED_DESTINATION_FOR_NZ_DESTINATION)} destinations get ch4, "
+        f"{len(LEVY_CARRYING_DESTINATIONS)} get a nonzero cost)."
     )
     return 0
 

@@ -18,18 +18,22 @@ been confirmed by the client. The repository owner is taking this draft to
 a client meeting to ask the questions it raises; it is deliberately "concrete
 enough to argue with" rather than a finished answer.
 
-**Everything here traces to one of three places**: the client's own Rawtec
+**Everything here traces to one of four places**: the client's own Rawtec
 tables (transcribed, not re-measured); ReFED's already-published,
 already-committed benchmark fixture (`tests/benchmark/refed/
-refed-benchmark-factors.json`), used both to shape the client's totals across
-supply-chain stages and, for two destinations, as a value in its own right;
-or Poore & Nemecek (2018) as republished by Our World in Data, used only to
-fill the one gap ReFED's own data leaves open (the Farm stage for five food
-categories -- §5.3). Nothing is estimated from general knowledge. Every value
-this document does not attribute to one of those three sources is either an
-unweighted arithmetic mean of several client rows (stated explicitly, every
-time), an explicit, labelled zero, or a stated assumption labelled as one
-(§5.3's water share).
+refed-benchmark-factors.json`), used to shape the client's totals across
+supply-chain stages, as a value in its own right for several destinations,
+and, as of this revision, as the sole source for `ch4` everywhere it is
+seeded (§4.4, §5.7); Poore & Nemecek (2018) as republished by Our World in
+Data, used only to fill the one gap ReFED's own data leaves open for `co2e`
+(the Farm stage for five food categories -- §5.3); or, as of this revision,
+the New Zealand government's own published waste disposal levy schedule
+(Ministry for the Environment, read 2026-09-05), the sole source for `cost`
+(§4.5). Nothing is estimated from general knowledge. Every value this
+document does not attribute to one of those four sources is either an
+unweighted arithmetic mean of several client or ReFED rows (stated
+explicitly, every time), an explicit, labelled zero with a stated reason, or
+a stated assumption labelled as one (§5.3's water share).
 
 **A note for anyone who read the previous version of this document.** The
 first draft (commit `ba7fe93`) built the six-sector split as *shares of a
@@ -304,6 +308,129 @@ the point the engine reads it, the two are indistinguishable (§4.1 of
 `docs/architecture.md`'s three-step fallback), which is exactly why this
 section, and the row's own `source_note`, exist.
 
+### 4.4 `ch4` downstream: matched to ReFED by shape, not by client row
+
+Neither client table carries a methane column at all, so `ch4` cannot be
+built the way §4.2 builds `co2e`/`water` -- there is no client destination
+row to draw a mapping from. Every one of our fourteen destinations is
+instead matched directly onto the ReFED destination whose shape it is
+closest to (`REFED_DESTINATION_FOR_NZ_DESTINATION` in
+`build_upstream_factors_draft.py`), the identical reasoning §4.2 already
+uses for `other_recovery`'s co2e/water fill, extended to cover every
+destination: an unweighted mean across every published (sector, food
+category) row ReFED carries for that destination.
+
+| Our destination | ReFED destination | `ch4` (mean) |
+| --- | --- | --- |
+| `food_redistribution` | Donations | 0.0000001343 |
+| `animal_feed` | Animal Feed | -0.0004394564 |
+| `compost` | Composting | 0.0024507901 |
+| `anaerobic_digestion` | Anaerobic Digestion | 0.0042779307 |
+| `land_application` | Land Application | -0.0000287599 |
+| `not_harvested` | Not Harvested | 0.0000000000 |
+| `bioprocessing` | Industrial Uses | -0.0009280499 |
+| `other_recovery` | Industrial Uses | -0.0009280499 |
+| `combustion` | Incineration | 0.0000655859 |
+| `landfill` | Landfill | 0.0320905540 |
+| `refuse_discard` | Dumping | -0.0000287599 |
+| `sewer` | Sewer | 0.1332824899 |
+| `prevention` | *(none -- zero override)* | 0.0000000000 |
+
+**`bioprocessing` and `other_recovery` deliberately share one ReFED figure**
+(Industrial Uses): both are the nearest recycle_recovery-shaped ReFED
+destination to either of ours, the same reasoning §4.2 already applies to
+`other_recovery`'s co2e/water fill. **`upcycling` gets no `ch4` row at all --
+a reported gap, not a zero.** ReFED's own `reuse`-equivalent destinations are
+only Donations and Animal Feed; nothing it publishes matches "Upcycling to
+other food products" by shape, and forcing one of those two onto it would be
+exactly the kind of same-sounding-name match §4.2 already declines for
+`other_recovery`/"Other Food Waste". Reported alongside `eggs`, not silently
+zeroed -- see §6.
+
+**Negative values are genuine ReFED figures, not a defect.** `factor_
+downstream.value_per_kg` already permits negative values by design (§4.2 of
+`docs/architecture.md`): several of ReFED's own destination means come out
+negative (`animal_feed`, `land_application`, `bioprocessing`/`other_recovery`,
+`refuse_discard`), consistent with a downstream offset displacing an
+emission elsewhere, the same reading §4.2 already gives `other_recovery`'s
+co2e mean.
+
+**ReFED's `ch4` is raw methane mass, not a CO2-equivalent, and is seeded
+directly for that reason.** Confirmed by reading
+`tests/benchmark/refed/build_refed_benchmark.py`'s own unit-conversion
+table: its `ch4` column is read from the CSV's own
+`..._mtch4_footprint_per_ton` field (metric tons of CH4 itself) and
+converted by the *same* mass-based `1000 / 907.185` factor `co2e`'s
+`..._mtco2e_footprint_per_ton` field uses, landing at `kg CH4/kg` -- a
+distinct unit from `co2e`'s `kg CO2e/kg`, not a GWP-multiplied version of
+it. This matches the `ch4` metric's own declared unit (`admin/seed.py`
+`METRICS`: `("ch4", "Methane", "kg CH4", ...)`) and this draft's own `ch4`
+formula (`qty_kg * (upstream + downstream)`, unchanged by this revision, no
+`const_GWP_CH4` term -- identical to `docker/mock-factors.json`'s shipped
+formula). `const_GWP_CH4` (bound to `GWP_CH4_20`/`GWP_CH4_100`, 84/28) stays
+unreferenced by any formula here, exactly as before: multiplying by it would
+overstate every methane figure by that same factor.
+
+### 4.5 `cost` downstream: the New Zealand waste disposal levy
+
+Neither client table carries a cost column, and O-2's closure (contract
+v1.48, `docs/architecture.md`) already rules that `cost` is disposal cost
+and the waste levy only -- the value of the wasted food itself stays at
+zero via `FOOD_VALUE_PER_KG`, unchanged by this revision. `cost` is
+therefore built here as a purely **downstream** figure: it depends on where
+the waste goes, not what food it was, so no upstream `cost` row exists for
+any food category (the upstream term resolves to zero via the ordinary
+three-step lookup fallback, exactly as it did before this revision).
+
+**The rate seeded is the one in force today (2026-09-05), not the rate the
+client's own working notes cite.** Read directly on 2026-09-05 from the
+Ministry for the Environment's own "Waste disposal levy expansion" page
+(<https://environment.govt.nz/what-government-is-doing/areas-of-work/waste/waste-disposal-levy/expansion/>),
+Class 1 (municipal landfill)'s own published schedule is:
+
+| Effective date | Class 1 rate |
+| --- | --- |
+| 1 July 2025 | $65/tonne |
+| **1 July 2026** | **$70/tonne** |
+| 1 July 2027 | $75/tonne |
+
+Cross-checked against an independently dated report of the same 1 July 2026
+increase (Bin Bookings, "The National Waste Levy Explained", published 22
+June 2026, read 2026-09-05: "$70 per tonne... up from $65"). **As of
+2026-09-05 the levy in force is $70/tonne.** The figure the project's own
+working notes cite, $75/tonne, is the rate that takes effect 1 July 2027 and
+is **not yet in force** -- seeding it today would overstate every cost
+figure by roughly seven percent. Both rates and both dates are recorded in
+`build_upstream_factors_draft.py`'s `LEVY_SOURCE`; only the current one
+($70/tonne = **0.0700000000 NZD/kg**) is seeded.
+
+**Which destinations carry it, and why the rest are zero.** The levy is
+charged at a "disposal facility" (a landfill of some class) -- it is not a
+general waste charge, and every destination that is not one gets an
+**explicit zero, with a stated reason**, never a silent absence:
+
+| Our destination | Cost (NZD/kg) | Reason |
+| --- | --- | --- |
+| `landfill` | 0.0700000000 | *Bin to Landfill* -- Class 1 municipal landfill, the levy's core case. |
+| `refuse_discard` | 0.0700000000 | Its own client rows are all published *Bin to Landfill* (§4.2) -- the identical life cycle as `landfill` itself. |
+| `combustion` | 0.0000000000 | Energy-from-waste/incineration is not classified as a "disposal facility" under the Waste Minimisation Act and is excluded from the levy (an independent policy source, read 2026-09-05, not merely inferred from the name). |
+| `compost`, `anaerobic_digestion`, `land_application`, `not_harvested`, `bioprocessing`, `other_recovery` | 0.0000000000 | Recycle/recovery pathways, not disposal to a levied facility. |
+| `food_redistribution`, `animal_feed`, `upcycling` | 0.0000000000 | Reuse pathways; the food is not disposed of at all. |
+| `sewer` | 0.0000000000 | Trade-waste discharge is charged under a separate regime (trade waste bylaws), not the Waste Minimisation Act's disposal levy. |
+| `prevention` | 0.0000000000 | Zero by definition (§O-7) -- unchanged. |
+
+`food_category_id` is left `NULL` on both nonzero rows: the levy is charged
+per tonne of waste regardless of food type, exactly the shape §2.2 of
+`docs/architecture.md` already gives the waste levy as its worked example of
+a `factor_downstream.food_category_id IS NULL` row.
+
+**What this does not include.** The levy is the only cost seeded here.
+Landfill gate fees (the commercial charge a facility adds on top of the
+statutory levy) are real and vary by facility and contract, but no
+New-Zealand-wide public figure for them was found, and none is guessed --
+`cost` in this draft is the statutory levy only, stated as such in every
+row's `source_note`.
+
 ## 5. The stage split: a cumulative footprint, not a share of a whole
 
 ### 5.1 The defect this section replaces, and why it mattered
@@ -531,6 +658,56 @@ L/kg respectively.
 (`staples` has no anchor -- see §5.4 -- so no cell is bolded for it; every
 value there is ReFED's own, floored to a running maximum.)
 
+### 5.7 `ch4` upstream: filled from ReFED alone, every food category
+
+Neither client table carries a methane column at all, so there is no client
+total to anchor *any* food category's `ch4` to -- unlike co2e/water, this is
+not a "some categories have a client figure, some don't" situation; none do.
+Every one of the ten New Zealand food categories' `ch4` upstream rows is
+therefore built the unanchored way §5.4 already uses for `staples`'
+co2e/water: ReFED's own absolute per-stage methane figures, scale exactly 1,
+non-decreasing enforced by a forward running-maximum clamp. This reuses
+`NZ_TO_REFED_FOOD_SHAPE` and `REFED_SECTOR_FOR_NZ_SECTOR` exactly as already
+built for co2e/water in §5.2/§5.5 -- no second food-category or sector
+mapping is introduced for methane.
+
+| Category | primary_production | processing | wholesale_retail | consumer_household | consumer_hospitality | consumer_institution |
+| --- | --- | --- | --- | --- | --- | --- |
+| `fruit` ch4 | 0.0008140063 | 0.0028094187 | 0.0047158881 | 0.0067383152 | 0.0056488233 | 0.0056488233 |
+| `vegetables` ch4 | 0.0008140063 | 0.0028094187 | 0.0047158881 | 0.0067383152 | 0.0056488233 | 0.0056488233 |
+| `nuts_seeds` ch4 | 0.0075282276 | 0.0080761003 | 0.0142371425 | 0.0164156786 | 0.0142371425 | 0.0142371425 |
+| `meat` ch4 | 0.1679408876 | 0.1679408876 | 0.1816944075 | 0.1827416355 | 0.1953242898 | 0.1953242898 |
+| `seafood` ch4 | 0.1679408876 | 0.1679408876 | 0.1816944075 | 0.1827416355 | 0.1953242898 | 0.1953242898 |
+| `dairy` ch4 | 0.0440772809 | 0.0440772809 | 0.0480769779 | 0.0496758764 | 0.0617321061 | 0.0617321061 |
+| `bakery_grains` ch4 | 0.0101927230 | 0.0101927230 | 0.0101927230 | 0.0113109546 | 0.0101927230 | 0.0101927230 |
+| `beverages` ch4 | 0.0059509972 | 0.0059509972 | 0.0088489176 | 0.0110395864 | 0.0295534375 | 0.0295534375 |
+| `standard_mix` ch4 | 0.0008804519 | 0.0412901324 | 0.0412901324 | 0.0412901324 | 0.0440145668 | 0.0440145668 |
+| `staples` ch4 | 0.0075282276 | 0.0080761003 | 0.0142371425 | 0.0164156786 | 0.0142371425 | 0.0142371425 |
+
+None of these rows is bolded as an anchor: there is no client figure to pin
+any of them to, for any category, and that absence is the point of this
+section rather than an oversight.
+
+**The five categories missing a Farm-stage co2e value (§5.3) are missing a
+Farm-stage methane value too** -- the identical structural gap in ReFED's
+own published data (`meat`, `seafood`, `dairy`, `bakery_grains`,
+`beverages`). Unlike co2e, **no public per-product methane farm-share source
+was found** to fill it: Poore & Nemecek's own farm-share (used in §5.3) is a
+CO2e-equivalent share, and does not carry over to methane, whose farm-stage
+share for livestock is typically *larger*, not smaller, on account of
+enteric fermentation. Rather than leave `primary_production` a silent gap --
+implausible for meat and dairy in particular, where on-farm methane is
+usually the dominant term -- it is floored at `processing`'s own resolved
+value: the highest figure the non-decreasing invariant permits without
+inventing a number no source gives. **This is very likely still an
+understatement** for those five categories, and every affected row's
+`source_note` says so in full (`data_quality =
+"derived-refed-no-farm-floor"`, distinct from the ordinary
+`"derived-refed-unanchored"` tag every other cell in this table carries).
+`standard_mix`, by contrast, does have a published Farm-stage methane value
+from ReFED (0.0008804519, well below every later stage) and needs no such
+floor.
+
 ## 6. What is not represented, and why
 
 - **`land`** -- the client's table 1 gives t/ha for every food row. This
@@ -541,24 +718,33 @@ value there is ReFED's own, floored to a running maximum.)
   `docs/architecture.md`, "metrics are data, not code" and "the engine
   iterates every active row"). That decision belongs to the owner, and is
   not taken here.
-- **`ch4`** -- the client's CO2-eq figures are already carbon-dioxide
-  equivalents, not decomposed into a separate methane mass. No `ch4` row is
-  written, upstream or downstream, matching how the shipped mock set already
-  handles it.
-- **`cost`** -- neither table carries a cost column. The NZ landfill levy
-  ($75/tonne from July 2027, per the team's working notes) is a real,
-  distinct figure this task does not seed; it belongs to a future pass, not
-  folded in here as a guess.
+- **`upcycling`'s `ch4`** -- no ReFED destination matches its shape (§4.4).
+  A reported gap, like `eggs`, not a zero-by-choice.
+- **The waste levy's own "disposal cost" component beyond the statutory
+  levy itself** -- landfill gate fees vary by facility and contract and no
+  New-Zealand-wide public figure was found for them, so `cost` in this
+  draft is the statutory levy only (§4.5), stated as such in every row's
+  `source_note`.
 - **Sector variation in the downstream figures** -- `factor_downstream.
   sector_id` exists (contract v1.31) so that a set can price a destination
   differently by supply-chain stage. The client's table 2 gives one CO2-eq
   and one water figure per destination, with no stage breakdown, so every
   downstream row in this draft carries `sector = null` ("applies to every
   sector"), matching how the New Zealand mock set's own downstream rows are
-  already built. This includes the two ReFED-filled rows added in this
-  revision (`other_recovery`, `combustion`'s water): both are unweighted
-  means/direct reads across everything ReFED publishes for that destination,
-  for the same reason.
+  already built. This includes every ReFED-filled row added across both
+  revisions of this draft (`other_recovery`, `combustion`'s water, and now
+  `ch4` for twelve of fourteen destinations and `cost` for two): all are
+  unweighted means/direct reads across everything ReFED (or, for the levy,
+  the government's own published rate) gives, for the same reason.
+
+**`ch4` and `cost`, both previously entirely absent, are as of this revision
+seeded for most food categories/destinations** -- see §4.4, §4.5 and §5.7
+for the full construction. What remains genuinely unfilled after this
+revision: `land` (no metric exists), `upcycling`'s `ch4` (no ReFED shape
+match), gate fees beyond the statutory levy (no public source found), and
+`eggs`/`staples`' still-unresolved status as noted in §3.2 (`staples` itself
+*is* seeded, from ReFED alone, per the owner's ruling; `eggs` remains an
+unseeded gap pending a taxonomy or client decision).
 
 ## 7. The traxie data directory
 

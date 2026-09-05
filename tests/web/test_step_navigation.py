@@ -1000,6 +1000,64 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
     )
 
 
+def test_a_blocked_refusal_still_shows_a_message_back_on_the_amount_step(page_at):
+    """**A live regression, not a new requirement.** `amountStep`'s three-way
+    classification (`amountFieldError` / `moneyContradictionError` /
+    `bannerError`) matches `state.error` against whichever of
+    `amountOnlyValidation`, `moneyContradictionValidation` and
+    `massContradictionValidation` currently agrees with it - and, before this
+    fix, had no branch for an error that matches none of them.
+
+    `BLOCKED` is exactly that state. §9.2: a blocked caller must never be
+    offered a "try again" affordance, so `clearedError` deliberately keeps a
+    `BLOCKED` error and its `errorCode` across a step change. A visitor refused
+    at Calculate (step 4) who then returns to step 2 carries an error that is
+    not a `VALIDATION_ERROR` and satisfies none of the three client checks
+    either - so it matched nothing and rendered nothing. Measured at HEAD
+    before this fix: no visible message at all, where the previous single-slot
+    code showed the refusal text.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 4)
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: route.fulfill(
+            status=403,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "error": {
+                        "code": "BLOCKED",
+                        "message": "This submission was refused.",
+                        "details": None,
+                    }
+                }
+            ),
+        ),
+    )
+    page.click('.step-nav [data-action="calculate"]')
+    page.wait_for_timeout(200)
+
+    #: §9.2's own affordance rule, restated as a precondition: the refusal is
+    #: terminal, so Calculate must already be disabled on the screen it landed
+    #: on, before this test ever asks about step 2.
+    assert page.locator('.step-nav [data-action="calculate"]').is_disabled(), (
+        "a BLOCKED refusal left Calculate enabled, offering a retry §9.2 forbids"
+    )
+
+    page.click('[data-action="go-step"][data-step="2"]')
+    page.wait_for_selector("#total-waste")
+
+    messages = [
+        text.strip()
+        for text in page.locator(".field-error").all_inner_texts()
+        if text.strip()
+    ]
+    assert messages, (
+        "a refused submission shows no visible message at all back on the amount step"
+    )
+    assert any("refused" in message.lower() for message in messages), messages
+
+
 def test_step_three_asks_for_the_two_money_figures(page_at):
     """Item ⑤. Both optional, both in New Zealand dollars, and both
     STATISTICS ONLY - the client's ruling on open item O-2 is that the value

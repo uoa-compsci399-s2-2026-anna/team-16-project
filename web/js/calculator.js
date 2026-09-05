@@ -413,7 +413,17 @@ function amountStep() {
     ? state.error
     : null
   const moneyContradictionError = isClientError && state.error === moneyContradictionValidation() ? state.error : null
-  const bannerError = isApiError ? state.error : null
+  // **The classification's own `else`.** The three checks above are recomputed fresh
+  // from what is currently typed, so a `state.error` left over from something none of
+  // them asks about — the concrete case is `BLOCKED` (§9.2): `clearedError` deliberately
+  // keeps it and its `errorCode` across a step change, so a visitor refused at Calculate
+  // and then returning to this step carries an error that is not a VALIDATION_ERROR and
+  // matches none of the three client checks either. Before this line such an error
+  // matched nothing and rendered nothing — a refused visitor saw no message at all. It
+  // is not a fault in any field on this screen, so — like a VALIDATION_ERROR — it goes
+  // in the banner, not beside a field it was never about.
+  const unmatchedClientError = isClientError && !amountFieldError && !moneyContradictionError ? state.error : null
+  const bannerError = isApiError ? state.error : unmatchedClientError
   // The three round-two scalar fields' own per-field errors, keyed the same way
   // `destinationRows` keys a line's — `state.fieldErrors`, by the exact path the server
   // named (`entries[N].<key>`, always the draft entry's: see `ENTRY_SCALAR_FIELD_STEP`).

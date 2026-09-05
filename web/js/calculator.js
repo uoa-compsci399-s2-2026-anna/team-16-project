@@ -619,6 +619,36 @@ function amountOnlyValidation() {
 }
 
 /**
+ * **Money's own rule — not `exceedsTotal`'s mass tolerance borrowed.**
+ * `ALLOCATION_EPSILON` is 0.01 *kilograms*, a tolerance built because a scale does not
+ * agree with itself to the gram; reusing it as a money rule let a wasted value up to a
+ * whole cent over its own total through — the client's own defect, one cent smaller —
+ * and even that boundary was decided by binary floating-point error rather than by the
+ * figure typed: `0.03 -> 0.04` (a whole cent over) was refused while `0.07 -> 0.08` (the
+ * identical logical gap) was allowed, purely because `0.04 - 0.03` and `0.08 - 0.07`
+ * land on different sides of `0.01` in a double.
+ *
+ * Money is exact to the cent (§1.2's own discipline), so it gets zero tolerance and an
+ * integer comparison that cannot be decided by dust: both figures are parsed directly
+ * into integer cents by `moneyCents`, with no floating-point arithmetic anywhere in the
+ * decision.
+ *
+ * @param {string} value  A money field's typed string.
+ * @returns {number|null} Integer cents, or `null` when `value` is not a plain decimal
+ *   with at most two decimal places.
+ */
+function moneyCents(value) {
+  if (!isPlainDecimal(value)) return null
+  const [whole, fraction = ''] = String(value).trim().split('.')
+  // Both money fields already refuse a third decimal place as it is typed (the
+  // keystroke-level guard beside `decimalPattern`), so this is a defensive floor, not
+  // the primary enforcement — a figure with a third decimal is treated as unparsable
+  // for this comparison, never silently truncated into one that was not typed.
+  if (fraction.length > 2) return null
+  return Number(`${whole}${fraction.padEnd(2, '0')}`)
+}
+
+/**
  * **The client's own report: a wasted share of 102.17%.** The value of food wasted
  * cannot exceed the value of food handled, because the wasted food is a subset of the
  * food handled — the same reasoning §4.5's money block is built on. Refused here, at
@@ -630,8 +660,9 @@ function amountOnlyValidation() {
  * rather than letting the summary print a number past what was produced.
  *
  * Both fields are optional (§4.5) and this is a comparison between the two, not a
- * format rule on either — a non-numeric or blank figure fails `Number.isFinite` and
- * falls through to the server's own validation, exactly as it did before this check.
+ * format rule on either — a blank or unparsable figure on either side is `null` from
+ * `moneyCents` and falls through to the server's own validation, exactly as it did
+ * before this check.
  *
  * **A function of its own, not folded into `amountOnlyValidation`, because it is
  * never a fault in `amountId`** — `amountStep` (below) attaches this message to
@@ -641,10 +672,10 @@ function amountOnlyValidation() {
  */
 function moneyContradictionValidation() {
   if (state.totalValueNzd === '' || state.wastedValueNzd === '') return ''
-  const totalValue = Number(state.totalValueNzd)
-  const wastedValue = Number(state.wastedValueNzd)
-  if (!Number.isFinite(totalValue) || !Number.isFinite(wastedValue) || !exceedsTotal(wastedValue, totalValue)) return ''
-  return t('Value of the waste exceeds value of production by NZ$%(excess)s.', { excess: (wastedValue - totalValue).toFixed(2) })
+  const totalCents = moneyCents(state.totalValueNzd)
+  const wastedCents = moneyCents(state.wastedValueNzd)
+  if (totalCents === null || wastedCents === null || wastedCents <= totalCents) return ''
+  return t('Value of the waste exceeds value of production by NZ$%(excess)s.', { excess: ((wastedCents - totalCents) / 100).toFixed(2) })
 }
 
 /**

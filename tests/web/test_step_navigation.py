@@ -1000,6 +1000,96 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
     )
 
 
+@pytest.mark.parametrize(
+    "total_value,wasted_value,should_refuse",
+    [
+        pytest.param("47.00", "47.00", False, id="exactly_equal_at_the_cent"),
+        pytest.param("47.00", "47.01", True, id="one_cent_over"),
+        #: These two logical gaps are identical - one cent - and used to fall on
+        #: opposite sides of `ALLOCATION_EPSILON` purely from binary floating-point
+        #: error (`0.04 - 0.03` and `0.08 - 0.07` land on different sides of `0.01`
+        #: in a double). Both must now be refused, identically.
+        pytest.param("0.03", "0.04", True, id="one_cent_over_dust_prone_low"),
+        pytest.param("0.07", "0.08", True, id="one_cent_over_dust_prone_high"),
+        pytest.param("46.00", "47.00", True, id="the_clients_own_figures"),
+    ],
+)
+def test_the_money_contradiction_is_decided_at_the_exact_cent_not_by_float_dust(
+    page_at, total_value, wasted_value, should_refuse
+):
+    """**Finding 1.** `exceedsTotal`'s `ALLOCATION_EPSILON` (0.01) is a mass
+    tolerance, built for a scale that does not agree with itself to the gram.
+    Reused as a money rule it let a wasted value up to a whole cent over its
+    own total through - the client's own defect, one cent smaller - and even
+    that one-cent boundary was decided by double-precision rounding rather
+    than by the figure actually typed. `moneyCents` parses both figures
+    directly into integer cents, so the decision cannot be moved by dust: the
+    exact-cent boundary (equal values) is allowed, and every one-cent-over case
+    here is refused identically regardless of which specific figures produce
+    the one-cent gap.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1000")
+    page.fill("#total-value", total_value)
+    page.fill("#wasted-value", wasted_value)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    advanced = page.locator(".destination-row").count() > 0
+    if should_refuse:
+        assert not advanced, (
+            f"wasted value {wasted_value} against total value {total_value} was allowed through"
+        )
+    else:
+        assert advanced, (
+            f"wasted value {wasted_value} against total value {total_value} was refused"
+        )
+
+
+def test_the_money_contradiction_is_checked_per_entry_not_across_the_whole_submission(page_at):
+    """**Confirms this stayed true through the fix.** The check reads only the
+    draft entry's own two fields, never anything saved on an earlier entry - so
+    a submission whose figures would sum to something unobjectionable can
+    still be refused, if one entry's own pair contradicts.
+
+    Entry 1: value 1000 / wasted 10 (saved, unremarkable). Entry 2, the draft:
+    value 5 / wasted 500 - refused on its own even though 1005 handled against
+    510 wasted, summed across both entries, would not be.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    page.fill("#total-waste", "1000")
+    page.fill("#total-value", "1000")
+    page.fill("#wasted-value", "10")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('[data-line-field="amount"]')
+    page.fill('[data-line-field="amount"] >> nth=0', "1000")
+    page.wait_for_timeout(60)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('[data-action="add-entry"]')
+
+    page.click('[data-action="add-entry"]')
+    page.wait_for_selector('input[name="sector"]')
+    page.evaluate("document.querySelector('input[name=sector]').click()")
+    page.wait_for_timeout(60)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('input[name="food-category"]')
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector("#total-waste")
+
+    page.fill("#total-waste", "500")
+    page.fill("#total-value", "5")
+    page.fill("#wasted-value", "500")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    assert page.locator(".destination-row").count() == 0, (
+        "the second entry's own money contradiction was masked by the first entry's figures"
+    )
+    message = page.locator("#wasted-value-error").inner_text()
+    assert "495.00" in message, f"unexpected excess figure: {message!r}"
+
+
 def test_a_blocked_refusal_still_shows_a_message_back_on_the_amount_step(page_at):
     """**A live regression, not a new requirement.** `amountStep`'s three-way
     classification (`amountFieldError` / `moneyContradictionError` /

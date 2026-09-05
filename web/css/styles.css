@@ -973,6 +973,25 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      pushed a step that used to fit `1278x983` into a scrollbar - the layout a
      step-3 field must not cause, per `amountStep()`'s own docstring. */
   .amount-grid { grid-template-columns: 1fr 1fr 1fr; }
+  /* Each field borrows the same five row tracks from its parent: label, hint,
+     control, then validation and container feedback as two separate tracks.
+     The longest label or hint therefore grows that row for all three columns
+     and the controls keep one baseline without a language-specific min-height
+     or one-off margin. **Five, not four**: `amountStep()` can render a field
+     error and the container total in the same field at once — pick a
+     container preset, then type `0` or an over-limit count — and a subgrid
+     has no implicit tracks of its own, so a track short clamps the fifth
+     child into the fourth and prints it over the container total instead of
+     below it. Five is every state this field's markup can be in: label,
+     hint, control, error, container-total is the longest sequence it ever
+     emits (`amountStep()` in web/js/calculator.js), so this cannot fall one
+     track short again without the markup itself growing a sixth node. */
+  .amount-grid > .form-field,
+  .amount-grid .money-fields > .form-field {
+    display: grid;
+    grid-template-rows: subgrid;
+    grid-row: span 5;
+  }
   /* The pair spans the whole row rather than taking one of the three tracks
      above and leaving the other two empty - a full-width row split evenly in
      two, not a ragged one-of-three. */

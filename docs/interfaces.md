@@ -2983,13 +2983,15 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | Multi-entry | `entries: []` — committed entries, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
 | Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
-| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementMode` (`'percentage'` \| `'kilograms'`), `improvementChartExpanded`, `improvementResult`, `improvementLoading`, `improvementError` |
+| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}`, `improvementChartExpanded`, `improvementResult`, `improvementLoading`, `improvementError` |
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
 > **The table above was exhaustive as of 2026-08-09** — `alternative: []` and `compareAlternative: false` were also on the object — initialised, reset by `resetCalculator`, assigned `[]` by two functions in `calculator.js`, and **read by nothing.** The alternative scenario is built from `improvedAllocations` by `improvement.js`, which never looks at either. Both are removed. A key that is initialised and reset but never populated reads as a feature under construction, and the next person to need an alternative scenario would have wired theirs into a dead one.
 >
 > **Exhaustive again as of 2026-08-28.** `improvementMode` was missing above: item ⑧'s kilogram/percentage toggle reads it in `improvement.js` — `state.improvementMode || 'percentage'` — to decide only what the sliders and the number boxes *display*. `state.improvedAllocations` stays a percentage in every mode regardless of which one this holds, which is what keeps `improvementValidation`'s exactly-100 rule a percentage comparison at every tonnage; see §7.3a. `improvementChartExpanded` is the donut's enlarge modal, and holds nothing but whether that dialog is open.
+>
+> **Exhaustive again as of 2026-09-05.** `improvementMode`'s second value is now `'unit'`, not `'kilograms'`: the toggle no longer offers kilograms alone — a row may be shown in kilograms, tonnes, or any `unit_preset` the taxonomy carries — so the mode names what the panel is doing (displaying in *a* unit) rather than which one it is. `improvementRowUnits` is new and holds that per-row choice, keyed by destination `code`; a code absent from it defaults to `'kilograms'`, the unit every row was shown in before this selector existed. Like `improvementMode`, it is display-only — `state.improvedAllocations` stays a percentage regardless of what either key holds — see §7.3's `kgToUnitAmount`/`unitAmountToKg`.
 
 **Still requirements, and still unmet:**
 
@@ -3219,11 +3221,53 @@ export function percentageToKg(percentage, totalKg);
  *                    rather than dividing by zero into Infinity
  */
 export function kgToPercentage(kg, totalKg);
+
+/**
+ * `rowKgString`'s inverse, for the improvement panel's per-row unit selector:
+ * what the visitor typed, in `unit`, converted to kilograms — **display
+ * only**, the same reservation `percentageToKg` carries. Handles a container
+ * preset as well as the two weights, which `massToKg` alone does not.
+ * @param {string|number} amount  what the visitor typed, in `unit`
+ * @param {string} unit           `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+ * @param {Array} presets         taxonomy.unit_presets
+ * @returns {number}  NaN when `amount` is not finite, or `unit` names a
+ *                    preset the taxonomy no longer carries
+ */
+export function unitAmountToKg(amount, unit, presets);
+
+/**
+ * `unitAmountToKg`'s inverse: a mass in kilograms, restated in an arbitrary
+ * row unit — **display only**. A destination row showing tonnes or a
+ * container preset still allocates the percentage it always did; this only
+ * decides what number is printed beside it.
+ * @param {number} kg      a mass in kilograms
+ * @param {string} unit    `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {number}  NaN when `kg` is not finite, or when `unit` names a
+ *                    preset the taxonomy no longer carries or whose
+ *                    `kg_per_unit` is not usable
+ */
+export function kgToUnitAmount(kg, unit, presets);
+
+/**
+ * How many decimal places a row's own unit needs so that rounding it for
+ * display never throws away more than the two decimal places
+ * `improvement.js`'s own mass check (`MASS_TOLERANCE_KG`) already works in.
+ * Tonnes are the same mass three orders of magnitude smaller a number, and a
+ * heavy container preset scales the same way, so both need more than two
+ * places to keep the 0.01 kg of resolution a kilogram row already shows.
+ * @param {string} unit    `'kilograms'`, `'tonnes'`, or `preset:<unit_preset.code>`
+ * @param {Array} presets  taxonomy.unit_presets
+ * @returns {number}  a whole number of decimal places, never fewer than 2
+ */
+export function unitDisplayPrecision(unit, presets);
 ```
 
 > `kgToTonnes` was added on 2026-08-09 for `results.js`, which printed `totals.total_kg / 1000` inline at two sites — the summary card's "2.300 tonnes" note and the same line in the downloaded report. §7.6.1's exception is stated in terms of *this module*, and neither site was in it. It is a one-line function and it exists so the rule reads the same everywhere: **outside `units.js`, nothing divides, multiplies or adds a number the API supplied.** Bar and chart widths scaled against a local maximum are not figures and are not covered by this.
 >
 > `percentageToKg` and `kgToPercentage` were added for item ⑧'s kilogram/percentage toggle and are exactly the pair `improvement.js` needs to keep one stored allocation and two displayed units: the first turns the stored percentage into a number a slider or a box can show in kilograms, and the second turns a kilogram keystroke back into the percentage that is actually kept. Neither is a second calculation in the §7.6.1 sense — the number that reaches the API is still built from `state.improvedAllocations` by `improvedLines`, in kilograms, once.
+>
+> **`kgToUnitAmount`, `unitAmountToKg` and `unitDisplayPrecision` were added on 2026-09-05, generalising item ⑧'s single kilogram figure to a per-row unit.** `kgToUnitAmount`/`unitAmountToKg` are `percentageToKg`/`kgToPercentage`'s conversion carried one step further — from kilograms to whatever unit a row is showing, kilograms, tonnes, or a `unit_preset` container — and are exactly as display-only: `improvement.js`'s `improvedLines` still derives every `qty_kg` it sends from the stored percentage, never from either. `unitDisplayPrecision` decides how many decimal places that unit is worth printing, so that a tonnes or container row does not round away the same 0.01 kg a kilogram row is already shown to.
 
 ## 7.3a Calculator Modules (written by C)
 

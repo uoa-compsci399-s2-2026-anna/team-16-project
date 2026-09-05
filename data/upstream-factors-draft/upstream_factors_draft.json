@@ -1,7 +1,7 @@
 {
-  "version_label": "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED stage split) - NOT PUBLISHED",
+  "version_label": "CLIENT-DRAFT-2026-09-05 (Rawtec + ReFED cumulative footprint, corrected) - NOT PUBLISHED",
   "is_mock": true,
-  "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination), with upstream figures split across this system's six supply-chain sectors using ReFED's own published stage shares (tests/benchmark/refed/refed-benchmark-factors.json). is_mock stays true: these values are derived, partly from United States ReFED data via a stated proportional split, and not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. This set is a DRAFT and must never be published: doing so would archive whatever New Zealand set is currently live. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
+  "notes": "Draft factor set derived from the client's own Rawtec tables (farm-to-fork/-shelf production footprint by food, and bin-to-destination footprint by destination). Upstream figures are built as a CUMULATIVE footprint per sector -- ReFED's own per-sector shape (tests/benchmark/refed/refed-benchmark-factors.json), anchored so the sector matching the client's own 'Life cycle covered' wording equals the client's own total exactly, with the client's farm stage for five categories ReFED does not publish one for filled from Poore & Nemecek (2018) via Our World in Data (co2e) or a stated assumption (water) -- see data/upstream-factors-draft/public_farm_share_source_data.py. This replaces an earlier construction (commit ba7fe93) that read ReFED's per-sector values as shares summing to the client's total, which understated every consumer-stage factor roughly fourfold; see docs/upstream-factors-draft.md. is_mock stays true: these values are derived, not yet the client's confirmed figures -- the placeholder banner must keep showing until the owner decides otherwise. This set is a DRAFT and must never be published: doing so would archive whatever New Zealand set is currently live. Full provenance: docs/upstream-factors-draft.md and data/upstream-factors-draft/build_upstream_factors_draft.py.",
   "constants": [
     {
       "code": "GWP_CH4_100",
@@ -55,66 +55,57 @@
       "food_category": "fruit",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0488256944",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.02743016540532448294553865722 (refed_farm) = 0.02743016540532448294553865722. 1.78 x 0.02743016540532448294553865722 = 0.04882569442147757964305880985 -> 0.0488256944 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "0.2156370311",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_farm stage (0.2313910064) x scale 0.9319162160772008054983678305 (= client total 1.78 / anchor refed_retail value 1.9100429516) = 0.2156370311185833544791579859.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "fruit",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2540530311",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1427264219548898053382082298 (refed_manufacturing) = 0.1427264219548898053382082298. 1.78 x 0.1427264219548898053382082298 = 0.2540530310797038535020106490 -> 0.2540530311 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.1220166353",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_manufacturing stage (1.2039887448) x scale 0.9319162160772008054983678305 (= client total 1.78 / anchor refed_retail value 1.9100429516) = 1.122016635253554577709528823.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "fruit",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.4030371575",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.2264253693727924671883034729 (refed_retail) = 0.2264253693727924671883034729. 1.78 x 0.2264253693727924671883034729 = 0.4030371574835705915951801818 -> 0.4030371575 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.7800000000",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_retail stage (1.9100429516) x scale 0.9319162160772008054983678305 (= client total 1.78 / anchor refed_retail value 1.9100429516) = 1.780000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "fruit",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.5546013432",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.3115737883172442319682639022 (refed_residential) = 0.3115737883172442319682639022. 1.78 x 0.3115737883172442319682639022 = 0.5546013432046947329035097459 -> 0.5546013432 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.4493781096",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_residential stage (2.6283243787) x scale 0.9319162160772008054983678305 (= client total 1.78 / anchor refed_retail value 1.9100429516) = 2.449378109621563758346637172.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "fruit",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2597413869",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2918442549497490125596857379 (refed_foodservice) = 0.1459221274748745062798428690. 1.78 x 0.1459221274748745062798428690 = 0.2597413869052766211781203068 -> 0.2597413869 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.2942781335",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (2.4618931336) x scale 0.9319162160772008054983678305 (= client total 1.78 / anchor refed_retail value 1.9100429516) = 2.294278133450954590564820888.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "fruit",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2597413869",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2918442549497490125596857379 (refed_foodservice) = 0.1459221274748745062798428690. 1.78 x 0.1459221274748745062798428690 = 0.2597413869052766211781203068 -> 0.2597413869 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.2942781335",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1.78 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (2.4618931336) x scale 0.9319162160772008054983678305 (= client total 1.78 / anchor refed_retail value 1.9100429516) = 2.294278133450954590564820888.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "fruit",
-      "destination": "prevention",
-      "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "fruit",
       "destination": "prevention",
       "metric": "co2e",
@@ -123,6 +114,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "fruit",
       "destination": "prevention",
@@ -163,66 +163,57 @@
       "food_category": "fruit",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "213.3075174617",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1568437628394883307525255413 (refed_farm) = 0.1568437628394883307525255413. 1360.00 x 0.1568437628394883307525255413 = 213.3075174617041298234347362 -> 213.3075174617 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1079.2419160082",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_farm stage (132.3619414841) x scale 8.153717782523223381187307190 (= client total 1360.00 / anchor refed_retail value 166.7950787940) = 1079.241916008204502830027303.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "fruit",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "304.5480974564",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.2239324246002950478080466520 (refed_manufacturing) = 0.2239324246002950478080466520. 1360.00 x 0.2239324246002950478080466520 = 304.5480974564012650189434467 -> 304.5480974564 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1360.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_manufacturing stage (188.9787004898) x scale 8.153717782523223381187307190 (= client total 1360.00 / anchor refed_retail value 166.7950787940) = 1540.878990701812444266256581. CLAMPED DOWN to 1360.00 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (1540.878990701812444266256581) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "fruit",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "268.7981438127",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1976456939799607868156905774 (refed_retail) = 0.1976456939799607868156905774. 1360.00 x 0.1976456939799607868156905774 = 268.7981438127466700693391853 -> 268.7981438127 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1360.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_retail stage (166.7950787940) x scale 8.153717782523223381187307190 (= client total 1360.00 / anchor refed_retail value 166.7950787940) = 1360.000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "fruit",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "268.7981438127",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1976456939799607868156905774 (refed_residential) = 0.1976456939799607868156905774. 1360.00 x 0.1976456939799607868156905774 = 268.7981438127466700693391853 -> 268.7981438127 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1360.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_residential stage (166.7950787940) x scale 8.153717782523223381187307190 (= client total 1360.00 / anchor refed_retail value 166.7950787940) = 1360.000000000000000000000000.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "fruit",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "152.2740487282",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2239324246002950478080466520 (refed_foodservice) = 0.1119662123001475239040233260. 1360.00 x 0.1119662123001475239040233260 = 152.2740487282006325094717234 -> 152.2740487282 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1540.8789907018",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (188.9787004898) x scale 8.153717782523223381187307190 (= client total 1360.00 / anchor refed_retail value 166.7950787940) = 1540.878990701812444266256581.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "fruit",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "152.2740487282",
-      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2239324246002950478080466520 (refed_foodservice) = 0.1119662123001475239040233260. 1360.00 x 0.1119662123001475239040233260 = 152.2740487282006325094717234 -> 152.2740487282 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1540.8789907018",
+      "source_note": "Rawtec farm-to-shelf total for fruit: client row: Fruit (Produce) = 1360.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (188.9787004898) x scale 8.153717782523223381187307190 (= client total 1360.00 / anchor refed_retail value 166.7950787940) = 1540.878990701812444266256581.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "fruit",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "fruit",
       "destination": "prevention",
       "metric": "water",
@@ -231,6 +222,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "fruit",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "fruit",
       "destination": "prevention",
@@ -271,66 +271,57 @@
       "food_category": "vegetables",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0499229010",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED stage share for primary_production (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.02743016540532448294553865722 (refed_farm) = 0.02743016540532448294553865722. 1.82 x 0.02743016540532448294553865722 = 0.04992290103769055896088035614 -> 0.0499229010 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "0.1602281800",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_farm stage (0.2313910064) x scale 0.6924563858058468801128728807 (= client total 1.82 / anchor refed_residential value 2.6283243787) = 0.1602281799997215845936178015.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "vegetables",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2597620880",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED stage share for processing (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1427264219548898053382082298 (refed_manufacturing) = 0.1427264219548898053382082298. 1.82 x 0.1427264219548898053382082298 = 0.2597620879578994457155389782 -> 0.2597620880 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "0.8337096948",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_manufacturing stage (1.2039887448) x scale 0.6924563858058468801128728807 (= client total 1.82 / anchor refed_residential value 2.6283243787) = 0.8337096947751261216880939020.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "vegetables",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.4120941723",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.2264253693727924671883034729 (refed_retail) = 0.2264253693727924671883034729. 1.82 x 0.2264253693727924671883034729 = 0.4120941722584822902827123207 -> 0.4120941723 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.3226214390",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_retail stage (1.9100429516) x scale 0.6924563858058468801128728807 (= client total 1.82 / anchor refed_residential value 2.6283243787) = 1.322621438998868119428443058.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "vegetables",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.5670642947",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.3115737883172442319682639022 (refed_residential) = 0.3115737883172442319682639022. 1.82 x 0.3115737883172442319682639022 = 0.5670642947373845021822403020 -> 0.5670642947 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.8200000000",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_residential stage (2.6283243787) x scale 0.6924563858058468801128728807 (= client total 1.82 / anchor refed_residential value 2.6283243787) = 1.820000000000000000000000000. This is the anchor stage (client's own 'Farm to Fork' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "vegetables",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2655782720",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2918442549497490125596857379 (refed_foodservice) = 0.1459221274748745062798428690. 1.82 x 0.1459221274748745062798428690 = 0.2655782720042716014293140216 -> 0.2655782720 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.7047536215",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (2.4618931336) x scale 0.6924563858058468801128728807 (= client total 1.82 / anchor refed_residential value 2.6283243787) = 1.704753621532886936882864138.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "vegetables",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2655782720",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2918442549497490125596857379 (refed_foodservice) = 0.1459221274748745062798428690. 1.82 x 0.1459221274748745062798428690 = 0.2655782720042716014293140216 -> 0.2655782720 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.7047536215",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 1.82 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (2.4618931336) x scale 0.6924563858058468801128728807 (= client total 1.82 / anchor refed_residential value 2.6283243787) = 1.704753621532886936882864138.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "vegetables",
-      "destination": "prevention",
-      "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "vegetables",
       "destination": "prevention",
       "metric": "co2e",
@@ -339,6 +330,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "vegetables",
       "destination": "prevention",
@@ -379,66 +379,57 @@
       "food_category": "vegetables",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "80.1016781198",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED stage share for primary_production (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1568437628394883307525255413 (refed_farm) = 0.1568437628394883307525255413. 510.71 x 0.1568437628394883307525255413 = 80.10167811975508539862231920 -> 80.1016781198 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "405.2791462681",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_farm stage (132.3619414841) x scale 3.061900888759143686033948276 (= client total 510.71 / anchor refed_residential value 166.7950787940) = 405.2791462680515600296494441.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "vegetables",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "114.3645285676",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED stage share for processing (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.2239324246002950478080466520 (refed_manufacturing) = 0.2239324246002950478080466520. 510.71 x 0.2239324246002950478080466520 = 114.3645285676166838660475056 -> 114.3645285676 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "510.7100000000",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_manufacturing stage (188.9787004898) x scale 3.061900888759143686033948276 (= client total 510.71 / anchor refed_residential value 166.7950787940) = 578.6340509862666422141322785. CLAMPED DOWN to 510.71 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (578.6340509862666422141322785) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "vegetables",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "100.9396323725",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1976456939799607868156905774 (refed_retail) = 0.1976456939799607868156905774. 510.71 x 0.1976456939799607868156905774 = 100.9396323725057734346413348 -> 100.9396323725 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "510.7100000000",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_retail stage (166.7950787940) x scale 3.061900888759143686033948276 (= client total 510.71 / anchor refed_residential value 166.7950787940) = 510.7100000000000000000000001. CLAMPED DOWN to 510.71 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (510.7100000000000000000000001) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "vegetables",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "100.9396323725",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_produce, normalised over the ReFED sectors it publishes): 1 x 0.1976456939799607868156905774 (refed_residential) = 0.1976456939799607868156905774. 510.71 x 0.1976456939799607868156905774 = 100.9396323725057734346413348 -> 100.9396323725 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "510.7100000000",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_residential stage (166.7950787940) x scale 3.061900888759143686033948276 (= client total 510.71 / anchor refed_residential value 166.7950787940) = 510.7100000000000000000000001. This is the anchor stage (client's own 'Farm to Fork' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "vegetables",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "57.1822642838",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2239324246002950478080466520 (refed_foodservice) = 0.1119662123001475239040233260. 510.71 x 0.1119662123001475239040233260 = 57.18226428380834193302375282 -> 57.1822642838 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "578.6340509863",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (188.9787004898) x scale 3.061900888759143686033948276 (= client total 510.71 / anchor refed_residential value 166.7950787940) = 578.6340509862666422141322785.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "vegetables",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "57.1822642838",
-      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_produce, normalised over the ReFED sectors it publishes): 0.5 x 0.2239324246002950478080466520 (refed_foodservice) = 0.1119662123001475239040233260. 510.71 x 0.1119662123001475239040233260 = 57.18226428380834193302375282 -> 57.1822642838 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "578.6340509863",
+      "source_note": "Rawtec farm-to-fork total for vegetables: client row: Vegetable (Produce) = 510.71 [Farm to Fork] (used directly, no aggregation). ReFED refed_produce refed_foodservice stage (188.9787004898) x scale 3.061900888759143686033948276 (= client total 510.71 / anchor refed_residential value 166.7950787940) = 578.6340509862666422141322785.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "vegetables",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "vegetables",
       "destination": "prevention",
       "metric": "water",
@@ -447,6 +438,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "vegetables",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "vegetables",
       "destination": "prevention",
@@ -487,66 +487,57 @@
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.6630310047",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.2502003791358359607266015080 (refed_farm) = 0.2502003791358359607266015080. 2.65 x 0.2502003791358359607266015080 = 0.6630310047099652959254939962 -> 0.6630310047 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.8836451842",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_farm stage (4.0287959349) x scale 0.8553462762137214353131680917 (= client total 2.65 / anchor refed_retail value 3.0981604453) = 3.446015600541693482190684916. CLAMPED DOWN to 1.883645184200557581109984356 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (3.446015600541693482190684916) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.3624229556",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.1367633794723062892711340887 (refed_manufacturing) = 0.1367633794723062892711340887. 2.65 x 0.1367633794723062892711340887 = 0.3624229556016116665685053351 -> 0.3624229556 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.8836451842",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_manufacturing stage (2.2022018878) x scale 0.8553462762137214353131680917 (= client total 2.65 / anchor refed_retail value 3.0981604453) = 1.883645184200557581109984356.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.5098735369",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.1924051082664108377331159423 (refed_retail) = 0.1924051082664108377331159423. 2.65 x 0.1924051082664108377331159423 = 0.5098735369059887199927572471 -> 0.5098735369 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.6500000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_retail stage (3.0981604453) x scale 0.8553462762137214353131680917 (= client total 2.65 / anchor refed_retail value 3.0981604453) = 2.650000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.6050991100",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.2283392867873719373506150457 (refed_residential) = 0.2283392867873719373506150457. 2.65 x 0.2283392867873719373506150457 = 0.6050991099865356339791298711 -> 0.6050991100 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3.1449222707",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_residential stage (3.6767825595) x scale 0.8553462762137214353131680917 (= client total 2.65 / anchor refed_retail value 3.0981604453) = 3.144922270715880667950763860.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2547866964",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_dry_goods, normalised over the ReFED sectors it publishes): 0.5 x 0.1922918463380749749185334152 (refed_foodservice) = 0.09614592316903748745926670760. 2.65 x 0.09614592316903748745926670760 = 0.2547866963979493417670567751 -> 0.2547866964 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.6500000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_foodservice stage (3.0963366703) x scale 0.8553462762137214353131680917 (= client total 2.65 / anchor refed_retail value 3.0981604453) = 2.648440040845098320189311727. CLAMPED UP to 2.65 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (2.648440040845098320189311727) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2547866964",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_dry_goods, normalised over the ReFED sectors it publishes): 0.5 x 0.1922918463380749749185334152 (refed_foodservice) = 0.09614592316903748745926670760. 2.65 x 0.09614592316903748745926670760 = 0.2547866963979493417670567751 -> 0.2547866964 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.6500000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 2.65 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_foodservice stage (3.0963366703) x scale 0.8553462762137214353131680917 (= client total 2.65 / anchor refed_retail value 3.0981604453) = 2.648440040845098320189311727. CLAMPED UP to 2.65 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (2.648440040845098320189311727) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "nuts_seeds",
-      "destination": "prevention",
-      "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "nuts_seeds",
       "destination": "prevention",
       "metric": "co2e",
@@ -555,6 +546,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "nuts_seeds",
       "destination": "prevention",
@@ -595,66 +595,57 @@
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "7317.5067371698",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.5237624927829116225080412691 (refed_farm) = 0.5237624927829116225080412691. 13971.04 x 0.5237624927829116225080412691 = 7317.506737169769594524744892 -> 7317.5067371698 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "13419.0542765924",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_farm stage (2325.2841988065) x scale 25.90945518674834690567588917 (= client total 13971.04 / anchor refed_retail value 539.2255413825) = 60246.84674543104567050288338. CLAMPED DOWN to 13419.05427659244138660596414 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (60246.84674543104567050288338) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "1629.8615675327",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.1166600029441418384399332353 (refed_manufacturing) = 0.1166600029441418384399332353. 13971.04 x 0.1166600029441418384399332353 = 1629.861567532723390517844828 -> 1629.8615675327 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "13419.0542765924",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_manufacturing stage (517.9211287876) x scale 25.90945518674834690567588917 (= client total 13971.04 / anchor refed_retail value 539.2255413825) = 13419.05427659244138660596414.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "1696.9050638824",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.1214587506644023503060461301 (refed_retail) = 0.1214587506644023503060461301. 13971.04 x 0.1214587506644023503060461301 = 1696.905063882391812219782725 -> 1696.9050638824 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "13971.0400000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_retail stage (539.2255413825) x scale 25.90945518674834690567588917 (= client total 13971.04 / anchor refed_retail value 539.2255413825) = 13971.04000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "1696.9050638824",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_dry_goods, normalised over the ReFED sectors it publishes): 1 x 0.1214587506644023503060461301 (refed_residential) = 0.1214587506644023503060461301. 13971.04 x 0.1214587506644023503060461301 = 1696.905063882391812219782725 -> 1696.9050638824 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "13971.0400000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_residential stage (539.2255413825) x scale 25.90945518674834690567588917 (= client total 13971.04 / anchor refed_retail value 539.2255413825) = 13971.04000000000000000000000.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "814.9307837664",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_dry_goods, normalised over the ReFED sectors it publishes): 0.5 x 0.1166600029441418384399332353 (refed_foodservice) = 0.05833000147207091921996661765. 13971.04 x 0.05833000147207091921996661765 = 814.9307837663616952589224139 -> 814.9307837664 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "13971.0400000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_foodservice stage (517.9211287876) x scale 25.90945518674834690567588917 (= client total 13971.04 / anchor refed_retail value 539.2255413825) = 13419.05427659244138660596414. CLAMPED UP to 13971.04 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (13419.05427659244138660596414) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "nuts_seeds",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "814.9307837664",
-      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_dry_goods, normalised over the ReFED sectors it publishes): 0.5 x 0.1166600029441418384399332353 (refed_foodservice) = 0.05833000147207091921996661765. 13971.04 x 0.05833000147207091921996661765 = 814.9307837663616952589224139 -> 814.9307837664 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "13971.0400000000",
+      "source_note": "Rawtec farm-to-shelf total for nuts_seeds: client row: Nuts and seeds (Grains, Nuts, Seeds) = 13971.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_dry_goods refed_foodservice stage (517.9211287876) x scale 25.90945518674834690567588917 (= client total 13971.04 / anchor refed_retail value 539.2255413825) = 13419.05427659244138660596414. CLAMPED UP to 13971.04 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (13419.05427659244138660596414) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "nuts_seeds",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "nuts_seeds",
       "destination": "prevention",
       "metric": "water",
@@ -663,6 +654,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "nuts_seeds",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "nuts_seeds",
       "destination": "prevention",
@@ -703,54 +703,54 @@
       "food_category": "meat",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED stage share for primary_production (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 11.6275 x 0 = 0.0000 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "10.3110439558",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. No ReFED Farm-stage value published for refed_fresh_meat_seafood. Filled from Poore & Nemecek (2018) via Our World in Data (public_farm_share_source_data.py, read 2026-09-05): farm-share of Beef (beef herd), Pig Meat, Poultry Meat, Lamb & Mutton = 0.9660051955443409035229314163, 0.8471430332399377452911525592, 0.8187333543878684241208906065, 0.9152416869308513595813297662 -> unweighted mean 0.886780817525749608129076087. 11.6275 x 0.886780817525749608129076087 = 10.31104395578065356852083220 -> 10.3110439558.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "meat",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "2.4968514695",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED stage share for processing (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2147367421601103417810026305 (refed_manufacturing) = 0.2147367421601103417810026305. 11.6275 x 0.2147367421601103417810026305 = 2.496851469466682999058608086 -> 2.4968514695 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "10.5990639635",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED refed_fresh_meat_seafood refed_manufacturing stage (12.1991243815) x scale 0.8688380929681044201095418874 (= client total 11.6275 / anchor refed_retail value 13.3828156179) = 10.59906396350316633319623134.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "meat",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "2.7391230548",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED stage share for wholesale_retail (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2355728277576534409216039769 (refed_retail) = 0.2355728277576534409216039769. 11.6275 x 0.2355728277576534409216039769 = 2.739123054752115384315950241 -> 2.7391230548 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "11.6275000000",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED refed_fresh_meat_seafood refed_retail stage (13.3828156179) x scale 0.8688380929681044201095418874 (= client total 11.6275 / anchor refed_retail value 13.3828156179) = 11.62750000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "meat",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "3.0391974909",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED stage share for consumer_household (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2613801325216455347656619489 (refed_residential) = 0.2613801325216455347656619489. 11.6275 x 0.2613801325216455347656619489 = 3.039197490895433455487734311 -> 3.0391974909 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "12.9013075057",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED refed_fresh_meat_seafood refed_residential stage (14.8489201960) x scale 0.8688380929681044201095418874 (= client total 11.6275 / anchor refed_retail value 13.3828156179) = 12.90130750572821130760144506.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "meat",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.6761639924",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED stage share for consumer_hospitality (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2883102975605906825317314437 (refed_foodservice) = 0.1441551487802953412658657218. 11.6275 x 0.1441551487802953412658657218 = 1.676163992442884080568853680 -> 1.6761639924 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "14.2305376082",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED refed_fresh_meat_seafood refed_foodservice stage (16.3788141006) x scale 0.8688380929681044201095418874 (= client total 11.6275 / anchor refed_retail value 13.3828156179) = 14.23053760824440238214335086.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "meat",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.6761639924",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED stage share for consumer_institution (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2883102975605906825317314437 (refed_foodservice) = 0.1441551487802953412658657218. 11.6275 x 0.1441551487802953412658657218 = 1.676163992442884080568853680 -> 1.6761639924 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "14.2305376082",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 20.28 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 10.62 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 3.98 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 11.63 [Farm to Supermarket Shelf] -> unweighted mean 11.6275. ReFED refed_fresh_meat_seafood refed_foodservice stage (16.3788141006) x scale 0.8688380929681044201095418874 (= client total 11.6275 / anchor refed_retail value 13.3828156179) = 14.23053760824440238214335086.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -811,66 +811,57 @@
       "food_category": "meat",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED stage share for primary_production (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 7185.3475 x 0 = 0.0000 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6289.1673353447",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. No ReFED Farm-stage value published for refed_fresh_meat_seafood, and no public per-stage water breakdown was found (see public_farm_share_source_data.py). STATED ASSUMPTION, not a citation: primary production is assumed to account for 0.90 of the client's total water figure, on the general finding that irrigation dominates agricultural freshwater withdrawal. 7185.3475 x 0.90 = 6466.812750 -> 6466.8127500000. CLAMPED DOWN to 6289.167335344742802011982180 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (6466.812750) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "meat",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "1681.3720818893",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED stage share for processing (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2340001067295992598815212612 (refed_manufacturing) = 0.2340001067295992598815212612. 7185.3475 x 0.2340001067295992598815212612 = 1681.372081889259217991539090 -> 1681.3720818893 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6289.1673353447",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED refed_fresh_meat_seafood refed_manufacturing stage (4921.7723740359) x scale 1.277825721588088392689037798 (= client total 7185.3475 / anchor refed_retail value 5623.1044489150) = 6289.167335344742802011982180.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "meat",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "1920.9606043199",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED stage share for wholesale_retail (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2673441478397385092574837691 (refed_retail) = 0.2673441478397385092574837691. 7185.3475 x 0.2673441478397385092574837691 = 1920.960604319895498146987857 -> 1920.9606043199 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7185.3475000000",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED refed_fresh_meat_seafood refed_retail stage (5623.1044489150) x scale 1.277825721588088392689037798 (= client total 7185.3475 / anchor refed_retail value 5623.1044489150) = 7185.347500000000000000000002. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "meat",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "1901.6427319016",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED stage share for consumer_household (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2646556387010629709794737084 (refed_residential) = 0.2646556387010629709794737084. 7185.3475 x 0.2646556387010629709794737084 = 1901.642731901586065869933962 -> 1901.6427319016 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7185.3475000000",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED refed_fresh_meat_seafood refed_residential stage (5566.5564832281) x scale 1.277825721588088392689037798 (= client total 7185.3475 / anchor refed_retail value 5623.1044489150) = 7113.089054941798544994456120. CLAMPED UP to 7185.3475 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (7113.089054941798544994456120) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "meat",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "840.6860409446",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED stage share for consumer_hospitality (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2340001067295992598815212612 (refed_foodservice) = 0.1170000533647996299407606306. 7185.3475 x 0.1170000533647996299407606306 = 840.6860409446296089957695452 -> 840.6860409446 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7185.3475000000",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED refed_fresh_meat_seafood refed_foodservice stage (4921.7723740359) x scale 1.277825721588088392689037798 (= client total 7185.3475 / anchor refed_retail value 5623.1044489150) = 6289.167335344742802011982180. CLAMPED UP to 7185.3475 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (6289.167335344742802011982180) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "meat",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "840.6860409446",
-      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED stage share for consumer_institution (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2340001067295992598815212612 (refed_foodservice) = 0.1170000533647996299407606306. 7185.3475 x 0.1170000533647996299407606306 = 840.6860409446296089957695452 -> 840.6860409446 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7185.3475000000",
+      "source_note": "Rawtec farm-to-shelf total for meat: mean of 4 client row(s): Red Meat (Meat & Seafood) = 13971.04 [Farm to Supermarket Shelf]; Pork (Meat & Seafood) = 6925.00 [Farm to Supermarket Shelf]; Poultry (Meat & Seafood) = 660.00 [Farm to Supermarket Shelf]; Other meat (Meat & Seafood) = 7185.35 [Farm to Supermarket Shelf] -> unweighted mean 7185.3475. ReFED refed_fresh_meat_seafood refed_foodservice stage (4921.7723740359) x scale 1.277825721588088392689037798 (= client total 7185.3475 / anchor refed_retail value 5623.1044489150) = 6289.167335344742802011982180. CLAMPED UP to 7185.3475 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (6289.167335344742802011982180) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "meat",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "meat",
       "destination": "prevention",
       "metric": "water",
@@ -879,6 +870,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "meat",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "meat",
       "destination": "prevention",
@@ -919,54 +919,54 @@
       "food_category": "seafood",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 5.94 x 0 = 0.00 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "5.4146153467",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). No ReFED Farm-stage value published for refed_fresh_meat_seafood. Filled from Poore & Nemecek (2018) via Our World in Data (public_farm_share_source_data.py, read 2026-09-05): farm-share of Fish (farmed), Shrimps (farmed) = 0.9551869189416780003956753372, 0.9359372605867788402085900608 -> unweighted mean 0.945562089764228420302132699. 5.94 x 0.945562089764228420302132699 = 5.616638813199516816594668232 -> 5.6166388132. CLAMPED DOWN to 5.414615346653090347812136243 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (5.616638813199516816594668232) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "seafood",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.2755362484",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2147367421601103417810026305 (refed_manufacturing) = 0.2147367421601103417810026305. 5.94 x 0.2147367421601103417810026305 = 1.275536248431055430179155625 -> 1.2755362484 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "5.4146153467",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_manufacturing stage (12.1991243815) x scale 0.4438527862593455390626255697 (= client total 5.94 / anchor refed_retail value 13.3828156179) = 5.414615346653090347812136243.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "seafood",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.3993025969",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2355728277576534409216039769 (refed_retail) = 0.2355728277576534409216039769. 5.94 x 0.2355728277576534409216039769 = 1.399302596880461439074327623 -> 1.3993025969 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "5.9400000000",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_retail stage (13.3828156179) x scale 0.4438527862593455390626255697 (= client total 5.94 / anchor refed_retail value 13.3828156179) = 5.940000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "seafood",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.5525979872",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2613801325216455347656619489 (refed_residential) = 0.2613801325216455347656619489. 5.94 x 0.2613801325216455347656619489 = 1.552597987178574476508031976 -> 1.5525979872 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6.5907346019",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_residential stage (14.8489201960) x scale 0.4438527862593455390626255697 (= client total 5.94 / anchor refed_retail value 13.3828156179) = 6.590734601937267268729527731.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "seafood",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8562815838",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2883102975605906825317314437 (refed_foodservice) = 0.1441551487802953412658657218. 5.94 x 0.1441551487802953412658657218 = 0.8562815837549543271192423875 -> 0.8562815838 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7.2697822742",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_foodservice stage (16.3788141006) x scale 0.4438527862593455390626255697 (= client total 5.94 / anchor refed_retail value 13.3828156179) = 7.269782274175166643726639787.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "seafood",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8562815838",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2883102975605906825317314437 (refed_foodservice) = 0.1441551487802953412658657218. 5.94 x 0.1441551487802953412658657218 = 0.8562815837549543271192423875 -> 0.8562815838 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7.2697822742",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 5.94 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_foodservice stage (16.3788141006) x scale 0.4438527862593455390626255697 (= client total 5.94 / anchor refed_retail value 13.3828156179) = 7.269782274175166643726639787.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1027,66 +1027,57 @@
       "food_category": "seafood",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 3603.00 x 0 = 0.00 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3153.6219938211",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). No ReFED Farm-stage value published for refed_fresh_meat_seafood, and no public per-stage water breakdown was found (see public_farm_share_source_data.py). STATED ASSUMPTION, not a citation: primary production is assumed to account for 0.90 of the client's total water figure, on the general finding that irrigation dominates agricultural freshwater withdrawal. 3603.00 x 0.90 = 3242.7000 -> 3242.7000000000. CLAMPED DOWN to 3153.621993821051565794023433 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (3242.7000) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "seafood",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "843.1023845467",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2340001067295992598815212612 (refed_manufacturing) = 0.2340001067295992598815212612. 3603.00 x 0.2340001067295992598815212612 = 843.1023845467461333531211041 -> 843.1023845467 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3153.6219938211",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_manufacturing stage (4921.7723740359) x scale 0.6407492574133516129677239945 (= client total 3603.00 / anchor refed_retail value 5623.1044489150) = 3153.621993821051565794023433.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "seafood",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "963.2409646666",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2673441478397385092574837691 (refed_retail) = 0.2673441478397385092574837691. 3603.00 x 0.2673441478397385092574837691 = 963.2409646665778488547140201 -> 963.2409646666 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3603.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_retail stage (5623.1044489150) x scale 0.6407492574133516129677239945 (= client total 3603.00 / anchor refed_retail value 5623.1044489150) = 3603.000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "seafood",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "953.5542662399",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 1 x 0.2646556387010629709794737084 (refed_residential) = 0.2646556387010629709794737084. 3603.00 x 0.2646556387010629709794737084 = 953.5542662399298844390437714 -> 953.5542662399 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3603.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_residential stage (5566.5564832281) x scale 0.6407492574133516129677239945 (= client total 3603.00 / anchor refed_retail value 5623.1044489150) = 3566.766932977883137539976374. CLAMPED UP to 3603.00 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (3566.766932977883137539976374) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "seafood",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "421.5511922734",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2340001067295992598815212612 (refed_foodservice) = 0.1170000533647996299407606306. 3603.00 x 0.1170000533647996299407606306 = 421.5511922733730666765605521 -> 421.5511922734 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3603.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_foodservice stage (4921.7723740359) x scale 0.6407492574133516129677239945 (= client total 3603.00 / anchor refed_retail value 5623.1044489150) = 3153.621993821051565794023433. CLAMPED UP to 3603.00 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (3153.621993821051565794023433) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "seafood",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "421.5511922734",
-      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_fresh_meat_seafood, normalised over the ReFED sectors it publishes): 0.5 x 0.2340001067295992598815212612 (refed_foodservice) = 0.1170000533647996299407606306. 3603.00 x 0.1170000533647996299407606306 = 421.5511922733730666765605521 -> 421.5511922734 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3603.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for seafood: client row: Seafood (Meat & Seafood) = 3603.00 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_fresh_meat_seafood refed_foodservice stage (4921.7723740359) x scale 0.6407492574133516129677239945 (= client total 3603.00 / anchor refed_retail value 5623.1044489150) = 3153.621993821051565794023433. CLAMPED UP to 3603.00 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (3153.621993821051565794023433) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "seafood",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "seafood",
       "destination": "prevention",
       "metric": "water",
@@ -1095,6 +1086,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "seafood",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "seafood",
       "destination": "prevention",
@@ -1135,54 +1135,54 @@
       "food_category": "dairy",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED stage share for primary_production (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 5.41 x 0 = 0.00 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4.0489595250",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. No ReFED Farm-stage value published for refed_dairy_eggs. Filled from Poore & Nemecek (2018) via Our World in Data (public_farm_share_source_data.py, read 2026-09-05): farm-share of Cheese, Milk = 0.9350073830195875197467239351, 0.7870644532331915940525057739 -> unweighted mean 0.8610359181263895568996148545. 5.41 x 0.8610359181263895568996148545 = 4.658204317063767502826916363 -> 4.6582043171. CLAMPED DOWN to 4.048959525047158701503315627 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (4.658204317063767502826916363) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "dairy",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.9756488035",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED stage share for processing (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0.1803417381616916711454489445 (refed_manufacturing) = 0.1803417381616916711454489445. 5.41 x 0.1803417381616916711454489445 = 0.9756488034547519408968787897 -> 0.9756488035 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4.0489595250",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED refed_dairy_eggs refed_manufacturing stage (2.8793646991) x scale 1.406198918224126915185502500 (= client total 5.41 / anchor refed_retail value 3.8472508618) = 4.048959525047158701503315627.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "dairy",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.3036089875",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED stage share for wholesale_retail (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0.2409628442614250252479281862 (refed_retail) = 0.2409628442614250252479281862. 5.41 x 0.2409628442614250252479281862 = 1.303608987454309386591291487 -> 1.3036089875 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "5.4100000000",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED refed_dairy_eggs refed_retail stage (3.8472508618) x scale 1.406198918224126915185502500 (= client total 5.41 / anchor refed_retail value 3.8472508618) = 5.410000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "dairy",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.5135309994",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED stage share for consumer_household (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0.2797654342690151076225952026 (refed_residential) = 0.2797654342690151076225952026. 5.41 x 0.2797654342690151076225952026 = 1.513530999395371732238240046 -> 1.5135309994 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6.2811800053",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED refed_dairy_eggs refed_residential stage (4.4667791476) x scale 1.406198918224126915185502500 (= client total 5.41 / anchor refed_retail value 3.8472508618) = 6.281180005301207727966516353.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "dairy",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8086056048",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED stage share for consumer_hospitality (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 0.5 x 0.2989299833078681959840276667 (refed_foodservice) = 0.1494649916539340979920138334. 5.41 x 0.1494649916539340979920138334 = 0.8086056048477834701367948387 -> 0.8086056048 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6.7114546836",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED refed_dairy_eggs refed_foodservice stage (4.7727633670) x scale 1.406198918224126915185502500 (= client total 5.41 / anchor refed_retail value 3.8472508618) = 6.711454683615141636356082341.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "dairy",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8086056048",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED stage share for consumer_institution (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 0.5 x 0.2989299833078681959840276667 (refed_foodservice) = 0.1494649916539340979920138334. 5.41 x 0.1494649916539340979920138334 = 0.8086056048477834701367948387 -> 0.8086056048 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6.7114546836",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 10.13 [Farm to Supermarket Shelf]; Milk (Dairy) = 1.51 [Farm to Supermarket Shelf]; Cream (Dairy) = 4.95 [Farm to Supermarket Shelf]; Butter (Dairy) = 11.39 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3.29 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 1.19 [Farm to Supermarket Shelf] -> unweighted mean 5.41. ReFED refed_dairy_eggs refed_foodservice stage (4.7727633670) x scale 1.406198918224126915185502500 (= client total 5.41 / anchor refed_retail value 3.8472508618) = 6.711454683615141636356082341.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1243,66 +1243,57 @@
       "food_category": "dairy",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED stage share for primary_production (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 2785.463333333333333333333333 x 0 = 0E-24 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2506.9170000000",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. No ReFED Farm-stage value published for refed_dairy_eggs, and no public per-stage water breakdown was found (see public_farm_share_source_data.py). STATED ASSUMPTION, not a citation: primary production is assumed to account for 0.90 of the client's total water figure, on the general finding that irrigation dominates agricultural freshwater withdrawal. 2785.463333333333333333333333 x 0.90 = 2506.917000000000000000000000 -> 2506.9170000000.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "dairy",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "733.5645808107",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED stage share for processing (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0.2633545995857135316744606915 (refed_manufacturing) = 0.2633545995857135316744606915. 2785.463333333333333333333333 x 0.2633545995857135316744606915 = 733.5645808106868996497155259 -> 733.5645808107 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2785.4633333333",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED refed_dairy_eggs refed_manufacturing stage (1196.8756103542) x scale 2.587911084779992355371905918 (= client total 2785.463333333333333333333333 / anchor refed_retail value 1076.3365672473) = 3097.407659138453172360159965. CLAMPED DOWN to 2785.463333333333333333333333 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (3097.407659138453172360159965) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "dairy",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "659.6862497100",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED stage share for wholesale_retail (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0.2368317837164283927659974640 (refed_retail) = 0.2368317837164283927659974640. 2785.463333333333333333333333 x 0.2368317837164283927659974640 = 659.6862497100416856752845160 -> 659.6862497100 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2785.4633333333",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED refed_dairy_eggs refed_retail stage (1076.3365672473) x scale 2.587911084779992355371905918 (= client total 2785.463333333333333333333333 / anchor refed_retail value 1076.3365672473) = 2785.463333333333333333333334. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "dairy",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "658.6479220019",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED stage share for consumer_household (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 1 x 0.2364590171121445438850811529 (refed_residential) = 0.2364590171121445438850811529. 2785.463333333333333333333333 x 0.2364590171121445438850811529 = 658.6479220019178483586177650 -> 658.6479220019 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2785.4633333333",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED refed_dairy_eggs refed_residential stage (1074.6424435915) x scale 2.587911084779992355371905918 (= client total 2785.463333333333333333333333 / anchor refed_retail value 1076.3365672473) = 2781.079091945500508945554627. CLAMPED UP to 2785.463333333333333333333333 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (2781.079091945500508945554627) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "dairy",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "366.7822904053",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED stage share for consumer_hospitality (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 0.5 x 0.2633545995857135316744606915 (refed_foodservice) = 0.1316772997928567658372303458. 2785.463333333333333333333333 x 0.1316772997928567658372303458 = 366.7822904053434498248577631 -> 366.7822904053 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3097.4076591385",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED refed_dairy_eggs refed_foodservice stage (1196.8756103542) x scale 2.587911084779992355371905918 (= client total 2785.463333333333333333333333 / anchor refed_retail value 1076.3365672473) = 3097.407659138453172360159965.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "dairy",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "366.7822904053",
-      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED stage share for consumer_institution (from refed_dairy_eggs, normalised over the ReFED sectors it publishes): 0.5 x 0.2633545995857135316744606915 (refed_foodservice) = 0.1316772997928567658372303458. 2785.463333333333333333333333 x 0.1316772997928567658372303458 = 366.7822904053434498248577631 -> 366.7822904053 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3097.4076591385",
+      "source_note": "Rawtec farm-to-shelf total for dairy: mean of 6 client row(s): Cheese (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Milk (Dairy) = 420.39 [Farm to Supermarket Shelf]; Cream (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Butter (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Yoghurt (Dairy) = 3968.00 [Farm to Supermarket Shelf]; Other dairy (Dairy) = 420.39 [Farm to Supermarket Shelf] -> unweighted mean 2785.463333333333333333333333. ReFED refed_dairy_eggs refed_foodservice stage (1196.8756103542) x scale 2.587911084779992355371905918 (= client total 2785.463333333333333333333333 / anchor refed_retail value 1076.3365672473) = 3097.407659138453172360159965.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
-      "food_category": "dairy",
-      "destination": "prevention",
-      "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
-      "data_quality": "definitional"
-    },
-    {
-      "sector": "processing",
       "food_category": "dairy",
       "destination": "prevention",
       "metric": "water",
@@ -1311,6 +1302,15 @@
       "data_quality": "definitional"
     },
     {
+      "sector": "processing",
+      "food_category": "dairy",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
       "sector": "wholesale_retail",
       "food_category": "dairy",
       "destination": "prevention",
@@ -1351,54 +1351,54 @@
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED stage share for primary_production (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 2.766666666666666666666666667 x 0 = 0E-27 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.8183576113",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. No ReFED Farm-stage value published for refed_breads_bakery. Filled from Poore & Nemecek (2018) via Our World in Data (public_farm_share_source_data.py, read 2026-09-05): farm-share of Wheat & Rye = 0.6572376908274192341062188503 -> unweighted mean 0.6572376908274192341062188503. 2.766666666666666666666666667 x 0.6572376908274192341062188503 = 1.818357611289193214360538819 -> 1.8183576113.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.6591159848",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED stage share for processing (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0.2382346933183818766666061444 (refed_manufacturing) = 0.2382346933183818766666061444. 2.766666666666666666666666667 x 0.2382346933183818766666061444 = 0.6591159848475231921109436663 -> 0.6591159848 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.7306582492",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED refed_breads_bakery refed_manufacturing stage (2.2396534216) x scale 1.219232503937939351455553833 (= client total 2.766666666666666666666666667 / anchor refed_retail value 2.2691870974) = 2.730658249170541342540716082.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.6678075608",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED stage share for wholesale_retail (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0.2413762267935706685850294260 (refed_retail) = 0.2413762267935706685850294260. 2.766666666666666666666666667 x 0.2413762267935706685850294260 = 0.6678075607955455164185814120 -> 0.6678075608 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.7666666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED refed_breads_bakery refed_retail stage (2.2691870974) x scale 1.219232503937939351455553833 (= client total 2.766666666666666666666666667 / anchor refed_retail value 2.2691870974) = 2.766666666666666666666666667. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8481227257",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED stage share for consumer_household (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0.3065503827756252037613743434 (refed_residential) = 0.3065503827756252037613743434. 2.766666666666666666666666667 x 0.3065503827756252037613743434 = 0.8481227256792297304064690168 -> 0.8481227257 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3.5136961786",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED refed_breads_bakery refed_residential stage (2.8818918190) x scale 1.219232503937939351455553833 (= client total 2.766666666666666666666666667 / anchor refed_retail value 2.2691870974) = 3.513696178557632700677926333.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2958101977",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED stage share for consumer_hospitality (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 0.5 x 0.2138386971124222509869900861 (refed_foodservice) = 0.1069193485562111254934950430. 2.766666666666666666666666667 x 0.1069193485562111254934950430 = 0.2958101976721841138653362857 -> 0.2958101977 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.7666666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED refed_breads_bakery refed_foodservice stage (2.0103057325) x scale 1.219232503937939351455553833 (= client total 2.766666666666666666666666667 / anchor refed_retail value 2.2691870974) = 2.451030091916768302468432089. CLAMPED UP to 2.766666666666666666666666667 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (2.451030091916768302468432089) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2958101977",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED stage share for consumer_institution (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 0.5 x 0.2138386971124222509869900861 (refed_foodservice) = 0.1069193485562111254934950430. 2.766666666666666666666666667 x 0.1069193485562111254934950430 = 0.2958101976721841138653362857 -> 0.2958101977 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.7666666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1.46 [Farm to Supermarket Shelf]; Bakery (Bakery) = 4.28 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2.56 [Farm to Supermarket Shelf] -> unweighted mean 2.766666666666666666666666667. ReFED refed_breads_bakery refed_foodservice stage (2.0103057325) x scale 1.219232503937939351455553833 (= client total 2.766666666666666666666666667 / anchor refed_retail value 2.2691870974) = 2.451030091916768302468432089. CLAMPED UP to 2.766666666666666666666666667 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (2.451030091916768302468432089) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1459,54 +1459,54 @@
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED stage share for primary_production (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 2033.926666666666666666666667 x 0 = 0E-24 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1830.5340000000",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. No ReFED Farm-stage value published for refed_breads_bakery, and no public per-stage water breakdown was found (see public_farm_share_source_data.py). STATED ASSUMPTION, not a citation: primary production is assumed to account for 0.90 of the client's total water figure, on the general finding that irrigation dominates agricultural freshwater withdrawal. 2033.926666666666666666666667 x 0.90 = 1830.534000000000000000000000 -> 1830.5340000000.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "508.4816666667",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED stage share for processing (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0.25 (refed_manufacturing) = 0.25. 2033.926666666666666666666667 x 0.25 = 508.4816666666666666666666668 -> 508.4816666667 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2033.9266666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED refed_breads_bakery refed_manufacturing stage (80.8687542020) x scale 25.15095832422709375703740567 (= client total 2033.926666666666666666666667 / anchor refed_retail value 80.8687542020) = 2033.926666666666666666666667.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "508.4816666667",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED stage share for wholesale_retail (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0.25 (refed_retail) = 0.25. 2033.926666666666666666666667 x 0.25 = 508.4816666666666666666666668 -> 508.4816666667 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2033.9266666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED refed_breads_bakery refed_retail stage (80.8687542020) x scale 25.15095832422709375703740567 (= client total 2033.926666666666666666666667 / anchor refed_retail value 80.8687542020) = 2033.926666666666666666666667. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "508.4816666667",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED stage share for consumer_household (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 1 x 0.25 (refed_residential) = 0.25. 2033.926666666666666666666667 x 0.25 = 508.4816666666666666666666668 -> 508.4816666667 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2033.9266666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED refed_breads_bakery refed_residential stage (80.8687542020) x scale 25.15095832422709375703740567 (= client total 2033.926666666666666666666667 / anchor refed_retail value 80.8687542020) = 2033.926666666666666666666667.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "254.2408333333",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED stage share for consumer_hospitality (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 0.5 x 0.25 (refed_foodservice) = 0.125. 2033.926666666666666666666667 x 0.125 = 254.2408333333333333333333334 -> 254.2408333333 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2033.9266666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED refed_breads_bakery refed_foodservice stage (80.8687542020) x scale 25.15095832422709375703740567 (= client total 2033.926666666666666666666667 / anchor refed_retail value 80.8687542020) = 2033.926666666666666666666667.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "bakery_grains",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "254.2408333333",
-      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED stage share for consumer_institution (from refed_breads_bakery, normalised over the ReFED sectors it publishes): 0.5 x 0.25 (refed_foodservice) = 0.125. 2033.926666666666666666666667 x 0.125 = 254.2408333333333333333333334 -> 254.2408333333 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2033.9266666667",
+      "source_note": "Rawtec farm-to-shelf total for bakery_grains: mean of 3 client row(s): Bread (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Bakery (Bakery) = 1608.00 [Farm to Supermarket Shelf]; Grains (Grains, Nuts, Seeds) = 2885.78 [Farm to Supermarket Shelf] -> unweighted mean 2033.926666666666666666666667. ReFED refed_breads_bakery refed_foodservice stage (80.8687542020) x scale 25.15095832422709375703740567 (= client total 2033.926666666666666666666667 / anchor refed_retail value 80.8687542020) = 2033.926666666666666666666667.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1567,54 +1567,54 @@
       "food_category": "beverages",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED stage share for primary_production (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 2.01 x 0 = 0.00 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "0.9388955359",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). No ReFED Farm-stage value published for refed_ready_to_drink_beverages. Filled from Poore & Nemecek (2018) via Our World in Data (public_farm_share_source_data.py, read 2026-09-05): farm-share of Wine, Coffee, Soy milk = 0.3562660640163229719794465828, 0.8541875689844816506436498509, 0.2985161908225764551344147117 -> unweighted mean 0.5029899412744603592525037153. 2.01 x 0.5029899412744603592525037153 = 1.011009781961665322097532468 -> 1.0110097820. CLAMPED DOWN to 0.9388955359276049213231704373 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (1.011009781961665322097532468) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "beverages",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.2184311905",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED stage share for processing (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0.1086722340718396102979413261 (refed_manufacturing) = 0.1086722340718396102979413261. 2.01 x 0.1086722340718396102979413261 = 0.2184311904843976166988620655 -> 0.2184311905 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "0.9388955359",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_manufacturing stage (1.2055679272) x scale 0.7787993648008230799283745555 (= client total 2.01 / anchor refed_residential value 2.5808957876) = 0.9388955359276049213231704373.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "beverages",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.3228576099",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0.1606256765626887558742471173 (refed_retail) = 0.1606256765626887558742471173. 2.01 x 0.1606256765626887558742471173 = 0.3228576098910043993072367058 -> 0.3228576099 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "1.3877577099",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_retail stage (1.7819194167) x scale 0.7787993648008230799283745555 (= client total 2.01 / anchor refed_residential value 2.5808957876) = 1.387757709852213174265866666.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "beverages",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.4676203859",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0.2326469581821934570795392918 (refed_residential) = 0.2326469581821934570795392918. 2.01 x 0.2326469581821934570795392918 = 0.4676203859462088487298739765 -> 0.4676203859 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "2.0100000000",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_residential stage (2.5808957876) x scale 0.7787993648008230799283745555 (= client total 2.01 / anchor refed_residential value 2.5808957876) = 2.010000000000000000000000000. This is the anchor stage (client's own 'Farm to Fork' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "beverages",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.5005454068",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 0.5 x 0.4980551311832781767482722648 (refed_foodservice) = 0.2490275655916390883741361324. 2.01 x 0.2490275655916390883741361324 = 0.5005454068391945676320136261 -> 0.5005454068 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4.3030470783",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_foodservice stage (5.5252318797) x scale 0.7787993648008230799283745555 (= client total 2.01 / anchor refed_residential value 2.5808957876) = 4.303047078287617722019796287.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "beverages",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.5005454068",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 0.5 x 0.4980551311832781767482722648 (refed_foodservice) = 0.2490275655916390883741361324. 2.01 x 0.2490275655916390883741361324 = 0.5005454068391945676320136261 -> 0.5005454068 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4.3030470783",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 2.01 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_foodservice stage (5.5252318797) x scale 0.7787993648008230799283745555 (= client total 2.01 / anchor refed_residential value 2.5808957876) = 4.303047078287617722019796287.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1675,54 +1675,54 @@
       "food_category": "beverages",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "0.0000000000",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED stage share for primary_production (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0E+10 (refed_farm) = 0. 438.00 x 0 = 0.00 -> 0.0000000000 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "394.2000000000",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). No ReFED Farm-stage value published for refed_ready_to_drink_beverages, and no public per-stage water breakdown was found (see public_farm_share_source_data.py). STATED ASSUMPTION, not a citation: primary production is assumed to account for 0.90 of the client's total water figure, on the general finding that irrigation dominates agricultural freshwater withdrawal. 438.00 x 0.90 = 394.2000 -> 394.2000000000.",
+      "data_quality": "derived-client-public-data"
     },
     {
       "sector": "processing",
       "food_category": "beverages",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "135.9526458265",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED stage share for processing (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0.3103941685536153270752850604 (refed_manufacturing) = 0.3103941685536153270752850604. 438.00 x 0.3103941685536153270752850604 = 135.9526458264835132589748565 -> 135.9526458265 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "438.0000000000",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_manufacturing stage (112.7335518082) x scale 6.360375903550599783222477812 (= client total 438.00 / anchor refed_residential value 68.8638543762) = 717.0277664425484269920948916. CLAMPED DOWN to 438.0000000000000000000000000 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (717.0277664425484269920948916) exceeded the next stage's resolved value, which would have made the footprint decrease later in the chain.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "beverages",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "83.0473541735",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0.1896058314463846729247149396 (refed_retail) = 0.1896058314463846729247149396. 438.00 x 0.1896058314463846729247149396 = 83.04735417351648674102514354 -> 83.0473541735 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "438.0000000000",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_retail stage (68.8638543762) x scale 6.360375903550599783222477812 (= client total 438.00 / anchor refed_residential value 68.8638543762) = 438.0000000000000000000000000.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "beverages",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "83.0473541735",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 1 x 0.1896058314463846729247149396 (refed_residential) = 0.1896058314463846729247149396. 438.00 x 0.1896058314463846729247149396 = 83.04735417351648674102514354 -> 83.0473541735 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "438.0000000000",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_residential stage (68.8638543762) x scale 6.360375903550599783222477812 (= client total 438.00 / anchor refed_residential value 68.8638543762) = 438.0000000000000000000000000. This is the anchor stage (client's own 'Farm to Fork' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "beverages",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "67.9763229132",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 0.5 x 0.3103941685536153270752850604 (refed_foodservice) = 0.1551970842768076635376425302. 438.00 x 0.1551970842768076635376425302 = 67.97632291324175662948742823 -> 67.9763229132 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "717.0277664425",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_foodservice stage (112.7335518082) x scale 6.360375903550599783222477812 (= client total 438.00 / anchor refed_residential value 68.8638543762) = 717.0277664425484269920948916.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "beverages",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "67.9763229132",
-      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_ready_to_drink_beverages, normalised over the ReFED sectors it publishes): 0.5 x 0.3103941685536153270752850604 (refed_foodservice) = 0.1551970842768076635376425302. 438.00 x 0.1551970842768076635376425302 = 67.97632291324175662948742823 -> 67.9763229132 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "717.0277664425",
+      "source_note": "Rawtec farm-to-fork total for beverages: client row: Drinks/Beverages (excluding dairy) (Drinks) = 438.00 [Farm to Fork] (used directly, no aggregation). ReFED refed_ready_to_drink_beverages refed_foodservice stage (112.7335518082) x scale 6.360375903550599783222477812 (= client total 438.00 / anchor refed_residential value 68.8638543762) = 717.0277664425484269920948916.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1783,54 +1783,54 @@
       "food_category": "standard_mix",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.0942399264",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.01560263682685978788642337582 (refed_farm) = 0.01560263682685978788642337582. 6.04 x 0.01560263682685978788642337582 = 0.09423992643423311883399718995 -> 0.0942399264 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "0.3729210619",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_farm stage (0.2689710636) x scale 1.386472793336918817627766661 (= client total 6.04 / anchor refed_retail value 4.3563783069) = 0.3729210618762940475241948277.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.1968403562",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.1981523768583311142357626276 (refed_manufacturing) = 0.1981523768583311142357626276. 6.04 x 0.1981523768583311142357626276 = 1.196840356224319929984006271 -> 1.1968403562 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4.7360709354",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_manufacturing stage (3.4159133581) x scale 1.386472793336918817627766661 (= client total 6.04 / anchor refed_retail value 4.3563783069) = 4.736070935401801663029945891.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.5263529306",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.2527074388345878229123759001 (refed_retail) = 0.2527074388345878229123759001. 6.04 x 0.2527074388345878229123759001 = 1.526352930560910450390750437 -> 1.5263529306 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6.0400000000",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_retail stage (4.3563783069) x scale 1.386472793336918817627766661 (= client total 6.04 / anchor refed_retail value 4.3563783069) = 6.040000000000000000000000001. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "1.4479545342",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.2397275718806832709287160177 (refed_residential) = 0.2397275718806832709287160177. 6.04 x 0.2397275718806832709287160177 = 1.447954534159326956409444747 -> 1.4479545342 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "6.0400000000",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_residential stage (4.1326207037) x scale 1.386472793336918817627766661 (= client total 6.04 / anchor refed_retail value 4.3563783069) = 5.729766170860922115294633023. CLAMPED UP to 6.04 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (5.729766170860922115294633023) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8873061263",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_standard_mix, normalised over the ReFED sectors it publishes): 0.5 x 0.2938099755995380040367220789 (refed_foodservice) = 0.1469049877997690020183610394. 6.04 x 0.1469049877997690020183610394 = 0.8873061263106047721909006780 -> 0.8873061263 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7.0223981566",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_foodservice stage (5.0649375814) x scale 1.386472793336918817627766661 (= client total 6.04 / anchor refed_retail value 4.3563783069) = 7.022398156560795631483728157.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "co2e",
-      "value_per_kg": "0.8873061263",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_standard_mix, normalised over the ReFED sectors it publishes): 0.5 x 0.2938099755995380040367220789 (refed_foodservice) = 0.1469049877997690020183610394. 6.04 x 0.1469049877997690020183610394 = 0.8873061263106047721909006780 -> 0.8873061263 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "7.0223981566",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 6.04 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_foodservice stage (5.0649375814) x scale 1.386472793336918817627766661 (= client total 6.04 / anchor refed_retail value 4.3563783069) = 7.022398156560795631483728157.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1891,54 +1891,54 @@
       "food_category": "standard_mix",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "90.1516006552",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for primary_production (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.02851996224461610102935677965 (refed_farm) = 0.02851996224461610102935677965. 3161 x 0.02851996224461610102935677965 = 90.15160065523149535379678047 -> 90.1516006552 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "381.7599766536",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_farm stage (154.0636418781) x scale 2.477936857780145502210593993 (= client total 3161 / anchor refed_retail value 1275.6580096362) = 381.7599766535847483970834248.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "processing",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "731.7181992623",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for processing (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.2314831380140165898909951437 (refed_manufacturing) = 0.2314831380140165898909951437. 3161 x 0.2314831380140165898909951437 = 731.7181992623064406454356492 -> 731.7181992623 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3098.5664218617",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_manufacturing stage (1250.4622190565) x scale 2.477936857780145502210593993 (= client total 3161 / anchor refed_retail value 1275.6580096362) = 3098.566421861651591301706991.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "wholesale_retail",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "746.4617222820",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for wholesale_retail (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.2361473338443661249037921236 (refed_retail) = 0.2361473338443661249037921236. 3161 x 0.2361473338443661249037921236 = 746.4617222820413208208869027 -> 746.4617222820 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3161.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_retail stage (1275.6580096362) x scale 2.477936857780145502210593993 (= client total 3161 / anchor refed_retail value 1275.6580096362) = 3161.000000000000000000000000. This is the anchor stage (client's own 'Farm to Supermarket Shelf' total, stored exactly).",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_household",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "472.1771135271",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_household (from refed_standard_mix, normalised over the ReFED sectors it publishes): 1 x 0.1493758663483488155370026867 (refed_residential) = 0.1493758663483488155370026867. 3161 x 0.1493758663483488155370026867 = 472.1771135271306059124654927 -> 472.1771135271 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "3161.0000000000",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_residential stage (806.9221754551) x scale 2.477936857780145502210593993 (= client total 3161 / anchor refed_retail value 1275.6580096362) = 1999.502199920329744435984031. CLAMPED UP to 3161 to preserve the non-decreasing cumulative-footprint invariant (see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): the raw candidate (1999.502199920329744435984031) was lower than wholesale_retail's resolved value, which a consumer-stage sector may not fall below.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_hospitality",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "560.2456821366",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_hospitality (from refed_standard_mix, normalised over the ReFED sectors it publishes): 0.5 x 0.3544736995486523686388532664 (refed_foodservice) = 0.1772368497743261843194266332. 3161 x 0.1772368497743261843194266332 = 560.2456821366450686337075875 -> 560.2456821366 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4744.8825529055",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_foodservice stage (1914.8520826944) x scale 2.477936857780145502210593993 (= client total 3161 / anchor refed_retail value 1275.6580096362) = 4744.882552905528867213424547.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "consumer_institution",
       "food_category": "standard_mix",
       "destination": null,
       "metric": "water",
-      "value_per_kg": "560.2456821366",
-      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED stage share for consumer_institution (from refed_standard_mix, normalised over the ReFED sectors it publishes): 0.5 x 0.3544736995486523686388532664 (refed_foodservice) = 0.1772368497743261843194266332. 3161 x 0.1772368497743261843194266332 = 560.2456821366450686337075875 -> 560.2456821366 (DECIMAL(20,10)).",
-      "data_quality": "derived-client-refed-split"
+      "value_per_kg": "4744.8825529055",
+      "source_note": "Rawtec farm-to-shelf total for standard_mix: client row: General mixed food product (Grains, Nuts, Seeds) = 3161 [Farm to Supermarket Shelf] (used directly, no aggregation). ReFED refed_standard_mix refed_foodservice stage (1914.8520826944) x scale 2.477936857780145502210593993 (= client total 3161 / anchor refed_retail value 1275.6580096362) = 4744.882552905528867213424547.",
+      "data_quality": "derived-client-refed-shape"
     },
     {
       "sector": "primary_production",
@@ -1988,6 +1988,222 @@
     {
       "sector": "consumer_institution",
       "food_category": "standard_mix",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0287959349",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_farm stage = 4.0287959349.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0287959349",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_manufacturing stage = 2.2022018878. CLAMPED to 4.0287959349 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (2.2022018878) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0287959349",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_retail stage = 3.0981604453. CLAMPED to 4.0287959349 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (3.0981604453) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0287959349",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_residential stage = 3.6767825595. CLAMPED to 4.0287959349 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (3.6767825595) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0287959349",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_foodservice stage = 3.0963366703. CLAMPED to 4.0287959349 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (3.0963366703) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "co2e",
+      "value_per_kg": "4.0287959349",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_foodservice stage = 3.0963366703. CLAMPED to 4.0287959349 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (3.0963366703) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "co2e",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "2325.2841988065",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_farm stage = 2325.2841988065.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "2325.2841988065",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_manufacturing stage = 517.9211287876. CLAMPED to 2325.2841988065 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (517.9211287876) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "2325.2841988065",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_retail stage = 539.2255413825. CLAMPED to 2325.2841988065 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (539.2255413825) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "2325.2841988065",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_residential stage = 539.2255413825. CLAMPED to 2325.2841988065 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (539.2255413825) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "2325.2841988065",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_foodservice stage = 517.9211287876. CLAMPED to 2325.2841988065 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (517.9211287876) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
+      "destination": null,
+      "metric": "water",
+      "value_per_kg": "2325.2841988065",
+      "source_note": "No client (Rawtec) row exists for 'staples'. Filled entirely from ReFED's own Dry Goods figures (the closest available ReFED category to a New Zealand 'staples/pantry basics' grouping -- also used for nuts_seeds), used directly with no client total to scale against: ReFED refed_dry_goods refed_foodservice stage = 517.9211287876. CLAMPED to 2325.2841988065 (forward running-maximum, no anchor to work back from -- see module docstring, 'ENFORCING THE NON-DECREASING INVARIANT'): ReFED's own raw value (517.9211287876) was lower than an earlier stage's (or, for a consumer-stage sector, lower than wholesale_retail's) resolved value.",
+      "data_quality": "derived-refed-unanchored"
+    },
+    {
+      "sector": "primary_production",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "processing",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "wholesale_retail",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_household",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_hospitality",
+      "food_category": "staples",
+      "destination": "prevention",
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "Zero by definition. 'prevention' is the mandatory 100% offset (contract \u00a7O-7): food that was never produced in excess carries no upstream footprint. Not a client or ReFED figure.",
+      "data_quality": "definitional"
+    },
+    {
+      "sector": "consumer_institution",
+      "food_category": "staples",
       "destination": "prevention",
       "metric": "water",
       "value_per_kg": "0.0000000000",
@@ -2202,6 +2418,33 @@
       "value_per_kg": "-2.8000000000",
       "source_note": "Rawtec table 2 ('bin to destination'), client row: Upcycled (Bin to Product) = -2.80 (used directly, no aggregation). The water column does not share that defect and looks like an independent measurement -- see docs/upstream-factors-draft.md.",
       "data_quality": "client-table2"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "co2e",
+      "value_per_kg": "-0.0331116624",
+      "source_note": "No client (Rawtec) destination row exists for 'other_recovery' ('Other recovery, including biodiesel'); the client's own 'Other Food Waste' is a disposal row (Bin to Landfill) and is deliberately not folded in here. Filled instead from ReFED's own 'Industrial Uses' destination (tests/benchmark/refed/refed-benchmark-factors.json), which sits in the same recycle_recovery-equivalent group as other_recovery -- an unweighted mean across all 39 published (sector, food category) rows: min -0.3177516707, max 0E-10, mean -0.03311166244102564102564102564.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "other_recovery",
+      "sector": null,
+      "food_category": null,
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "No client destination row exists for 'other_recovery'. ReFED's own water figure for its 'Industrial Uses' destination (same match as the co2e row above) is exactly zero across all 39 published (sector, food category) rows; adopted directly as a sourced zero, not an invented one.",
+      "data_quality": "derived-refed"
+    },
+    {
+      "destination": "combustion",
+      "sector": null,
+      "food_category": null,
+      "metric": "water",
+      "value_per_kg": "0.0000000000",
+      "source_note": "The client's own table prints `null` for Incineration's water column (no measurement offered). Rather than leave this an absence or invent a figure, ReFED's own water value for its 'Incineration' destination is used: it is exactly zero across all 39 published (sector, food category) rows in refed-benchmark-factors.json -- ReFED's own model assigns waste-to-energy combustion no process water at all. Adopted here as a real, sourced zero, not a silent one.",
+      "data_quality": "derived-refed"
     },
     {
       "destination": "prevention",

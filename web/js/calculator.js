@@ -691,6 +691,20 @@ function moneyContradictionValidation() {
  * an `amountFieldError` in `amountStep` alongside `amountOnlyValidation`'s own
  * messages** — unlike the money contradiction above, there is no other field on this
  * screen a mass contradiction could belong to instead.
+ *
+ * **Decision, recorded rather than acted on:** refusing "produced 0, wasted more than
+ * 0" (a legitimate case of this same contradiction — `exceedsTotal(wasteKg, 0)` is true
+ * for any positive waste) makes the server's `production_share_percent: "undefined"`
+ * state (§4.6, added at v1.51 for exactly a stated zero production total) unreachable
+ * from this form, while its copy still ships on the results page, the text export and
+ * the PDF. The refusal stays — a zero production total alongside non-zero waste is a
+ * genuine contradiction and this check exists to catch exactly that shape of it — but
+ * that `undefined` state is not thereby dead: it remains reachable for a submission
+ * made before this change (nothing here touches a stored `submission` row) and for a
+ * caller that reaches the API directly, bypassing this client-side check entirely
+ * (§7.6.1 — this form calculates nothing and refuses nothing the server itself relies
+ * on). So it is a defensive state, not dead copy, and this comment is that record —
+ * not a contract change: `docs/interfaces.md` is unaffected and untouched.
  */
 function massContradictionValidation() {
   if (state.totalInputKg === '') return ''

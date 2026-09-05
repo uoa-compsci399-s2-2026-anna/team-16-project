@@ -1001,6 +1001,41 @@ def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(pa
 
 
 @pytest.mark.parametrize(
+    "total_value,wasted_value",
+    [
+        pytest.param("", "47.00", id="value_handled_blank"),
+        pytest.param("46.00", "", id="value_wasted_blank"),
+        pytest.param("", "", id="both_blank"),
+    ],
+)
+def test_a_blank_money_field_is_exempt_from_the_contradiction_check(page_at, total_value, wasted_value):
+    """**Both money fields are optional by design (§4.5), and the mass side of
+    this same round already has its own test for this
+    (`test_the_production_total_is_optional_and_continue_still_works`); the
+    money side had none.** `moneyContradictionValidation` returns early on a
+    blank `#total-value` or `#wasted-value` - untested, that guard could be
+    deleted and the whole file would still pass while a blank optional field
+    was refused outright, exactly the `not_supplied`/`incomplete` regression
+    the four-state `data_state` model at v1.51 exists to keep the calculator
+    out of.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1000")
+    if total_value:
+        page.fill("#total-value", total_value)
+    if wasted_value:
+        page.fill("#wasted-value", wasted_value)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+
+    assert page.locator(".destination-row").count() > 0, (
+        f"a blank money field (total={total_value!r}, wasted={wasted_value!r}) "
+        "was refused as though it contradicted the other"
+    )
+
+
+@pytest.mark.parametrize(
     "total_value,wasted_value,should_refuse",
     [
         pytest.param("47.00", "47.00", False, id="exactly_equal_at_the_cent"),

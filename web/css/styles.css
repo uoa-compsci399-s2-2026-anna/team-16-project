@@ -929,7 +929,38 @@ tbody th { font-weight: 700; }
    the nested grid. Already used elsewhere in this file (`.main-content:has(.hero)`), so
    this is the same tool, not a new dependency. */
 .improvement-allocation-row:has(.improvement-control-unit) { grid-template-columns: minmax(120px, 0.55fr) minmax(260px, 1.45fr); }
-.improvement-control-unit { grid-template-columns: minmax(50px, 1fr) minmax(55px, 100px) minmax(85px, 170px); gap: 8px; }
+/* Item ⑨: the range is the control a visitor actually drags; the select is a choice made
+   once and does not need to compete with it for room. The three tracks were `1fr / 100px /
+   170px` - the select's own upper bound (170px) wider than the box's, and the range's lower
+   bound (50px) low enough to leave it a stub once the other two claimed their own space, which
+   is what the client's screenshot showed ("23 L kerbside foo…" next to a squeezed thumb). The
+   range now carries a real minimum of its own and the select's own ceiling is lower than the
+   range's - the range still grows into whatever the row has left (`1fr`), the select does not
+   grow past a sensible width for a closed control, and a name too long for that width relies on
+   the select's own `title` (see `DestinationAllocationRow`), not on the track widening for it.
+
+   **The three minimums must sum to no more than the row's own `:has()` floor above (260px),
+   gaps included, or the row silently overflows its own `.improvement-allocation-list`
+   (`overflow: hidden`) the moment that floor is the width actually on offer - which is every
+   viewport from the mobile stack (480px) up to where `.improvement-editor`'s two-column split
+   stops squeezing it (roughly 900px), not merely one measured breakpoint.** A first pass here
+   used `140/55/80` - 291px including gaps, 31px over the 260px floor - which fit in English
+   only by coincidence of where the row happened to sit; in `dir="rtl"` the overflow was real
+   and clipped the select half off the left edge, invisibly, because clipped content raises no
+   scrollbar.
+
+   **A track's growth past its own minimum is not "whatever's left goes to the `1fr` track
+   first" - grid fills every `minmax(min, <length>)` track up to its own fixed ceiling BEFORE
+   a `1fr` track gets anything at all** (the spec's own "Maximize Tracks" step runs before
+   "Expand Flexible Tracks"). A first pass at `110/55/65` with box/select ceilings of `90/130`
+   spent the tightest budget's entire few pixels of slack on the box and select, leaving the
+   range sitting at its bare minimum while the other two grew past theirs - the opposite of
+   the stated goal. Fixed by giving the range a minimum that is already the majority of the
+   260px floor on its own (130 of 244 available past gaps), so the outcome does not depend on
+   which track the grid algorithm happens to feed first, and by lowering the box's and
+   select's own ceilings (90/100, down from 90/130) so they stop growing sooner at wider
+   viewports too, leaving the surplus for the range rather than the select. */
+.improvement-control-unit { grid-template-columns: minmax(130px, 1fr) minmax(50px, 90px) minmax(60px, 100px); gap: 8px; }
 .improvement-control-unit .percentage-input { display: contents; }
 .improvement-row-unit { max-width: 100%; min-width: 0; font: inherit; }
 .improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }

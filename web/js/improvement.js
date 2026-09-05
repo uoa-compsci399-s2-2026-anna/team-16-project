@@ -227,27 +227,28 @@ export function resetImprovement(state) {
   setState({ improvedAllocations: currentAllocationPercentages(state), improvementResult: null, improvementError: null })
 }
 
-// Each slider's own ceiling is its current value plus whatever is unallocated —
-// `headroom = 100 - allocationTotal(...)` — so dragging one destination to its own limit
-// leaves every other destination's slider unable to move at all. Recomputed after every
-// change, here and in the row template's first render, from the same two numbers.
+// **A slider's `max` is fixed, never derived from headroom, and never recomputed after the
+// row is drawn.** The previous round floored this at the row's own current value so the
+// browser's silent "assigning a lower `max` clamps `.value`" could not fire against an
+// UNTOUCHED row — but every OTHER slider's `max` was still recomputed from the remaining
+// headroom on every keystroke, and a thumb's rendered position is `value / max`. Dragging
+// one destination down grows the headroom, which grows every sibling's `max`, which moves
+// their thumb left even though their stored `value` never changed — "I drag one and the
+// others move" survives even once the value itself is protected. A fixed maximum removes
+// the only thing that was making a sibling's thumb move: nothing about ANY other row's edit
+// changes THIS row's `max` ever again, so `value / max` — and therefore the thumb — depends
+// on nothing but this row's own value.
 //
-// **The result is never less than `value` itself, and that floor is not decoration.** The
-// bare `Math.round((value + headroom) * 100) / 100` this replaced can round *down* past
-// `value` when `value` itself carries more than two decimal places — a three-way 33.333…%
-// split, or any allocation `kgToPercentage` produced rather than a human typing two decimal
-// places — and `headroom` is at or near zero. `max` on an `<input type="range">` is not a
-// suggestion: the browser clamps `.value` the instant a lower `max` is assigned, silently,
-// with no event fired for anything to react to. So a slider nobody had touched would sit at
-// a different number the moment any OTHER row's edit forced this recomputation — visible on
-// screen as one destination "chasing" another, which is what the client reported as sliders
-// dragging each other around. It was never the recomputation itself: two sliders sharing
-// one 100% ARE meant to shrink each other's headroom, on purpose, and that coupling stays.
-// It was this rounding occasionally handing an *untouched* row a ceiling below the value it
-// already held. The fix is the floor, not removing the recomputation.
-function sliderMax(value, headroom) {
-  const numericValue = typed(value)
-  return Math.max(numericValue, Math.round((numericValue + headroom) * 100) / 100, 0)
+// `100` in percentage mode; the whole mass being redistributed, in this row's own display
+// unit, in unit mode (`kgToUnitAmount(totalKg, rowUnit, presets)`, computed once at the call
+// site below, where `totalKg` and `rowUnit` already are). The 100%-total rule has not gone
+// away — it is now enforced only on the control being dragged, in `updateImprovementInput`'s
+// per-input ceiling clamp, which never touches a sibling row's DOM at all.
+function fixedRowMax(mode, totalKg, rowUnit, presets) {
+  if (mode !== 'unit') return '100'
+  const wholeAmount = kgToUnitAmount(totalKg, rowUnit, presets)
+  const precision = unitDisplayPrecision(rowUnit, presets)
+  return Number.isFinite(wholeAmount) && wholeAmount > 0 ? wholeAmount.toFixed(precision) : '0'
 }
 
 // The pointer-drag granularity: half a percentage point of the mass being redistributed,
@@ -306,19 +307,20 @@ function rangeStep(mode, totalKg, rowUnit, presets) {
  * number, is rounded here instead, to `rangeStep`'s own coarseness, only when `control`
  * is the range itself.
  *
- * **The one coupling the client asked for — an upper bound, on the SLIDER only.** A
- * number box has always been allowed to hold a figure `improvementValidation` will refuse
- * — that is what disables Compare and shows the message, and rewriting it here would take
- * away the number a visitor typed the moment it went out of range, which is a different
- * defect `test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number`
- * exists to catch (a clamp is exactly the "rewrite the number" that guard may not do). A
- * range control has no such freedom to begin with — `<input type="range">` cannot represent
- * a value outside its own `min`/`max` at all — so `ceiling` here only ever tightens what a
- * DRAG (never a typed figure) can request, for the row being dragged, before the browser's
- * own clamp would otherwise land on whatever the coarse `rangeStep` snap rounded to. This
- * is not what stops one destination's edit from moving ANOTHER destination's slider —
- * `sliderMax`'s own floor (see its comment) is the whole reason that stopped — this is
- * only the affirmative half, restated for the control the client actually dragged.
+ * **The one coupling the client asked for — an upper bound, on the SLIDER only, enforced
+ * on the value being entered rather than on anyone else's `max`.** A number box has
+ * always been allowed to hold a figure `improvementValidation` will refuse — that is what
+ * disables Compare and shows the message, and rewriting it here would take away the number
+ * a visitor typed the moment it went out of range, which is a different defect
+ * `test_the_improvement_percentage_refuses_a_minus_without_rewriting_the_number` exists to
+ * catch (a clamp is exactly the "rewrite the number" that guard may not do). A range
+ * control's own `max` is now fixed (see `fixedRowMax`) and never shrunk to enforce this, so
+ * `ceiling` below — `this row's own current share plus whatever headroom the WHOLE
+ * allocation has left` — is what stops a drag from pushing the total over 100%: it clamps
+ * only the figure the control being dragged is about to store, never touches a sibling
+ * row's `max`, `value` or rendered thumb, and at exactly 100% it reduces to "clamp back to
+ * what this row already held" — a slider that cannot be increased, without moving anyone
+ * else's.
  */
 export function updateImprovementInput(control, state) {
   const code = control.dataset.improvementCode
@@ -351,8 +353,7 @@ export function updateImprovementInput(control, state) {
       const ceiling = Math.max(0, 100 - othersTotal)
       const clamped = Math.min(Math.max(0, numericPercentage), ceiling)
       if (clamped !== numericPercentage) {
-        // Rounded to the same two decimal places `sliderMax` already rounds a
-        // headroom-derived ceiling to: `othersTotal` is a running sum of floats, so
+        // Rounded to two decimal places: `othersTotal` is a running sum of floats, so
         // `ceiling` routinely lands a few units of float dust away from the clean
         // figure it means (`1.7999999999999998`, not `1.8`) — displaying that dust
         // on the control the visitor is looking at would read as a new, unexplained
@@ -366,29 +367,15 @@ export function updateImprovementInput(control, state) {
   state.improvedAllocations = { ...state.improvedAllocations, [code]: percentage }
   state.improvementResult = null
   state.improvementError = null
-  // **The `max` loop runs BEFORE the mirror loop, and the order is load-bearing.** Both
-  // read only `state.improvedAllocations` (just assigned above) and neither reads the
-  // other's DOM writes, so nothing about what either loop computes depends on which goes
-  // first — but a row's own box can hold a figure past its OWN old ceiling (typing past
-  // the ceiling is allowed on the box; see the docstring above), and that is exactly the
-  // `raw` value the mirror loop is about to assign to that row's *slider*. Mirroring it
-  // onto a slider whose `max` has not been raised yet triggers the same silent
-  // browser clamp `sliderMax`'s own floor exists to stop — a slider that had nothing to
-  // do with the drag being latched at its stale ceiling (box `8.20`, thumb `1.75`, `max`
-  // stuck at `1.75` until the max loop ran). Raising every slider's `max` first means the
-  // mirror loop's assignment always lands inside the ceiling that is about to admit it.
+  // **No sibling row's `max` is touched here, ever.** Every slider's `max` is fixed at
+  // render time (`fixedRowMax`) from `totalKg` and its OWN row unit alone, neither of which
+  // this function changes — so there is nothing left to recompute after a keystroke, and
+  // no loop-ordering question between "raise the ceiling" and "mirror the value" the way a
+  // headroom-derived `max` used to raise. Mirroring `raw` below can never be clamped by a
+  // stale ceiling on THIS row either, because this row's own ceiling never moves: typing
+  // past it (allowed on the box) mirrors straight onto the slider up to the fixed maximum,
+  // exactly as before, with no ordering to get wrong.
   const total = allocationTotal(state.improvedAllocations)
-  const headroom = 100 - total
-  document.querySelectorAll('input[type="range"][data-improvement-code]').forEach(slider => {
-    const sliderCode = slider.dataset.improvementCode
-    const maxPercent = sliderMax(state.improvedAllocations[sliderCode], headroom)
-    if (mode === 'unit') {
-      const sliderUnit = rowUnitFor(state, sliderCode)
-      slider.max = displayAmount(maxPercent, totalKg, sliderUnit, presets).toFixed(unitDisplayPrecision(sliderUnit, presets))
-    } else {
-      slider.max = String(maxPercent)
-    }
-  })
   // Mirrors the *raw* value, not the percentage just computed: every control sharing this
   // code is rendered in the same mode and the same row unit (§ `ImprovementScenario`), so
   // the slider and the number box always agree on which unit `.value` is in and a straight
@@ -522,7 +509,7 @@ export async function compareImprovement(state, toPublicMessage = error => error
 // m, mode, totalKg)` was already unreadable at the call site without counting commas
 // against the signature above it. `presets` and `rowUnit` joined them for the same reason
 // item ⑧'s per-row unit selector needs both.
-function DestinationAllocationRow({ destination, current, improved, max, mode, totalKg, presets, rowUnit }) {
+function DestinationAllocationRow({ destination, current, improved, mode, totalKg, presets, rowUnit }) {
   // The one interpolation on the branch that reached an attribute through neither
   // `escapeHtml` nor `slug`. `destination.code` is `VARCHAR(64)` with no pattern constraint
   // in `db/`, `api/` or `admin/`, and staff edit it through sqladmin's generic CRUD, so a
@@ -536,12 +523,9 @@ function DestinationAllocationRow({ destination, current, improved, max, mode, t
   const id = `improved-${slug(destination.code)}`
   const unitMode = mode === 'unit'
   // Item ⑧: the control's raw `.value` is in the displayed unit, never the stored
-  // percentage — `updateImprovementInput` is what converts back on the way in. `max` is
-  // this row's `improved` value plus whatever headroom the whole allocation has left (§
-  // `updateImprovementInput`), not the fixed `100` a slider starts and ends at regardless
-  // of its neighbours, converted into this row's own unit the same way the value is.
+  // percentage — `updateImprovementInput` is what converts back on the way in.
   //
-  // **Percentage mode prints `improved` / `max` exactly as it always did — no `.toFixed`
+  // **Percentage mode prints `improved` exactly as it always did — no `.toFixed`
   // added here.** `test_the_sliders_start_at_zero_and_the_total_says_so` reads the
   // sliders' own `.value` and requires the literal `"0"`; rounding every percentage to two
   // places for symmetry with the unit branch would have turned that into `"0.00"` for a
@@ -555,9 +539,14 @@ function DestinationAllocationRow({ destination, current, improved, max, mode, t
   // — 5.90 kg read back as "0.01" t, indistinguishable from anywhere between 5 and 15 kg.
   const precision = unitMode ? unitDisplayPrecision(rowUnit, presets) : 2
   const value = improved === '' ? '' : (unitMode ? displayAmount(improved, totalKg, rowUnit, presets).toFixed(precision) : improved)
-  const ceiling = unitMode ? displayAmount(max, totalKg, rowUnit, presets).toFixed(precision) : max
-  const wholeAmount = unitMode ? kgToUnitAmount(totalKg, rowUnit, presets) : Number.NaN
-  const numberMax = unitMode ? (Number.isFinite(wholeAmount) && wholeAmount > 0 ? wholeAmount.toFixed(precision) : '') : 100
+  // **Both controls' `max` are the same FIXED figure, and neither is ever touched again
+  // after this render.** `100` in percentage mode; the whole mass being redistributed, in
+  // THIS row's own unit, in unit mode — never this row's value plus headroom, and never
+  // recomputed from any other row's edit (see `fixedRowMax`). The 100%-total rule is
+  // enforced elsewhere, on the value being entered (`updateImprovementInput`'s own ceiling
+  // clamp), not by shrinking what a slider is even capable of reaching.
+  const ceiling = fixedRowMax(mode, totalKg, rowUnit, presets)
+  const numberMax = unitMode ? (ceiling === '0' ? '' : ceiling) : 100
   // The number box stays the exact-entry control and the slider the coarse one in both
   // modes: `step` here is the row's own display precision (two decimal places for
   // kilograms, more for tonnes and for a container — see `unitDisplayPrecision`), which for
@@ -601,8 +590,14 @@ function DestinationAllocationRow({ destination, current, improved, max, mode, t
   // `aria-label="${t('Unit')}"`, bare, is `calculator.js`'s own row unit `<select>` (step 4)
   // repeated rather than a new key: neither names the destination, and the row's own visible
   // label already does that for a screen reader reading the row as a whole.
+  // `title` carries the row's own unit name in full, unshortened — a container preset's
+  // label (§7.7.7's staff text, never `t()`) can run well past what the select's own
+  // bounded width shows (item ⑨), and `text-overflow: ellipsis` is not reliable on a closed
+  // `<select>` across browsers, so a hover/focus tooltip is what still makes the full name
+  // reachable rather than only ever guessable from what fits. The preset names themselves
+  // are never shortened — every option keeps `preset.label` verbatim (see `rowUnitOptionsHtml`).
   const unitControl = unitMode
-    ? `<select class="improvement-row-unit" data-improvement-unit-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Unit'))}">${rowUnitOptionsHtml(presets, rowUnit)}</select>`
+    ? `<select class="improvement-row-unit" data-improvement-unit-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(t('Unit'))}" title="${escapeHtml(unitName)}">${rowUnitOptionsHtml(presets, rowUnit)}</select>`
     : `<span>%</span>`
   return `<div class="improvement-allocation-row"><div><label for="${id}">${escapeHtml(destination.name)}</label><span>${escapeHtml(t('Current'))}: ${formatNumber(current, 2)}%</span></div><div class="improvement-control${unitMode ? ' improvement-control-unit' : ''}"><input id="${id}" type="range" min="0" max="${ceiling}" step="any" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(rangeLabel)}"><div class="percentage-input"><input type="number" min="0" max="${numberMax}" step="${boxStep}" inputmode="decimal" value="${escapeHtml(value)}" data-improvement-code="${escapeHtml(destination.code)}" aria-label="${escapeHtml(boxLabel)}">${unitControl}</div></div></div>`
 }
@@ -611,7 +606,6 @@ export function ImprovementScenario(state) {
   if (!state.improvementOpen) return `<section class="explore-improvements"><h2>${escapeHtml(t('Want to explore potential improvements?'))}</h2><p>${escapeHtml(t('Adjust how your food waste is managed to see how the environmental and economic impacts could change.'))}</p><button class="button button-primary" type="button" data-action="explore-improvements">${escapeHtml(t('Explore Improvements'))}</button></section>`
   const current = currentAllocationPercentages(state)
   const total = allocationTotal(state.improvedAllocations)
-  const headroom = 100 - total
   const error = improvementValidation(state)
   // Item ⑧: a site manager thinks in tonnes or bins diverted, not in percentage points.
   // This decides only what the sliders and boxes below *display* — see the note on
@@ -626,7 +620,7 @@ export function ImprovementScenario(state) {
   const modeField = `<div class="form-field improvement-mode-field"><label for="improvement-mode">${escapeHtml(t('Unit'))}</label><select id="improvement-mode"><option value="percentage" ${mode === 'percentage' ? 'selected' : ''}>${escapeHtml(t('Percentage'))}</option><option value="unit" ${mode === 'unit' ? 'selected' : ''}>${escapeHtml(t('Unit'))}</option></select></div>`
   return `<section class="improvement-scenario" aria-labelledby="improvement-title"><h2 id="improvement-title">${escapeHtml(t('Create an Improvement Scenario'))}</h2><p>${escapeHtml(t('Redistribute the current waste amount across different destinations. The total amount of waste should remain unchanged.'))}</p>${modeField}<div class="improvement-editor"><div class="improvement-pie-wrap"><div class="improvement-pie-content">${PieChart(state, sorted(state.taxonomy.destinations))}</div><button class="button button-secondary improvement-expand-chart" type="button" data-action="expand-improvement-chart"><span aria-hidden="true">⛶</span> ${escapeHtml(t('Total allocation'))}</button></div><div class="improvement-allocation-list">${sorted(state.taxonomy.destinations).map(destination => {
     const improved = state.improvedAllocations[destination.code] ?? 0
-    return DestinationAllocationRow({ destination, current: current[destination.code] || 0, improved, max: sliderMax(improved, headroom), mode, totalKg, presets, rowUnit: rowUnitFor(state, destination.code) })
+    return DestinationAllocationRow({ destination, current: current[destination.code] || 0, improved, mode, totalKg, presets, rowUnit: rowUnitFor(state, destination.code) })
   }).join('')}</div></div><div class="improvement-total ${error ? 'invalid' : ''}" aria-live="polite"><span>${escapeHtml(t('Total allocation'))}</span><strong id="improvement-total-value">${total.toFixed(2)}%</strong><span class="improvement-total-mass">${escapeHtml(t('Total mass'))}: <strong id="improvement-total-kg">${formatNumber(totalKg, 2)}</strong> kg</span></div><p class="field-error" id="improvement-inline-error" role="alert" ${error ? '' : 'hidden'}>${escapeHtml(error)}</p>${state.improvementError ? `<p class="field-error" role="alert">${escapeHtml(state.improvementError)}</p>` : ''}<div class="improvement-actions"><button class="button button-secondary" type="button" data-action="reset-improvement">${escapeHtml(t('Match the current allocation'))}</button><button class="button button-secondary" type="button" data-action="cancel-improvement">${escapeHtml(t('Cancel'))}</button><button class="button button-primary" type="button" data-action="compare-improvement" ${error || state.improvementLoading ? 'disabled' : ''}>${escapeHtml(state.improvementLoading ? t('Comparing…') : t('Compare Impact'))}</button></div>${state.improvementChartExpanded ? `<div class="improvement-chart-modal" role="dialog" aria-modal="true" aria-label="${escapeHtml(t('Total allocation'))}"><div class="improvement-chart-expanded"><button class="improvement-chart-close" type="button" data-action="close-improvement-chart" aria-label="${escapeHtml(t('Cancel'))}">×</button>${PieChart(state, sorted(state.taxonomy.destinations))}</div></div>` : ''}</section>`
 }
 

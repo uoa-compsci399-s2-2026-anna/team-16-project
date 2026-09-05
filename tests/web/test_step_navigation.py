@@ -1193,7 +1193,8 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
 
 
 def test_a_slider_cannot_be_dragged_past_what_is_left(page_at):
-    """**Item ⑨, and the rule it works within does not change.**
+    """**Item ⑨, and the rule it works within does not change - only WHERE it is
+    enforced.**
 
     `improvementValidation` requires the allocation to total exactly 100% -
     that is what keeps both scenarios moving the same mass, so net benefit
@@ -1201,21 +1202,41 @@ def test_a_slider_cannot_be_dragged_past_what_is_left(page_at):
     confirmed it stands. What is wrong is only that a slider will happily go
     past the remaining headroom and leave the visitor to notice.
 
-    So each slider's own `max` is its current value plus whatever is
-    unallocated. Pulling the first to 100 leaves the second unable to move
-    above 0.
+    **Every slider's `max` is now FIXED (see `fixedRowMax` in
+    `web/js/improvement.js`) - `100` in percentage mode, regardless of any
+    other row's value.** It is no longer this row's own value plus whatever is
+    unallocated: that was the earlier mechanism, and shrinking a max was what
+    moved an untouched row's THUMB even when its value did not (item ⑨ round
+    two's own report). The 100%-total rule is enforced instead on the value
+    being entered, in `updateImprovementInput`'s own ceiling clamp - so pulling
+    the first destination to 100% leaves the second UNABLE TO BE INCREASED
+    (an attempt to drag it up clamps straight back to what it already held),
+    while its `max` attribute never moves off the fixed `100` at all.
     """
     page = _improvement_panel(page_at)
     sliders = page.locator('input[type="range"][data-improvement-code]')
     assert sliders.count() >= 2, "need two destinations to test headroom"
 
+    max_before = sliders.nth(1).get_attribute("max")
+
     #: Everything to the first destination.
     sliders.nth(0).evaluate("el => { el.value = '100'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
     page.wait_for_timeout(80)
 
-    assert sliders.nth(1).get_attribute("max") == "0", (
-        "the second slider still offers headroom that does not exist"
+    assert sliders.nth(1).get_attribute("max") == max_before == "100", (
+        f"the second slider's own max moved off its fixed figure: {max_before!r} -> "
+        f"{sliders.nth(1).get_attribute('max')!r}"
     )
+
+    #: The second destination has no headroom left (the first took it all) -
+    #: dragging it up must be refused, even though nothing shrank its `max`.
+    sliders.nth(1).evaluate("el => { el.value = '50'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert sliders.nth(1).input_value() == "0", (
+        f"the second slider still offers headroom that does not exist: {sliders.nth(1).input_value()!r}"
+    )
+    assert page.locator("#improvement-total-value").inner_text() == "100.00%"
 
 
 def test_dragging_one_destination_does_not_move_another(page_at):
@@ -1236,10 +1257,14 @@ def test_dragging_one_destination_does_not_move_another(page_at):
     left ReFED Prevention's slider reading `6.4` (its box stayed at `7.80`,
     which is itself the two-controls-disagreeing half of the same defect).
 
-    Mutation to confirm this test would catch the regression: restore
-    `sliderMax`'s body in `web/js/improvement.js` to
-    `Math.max(0, Math.round((typed(value) + headroom) * 100) / 100)` (drop the
-    `numericValue` floor) and watch this fail.
+    **Superseded as a mutation target by item ⑨ round two's fixed `max`** (see
+    `fixedRowMax` in `web/js/improvement.js`): a headroom-derived ceiling no
+    longer exists at all, so there is no `sliderMax` body left to restore here.
+    `test_decreasing_one_destination_leaves_every_other_row_s_thumb_position_unchanged`
+    is what a reintroduced headroom-derived `max` is confirmed to fail against.
+    This test still stands on its own: an untouched row's stored VALUE, on
+    both controls, must survive a sibling's edit regardless of which mechanism
+    enforces the 100% cap.
     """
     page = _improvement_panel(page_at)
     boxes = page.locator('.percentage-input input[type="number"]')
@@ -1275,6 +1300,150 @@ def test_dragging_one_destination_does_not_move_another(page_at):
         "this is the exact shape of the client's report even when the box beside it "
         "does not move"
     )
+
+
+def test_decreasing_one_destination_leaves_every_other_row_s_thumb_position_unchanged(page_at):
+    """**The client's report, again, after round two's own fix shipped:**
+    dragging ReFED Donations down from 0.12 to 0.03 left the other rows'
+    NUMBER BOXES correct (0.052 and 0.53 unchanged) but visibly moved their
+    slider THUMBS.
+
+    **Why round two's fix was only half of it.** It floored `sliderMax` at
+    each row's own current value, which stopped the browser's silent
+    "assigning a lower `max` clamps `.value`" from firing against an
+    untouched row - so a sibling's stored VALUE was safe. But `max` itself was
+    still recomputed from the remaining headroom on every keystroke, and a
+    thumb's rendered position is `value / max`. DECREASING one destination
+    GROWS the headroom, which grows every OTHER row's `max`, which moves their
+    thumb left even though their stored value never changed at all - "I drag
+    one and the others move" survives even once the value itself is
+    protected, which is exactly what the client saw a second time.
+
+    So this asserts the thumb POSITION (`value / max`) for every untouched
+    row, not only its value - the gap the previous round's own test
+    (`test_dragging_one_destination_does_not_move_another`, which asserts
+    value only) left open.
+
+    Mutation to confirm this test would catch the regression: give
+    `fixedRowMax` back a headroom-derived body -
+    `Math.max(typed(value), Math.round((typed(value) + headroom) * 100) / 100, 0)`,
+    reading a fresh `headroom = 100 - allocationTotal(state.improvedAllocations)`
+    and the row's OWN current value at each `updateImprovementInput` call, the
+    way `sliderMax` used to - and watch the THUMB-POSITION assertion below
+    fail while the plain value assertion right above it still passes.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+    assert boxes.count() >= 3, "need three destinations for two to hold still while one moves"
+
+    #: prevention, refed_prevention, refed_donations, in the taxonomy's own
+    #: sort order (see the other tests in this module) - 5.20 / 53.00 / 12.00,
+    #: comfortably under 100%, so there is real headroom for a decrease to grow.
+    boxes.nth(0).fill("5.20")
+    boxes.nth(1).fill("53.00")
+    boxes.nth(2).fill("12.00")
+    page.wait_for_timeout(80)
+
+    def snapshot():
+        return sliders.evaluate_all("els => els.map(el => ({value: el.value, max: el.max}))")
+
+    before = snapshot()
+
+    #: The push DOWN the client actually reported: donations falls, so the
+    #: headroom every OTHER row could grow into gets BIGGER, not smaller.
+    boxes.nth(2).fill("3.00")
+    page.wait_for_timeout(80)
+
+    after = snapshot()
+
+    for index in (0, 1):
+        assert after[index]["value"] == before[index]["value"], (
+            f"row {index}'s stored value changed from {before[index]['value']!r} to "
+            f"{after[index]['value']!r} when a DIFFERENT row was decreased"
+        )
+        assert after[index]["max"] == before[index]["max"], (
+            f"row {index}'s own max changed from {before[index]['max']!r} to "
+            f"{after[index]['max']!r} when a DIFFERENT row was decreased - a fixed max "
+            "must never move for an edit made elsewhere"
+        )
+        thumb_before = float(before[index]["value"]) / float(before[index]["max"])
+        thumb_after = float(after[index]["value"]) / float(after[index]["max"])
+        assert abs(thumb_before - thumb_after) < 1e-9, (
+            f"row {index}'s THUMB moved from {thumb_before} to {thumb_after} even though "
+            "its own value and max both read the same figure before and after - this is "
+            "the client's own report: the picture moved even though the number did not"
+        )
+
+
+def test_a_clamp_on_drag_still_agrees_with_the_donut_the_total_and_the_validation_message(page_at):
+    """**Item ⑨'s ceiling clamp changes `state.improvedAllocations`, and every
+    other view of that same state has to agree with it** - the running total,
+    the donut chart and the inline validation message are all re-derived from
+    the clamped figure inside `updateImprovementInput`, on the same keystroke;
+    this asserts they actually do, rather than trusting that a shared code
+    path keeps them in step.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    boxes.nth(0).fill("60")
+    boxes.nth(1).fill("40")
+    page.wait_for_timeout(80)
+
+    #: Dragging the first destination up to 100 clamps straight back to 60 -
+    #: see `test_no_destination_can_be_increased_once_the_allocation_reaches_one_hundred_percent`.
+    sliders.nth(0).evaluate("el => { el.value = '100'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert sliders.nth(0).input_value() == boxes.nth(0).input_value() == "60"
+    assert page.locator("#improvement-total-value").inner_text() == "100.00%"
+
+    #: The donut's own slice carries the SAME share the box and slider agree
+    #: on, read from the `<title>` its own slice draws. An SVG `<title>` has
+    #: no rendered box, so `inner_text()` reads it as empty/`None` - `evaluate_all`
+    #: over `.textContent` is what actually reads it.
+    pie_titles = page.locator(".improvement-pie-content svg title").evaluate_all(
+        "els => els.map(el => el.textContent)"
+    )
+    assert any("60.0%" in title for title in pie_titles), (
+        f"the donut does not show the clamped 60% share anywhere: {pie_titles!r}"
+    )
+    #: The allocation is exactly 100%, so the inline message is gone and
+    #: Compare is enabled - the clamp did not leave the panel thinking the
+    #: total is still wrong.
+    assert page.locator("#improvement-inline-error").is_hidden()
+    assert page.locator('[data-action="compare-improvement"]').is_enabled()
+
+
+def test_reducing_a_slider_is_never_clamped(page_at):
+    """**The clamp is a ceiling, never a floor, and it must not fire on the
+    way down.** `updateImprovementInput`'s ceiling check only ever tightens a
+    value that would push the total over 100%; a visitor pulling a slider
+    DOWN is moving further from that ceiling on every row, on both the row
+    being dragged and (per the two tests above) every other row's thumb,
+    which must not so much as twitch.
+    """
+    page = _improvement_panel(page_at)
+    boxes = page.locator('.percentage-input input[type="number"]')
+    sliders = page.locator('input[type="range"][data-improvement-code]')
+
+    boxes.nth(0).fill("60")
+    boxes.nth(1).fill("40")
+    page.wait_for_timeout(80)
+
+    sliders.nth(0).evaluate("el => { el.value = '25'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
+    page.wait_for_timeout(80)
+
+    assert sliders.nth(0).input_value() == "25", (
+        f"a plain decrease was itself clamped: {sliders.nth(0).input_value()!r}"
+    )
+    assert boxes.nth(0).input_value() == "25"
+    assert page.locator("#improvement-total-value").inner_text() == "65.00%"
+    #: The second row was never touched - not its value, not its max.
+    assert boxes.nth(1).input_value() == "40"
+    assert sliders.nth(1).get_attribute("max") == "100"
 
 
 def test_no_destination_can_be_increased_once_the_allocation_reaches_one_hundred_percent(page_at):
@@ -1380,7 +1549,11 @@ def test_a_coarse_drag_near_the_ceiling_does_not_leave_the_box_and_slider_disagr
     #: headroom - inside one `rangeStep` (0.5) of overshooting on a drag.
     boxes.nth(0).fill("99.7")
     page.wait_for_timeout(80)
-    assert sliders.nth(1).get_attribute("max") == "0.3"
+    #: The second slider's own `max` is fixed at 100 regardless (item ⑨ round
+    #: two) - it is no longer where the 0.3% ceiling lives, so this drag has
+    #: to be caught by `updateImprovementInput`'s own clamp, not by the
+    #: browser refusing to assign a value above `max`.
+    assert sliders.nth(1).get_attribute("max") == "100"
 
     sliders.nth(1).evaluate("el => { el.value = '0.29'; el.dispatchEvent(new Event('input', {bubbles: true})) }")
     page.wait_for_timeout(80)
@@ -1498,29 +1671,27 @@ def test_a_retreat_after_being_driven_down_does_not_survive_the_next_touch(page_
 
 def test_a_box_typed_past_its_own_ceiling_does_not_leave_its_own_slider_stuck_below_it(page_at):
     """**A cosmetic desynchronisation, not the client's own report, but the same
-    silent-clamp mechanism in one narrower case.** A number box has always been
-    allowed to hold a figure past its own row's ceiling - that is what disables
-    Compare, and it is deliberate (see the docstring on `updateImprovementInput`).
-    What is not deliberate is what its OWN slider ends up showing.
+    silent-clamp mechanism in one narrower case - and item ⑨ round two's fixed
+    `max` closes it a different way than round one did.** A number box has
+    always been allowed to hold a figure past its own row's ceiling - that is
+    what disables Compare, and it is deliberate (see the docstring on
+    `updateImprovementInput`). What is not deliberate is what its OWN slider
+    ends up showing.
 
-    `updateImprovementInput` used to mirror the typed figure onto the sibling
-    slider BEFORE recomputing every slider's own `max`. Mirroring a value past
-    the slider's still-stale `max` triggers the same silent browser clamp
-    `sliderMax`'s floor exists to stop elsewhere - so a row's own slider could
-    end up reading its OLD ceiling while its box read the new, out-of-range
-    figure and its `max` (raised a moment later) read the new figure too:
-    box `8.20`, thumb `1.75`, `max="8.20"`. Nothing is lost - the allocation is
-    already invalid and Compare is already disabled - but the two controls for
-    ONE destination disagree.
+    Round one's fix was a `max` loop that ran before the mirror loop, so a
+    slider's ceiling was raised to admit an out-of-range box value before that
+    value was mirrored onto it. **That loop no longer exists, because there is
+    nothing left for it to raise: every slider's `max` is now fixed at `100`
+    (percentage mode) from the moment the row is drawn** (see `fixedRowMax`),
+    which already exceeds any figure `improvementValidation`'s own 0-100 range
+    check would let through Compare, so a box value mirrored onto its sibling
+    slider is never rejected by a stale ceiling in the first place - there is
+    no ordering left to get wrong.
 
-    The `max` loop now runs before the mirror loop (both read only
-    `state.improvedAllocations`, already assigned by the time either runs, so
-    neither depends on the other's DOM writes) - so every slider's ceiling is
-    already wide enough by the time a value is mirrored onto it.
-
-    Mutation to confirm this test would catch the regression: swap the two
-    loops in `updateImprovementInput` back (mirror loop before the `max` loop)
-    and watch the slider assertion below fail.
+    Mutation to confirm this test would still catch a regression of the
+    underlying symptom: in `DestinationAllocationRow`, hard-code the range's
+    own `max="50"` instead of `fixedRowMax(...)` and watch the slider
+    assertion below fail once the box is typed past it.
     """
     page = _improvement_panel(page_at)
     boxes = page.locator('.percentage-input input[type="number"]')
@@ -1531,7 +1702,10 @@ def test_a_box_typed_past_its_own_ceiling_does_not_leave_its_own_slider_stuck_be
     boxes.nth(1).fill("50")
     page.wait_for_timeout(80)
     assert page.locator("#improvement-total-value").inner_text() == "100.00%"
-    assert sliders.nth(1).get_attribute("max") == "50"
+    assert sliders.nth(1).get_attribute("max") == "100", (
+        "the slider's own max should already be the fixed percentage ceiling, "
+        "not this row's current share plus headroom"
+    )
 
     #: Typed straight past this row's own ceiling (50, since headroom is
     #: already zero) - allowed on the box, refused nowhere until Compare.
@@ -1541,13 +1715,53 @@ def test_a_box_typed_past_its_own_ceiling_does_not_leave_its_own_slider_stuck_be
     assert boxes.nth(1).input_value() == "90", (
         "the box itself should hold exactly what was typed, unclamped"
     )
-    assert sliders.nth(1).get_attribute("max") == "90", (
-        f"the slider's own max did not follow the new figure: {sliders.nth(1).get_attribute('max')!r}"
+    assert sliders.nth(1).get_attribute("max") == "100", (
+        f"the slider's own max should stay fixed, not follow the new figure: "
+        f"{sliders.nth(1).get_attribute('max')!r}"
     )
     assert sliders.nth(1).input_value() == "90", (
         f"the slider reads {sliders.nth(1).input_value()!r} while its own box reads '90' - "
-        "the mirror loop assigned the new value before the max loop widened the ceiling "
-        "that was meant to admit it"
+        "the fixed max should already have been wide enough to admit the mirrored value "
+        "without any ceiling recompute at all"
+    )
+
+
+@pytest.mark.parametrize("width,height,dpr", [(700, 900, 1.0), (938, 898, 1.5), (1278, 983, 1.25)])
+def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at, width, height, dpr):
+    """**Item ⑨'s layout half.** The client's screenshot showed the unit
+    select wide enough to truncate a container's name while the slider - the
+    control actually manipulated - was squeezed to a stub. The select is a
+    choice made once and does not need to out-compete the range for room, at
+    any of the widths where the row does not simply stack (below ~480px every
+    control is full-width and this comparison does not apply).
+    """
+    page = advance_to(page_at(width, height, dpr), 5)
+    page.click('[data-action="explore-improvements"]')
+    page.select_option("#improvement-mode", "unit")
+    page.wait_for_timeout(120)
+
+    row = page.locator(".improvement-allocation-row").first
+    range_box = row.locator('input[type="range"]').bounding_box()
+    select_box = row.locator("select.improvement-row-unit").bounding_box()
+    box_box = row.locator('.percentage-input input[type="number"]').bounding_box()
+
+    assert range_box["width"] > select_box["width"], (
+        f"at {width}px the range ({range_box['width']}px) is not wider than the select "
+        f"({select_box['width']}px) - the control the visitor drags should get the room"
+    )
+    assert range_box["width"] >= box_box["width"], (
+        f"at {width}px the range ({range_box['width']}px) is narrower than the number box "
+        f"({box_box['width']}px)"
+    )
+    #: The panel must not silently clip past its own list container
+    #: (`.improvement-allocation-list` has `overflow: hidden`) - a control
+    #: with a negative or over-the-edge origin is being cut off rather than
+    #: merely narrow.
+    list_box = page.locator(".improvement-allocation-list").bounding_box()
+    assert select_box["x"] >= list_box["x"] - 1, (
+        f"the select's own left edge ({select_box['x']}) sits outside its list "
+        f"container's own left edge ({list_box['x']}) - it is being clipped, not "
+        "merely narrow"
     )
 
 

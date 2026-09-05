@@ -1,0 +1,65 @@
+{
+  "gwp_horizon": 100,
+  "entries": [
+    {
+      "sector_code": "processing",
+      "food_category_code": "dairy",
+      "total_value_nzd": "60000.00",
+      "wasted_value_nzd": "9000.00",
+      "current": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "1200.000"
+        }
+      ],
+      "alternative": null,
+      "total_input_kg": "12000.000"
+    },
+    {
+      "sector_code": "primary_production",
+      "food_category_code": "vegetables",
+      "total_value_nzd": "15000.00",
+      "wasted_value_nzd": "6000.00",
+      "current": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "1000.000"
+        }
+      ],
+      "alternative": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "600.000"
+        },
+        {
+          "destination_code": "prevention",
+          "qty_kg": "400.000"
+        }
+      ],
+      "total_input_kg": "5000.000"
+    },
+    {
+      "sector_code": "processing",
+      "food_category_code": "dairy",
+      "current": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "500.000"
+        }
+      ],
+      "alternative": [
+        {
+          "destination_code": "landfill",
+          "qty_kg": "200.000"
+        },
+        {
+          "destination_code": "prevention",
+          "qty_kg": "300.000"
+        }
+      ],
+      "total_input_kg": "2500.000",
+      "total_value_nzd": "25000.00",
+      "wasted_value_nzd": "2500.00"
+    }
+  ]
+}

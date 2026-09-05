@@ -108,3 +108,98 @@ the characters and this file. **A loud failure, not tofu** — which is the whol
 point of the exercise. If it ever fires in earnest, the fix is to re-cut the
 face concerned with the extra characters, or to ship the whole 10.9 MiB face
 for that language and accept the weight.
+
+## Re-cut, 2026-09-04
+
+The four CJK subsets had drifted from "the characters the four catalogues
+actually contain": `ja.json`, `ko.json`, `zh.json` and `zh-Hant.json` had each
+grown at least one string since the faces were last cut, and six characters
+across the four catalogues (`及` `涉` `率` `笔` `部` and one Hangul syllable)
+had no glyph in any embedded face — a fact `test_no_character_in_any_catalogue_
+would_print_as_a_box` had been failing on for some time without anything
+actually asking a CJK document to print one of them. Task 5's title block did:
+the Traditional Chinese "not supplied" sentence contains `涉`, and rendering it
+raised `UndrawableCharacterError` rather than shipping a box.
+
+Re-cut inside the running `api` container (already `debian:bookworm`-based
+with Pango/HarfBuzz installed) rather than a fresh build, following the same
+recipe as the table above:
+
+```sh
+apt-get install --no-install-recommends fonts-noto-cjk   # fonttools + brotli already present
+fonttools subset /usr/share/fonts/opentype/noto/NotoSansCJK-Regular.ttc \
+  --font-number=<0|1|2|3> --text-file=<catalogue's own characters, plus ASCII and Latin-1> \
+  --flavor=woff2 --output-file=<NotoSansCJK{jp,kr,sc,tc}-Regular.woff2> \
+  --layout-features=* --glyph-names --symbol-cmap --legacy-cmap \
+  --notdef-glyph --notdef-outline --recommended-glyphs --name-legacy
+```
+
+Each face is cut from its own language's *current* `web/locales/*.json` (`ja`
+→ face 0, `ko` → face 1, `zh` → face 2, `zh-Hant` → face 3), read fresh rather
+than from the character list the previous cut used — a list frozen at the last
+cut is exactly how this drifted the first time. New sizes: jp 228,224 B (was
+208,076), kr 79,916 B (was 72,968), sc 200,708 B (was 188,332), tc 261,024 B
+(was 243,356) — a few kilobytes each for the characters that were missing,
+still two orders of magnitude under the 10.9 MiB whole face.
+
+**The character-extraction step above was prose, not a committed script, and
+that gap is now closed.** `recut_cjk_subsets.py`, beside this file, is the
+`--text-file` step: it reads each language's own `web/locales/*.json`
+`strings` values (the same collection `assert_every_character_is_drawable`
+checks a render against), adds printable ASCII and the printable half of
+Latin-1 Supplement, and drives `fontTools.subset` with the flags above.
+Re-cutting all four faces from the current catalogues is `apt-get install
+fonts-noto-cjk` followed by `py -3.12
+api/assets/fonts/noto/recut_cjk_subsets.py` — no longer a paragraph a future
+maintainer has to reconstruct into a `--text-file` by hand, which is the same
+drift that produced the gap this section exists to record.
+
+### What the review that closed this task found
+
+The re-cut's six-character gap (`及` `涉` `率` `笔` `部` and one Hangul
+syllable) was confirmed genuinely pre-existing — present against the parent
+commit's fonts, absent against these — and closed by this re-cut. Two things
+the re-cut itself changed, neither caught by any test because neither is a
+regression a test watches for:
+
+* **`U+5360` (`占`) is gone from the Traditional Chinese face.** It was in the
+  face this re-cut replaced and is not in the one it produced, because
+  `zh-Hant.json`'s current strings no longer contain it — the previous cut was
+  frozen at an older catalogue and this one reads fresh, exactly as designed.
+  Benign: the Simplified Chinese face still carries `U+5360` for `zh`, and
+  `zh-Hant` never asks for it. Recorded because a *harmful* drop would look
+  identical to this one from the outside — same silent size change, same
+  "still all green" test run — and nothing before this line distinguished
+  them from each other.
+* **`U+672C` (`本`, in `ja`) and `U+AD6D` (`국`, in `ko`) are not covered by
+  any embedded face, and are not a gap.** Both live only in their catalogue's
+  top-level `endonym` field ("日本語", "한국어" — the language's own name for
+  itself), which sits beside `strings` in the JSON file, not inside it.
+  `i18n.Catalogue.strings` is built from the `strings` key alone, so neither
+  character ever reaches `gettext`, `assert_every_character_is_drawable`, or
+  the rendered document — `recut_cjk_subsets.py`'s `catalogue_characters`
+  reads the same key for the same reason. Pre-existing, unrelated to this
+  re-cut, and left exactly as they were rather than added to a subset for
+  characters nothing prints.
+
+## Re-cut, 2026-09-04 (v1.51, second re-cut this day)
+
+v1.51 gave `production_share_percent` and `wasted_share_percent` a fourth
+`data_state`, `undefined`, and three new strings reach the twenty catalogues
+for it — `Undefined`, and one note each for the production-share card and the
+money block. `ja`, `zh` and `zh-Hant`'s translations of the one-word value
+all draw on `義`/`义`, "meaning" — `U+7FA9` in Traditional, `U+4E49` in
+Simplified — and neither had a glyph in the June re-cut's subsets, which had
+been cut from the catalogues as they stood before this task.
+`test_no_character_in_any_catalogue_would_print_as_a_box` caught it before
+anything asked a document to print the new string, the same way it caught
+the six-character gap above.
+
+Re-cut with `recut_cjk_subsets.py`, run inside the `api` container after
+rebuilding it with the new catalogues baked in — `fonts-noto-cjk` installed
+fresh (the base image carries no state between builds), `fonttools` and
+`brotli` already present as `weasyprint`'s own dependencies. `ko`'s subset is
+untouched (`정의되지 않음`, the Korean translation of `Undefined`, composes
+entirely from syllables the existing subset already drew); the other three
+grew a handful of characters each: jp 228,432 B (was 228,224), sc 201,112 B
+(was 200,708), tc 261,488 B (was 261,024).

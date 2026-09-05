@@ -38,6 +38,7 @@ import os
 import re
 import shutil
 import subprocess
+from datetime import datetime
 from pathlib import Path
 
 import pytest
@@ -45,6 +46,7 @@ import pytest
 ROOT = Path(__file__).resolve().parents[2]
 FIXTURES = ROOT / "tests" / "fixtures"
 RESULTS_JS = ROOT / "web" / "js" / "results.js"
+IMPROVEMENT_JS = ROOT / "web" / "js" / "improvement.js"
 
 #: Node is not a dependency of this project and never becomes one — `web/` has no
 #: build step and `docs/architecture.md` §3 rules Node out of the stack. It is
@@ -67,6 +69,60 @@ const { buildResultsReport } = await import(process.argv[2])
 const state = JSON.parse(readFileSync(process.argv[3], 'utf8'))
 writeFileSync(process.argv[4], buildResultsReport(state), 'utf8')
 """
+
+
+#: **The agreement harness (v1.50 review, item 1).** `HARNESS` above proves
+#: `results.js`'s own text export; this proves it *alongside*
+#: `improvement.js`'s HTML comparison, from the **one** state object, in the
+#: **one** Node process — so a fix that only reaches one of `savingLines` and
+#: `comparisonSaving` shows up here as a disagreement rather than as two green
+#: test files that each checked their own surface in isolation and never
+#: compared notes. `improvement.js`'s `ComparisonResults` is exported for the
+#: screen already (`web/js/results.js` renders it into the results page); this
+#: calls it directly rather than through a browser; nothing here needs a DOM.
+HARNESS_BOTH = """
+globalThis.window = { location: { search: '' } }
+globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+
+import { readFileSync, writeFileSync } from 'node:fs'
+const { buildResultsReport } = await import(process.argv[2])
+const { ComparisonResults } = await import(process.argv[3])
+const state = JSON.parse(readFileSync(process.argv[4], 'utf8'))
+const out = {
+  report: buildResultsReport(state),
+  html: ComparisonResults(state),
+}
+writeFileSync(process.argv[5], JSON.stringify(out), 'utf8')
+"""
+
+
+def both_surfaces_for(tmp_path: Path, state: dict) -> dict:
+    """`{"report": <text export>, "html": <the comparison screen's markup>}`,
+    both built from the same `state` in the same Node process — see
+    `HARNESS_BOTH`."""
+    harness = tmp_path / "harness_both.mjs"
+    harness.write_text(HARNESS_BOTH, encoding="utf-8")
+    state_file = tmp_path / "state_both.json"
+    state_file.write_text(json.dumps(state), encoding="utf-8")
+    out = tmp_path / "both.json"
+    completed = subprocess.run(
+        [
+            shutil.which("node"),
+            str(harness),
+            RESULTS_JS.as_uri(),
+            IMPROVEMENT_JS.as_uri(),
+            str(state_file),
+            str(out),
+        ],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not build both surfaces:\n{completed.stdout}\n{completed.stderr}"
+    )
+    return json.loads(out.read_text(encoding="utf-8"))
 
 
 def _fixture(name: str) -> dict:
@@ -122,6 +178,63 @@ def build_state(*, is_mock: bool = True, with_comparison: bool = False) -> dict:
         "improvementResult": response if with_comparison else None,
     }
     return state
+
+
+def build_state_with_share(*, state: str, value: str | None) -> dict:
+    """`build_state`, with `totals.data_state.production_share_percent` and
+    `totals.production_share_percent` set explicitly - the fixture's own default
+    (`incomplete`, `null`) is exercised by `report` above, so the other two states
+    need their own response rather than a hand-edited copy per test."""
+    response = _fixture("calculate_response.json")
+    response["totals"] = dict(response["totals"])
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"], production_share_percent=state
+    )
+    response["totals"]["production_share_percent"] = value
+    return {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
+        "improvementResult": None,
+    }
+
+
+#: **v1.50 review, item 3.** Neither `calculate_response.json` (`complete` in
+#: all four money fields, `incomplete` share) nor `calculate_response_single.
+#: json` (`not_supplied` throughout) ever gives a money field `incomplete` or
+#: the share `complete` — the exact state §4.5's rewrite exists for. This
+#: fixture does, and it is not hand-typed: `docs/interfaces.md` §10 and
+#: `tests/api/test_fixture_consistency.py` both record it as
+#: `engine.calculate.calculate`'s own output for a two-entry request in which
+#: entry 2 supplies a production total but no money figures.
+def build_state_partial_coverage() -> dict:
+    """`build_state`'s shape, fed by `calculate_response_partial_coverage.
+    json` on both `result` and `improvementResult` — the same doubling
+    `build_state(with_comparison=True)` already does for the canonical
+    fixture, needed here because `savingLines` reads `improvementResult` and
+    `moneyLines` / `productionShareText` read `result`, and this fixture is
+    the one response in the tree where all three are worth reading at once."""
+    response = _fixture("calculate_response_partial_coverage.json")
+    return {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
+        "improvementResult": response,
+    }
+
+
+#: **v1.51.** Neither fixture above ever gives `production_share_percent` or
+#: `wasted_share_percent` the fourth state: every entry answered a production
+#: total, a total value and a wasted value of zero, so both ratios are
+#: `complete`-coverage and still undefined. Not hand-typed — the same
+#: discipline `build_state_partial_coverage` above documents —
+#: `tests/api/test_fixture_consistency.py::test_the_zero_totals_pair_is_what_
+#: its_name_promises` pins the same fixture's shape from the API side.
+def build_state_zero_totals() -> dict:
+    response = _fixture("calculate_response_zero_totals.json")
+    return {
+        "taxonomy": _fixture("taxonomy.json"),
+        "result": {**response, "entry_results": _entry_results(DRAFT_ENTRIES, response)},
+        "improvementResult": None,
+    }
 
 
 def report_for(tmp_path: Path, state: dict) -> str:
@@ -248,21 +361,108 @@ def test_the_export_does_not_ask_for_a_figure_the_visitor_already_gave(report):
     """**Finding 2, in the file this time.**
 
     `#total-input` is collected on step 2 and persisted as `total_input_kg`, and
-    §4.5 states plainly that **no field of `MoneyResult` reads it**: waste as a
-    share of production has no consumer yet. The export's closing line said the
-    figure was unavailable "because total food handled data is required", a few
-    lines under a money block built from the very value that sentence asks for.
+    the export's closing line used to say the figure was unavailable "because
+    total food handled data is required", a few lines under a money block built
+    from the very value that sentence asked for.
 
-    §4.5 forbids deriving the share in the browser, so the figure stays
-    unavailable. What changes is that the file stops blaming its reader for it.
+    The engine now returns `production_share_percent`, and `report`'s fixture
+    supplies it for one entry and not the other - `incomplete`, not `not
+    available` - so the file no longer blames its reader for a figure it never
+    asked them to type twice.
     """
     assert "data is required" not in report, report
     assert re.search(
-        r"^Percentage waste: Not available\. This calculator does not report waste "
-        r"as a share of food handled yet\.$",
+        r"^Percentage waste: Data incomplete\. Some entries stated a production total "
+        r"and some did not, so a share of waste cannot be shown\.$",
         report,
         re.M,
     ), report
+
+
+# ------------------------------------- the percentage card's three states (§4.6)
+#
+# `productionShareText` backs both `summaryCards` (the on-screen card) and
+# `buildResultsReport` (this export) - the same function, so proving its three
+# branches here proves the card's wording too. Each test asserts what tells its
+# state apart from the *other two*, not just that its own sentence is present: a
+# card that always printed the same words would pass a test that only checked
+# the state it was pointed at.
+
+
+@node
+def test_the_export_states_the_percentage_when_every_entry_gave_one(tmp_path):
+    """`complete`: the number itself, and neither other state's wording."""
+    report = report_for(tmp_path, build_state_with_share(state="complete", value="50.00"))
+    assert re.search(r"^Percentage waste: 50\.00%$", report, re.M), report
+    assert "Data incomplete" not in report
+    assert "You did not say" not in report
+
+
+@node
+def test_the_export_says_incomplete_when_some_entries_answered_and_some_did_not(tmp_path):
+    """`incomplete`: named as incomplete - not silence, and not "not supplied",
+    which would claim nobody said anything when some entries did."""
+    report = report_for(tmp_path, build_state_with_share(state="incomplete", value=None))
+    assert re.search(
+        r"^Percentage waste: Data incomplete\. Some entries stated a production total "
+        r"and some did not, so a share of waste cannot be shown\.$",
+        report,
+        re.M,
+    ), report
+    assert "You did not say how much food this covered" not in report
+    assert not re.search(r"^Percentage waste: \d", report, re.M)
+
+
+@node
+def test_the_export_says_not_supplied_when_nobody_answered(tmp_path):
+    """`not_supplied`: worded about what the visitor typed, not about what the
+    calculator reports - and not "incomplete", which would imply somebody did
+    answer part of it."""
+    report = report_for(tmp_path, build_state_with_share(state="not_supplied", value=None))
+    assert re.search(
+        r"^Percentage waste: Not supplied\. You did not say how much food this covered, "
+        r"so a share of waste cannot be shown\.$",
+        report,
+        re.M,
+    ), report
+    assert "Data incomplete" not in report
+    assert not re.search(r"^Percentage waste: \d", report, re.M)
+
+
+@node
+def test_the_export_says_undefined_when_every_entry_answered_zero(tmp_path):
+    """v1.51's fourth state: every entry answered `total_input_kg` — as
+    zero — so the coverage is `complete`, and the ratio built from what they
+    answered is still undefined. Distinct from `not_supplied` (the visitor
+    said none, not nothing) and from `incomplete` (nobody left a gap)."""
+    report = report_for(tmp_path, build_state_with_share(state="undefined", value=None))
+    assert re.search(
+        r"^Percentage waste: Undefined\. You said this covered 0 kg in total, "
+        r"so a share of waste cannot be shown\.$",
+        report,
+        re.M,
+    ), report
+    assert "Data incomplete" not in report
+    assert "You did not say how much food this covered" not in report
+    assert not re.search(r"^Percentage waste: \d", report, re.M)
+
+
+@node
+def test_the_export_says_undefined_for_a_money_share_of_a_zero_total(tmp_path):
+    """The money block's own fourth state, off the real fixture rather than a
+    hand-built one: both `total_value_nzd` and `wasted_value_nzd` print as
+    real `NZ$0.00` figures — `complete`, not withheld — and only the ratio
+    built from them says it cannot be calculated."""
+    report = report_for(tmp_path, build_state_zero_totals())
+    assert re.search(r"^\s*- Total value of food handled: NZ\$0\.00$", report, re.M), report
+    assert re.search(r"^\s*- Value of food wasted: NZ\$0\.00$", report, re.M), report
+    assert re.search(
+        r"^\s*- Share of value wasted: The total value was zero, so this "
+        r"cannot be calculated\.$",
+        report,
+        re.M,
+    ), report
+    assert "Not every entry supplied this figure" not in report
 
 
 # --------------------------------------------------------- the placeholder rule
@@ -469,8 +669,13 @@ def page_at(browser):
     """
     contexts = []
 
-    def open_page(response, width=390, height=900):
-        ctx = browser.new_context(viewport={"width": width, "height": height}, locale="en-NZ", bypass_csp=True)
+    def open_page(response, width=390, height=900, reduced_motion=None):
+        ctx = browser.new_context(
+            viewport={"width": width, "height": height},
+            locale="en-NZ",
+            bypass_csp=True,
+            reduced_motion=reduced_motion,
+        )
         contexts.append(ctx)
         page = ctx.new_page()
         page.route(
@@ -1035,6 +1240,180 @@ def test_the_period_is_absent_when_it_was_not_stated(page_at):
     assert page.locator(".results-period").count() == 0
 
 
+# --------------------------------- the percentage card's three states, on screen
+#
+# The `@node` tests above (`test_the_export_states_the_percentage_when_every_entry_
+# gave_one` and its two siblings) prove `productionShareText` by calling
+# `buildResultsReport`, which is the text export's own call site - not
+# `summaryCards`', the card a visitor actually looks at. The two call the shared
+# helper independently (`results.js` lines ~236 and ~656), so a fault planted at
+# `summaryCards`' own call site - the branch forced unconditionally, the two
+# non-complete states swapped, or the card's number replaced with a constant -
+# changes nothing the export tests above can see. These render the real page
+# through `page_at` and read the card `summaryCards` actually built.
+
+
+def _share_response(*, state, value=None):
+    """A deep copy of `calculate_response.json` with `totals.production_share_
+    percent` and its `data_state` entry set explicitly - the on-screen
+    counterpart of `build_state_with_share` above, which drives the same three
+    states through the text export instead."""
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"], production_share_percent=state
+    )
+    response["totals"]["production_share_percent"] = value
+    return response
+
+
+def _results_page_with_share(page_at, *, state, value=None):
+    page = page_at(_share_response(state=state, value=value))
+    _submit_two_entries(page)
+    return page
+
+
+def _share_card(page):
+    """The one `.result-card` `summaryCards` labels "Percentage waste", among
+    the several it renders for a two-entry submission."""
+    card = page.locator('.result-card:has-text("Percentage waste")')
+    assert card.count() == 1, "no Percentage waste card on the results page"
+    return card
+
+
+@pytest.mark.browser
+def test_the_percentage_card_shows_the_number_when_every_entry_gave_one(page_at):
+    """`complete`: the card prints the percentage itself, and neither other
+    state's wording - kills a mutation that hardcodes the card's value (a
+    constant would not read `50.00` back) and a mutation that renders the
+    `complete` branch unconditionally regardless of `data_state` (it would
+    still say `50.00%` here, but fails the `incomplete` and `not_supplied`
+    tests below instead)."""
+    page = _results_page_with_share(page_at, state="complete", value="50.00")
+    text = _share_card(page).inner_text()
+    assert "50.00%" in text, f"the card does not show the supplied percentage: {text!r}"
+    assert "Data incomplete" not in text
+    assert "Not supplied" not in text
+
+
+@pytest.mark.browser
+def test_the_percentage_card_says_incomplete_when_some_entries_answered_and_some_did_not(page_at):
+    """`incomplete`: named as incomplete, not silence and not "not supplied" -
+    which would claim nobody said anything when some entries did. Kills a
+    mutation that swaps the `incomplete` and `not_supplied` wording at the
+    card's own call site (this response's state is `incomplete`; the swap
+    would print the `not_supplied` sentence here instead) and a mutation that
+    renders the `complete` branch unconditionally (it would print
+    `Not available%` here, not this sentence)."""
+    page = _results_page_with_share(page_at, state="incomplete")
+    text = _share_card(page).inner_text()
+    assert "Data incomplete" in text, text
+    assert (
+        "Some entries stated a production total and some did not, so a share "
+        "of waste cannot be shown."
+    ) in text, text
+    assert "Not supplied" not in text
+    assert "You did not say" not in text
+    assert not re.search(r"\d+\.\d+%", text), f"a number leaked into an incomplete card: {text!r}"
+
+
+@pytest.mark.browser
+def test_the_percentage_card_says_not_supplied_when_nobody_answered(page_at):
+    """`not_supplied`: worded about what the visitor typed, not "incomplete" -
+    which would imply somebody did answer part of it. Kills the same
+    call-site swap as the test above, from the other direction (this
+    response's state is `not_supplied`; the swap would print the `incomplete`
+    sentence here instead)."""
+    page = _results_page_with_share(page_at, state="not_supplied")
+    text = _share_card(page).inner_text()
+    assert "Not supplied" in text, text
+    assert "You did not say how much food this covered, so a share of waste cannot be shown." in text, text
+    assert "Data incomplete" not in text
+    assert not re.search(r"\d+\.\d+%", text), f"a number leaked into a not_supplied card: {text!r}"
+
+
+@pytest.mark.browser
+def test_the_percentage_card_says_undefined_when_every_entry_answered_zero(page_at):
+    """v1.51's fourth state, on screen: every entry answered `total_input_kg`
+    as zero, so `data_state` is `complete` and `production_share_percent`
+    is still `null`. Before v1.51 this state did not exist and the card fell
+    through to `not_supplied`'s branch, telling a visitor who typed zero on
+    every row that they had typed nothing. Kills a mutation that collapses
+    `undefined` into either of the other two non-complete branches."""
+    page = _results_page_with_share(page_at, state="undefined")
+    text = _share_card(page).inner_text()
+    assert "Undefined" in text, text
+    assert "You said this covered 0 kg in total, so a share of waste cannot be shown." in text, text
+    assert "Not supplied" not in text
+    assert "You did not say" not in text
+    assert "Data incomplete" not in text
+    assert not re.search(r"\d+\.\d+%", text), f"a number leaked into an undefined card: {text!r}"
+
+
+@pytest.mark.browser
+def test_the_money_block_shows_the_incomplete_note_on_screen(page_at):
+    """The on-screen counterpart of `test_the_export_says_incomplete_for_a_
+    money_figure_partial_coverage_gave_no_number` below: that test only proves
+    `moneyFieldText`, never `moneySummary`'s own call site, so a card that
+    ignored `data_state` and simply hid every `null` field (the pre-§4.6
+    behaviour) would still pass every export test while showing a visitor an
+    incomplete row exactly as if nobody had touched it at all.
+
+    One field complete (a number, its own row), one `incomplete` (the shared
+    note, its own row), one `not_supplied` (no row) - the same three-way split
+    the export test below carries, read from the screen instead of the file.
+    """
+    response = _money_response(total="120000.00", wasted=None, share=None)
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"],
+        wasted_value_nzd="incomplete",
+        wasted_share_percent="not_supplied",
+    )
+    page = page_at(response)
+    _submit_two_entries(page)
+
+    summary = page.locator(".money-summary")
+    assert summary.count() == 1, "no money section on a response carrying a total"
+    text = summary.inner_text()
+    assert "120,000.00" in text, f"the supplied figure is not shown: {text!r}"
+    assert "Not every entry supplied this figure, so it cannot be totalled." in text, (
+        f"the incomplete note is missing from the money block: {text!r}"
+    )
+    assert summary.locator(".money-row").count() == 2, (
+        "expected one complete row and one incomplete-note row, and no row at "
+        f"all for the not_supplied field: {text!r}"
+    )
+
+
+@pytest.mark.browser
+def test_the_money_block_shows_the_undefined_note_on_screen(page_at):
+    """v1.51's fourth state, on screen. Both sums answered as real zeros
+    (`complete`, not withheld) print their own rows as `NZ$0.00`; the ratio
+    built from them prints its own "cannot be calculated" sentence, which
+    must not be the `incomplete` sentence above — a different claim about a
+    different kind of gap."""
+    response = _money_response(total="0.00", wasted="0.00", share=None)
+    response["totals"]["data_state"] = dict(
+        response["totals"]["data_state"],
+        total_value_nzd="complete",
+        wasted_value_nzd="complete",
+        wasted_share_percent="undefined",
+    )
+    page = page_at(response)
+    _submit_two_entries(page)
+
+    summary = page.locator(".money-summary")
+    assert summary.count() == 1, "no money section on a response carrying real zeros"
+    text = summary.inner_text()
+    assert "NZ$0.00" in text, f"the two zero sums are not shown: {text!r}"
+    assert "The total value was zero, so this cannot be calculated." in text, (
+        f"the undefined note is missing from the money block: {text!r}"
+    )
+    assert "Not every entry supplied this figure" not in text, text
+    assert summary.locator(".money-row").count() == 3, (
+        f"expected two complete rows and one undefined-note row: {text!r}"
+    )
+
+
 @node
 def test_the_export_carries_the_money_and_the_period(tmp_path):
     """§7.3a: the file named "results" carries the results. The money figures and
@@ -1119,6 +1498,110 @@ def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
     assert not re.search(r"^The money$", report, re.M)
 
 
+@node
+def test_the_export_says_incomplete_for_a_money_figure_partial_coverage_gave_no_number(tmp_path):
+    """§4.6 extends the same three-state rule to `totals.money`: a field the
+    engine made `null` because coverage was partial says so in words, distinct
+    from `complete` (a number, on the row above) and from a field nobody
+    touched at all (`not_supplied` - no row at all, on the row below). One test
+    carrying all three is what proves the block tells them apart rather than
+    printing the same thing, or nothing, regardless of which one it is."""
+    state = build_state()
+    state["result"]["totals"]["money"] = {
+        "total_value_nzd": "120000.00",
+        "wasted_value_nzd": None,
+        "wasted_share_percent": None,
+        "saving_nzd": None,
+    }
+    state["result"]["totals"]["data_state"] = dict(
+        state["result"]["totals"]["data_state"],
+        wasted_value_nzd="incomplete",
+        wasted_share_percent="not_supplied",
+    )
+    report = report_for(tmp_path, state)
+    assert re.search(r"^  - Total value of food handled: NZ\$120,000\.00$", report, re.M), report
+    assert re.search(
+        r"^  - Value of food wasted: Not every entry supplied this figure, so it "
+        r"cannot be totalled\.$",
+        report,
+        re.M,
+    ), report
+    assert not re.search(r"^  - Share of value wasted: ", report, re.M), (
+        "a field nobody touched at all printed a row: " + report
+    )
+
+
+# -------------------------------------------- the three surfaces agree (v1.50 review)
+#
+# The review that closed this task found `saving_nzd` on different terms in the
+# text export and the comparison screen than in the PDF: a bare `hasValue`
+# printed *nothing* for an `incomplete` submission on both browser surfaces,
+# while `api/pdf_render.py::_money_rows` printed the shared "Not every entry
+# supplied this figure, so it cannot be totalled." sentence — directly against
+# v1.50's own change-log item 4, "the three surfaces cannot disagree about one
+# submission." The tests below assert the two browser surfaces against *each
+# other*, from one fixture-derived state, in one Node process — not each
+# against its own expectation, which is what let the disagreement through in
+# the first place.
+
+
+@node
+def test_the_saving_says_incomplete_in_the_export_when_the_comparison_did_not_price_every_entry(
+    tmp_path,
+):
+    """`calculate_response_partial_coverage.json`'s `saving_nzd` is
+    `incomplete` (one entry priced, one did not, both carry an alternative) —
+    the state a bare `hasValue` used to render as nothing at all in the text
+    export, silently disagreeing with the PDF beside it."""
+    report = report_for(tmp_path, build_state_partial_coverage())
+    improved = report.split("Improved scenario (Current", 1)
+    assert len(improved) == 2, f"no comparison section in the export: {report}"
+    assert re.search(
+        r"^  - Value of food not wasted at all: Not every entry supplied this "
+        r"figure, so it cannot be totalled\.$",
+        improved[1],
+        re.M,
+    ), improved[1]
+    # The nominal-rate caveat is a claim about a *figure*; the row above carries
+    # a sentence instead, so the caveat must not ride along with it here the
+    # way it does beside an actual number (`test_the_saving_reaches_the_export_
+    # from_the_comparison` above).
+    assert "assumes an even value per kilogram" not in improved[1]
+
+
+@node
+def test_the_text_export_and_the_comparison_screen_agree_about_an_incomplete_saving(
+    tmp_path,
+):
+    """**The agreement test.** Built from `calculate_response_partial_
+    coverage.json` through `HARNESS_BOTH`, so the text export
+    (`buildResultsReport`, `web/js/results.js`) and the comparison screen's own
+    markup (`ComparisonResults`, `web/js/improvement.js`) are two outputs of
+    the *same* Node process reading the *same* state — not two test files each
+    checking their own surface against a hand-typed expectation, which is
+    exactly what let the two surfaces drift apart from each other undetected.
+
+    **Mutation target.** Revert either `savingLines` (`results.js`) or
+    `comparisonSaving` (`improvement.js`) to a bare `hasValue` check and this
+    fails: the reverted surface prints nothing for `saving_nzd`, the other
+    still prints the sentence, and the assertion below - which requires the
+    *same* sentence in *both* outputs - catches whichever one went quiet
+    without needing to know in advance which surface regressed.
+    """
+    both = both_surfaces_for(tmp_path, build_state_partial_coverage())
+    sentence = "Not every entry supplied this figure, so it cannot be totalled."
+    assert sentence in both["report"], (
+        f"the text export does not carry the incomplete sentence: {both['report']!r}"
+    )
+    assert sentence in both["html"], (
+        f"the comparison screen does not carry the incomplete sentence: {both['html']!r}"
+    )
+    # And neither surface is silent about the field instead - the specific
+    # failure mode a bare `hasValue` produced on both of them at once.
+    assert "not wasted at all" in both["report"].lower()
+    assert "not wasted at all" in both["html"].lower()
+
+
 # ------------------------------------------------------------- the contribute control
 #
 # Task 3. §6.2.2's opt-in, reached through the ordinary wizard so the token exercised
@@ -1127,7 +1610,7 @@ def test_the_export_omits_the_money_section_when_the_block_is_null(tmp_path):
 # test in this file already drives.
 
 
-def _results_page(page_at, *, contribute_calls=None):
+def _results_page(page_at, *, contribute_calls=None, reduced_motion=None):
     """The results page, reached with `calculate_response.json` - the fixture that
     carries a real `token` (§6.2), which is what the control this section tests
     actually sends.
@@ -1140,8 +1623,12 @@ def _results_page(page_at, *, contribute_calls=None):
     handler calls `route.fallback()`, which this one never does - so a route a
     test adds afterwards, to capture the on-press request specifically, takes
     over cleanly without this counter also swallowing it.
+
+    `reduced_motion`, when given, is forwarded to `page_at`'s own context - see
+    `test_the_flower_blooms_only_when_motion_is_allowed` below for the one
+    place this actually varies.
     """
-    page = page_at(_fixture("calculate_response.json"))
+    page = page_at(_fixture("calculate_response.json"), reduced_motion=reduced_motion)
     if contribute_calls is not None:
         page.route(
             "**/api/v1/contribute",
@@ -1277,6 +1764,250 @@ def test_the_control_is_described_for_a_visitor_who_cannot_see_the_sentence(page
     )
 
 
+# ------------------------------------------------------- the invitation (Task 4)
+#
+# The client's ask was a long rounded button rather than a tick, "a bit cuter",
+# and perhaps a small flower animation on press. The three tests above this
+# banner - unticked by default, described before the click, an explicit
+# aria-describedby - all still pass unchanged against whatever markup this
+# section builds, because the id `#contribute`, the `label[for="contribute"]`
+# association and `.contribute-block`'s own text never move. What follows is
+# new ground: an explicit `aria-checked` alongside the control's native
+# semantics, a checked-state mark that does not rely on colour alone, and the
+# flower itself, gated on `prefers-reduced-motion`.
+
+
+@pytest.mark.browser
+def test_the_control_reports_an_explicit_aria_checked_state(page_at):
+    """The brief's own wording: "keep a real checkbox or switch role, and
+    `aria-checked`". A native `input[type=checkbox]` already exposes its
+    checked state to the accessibility tree through the `checked` property
+    alone, so this is not asserting the control is *readable* - the existing
+    `test_the_results_page_offers_to_contribute_and_does_not_assume` already
+    covers that with `is_checked()`. It asserts the explicit attribute the
+    brief calls for is present *and tracks the same state*, which a control
+    that set it once at render time and never updated it would fail.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    control = page.locator("#contribute")
+    assert control.get_attribute("aria-checked") == "false", (
+        "the control has no aria-checked attribute, or it is not false before the press"
+    )
+
+    control.check()
+    page.wait_for_timeout(400)
+
+    assert control.get_attribute("aria-checked") == "true", (
+        "aria-checked did not move to true once the control was ticked"
+    )
+
+
+@pytest.mark.browser
+def test_the_checked_state_is_marked_by_more_than_colour(page_at):
+    """"A button that looks the same pressed and unpressed is worse than the
+    checkbox it replaced" - so this measures a *non-colour* property of the
+    control's own state mark before and after the press, the same way
+    `test_site_drawer.py` measures its chevron's rotation rather than trusting
+    a colour token to have changed. A mutation that left only a background
+    colour switching between the two states passes every other test in this
+    file and fails this one.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+
+    read_mark = (
+        "() => { const mark = document.querySelector('.contribute-toggle__mark');"
+        " const after = getComputedStyle(mark, '::after');"
+        " return after.content + '|' + after.borderStyle + '|' + mark.className; }"
+    )
+    before = page.evaluate(read_mark)
+
+    page.locator("#contribute").check()
+    page.wait_for_timeout(400)
+
+    after = page.evaluate(read_mark)
+    assert before != after, (
+        "the control's state mark reads identically before and after the "
+        f"press ({before!r}); only colour would then distinguish the two states"
+    )
+
+
+@pytest.mark.browser
+def test_the_flower_blooms_only_when_motion_is_allowed(page_at):
+    """The client's own ask - "perhaps a small flower animation... when it is
+    pressed" - and the one non-negotiable beside it: it must not run under
+    `prefers-reduced-motion: reduce`, and the control's own state change must
+    be complete and visible without it.
+
+    Both halves live in one test rather than two. A suite that only asserted
+    the reduced-motion half would pass equally against an implementation that
+    never grew a flower at all - asserting the element DOES appear under
+    ordinary motion first is what makes the reduced-motion assertion below
+    mean "suppressed" rather than "never built".
+    """
+    ordinary = _results_page(page_at, reduced_motion="no-preference")
+    ordinary.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+    ordinary.locator("#contribute").check()
+    ordinary.wait_for_timeout(300)
+    assert ordinary.locator(".contribute-flower").count() >= 1, (
+        "no flower ever appears, even with motion allowed - the reduced-motion "
+        "assertion below would prove nothing"
+    )
+
+    reduced = _results_page(page_at, reduced_motion="reduce")
+    reduced.route("**/api/v1/contribute", lambda route: route.fulfill(status=204))
+    reduced.locator("#contribute").check()
+    reduced.wait_for_timeout(300)
+    assert reduced.locator(".contribute-flower").count() == 0, (
+        "the flower animation element is present in the DOM under "
+        "prefers-reduced-motion: reduce"
+    )
+
+    # The state change itself does not depend on the animation having played.
+    assert reduced.locator("#contribute").is_checked() is True
+    assert reduced.locator(".contribute-status").count() == 1, (
+        "the contributed state is not fully conveyed without the animation"
+    )
+
+
+@pytest.mark.browser
+def test_the_flower_does_not_bloom_over_a_failed_contribute(page_at):
+    """The brief: the flower plays on the transition INTO the contributed state
+    and never on the way out. Nothing above drives a failed `/contribute` at
+    all, so nothing constrained which branch of `contributeCalculation`
+    (`results.js`) is allowed to set `contributeCelebrating` - a version that
+    set it in the `catch` too, alongside dropping the `done &&` half of
+    `celebrate`'s guard, left every other test in this file green: a failed
+    press still leaves `checked=False`, so `test_the_results_page_offers_to_
+    contribute_and_does_not_assume`'s "starts unticked" reads exactly the same
+    whether or not a flower bloomed on the way there.
+
+    A failed contribute must snap the control back to its unticked, unpressed
+    state; a flower blooming over that is celebrating a consent that was never
+    recorded.
+    """
+    page = _results_page(page_at)
+    page.route("**/api/v1/contribute", lambda route: route.fulfill(status=500))
+
+    # `.click()` rather than `.check()`: the box settles back to unticked once the
+    # failure lands, so `.check()`'s own "ends up checked" postcondition would retry
+    # the click forever and time out - the failure path is exactly what this test
+    # means to drive.
+    page.locator("#contribute").click()
+    page.wait_for_timeout(400)
+
+    assert page.locator("#contribute").is_checked() is False, (
+        "the control still reads ticked after the contribute request failed"
+    )
+    assert page.locator(".contribute-flower").count() == 0, (
+        "the flower bloomed over a contribute that failed and snapped back to unticked"
+    )
+
+
+@pytest.mark.browser
+def test_the_control_shows_a_focus_ring_when_tabbed_to(page_at):
+    """**Required fix.** `#contribute` is `opacity: 0` (see `styles.css`'s own
+    note over `.contribute-control input[type="checkbox"]`) so the ring the
+    top-of-file `:focus-visible { outline }` rule draws on the input itself is
+    real but painted on nothing anybody can see - the parent's full-opacity
+    20px native checkbox had a visible ring; this pill did not. The fix draws
+    it on the sibling pill instead, keyed off the input's own `:focus-visible`
+    state (`.contribute-control input:focus-visible + .contribute-toggle`).
+
+    `.focus()` does not exercise this: Chromium only turns `:focus-visible` on
+    for a genuine keyboard walk, not a script calling `.focus()` on an element
+    directly (confirmed against this exact page before writing this test), so
+    the walk below is a real `Tab` from the skip link - the same construction
+    `test_the_capsule_shows_a_focus_ring_when_the_control_is_tabbed_to`
+    (`test_i18n_browser.py`) uses for the language chooser. The assertion is a
+    screenshot difference rather than a check that some CSS rule exists,
+    because a rule that exists but targets the wrong element, or draws an
+    outline `opacity: 0` still swallows, would satisfy the latter and fail a
+    real keyboard visitor exactly as before this fix.
+    """
+    page = _results_page(page_at)
+
+    resting = page.locator(".contribute-control").screenshot()
+
+    page.focus(".skip-link")
+    reached = False
+    for _ in range(40):
+        page.keyboard.press("Tab")
+        if page.evaluate("() => document.activeElement?.id") == "contribute":
+            reached = True
+            break
+    assert reached, "forty Tabs from the top of the page never reached #contribute"
+    assert page.evaluate(
+        "() => document.querySelector('#contribute').matches(':focus-visible')"
+    ) is True, "the control was reached but Chromium does not consider it focus-visible"
+
+    focused = page.locator(".contribute-control").screenshot()
+    assert focused != resting, (
+        "tabbing to the contribute control paints no different pixels - there is no "
+        "visible focus indicator on the one control that records a consent"
+    )
+
+
+#: 320, 390, 700, 938 and 1278 - the plan's own five widths - checked in German,
+#: the longest of the twenty catalogues shipped. Mirrors
+#: `DOWNLOAD_LAYOUT_WIDTHS`/`test_neither_download_button_overflows_in_german`
+#: below, applied to the one other piece of layout this task touches.
+CONTRIBUTE_LAYOUT_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", CONTRIBUTE_LAYOUT_WIDTHS)
+def test_the_contribute_button_does_not_overflow_in_german(browser, width):
+    """A "long rounded button" is exactly the shape that breaks first at a
+    narrow width - German is this catalogue set's longest language and the one
+    that builds unbreakable compounds (`test_horizontal_overflow.py`'s own
+    reasoning), so its label is what a real button has to accommodate rather
+    than English's shorter one.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 900},
+        locale="de",
+        extra_http_headers={"Accept-Language": "de,en;q=0.5"},
+        bypass_csp=True,
+    )
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(_fixture("calculate_response.json")),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+
+        de = page.evaluate(
+            "() => ({scroll: document.documentElement.scrollWidth, "
+            "client: document.documentElement.clientWidth})"
+        )
+        assert de["scroll"] <= max(de["client"], 320), (
+            f"the page scrolls sideways at {width}px in German: "
+            f"scrollWidth={de['scroll']} clientWidth={de['client']}"
+        )
+
+        toggle = page.locator(".contribute-toggle")
+        box = toggle.bounding_box()
+        assert box is not None, f"the contribute button has no box at {width}px"
+        assert box["x"] + box["width"] <= de["client"] + 1, (
+            f"the contribute button overflows its own viewport at {width}px in German: {box}"
+        )
+    finally:
+        context.close()
+
+
 # ---------------------------------------------------------------- the PDF export
 #
 # Task 5. `POST /api/v1/export/pdf` already works (`api/export.py`, `api/router.py`); this
@@ -1391,3 +2122,281 @@ def test_both_downloads_are_offered_and_each_produces_its_own_format(page_at):
 
     #: Two names, so a visitor who takes both does not overwrite one with the other.
     assert text_download.suggested_filename != pdf_download.suggested_filename
+
+
+# ------------------------------------------------- the two buttons, and the PDF's own name
+#
+# Task 3, the plan of 2026-08-31. Two client complaints landing in one place: the text
+# download was the step-nav's own primary action and the PDF a secondary afterthought in
+# `.result-actions`, so the pair did not read as a pair; and the PDF's file name was the
+# fixed `kai-commitment-impact-calculator.pdf`, so a second download became `... (1).pdf`.
+
+
+@node
+def test_the_shared_helper_stamps_a_pdf_name_from_the_same_clock_as_the_text_export(tmp_path):
+    """`exportFilename` is the one place a timestamp is turned into a file name -
+    `docs`'s own reasoning for the text export's stamp - so the PDF has to be
+    stamped by a call to the *same* function, not a second implementation of the
+    same date arithmetic.
+
+    Two calls at the same fixed instant, one for each extension, carry the same
+    date-and-time stamp; only the extension (and, for the PDF, an added
+    identifier - see the distinctness tests below) differs. The text call is the
+    exact call `downloadResults` already made before this task, so this also
+    guards the existing convention against a change made in passing while the
+    PDF gains its own.
+    """
+    harness = tmp_path / "harness.mjs"
+    harness.write_text(
+        """
+        globalThis.window = { location: { search: '' } }
+        globalThis.sessionStorage = { getItem: () => null, setItem() {}, removeItem() {} }
+        import { writeFileSync } from 'node:fs'
+        const { exportFilename } = await import(process.argv[2])
+        const fixed = new Date(2026, 7, 12, 9, 4, 5)
+        const names = {
+          text: exportFilename(fixed),
+          pdfOne: exportFilename(fixed, { ext: 'pdf', unique: 'aaaaaaaa' }),
+          pdfTwo: exportFilename(fixed, { ext: 'pdf', unique: 'bbbbbbbb' }),
+        }
+        writeFileSync(process.argv[3], JSON.stringify(names), 'utf8')
+        """,
+        encoding="utf-8",
+    )
+    out = tmp_path / "names.json"
+    completed = subprocess.run(
+        [shutil.which("node"), str(harness), RESULTS_JS.as_uri(), str(out)],
+        capture_output=True,
+        text=True,
+        encoding="utf-8",
+        timeout=60,
+    )
+    assert completed.returncode == 0, (
+        f"node could not build the file names:\n{completed.stdout}\n{completed.stderr}"
+    )
+    names = json.loads(out.read_text(encoding="utf-8"))
+
+    #: The existing text convention, unchanged by the PDF gaining one.
+    assert names["text"] == "food-waste-impact-results-2026-08-12-090405.txt", names
+    #: The PDF carries the identical stamp, plus the identifier that tells two
+    #: PDFs taken in the same second apart.
+    assert names["pdfOne"] == "food-waste-impact-results-2026-08-12-090405-aaaaaaaa.pdf", names
+    assert names["pdfTwo"] == "food-waste-impact-results-2026-08-12-090405-bbbbbbbb.pdf", names
+
+
+def test_the_pdf_no_longer_hard_codes_one_file_name():
+    """The regression this task exists to close: a constant name is what turned
+    every second PDF download into `... (1).pdf`.
+
+    Both downloads' `link.download` are asserted set from `exportFilename` -
+    counting the call sites rather than grepping for either one alone, because a
+    file that kept the old constant *beside* a new call would satisfy a
+    presence check while the PDF still had a fixed name available to fall back
+    to.
+    """
+    source = RESULTS_JS.read_text(encoding="utf-8")
+    assert "kai-commitment-impact-calculator.pdf" not in source, (
+        "the PDF still carries a constant file name somewhere in the file"
+    )
+    calls = re.findall(r"link\.download\s*=\s*exportFilename\(", source)
+    assert len(calls) == 2, (
+        f"expected the text and PDF downloads to both set `link.download` from "
+        f"`exportFilename`, found {len(calls)} such call(s)"
+    )
+
+
+#: `food-waste-impact-results-2026-08-30-213033`, less its extension - the shape both
+#: downloads must share, the PDF with an identifier appended before its own extension.
+STAMP_PATTERN = r"food-waste-impact-results-\d{4}-\d{2}-\d{2}-\d{6}"
+
+
+@pytest.mark.browser
+def test_the_two_downloads_sit_together_as_one_choice(page_at):
+    """**Complaint 1.** The text download used to be the step-nav's own primary
+    action, reachable nowhere near the PDF button in `.result-actions` - a
+    visitor reading the page saw one action and, below it, an afterthought, and
+    could not find the text export among the sentence-shaped step navigation at
+    all. The two now sit in one container as two buttons of equal visual
+    weight, so the page reads as a choice of format rather than an action plus
+    an extra.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    text_button = page.locator('[data-action="download-results"]')
+    pdf_button = page.locator('[data-action="download-pdf"]')
+    assert text_button.count() == 1, "the text download is missing from the results page"
+    assert pdf_button.count() == 1, "the PDF download is missing from the results page"
+
+    #: The step-nav keeps only its back action - the primary slot the text
+    #: download used to occupy is gone, not merely relabelled.
+    assert page.locator('.step-nav [data-action="download-results"]').count() == 0, (
+        "the text download is still living inside the step navigation"
+    )
+    assert page.locator('.step-nav [data-action="go-step"]').count() == 1, (
+        "the step-nav's own back action moved when it was not supposed to"
+    )
+
+    #: One container holds both. A single `page.evaluate` reads both elements out of the
+    #: live DOM in one call, rather than comparing two locators' handles across separate
+    #: round trips - which is not the same node identity check it looks like.
+    same_parent = page.evaluate(
+        """() => {
+            const text = document.querySelector('[data-action="download-results"]');
+            const pdf = document.querySelector('[data-action="download-pdf"]');
+            return !!text && !!pdf && text.parentElement === pdf.parentElement;
+        }"""
+    )
+    assert same_parent, "the two downloads do not share a parent element"
+
+    #: Equal weight - the same button styling, not one primary and one secondary.
+    text_classes = set((text_button.get_attribute("class") or "").split())
+    pdf_classes = set((pdf_button.get_attribute("class") or "").split())
+    assert text_classes == pdf_classes, (
+        f"the two downloads are not styled as equals: {text_classes} vs {pdf_classes}"
+    )
+    assert "button-secondary" not in text_classes or "button-primary" not in pdf_classes, (
+        "one button reads as primary and the other secondary"
+    )
+
+
+@pytest.mark.browser
+def test_two_pdf_downloads_in_the_same_frozen_second_still_get_distinct_names(page_at):
+    """**Complaint 2, made deliberately non-flaky.** `exportFilename`'s stamp has
+    one-second resolution, so two downloads taken in quick succession would
+    only prove distinctness by luck - passing when the clicks happen to straddle
+    a second boundary and failing, or worse, silently agreeing, when they land
+    inside the same one. That is exactly the "timestamp alone" version of this
+    fix the client did not ask for: they asked for a timestamp *and* something
+    unique per file.
+
+    So the browser's own clock is frozen to one instant before either click.
+    Both downloads are therefore built from the identical timestamp; if the
+    file name depended on the timestamp alone the two names would be identical
+    outright, which is what the assertion below actually tests for - not "two
+    downloads happened to differ" but "two downloads forced onto the same
+    second still differ", which only a genuinely unique identifier can produce.
+    """
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    page.clock.set_fixed_time(datetime(2026, 8, 30, 21, 30, 33))
+
+    pdf_button = page.locator('[data-action="download-pdf"]')
+
+    with page.expect_download() as first_info:
+        pdf_button.click()
+    first_name = first_info.value.suggested_filename
+
+    #: `downloadPdf` disables the button for the length of the request; the
+    #: second click has to wait for it, exactly as a visitor's second press
+    #: would have to.
+    page.wait_for_selector('[data-action="download-pdf"]:not([disabled])', timeout=10000)
+
+    with page.expect_download() as second_info:
+        pdf_button.click()
+    second_name = second_info.value.suggested_filename
+
+    assert len(calls) == 2, f"expected two requests to /export/pdf, got {calls}"
+
+    first_stamp = re.match(STAMP_PATTERN, first_name)
+    second_stamp = re.match(STAMP_PATTERN, second_name)
+    assert first_stamp and second_stamp, (first_name, second_name)
+    assert first_stamp.group() == second_stamp.group(), (
+        "the clock was not actually frozen for both downloads - the test proves "
+        f"nothing about the same-second case: {first_name!r} vs {second_name!r}"
+    )
+
+    assert first_name != second_name, (
+        "two PDF downloads taken in the same frozen second produced the same "
+        f"file name: {first_name!r}"
+    )
+
+
+@pytest.mark.browser
+def test_the_pdf_filename_follows_the_same_convention_as_the_text_export(page_at):
+    """The stamp itself - not merely that the two names differ from each other,
+    but that the PDF's name is built the way the text export's already was:
+    the same sortable date-and-time prefix, with the PDF's own identifier and
+    extension after it rather than before or in place of the stamp."""
+    page = page_at(_fixture("calculate_response.json"))
+    calls = []
+    page.route("**/api/v1/export/pdf", lambda route: _fulfil_pdf(route, calls))
+    _submit_two_entries(page)
+
+    with page.expect_download() as text_info:
+        page.locator('[data-action="download-results"]').click()
+    text_name = text_info.value.suggested_filename
+
+    with page.expect_download() as pdf_info:
+        page.locator('[data-action="download-pdf"]').click()
+    pdf_name = pdf_info.value.suggested_filename
+
+    assert re.fullmatch(STAMP_PATTERN + r"\.txt", text_name), text_name
+    assert re.fullmatch(STAMP_PATTERN + r"-[0-9a-z]{6,10}\.pdf", pdf_name), pdf_name
+
+
+#: 320, 390, 700, 938 and 1278 - the plan's own five widths - checked in German, the
+#: longest of the twenty catalogues shipped, per `tests/web/test_horizontal_overflow.py`'s
+#: own reasoning for including it.
+DOWNLOAD_LAYOUT_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", DOWNLOAD_LAYOUT_WIDTHS)
+def test_neither_download_button_overflows_in_german(browser, width):
+    """Measured, not reasoned about - `test_horizontal_overflow.py`'s own rule,
+    applied to the one change this task makes to the page's layout. German is
+    checked because it is this catalogue set's longest language and the one
+    that builds unbreakable compounds; a button pair that wraps rather than
+    overflows at a narrow width is a pass, the same allowance
+    `test_horizontal_overflow.py` makes for `.result-actions` already wrapping.
+    """
+    context = browser.new_context(
+        viewport={"width": width, "height": 900},
+        locale="de",
+        extra_http_headers={"Accept-Language": "de,en;q=0.5"},
+        bypass_csp=True,
+    )
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(_fixture("calculate_response.json")),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+
+        de = page.evaluate(
+            "() => ({scroll: document.documentElement.scrollWidth, "
+            "client: document.documentElement.clientWidth})"
+        )
+        #: The same 320px floor `test_horizontal_overflow.py` applies: below that,
+        #: the interface stops reflowing by design and the page is 320px wide on
+        #: purpose rather than by defect.
+        assert de["scroll"] <= max(de["client"], 320), (
+            f"the page scrolls sideways at {width}px in German: "
+            f"scrollWidth={de['scroll']} clientWidth={de['client']}"
+        )
+
+        for action in ("download-results", "download-pdf"):
+            button = page.locator(f'[data-action="{action}"]')
+            box = button.bounding_box()
+            assert box is not None, f"{action} has no box at {width}px"
+            assert box["x"] + box["width"] <= de["client"] + 1, (
+                f"{action} overflows its own viewport at {width}px in German: {box}"
+            )
+    finally:
+        context.close()

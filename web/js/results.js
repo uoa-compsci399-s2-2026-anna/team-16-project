@@ -8,6 +8,22 @@ import { setState } from './state.js'
 
 const DEMONSTRATION_NOTICE = 'Demonstration only — verified calculation factors have not yet been supplied.'
 
+// Task 4's flower stays on screen for one `kc-flower-bloom` (styles.css) plus headroom,
+// then `contributeCalculation` clears the flag that renders it. Not the animation's own
+// duration alone: a re-render that lands mid-tween (a keystroke in the improvement panel,
+// say) would otherwise cut the bloom off with the timer already spent.
+const CONTRIBUTE_CELEBRATE_MS = 900
+
+// §7.6.5-adjacent: the one piece of user *preference* this module reads rather than an
+// API figure. Guarded rather than called bare because the Node harness
+// `tests/web/test_results_export.py` stubs `window` as `{ location: { search: '' } }` -
+// no `matchMedia` - to run this module outside a browser at all; a bare call would throw
+// on module load rather than on the one branch that actually needs it.
+const prefersReducedMotion = () =>
+  typeof window !== 'undefined' &&
+  typeof window.matchMedia === 'function' &&
+  window.matchMedia('(prefers-reduced-motion: reduce)').matches
+
 // The English source strings, which are also the catalogue keys. `TAB_LABELS` is
 // keyed by tab and read in three places, one of which is a table caption, so the
 // translation happens where it is rendered rather than here - a module-level t()
@@ -86,7 +102,86 @@ const periodLine = timeFrame => {
 // currency notation, not a phrase, so it is not passed through `t()` - the same
 // reasoning `kg` throughout this file is written in and never translated (§7.7.7).
 const nzd = value => `NZ$${formatNumber(number(value), 2)}`
+const percentText = value => `${formatNumber(number(value), 2)}%`
 const hasValue = value => value !== null && value !== undefined
+
+// §4.6: every figure this card and the money block below it carry now travels with a
+// `data_state` entry, and `null` alone cannot tell "nobody typed one" from "some entries
+// did and some did not" from "everybody typed one and the ratio is still undefined" -
+// that is the whole reason the engine grew a fourth state rather than leaving the figure
+// `None`-or-a-value. A partially answered figure used to arrive as a wrong number (a sum
+// with a silently short denominator) and, since Task 1, arrives as `null` instead -
+// silence is the honest fallback but it is not the best one available, so `incomplete`
+// gets its own sentence rather than being folded into "nobody said".
+//
+// `undefined` (v1.51) is the fourth: every entry answered, and the ratio built from what
+// they answered has no defined value because it summed to zero — a production total of
+// zero is not the same claim as "nobody said", and reading it that way is exactly the
+// defect v1.51 closed. See `engine/calculate.py::_share_state`.
+//
+// One field a reader of this comment should not miss: `production_share_percent` is the
+// one figure on this page the mock-factor warning does not describe. Every other card is
+// `qty_kg * factor`, and the factor set is mock (open item O-1) until real ones arrive.
+// This card is `current.total_kg / total_input_kg` - two masses the visitor typed, with
+// no factor and no formula anywhere in the division - so it is exactly as trustworthy
+// under the placeholder banner as it will be once real factors are supplied. The
+// methodology paragraph in `renderResults` says so in words a visitor can read.
+
+// One field of `totals.money`, read against its own `data_state` entry (§4.6): `complete`
+// formats the value, `incomplete` returns the shared note below instead of nothing,
+// `undefined` (v1.51 - reachable only by `wasted_share_percent`, the one ratio among the
+// four money fields) returns its own note rather than either of the other two sentences,
+// and `not_supplied` - and any state this module has not learned - returns `null`, which
+// the caller reads as "print no row", the same rule `hasValue` gave every field here
+// before `data_state` existed.
+//
+// Both notes are literal `t('...')` calls, not module-level constants passed by reference -
+// `tests/web/i18n_keys.py` only extracts a `t()` argument literally or from its own named
+// list of indirect constants, and this string is not on that list. An indirect reference
+// here would render in every language but the one the visitor chose, silently, with no
+// test able to catch it - the exact failure mode `_INDIRECT` exists to name deliberately
+// rather than let happen by accident.
+function moneyFieldText(money, dataState, field, format) {
+  if (hasValue(money?.[field])) return format(money[field])
+  if (dataState?.[field] === 'incomplete') return t('Not every entry supplied this figure, so it cannot be totalled.')
+  if (dataState?.[field] === 'undefined') return t('The total value was zero, so this cannot be calculated.')
+  return null
+}
+
+/**
+ * The "Percentage waste" card's own four states (§4.6, v1.51), read and not derived: the
+ * engine divides `current.total_kg` by the summed `total_input_kg` and this only formats
+ * what comes back. `complete` prints the percentage; `incomplete` says the coverage was
+ * partial rather than showing nothing where a wrong number used to sit; `undefined` says
+ * every entry answered and the total came to zero, so the share itself has no value -
+ * distinct from `not_supplied` because "nobody said" and "the answer was zero" are not the
+ * same claim, and conflating them is the defect v1.51 closed; `not_supplied` - and anything
+ * this module has not learned the name of yet, the same forward-compatible fallback
+ * `hasValue` already gives every other absent figure - says nobody stated it, in words
+ * about what the visitor typed rather than about what the calculator can report.
+ */
+function productionShareText(totals) {
+  const state = totals.data_state?.production_share_percent
+  if (state === 'complete' && hasValue(totals.production_share_percent)) {
+    return { value: `${formatNumber(number(totals.production_share_percent), 2)}%`, note: '' }
+  }
+  if (state === 'incomplete') {
+    return {
+      value: t('Data incomplete'),
+      note: t('Some entries stated a production total and some did not, so a share of waste cannot be shown.'),
+    }
+  }
+  if (state === 'undefined') {
+    return {
+      value: t('Undefined'),
+      note: t('You said this covered 0 kg in total, so a share of waste cannot be shown.'),
+    }
+  }
+  return {
+    value: t('Not supplied'),
+    note: t('You did not say how much food this covered, so a share of waste cannot be shown.'),
+  }
+}
 
 /**
  * §4.5's money block, rendered beside `summaryCards()` inside the same "Impact
@@ -113,26 +208,37 @@ const hasValue = value => value !== null && value !== undefined
  * export by `comparisonLines` below, under the same heading as that comparison.
  * Teaching this block to read a second response would have put a figure about the
  * improved scenario inside a section describing the current one.
+ *
+ * §4.6 gave each of these three fields its own `data_state`, on the same terms as the
+ * percentage card above. Task 1 turned a partial sum into `null` — a two-entry submission
+ * that priced one entry no longer reports that entry's figure as the whole submission's
+ * total — and a block that only checked `hasValue` would now render nothing for that row,
+ * which is honest but not the most it can say: `moneyFieldText` prints the shared
+ * incomplete note instead, and stays silent only for a field nobody touched at all.
  */
 function moneySummary(totals) {
   const money = totals.money
   if (!money) return ''
+  const dataState = totals.data_state
   const rows = []
-  if (hasValue(money.total_value_nzd)) {
-    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Total value of food handled'))}</span><span class="money-value">${nzd(money.total_value_nzd)}</span></div>`)
+  const total = moneyFieldText(money, dataState, 'total_value_nzd', nzd)
+  if (total !== null) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Total value of food handled'))}</span><span class="money-value">${escapeHtml(total)}</span></div>`)
   }
-  if (hasValue(money.wasted_value_nzd)) {
-    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Value of food wasted'))}</span><span class="money-value">${nzd(money.wasted_value_nzd)}</span></div>`)
+  const wasted = moneyFieldText(money, dataState, 'wasted_value_nzd', nzd)
+  if (wasted !== null) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Value of food wasted'))}</span><span class="money-value">${escapeHtml(wasted)}</span></div>`)
   }
-  if (hasValue(money.wasted_share_percent)) {
-    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${formatNumber(number(money.wasted_share_percent), 2)}%</span></div>`)
+  const share = moneyFieldText(money, dataState, 'wasted_share_percent', percentText)
+  if (share !== null) {
+    rows.push(`<div class="money-row"><span class="money-label">${escapeHtml(t('Share of value wasted'))}</span><span class="money-value">${escapeHtml(share)}</span></div>`)
   }
   if (!rows.length) return ''
   return `<div class="money-summary"><h3>${escapeHtml(t('The money'))}</h3><p class="result-note">${escapeHtml(t("Figures the calculator did not derive: what you typed for value, summed by the calculation service."))}</p><div class="money-rows">${rows.join('')}</div></div>`
 }
 
 // `moneySummary`'s figures, in text, worded to match the rows on screen rather than
-// re-deriving them: same three fields, same `null`-means-absent rule. Returns `[]` (no
+// re-deriving them: same three fields, same `data_state` rule. Returns `[]` (no
 // heading printed) when the block is `null` or carries nothing - a heading over an empty
 // list is the "—" this module exists to avoid. The saving is not here for the reason it
 // is not on screen here either: it belongs to the comparison, and `savingLines` below
@@ -140,10 +246,14 @@ function moneySummary(totals) {
 function moneyLines(totals) {
   const money = totals.money
   if (!money) return []
+  const dataState = totals.data_state
   const lines = []
-  if (hasValue(money.total_value_nzd)) lines.push(`  - ${t('Total value of food handled')}: ${nzd(money.total_value_nzd)}`)
-  if (hasValue(money.wasted_value_nzd)) lines.push(`  - ${t('Value of food wasted')}: ${nzd(money.wasted_value_nzd)}`)
-  if (hasValue(money.wasted_share_percent)) lines.push(`  - ${t('Share of value wasted')}: ${formatNumber(number(money.wasted_share_percent), 2)}%`)
+  const total = moneyFieldText(money, dataState, 'total_value_nzd', nzd)
+  if (total !== null) lines.push(`  - ${t('Total value of food handled')}: ${total}`)
+  const wasted = moneyFieldText(money, dataState, 'wasted_value_nzd', nzd)
+  if (wasted !== null) lines.push(`  - ${t('Value of food wasted')}: ${wasted}`)
+  const share = moneyFieldText(money, dataState, 'wasted_share_percent', percentText)
+  if (share !== null) lines.push(`  - ${t('Share of value wasted')}: ${share}`)
   if (!lines.length) return []
   return ['', t('The money'), ...lines]
 }
@@ -157,7 +267,9 @@ function summaryCards(totals, taxonomy) {
     return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
   }).join('')
   const totalKg = number(totals.total_kg)
-  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(t('Not available'))}</p><p class="result-note">${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></article>`
+  const share = productionShareText(totals)
+  const shareNote = share.note ? `<p class="result-note">${escapeHtml(share.note)}</p>` : ''
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}</article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and
@@ -418,18 +530,25 @@ const destinationImpactLines = (scenario, taxonomy) => destinationRows(scenario,
 /**
  * §4.5's saving, in text, in the two lines the comparison screen shows it in.
  *
- * Same fields and the same `null`-means-absent rule as `moneyLines`, and the caveat
- * travels with the figure here exactly as it does on screen: the rate is nominal —
- * `wasted_value_nzd ÷ that entry's current mass` — so a sentence saying so has to be
- * as hard to crop away in a text file as it is in a screenshot.
+ * Same fields and the same `null`-means-absent rule as `moneyLines` — **on the same
+ * three-state terms as `moneyFieldText` gives every other money field, not a bare
+ * `hasValue` check.** `saving_nzd` used to be tested with `hasValue` alone, which
+ * printed nothing at all when the state was `incomplete`, while the PDF (`api/
+ * pdf_render.py::_money_rows`, which reads the same `data_state.saving_nzd`) printed
+ * the shared "Not every entry supplied this figure, so it cannot be totalled."
+ * sentence — the exact disagreement v1.50's own change-log item 4 rules out. The
+ * caveat about the nominal rate only makes sense beside an actual figure, so it is
+ * appended only when the state produced one, not when it produced the sentence.
  */
 function savingLines(totals) {
   const saving = totals?.money?.saving_nzd
-  if (!hasValue(saving)) return []
-  return [
-    `  - ${t('Value of food not wasted at all')}: ${nzd(saving)}`,
-    `    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`,
-  ]
+  const text = moneyFieldText(totals?.money, totals?.data_state, 'saving_nzd', nzd)
+  if (text === null) return []
+  const lines = [`  - ${t('Value of food not wasted at all')}: ${text}`]
+  if (hasValue(saving)) {
+    lines.push(`    ${t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.')}`)
+  }
+  return lines
 }
 
 // The comparison screen, in text, and only when one was run. `net_benefit` is read from the
@@ -573,6 +692,9 @@ export function buildResultsReport(state) {
   // Item ⑦: a label, printed once near the top of the file, same as on screen — no
   // figure below it is scaled by the period (contract v1.48).
   const period = periodLine(state.timeFrame)
+  // §4.6: the same three states `summaryCards` renders as the card, worded the same way,
+  // so a visitor reading the page and the file downloaded from it sees the same sentence.
+  const share = productionShareText(totals)
   return [
     t('Food Waste Impact Calculator — Results'),
     '',
@@ -591,13 +713,14 @@ export function buildResultsReport(state) {
     ...entryLines,
     `${t('Factor version')}: ${state.result?.factor_set?.version_label || t('Not supplied')}`,
     ...notice,
-    `${t('Percentage waste')}: ${t('Not available')}. ${t('This calculator does not report waste as a share of food handled yet.')}`,
+    `${t('Percentage waste')}: ${share.value}${share.note ? `. ${share.note}` : ''}`,
     ...translationNotice,
   ].join('\n')
 }
 
 /**
- * The download's file name, stamped with local time.
+ * The download's file name, stamped with local time — shared by both downloads
+ * (Task 3, 2026-08-31) so the stamp's own convention exists in exactly one place.
  *
  * A fixed name meant every export after the first arrived as
  * `food-waste-impact-results (1).txt`, and the browser decides that suffix, not
@@ -611,8 +734,16 @@ export function buildResultsReport(state) {
  *
  * `now` is a parameter because a function that reads the system clock cannot be
  * asserted on - the same reason `engine.calculate` takes no clock.
+ *
+ * `ext` and `unique` are both optional and both new: the text download still
+ * calls this with neither, so its own name is untouched. The PDF passes both —
+ * see `downloadPdf` — because the stamp alone has one-second resolution and a
+ * fixed name is exactly what made a second PDF land as `... (1).pdf`; the client
+ * asked for a timestamp *and* something unique per file, not the timestamp
+ * alone, so `unique` is a real per-download identifier rather than a second
+ * clock reading.
  */
-export function exportFilename(now = new Date()) {
+export function exportFilename(now = new Date(), { ext = 'txt', unique } = {}) {
   const pad = (value) => String(value).padStart(2, '0')
   const stamp = [
     now.getFullYear(),
@@ -623,14 +754,31 @@ export function exportFilename(now = new Date()) {
     pad(now.getMinutes()),
     pad(now.getSeconds()),
   ].join('')
-  return `food-waste-impact-results-${stamp}.txt`
+  const suffix = unique ? `-${unique}` : ''
+  return `food-waste-impact-results-${stamp}${suffix}.${ext}`
 }
 
 /**
- * The plain-text download, on `data-action="download-results"` — the original export, and
- * still the one the step navigation offers. PR #46 replaced this implementation with a
- * hand-rolled PDF rather than adding one beside it; the PDF now comes from the server
- * (`downloadPdf` below), so the two formats are two buttons and this one stays text.
+ * A short identifier that tells two downloads apart without depending on the
+ * clock — `exportFilename`'s stamp alone cannot, at one-second resolution.
+ * `crypto.randomUUID` is available in every browser this interface supports
+ * (it needs only a secure context, and `localhost` qualifies for it exactly as
+ * the deployed origin will); the fallback covers an embedded or older engine
+ * that Playwright or a real visitor could still present.
+ */
+function downloadUniqueId() {
+  if (typeof crypto !== 'undefined' && typeof crypto.randomUUID === 'function') {
+    return crypto.randomUUID().replace(/-/g, '').slice(0, 8)
+  }
+  return Math.random().toString(36).slice(2, 10)
+}
+
+/**
+ * The plain-text download, on `data-action="download-results"` — the original export.
+ * PR #46 replaced this implementation with a hand-rolled PDF rather than adding one beside
+ * it; the PDF now comes from the server (`downloadPdf` below), so the two formats are two
+ * buttons, rendered together as one choice rather than one in the step navigation and one
+ * trailing after it (Task 3, 2026-08-31 — see `renderResults`' own `.download-actions`).
  *
  * The link is attached to the document before `click()` and removed after: a detached
  * anchor is not reliably actionable in Firefox. Both details, and the deferred revoke
@@ -659,13 +807,15 @@ export function downloadResults(state) {
  * negotiated to put the rest of this page's own text on screen — because the server has no
  * other way to know which language the visitor is reading (§O-8).
  *
- * **One fixed name, matching the server's own `Content-Disposition`** (`EXPORT_FILENAME` in
- * `api/export.py`): the blob this creates has no headers of its own for the browser to read
- * a name from, and a document downloaded twice under two different names would be the
- * confusing sibling of `exportFilename()`'s reason for stamping the text export instead.
+ * **Stamped by `exportFilename`, the same helper the text export uses, not a constant.**
+ * `EXPORT_FILENAME` in `api/export.py` still names the response's `Content-Disposition`
+ * header, but that header is never what names this file: `exportPdf` (`web/js/api.js`)
+ * returns a `Blob` from a completed `fetch`, not a navigation the browser could read a
+ * header from, so the name a visitor sees has only ever been this `<a download>`'s own
+ * attribute — a front-end fix, and not one the contract needs to record. A fixed name here
+ * is exactly what turned every second PDF into `... (1).pdf`, the confusing sibling of
+ * `exportFilename()`'s reason for stamping the text export in the first place.
  */
-const PDF_EXPORT_FILENAME = 'kai-commitment-impact-calculator.pdf'
-
 export async function downloadPdf(state) {
   if (state.pdfExporting) return
   setState({ pdfExporting: true, pdfError: null })
@@ -674,7 +824,7 @@ export async function downloadPdf(state) {
     const url = URL.createObjectURL(blob)
     const link = document.createElement('a')
     link.href = url
-    link.download = PDF_EXPORT_FILENAME
+    link.download = exportFilename(new Date(), { ext: 'pdf', unique: downloadUniqueId() })
     document.body?.append(link)
     link.click()
     link.remove?.()
@@ -689,12 +839,57 @@ export async function downloadPdf(state) {
 }
 
 /**
+ * The client's own ask (round three): "a long rounded button rather than a tick, a bit
+ * cuter, perhaps a small flower animation on press" — built from five half-circles, the
+ * brand's own supporting graphic (the logo's half-disc, at small scale in an odd-numbered
+ * group), each offset out from a shared hub before it is rotated into place - meeting at
+ * the hub rather than at a single shared centre point, which is what keeps the five lobes
+ * readable as petals instead of tiling into a solid disc (five half-discs rotated about
+ * one point cover the circle completely, with no ground visible between them - a pie
+ * chart, not a flower). Renders only from `contributeBlock`, only while
+ * `state.contributeCelebrating` is true, so it never plays on its own — see that flag's
+ * note in `state.js` for why a re-render alone must not replay it, and
+ * `contributeCalculation` below for what clears it.
+ *
+ * `aria-hidden`: the flower adds nothing a screen reader needs. Every fact it stands for
+ * — ticked, and now contributed — is already on the accessible checkbox itself and in
+ * `.contribute-status`'s own text.
+ */
+function contributeFlower() {
+  // Each half-disc is drawn at the origin, same as before, then pushed outward by 7 units
+  // along its own local +x *before* the rotation places it around the hub (`translate`
+  // first, `rotate` second - SVG composes transforms right to left) - so its flat edge
+  // sits 7 units from the hub and its dome reaches to 16, leaving the hub itself clear and
+  // leaving ground visible between one dome tip and the next.
+  const petal = (rotate, fill) =>
+    `<path d="M0,-9 A9,9 0 0 1 0,9 Z" fill="${fill}" transform="rotate(${rotate}) translate(7,0)"></path>`
+  return `<svg class="contribute-flower" width="44" height="44" viewBox="-22 -22 44 44" aria-hidden="true" focusable="false">${petal(0, 'var(--kai-pea)')}${petal(72, 'var(--kai-banana)')}${petal(144, 'var(--kai-pea)')}${petal(216, 'var(--kai-banana)')}${petal(288, 'var(--kai-pea)')}<circle r="3.4" fill="var(--kai-kale)"></circle></svg>`
+}
+
+/**
  * §6.2.2, and the control this whole task exists to write.
  *
  * **Unticked by construction.** `state.contributed` starts `false` and nothing here
  * sets it before a press — a pre-checked box would make stage one's `is_public_
  * contributed` default of FALSE decorative, which is exactly what item ⑬ reverses
  * §2.3's "no consent checkbox" decision to prevent.
+ *
+ * **Still a real checkbox, underneath.** Round three restyled this into the "long
+ * rounded button" the client asked for, but `#contribute` is still a native
+ * `input[type="checkbox"]` — visually replaced by the `<label>` beside it (`styles.css`'s
+ * `.contribute-toggle`), never removed from the accessibility tree. That is what keeps
+ * `page.locator('#contribute').check()` / `.is_checked()` — this file's own database-
+ * reading tests among them — working unchanged: Playwright and a screen reader alike
+ * still see a checkbox with this label as its accessible name. `aria-checked` is set
+ * explicitly alongside the native `checked` property, redundant on a native input but
+ * literally what the brief asks for kept, in case the visual control is ever rebuilt on
+ * a non-native element that has no `checked` property of its own to fall back on.
+ *
+ * **The checked state is never colour alone.** `.contribute-toggle__mark` (`styles.css`)
+ * switches from an open ring to a filled disc with a check mark drawn in its own `::after`
+ * — a shape change, not a repaint — and `.contribute-status` below says the same thing in
+ * words once a press succeeds. A visitor who cannot see colour, or is reading a screen
+ * reader, still gets an unambiguous answer either way.
  *
  * **One-way, and said so before the click, not after.** The route only ever sets the
  * flag (§6.2.2's own table has no path that clears it), so unticking this box would be
@@ -724,11 +919,14 @@ export async function downloadPdf(state) {
 function contributeBlock(state) {
   const pending = state.contributing
   const done = state.contributed
+  const active = pending || done
+  const celebrate = done && state.contributeCelebrating && !prefersReducedMotion()
   return `<div class="contribute-block">
     <p class="contribute-sentence" id="contribute-sentence">${escapeHtml(t('This sends an anonymous copy of your results into this calculator\'s public statistics — no name, no address, nothing that identifies you. It cannot be undone from here once sent, and if you come back and recalculate, your updated figures take its place under this same choice.'))}</p>
     <div class="contribute-control">
-      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" ${pending || done ? 'checked' : ''} ${pending || done ? 'disabled' : ''}>
-      <label for="contribute">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</label>
+      <input type="checkbox" id="contribute" aria-describedby="contribute-sentence" aria-checked="${active ? 'true' : 'false'}" ${active ? 'checked' : ''} ${active ? 'disabled' : ''}>
+      <label for="contribute" class="contribute-toggle"><span class="contribute-toggle__mark" aria-hidden="true"></span><span class="contribute-toggle__text">${escapeHtml(t('I would like to contribute to the Kai Commitment'))}</span></label>
+      ${celebrate ? contributeFlower() : ''}
     </div>
     ${done ? `<p class="contribute-status" role="status">${escapeHtml(t("Your latest figures are in this calculator's public statistics."))}</p>` : ''}
     ${state.contributeError ? `<p class="field-error" role="alert">${escapeHtml(state.contributeError)}</p>` : ''}
@@ -748,13 +946,22 @@ function contributeBlock(state) {
  * A failed call leaves `contributed` false, which re-enables the checkbox and leaves it
  * unticked — the "pre-press state" the brief asks for — rather than reporting a success
  * that did not happen.
+ *
+ * **`contributeCelebrating` is set on success and cleared by this function, not by the
+ * next render.** `renderResults` rebuilds the whole section on every `setState`
+ * (`main.js`'s `render()`), so a flower that rendered for as long as `state.contributed`
+ * stayed true would bloom again on every unrelated re-render — opening the improvement
+ * panel after contributing, say. Setting a second, one-shot flag and clearing it with its
+ * own `setTimeout` is what confines the animation to the actual transition, the same
+ * pattern `calculator.js` and `downloadPdf` above already use for a timed state clear.
  */
 export async function contributeCalculation(state, toPublicMessage = error => error.message || t('The calculator service could not be reached. Check your connection and try again.')) {
   if (state.contributing || state.contributed || !state.token) return
   setState({ contributing: true, contributeError: null })
   try {
     await contribute(state.token)
-    setState({ contributing: false, contributed: true })
+    setState({ contributing: false, contributed: true, contributeCelebrating: true })
+    setTimeout(() => setState({ contributeCelebrating: false }), CONTRIBUTE_CELEBRATE_MS)
   } catch (error) {
     setState({ contributing: false, contributed: false, contributeError: toPublicMessage(error) })
   }
@@ -786,11 +993,11 @@ export function renderResults(state) {
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
     ${breakdownSection(state, entryResults)}
-    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('This calculator does not report waste as a share of food handled yet.'))}</p></div></details></section>
-    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><button class="button button-secondary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
+    <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
+    <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
     ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
     ${contributeBlock(state)}
-    ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), label: t('Download results'), action: 'download-results' })}
+    ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), action: null })}
   </section>`
 }

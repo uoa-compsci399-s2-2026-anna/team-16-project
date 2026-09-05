@@ -49,6 +49,7 @@ inheriting ``CalculatePayload`` is untouched.
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any
 
 from pydantic import Field
@@ -80,16 +81,30 @@ class ExportPayload(PricingOptions):
     locale: str = Field(min_length=_LOCALE_MIN, max_length=_LOCALE_MAX)
 
 
-#: The filename every export answers with. One name rather than one derived
-#: from the request, because nothing in the payload is safe to put in a
-#: `Content-Disposition` header unescaped, and a fixed name is what every
-#: other download-shaped route in this API already does (`_csv_zip` in
-#: `api/router.py`).
+#: The filename this route's `Content-Disposition` header names — and, for the
+#: calculator itself, inert. `web/js/results.js`'s `downloadPdf` takes a `Blob`
+#: from a completed `fetch` rather than a navigation the browser could read a
+#: header from, and stamps its own name via `exportFilename()` on the `<a
+#: download>` it creates, so nothing under `web/` ever reads this constant. The
+#: route is POST-only — a `GET` answers 405 — so no browser ever navigates here
+#: directly either; the header only names the file for a caller that issues the
+#: POST itself and saves the response as-is (curl, say, or a future API
+#: consumer). Still one fixed name rather than one derived from the request,
+#: because nothing in the payload is safe to put in the header unescaped — the
+#: same reason `_csv_zip` in `api/router.py` uses a fixed name too.
 EXPORT_FILENAME = "kai-commitment-impact-calculator.pdf"
 
 
-def render_export_pdf(result: Any, payload: ExportPayload, taxonomy: Any) -> bytes:
+def render_export_pdf(
+    result: Any, payload: ExportPayload, taxonomy: Any, generated_at: datetime
+) -> bytes:
     """Build the response body for `POST /api/v1/export/pdf`.
+
+    `generated_at` is read once, by the route in `api/router.py`, and passed
+    in rather than read here - the title block's "generated" fact has to name
+    the moment this request was actually served, and a value threaded through
+    as a parameter is what lets a test pin that moment to something fixed
+    instead of racing the wall clock.
 
     `result` is whatever `EngineAdapter.calculate` returned for this exact
     request — the same object `api/engine_adapter.py`'s `serialize_result`
@@ -114,4 +129,4 @@ def render_export_pdf(result: Any, payload: ExportPayload, taxonomy: Any) -> byt
     three arguments and a call, so that there is exactly one place a figure is
     turned into text.
     """
-    return render_results_pdf(result, taxonomy, payload.locale)
+    return render_results_pdf(result, taxonomy, payload.locale, generated_at)

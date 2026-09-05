@@ -130,6 +130,96 @@ class EntryResult:
     current: ScenarioResult
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
+    #: This entry's own current mass as a percentage of the `total_input_kg`
+    #: it supplied, two places. `None` when this entry supplied no production
+    #: total -- absent, never zero, because "0% of what this site handles"
+    #: is a claim about the site and not an absence of data.
+    #:
+    #: **Permanent, and independent of the totals.** An entry that answered
+    #: keeps its own share whether or not its neighbours did, so a visitor
+    #: who filled the field in on one row still sees that row's figure even
+    #: when the summary has to say the data is incomplete.
+    #:
+    #: **This is the one figure on the results page that open item O-1 does
+    #: not touch.** Every other number there is computed from a mock factor
+    #: set and carries the mandatory placeholder banner. This one is
+    #: arithmetic on two masses the visitor typed -- a waste mass over a
+    #: production mass -- and no factor, real or placeholder, enters it. A
+    #: reader who distrusts it because of the banner is distrusting the wrong
+    #: number.
+    production_share_percent: Decimal | None = None
+
+
+#: §4.5/§4.6's states, and the reason `Decimal | None` alone cannot carry
+#: them. A totals-level figure here is a roll-up of a **per-entry optional
+#: input**, and a submission may answer it on some entries and not others.
+#: That leaves three different things to say about *coverage*, not two:
+#:
+#:   complete      every entry supplied the input; the figure is the figure.
+#:   incomplete    some entries supplied it and some did not. The value is
+#:                 withheld -- summing only the entries that answered yields
+#:                 a real-looking figure whose denominator silently excludes
+#:                 part of the submission, and averaging the per-entry
+#:                 percentages weights a 10 kg entry equally with a 10 t one.
+#:                 A stated gap is better than a number that is quietly wrong.
+#:   not_supplied  no entry supplied it. Nobody answered the question.
+#:
+#: A fourth state (v1.51) answers a different question -- not "did everybody
+#: answer" but "is the arithmetic defined once they did":
+#:
+#:   undefined     every entry answered, and the ratio has no defined value
+#:                 because what they answered summed to zero -- a
+#:                 submission whose every entry typed a production total of
+#:                 zero, or a total value of zero. A stated answer, an
+#:                 undefined question.
+#:
+#: `production_share_percent` and `wasted_share_percent` are the two figures
+#: that can reach it -- both are `part / whole` over a whole every entry
+#: supplied, and `engine/calculate.py::_share_state` is the one place that
+#: decides it, so `complete` and `None` never pair on those two figures by
+#: accident (before v1.51 they did: a zero production total read back as
+#: "you did not say how much food this covered", which was false).
+#:
+#: `None` conflates all three of `incomplete`, `not_supplied` and
+#: `undefined`, which is exactly the defect the results page shipped with:
+#: one card said "Not available" whether the visitor had skipped the field,
+#: filled it in on half their rows, or answered every row with a total of
+#: zero.
+DATA_COMPLETE = "complete"
+DATA_INCOMPLETE = "incomplete"
+DATA_NOT_SUPPLIED = "not_supplied"
+DATA_UNDEFINED = "undefined"
+
+
+@dataclass(frozen=True)
+class DataState:
+    """Which of the three states above each totals-level figure is in.
+
+    **Why a state beside the value rather than a sentinel inside it.**
+    Decimals travel as strings and every consumer runs `Number()` on them for
+    display; a sentinel decimal is a number that can be plotted, summed and
+    screenshotted. A boolean flag would only name one of the two absences and
+    leave the reader to infer the other from a null. A named state per figure
+    says which of three things happened, and the value stays `None` for both
+    non-complete states -- so a caller that forgets to read the state renders
+    a blank, never a wrong number. Both failure modes are honest.
+
+    **One direction only.** A non-complete state (`incomplete`,
+    `not_supplied`, `undefined`) always implies a `None` value. For
+    `production_share_percent` and `wasted_share_percent`, `complete` now
+    always implies a value too (v1.51) -- the one case that used to break
+    that, a denominator every entry answered as zero, is named `undefined`
+    instead of being left `complete` with nothing to show for it. `saving_nzd`
+    is the one field this class carries where `complete` still does not fully
+    guarantee a value; see the comment beside its computation in
+    `engine/calculate.py::_money`.
+    """
+
+    production_share_percent: str = DATA_NOT_SUPPLIED
+    total_value_nzd: str = DATA_NOT_SUPPLIED
+    wasted_value_nzd: str = DATA_NOT_SUPPLIED
+    wasted_share_percent: str = DATA_NOT_SUPPLIED
+    saving_nzd: str = DATA_NOT_SUPPLIED
 
 
 @dataclass(frozen=True)
@@ -146,7 +236,11 @@ class MoneyResult:
     cost-price versus retail-price is the client's own client's question.
 
     Every field is optional because every input is. `None` means nobody
-    supplied what it is derived from - never zero, which is a claim.
+    supplied what it is derived from - never zero, which is a claim. Since
+    §4.6 it can mean one further thing: that *some* entries supplied it and
+    some did not, in which case the figure is withheld rather than summed
+    over the entries that answered. `CalculationTotals.data_state` is what
+    tells the two apart, and it is the only thing that can.
     """
 
     #: Summed across entries. A business reporting at three stages has three
@@ -189,6 +283,16 @@ class CalculationTotals:
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
     money: MoneyResult | None
+    #: The whole submission's current mass over the whole submission's
+    #: production, two places -- **computed only when every entry supplied a
+    #: production total**, and `None` otherwise. See `DataState` for the two
+    #: different reasons it can be `None` and for why neither is zero. Like
+    #: the per-entry figure above, O-1's mock factors cannot reach it.
+    production_share_percent: Decimal | None = None
+    #: Which of the three states each totals-level figure above is in.
+    #: Always present, so the caller never has to infer a state from an
+    #: absent object.
+    data_state: DataState = DataState()
 
 
 @dataclass(frozen=True)

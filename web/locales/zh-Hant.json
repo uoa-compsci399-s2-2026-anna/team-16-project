@@ -342,13 +342,22 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "這些數字描述的是貢獻給本工具的計算所構成的自選樣本，既不是一項調查，也不代表紐西蘭全國的食物浪費狀況。",
     "Breakdowns of entries contributed to this tool": "本工具中所貢獻記錄的細分情形",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s，本工具累計貢獻的數量",
-    "This calculator does not report waste as a share of food handled yet.": "本計算機尚未提供浪費占處理食物總量的比例。",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "您填寫的記錄會以匿名方式保存，只有在您選擇提供時才會納入公開統計。",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "您在計算機中填寫的產業環節、食物類別與數量會以匿名方式記錄。只有在您選擇提供時，才會納入具備隱私保護的公開統計。我們不會記錄任何足以辨識您本人或您公司的資訊。",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "本計算機會保存您填寫的產業環節、食物類別與數量。只有在您選擇提供時才會納入公開統計，且不會保存任何足以辨識您本人或您公司的資訊。",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "瀏覽提供給 Kai Commitment 食物浪費影響計算機的各次計算的匿名彙總統計。",
     "Percentage": "百分比",
     "Total mass": "總重量",
-    "Download PDF": "下載 PDF"
+    "Download PDF": "下載 PDF",
+    "Data incomplete": "資料不完整",
+    "Not every entry supplied this figure, so it cannot be totalled.": "並非每筆記錄都提供了此數值，因此無法加總。",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "部分記錄填寫了生產總量，部分未填寫，因此無法顯示浪費佔比。",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "浪費佔處理食物的比例是您輸入的兩個質量之比，並非基於係數計算得出，因此上方的佔位資料不會影響該數值。",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "您未說明此次記錄涉及的食物總量，因此無法顯示浪費佔比。",
+    "Undefined": "未定義",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "您表示此次記錄合計涉及 0 公斤，因此無法顯示浪費佔比。",
+    "The total value was zero, so this cannot be calculated.": "總價值為零，因此無法計算此數值。",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "浪費價值比生產價值多出 NZ$%(excess)s。",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "浪費量比生產總量多出 %(excess)s %(unit)s。"
   }
 }

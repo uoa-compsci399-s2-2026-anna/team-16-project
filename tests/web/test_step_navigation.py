@@ -212,8 +212,18 @@ def advance_to(page, step):
 
 #: The screen, and the selector for the action that advances it. The intro has
 #: no bar — it is a full-bleed hero whose own CTA measured -447 / -362 / -273 on
-#: the pass that put this table here — and the results screen's advancing action
-#: is the download.
+#: the pass that put this table here.
+#:
+#: **Step 5 changed under the plan of 2026-08-31 (Task 3).** The download used to
+#: be `.step-nav [data-action="download-results"]`, pinned exactly like every
+#: other step's advancing action. The client's second-round feedback was that
+#: the text export was unreachable beside the PDF button, which lived outside
+#: the bar in `.result-actions` — so the text download moved out to sit beside
+#: it as an equal-weight pair, and the step-nav's primary slot for this one step
+#: is now empty (`stepNav({..., action: null})`, `web/js/view.js`). Results is
+#: the wizard's terminal screen — there is nothing further to "advance" to — so
+#: what this table now measures there is the one action Task 3's own brief says
+#: must stay put: the back action, still pinned in the bar.
 PRIMARY = {
     -1: '[data-action="start"]',
     0: '.step-nav [data-action="continue"]',
@@ -221,7 +231,7 @@ PRIMARY = {
     2: '.step-nav [data-action="continue"]',
     3: '.step-nav [data-action="continue"]',
     4: '.step-nav [data-action="calculate"]',
-    5: '.step-nav [data-action="download-results"]',
+    5: '.step-nav [data-action="go-step"]',
 }
 
 
@@ -269,6 +279,25 @@ def test_the_back_action_of_every_step_is_reachable_without_scrolling(page_at, w
         elif past > 0:
             failures.append(f"step {step}: Back is {past}px past the fold")
     assert not failures, "; ".join(failures)
+
+
+def test_the_results_step_bar_has_no_primary_button(page_at):
+    """Task 3 gave `stepNav`'s `action` parameter a `null` case so the results
+    step's bar can omit the primary button entirely (`web/js/view.js`) — its
+    "download" action moved out to sit beside the PDF button instead. Neither
+    `test_results_export.py` nor the table above notices if that branch is
+    ever removed: `PRIMARY[5]` and both viewport sweeps above only assert
+    where the *back* action lands, and a `stepNav` that fell back to
+    rendering `data-action="continue"` here — a dead button with no step left
+    to continue to — would leave both green. This is the assertion that
+    actually counts what the bar's primary slot holds on that one step.
+    """
+    page = advance_to(page_at(1278, 983, 1.0), 5)
+    count = page.locator(".step-nav .button-primary").count()
+    assert count == 0, (
+        f"the results step-nav renders {count} primary button(s); its "
+        "primary slot should be empty (`stepNav({action: null})`)"
+    )
 
 
 def test_the_bar_is_sticky_and_not_fixed(page_at):
@@ -975,6 +1004,282 @@ def test_the_production_total_is_optional_and_continue_still_works(page_at):
     )
 
 
+def test_a_wasted_value_greater_than_the_total_value_is_refused_at_entry(page_at):
+    """**The client's own report: a money block reading "wasted share 102.17%".**
+    The wasted food is a subset of the food handled, so its value cannot exceed
+    the value of the whole - refused here, at the field, rather than only
+    printed unclamped on the results page (`moneySummary` in `results.js`
+    deliberately does not clamp `wasted_share_percent`, on the theory that a
+    contradiction reaching it is the visitor's own typo showing through; this
+    is the fix that stops the typo reaching it at all).
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1000")
+    page.fill("#total-value", "46.00")
+    page.fill("#wasted-value", "47.00")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    assert page.locator("#amount-title").count() == 1, (
+        "the contradiction did not keep the visitor on the amount step"
+    )
+    assert page.locator(".destination-row").count() == 0, (
+        "the step advanced despite the wasted value exceeding the total value"
+    )
+    #: Attached to `#wasted-value` specifically - the figure the message is
+    #: actually about - not the waste-amount field, and not a generic banner.
+    field = page.locator("#wasted-value")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert field.get_attribute("aria-describedby") == "wasted-value-error"
+    message_el = page.locator("#wasted-value-error")
+    assert message_el.count() == 1, "no message was shown against #wasted-value"
+    assert message_el.get_attribute("role") == "alert"
+    message = message_el.inner_text()
+    assert "waste" in message.lower() and "production" in message.lower(), (
+        f"the message does not say which figure is the problem: {message!r}"
+    )
+    #: Not also duplicated against the waste-amount field, which this
+    #: contradiction is not about.
+    assert page.locator("#amount-error").count() == 0, (
+        "the money contradiction was ALSO attached to the waste-amount field"
+    )
+
+    #: The affirmative half: pulling the wasted figure back under the total
+    #: lets the visitor continue, exactly as editable as it always was.
+    page.fill("#wasted-value", "45.00")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+    assert page.locator(".destination-row").count() > 0, (
+        "a wasted value under the total was still refused"
+    )
+
+
+def test_a_waste_amount_greater_than_the_production_total_is_refused_at_entry(page_at):
+    """**The same contradiction, one dimension over.** The waste amount is a
+    subset of the production total beside it, so the same rule applies to the
+    two masses as to the two money figures above - and the same server-side
+    ratio (`production_share_percent`, §4.6) would otherwise print a share
+    past 100% for the same reason the money share could.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1500")
+    page.fill("#total-input", "1000")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    assert page.locator("#amount-title").count() == 1, (
+        "the contradiction did not keep the visitor on the amount step"
+    )
+    assert page.locator(".destination-row").count() == 0, (
+        "the step advanced despite the waste amount exceeding the production total"
+    )
+    #: Attached to the waste-amount field itself - the mass contradiction's
+    #: own subject, unlike the money one above.
+    field = page.locator("#total-waste")
+    assert field.get_attribute("aria-invalid") == "true"
+    assert field.get_attribute("aria-describedby") == "amount-error"
+    message_el = page.locator("#amount-error")
+    assert message_el.count() == 1, "no message was shown against #total-waste"
+    assert message_el.get_attribute("role") == "alert"
+    message = message_el.inner_text()
+    assert "waste" in message.lower() and "produced" in message.lower(), (
+        f"the message does not say which figure is the problem: {message!r}"
+    )
+
+    #: The affirmative half.
+    page.fill("#total-input", "2000")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+    assert page.locator(".destination-row").count() > 0, (
+        "a waste amount under the production total was still refused"
+    )
+
+
+@pytest.mark.parametrize(
+    "total_value,wasted_value",
+    [
+        pytest.param("", "47.00", id="value_handled_blank"),
+        pytest.param("46.00", "", id="value_wasted_blank"),
+        pytest.param("", "", id="both_blank"),
+    ],
+)
+def test_a_blank_money_field_is_exempt_from_the_contradiction_check(page_at, total_value, wasted_value):
+    """**Both money fields are optional by design (§4.5), and the mass side of
+    this same round already has its own test for this
+    (`test_the_production_total_is_optional_and_continue_still_works`); the
+    money side had none.** `moneyContradictionValidation` returns early on a
+    blank `#total-value` or `#wasted-value` - untested, that guard could be
+    deleted and the whole file would still pass while a blank optional field
+    was refused outright, exactly the `not_supplied`/`incomplete` regression
+    the four-state `data_state` model at v1.51 exists to keep the calculator
+    out of.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1000")
+    if total_value:
+        page.fill("#total-value", total_value)
+    if wasted_value:
+        page.fill("#wasted-value", wasted_value)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector(".destination-row", timeout=5000)
+
+    assert page.locator(".destination-row").count() > 0, (
+        f"a blank money field (total={total_value!r}, wasted={wasted_value!r}) "
+        "was refused as though it contradicted the other"
+    )
+
+
+@pytest.mark.parametrize(
+    "total_value,wasted_value,should_refuse",
+    [
+        pytest.param("47.00", "47.00", False, id="exactly_equal_at_the_cent"),
+        pytest.param("47.00", "47.01", True, id="one_cent_over"),
+        #: These two logical gaps are identical - one cent - and used to fall on
+        #: opposite sides of `ALLOCATION_EPSILON` purely from binary floating-point
+        #: error (`0.04 - 0.03` and `0.08 - 0.07` land on different sides of `0.01`
+        #: in a double). Both must now be refused, identically.
+        pytest.param("0.03", "0.04", True, id="one_cent_over_dust_prone_low"),
+        pytest.param("0.07", "0.08", True, id="one_cent_over_dust_prone_high"),
+        pytest.param("46.00", "47.00", True, id="the_clients_own_figures"),
+    ],
+)
+def test_the_money_contradiction_is_decided_at_the_exact_cent_not_by_float_dust(
+    page_at, total_value, wasted_value, should_refuse
+):
+    """**Finding 1.** `exceedsTotal`'s `ALLOCATION_EPSILON` (0.01) is a mass
+    tolerance, built for a scale that does not agree with itself to the gram.
+    Reused as a money rule it let a wasted value up to a whole cent over its
+    own total through - the client's own defect, one cent smaller - and even
+    that one-cent boundary was decided by double-precision rounding rather
+    than by the figure actually typed. `moneyCents` parses both figures
+    directly into integer cents, so the decision cannot be moved by dust: the
+    exact-cent boundary (equal values) is allowed, and every one-cent-over case
+    here is refused identically regardless of which specific figures produce
+    the one-cent gap.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+
+    page.fill("#total-waste", "1000")
+    page.fill("#total-value", total_value)
+    page.fill("#wasted-value", wasted_value)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    advanced = page.locator(".destination-row").count() > 0
+    if should_refuse:
+        assert not advanced, (
+            f"wasted value {wasted_value} against total value {total_value} was allowed through"
+        )
+    else:
+        assert advanced, (
+            f"wasted value {wasted_value} against total value {total_value} was refused"
+        )
+
+
+def test_the_money_contradiction_is_checked_per_entry_not_across_the_whole_submission(page_at):
+    """**Confirms this stayed true through the fix.** The check reads only the
+    draft entry's own two fields, never anything saved on an earlier entry - so
+    a submission whose figures would sum to something unobjectionable can
+    still be refused, if one entry's own pair contradicts.
+
+    Entry 1: value 1000 / wasted 10 (saved, unremarkable). Entry 2, the draft:
+    value 5 / wasted 500 - refused on its own even though 1005 handled against
+    510 wasted, summed across both entries, would not be.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    page.fill("#total-waste", "1000")
+    page.fill("#total-value", "1000")
+    page.fill("#wasted-value", "10")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('[data-line-field="amount"]')
+    page.fill('[data-line-field="amount"] >> nth=0', "1000")
+    page.wait_for_timeout(60)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('[data-action="add-entry"]')
+
+    page.click('[data-action="add-entry"]')
+    page.wait_for_selector('input[name="sector"]')
+    page.evaluate("document.querySelector('input[name=sector]').click()")
+    page.wait_for_timeout(60)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('input[name="food-category"]')
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector("#total-waste")
+
+    page.fill("#total-waste", "500")
+    page.fill("#total-value", "5")
+    page.fill("#wasted-value", "500")
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(80)
+
+    assert page.locator(".destination-row").count() == 0, (
+        "the second entry's own money contradiction was masked by the first entry's figures"
+    )
+    message = page.locator("#wasted-value-error").inner_text()
+    assert "495.00" in message, f"unexpected excess figure: {message!r}"
+
+
+def test_a_blocked_refusal_still_shows_a_message_back_on_the_amount_step(page_at):
+    """**A live regression, not a new requirement.** `amountStep`'s three-way
+    classification (`amountFieldError` / `moneyContradictionError` /
+    `bannerError`) matches `state.error` against whichever of
+    `amountOnlyValidation`, `moneyContradictionValidation` and
+    `massContradictionValidation` currently agrees with it - and, before this
+    fix, had no branch for an error that matches none of them.
+
+    `BLOCKED` is exactly that state. §9.2: a blocked caller must never be
+    offered a "try again" affordance, so `clearedError` deliberately keeps a
+    `BLOCKED` error and its `errorCode` across a step change. A visitor refused
+    at Calculate (step 4) who then returns to step 2 carries an error that is
+    not a `VALIDATION_ERROR` and satisfies none of the three client checks
+    either - so it matched nothing and rendered nothing. Measured at HEAD
+    before this fix: no visible message at all, where the previous single-slot
+    code showed the refusal text.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 4)
+    page.route(
+        "**/api/v1/calculate",
+        lambda route: route.fulfill(
+            status=403,
+            content_type="application/json",
+            body=json.dumps(
+                {
+                    "error": {
+                        "code": "BLOCKED",
+                        "message": "This submission was refused.",
+                        "details": None,
+                    }
+                }
+            ),
+        ),
+    )
+    page.click('.step-nav [data-action="calculate"]')
+    page.wait_for_timeout(200)
+
+    #: §9.2's own affordance rule, restated as a precondition: the refusal is
+    #: terminal, so Calculate must already be disabled on the screen it landed
+    #: on, before this test ever asks about step 2.
+    assert page.locator('.step-nav [data-action="calculate"]').is_disabled(), (
+        "a BLOCKED refusal left Calculate enabled, offering a retry §9.2 forbids"
+    )
+
+    page.click('[data-action="go-step"][data-step="2"]')
+    page.wait_for_selector("#total-waste")
+
+    messages = [
+        text.strip()
+        for text in page.locator(".field-error").all_inner_texts()
+        if text.strip()
+    ]
+    assert messages, (
+        "a refused submission shows no visible message at all back on the amount step"
+    )
+    assert any("refused" in message.lower() for message in messages), messages
+
+
 def test_step_three_asks_for_the_two_money_figures(page_at):
     """Item ⑤. Both optional, both in New Zealand dollars, and both
     STATISTICS ONLY - the client's ruling on open item O-2 is that the value
@@ -1114,13 +1419,21 @@ def test_the_four_new_values_reach_the_request_body(page_at):
             #: **Tonnes, and that is the whole point of this line.** Filled while the
             #: entry unit was kilograms, the conversion on `total_input_kg` is the
             #: identity - so deleting it outright left this test green while claiming in
-            #: its own comment to assert the conversion happened. 50 tonnes is 50,000 kg
-            #: and no other reading of the field produces that number. The unit is
-            #: selected before the field is filled because changing it clears the field.
+            #: its own comment to assert the conversion happened. 5000 tonnes is
+            #: 5,000,000 kg and no other reading of the field produces that number. The
+            #: unit is selected before the field is filled because changing it clears
+            #: the field.
+            #:
+            #: **Larger than `#total-waste`, which `walk()`'s own step-2 fill sets to
+            #: "1000" in whatever unit is active - here, tonnes - immediately after
+            #: this block runs.** A production total smaller than that would trip the
+            #: item-①-round-two guard in `validateCurrentStep` (waste cannot exceed
+            #: production) and refuse to advance past step 2 at all, which is a
+            #: different test's subject, not this one's.
             page.select_option("#total-unit", "tonnes")
             page.wait_for_timeout(80)
             page.fill("#total-waste", "1")
-            page.fill("#total-input", "50")
+            page.fill("#total-input", "5000")
             page.fill("#total-value", "120000")
             page.fill("#wasted-value", "4500")
         elif arrived == 4:
@@ -1132,14 +1445,14 @@ def test_the_four_new_values_reach_the_request_body(page_at):
     assert sent, "no request was made"
     assert sent["time_frame"] == "one_month"
     entry = sent["entries"][0]
-    #: 50 tonnes is 50,000 kg. §1.2: decimals travel as strings because
+    #: 5000 tonnes is 5,000,000 kg. §1.2: decimals travel as strings because
     #: JavaScript's Number is a double.
     #:
-    #: **Exactly `"50000"`, with no invented decimal places.** The send path
+    #: **Exactly `"5000000"`, with no invented decimal places.** The send path
     #: ended in `.toFixed(3)`, which also *rounded* - a typed `1.2345` became
     #: `"1.234"`, the very rewrite the round-one fix refused to perform on the
     #: money fields two lines below. The two families now apply one rule.
-    assert entry["total_input_kg"] == "50000"
+    assert entry["total_input_kg"] == "5000000"
     #: The two money fields are **not** reformatted - Fix round 1 found
     #: `Number(value).toFixed(2)` silently padding (and, for a third typed
     #: decimal, rounding) a figure nobody asked to have rewritten. "120000"
@@ -1250,11 +1563,22 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
     `.toFixed(3)`, which rounded `1.2345` to `1.234`.
 
     **`CalculatePayload.model_validate` is deliberately not run on the kilogram
-    body.** `1.2345` kg is four decimal places, so §6.2 refuses it - and that is
-    the honest outcome the round-one money fix chose over rewriting the figure:
-    the ceiling is enforced at the keystroke, and anything that gets past it goes
-    to the server as written rather than being quietly made acceptable. The
-    tonnes body is valid and is checked.
+    body.** `5000.1234` kg is four decimal places, so §6.2 refuses it - and that
+    is the honest outcome the round-one money fix chose over rewriting the
+    figure: the ceiling is enforced at the keystroke, and anything that gets
+    past it goes to the server as written rather than being quietly made
+    acceptable. The tonnes body is valid and is checked.
+
+    **The production figure is larger than the waste amount, on purpose.**
+    `walk()`'s own step-2 fill (`#total-waste` -> `"1000"`) runs immediately
+    after this function's own custom fill, in whatever unit `#total-unit` was
+    just set to - so the waste amount here is always "1000" in that unit,
+    regardless of which branch is under test. A production total *smaller*
+    than that would trip the item-①-round-two guard added to
+    `validateCurrentStep` (waste cannot exceed production, the mass-dimension
+    twin of the money contradiction the client reported), which refuses to
+    advance past step 2 at all - and this test is about what reaches the wire,
+    not about that refusal.
     """
 
     def sent_body(unit, typed):
@@ -1277,15 +1601,16 @@ def test_the_production_total_is_not_rounded_on_its_way_to_the_wire(page_at):
         assert body, "no request was made"
         return body
 
-    kilograms = sent_body("kilograms", "1.2345")
-    assert kilograms["entries"][0]["total_input_kg"] == "1.2345", (
+    kilograms = sent_body("kilograms", "5000.1234")
+    assert kilograms["entries"][0]["total_input_kg"] == "5000.1234", (
         "the production total was rounded on its way to the wire"
     )
 
-    tonnes = sent_body("tonnes", "1.2345")
-    #: 1.2345 t is 1234.5 kg exactly - the conversion gains three decimal places,
-    #: so nothing is rounded here either, and the result is inside §6.2's three.
-    assert tonnes["entries"][0]["total_input_kg"] == "1234.5"
+    tonnes = sent_body("tonnes", "5000.1234")
+    #: 5000.1234 t is 5,000,123.4 kg exactly - the conversion gains three
+    #: decimal places, so nothing is rounded here either, and the result is
+    #: inside §6.2's three.
+    assert tonnes["entries"][0]["total_input_kg"] == "5000123.4"
     CalculatePayload.model_validate(tonnes)
 
 

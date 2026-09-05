@@ -339,13 +339,22 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "これらの数値は、このツールに提供された計算という、利用者が自ら選んだサンプルを示すものです。調査結果でも、ニュージーランド全体の食品廃棄の実態でもありません。",
     "Breakdowns of entries contributed to this tool": "このツールに提供された入力の内訳",
     "%(mass)s cumulative quantity contributed to this tool": "このツールに提供された累計数量 %(mass)s",
-    "This calculator does not report waste as a share of food handled yet.": "この計算ツールは、取扱食品量に対する廃棄の割合をまだ表示しません。",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "入力内容は匿名で記録され、あなたが提供を選んだ場合にのみ公開統計に加わります。",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "計算ツールに入力された業種、食品カテゴリー、数量は匿名で記録されます。あなたが提供を選んだ場合にのみ、プライバシーを保護した公開統計に加わります。あなたや事業者を特定できる情報は記録しません。",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "この計算ツールは、入力された業種、食品カテゴリー、数量を保存します。あなたが提供を選んだ場合にのみ公開統計に加わり、あなたや事業者を特定できる情報は一切保存しません。",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment の食品廃棄インパクト計算ツールに提供された計算の、匿名化された集計統計をご覧いただけます。",
     "Percentage": "パーセンテージ",
     "Total mass": "総重量",
-    "Download PDF": "PDFをダウンロード"
+    "Download PDF": "PDFをダウンロード",
+    "Data incomplete": "データが不完全です",
+    "Not every entry supplied this figure, so it cannot be totalled.": "すべての項目でこの数値が入力されていないため、合計できません。",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "一部の項目では生産量の合計が入力され、一部では入力されていないため、廃棄割合を表示できません。",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "取り扱った食品に対する廃棄の割合は、入力された2つの重量の比率であり、係数に基づく数値ではないため、上記の仮データはこの値に影響しません。",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "対象となる食品の量が入力されていないため、廃棄割合を表示できません。",
+    "Undefined": "未定義",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "合計0kgと入力されたため、廃棄割合を表示できません。",
+    "The total value was zero, so this cannot be calculated.": "合計金額が0だったため、この値は計算できません。",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "廃棄物の価値が生産の価値を NZ$%(excess)s 上回っています。",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "廃棄量が生産された総量を %(excess)s %(unit)s 上回っています。"
   }
 }

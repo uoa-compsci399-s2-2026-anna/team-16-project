@@ -82,7 +82,10 @@ export const stepName = index => t(STEPS[index] || '')
  * @param {string} options.backLabel Text for the secondary action.
  * @param {string} options.label Text for the primary action.
  * @param {boolean} options.disabled Whether the primary action is disabled.
- * @param {string} options.action `data-action` for the primary action.
+ * @param {string|null} options.action `data-action` for the primary action, or `null` to
+ *   omit the primary button entirely — the results step's own case: its "download"
+ *   action moved out of the bar (Task 3, 2026-08-31) to sit beside the PDF button as
+ *   an equal-weight choice of format, leaving only the back action here.
  * @returns {string}
  */
 export function stepNav({ step, back, backLabel = t('Back'), label = t('Continue'), disabled = false, action = 'continue' }) {
@@ -91,9 +94,12 @@ export function stepNav({ step, back, backLabel = t('Back'), label = t('Continue
   const backButton = back === null || back === undefined
     ? ''
     : `<button class="button button-secondary" type="button" data-action="go-step" data-step="${back}">${escapeHtml(backLabel)}</button>`
+  const primaryButton = action === null
+    ? ''
+    : `<button class="button button-primary" type="button" data-action="${action}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>`
   return `<div class="step-nav" role="group" aria-label="${escapeHtml(t('Step navigation'))}">
     ${backButton}
     <p class="step-nav-progress" aria-current="step"><span class="step-nav-label">${escapeHtml(position)}</span> · <span class="step-nav-name">${escapeHtml(stepName(step))}</span><span class="step-nav-track" aria-hidden="true"><span style="width:${percent}%"></span></span></p>
-    <button class="button button-primary" type="button" data-action="${action}" ${disabled ? 'disabled' : ''}>${escapeHtml(label)}</button>
+    ${primaryButton}
   </div>`
 }

@@ -5,6 +5,7 @@ from __future__ import annotations
 import csv
 import io
 import zipfile
+from datetime import datetime, timezone
 from typing import Any
 
 from fastapi import APIRouter, Request
@@ -38,6 +39,7 @@ from db.repository import (
     get_public_stats,
     get_published_factor_set_id,
     get_taxonomy,
+    get_taxonomy_for_naming,
     load_factor_bundle,
     prevention_destination_codes,
     set_public_contribution,
@@ -282,15 +284,29 @@ def export_pdf(payload: ExportPayload, request: Request) -> Response:
 
     try:
         prevention_codes = prevention_destination_codes(request.state.db)
-        # The §5.1 snapshot, read through the repository like everything else
-        # that touches the database. The renderer needs it because `result`
-        # speaks in `code`s and a document a person reads has to say
-        # "Landfill" rather than `landfill`; it is a read, it persists
-        # nothing, and it is the same call `GET /taxonomy` makes. Loaded here
-        # rather than beside the bundle below so that a taxonomy fault is
-        # reported as the repository problem it is, rather than being run
-        # through `engine_problem` and blamed on the engine.
-        taxonomy = get_taxonomy(request.state.db)
+        # The renderer needs a code-to-name map because `result` speaks in
+        # `code`s and a document a person reads has to say "Landfill" rather
+        # than `landfill`; it is a read, it persists nothing.
+        #
+        # **Deliberately not `get_taxonomy`, and not "the same call `GET
+        # /taxonomy` makes" any more.** `get_taxonomy` narrows its snapshot to
+        # what the *published* factor set prices — correct for a selection
+        # form, where an unpriced destination should not be offered as a
+        # choice, and wrong here: `result` already names whatever destination
+        # the submitted entries used, priced or not, and a document naming a
+        # code the published set happens not to price is not the same defect
+        # as a form offering one. Reading the narrowed snapshot here meant a
+        # perfectly valid destination fell through `_Taxonomy`'s "tolerant of
+        # a code the snapshot does not carry" fallback in `api/pdf_render.py`
+        # and printed as itself — `anaerobic_digestion` rather than "Anaerobic
+        # digestion" — the moment the published set stopped pricing it, with
+        # nothing wrong about the request that caused it.
+        # `get_taxonomy_for_naming` is `get_taxonomy`'s unnarrowed sibling,
+        # read through the repository like everything else that touches the
+        # database. Loaded here rather than beside the bundle below so that a
+        # taxonomy fault is reported as the repository problem it is, rather
+        # than being run through `engine_problem` and blamed on the engine.
+        taxonomy = get_taxonomy_for_naming(request.state.db)
     except Exception as exc:
         raise _repository_problem(exc) from exc
 
@@ -315,7 +331,10 @@ def export_pdf(payload: ExportPayload, request: Request) -> Response:
     except Exception as exc:
         raise engine_problem(exc, authenticated_dry_run=False) from exc
 
-    pdf_bytes = render_export_pdf(result, payload, taxonomy)
+    # Read once, here, and passed down rather than read inside the renderer -
+    # see `render_results_pdf`'s docstring for why that function still does
+    # not touch the clock itself.
+    pdf_bytes = render_export_pdf(result, payload, taxonomy, datetime.now(timezone.utc))
     return Response(
         content=pdf_bytes,
         media_type="application/pdf",

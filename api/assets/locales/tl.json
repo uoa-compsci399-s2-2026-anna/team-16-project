@@ -340,13 +340,22 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "Inilalarawan ng mga bilang na ito ang isang kusang-piling sampol ng mga pagtuos na inambag sa kasangkapang ito. Hindi ito isang sarbey o larawan ng basurang pagkain sa buong New Zealand.",
     "Breakdowns of entries contributed to this tool": "Paghahati ng mga talang inambag sa kasangkapang ito",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s na pinagsama-samang daming inambag sa kasangkapang ito",
-    "This calculator does not report waste as a share of food handled yet.": "Hindi pa iniuulat ng pantuos na ito ang basura bilang bahagi ng kabuuang pagkaing hinawakan.",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "Ang iyong mga tala ay itinatala nang walang pangalan, at napapasama lamang sa pampublikong estadistika kung piliin mong ialok ang mga ito.",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "Ang sektor, kategorya ng pagkain at mga daming inilagay sa pantuos ay itinatala nang walang pangalan. Napapasama lamang ang mga ito sa pampublikong estadistikang nangangalaga sa pagkapribado kung piliin mong ialok ang mga ito. Wala kaming itinatalang impormasyong makakakilala sa iyo o sa iyong negosyo.",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "Iniimbak ng pantuos na ito ang sektor, kategorya ng pagkain at mga daming inilagay. Napapasama lamang ang mga ito sa pampublikong estadistika kung piliin mong ialok ang mga ito, at walang iniimbak na makakakilala sa iyo o sa iyong negosyo.",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Tuklasin ang walang pangalan at pinagsamang estadistika mula sa mga pagtuos na iniambag sa pantuos ng epekto ng basurang pagkain ng Kai Commitment.",
     "Percentage": "Porsyento",
     "Total mass": "Kabuuang bigat",
-    "Download PDF": "I-download ang PDF"
+    "Download PDF": "I-download ang PDF",
+    "Data incomplete": "Hindi kumpleto ang datos",
+    "Not every entry supplied this figure, so it cannot be totalled.": "Hindi ibinigay ng bawat entry ang bilang na ito, kaya hindi ito matotolatal.",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "Ibinigay ng ilang entry ang kabuuang produksyon at may hindi nagbigay, kaya hindi maipapakita ang bahagi ng basura.",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "Ang basura bilang bahagi ng pagkaing hinawakan ay ratio ng dalawang timbang na iyong itinype, hindi isang bilang na batay sa factor, kaya hindi ito naaapektuhan ng placeholder data sa itaas.",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "Hindi mo sinabi kung gaano karaming pagkain ang saklaw nito, kaya hindi maipapakita ang bahagi ng basura.",
+    "Undefined": "Hindi tiyak",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Sinabi mong 0 kg lang ang kabuuang saklaw nito, kaya hindi maipapakita ang bahagi ng basura.",
+    "The total value was zero, so this cannot be calculated.": "Zero ang kabuuang halaga, kaya hindi ito makukuwenta.",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "Lumampas ang halaga ng basura sa halaga ng produksyon ng NZ$%(excess)s.",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Lumampas ang dami ng basura sa kabuuang dami na nagawa ng %(excess)s %(unit)s."
   }
 }

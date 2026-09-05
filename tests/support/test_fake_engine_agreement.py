@@ -103,6 +103,7 @@ def _entry(
     alternative=None,
     total_value_nzd=None,
     wasted_value_nzd=None,
+    total_input_kg=None,
 ):
     """One entry, in the plain-dict shape every case below is written in.
 
@@ -117,6 +118,7 @@ def _entry(
         "alternative": alternative,
         "total_value_nzd": total_value_nzd,
         "wasted_value_nzd": wasted_value_nzd,
+        "total_input_kg": total_input_kg,
     }
 
 
@@ -151,6 +153,17 @@ CASES = {
                total_value_nzd="5000.00", wasted_value_nzd="1200.00"),
         _entry("primary_production", "vegetables", [("landfill", "150.000")],
                total_value_nzd="2000.00", wasted_value_nzd="2000.00"),
+    ],
+    "§4.6: every entry gives a production total -- the share is computable": [
+        _entry("processing", "dairy", [("landfill", "1200.000")],
+               [("landfill", "1200.000")], total_input_kg="10000.000"),
+        _entry("primary_production", "vegetables", [("landfill", "800.000")],
+               None, total_input_kg="2000.000"),
+    ],
+    "§4.6: one entry gives a production total and one does not": [
+        _entry("processing", "dairy", [("landfill", "1200.000")],
+               [("landfill", "1200.000")], total_input_kg="10000.000"),
+        _entry("primary_production", "vegetables", [("landfill", "800.000")]),
     ],
     "wasted value exceeds total value -- the share is left unclamped": [
         _entry("processing", "dairy", [("landfill", "400.000")],
@@ -194,6 +207,7 @@ def _real_request(entries) -> CalculationRequest:
                         for code, qty in entry["alternative"]
                     )
                 ),
+                total_input_kg=_decimal_or_none(entry["total_input_kg"]),
                 total_value_nzd=_decimal_or_none(entry["total_value_nzd"]),
                 wasted_value_nzd=_decimal_or_none(entry["wasted_value_nzd"]),
             )
@@ -225,7 +239,7 @@ def _fake_request(entries):
                         for code, qty in entry["alternative"]
                     )
                 ),
-                total_input_kg=None,
+                total_input_kg=_decimal_or_none(entry["total_input_kg"]),
                 total_value_nzd=_decimal_or_none(entry["total_value_nzd"]),
                 wasted_value_nzd=_decimal_or_none(entry["wasted_value_nzd"]),
             )
@@ -248,6 +262,29 @@ def _money_tuple(money):
         money.wasted_share_percent,
         money.saving_nzd,
     )
+
+
+def _state_tuple(totals):
+    """§4.6's five states plus the production share itself.
+
+    Compared alongside the money figures rather than instead of them: a copy
+    that agreed on every value while disagreeing about whether a partial
+    submission was `incomplete` or `not_supplied` would put a different card
+    on the results page for the same request, which is precisely the
+    distinction §4.6 exists to make."""
+    state = totals.data_state
+    return (
+        totals.production_share_percent,
+        state.production_share_percent,
+        state.total_value_nzd,
+        state.wasted_value_nzd,
+        state.wasted_share_percent,
+        state.saving_nzd,
+    )
+
+
+def _entry_shares(result):
+    return tuple(entry.production_share_percent for entry in result.entries)
 
 
 def _rollup_tuple(scenario, metric_code):
@@ -281,6 +318,8 @@ def test_the_fake_agrees_with_the_real_engine_on_money(case):
     assert _money_tuple(fake_result.totals.money) == _money_tuple(
         real_result.totals.money
     ), case
+    assert _state_tuple(fake_result.totals) == _state_tuple(real_result.totals), case
+    assert _entry_shares(fake_result) == _entry_shares(real_result), case
 
 
 @pytest.mark.parametrize("case", CASES, ids=lambda name: name)
@@ -332,4 +371,25 @@ def test_the_corpus_exercises_every_money_shape():
     )
     assert any(money.saving_nzd is None for money in priced), (
         "no case in the corpus withholds a saving"
+    )
+
+
+def test_the_corpus_reaches_all_three_states_of_the_production_share():
+    """§4.6's own guard on the guard. One entry cannot tell a sum from an
+    average or a full denominator from a partial one, and a corpus that only
+    ever left `total_input_kg` absent would agree with any implementation at
+    all -- including one that returned zero."""
+    states = {}
+    for name, entries in CASES.items():
+        bundle = FactorBundle.from_json(json.loads(json.dumps(BUNDLE_DATA)))
+        totals = real_calculate(_real_request(entries), bundle).totals
+        states[name] = totals.data_state.production_share_percent
+
+    assert "complete" in states.values(), "no case computes a production share"
+    assert "incomplete" in states.values(), (
+        "no case leaves the production share partly answered -- the state that "
+        "cannot be reached with one entry"
+    )
+    assert "not_supplied" in states.values(), (
+        "no case leaves the production share unanswered"
     )

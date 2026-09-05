@@ -17,6 +17,9 @@ from decimal import Decimal
 import pytest
 
 from engine.types import (
+    DATA_COMPLETE,
+    DATA_INCOMPLETE,
+    DATA_NOT_SUPPLIED,
     BreakdownRow,
     CalculationRequest,
     CalculationResult,
@@ -286,6 +289,45 @@ def test_calculation_totals():
     assert totals.current.metrics["co2e"].total == Decimal("456.0000000000")
     assert totals.alternative is alternative_result
     assert totals.net_benefit == {"co2e": Decimal("456.0000000000")}
+
+
+def test_the_totals_always_carry_a_data_state_even_when_nothing_was_supplied():
+    """§4.6. `data_state` is not optional and is never `None`: a caller
+    that has to check whether the state object exists before reading it is a
+    caller that will forget, and the figure it guards is `None` in two
+    different situations that mean different things.
+
+    The default is `not_supplied` on every figure, which is what a submission
+    that answered none of the three optional inputs produces.
+    """
+    bare = CalculationTotals(
+        current=current_result, alternative=None, net_benefit=None, money=None
+    )
+    assert bare.production_share_percent is None
+    assert bare.data_state.production_share_percent == "not_supplied"
+    assert bare.data_state.total_value_nzd == "not_supplied"
+    assert bare.data_state.wasted_value_nzd == "not_supplied"
+    assert bare.data_state.wasted_share_percent == "not_supplied"
+    assert bare.data_state.saving_nzd == "not_supplied"
+
+
+def test_the_three_states_are_three_distinct_values():
+    """The distinction is the whole point: two of them both withhold the
+    figure, and a card that could not tell them apart is the defect §4.6
+    exists to fix."""
+    assert len({DATA_COMPLETE, DATA_INCOMPLETE, DATA_NOT_SUPPLIED}) == 3
+
+
+def test_an_entry_carries_its_own_share_and_defaults_to_absent():
+    """§4.6. Per entry, and `None` rather than zero when the entry supplied
+    no production total -- zero would read as "this site wastes none of what
+    it handles", which is a claim about the site."""
+    assert entry_result.production_share_percent is None
+    priced = EntryResult(
+        "retail", None, current_result, None, None,
+        production_share_percent=Decimal("25.00"),
+    )
+    assert priced.production_share_percent == Decimal("25.00")
 
 
 def test_totals_are_null_when_no_entry_carries_an_alternative():

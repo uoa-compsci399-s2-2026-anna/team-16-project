@@ -108,10 +108,18 @@
       "mass": "0.0000000000"
     },
     "money": {
-      "total_value_nzd": "75000.00",
-      "wasted_value_nzd": "15000.00",
-      "wasted_share_percent": "20.00",
-      "saving_nzd": "2400.00"
+      "total_value_nzd": null,
+      "wasted_value_nzd": null,
+      "wasted_share_percent": null,
+      "saving_nzd": null
+    },
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "incomplete",
+      "wasted_value_nzd": "incomplete",
+      "wasted_share_percent": "incomplete",
+      "saving_nzd": "incomplete"
     }
   },
   "entries": [
@@ -162,7 +170,8 @@
         ]
       },
       "alternative": null,
-      "net_benefit": null
+      "net_benefit": null,
+      "production_share_percent": null
     },
     {
       "sector_code": "primary_production",
@@ -270,7 +279,8 @@
       "net_benefit": {
         "co2e": "460.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null
     },
     {
       "sector_code": "processing",
@@ -378,7 +388,8 @@
       "net_benefit": {
         "co2e": "867.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null
     }
   ]
 }

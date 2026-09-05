@@ -322,6 +322,14 @@
       "wasted_value_nzd": "10750.00",
       "wasted_share_percent": "21.50",
       "saving_nzd": "4000.00"
+    },
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "incomplete",
+      "total_value_nzd": "complete",
+      "wasted_value_nzd": "complete",
+      "wasted_share_percent": "complete",
+      "saving_nzd": "complete"
     }
   },
   "entries": [
@@ -570,7 +578,8 @@
         "water": "0.0000000000",
         "cost": "18.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": "15.00"
     },
     {
       "sector": "primary_production",
@@ -747,7 +756,8 @@
         "water": "257600.0000000000",
         "cost": "0.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null
     }
   ],
   "factor_source": "published",

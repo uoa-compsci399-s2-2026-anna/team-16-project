@@ -100,6 +100,11 @@ def _result(*, with_alternative=True):
         current=current,
         alternative=alternative,
         net_benefit=net_benefit,
+        #: §4.6. This entry supplied a production total; the second does
+        #: not, which is what makes the totals-level share `incomplete`
+        #: below. Two different values, so a carry that read the wrong
+        #: entry's figure is visible.
+        production_share_percent=Decimal("15.00"),
     )
     second_current = _scenario(
         "800.000",
@@ -125,6 +130,7 @@ def _result(*, with_alternative=True):
         current=second_current,
         alternative=second_alternative,
         net_benefit=second_net,
+        production_share_percent=None,
     )
     totals_net = (
         {"co2e": Decimal("2196.0000000000")} if with_alternative else None
@@ -165,6 +171,16 @@ def _result(*, with_alternative=True):
         #: this stand-in's entries carry a money figure -- but present
         #: because `_totals()` reads `totals.money` unconditionally.
         money=None,
+        #: §4.6. One of the two entries above supplied a production total,
+        #: so the submission-wide share is withheld and the state says why.
+        production_share_percent=None,
+        data_state=SimpleNamespace(
+            production_share_percent="incomplete",
+            total_value_nzd="not_supplied",
+            wasted_value_nzd="not_supplied",
+            wasted_share_percent="not_supplied",
+            saving_nzd="not_supplied",
+        ),
     )
     return SimpleNamespace(
         factor_set_version="MOCK-v0 — PLACEHOLDER",
@@ -173,6 +189,33 @@ def _result(*, with_alternative=True):
         totals=totals,
         entries=(entry, second_entry),
     )
+
+
+def test_the_share_of_production_and_its_state_are_carried_not_computed():
+    """§4.6. `serialize_result` performs no arithmetic (§4.2), so both the
+    figure and its state arrive from the engine and are copied onto the wire.
+
+    The state is what lets the front end tell "nobody supplied a production
+    total" from "some entries did and some did not" -- a bare `null` says
+    both, which is the defect the results card shipped with. It is additive:
+    every figure beside it keeps the decimal-string shape §1.2 requires, so a
+    caller that has not learned about the key reads exactly what it read
+    before.
+    """
+    body = DefaultEngineAdapter().serialize_result(_result())
+
+    assert body["totals"]["production_share_percent"] is None
+    assert body["totals"]["data_state"] == {
+        "production_share_percent": "incomplete",
+        "total_value_nzd": "not_supplied",
+        "wasted_value_nzd": "not_supplied",
+        "wasted_share_percent": "not_supplied",
+        "saving_nzd": "not_supplied",
+    }
+    # Per entry, and each entry's own: the first supplied a production total
+    # and keeps its figure whether or not the second did.
+    assert body["entries"][0]["production_share_percent"] == Decimal("15.00")
+    assert body["entries"][1]["production_share_percent"] is None
 
 
 def test_the_top_level_keys_are_exactly_the_ones_6_2_lists():

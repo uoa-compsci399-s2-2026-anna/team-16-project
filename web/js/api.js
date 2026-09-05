@@ -133,18 +133,58 @@ function mockScenarioTotals(entries, key, equivalences) {
   }
 }
 
-function mockTotals(template, entries) {
+// §4.6 in miniature, for the one totals-level figure mock mode can compute honestly.
+// `production_share_percent` is `current.total_kg ÷ Σ total_input_kg` (§4.6) — two masses
+// the visitor typed, the same identity `mockScenario`'s own `mass` metric already
+// recomputes above, so this is not "deriving an impact figure" the comment over this
+// section forbids: no factor and no formula enters it, on the server or here. The other
+// four §4.6 fields (`totals.money`) stay the pre-existing gap `docs/interfaces.md` §7.1
+// records — mock mode never had a real per-request money figure to show, because it never
+// carried the visitor's own `total_value_nzd`/`wasted_value_nzd` through a computation —
+// and this function does not change that.
+//
+// Same three states `_across_entries` gives the real engine, in the same order: nobody
+// typed a production total, some did and some did not, or everybody did and the total
+// came to zero (`undefined`, v1.51 — a mock-mode visitor who types 0 kg across the board
+// must see the same sentence a real submission would, not "Not supplied").
+function mockProductionShare(requestEntries, totalKg) {
+  const totals = requestEntries.map(entry => entry.total_input_kg)
+  const present = totals.filter(value => value !== null && value !== undefined && value !== '')
+  if (present.length === 0) return { value: null, state: 'not_supplied' }
+  if (present.length !== totals.length) return { value: null, state: 'incomplete' }
+  const sum = present.reduce((total, value) => total + (Number(value) || 0), 0)
+  if (sum === 0) return { value: null, state: 'undefined' }
+  return { value: ((totalKg / sum) * 100).toFixed(2), state: 'complete' }
+}
+
+function mockTotals(template, entries, requestEntries) {
   const current = mockScenarioTotals(entries, 'current', template.current?.equivalences)
   const compared = entries.some(entry => entry.alternative)
   const alternative = compared ? mockScenarioTotals(entries, 'alternative', template.alternative?.equivalences) : null
   const netBenefit = alternative
     ? Object.fromEntries(Object.entries(current.metrics).map(([code, metric]) => [code, (Number(metric.total) - Number(alternative.metrics[code]?.total || 0)).toFixed(10)]))
     : null
+  const totalKg = entries.reduce((sum, entry) => sum + (Number(entry.current?.total_kg) || 0), 0)
+  const share = mockProductionShare(requestEntries, totalKg)
   return {
-    total_kg: entries.reduce((sum, entry) => sum + (Number(entry.current?.total_kg) || 0), 0).toFixed(3),
+    total_kg: totalKg.toFixed(3),
     current,
     alternative,
     net_benefit: netBenefit,
+    // `money` stays absent — see the comment above `mockProductionShare`. `data_state`
+    // is emitted in full regardless, consistent with what this response actually carries:
+    // `production_share_percent`'s own computed state, and `not_supplied` for every money
+    // field, because mock mode never supplies one. Before this, the totals object carried
+    // no `data_state` key at all, and every card read that as "not supplied" by accident
+    // of `results.js`'s fallback branch rather than because mock mode said so.
+    production_share_percent: share.value,
+    data_state: {
+      production_share_percent: share.state,
+      total_value_nzd: 'not_supplied',
+      wasted_value_nzd: 'not_supplied',
+      wasted_share_percent: 'not_supplied',
+      saving_nzd: 'not_supplied',
+    },
   }
 }
 
@@ -163,7 +203,7 @@ async function mockCalculate(options) {
     factor_source: fixture.factor_source || 'published',
     gwp_horizon: payload.gwp_horizon ?? fixture.gwp_horizon,
     token: payload.token || fixture.token || 'mock-session-token',
-    totals: mockTotals(fixture.totals || {}, entries),
+    totals: mockTotals(fixture.totals || {}, entries, requestEntries),
     entries,
   }
 }

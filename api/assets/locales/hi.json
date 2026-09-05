@@ -339,13 +339,22 @@
     "These figures describe a self-selected sample of calculations contributed to this tool. They are not a survey or a picture of food waste across New Zealand.": "ये आँकड़े इस टूल में योगदान दी गई गणनाओं के एक स्वयं-चयनित नमूने का वर्णन करते हैं। ये न कोई सर्वेक्षण हैं और न पूरे न्यूज़ीलैंड में खाद्य अपशिष्ट की तस्वीर।",
     "Breakdowns of entries contributed to this tool": "इस टूल में योगदान दी गई प्रविष्टियों का विवरण",
     "%(mass)s cumulative quantity contributed to this tool": "%(mass)s — इस टूल में योगदान दी गई कुल संचयी मात्रा",
-    "This calculator does not report waste as a share of food handled yet.": "यह कैलकुलेटर अभी संभाले गए भोजन के अनुपात में अपशिष्ट नहीं बताता।",
     "Your entries are recorded anonymously, and they join the public statistics only if you choose to offer them.": "आपकी प्रविष्टियाँ गुमनाम रूप से दर्ज की जाती हैं, और वे सार्वजनिक आँकड़ों में तभी शामिल होती हैं जब आप उन्हें देना चुनते हैं।",
     "The sector, food category and quantities entered into the calculator are recorded anonymously. They join the privacy-protected public statistics only if you choose to offer them. We do not record information that identifies you or your business.": "कैलकुलेटर में दर्ज किया गया क्षेत्र, खाद्य श्रेणी और मात्राएँ गुमनाम रूप से दर्ज की जाती हैं। वे निजता-संरक्षित सार्वजनिक आँकड़ों में तभी शामिल होती हैं जब आप उन्हें देना चुनते हैं। हम ऐसी कोई जानकारी दर्ज नहीं करते जिससे आपकी या आपके व्यवसाय की पहचान हो सके।",
     "This calculator stores the sector, food category and quantities entered. They join the public statistics only if you choose to offer them, and nothing that identifies you or your business is stored.": "यह कैलकुलेटर दर्ज किया गया क्षेत्र, खाद्य श्रेणी और मात्राएँ संग्रहीत करता है। वे सार्वजनिक आँकड़ों में तभी शामिल होती हैं जब आप उन्हें देना चुनते हैं, और ऐसा कुछ भी संग्रहीत नहीं किया जाता जिससे आपकी या आपके व्यवसाय की पहचान हो सके।",
     "Explore anonymised, aggregate statistics from calculations contributed to the Kai Commitment food waste impact calculator.": "Kai Commitment खाद्य अपशिष्ट प्रभाव कैलकुलेटर में दी गई गणनाओं के गुमनाम, सामूहिक आँकड़े देखें।",
     "Percentage": "प्रतिशत",
     "Total mass": "कुल वज़न",
-    "Download PDF": "PDF डाउनलोड करें"
+    "Download PDF": "PDF डाउनलोड करें",
+    "Data incomplete": "डेटा अधूरा है",
+    "Not every entry supplied this figure, so it cannot be totalled.": "हर प्रविष्टि में यह आंकड़ा नहीं दिया गया, इसलिए इसका योग नहीं किया जा सकता।",
+    "Some entries stated a production total and some did not, so a share of waste cannot be shown.": "कुछ प्रविष्टियों ने उत्पादन कुल बताया और कुछ ने नहीं, इसलिए बर्बादी का हिस्सा नहीं दिखाया जा सकता।",
+    "Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.": "संभाले गए भोजन के हिस्से के रूप में बर्बादी आपके द्वारा टाइप किए गए दो द्रव्यमानों का अनुपात है, न कि किसी कारक-आधारित आंकड़ा, इसलिए ऊपर दिया गया प्लेसहोल्डर डेटा इसे प्रभावित नहीं करता।",
+    "You did not say how much food this covered, so a share of waste cannot be shown.": "आपने यह नहीं बताया कि इसमें कितना भोजन शामिल था, इसलिए बर्बादी का हिस्सा नहीं दिखाया जा सकता।",
+    "Undefined": "अपरिभाषित",
+    "You said this covered 0 kg in total, so a share of waste cannot be shown.": "आपने बताया कि इसमें कुल 0 किग्रा शामिल था, इसलिए बर्बादी का हिस्सा नहीं दिखाया जा सकता।",
+    "The total value was zero, so this cannot be calculated.": "कुल मूल्य शून्य था, इसलिए इसकी गणना नहीं की जा सकती।",
+    "Value of the waste exceeds value of production by NZ$%(excess)s.": "बर्बादी का मूल्य, उत्पादन का मूल्य से NZ$%(excess)s अधिक है।",
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "अपशिष्ट की मात्रा, उत्पादित कुल मात्रा से %(excess)s %(unit)s अधिक है।"
   }
 }

@@ -593,6 +593,22 @@ function equivalentComparison(rows) {
   return `<p class="comparison-equivalent-note">${escapeHtml(t('Each scenario is shown as the calculation service worded it. The difference between the two is not shown, because the service does not return one — compare the two figures.'))}</p><ul class="comparison-equivalents">${rows.map(row => `<li><div class="comparison-values">${side(t('Current'), row.current)}<span class="comparison-arrow" aria-hidden="true">→</span>${side(t('Improved'), row.improved)}</div></li>`).join('')}</ul>`
 }
 
+// §4.6's three-state rule for the one money field this module renders, mirroring
+// `results.js::moneyFieldText` — a local copy rather than an import, for the same
+// reason `nzd` and `hasValue` above are local copies (the import back would close a
+// cycle). `complete` formats the figure; `incomplete` returns the shared sentence
+// (the literal `t()` call has to live here too, not just in `results.js`, or the key
+// extractor would not see this file ask for it); `not_supplied` — and any state this
+// module has not learned — returns `null`, read as "print nothing".
+function savingText(totals) {
+  const saving = totals?.money?.saving_nzd
+  if (hasValue(saving)) return nzd(saving)
+  if (totals?.data_state?.saving_nzd === 'incomplete') {
+    return t('Not every entry supplied this figure, so it cannot be totalled.')
+  }
+  return null
+}
+
 /**
  * §4.5's saving, rendered where the scenario that produced it is.
  *
@@ -607,14 +623,26 @@ function equivalentComparison(rows) {
  * The caveat rides directly beneath it rather than in a tooltip a screenshot would crop
  * away: the rate is nominal, derived from two totals the visitor typed for that entry, and
  * copy presenting it as a measured valuation claims a precision the input does not carry.
+ * It only applies beside an actual figure, so it is left off when the row instead carries
+ * the `incomplete` sentence.
+ *
+ * **On the same three-state terms as every other money field (§4.6), not a bare
+ * `hasValue` check.** A bare `hasValue` printed nothing at all for an `incomplete`
+ * submission, while the PDF (`api/pdf_render.py::_money_rows`, reading the same
+ * `data_state.saving_nzd`) printed the shared sentence — the disagreement v1.50's
+ * change-log item 4 rules out.
  *
  * The classes are `results.js`'s own `.money-row` / `.money-saving` / `.money-caveat`, so
  * the figure reads as the same kind of thing in both places rather than as a new widget.
  */
 function comparisonSaving(result) {
-  const saving = result.totals?.money?.saving_nzd
-  if (!hasValue(saving)) return ''
-  return `<div class="comparison-saving"><div class="money-row money-saving"><span class="money-label">${escapeHtml(t('Value of food not wasted at all'))}</span><span class="money-value">${nzd(saving)}</span></div><p class="money-caveat">${escapeHtml(t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.'))}</p></div>`
+  const totals = result.totals
+  const text = savingText(totals)
+  if (text === null) return ''
+  const caveat = hasValue(totals?.money?.saving_nzd)
+    ? `<p class="money-caveat">${escapeHtml(t('This assumes an even value per kilogram within each entry you priced, the way a box of produce is costed as a whole - not a measured price, and not an average taken across every entry.'))}</p>`
+    : ''
+  return `<div class="comparison-saving"><div class="money-row money-saving"><span class="money-label">${escapeHtml(t('Value of food not wasted at all'))}</span><span class="money-value">${escapeHtml(text)}</span></div>${caveat}</div>`
 }
 
 export function ComparisonResults(state) {

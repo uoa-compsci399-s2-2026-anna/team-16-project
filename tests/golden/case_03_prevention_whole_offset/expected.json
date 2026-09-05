@@ -93,7 +93,15 @@
       "co2e": "456.0000000000",
       "mass": "0.0000000000"
     },
-    "money": null
+    "money": null,
+    "production_share_percent": null,
+    "data_state": {
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
+    }
   },
   "entries": [
     {
@@ -188,7 +196,8 @@
       "net_benefit": {
         "co2e": "456.0000000000",
         "mass": "0.0000000000"
-      }
+      },
+      "production_share_percent": null
     }
   ]
 }

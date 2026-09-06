@@ -1,5 +1,6 @@
 {% extends "brand/base.html" %}
 {% import "brand/_account_hint.html" as account %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}Your security{% endblock %}
 
 {# Plain ES module, deferred, no inline script - the panel may grow a CSP and
@@ -46,13 +47,13 @@
     <div class="actions">
       <button type="button" id="add-authenticator" class="button"
               data-dialog="dialog-add" aria-haspopup="dialog"
-              aria-controls="dialog-add">Add authenticator</button>
+              aria-controls="dialog-add">Add authenticator</button>{{ help.help_tip(_("What Add authenticator does"), _("Sets up a second device for signing in, so a lost phone becomes an inconvenience rather than something only another administrator can fix. It does not remove any device you already have.")) }}
       <button type="button" id="rename-authenticator" class="button"
               data-dialog="dialog-rename" aria-haspopup="dialog"
               aria-controls="dialog-rename">Rename authenticator</button>
       <button type="button" id="remove-authenticator" class="button button--danger"
               data-dialog="dialog-remove" aria-haspopup="dialog"
-              aria-controls="dialog-remove">Remove authenticator</button>
+              aria-controls="dialog-remove">Remove authenticator</button>{{ help.help_tip(_("What Remove authenticator does"), _("Removes a device from this account immediately. If it is your only one, you will be locked out unless you still have a recovery code — another administrator can reset your account, but you cannot reset your own.")) }}
     </div>
 
     {# A wide table scrolls inside its own container rather than making the
@@ -141,7 +142,7 @@
     <div class="actions">
       <button type="button" id="change-password" class="button"
               data-dialog="dialog-password" aria-haspopup="dialog"
-              aria-controls="dialog-password">Change password</button>
+              aria-controls="dialog-password">Change password</button>{{ help.help_tip(_("What Change password does"), _("Replaces your password immediately, once you confirm your current one. Nobody else can see or recover the old one afterwards.")) }}
     </div>
   </section>
 

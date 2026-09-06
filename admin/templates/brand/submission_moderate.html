@@ -13,6 +13,7 @@
    stage, how much - so the decision is made against the same evidence the list
    page showed. #}
 {% extends "brand/base.html" %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}{% if excluding %}Exclude from public statistics{% else %}Return to public statistics{% endif %}{% endblock %}
 {% block content %}
   <h1>{% if excluding %}Exclude from public statistics{% else %}Return to public statistics{% endif %}</h1>
@@ -87,7 +88,7 @@
       </p>
       <button type="submit" class="button">
         {% if excluding %}Exclude{% else %}Return to statistics{% endif %}
-      </button>
+      </button>{% if excluding %}{{ help.help_tip(_("What Exclude does"), _("Stops these submissions counting towards the public statistics from now on. Nothing is deleted, and you can bring them back from this same screen at any time.")) }}{% else %}{{ help.help_tip(_("What Return to statistics does"), _("Makes these submissions count towards the public statistics again, starting now.")) }}{% endif %}
       <a class="button button--secondary" href="{{ list_url }}">Cancel</a>
     </form>
   {% else %}

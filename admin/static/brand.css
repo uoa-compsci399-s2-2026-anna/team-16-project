@@ -484,6 +484,81 @@ button:hover { background: var(--blueberry); }
 .guidance-disclosure__body { padding-block: 0.75rem 0.25rem; padding-inline: 0.15rem; }
 .guidance-disclosure__body p:last-child { margin-bottom: 0; }
 
+/* The small "?" beside a button (brand/_help_tip.html).
+
+   THIS USED TO BE `position: absolute`, floating the explanation over the
+   page instead of pushing anything else down. Measured at a 320px-wide
+   viewport it overflowed the page horizontally by ~27px whenever the marker
+   sat any real distance from the left edge of its row (`Add authenticator`'s
+   marker on brand/security.html, for one): `max-inline-size` capped the
+   BOX's own width against the viewport, but did nothing about the box's
+   horizontal OFFSET, which is set by where the marker happens to sit, not by
+   the viewport. That is exactly the failure this panel was told to avoid -
+   "a help marker that pushes a button off a narrow screen is worse than no
+   help marker" - just sideways rather than by literally displacing the
+   button.
+
+   So this is a normal, in-flow block instead: closed, `.help-tip` is a tiny
+   inline-block next to the button, adding negligible width. Open, it
+   BECOMES a block box - `flex-basis: 100%` also throws it onto its own row
+   when the button sits in a `.actions` flex row, which every one of them
+   does bar one. Either way a block box is never wider than its own
+   containing block, so it cannot overflow the page at any width - the same
+   guarantee `.guidance-disclosure` above already relies on, and proven the
+   same way: measured with no horizontal scrollbar at 320px. The trade a
+   floating card would have kept is that opening one no longer leaves the
+   row's other buttons in place; they wrap below it instead. */
+.help-tip {
+  display: inline-block;
+  vertical-align: middle;
+  margin-inline-start: 0.4rem;
+}
+.help-tip summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  border: 1px solid var(--kale);
+  border-radius: 50%;
+  background: var(--white);
+  color: var(--kale);
+  font-family: 'Geologica', Helvetica, Arial, sans-serif;
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.help-tip summary::-webkit-details-marker { display: none; }
+.help-tip summary:focus-visible {
+  outline: 2px solid var(--blueberry);
+  outline-offset: 2px;
+}
+.help-tip[open] summary { background: var(--kale); color: var(--white); }
+.help-tip[open] {
+  display: block;
+  flex-basis: 100%;
+  margin-inline-start: 0;
+  margin-block-start: 0.5rem;
+}
+.help-tip__body {
+  margin-block-start: 0.5rem;
+  max-inline-size: 34rem;
+  padding-block: 0.55rem;
+  padding-inline: 0.75rem;
+  border: 1px solid rgba(0, 50, 35, 0.16);
+  border-radius: var(--radius);
+  background: var(--white);
+  color: var(--kale);
+  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: start;
+}
+
 /* One-time secrets: initial passwords, recovery codes. */
 .secrets {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;

@@ -1,5 +1,6 @@
 {% extends "brand/base.html" %}
 {% import "brand/_account_hint.html" as account %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}Delete accounts{% endblock %}
 
 {# The same generic module brand/security.html and brand/new_staff.html load.
@@ -111,7 +112,7 @@
     <div class="actions">
       <button type="button" id="delete-accounts" class="button button--danger"
               data-dialog="dialog-confirm" aria-haspopup="dialog"
-              aria-controls="dialog-confirm">Delete permanently</button>
+              aria-controls="dialog-confirm">Delete permanently</button>{{ help.help_tip(_("What Delete permanently does"), _("Removes the selected account for good and frees its username. This cannot be undone — Deactivate is the reversible version of this action.")) }}
       <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
     </div>
 

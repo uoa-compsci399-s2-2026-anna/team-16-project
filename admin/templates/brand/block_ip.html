@@ -1,4 +1,5 @@
 {% extends "brand/base.html" %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}Block an address{% endblock %}
 {% block content %}
   <h1>Block an address</h1>
@@ -35,7 +36,7 @@
       this blank on a re-block removes any expiry the earlier block had,
       rather than extending it.
     </p>
-    <button type="submit">Block</button>
+    <button type="submit">Block</button>{{ help.help_tip(_("What Block does"), _("Stops this address reaching the panel immediately. It does not affect the public calculator, and you can unblock it at any time from the IP blocks list.")) }}
   </form>
   <p><a href="{{ list_url }}">Back to IP blocks</a></p>
 {% endblock %}

@@ -9,13 +9,21 @@
    The refusals listed are the ones that surprise people, not the whole
    grammar: admin/expressions.py is the authority. `ndigits` is there
    because it is the one that was silently accepted and quietly wrong.
-   Pinned by tests/admin/test_guidance.py. #}
+   Pinned by tests/admin/test_guidance.py.
+
+   Closed by default (Task: admin guidance disclosure). Reference material
+   read while writing a formula, not a warning aimed at someone who is not
+   looking for it - so it is fine to fold. The check at Save still refuses
+   an invalid formula whether or not this has been read. #}
 <div class="col-12">
   <div class="card">
     <div class="card-status-start" style="background: #003223;"></div>
     <div class="card-body">
       <div style="max-width: 78ch;">
         <h3 class="card-title">Writing a formula</h3>
+        <details class="guidance-disclosure">
+        <summary>{{ _("Where qty_kg, upstream, downstream and const_ values come from, and what makes Save refuse a formula") }}</summary>
+        <div class="guidance-disclosure__body">
         <p>
           A formula is worked out once for every line a visitor enters — one food
           category going to one destination — with four kinds of value available
@@ -96,6 +104,8 @@
             course fine.
           </li>
         </ul>
+        </div>
+        </details>
       </div>
     </div>
   </div>

@@ -446,6 +446,44 @@ button:hover { background: var(--blueberry); }
 .guidance h2 { font-size: 1.15rem; }
 .guidance p:last-child { margin-bottom: 0; }
 
+/* The four card-level guidance blocks (factor_set_lifecycle, mock_data,
+   prevention_zero, writing_a_formula) fold their prose into a closed-by-
+   default <details>, so a staff member reaches this screen's controls
+   without scrolling past ~500 lines of reference material first. The card
+   title stays outside and visible - see each block's own header comment -
+   so the summary only has to add what the title does not already say.
+
+   Closed by default is the native behaviour of <details> with no `open`
+   attribute; nothing here overrides that, which is what keeps the closed
+   state an actual hidden state rather than a hidden-looking one. */
+.guidance-disclosure {
+  margin-block-start: 0.9rem;
+  border-radius: var(--radius);
+  background: rgba(0, 50, 35, 0.04);
+}
+.guidance-disclosure summary {
+  padding-block: 0.5rem;
+  padding-inline: 0.15rem;
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--kale);
+  list-style: none;
+}
+.guidance-disclosure summary::-webkit-details-marker { display: none; }
+.guidance-disclosure summary::before {
+  content: "▸";
+  display: inline-block;
+  margin-inline-end: 0.5rem;
+  transition: transform 0.15s ease;
+}
+.guidance-disclosure[open] summary::before { transform: rotate(90deg); }
+.guidance-disclosure summary:focus-visible {
+  outline: 2px solid var(--blueberry);
+  outline-offset: 2px;
+}
+.guidance-disclosure__body { padding-block: 0.75rem 0.25rem; padding-inline: 0.15rem; }
+.guidance-disclosure__body p:last-child { margin-bottom: 0; }
+
 /* One-time secrets: initial passwords, recovery codes. */
 .secrets {
   font-family: ui-monospace, "Cascadia Mono", Consolas, monospace;

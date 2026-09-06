@@ -392,3 +392,112 @@ def test_the_public_calculator_warning_is_not_behind_a_disclosure():
     #: And it is still on the page at all. Without this the assertion above
     #: passes trivially for a page that stopped including it.
     assert "guidance/dry_run_warning.html" in page
+
+
+# --- Task: admin guidance disclosure ----------------------------------------
+#
+# The four card-level blocks above are reference material a staff member goes
+# looking for (how the lifecycle works, how to write a formula, ...), not a
+# warning aimed at someone who is not looking for it - the opposite case from
+# `dry_run_warning.html` above - so folding them behind a closed `<details>`
+# is the right call for these four and the wrong one for that file. See each
+# block's own header comment for the specific reasoning.
+#
+# **Visibility, not presence.** Every assertion below is on the `<details>`
+# element itself - whether it carries an `open` attribute, which is the one
+# thing that actually decides whether a browser shows the content - and
+# never on whether a phrase merely occurs somewhere in the markup. A test
+# that asserted presence here would pass identically whether the block were
+# open, closed, or had never been wrapped at all.
+
+#: Which of the two already-pinned phrases above (LIFECYCLE, MOCK, PREVENTION,
+#: FORMULA) lives in each folded block, and which page renders it - reused
+#: to drive both a template-source check and a real HTTP round-trip.
+FOLDED_BLOCKS = {
+    "factor_set_lifecycle.html": (LIFECYCLE, "/admin/factor-set/list"),
+    "mock_data.html": (MOCK, "/admin/factor-set/list"),
+    "prevention_zero.html": (PREVENTION, "/admin/factor-upstream/list"),
+    "writing_a_formula.html": (FORMULA, "/admin/formula/list"),
+}
+
+
+def _enclosing_details_tag(markup: str, phrase: str) -> str:
+    """The opening `<details ...>` tag that `phrase` sits inside, verbatim.
+
+    `markup` is whitespace-collapsed first, the same reason `_flat` above
+    exists: these blocks are wrapped prose, so a pinned phrase such as
+    "clone, edit, publish" is split across source lines about as often as
+    not. Walks every `<details`/`</details>` before `phrase` and keeps the
+    last unmatched open, the same depth-blind counting
+    `test_the_public_calculator_warning_is_not_behind_a_disclosure` uses
+    above - correct here for the same reason: none of these blocks nest one
+    disclosure inside another.
+    """
+    markup = re.sub(r"\s+", " ", markup)
+    index = markup.index(phrase)
+    opens = [m.start() for m in re.finditer(r"<details\b[^>]*>", markup[:index])]
+    closes = [m.start() for m in re.finditer(r"</details>", markup[:index])]
+    assert len(opens) > len(closes), (
+        f"{phrase!r} is not inside any <details> at all - it has not been folded"
+    )
+    start = opens[-1]
+    end = markup.index(">", start) + 1
+    return markup[start:end]
+
+
+@pytest.mark.parametrize("template_name,pair", sorted(FOLDED_BLOCKS.items()))
+def test_a_card_guidance_block_is_folded_and_closed_in_its_template(template_name, pair):
+    """The mutation this guards against: someone reopens the block, or wraps
+    it in a `<details open>` "to be safe" and quietly undoes Change 1.
+
+    Read from the template source, not over HTTP, for the same reason the
+    dry-run check above is: the question is where the include sits and what
+    attributes the tag carries, and the source answers that directly.
+    """
+    phrase, _route = pair
+    markup = (GUIDANCE_DIR / template_name).read_text(encoding="utf-8")
+    markup = re.sub(r"\{#.*?#\}", "", markup, flags=re.S)  # strip comments first - see above
+    tag = _enclosing_details_tag(markup, phrase)
+    assert "guidance-disclosure" in tag, f"{template_name}'s <details> lost its class: {tag!r}"
+    assert not re.search(r"\bopen\b", tag), (
+        f"{template_name}'s guidance is inside an OPEN <details> - a visitor "
+        f"sees exactly what they would if it had never been folded: {tag!r}"
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("template_name,pair", sorted(FOLDED_BLOCKS.items()))
+async def test_a_card_guidance_block_renders_closed_on_its_real_page(admin_client, template_name, pair):
+    """The template-source check above cannot see template composition bugs -
+    `_guidance.html`'s loop, or a `model_view` that stopped declaring the
+    block - so this drives the same real route `test_guidance.py`'s other
+    HTTP tests use and checks the same thing on the response that actually
+    reaches a browser.
+    """
+    phrase, route = pair
+    body = (await admin_client.get(route)).text
+    tag = _enclosing_details_tag(body, phrase)
+    assert "guidance-disclosure" in tag
+    assert not re.search(r"\bopen\b", tag), (
+        f"{route} renders {template_name}'s guidance already open: {tag!r}"
+    )
+
+
+def test_getting_started_is_not_folded():
+    """The one block this task deliberately leaves alone.
+
+    `getting-started.html` is the *entire* content of its own page
+    (`brand/getting_started.html`) - there are no controls on that page to
+    scroll past, so Change 1's reason for folding the other four does not
+    apply here, and folding it would hide the walkthrough a reader navigated
+    to this page specifically to read. This pins that decision rather than
+    leaving it to be silently undone by a future "fold everything in
+    guidance/" pass.
+    """
+    page = (GUIDANCE_DIR / "getting-started.html").read_text(encoding="utf-8")
+    markup = re.sub(r"\{#.*?#\}", "", page, flags=re.S)
+    assert "<details" not in markup, (
+        "getting-started.html has been folded behind a <details> - it is the "
+        "whole of its own page, and there is nothing left to read if it starts "
+        "closed"
+    )

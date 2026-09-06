@@ -7,13 +7,22 @@
    `submission.factor_set_id` makes every stored result a claim about a
    named version.
 
-   Pinned by tests/admin/test_guidance.py. #}
+   Pinned by tests/admin/test_guidance.py.
+
+   Closed by default (Task: admin guidance disclosure). Reference material a
+   staff member reads before they clone, publish, roll back or archive - not
+   a warning that has to reach someone who is not looking for it - so it is
+   fine to fold. The `<h3>` stays outside the `<details>` so the card still
+   names itself when collapsed; only the explanatory prose folds. #}
 <div class="col-12">
   <div class="card">
     <div class="card-status-start" style="background: #003223;"></div>
     <div class="card-body">
       <div style="max-width: 78ch;">
         <h3 class="card-title">Draft, published, archived</h3>
+        <details class="guidance-disclosure">
+        <summary>{{ _("What draft, published and archived mean, and what Clone, Publish, Roll back and Archive each cost") }}</summary>
+        <div class="guidance-disclosure__body">
         <p>
           A factor set is one complete set of the numbers the calculator runs
           on: every upstream and downstream factor, every constant, every
@@ -68,6 +77,8 @@
           answer it gave then. That is why no factor set can be deleted here at
           all.
         </p>
+        </div>
+        </details>
       </div>
     </div>
   </div>

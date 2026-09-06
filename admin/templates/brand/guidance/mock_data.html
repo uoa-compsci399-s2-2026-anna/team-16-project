@@ -11,13 +11,25 @@
    "untick it on a draft before you publish": the flag is off the edit form
    entirely and moves through two actions instead, because the real sequence
    is publish, verify in front of real use, then clear. Pinned by
-   tests/admin/test_guidance.py. #}
+   tests/admin/test_guidance.py.
+
+   Closed by default (Task: admin guidance disclosure). This is the
+   procedure for a staff member who is about to act - reference material
+   sought out at that moment, not a warning aimed at someone who is not
+   looking for it. The mandatory, non-dismissible mock-data notice that a
+   *visitor* sees is a different thing entirely (contract §2.2, rendered by
+   web/js and by brand/dry_run_result.html) and is never folded; this block
+   only explains the admin-side flag and procedure behind it, so it is fine
+   to fold. #}
 <div class="col-12">
   <div class="card">
     <div class="card-status-start" style="background: #003223;"></div>
     <div class="card-body">
       <div style="max-width: 78ch;">
         <h3 class="card-title">Placeholder numbers, and the warning that goes with them</h3>
+        <details class="guidance-disclosure">
+        <summary>{{ _("What the Is Mock flag does, and the procedure for clearing it once real factors are in") }}</summary>
+        <div class="guidance-disclosure__body">
         <p>
           The calculator is running on placeholder factors. They are the right
           shape and the wrong values, and nothing calculated from them is a
@@ -95,6 +107,8 @@
           twelve are still borrowed. The Data quality box on each row is where
           that belongs.
         </p>
+        </div>
+        </details>
       </div>
     </div>
   </div>

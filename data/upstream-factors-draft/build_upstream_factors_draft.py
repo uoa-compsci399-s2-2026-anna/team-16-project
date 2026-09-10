@@ -1584,9 +1584,10 @@ def build() -> dict:
             "sources; see docs/upstream-factors-draft.md. is_mock "
             "stays true: these values are derived, not yet the client's "
             "confirmed figures -- the placeholder banner must keep showing "
-            "until the owner decides otherwise. This set is a DRAFT and "
-            "must never be published: doing so would archive whatever New "
-            "Zealand set is currently live. Full provenance: "
+            "until the owner decides otherwise. Built as a DRAFT; "
+            "published 2026-09-06 on the owner's instruction, which "
+            "archived the set it replaced rather than deleting it, so "
+            "rollback remains available. Full provenance: "
             "docs/upstream-factors-draft.md and "
             "data/upstream-factors-draft/build_upstream_factors_draft.py."
         ),

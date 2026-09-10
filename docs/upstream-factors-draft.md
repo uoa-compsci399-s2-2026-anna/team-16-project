@@ -11,12 +11,24 @@ status: "DRAFT factor set. is_mock = true. Never published. Not the deliverable'
 Open item O-1 is this project's hard blocker: the client had not supplied
 real emissions factors, so the calculator has run entirely on mock data.
 This document and the factor set it describes are the **first movement** on
-O-1, not its close. The set is loaded as a **draft** (`status = draft`,
-`is_mock = true`) and must never be published: publishing would archive
-whatever New Zealand set is currently live, and none of what follows has
-been confirmed by the client. The repository owner is taking this draft to
-a client meeting to ask the questions it raises; it is deliberately "concrete
-enough to argue with" rather than a finished answer.
+O-1, not its close. The set is built as a **draft** (`status = draft`,
+`is_mock = true`), and `is_mock` stays true wherever it goes: none of what
+follows has been confirmed by the client, so the placeholder banner keeps
+showing. The repository owner is taking this draft to a client meeting to ask
+the questions it raises; it is deliberately "concrete enough to argue with"
+rather than a finished answer.
+
+**It was published on 2026-09-06**, on the local development stack and on the
+10.0.0.130 deployment, on the repository owner's explicit instruction — the
+sentence here previously said it never should be, which was written the day
+before that decision. Publishing archives the set it replaces rather than
+deleting it (`MOCK-v0` on 130, the ReFED benchmark set locally), so rollback
+remains available, and every submission stamps its own `factor_set_id`, so
+results computed before the change still reproduce exactly. What publishing
+changed is the *form*: `get_taxonomy` narrows the offered vocabulary to what
+the published set prices, so where `MOCK-v0` priced 6 destinations of 14 and
+3 sectors of 6, this set prices all of them, and the silent zeros that
+narrowing existed to hide are gone.
 
 **Everything here traces to one of four places**: the client's own Rawtec
 tables (transcribed, not re-measured); ReFED's already-published,

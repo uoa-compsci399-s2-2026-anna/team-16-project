@@ -1,0 +1,40 @@
+{# A small "?" beside a control, carrying one or two plain-language sentences
+   about what pressing it does. Task: admin usability - the client and their
+   staff, not engineers, are who this is for.
+
+   WHY <details>/<summary> AND NOT A `title` ATTRIBUTE OR A HOVER TOOLTIP.
+   `title` is invisible to touch - there is no long-press-to-reveal affordance
+   most people ever discover - and it is slow for everyone else, gated behind
+   a timed hover delay with no keyboard path at all: Tab moves focus onto the
+   element but nothing then shows the text. A hover-only CSS tooltip
+   (:hover/:focus) fails the same population a different way: there is no
+   hover on a touchscreen, so the explanation never appears there either.
+
+   `<summary>` is natively focusable, and toggles open and closed on a mouse
+   click, on a touch tap, and on Enter or Space once focused - the three
+   input methods this task names - with no JavaScript at all. It is also the
+   idiom this panel already uses for disclosure elsewhere (brand/dry_run.html,
+   brand/enrol_done.html, brand/guidance/), so a help marker behaves the same
+   way as every other fold in the panel rather than inventing a second one.
+
+   ACCESSIBLE NAME. The visible glyph is "?" alone - a label that announces
+   as "question mark" to a screen reader and tells nobody what it explains.
+   `name` is required and becomes the summary's `aria-label`, so it must say
+   what the control does ("Delete this account for good" rather than "Help"
+   or "More info") - a person tabbing through several of these on one page
+   needs the name alone to tell them apart.
+
+   LAYOUT. Closed, `.help-tip` is a tiny inline circle next to the button and
+   adds negligible width. Open, it becomes a normal block box - full width of
+   whatever row it sits in, wrapping onto its own line - rather than a
+   floating card. See brand.css's own comment on `.help-tip` for why: a
+   floating, absolutely-positioned version of this was tried first and
+   measured to overflow the page horizontally at 320px whenever the marker
+   sat away from the row's left edge, which is the concrete failure this task
+   warns against, just sideways instead of literally displacing the button. #}
+{% macro help_tip(name, text) -%}
+<details class="help-tip">
+  <summary aria-label="{{ name }}"><span aria-hidden="true">?</span></summary>
+  <div class="help-tip__body">{{ text }}</div>
+</details>
+{%- endmacro %}

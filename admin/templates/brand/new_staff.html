@@ -1,5 +1,6 @@
 {% extends "brand/base.html" %}
 {% import "brand/_account_hint.html" as account %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}Add a staff member{% endblock %}
 
 {# The same module brand/security.html loads, unchanged. It is generic - it
@@ -124,7 +125,7 @@
     <div class="actions">
       <button type="button" id="create-account" class="button"
               data-dialog="dialog-confirm" aria-haspopup="dialog"
-              aria-controls="dialog-confirm">Create account</button>
+              aria-controls="dialog-confirm">Create account</button>{{ help.help_tip(_("What Create account does"), _("Creates the account right away and shows a one-time password on the next page. If it is lost before the new person signs in, you can display it again from the Staff accounts screen.")) }}
       <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
     </div>
 

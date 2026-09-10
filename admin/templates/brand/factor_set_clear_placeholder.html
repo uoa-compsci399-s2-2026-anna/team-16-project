@@ -1,5 +1,6 @@
 {% extends "brand/base.html" %}
 {% import "brand/_account_hint.html" as account %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}Clear the placeholder flag{% endblock %}
 
 {# The same generic module brand/delete_staff.html, brand/security.html and
@@ -115,7 +116,7 @@
     <div class="actions">
       <button type="button" id="clear-placeholder" class="button button--danger"
               data-dialog="dialog-confirm" aria-haspopup="dialog"
-              aria-controls="dialog-confirm">Clear the placeholder flag</button>
+              aria-controls="dialog-confirm">Clear the placeholder flag</button>{{ help.help_tip(_("What Clear the placeholder flag does"), _("Removes the placeholder-data warning that currently appears on every public result and export, all at once. Only do this once every number in this version is real — if you are wrong, Flag as placeholder data on the Factor sets screen puts the warning straight back.")) }}
       <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
     </div>
 

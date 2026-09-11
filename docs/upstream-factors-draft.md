@@ -79,7 +79,7 @@ page, `/admin/try`.
 ## 2. The client's two tables, and what changed in scope
 
 The client supplied two tables (`rawtec.md`, itself a conversion of the
-document the team received; the original is not committed -- see §7).
+document the team received; the original is not committed -- see §8).
 
 **Table 1**, "Impact values for EFC of foods (not including disposal)":
 twenty food rows under seven client categories, each carrying kg CO2-eq/kg,
@@ -98,7 +98,7 @@ draft excluded table 2 entirely on that basis. **That was overruled on
 themselves a draft, no better destination-side column exists yet, and the
 owner will raise the defect with the client directly. Table 2 is used here,
 CO2-eq column included, exactly as printed. Nothing is substituted, corrected
-or dropped. §4 documents the correspondence in full and §7 is explicit that
+or dropped. §4 documents the correspondence in full and §8 is explicit that
 this is a recorded, deliberate choice, not an oversight.
 
 ## 3. Table 1: New Zealand food categories
@@ -792,7 +792,50 @@ found), and `eggs`/`staples`' still-unresolved status as noted in §3.2
 (`staples` itself *is* seeded, from ReFED alone, per the owner's ruling;
 `eggs` remains an unseeded gap pending a taxonomy or client decision).
 
-## 7. The traxie data directory
+## 7. The three equivalences
+
+`equivalences` in this draft was `[]` through every prior revision --
+`admin/seed.py` creates no equivalence rows either, so the results page's
+"Tangible equivalents" block has been empty on both deployments. This
+revision fills it with the three conversions the client's own "Data sources
+for impact calculator" document (received 2026-08-29) supplies, each with
+its `source_note` carrying the client's exact wording. This is a **partial**
+close of O-3 -- the New Zealand basis for these three conversions is now the
+client's own stated figures, but the equivalence set is not necessarily
+complete, and no NZ-specific source has been substituted for any of the
+three.
+
+| `code` | `source_metric` | Client's statement | `value_per_unit` |
+| --- | --- | --- | --- |
+| `vehicles_year` | `co2e` | "Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)" | `1/2410` |
+| `olympic_pools` | `water` | "Olympic swimming pools: = (Water Used (L)) / 2,500,000" | `1/2,500,000` |
+| `meals` | `mass` | "Meals: 450g per meal" | `1/0.45` |
+
+**The tonnes-to-kilograms adjustment.** The client states the vehicle figure
+per *tonne* of CO2e -- this system's `co2e` metric is in *kilograms*
+(`metric.unit`, and every `co2e` factor and formula in this draft and the
+live/mock set alike). Dividing a kilogram total by 2.41 would answer "how
+many vehicle-years is this if it had been measured in tonnes", which is off
+by a factor of a thousand and renders as an entirely plausible number -- the
+same class of error this repository already shipped once, in the
+`display_unit` rows that read "t CO2e" against totals the engine returns in
+kg. The other two conversions need no such adjustment: `water` is already
+litres (matching "Water Used (L)" directly), and `mass` is already
+kilograms, so 450 g per meal is applied as `1 / 0.45` with no unit change.
+
+Every value above is computed as a `Decimal` division and stored quantized
+to ten places (`Decimal("1E-10")`), the same scale every other factor in
+this set carries; `str()` on the very small `olympic_pools` factor prints in
+scientific notation (`"4.000E-7"`), which parses back to the identical
+`Decimal` value and is not a different number from `"0.0000004000"`.
+
+`build_upstream_factors_draft.py`'s `_assert_completeness()` now also
+refuses to write a set where an equivalence names a `source_metric` this set
+does not compute, or carries no `source_note` -- the same mechanical
+guarantee §6 describes for the factor rows, extended to cover the one other
+place a silent gap could hide.
+
+## 8. The traxie data directory
 
 Nothing under `traxie data/` (the client's original files: spreadsheets,
 zips, images, the brand pack) is committed anywhere in this repository --

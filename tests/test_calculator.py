@@ -771,6 +771,27 @@ def test_an_equivalence_naming_a_metric_the_bundle_does_not_compute_is_skipped()
     assert scenario(loaded, (line("landfill", "1000.000"),)).equivalences == ()
 
 
+def test_the_vehicle_equivalence_divides_by_kilograms_not_tonnes():
+    """The client states 2.41 t CO2e per vehicle per year; this system's
+    `co2e` metric is in KILOGRAMS, so the divisor is 2410. Getting this wrong
+    is a factor of a thousand that renders as a plausible number -- the same
+    class of error this repository already shipped once, when the
+    `display_unit` rows read 't CO2e' against totals the engine returns in kg.
+
+    `one_metric_bundle`'s only metric is `mass`, not `co2e`, but that does not
+    weaken the test: what is being pinned here is the divisor's magnitude, and
+    `equivalence_for` lets the scenario's total be chosen exactly, so 2,410 kg
+    is one vehicle-year by construction."""
+    factor = Decimal(1) / Decimal(2410)
+    item = equivalence_for(
+        "2410",
+        value_per_unit=str(factor),
+        template="Equivalent to running {value} passenger vehicles for a year",
+        name="Passenger vehicles for a year",
+    )
+    assert item.label == "Equivalent to running 1 passenger vehicles for a year"
+
+
 # --------------------------------------- the value: §4.2's roll-up rule
 
 

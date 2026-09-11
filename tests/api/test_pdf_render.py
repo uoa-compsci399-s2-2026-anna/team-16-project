@@ -348,6 +348,29 @@ def test_the_equivalence_total_is_display_formatted_not_raw():
 
 
 @requires_weasyprint
+def test_the_equivalence_figure_row_does_not_repeat_the_whole_sentence():
+    """The sixth divergence the final review found, caught by a scoped
+    re-review: fixing the page's stutter and leaving the PDF's turned a wart
+    both surfaces shared into a fresh disagreement between them.
+    `api/templates/results.html.j2`'s last `<dd>` used to print `row.label` a
+    second time -- the card's own heading, already printed once, two lines
+    above -- where the page now prints just the figure the equivalence
+    carries. `_equivalence_rows`'s new `figure` field
+    (`_figure(item.value, 0)`) is what the template renders there now, the
+    same operation `web/js/results.js::equivalenceBasis` performs with
+    `formatNumber(row.value, 0)` for the page's own last row.
+
+    `_scenario()`'s equivalence stand-in fixes `value=Decimal("1")`, so the
+    figure this document must print is `1` -- and the label sentence itself
+    must appear exactly once (the heading), not twice.
+    """
+    label = "Equivalent to 18,024 km driven in an average car"
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert text.count(label) == 1, f"the label sentence appears {text.count(label)} times, not once"
+    assert re.search(r"=\s*1\b", text), f"no `= 1` figure row in: {text!r}"
+
+
+@requires_weasyprint
 def test_no_text_runs_off_the_page():
     """**Defect one.** A German compound of 70-odd characters, typed by staff
     into a destination name, laid out at A4.

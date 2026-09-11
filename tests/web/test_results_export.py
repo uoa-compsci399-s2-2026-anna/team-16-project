@@ -2705,6 +2705,45 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
             f"not a metric's display_precision"
         )
 
+    # The sixth divergence, found by the scoped re-review that closed the
+    # fifth: fixing the page's stuttering last row and leaving the PDF's
+    # turned a wart both surfaces shared into a fresh disagreement between
+    # them. The last row's content is the equivalence's own figure -- not
+    # `row.label` printed a second time.
+    #
+    # The label sentence itself cannot be pinned to one literal string here,
+    # for the same reason the Total line above cannot: the page and the text
+    # export interpolate it from the mocked `value` ("1"), but the PDF's
+    # route recomputes against the real entries and the real published
+    # `vehicles_year` factor, so its own `value` -- and the whole numeral
+    # inside the sentence -- is whatever that real division comes to. A
+    # regex extracts each surface's own sentence rather than assuming it.
+    label_pattern = re.compile(r"Equivalent to running [\d,.]+ passenger vehicles for a year")
+    # `on_screen` is `.equivalent-basis__body`'s own text, and the card's
+    # `<h3>` heading sits outside that element -- so the label sentence has
+    # no reason to appear inside it at all once fixed. It used to, because
+    # the dd literally contained `row.label`.
+    assert not label_pattern.search(on_screen), (
+        "screen repeats the label sentence inside the disclosure body"
+    )
+    # The text export and the PDF both print the label once, as their own
+    # heading line; a second occurrence there is exactly the stutter.
+    for surface, content in (("text", text), ("pdf", pdf)):
+        match = label_pattern.search(content)
+        assert match, f"{surface} is missing the equivalence's own label sentence"
+        occurrences = content.count(match.group(0))
+        assert occurrences == 1, (
+            f"{surface} prints {match.group(0)!r} {occurrences} times -- it "
+            f"should be the heading only, not repeated as the figure row too"
+        )
+    # And the figure row itself: `name` followed by `=` (pdf, screen) or `:`
+    # (text) and a NUMBER, never the word "Equivalent" -- which is what the
+    # stutter would put there instead.
+    figure_pattern = re.compile(rf"{re.escape(name)}\s*[:=]\s*([\d,.]+)\b")
+    for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
+        match = figure_pattern.search(content)
+        assert match, f"{surface} is missing the equivalence's own figure beside its name"
+
 
 #: The plan's own five widths, checked in both an RTL and an LTR language - the same
 #: reason `test_horizontal_overflow.py` checks Arabic and German rather than English

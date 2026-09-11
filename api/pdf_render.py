@@ -645,6 +645,13 @@ def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict
     Printing it unconditionally is exactly what `test_a_real_factor_set_
     carries_no_warning` exists to catch - a real, published factor set
     saying "placeholder factors" about itself.
+
+    `figure` is the equivalence's own value, at whole-number precision -
+    `_figure(item.value, 0)`, the same operation `web/js/results.js::
+    equivalenceBasis` performs with `formatNumber(row.value, 0)` for the
+    page's own last row. It exists so the template's `<dd>` has a number to
+    print instead of reprinting `label` (the whole interpolated sentence,
+    already the card's own heading two lines up) a second time.
     """
     rows = []
     for item in scenario.equivalences:
@@ -654,6 +661,7 @@ def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict
             "name": item.name,
             "total": f"{_figure(source.total, source.display_precision)} {source.unit}" if source else "",
             "per_unit": item.value_per_unit_display,
+            "figure": _figure(item.value, 0),
             "basis": item.source_note or translate(_EQUIVALENCE_BASIS_MISSING),
             "disclaimer": translate(_EQUIVALENCE_DISCLAIMER) if is_mock else "",
         })

@@ -277,10 +277,10 @@ function summaryCards(totals, taxonomy) {
 // `value` across entries and then rendered three hard-coded English labels of its own for
 // three hard-coded codes, so a new equivalence never appeared and the client's approved
 // wording was overridden (§7.6.5).
-function equivalences(totals) {
+function equivalences(totals, isMock) {
   const rows = totals.current?.equivalences || []
   if (!rows.length) return `<p class="empty-state">${escapeHtml(t('Tangible equivalents are available once approved conversion factors are supplied.'))}</p>`
-  return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3>${equivalenceBasis(row, totals)}</article>`).join('')}</div>`
+  return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3>${equivalenceBasis(row, totals, isMock)}</article>`).join('')}</div>`
 }
 
 // §7.6 rule 1: nothing here is arithmetic. `value_per_unit_display` and the
@@ -288,12 +288,23 @@ function equivalences(totals) {
 // out. §7.6 rule 9: `source_note` is the client's approved wording and is
 // printed verbatim in every language -- only the connective words are
 // translated.
-function equivalenceBasis(row, totals) {
+//
+// The standing caveat below is two facts in one sentence: the conversion
+// factor comes from the client (true regardless of the active factor set),
+// and the total it is multiplied against comes from PLACEHOLDER factors --
+// true only while `isMock`. Printing it unconditionally is what let a real,
+// published factor set say "placeholder factors" about itself; found when
+// extending it to the exports made `test_a_real_factor_set_carries_no_
+// warning` fail in the PDF and made the same sentence false here too.
+function equivalenceBasis(row, totals, isMock) {
   const source = totals.current?.metrics?.[row.source_metric]
   const total = source ? `${formatNumber(source.total, source.display_precision)} ${source.unit}` : ''
   const basis = row.source_note
     ? escapeHtml(row.source_note)
     : escapeHtml(t('The basis for this conversion is not recorded yet.'))
+  const disclaimer = isMock
+    ? `<p class="equivalent-basis__note">${escapeHtml(t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.'))}</p>`
+    : ''
   return `<details class="equivalent-basis">
   <summary aria-label="${escapeHtml(t('How this comparison was worked out'))}">?</summary>
   <div class="equivalent-basis__body">
@@ -303,7 +314,7 @@ function equivalenceBasis(row, totals) {
       <div><dt>${escapeHtml(row.name)}</dt><dd>= ${escapeHtml(row.label)}</dd></div>
     </dl>
     <p class="equivalent-basis__note">${escapeHtml(t('Basis:'))} ${basis}</p>
-    <p class="equivalent-basis__note">${escapeHtml(t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.'))}</p>
+    ${disclaimer}
   </div>
 </details>`
 }
@@ -681,6 +692,11 @@ export function buildResultsReport(state) {
   // it are the same three facts the page shows behind its disclosure -- paper
   // has no "open" gesture, and the PDF is the copy most likely to be forwarded
   // to someone who will challenge the figure (§6.3).
+  // The caveat below is true only while the active factor set is mock -- it
+  // says the total the conversion is applied to comes from placeholder
+  // factors, which is false the moment a real one is published. Gated the
+  // same way `notice`/`DEMONSTRATION_NOTICE` already are, a few lines below.
+  const equivalentsAreMock = state.result?.factor_set?.is_mock
   const equivalents = (totals.current?.equivalences || []).flatMap(row => {
     const source = totals.current?.metrics?.[row.source_metric]
     const total = source ? `${formatNumber(source.total, source.display_precision)} ${source.unit}` : ''
@@ -688,6 +704,7 @@ export function buildResultsReport(state) {
       `  - ${row.label}`,
       `      ${t('Total')}: ${total}  ${t('Per unit')}: x ${row.value_per_unit_display}`,
       `      ${t('Basis:')} ${row.source_note || t('The basis for this conversion is not recorded yet.')}`,
+      ...(equivalentsAreMock ? [`      ${t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.')}`] : []),
     ]
   })
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
@@ -1025,7 +1042,7 @@ export function renderResults(state) {
       ? t('Results returned by the calculation service for one supply-chain entry.')
       : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
-    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals)}</section>
+    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
     <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>

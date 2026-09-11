@@ -407,6 +407,17 @@ _LABELS = {
 #: not the plan's).
 _EQUIVALENCE_BASIS_MISSING = "The basis for this conversion is not recorded yet."
 
+#: The standing caveat `web/js/results.js::equivalenceBasis` prints beside
+#: every basis note on the page (Task 6). It was missing from both exports
+#: until a review of this task found it - a fourth fact the three surfaces
+#: disagreed on, inside the task written to end exactly that disagreement -
+#: so it is printed unconditionally, the same words, beside every equivalence
+#: in both the text export and here.
+_EQUIVALENCE_DISCLAIMER = (
+    "The conversion factor comes from the client. The total it is applied "
+    "to comes from placeholder factors."
+)
+
 #: §4.6's four states for a totals-level figure, worded to match
 #: `web/js/results.js::productionShareText` and `::moneyFieldText` exactly -
 #: literally the same catalogue keys, not a rephrasing of them - so the card,
@@ -493,6 +504,7 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     _MONEY_INCOMPLETE_NOTE,
     _MONEY_UNDEFINED_NOTE,
     _EQUIVALENCE_BASIS_MISSING,
+    _EQUIVALENCE_DISCLAIMER,
     *_LABELS.values(),
     *(key for _attribute, key, _kind in _MONEY_LABELS),
 )
@@ -614,7 +626,7 @@ def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, A
     return rows
 
 
-def _equivalence_rows(scenario: Any, translate: Any) -> list[dict[str, Any]]:
+def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict[str, Any]]:
     """§6.3: a calculator that cannot say which numbers are measured and which
     are borrowed cannot be defended in public, and the PDF is the copy that
     travels. `source_note` is the client's wording and is not translated
@@ -625,6 +637,13 @@ def _equivalence_rows(scenario: Any, translate: Any) -> list[dict[str, Any]]:
     re-runs the calculation and hands this module the object, not the wire
     response), so it is `source_metric_code` here and never the wire's
     `source_metric`.
+
+    `disclaimer` is empty outside `is_mock`. The sentence is two facts: the
+    conversion factor comes from the client (true regardless), and the total
+    it multiplies comes from PLACEHOLDER factors (true only while mock).
+    Printing it unconditionally is exactly what `test_a_real_factor_set_
+    carries_no_warning` exists to catch - a real, published factor set
+    saying "placeholder factors" about itself.
     """
     rows = []
     for item in scenario.equivalences:
@@ -635,6 +654,7 @@ def _equivalence_rows(scenario: Any, translate: Any) -> list[dict[str, Any]]:
             "total": f"{source.total} {source.unit}" if source else "",
             "per_unit": item.value_per_unit_display,
             "basis": item.source_note or translate(_EQUIVALENCE_BASIS_MISSING),
+            "disclaimer": translate(_EQUIVALENCE_DISCLAIMER) if is_mock else "",
         })
     return rows
 
@@ -781,7 +801,7 @@ def build_context(
         ),
         "destinations": _destination_rows(totals, names),
         "money": _money_rows(getattr(totals, "money", None), getattr(totals, "data_state", None), translate),
-        "equivalences": _equivalence_rows(totals.current, translate),
+        "equivalences": _equivalence_rows(totals.current, bool(result.is_mock), translate),
         "entries": entries,
         "colophon": translate(_COLOPHON),
     }

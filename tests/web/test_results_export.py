@@ -2594,9 +2594,11 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
 
     factor = "0.000414938"
     basis = "Client, Data sources for impact calculator"
+    disclaimer = "The conversion factor comes from the client. The total it is applied to comes from placeholder factors."
     for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
         assert factor in content, f"{surface} is missing the conversion factor"
         assert basis in content, f"{surface} is missing the basis"
+        assert disclaimer in content, f"{surface} is missing the disclaimer"
 
 
 #: The plan's own five widths, checked in both an RTL and an LTR language - the same

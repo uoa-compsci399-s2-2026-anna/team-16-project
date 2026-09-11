@@ -211,6 +211,7 @@
       <div><dt>{{ row.name }}</dt><dd>= {{ row.label }}</dd></div>
     </dl>
     <p class="equivalence-basis__note">{{ doc.labels.equivalence_basis }} {{ row.basis }}</p>
+    {% if row.disclaimer %}<p class="equivalence-basis__note">{{ row.disclaimer }}</p>{% endif %}
   </li>
   {% endfor %}
 </ul>

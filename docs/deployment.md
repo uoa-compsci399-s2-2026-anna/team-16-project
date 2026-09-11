@@ -48,9 +48,27 @@ nginx on the host       — terminates a second TLS leg with a Cloudflare
   │  HTTP, loopback only
   ▼
 docker/compose.yaml     — db, migrate (one-shot), api, admin, web(nginx),
-stack on 127.0.0.1:18080  reached only through the outer nginx; the security
-                           group does not admit 18080 from outside at all
+stack on 127.0.0.1:18080  reached through the outer nginx in normal operation
 ```
+
+**The inbound rules, and why each is what it is.** Port 443 is open to the
+internet rather than to Cloudflare's ranges alone: the operator's judgement is
+that not every visitor's path is guaranteed to be proxied, and the origin
+certificate makes a direct caller's leg encrypted anyway. Port 80 is closed —
+nothing needs it, because the Origin CA certificate requires no challenge and
+Cloudflare issues the redirect to HTTPS on the public side. Port 22 admits
+`<operator-ipv4>/32` only. Port 18080 is open to the operator's own addresses
+(`<operator-ipv4>/32`, and `<operator-ipv6>/56` where the IPv6 rule is in
+place) so that the stack can be reached directly when Cloudflare or DNS is the
+thing that has failed — a path worth having, because an outage in front of the
+origin otherwise leaves no way to tell a broken application from a broken
+proxy.
+
+Keeping 18080 narrow matters more than it looks. One calculation is one
+submission (§2.3 of `docs/interfaces.md`), and the public statistics page is
+computed from those submissions. An 18080 open to the world would let anyone
+push rows into a client-facing figure while bypassing Cloudflare's rate
+limiting entirely.
 
 Two TLS legs, not one, and each terminates a different thing. Cloudflare
 terminates the leg the public actually dials — it is what gives the site a

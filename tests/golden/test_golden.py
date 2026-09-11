@@ -46,6 +46,7 @@ will type.
 
 from __future__ import annotations
 
+import dataclasses
 import json
 from decimal import Decimal
 from pathlib import Path
@@ -58,6 +59,7 @@ from engine.types import (
     CalculationRequest,
     CalculationResult,
     EntryInput,
+    EquivalenceResult,
     ScenarioLine,
 )
 
@@ -295,25 +297,29 @@ def _metric(metric) -> dict:
     }
 
 
+def _equivalence(equivalence) -> dict:
+    """Every field `EquivalenceResult` carries, read off `dataclasses.fields`
+    rather than restated by name here. A hand-copied list is the defect this
+    branch already fixed once (`c330025`, widening a 4-key dict that had let
+    the whole subject of this suite go unpinned in thirteen cases) — deriving
+    it means a ninth field is pinned the moment it exists on the dataclass,
+    the same guarantee `tests/api/test_fixture_consistency.py::test_the_fake_
+    adapters_equivalence_has_every_field_the_engines_does` gives the fake
+    adapter's stand-in."""
+    return {
+        f.name: _decimal(value) if isinstance(value, Decimal) else value
+        for f in dataclasses.fields(EquivalenceResult)
+        for value in (getattr(equivalence, f.name),)
+    }
+
+
 def _scenario(scenario) -> dict | None:
     if scenario is None:
         return None
     return {
         "total_kg": _decimal(scenario.total_kg),
         "metrics": {code: _metric(metric) for code, metric in scenario.metrics.items()},
-        "equivalences": [
-            {
-                "code": equivalence.code,
-                "label": equivalence.label,
-                "value": _decimal(equivalence.value),
-                "source_metric_code": equivalence.source_metric_code,
-                "name": equivalence.name,
-                "value_per_unit": _decimal(equivalence.value_per_unit),
-                "value_per_unit_display": equivalence.value_per_unit_display,
-                "source_note": equivalence.source_note,
-            }
-            for equivalence in scenario.equivalences
-        ],
+        "equivalences": [_equivalence(equivalence) for equivalence in scenario.equivalences],
     }
 
 

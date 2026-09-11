@@ -47,6 +47,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 
 from admin.factor_models import (  # noqa: E402
     Constant,
+    Equivalence,
     FactorDownstream,
     FactorSet,
     FactorSetStatus,
@@ -102,7 +103,10 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
     destinations = _codes(session, Destination)
     metrics = _codes(session, Metric)
 
-    counts = {"constant": 0, "formula": 0, "upstream": 0, "downstream": 0}
+    counts = {
+        "constant": 0, "formula": 0, "upstream": 0, "downstream": 0,
+        "equivalence": 0,
+    }
 
     for row in data.get("constants", []):
         session.add(Constant(
@@ -162,6 +166,57 @@ def load_factor_set(session: Session, data: dict) -> tuple[int, dict[str, int]]:
         ))
         counts["downstream"] += 1
 
+    for index, row in enumerate(data.get("equivalences", [])):
+        where = f"equivalences[{index}]"
+        session.add(Equivalence(
+            factor_set_id=set_id, code=row["code"], name=row["name"],
+            source_metric_id=_lookup(
+                metrics, row["source_metric"], "metric", where),
+            value_per_unit=Decimal(str(row["value_per_unit"])),
+            label_template=row["label_template"],
+            source_note=row.get("source_note"),
+            sort_order=int(row.get("sort_order", 0)),
+        ))
+        counts["equivalence"] += 1
+
+    #: The defect this guards against: a whole section of the JSON silently
+    #: dropped because nothing here reads its key. That happened once
+    #: already -- ``equivalences`` was in every draft file this loader read
+    #: and nothing below counted it, so the set landed with an empty
+    #: "Tangible equivalents" block and nothing said so. Every key in `data`
+    #: that isn't one of the known scalar fields must be a section this
+    #: function knows how to load, and every row that section's JSON list
+    #: carries must have produced exactly one inserted row -- not "at least
+    #: one", not "some" -- or the load is refused rather than summarised as
+    #: though it were complete.
+    known_scalars = {"version_label", "is_mock", "notes"}
+    sections = {
+        "constants": "constant",
+        "formulas": "formula",
+        "upstream": "upstream",
+        "downstream": "downstream",
+        "equivalences": "equivalence",
+    }
+    unrecognised = set(data) - known_scalars - set(sections)
+    if unrecognised:
+        raise LoadError(
+            f"Unrecognised section(s) {sorted(unrecognised)!r} in the "
+            "factor-set JSON. This loader has no code path for them, which "
+            "is exactly how the `equivalences` section was silently dropped "
+            "before -- add a loop for the new section rather than loading "
+            "everything else and leaving it out."
+        )
+    for json_key, counts_key in sections.items():
+        present = len(data.get(json_key, []))
+        inserted = counts[counts_key]
+        if present != inserted:
+            raise LoadError(
+                f"Section {json_key!r} carried {present} row(s) in the JSON "
+                f"but only {inserted} were inserted into the database. "
+                "Refusing to load a set that silently drops part of what it "
+                "was given."
+            )
+
     return set_id, counts
 
 
@@ -196,7 +251,8 @@ def main() -> int:
         f"status DRAFT, is_mock=true: "
         f"{counts['constant']} constants, {counts['formula']} formulas, "
         f"{counts['upstream']} upstream rows, "
-        f"{counts['downstream']} downstream rows."
+        f"{counts['downstream']} downstream rows, "
+        f"{counts['equivalence']} equivalences."
     )
     print()
     print("It is a DRAFT and nothing that is live has changed. Do not")

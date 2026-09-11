@@ -711,6 +711,62 @@ def test_every_equivalence_is_derived_from_the_metric_total_it_names(name, facto
             check(entry[scenario], f"{name} entries[{index}].{scenario}")
 
 
+def test_the_fake_adapters_equivalence_has_every_field_the_engines_does():
+    """This repository has already shipped the sibling of what this guards
+    against: the engine's money block was once deleted while 105 API tests
+    stayed green, because `tests.support.sqlite.FakeEngineAdapter` carried its
+    own independent computation of the same figures and never noticed the
+    real one was gone.
+
+    The four fields v1.52 added to `EquivalenceResult` are additive, not a
+    computation the fake reimplements, so a *deletion* of one is already
+    caught loudly — `api/engine_adapter.py` reads `item.<field>` on every
+    call, and `AttributeError` fails any test that reaches
+    `serialize_result()`, which is most of `test_api.py` and
+    `test_api_entries.py`. What that crash does **not** catch is a *value*
+    drift: if the real formatting rule for, say, `value_per_unit_display`
+    changed, the fake's hardcoded stand-in would keep the field and keep
+    passing, silently rendering wire output the fake no longer matches, and
+    every assertion resting on "the fake and the real dataclass agree" would
+    go untested for exactly the fields nobody re-derives.
+
+    So this test does not re-list the field names -- restating them here
+    would be a third copy to keep in step with the other two, which is the
+    defect wearing a different hat. It reads `EquivalenceResult`'s own field
+    set via `dataclasses.fields` and compares it against the fake's stand-in
+    equivalence object's actual attributes, so adding, removing or renaming a
+    field on the dataclass makes *this* test fail until the fake is updated
+    to match -- at the type level, rather than only when a change to
+    `api/engine_adapter.py` happens to be exercised by a test that asserts a
+    value.
+    """
+    import dataclasses
+    from decimal import Decimal
+    from types import SimpleNamespace
+
+    from engine.types import EquivalenceResult
+    from tests.support.sqlite import _scenario_result
+
+    expected = {f.name for f in dataclasses.fields(EquivalenceResult)}
+
+    # `with_breakdown=False` is enough to reach the equivalence stand-in --
+    # `_scenario_result` only needs `qty_kg` off each line for that path.
+    scenario = _scenario_result(
+        [SimpleNamespace(qty_kg=Decimal("10.000"))], with_breakdown=False
+    )
+    (equivalence,) = scenario.equivalences
+    actual = set(vars(equivalence))
+
+    assert actual == expected, (
+        "tests.support.sqlite's fake equivalence stand-in has "
+        f"{actual - expected or '{}'} that engine.types.EquivalenceResult "
+        f"does not, and is missing {expected - actual or '{}'} that it "
+        "does -- api/engine_adapter.py serialises every field of the real "
+        "dataclass, so the fake must carry the same set for the wider API "
+        "test suite to mean what it appears to."
+    )
+
+
 def test_taxonomy_codes_and_names_are_the_shipped_seeds(taxonomy):
     """`taxonomy.json` must be `admin/seed.py`, not a plausible neighbour.
 

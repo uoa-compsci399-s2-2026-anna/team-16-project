@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "તમે જણાવ્યું કે આમાં કુલ 0 કિગ્રા સામેલ હતું, તેથી બગાડનો હિસ્સો બતાવી શકાતો નથી.",
     "The total value was zero, so this cannot be calculated.": "કુલ મૂલ્ય શૂન્ય હતું, તેથી આની ગણતરી કરી શકાતી નથી.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "બગાડનું મૂલ્ય ઉત્પાદનના મૂલ્ય કરતાં NZ$%(excess)s વધારે છે.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "કચરાનો જથ્થો કુલ ઉત્પાદિત જથ્થા કરતાં %(excess)s %(unit)s વધારે છે."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "કચરાનો જથ્થો કુલ ઉત્પાદિત જથ્થા કરતાં %(excess)s %(unit)s વધારે છે.",
+    "How this comparison was worked out": "આ સરખામણી કેવી રીતે કાઢવામાં આવી",
+    "Total": "કુલ",
+    "Per unit": "એકમ દીઠ",
+    "Basis:": "આધાર:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "રૂપાંતરણ પરિબળ ક્લાયન્ટ તરફથી આવે છે. જે કુલ રકમ પર તે લાગુ થાય છે તે કામચલાઉ પરિબળોમાંથી આવે છે.",
+    "The basis for this conversion is not recorded yet.": "આ રૂપાંતરણનો આધાર હજુ સુધી નોંધવામાં આવ્યો નથી."
   }
 }

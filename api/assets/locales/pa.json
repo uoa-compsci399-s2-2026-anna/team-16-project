@@ -357,6 +357,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ਤੁਸੀਂ ਦੱਸਿਆ ਕਿ ਇਸ ਵਿੱਚ ਕੁੱਲ 0 ਕਿਲੋਗ੍ਰਾਮ ਸ਼ਾਮਲ ਸੀ, ਇਸ ਲਈ ਬਰਬਾਦੀ ਦਾ ਹਿੱਸਾ ਨਹੀਂ ਦਿਖਾਇਆ ਜਾ ਸਕਦਾ।",
     "The total value was zero, so this cannot be calculated.": "ਕੁੱਲ ਮੁੱਲ ਸਿਫ਼ਰ ਸੀ, ਇਸ ਲਈ ਇਸਦੀ ਗਣਨਾ ਨਹੀਂ ਕੀਤੀ ਜਾ ਸਕਦੀ।",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "ਬਰਬਾਦੀ ਦਾ ਮੁੱਲ ਉਤਪਾਦਨ ਦੇ ਮੁੱਲ ਨਾਲੋਂ NZ$%(excess)s ਵੱਧ ਹੈ।",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "ਬਰਬਾਦੀ ਦੀ ਮਾਤਰਾ ਪੈਦਾ ਕੀਤੀ ਕੁੱਲ ਮਾਤਰਾ ਨਾਲੋਂ %(excess)s %(unit)s ਵੱਧ ਹੈ।"
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "ਬਰਬਾਦੀ ਦੀ ਮਾਤਰਾ ਪੈਦਾ ਕੀਤੀ ਕੁੱਲ ਮਾਤਰਾ ਨਾਲੋਂ %(excess)s %(unit)s ਵੱਧ ਹੈ।",
+    "How this comparison was worked out": "ਇਹ ਤੁਲਨਾ ਕਿਵੇਂ ਕੱਢੀ ਗਈ",
+    "Total": "ਕੁੱਲ",
+    "Per unit": "ਪ੍ਰਤੀ ਇਕਾਈ",
+    "Basis:": "ਆਧਾਰ:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "ਤਬਦੀਲੀ ਗੁਣਕ ਕਲਾਇੰਟ ਤੋਂ ਆਉਂਦਾ ਹੈ। ਜਿਸ ਕੁੱਲ ਰਕਮ ਉੱਤੇ ਇਹ ਲਾਗੂ ਕੀਤਾ ਗਿਆ ਹੈ, ਉਹ ਆਰਜ਼ੀ ਗੁਣਕਾਂ ਤੋਂ ਆਉਂਦੀ ਹੈ।",
+    "The basis for this conversion is not recorded yet.": "ਇਸ ਤਬਦੀਲੀ ਦਾ ਆਧਾਰ ਅਜੇ ਦਰਜ ਨਹੀਂ ਕੀਤਾ ਗਿਆ।"
   }
 }

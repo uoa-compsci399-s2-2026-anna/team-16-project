@@ -358,6 +358,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "您表示此次記錄合計涉及 0 公斤，因此無法顯示浪費佔比。",
     "The total value was zero, so this cannot be calculated.": "總價值為零，因此無法計算此數值。",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "浪費價值比生產價值多出 NZ$%(excess)s。",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "浪費量比生產總量多出 %(excess)s %(unit)s。"
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "浪費量比生產總量多出 %(excess)s %(unit)s。",
+    "How this comparison was worked out": "這項換算是如何得出的",
+    "Total": "總計",
+    "Per unit": "每單位",
+    "Basis:": "依據：",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "換算係數由客戶提供；套用該係數的總量則來自暫定係數。",
+    "The basis for this conversion is not recorded yet.": "這項換算的依據尚未記錄。"
   }
 }

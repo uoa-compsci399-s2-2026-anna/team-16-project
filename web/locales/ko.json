@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "총 0kg으로 입력하셨으므로 낭비 비율을 표시할 수 없습니다.",
     "The total value was zero, so this cannot be calculated.": "총 가치가 0이었으므로 이 값을 계산할 수 없습니다.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "폐기물 가치가 생산 가치보다 NZ$%(excess)s 많습니다.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "폐기량이 생산된 총량보다 %(excess)s %(unit)s 많습니다."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "폐기량이 생산된 총량보다 %(excess)s %(unit)s 많습니다.",
+    "How this comparison was worked out": "이 비교값이 산출된 방식",
+    "Total": "합계",
+    "Per unit": "단위당",
+    "Basis:": "근거:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "환산 계수는 클라이언트로부터 제공되었습니다. 이를 적용한 합계는 임시 계수에서 나온 것입니다.",
+    "The basis for this conversion is not recorded yet.": "이 환산의 근거는 아직 기록되지 않았습니다."
   }
 }

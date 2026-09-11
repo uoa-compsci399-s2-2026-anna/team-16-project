@@ -780,6 +780,73 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .equivalent-grid article > span { width: 34px; height: 34px; margin-bottom: 14px; display: grid; place-items: center; border: 1px solid rgba(0, 50, 35, 0.55); border-radius: 50%; font-weight: 700; }
 .equivalent-grid h3 { margin-bottom: 7px; }
 .equivalent-grid p { margin: 0; color: var(--muted); font-size: 0.92rem; }
+
+/* `.equivalent-basis`: the "?" beside each equivalence, explaining how the client's
+   factor was applied. Same shape as the admin panel's `.help-tip`
+   (admin/static/brand.css) and for the same reason -- a native <details>/<summary>
+   is keyboard-operable (Tab, then Enter or Space) and touch-operable with no
+   JavaScript, where a `title` attribute or a hover-only tooltip would be neither.
+   No `title` attribute is used here and nothing depends on `:hover`.
+
+   Closed, the "?" sits at the row's own INLINE END via `text-align: end` -- a
+   logical property, so it sits on the right in English and the left in Arabic
+   without a direction-specific rule. Open, the body is a normal IN-FLOW block,
+   never absolutely positioned: an earlier version of this same affordance
+   (the admin panel's help marker) was floated over the page and measured
+   overflowing the viewport by about 27px at 320px wide. A block box can never be
+   wider than its own containing block, so this cannot repeat that failure. */
+.equivalent-basis { display: block; margin-block-start: 8px; text-align: end; }
+.equivalent-basis summary {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  inline-size: 1.4rem;
+  block-size: 1.4rem;
+  border: 1px solid var(--ink);
+  border-radius: 50%;
+  background: #fff;
+  color: var(--ink);
+  font-family: var(--font-heading);
+  font-size: 0.78rem;
+  font-weight: 700;
+  line-height: 1;
+  cursor: pointer;
+  list-style: none;
+  user-select: none;
+}
+.equivalent-basis summary::-webkit-details-marker { display: none; }
+.equivalent-basis summary:focus-visible {
+  outline: 2px solid var(--focus);
+  outline-offset: 2px;
+}
+.equivalent-basis[open] summary { background: var(--ink); color: #fff; }
+.equivalent-basis__body {
+  margin-block-start: 8px;
+  max-inline-size: 100%;
+  padding-block: 12px;
+  padding-inline: 14px;
+  border: 1px solid rgba(0, 50, 35, 0.18);
+  border-radius: 10px;
+  background: #fff;
+  text-align: start;
+  font-size: 0.85rem;
+  line-height: 1.45;
+}
+/* `flex-wrap: wrap` plus `min-width: 0` on both children: without them a flex item's
+   default `min-width: auto` refuses to shrink below its own content's width, which is
+   the exact defect `tests/web/test_horizontal_overflow.py` was written for (a `<dd>`
+   holding a long, unbreakable value pushed a 310px list to 768px). The longest row
+   here is a food-category or destination name paired with the full equivalence
+   sentence, and either can be long enough in some language to need the second line
+   this allows rather than a sideways scroll. */
+.equivalent-basis__body dl { margin: 0 0 8px; }
+.equivalent-basis__body dl > div { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 2px 10px; }
+.equivalent-basis__body dl > div + div { margin-top: 4px; }
+.equivalent-basis__body dt { min-width: 0; overflow-wrap: break-word; font-weight: 700; }
+.equivalent-basis__body dd { min-width: 0; overflow-wrap: break-word; margin: 0; text-align: end; }
+.equivalent-basis__note { margin: 8px 0 0; color: var(--muted); }
+.equivalent-basis__note:first-of-type { margin-top: 10px; }
+
 /* ---------------------------------------------------------------------------------------
    THE ARROW SHOWS THE DIRECTION OF THE IMPACT, NOT THE SIGN OF THE NUMBER.
 

@@ -280,7 +280,32 @@ function summaryCards(totals, taxonomy) {
 function equivalences(totals) {
   const rows = totals.current?.equivalences || []
   if (!rows.length) return `<p class="empty-state">${escapeHtml(t('Tangible equivalents are available once approved conversion factors are supplied.'))}</p>`
-  return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3></article>`).join('')}</div>`
+  return `<div class="equivalent-grid">${rows.map(row => `<article><h3>${escapeHtml(row.label)}</h3>${equivalenceBasis(row, totals)}</article>`).join('')}</div>`
+}
+
+// §7.6 rule 1: nothing here is arithmetic. `value_per_unit_display` and the
+// metric total arrive already formatted by the engine, and this only lays them
+// out. §7.6 rule 9: `source_note` is the client's approved wording and is
+// printed verbatim in every language -- only the connective words are
+// translated.
+function equivalenceBasis(row, totals) {
+  const source = totals.current?.metrics?.[row.source_metric]
+  const total = source ? `${formatNumber(source.total, source.display_precision)} ${source.unit}` : ''
+  const basis = row.source_note
+    ? escapeHtml(row.source_note)
+    : escapeHtml(t('The basis for this conversion is not recorded yet.'))
+  return `<details class="equivalent-basis">
+  <summary aria-label="${escapeHtml(t('How this comparison was worked out'))}">?</summary>
+  <div class="equivalent-basis__body">
+    <dl>
+      <div><dt>${escapeHtml(t('Total'))}</dt><dd>${escapeHtml(total)}</dd></div>
+      <div><dt>${escapeHtml(t('Per unit'))}</dt><dd>&times; ${escapeHtml(row.value_per_unit_display)}</dd></div>
+      <div><dt>${escapeHtml(row.name)}</dt><dd>= ${escapeHtml(row.label)}</dd></div>
+    </dl>
+    <p class="equivalent-basis__note">${escapeHtml(t('Basis:'))} ${basis}</p>
+    <p class="equivalent-basis__note">${escapeHtml(t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.'))}</p>
+  </div>
+</details>`
 }
 
 // §6.2: the breakdown is rendered from `entries[]`, and nothing on this screen is added

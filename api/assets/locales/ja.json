@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "合計0kgと入力されたため、廃棄割合を表示できません。",
     "The total value was zero, so this cannot be calculated.": "合計金額が0だったため、この値は計算できません。",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "廃棄物の価値が生産の価値を NZ$%(excess)s 上回っています。",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "廃棄量が生産された総量を %(excess)s %(unit)s 上回っています。"
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "廃棄量が生産された総量を %(excess)s %(unit)s 上回っています。",
+    "How this comparison was worked out": "この換算の求め方",
+    "Total": "合計",
+    "Per unit": "単位あたり",
+    "Basis:": "根拠：",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "換算係数はクライアントから提供されたものです。それが適用される合計値は仮の係数によるものです。",
+    "The basis for this conversion is not recorded yet.": "この換算の根拠はまだ記録されていません。"
   }
 }

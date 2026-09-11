@@ -2405,3 +2405,190 @@ def test_neither_download_button_overflows_in_german(browser, width):
             )
     finally:
         context.close()
+
+
+# --------------------------------------------------------------- the equivalence disclosure
+#
+# Task 6. Every equivalence carries a question mark that opens onto how it was worked
+# out (contract v1.52, Task 3). Browser tests never reach the real engine - `page_at`
+# fulfils `/api/v1/calculate` in-browser - so the factor and basis text asserted below
+# come from the response THIS FILE builds, modelled on the client's own "vehicles_year"
+# conversion (Task 4), not from `tests/fixtures/*.json`'s `km_driven` row, which is still
+# on the old `4.1800000000` factor.
+
+
+def _equivalence_response(*, source_note):
+    """A deep copy of `calculate_response.json` with its one equivalence replaced.
+
+    `co2e`'s total in that fixture is `4449.0000000000` at one decimal place
+    (`kg CO2e`), so `equivalenceBasis` has a real metric to read `source_metric`
+    against. The factor itself - `0.0004149378`, displayed as `0.000414938` - and
+    the source note are copied verbatim from the client's document via
+    `data/upstream-factors-draft/build_upstream_factors_draft.py`'s `vehicles_year`
+    row, not retyped from memory.
+    """
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["totals"]["current"]["equivalences"] = [
+        {
+            "code": "vehicles_year",
+            "name": "Passenger vehicles for a year",
+            "label": "Equivalent to running 1 passenger vehicles for a year",
+            "value": "1.0000000000",
+            "value_per_unit": "0.0004149378",
+            "value_per_unit_display": "0.000414938",
+            "source_metric": "co2e",
+            "source_note": source_note,
+        }
+    ]
+    return response
+
+
+#: Copied verbatim from `data/upstream-factors-draft/upstream_factors_draft.json`'s
+#: `vehicles_year` row - not retyped, so a transcription slip cannot make this test
+#: pass against text the client never approved.
+_VEHICLE_SOURCE_NOTE = (
+    "Client, Data sources for impact calculator (2026-08-29): "
+    "\"Passenger vehicles on the road: GHG emissions (t CO2e) / "
+    "2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, "
+    "so the divisor here is 2,410."
+)
+
+
+@pytest.fixture
+def results_page(page_at):
+    """The results page, reached with one equivalence that carries a recorded basis."""
+    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE))
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.fixture
+def results_page_without_basis(page_at):
+    """O-3 is open and `source_note` is nullable - the same equivalence, unrecorded."""
+    page = page_at(_equivalence_response(source_note=None))
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.mark.browser
+def test_each_equivalence_offers_an_explanation_that_starts_closed(results_page):
+    """A long explanation beside every figure is what the client asked to be
+    spared; the disclosure is closed until asked for."""
+    rows = results_page.locator(".equivalent-grid article")
+    assert rows.count() > 0
+    for i in range(rows.count()):
+        details = rows.nth(i).locator("details.equivalent-basis")
+        assert details.count() == 1
+        assert details.get_attribute("open") is None
+
+
+@pytest.mark.browser
+def test_the_explanation_shows_the_total_the_factor_and_the_basis(results_page):
+    """Asserts what a person can SEE, not that the text is in the DOM. A closed
+    <details> still contains its text -- that is exactly how a folded warning
+    passed tests/admin/test_guidance.py once already."""
+    first = results_page.locator(".equivalent-grid article").first
+    body = first.locator(".equivalent-basis__body")
+    assert not body.is_visible()
+    first.locator("details.equivalent-basis > summary").click()
+    assert body.is_visible()
+    assert "0.000414938" in body.inner_text()
+    assert "Client, Data sources for impact calculator" in body.inner_text()
+
+
+@pytest.mark.browser
+def test_an_equivalence_with_no_basis_says_so_rather_than_opening_onto_nothing(
+    results_page_without_basis,
+):
+    """O-3 is open and source_note is nullable. A question mark that opens onto
+    nothing is worse than no question mark."""
+    first = results_page_without_basis.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    body = first.locator(".equivalent-basis__body")
+    assert body.is_visible()
+    assert "0.000414938" in body.inner_text()
+    assert "not recorded" in body.inner_text().lower()
+
+
+#: The plan's own five widths, checked in both an RTL and an LTR language - the same
+#: reason `test_horizontal_overflow.py` checks Arabic and German rather than English
+#: alone: a physical `left`/`right` property reads correctly in one direction and
+#: overflows, or sits on the wrong side, in the other.
+EQUIVALENT_BASIS_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", EQUIVALENT_BASIS_WIDTHS)
+@pytest.mark.parametrize("language", ("de", "ar"))
+def test_the_equivalence_explanation_does_not_overflow(browser, language, width):
+    """Measured, not reasoned about - `test_horizontal_overflow.py`'s own rule.
+    Checked with the disclosure open: the open body is the box `test_horizontal_
+    overflow.py`'s own docstring warns an absolutely-positioned version of this
+    exact affordance once overflowed by about 27px at 320px."""
+    context = browser.new_context(
+        viewport={"width": width, "height": 900},
+        locale=language,
+        extra_http_headers={"Accept-Language": f"{language},en;q=0.5"},
+        bypass_csp=True,
+    )
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE)),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+
+        summary = page.locator(".equivalent-grid article").first.locator(
+            "details.equivalent-basis > summary"
+        )
+        summary.click()
+        page.wait_for_selector(".equivalent-basis__body")
+
+        measured = page.evaluate(
+            "() => ({scroll: document.documentElement.scrollWidth, "
+            "client: document.documentElement.clientWidth})"
+        )
+        assert measured["scroll"] <= max(measured["client"], 320), (
+            f"the results page scrolls sideways at {width}px in {language} with the "
+            f"explanation open: scrollWidth={measured['scroll']} "
+            f"clientWidth={measured['client']}"
+        )
+
+        body_box = page.locator(".equivalent-basis__body").first.bounding_box()
+        assert body_box is not None
+        assert body_box["x"] >= -1, (
+            f"the open explanation starts off-screen at {width}px in {language}: {body_box}"
+        )
+        assert body_box["x"] + body_box["width"] <= measured["client"] + 1, (
+            f"the open explanation overflows its own viewport at {width}px in {language}: {body_box}"
+        )
+
+        #: The summary sits at its row's own INLINE END: in English/German (LTR)
+        #: that is nearer the article's right edge than its left, and in Arabic
+        #: (RTL) the reverse - `text-align: end`, a logical property, is what
+        #: makes both true without a direction-specific rule. Compared as
+        #: "nearer one edge than the other" rather than against a fixed pixel
+        #: gap, so the article's own padding does not have to be hard-coded here.
+        article_box = page.locator(".equivalent-grid article").first.bounding_box()
+        summary_box = summary.bounding_box()
+        assert article_box is not None and summary_box is not None
+        gap_from_start = summary_box["x"] - article_box["x"]
+        gap_from_end = (article_box["x"] + article_box["width"]) - (summary_box["x"] + summary_box["width"])
+        near_end = gap_from_end < gap_from_start if language != "ar" else gap_from_start < gap_from_end
+        assert near_end, (
+            f"the summary is not at the article's inline end at {width}px in "
+            f"{language}: {gap_from_start}px from the start, {gap_from_end}px from "
+            f"the end ({summary_box} in {article_box})"
+        )
+    finally:
+        context.close()

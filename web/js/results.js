@@ -677,10 +677,19 @@ export function buildResultsReport(state) {
   const totals = state.result?.totals || {}
   const totalKg = number(totals.total_kg)
   const summary = metricLines(totals.current, state.taxonomy, '  - ')
-  // §3: `label` is `label_template` with the value already interpolated and formatted by the
-  // engine. It is copied verbatim, the same as on screen — nothing here re-derives a figure
-  // or rewords the client's approved sentence.
-  const equivalents = (totals.current?.equivalences || []).map(row => `  - ${row.label}`)
+  // §3: `label` is the engine's own sentence, copied verbatim. The lines under
+  // it are the same three facts the page shows behind its disclosure -- paper
+  // has no "open" gesture, and the PDF is the copy most likely to be forwarded
+  // to someone who will challenge the figure (§6.3).
+  const equivalents = (totals.current?.equivalences || []).flatMap(row => {
+    const source = totals.current?.metrics?.[row.source_metric]
+    const total = source ? `${formatNumber(source.total, source.display_precision)} ${source.unit}` : ''
+    return [
+      `  - ${row.label}`,
+      `      ${t('Total')}: ${total}  ${t('Per unit')}: x ${row.value_per_unit_display}`,
+      `      ${t('Basis:')} ${row.source_note || t('The basis for this conversion is not recorded yet.')}`,
+    ]
+  })
   const entryLines = (state.result?.entry_results || []).flatMap(({ entry, response }, index) => {
     const sector = findByCode(state.taxonomy.sectors, entry.sector)
     const food = findByCode(state.taxonomy.food_categories, entry.foodCategory)

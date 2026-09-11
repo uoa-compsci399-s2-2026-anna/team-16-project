@@ -194,11 +194,24 @@
 
 {% if doc.equivalences %}
 <h2>{{ doc.labels.equivalences }}</h2>
-{#- The engine interpolated these labels itself (section 3's interpolation
-    rule), so the string below is printed verbatim and never re-formatted. -#}
+{#- `row.label` is the engine's own interpolated sentence (section 3's
+    interpolation rule) and is printed verbatim. The three lines under it are
+    the same three facts `web/js/results.js::equivalenceBasis` renders behind
+    the page's disclosure and the text export prints under the same heading
+    -- §6.3: the PDF is the copy most likely to be forwarded to someone who
+    will challenge the figure, and paper has no "open" gesture to hide them
+    behind. -#}
 <ul class="equivalences">
-  {% for label in doc.equivalences %}
-  <li>{{ label }}</li>
+  {% for row in doc.equivalences %}
+  <li>
+    <p class="equivalence__label">{{ row.label }}</p>
+    <dl class="equivalence-basis">
+      <div><dt>{{ doc.labels.equivalence_total }}</dt><dd>{{ row.total }}</dd></div>
+      <div><dt>{{ doc.labels.equivalence_per_unit }}</dt><dd>&times; {{ row.per_unit }}</dd></div>
+      <div><dt>{{ row.name }}</dt><dd>= {{ row.label }}</dd></div>
+    </dl>
+    <p class="equivalence-basis__note">{{ doc.labels.equivalence_basis }} {{ row.basis }}</p>
+  </li>
   {% endfor %}
 </ul>
 {% endif %}

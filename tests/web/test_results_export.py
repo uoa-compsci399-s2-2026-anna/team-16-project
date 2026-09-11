@@ -2510,6 +2510,95 @@ def test_an_equivalence_with_no_basis_says_so_rather_than_opening_onto_nothing(
     assert "not recorded" in body.inner_text().lower()
 
 
+def _extract_pdf_text(path) -> str:
+    """The same normalisation `tests/support/pdf.py::extract_text` applies,
+    read off a file the browser downloaded rather than in-process bytes -
+    this suite drives a real browser against the running container, so there
+    is no in-process PDF to hand the shared helper directly."""
+    from tests.support.pdf import extract_text
+
+    return extract_text(Path(path).read_bytes())
+
+
+def _submit_two_entries_of_different_sectors(page):
+    """The same wizard walk `_submit_two_entries` does, except the two entries
+    choose different sectors.
+
+    Only this test needs it: it is the one test in this file whose PDF
+    download reaches the real `/export/pdf` route rather than a routed stub
+    (see the test's own docstring), and that route re-runs the calculation
+    for real, where `POST /api/v1/calculate`'s own `duplicate_entry` check
+    refuses two entries sharing one `(sector, food_category)` pair -
+    `_submit_two_entries`'s default first radio button, chosen twice, is
+    exactly that pair, and the mocked `/calculate` route the other tests in
+    this file use never enforces it.
+    """
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    sectors = page.locator('input[name="sector"]').element_handles()
+    codes = [handle.get_attribute("value") for handle in sectors[:2]]
+    assert len(codes) == 2 and codes[0] != codes[1], (
+        f"need two distinct sectors to submit two entries without tripping "
+        f"the real API's duplicate_entry check, got {codes}"
+    )
+    for index, code in enumerate(codes):
+        page.check(f'input[name="sector"][value="{code}"]')
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('input[name="food-category"]')
+        page.click('[data-action="continue"]')
+        page.wait_for_selector("#total-waste")
+        page.fill("#total-waste", "1000")
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-line-field="amount"]')
+        page.fill('[data-line-field="amount"] >> nth=0', "1000")
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-action="calculate"]')
+        if index == 0:
+            page.click('[data-action="add-entry"]')
+            page.wait_for_selector('input[name="sector"]')
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+
+
+@pytest.mark.browser
+def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equivalence(page_at):
+    """One submission, three surfaces, one set of facts. Asserting each surface
+    on its own is how saving_nzd shipped a disagreement: the page printed
+    nothing where the PDF printed a sentence, and every test was green.
+
+    The page and the text export are read straight off the mocked `/calculate`
+    response, the same as every other test in this file - but the PDF button
+    posts to the real `/export/pdf` route (see `page_at`'s own docstring: the
+    results view is reached by fulfilling `/calculate` in-browser, not by
+    driving the real API), which re-runs the calculation against whatever
+    factor set is actually published. The point of the test is that all three
+    surfaces agree regardless of which one had to go back to the server for
+    its numbers.
+    """
+    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE))
+    _submit_two_entries_of_different_sectors(page)
+
+    first = page.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    on_screen = first.locator(".equivalent-basis__body").inner_text()
+
+    with page.expect_download() as text_download:
+        page.click("[data-action='download-results']")
+    text = text_download.value.path().read_text(encoding="utf-8")
+
+    with page.expect_download() as pdf_download:
+        page.click("[data-action='download-pdf']")
+    pdf = _extract_pdf_text(pdf_download.value.path())
+
+    factor = "0.000414938"
+    basis = "Client, Data sources for impact calculator"
+    for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
+        assert factor in content, f"{surface} is missing the conversion factor"
+        assert basis in content, f"{surface} is missing the basis"
+
+
 #: The plan's own five widths, checked in both an RTL and an LTR language - the same
 #: reason `test_horizontal_overflow.py` checks Arabic and German rather than English
 #: alone: a physical `left`/`right` property reads correctly in one direction and

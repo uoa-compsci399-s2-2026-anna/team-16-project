@@ -911,7 +911,18 @@ def test_no_locale_falls_back_to_english(locale):
             f"{locale}: {source!r} did not reach the document"
         )
         if locale != "en" and translated != source:
-            assert str(escape(source)) not in html, (
+            # A plain substring check false-positives once `source` is short
+            # enough to be a shared cognate's prefix: Task 7's "Total" is
+            # correctly translated to Afrikaans/Dutch "Totaal", but "Total"
+            # is also a literal substring of "Totale"/"Totaal" wherever
+            # *another*, unrelated key (`Total food waste`) is rendered
+            # nearby -- neither of those words IS the untranslated English
+            # source. Bounded on both sides by a non-letter/digit, the same
+            # check that finds the real defect (an untranslated whole word
+            # sitting in the document) stops finding a translated word that
+            # merely starts with it.
+            pattern = r"(?<![A-Za-z0-9])" + re.escape(str(escape(source))) + r"(?![A-Za-z0-9])"
+            assert not re.search(pattern, html), (
                 f"{locale}: the English source of {source!r} is in the document"
             )
 

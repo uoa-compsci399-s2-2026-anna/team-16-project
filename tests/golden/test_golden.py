@@ -185,6 +185,21 @@ _PROVENANCE = {
         "lands on 7210.5, which ROUND_HALF_UP and ROUND_HALF_EVEN answer "
         "differently."
     ),
+    "case_13_equivalences_across_metrics": (
+        "Hand-computed. case_01's bundle and request with the single "
+        "km_driven equivalence (source_metric co2e) replaced by the "
+        "client's three real equivalences from Task 4: vehicles_year "
+        "(co2e, factor 1/2410), olympic_pools (water, factor "
+        "1/2,500,000) and meals (mass, factor 1/0.45). Confirms an "
+        "equivalence off water and one off mass are wired correctly and "
+        "not silently skipped or mixed up with co2e -- at the request "
+        "totals level, current co2e 4449.0000000000 x 0.0004149378 = "
+        "1.8460582722 vehicles, water 1787600.0000000000 x 0.0000004 = "
+        "0.7150400000 pools, and mass 2300.0000000000 x 2.2222222222 = "
+        "5111.1111110600 meals -- the last of which is only reachable "
+        "from the mass total (the co2e total would instead give "
+        "9886.666666...)."
+    ),
 }
 
 

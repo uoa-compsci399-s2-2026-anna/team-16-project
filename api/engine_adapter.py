@@ -233,9 +233,13 @@ def _scenario(scenario: Any, *, with_total_kg: bool = True) -> dict[str, Any] | 
     body["equivalences"] = [
         {
             "code": item.code,
+            "name": item.name,
             "label": item.label,
             "value": item.value,
+            "value_per_unit": item.value_per_unit,
+            "value_per_unit_display": item.value_per_unit_display,
             "source_metric": item.source_metric_code,
+            "source_note": item.source_note,
         }
         for item in scenario.equivalences
     ]

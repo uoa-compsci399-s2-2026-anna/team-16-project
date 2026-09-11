@@ -144,6 +144,18 @@ def _scenario_result(lines, *, with_breakdown, rolled_up=False):
                 label="Equivalent to driving 0 km",
                 value=Decimal("0.0000000000"),
                 source_metric_code="co2e",
+                #: v1.52. `name`/`value_per_unit`/`value_per_unit_display`/
+                #: `source_note` mirror the `km_driven` fixture row -- this
+                #: fake's `co2e` total is trivial (the docstring above), so
+                #: no test asserts these beyond their presence and shape.
+                name="Kilometres driven",
+                value_per_unit=Decimal("4.1800000000"),
+                value_per_unit_display="4.18",
+                source_note=(
+                    "PLACEHOLDER. Open item O-3 — the New Zealand basis for "
+                    "this conversion is not settled. Roughly one kilometre "
+                    "of an average light petrol vehicle per 0.24 kg CO2e."
+                ),
             ),
         ),
     )

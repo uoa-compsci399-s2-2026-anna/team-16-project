@@ -307,6 +307,10 @@ def _scenario(scenario) -> dict | None:
                 "label": equivalence.label,
                 "value": _decimal(equivalence.value),
                 "source_metric_code": equivalence.source_metric_code,
+                "name": equivalence.name,
+                "value_per_unit": _decimal(equivalence.value_per_unit),
+                "value_per_unit_display": equivalence.value_per_unit_display,
+                "source_note": equivalence.source_note,
             }
             for equivalence in scenario.equivalences
         ],

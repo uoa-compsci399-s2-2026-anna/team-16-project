@@ -636,7 +636,14 @@ def one_metric_bundle(equivalences, formula="qty_kg"):
     return FactorBundle.from_json(document)
 
 
-def equivalence_for(qty, value_per_unit="1.0000000000", template="{value}", formula="qty_kg"):
+def equivalence_for(
+    qty,
+    value_per_unit="1.0000000000",
+    template="{value}",
+    formula="qty_kg",
+    name="",
+    source_note=None,
+):
     """The single `EquivalenceResult` a one-line scenario of `qty` produces."""
     loaded = one_metric_bundle(
         [
@@ -646,6 +653,8 @@ def equivalence_for(qty, value_per_unit="1.0000000000", template="{value}", form
                 "value_per_unit": value_per_unit,
                 "label_template": template,
                 "sort_order": 10,
+                "name": name,
+                "source_note": source_note,
             }
         ],
         formula=formula,
@@ -697,6 +706,33 @@ def test_an_equivalence_added_to_the_bundle_needs_no_code_change(bundle):
     assert added.label == "About 1,512 meals"
     #: The equivalence that was already there is untouched by the new row.
     assert after.equivalences[0] == before.equivalences[0]
+
+
+def test_an_equivalence_carries_its_name_factor_and_basis():
+    """The reader is shown how the conversion was done, so the pieces of the
+    conversion have to survive the bundle parse. `name` and `source_note` are
+    already in every bundle the repository writes; the spec used to drop them."""
+    equivalence = equivalence_for(
+        "100.000",
+        value_per_unit="0.00041493775933609958",
+        name="Passenger vehicles",
+        source_note="GHG (t CO2e) / 2.41 t CO2e per vehicle per year.",
+    )
+    assert equivalence.name == "Passenger vehicles"
+    assert equivalence.source_note == "GHG (t CO2e) / 2.41 t CO2e per vehicle per year."
+    assert equivalence.value_per_unit == Decimal("0.00041493775933609958")
+    assert equivalence.value_per_unit_display == "0.000414938"
+
+
+def test_an_equivalence_with_no_recorded_basis_still_reports_its_factor():
+    """O-3 is open and `equivalence.source_note` is nullable. A missing basis
+    must reach the surfaces as an absence they can speak about, not as a
+    silently dropped field."""
+    equivalence = equivalence_for(
+        "100.000", value_per_unit="4.1800000000", name="Kilometres driven", source_note=None,
+    )
+    assert equivalence.source_note is None
+    assert equivalence.value_per_unit_display == "4.18"
 
 
 #: The three equivalence codes §2.2 names and `admin/seed.py` ships.

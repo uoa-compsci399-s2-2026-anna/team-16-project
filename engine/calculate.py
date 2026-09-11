@@ -46,6 +46,7 @@ from decimal import ROUND_HALF_UP, Decimal
 from engine.bundle import FactorBundle
 from engine.errors import UnknownCodeError
 from engine.evaluator import evaluate
+from engine.format import significant_figures
 from engine.types import (
     DATA_COMPLETE,
     DATA_INCOMPLETE,
@@ -757,6 +758,10 @@ def _equivalences(
                 label=_interpolate(spec.label_template, value),
                 value=value,
                 source_metric_code=spec.source_metric_code,
+                name=spec.name,
+                value_per_unit=spec.value_per_unit,
+                value_per_unit_display=significant_figures(spec.value_per_unit),
+                source_note=spec.source_note,
             )
         )
     return tuple(results)

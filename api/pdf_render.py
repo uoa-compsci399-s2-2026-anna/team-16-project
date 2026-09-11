@@ -411,8 +411,9 @@ _EQUIVALENCE_BASIS_MISSING = "The basis for this conversion is not recorded yet.
 #: every basis note on the page (Task 6). It was missing from both exports
 #: until a review of this task found it - a fourth fact the three surfaces
 #: disagreed on, inside the task written to end exactly that disagreement -
-#: so it is printed unconditionally, the same words, beside every equivalence
-#: in both the text export and here.
+#: so it is printed, the same words, beside every equivalence in both the text
+#: export and here -- gated on `is_mock`, the same words either way, never on
+#: a real, published factor set (see `_equivalence_rows`'s own docstring).
 _EQUIVALENCE_DISCLAIMER = (
     "The conversion factor comes from the client. The total it is applied "
     "to comes from placeholder factors."
@@ -651,7 +652,7 @@ def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict
         rows.append({
             "label": item.label,
             "name": item.name,
-            "total": f"{source.total} {source.unit}" if source else "",
+            "total": f"{_figure(source.total, source.display_precision)} {source.unit}" if source else "",
             "per_unit": item.value_per_unit_display,
             "basis": item.source_note or translate(_EQUIVALENCE_BASIS_MISSING),
             "disclaimer": translate(_EQUIVALENCE_DISCLAIMER) if is_mock else "",

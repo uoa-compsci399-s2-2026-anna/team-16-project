@@ -311,7 +311,7 @@ function equivalenceBasis(row, totals, isMock) {
     <dl>
       <div><dt>${escapeHtml(t('Total'))}</dt><dd>${escapeHtml(total)}</dd></div>
       <div><dt>${escapeHtml(t('Per unit'))}</dt><dd>&times; ${escapeHtml(row.value_per_unit_display)}</dd></div>
-      <div><dt>${escapeHtml(row.name)}</dt><dd>= ${escapeHtml(row.label)}</dd></div>
+      <div><dt>${escapeHtml(row.name)}</dt><dd>= ${escapeHtml(formatNumber(row.value, 0))}</dd></div>
     </dl>
     <p class="equivalent-basis__note">${escapeHtml(t('Basis:'))} ${basis}</p>
     ${disclaimer}
@@ -703,6 +703,7 @@ export function buildResultsReport(state) {
     return [
       `  - ${row.label}`,
       `      ${t('Total')}: ${total}  ${t('Per unit')}: x ${row.value_per_unit_display}`,
+      `      ${row.name}: ${formatNumber(row.value, 0)}`,
       `      ${t('Basis:')} ${row.source_note || t('The basis for this conversion is not recorded yet.')}`,
       ...(equivalentsAreMock ? [`      ${t('The conversion factor comes from the client. The total it is applied to comes from placeholder factors.')}`] : []),
     ]

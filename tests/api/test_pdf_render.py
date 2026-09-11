@@ -325,6 +325,29 @@ def test_every_figure_comes_from_the_result():
 
 
 @requires_weasyprint
+def test_the_equivalence_total_is_display_formatted_not_raw():
+    """The fifth surface divergence the final review found: `_equivalence_
+    rows` built its `total` field with `f"{source.total} {source.unit}"`,
+    bypassing `_figure` entirely, so a `Decimal` at the engine's own
+    `DECIMAL(20,10)` scale printed with all ten fraction digits and no
+    thousands separator - `4449.0000000000 kg CO2e` - where the page and the
+    text export both print `4,449.0 kg CO2e`.
+
+    `test_every_figure_comes_from_the_result` above does not catch this: its
+    default `co2e` total, `"4449.0"`, already has no grouping to lose and no
+    trailing zeros to trim, and the same figure is printed a second time,
+    correctly, in the ordinary metrics block - so `"4,449.0"` was already
+    somewhere in the document regardless of what the equivalence block did.
+    This uses the shape a real `MetricResult.total` actually has.
+    """
+    text = extract_text(
+        render_results_pdf(_result(co2e="4449.0000000000"), _taxonomy(), "en")
+    )
+    assert "4,449.0 kg CO2e" in text
+    assert "4449.0000000000" not in text
+
+
+@requires_weasyprint
 def test_no_text_runs_off_the_page():
     """**Defect one.** A German compound of 70-odd characters, typed by staff
     into a destination name, laid out at A4.

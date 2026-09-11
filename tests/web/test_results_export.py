@@ -331,6 +331,18 @@ def test_the_equivalence_is_copied_as_the_engine_worded_it(report):
 
 
 @node
+def test_the_equivalence_name_reaches_the_text_export(report):
+    """The final review's other divergence (§1b): the page and the PDF each
+    print a third fact beside `Total` and `Per unit` -- the equivalence's own
+    `name` -- and the text export printed only the first two. `18596.82`
+    rounds the same way the engine's own label interpolation does (whole
+    number, half rounds up), so `18,597` here is not a coincidence with the
+    `Equivalent to driving 18,597 km` line above -- it is the same figure,
+    named rather than folded into a sentence."""
+    assert re.search(r"^      Kilometres driven: 18,597$", report, re.M)
+
+
+@node
 def test_each_destination_carries_its_own_computed_figures(report):
     """The destination breakdown table, in text.
 
@@ -490,6 +502,20 @@ def test_the_placeholder_notice_is_absent_from_a_real_export(tmp_path):
     report = report_for(tmp_path, build_state(is_mock=False))
     assert NOTICE not in report
     assert re.search(r"^  - Greenhouse gases: 4,449\.0 kg CO2e$", report, re.M)
+
+
+@node
+def test_the_equivalence_disclaimer_is_absent_from_a_real_export(tmp_path):
+    """The equivalence caveat's own negative case (L52). Gated on `is_mock`
+    the same way `NOTICE` is above, but until now only
+    `tests/api/test_pdf_render.py::test_a_real_factor_set_carries_no_warning`
+    proved the gate holds - the page and this export were only ever asserted
+    with `is_mock` true. The basis note itself is not gated and must still
+    print; only the placeholder sentence goes."""
+    report = report_for(tmp_path, build_state(is_mock=False))
+    assert "The conversion factor comes from the client" not in report
+    assert "placeholder factors" not in report
+    assert "PLACEHOLDER. Open item O-3" in report
 
 
 # ------------------------------------------------- the unit each row was measured in
@@ -2417,7 +2443,7 @@ def test_neither_download_button_overflows_in_german(browser, width):
 # on the old `4.1800000000` factor.
 
 
-def _equivalence_response(*, source_note):
+def _equivalence_response(*, source_note, is_mock: bool = True):
     """A deep copy of `calculate_response.json` with its one equivalence replaced.
 
     `co2e`'s total in that fixture is `4449.0000000000` at one decimal place
@@ -2426,8 +2452,14 @@ def _equivalence_response(*, source_note):
     the source note are copied verbatim from the client's document via
     `data/upstream-factors-draft/build_upstream_factors_draft.py`'s `vehicles_year`
     row, not retyped from memory.
+
+    `is_mock` defaults to the fixture's own `True` - the disclaimer beside the
+    basis is gated on it (`equivalenceBasis`, `web/js/results.js`), the same
+    gate `_EQUIVALENCE_DISCLAIMER` enforces in the PDF, so a caller can flip
+    it to prove the negative case without hand-building a whole response.
     """
     response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["factor_set"] = dict(response["factor_set"], is_mock=is_mock)
     response["totals"]["current"]["equivalences"] = [
         {
             "code": "vehicles_year",
@@ -2470,6 +2502,19 @@ def results_page_without_basis(page_at):
     return page
 
 
+@pytest.fixture
+def results_page_on_a_real_factor_set(page_at):
+    """The negative case for the equivalence disclaimer - L52. Only the PDF
+    (`tests/api/test_pdf_render.py::test_a_real_factor_set_carries_no_
+    warning`) had a test proving the gate holds in the direction that matters
+    most: a real, published factor set once described itself as
+    "placeholder" and the mistake shipped. The page and the text export were
+    asserted only with `is_mock` true."""
+    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE, is_mock=False))
+    _submit_two_entries(page)
+    return page
+
+
 @pytest.mark.browser
 def test_each_equivalence_offers_an_explanation_that_starts_closed(results_page):
     """A long explanation beside every figure is what the client asked to be
@@ -2494,6 +2539,37 @@ def test_the_explanation_shows_the_total_the_factor_and_the_basis(results_page):
     assert body.is_visible()
     assert "0.000414938" in body.inner_text()
     assert "Client, Data sources for impact calculator" in body.inner_text()
+
+
+@pytest.mark.browser
+def test_the_last_row_shows_the_figure_and_does_not_repeat_the_whole_sentence(results_page):
+    """The final review's own finding: this row used to render `row.name` /
+    `= row.label` -- `Passenger vehicles for a year = Equivalent to running 1
+    passenger vehicles for a year` -- restating the whole heading sentence
+    where a reader following the arithmetic (`Total` x `Per unit` = ?) expects
+    the answer. It now shows just the figure the equivalence rounds to,
+    `formatNumber(row.value, 0)` -- `1`, for this fixture's `vehicles_year`
+    row (`_equivalence_response`'s `"value": "1.0000000000"`) -- and the
+    sentence itself is not repeated a second time in this row."""
+    first = results_page.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    rows = first.locator(".equivalent-basis__body dl > div")
+    last_row = rows.nth(rows.count() - 1)
+    assert last_row.locator("dt").inner_text() == "Passenger vehicles for a year"
+    assert last_row.locator("dd").inner_text() == "= 1"
+
+
+@pytest.mark.browser
+def test_a_real_factor_set_carries_no_equivalence_warning(results_page_on_a_real_factor_set):
+    """The negative case, on the page: the factor and the basis still show,
+    but the sentence that says the total comes from placeholder factors does
+    not, because the factor set is not one."""
+    first = results_page_on_a_real_factor_set.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    body = first.locator(".equivalent-basis__body").inner_text()
+    assert "0.000414938" in body
+    assert "Client, Data sources for impact calculator" in body
+    assert "placeholder factors" not in body
 
 
 @pytest.mark.browser
@@ -2595,10 +2671,39 @@ def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equiv
     factor = "0.000414938"
     basis = "Client, Data sources for impact calculator"
     disclaimer = "The conversion factor comes from the client. The total it is applied to comes from placeholder factors."
+    # `row.name` (§1b): the page and the PDF both print it; the text export
+    # did not until this fix. Fixed by the equivalence's own definition
+    # (published set), not by the entries submitted, so it is safe to assert
+    # as one literal string on all three surfaces the same way `factor` and
+    # `basis` already are.
+    name = "Passenger vehicles for a year"
+    # The `Total` line (§1a): `api/pdf_render.py` printed `source.total` raw
+    # -- `4449.0000000000 kg CO2e` -- where the page and the text export both
+    # format it through the metric's own `display_precision`. Unlike `factor`
+    # and `basis`, this figure is the co2e metric's rolled-up total for
+    # *these two entries*: the page and the text export read it off the
+    # mocked `/calculate` response, but the PDF button reaches the real
+    # `/export/pdf` route, which recomputes it against the published factor
+    # set (`api/export.py`'s own module docstring: "the endpoint recalculates
+    # instead of trusting the client") -- so the three surfaces are not
+    # guaranteed to print the *same number*, only the same *shape*: grouped
+    # thousands, a bounded number of fraction digits, never the engine's raw
+    # ten-digit `Decimal`. That shape is exactly what the f-string this fix
+    # replaces would fail to produce.
+    total_line = re.compile(r"([\d,]+\.\d+) kg CO2e")
     for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
         assert factor in content, f"{surface} is missing the conversion factor"
         assert basis in content, f"{surface} is missing the basis"
         assert disclaimer in content, f"{surface} is missing the disclaimer"
+        assert name in content, f"{surface} is missing the equivalence's name"
+        match = total_line.search(content)
+        assert match, f"{surface} is missing a formatted total for co2e"
+        fraction_digits = len(match.group(1).split(".")[1])
+        assert fraction_digits <= 3, (
+            f"{surface}'s total {match.group(1)!r} is not display-formatted "
+            f"-- {fraction_digits} fraction digits is the engine's own scale, "
+            f"not a metric's display_precision"
+        )
 
 
 #: The plan's own five widths, checked in both an RTL and an LTR language - the same

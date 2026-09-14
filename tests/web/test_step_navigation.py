@@ -2361,6 +2361,54 @@ def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at_locale, w
     )
 
 
+@pytest.mark.parametrize("lang", ["de", "ar"])
+@pytest.mark.parametrize("width,height,dpr", _FIVE_WIDTHS)
+def test_a_step_heading_does_not_overflow_in_translation(page_at_locale, width, height, dpr, lang):
+    """Every step's `<h1>` shares one rule (`h1` in ``styles.css``), and until
+    now that rule had no ``overflow-wrap`` at all — unlike every other
+    long-content-risk element on this site (``.destination-group__name``,
+    ``.review-destinations dd``, ``.home-page .home-hero h1``), which already
+    carry ``overflow-wrap: anywhere``.
+
+    **German at 320px is where this actually broke**, on the food-category
+    step: "Welche Art von Lebensmittelabfall erfassen Sie?" puts
+    ``Lebensmittelabfall`` alone past the 280px column
+    ``.main-content``'s own padding leaves at that width, and with nowhere to
+    break, the *word* — not the `<h1>`'s own box, which never moved — carried
+    22px past its right edge. 20px of that lands back inside
+    ``.main-content``'s own right padding; the last 2px is exactly the
+    ``documentElement.scrollWidth`` overflow this file's own
+    ``test_no_horizontal_overflow_at_any_breakpoint`` never caught, because
+    that test runs English only, at three widths, and the word that does not
+    fit is German, at a fourth and fifth this file otherwise only exercises
+    through ``test_the_range_gets_more_room_than_the_select_in_unit_mode``.
+
+    This reuses that test's own ``_FIVE_WIDTHS`` and ``page_at_locale``
+    rather than adding a parallel width/language mechanism, and checks the
+    food-category step specifically — the step this defect was actually
+    found on — rather than asserting only in general.
+
+    Mutation: dropping ``overflow-wrap: anywhere`` from the `h1` rule
+    reproduces the exact 2px overflow this test is pinned against, and it
+    fails.
+    """
+    page = page_at_locale(width, height, dpr, lang)
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    page.evaluate("document.querySelector('input[name=sector]').click()")
+    page.wait_for_timeout(60)
+    page.click('[data-action="continue"]')
+    page.wait_for_selector('input[name="food-category"]')
+
+    measured = page.evaluate(
+        "() => ({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})"
+    )
+    assert measured["scroll"] <= measured["client"], (
+        f"[{lang}@{width}px] the food-category step overflows by "
+        f"{measured['scroll'] - measured['client']}px"
+    )
+
+
 def test_the_sliders_start_at_zero_and_the_total_says_so(page_at):
     """The client asked for "所有滑块默认都是 0".
 

@@ -1122,8 +1122,21 @@ async def test_the_device_ceiling_is_refused_at_the_url(
     )
 
     assert response.status_code == 400
-    assert "maximum" in response.text
-    assert "only authenticator" not in response.text
+    # Scoped to the alert, not searched over the whole document. The phrase
+    # this is guarding against - "only authenticator" - is also a legitimate
+    # part of the Remove authenticator button's own description, which is on
+    # this page at all times; a whole-page substring search cannot tell the
+    # wrong refusal from a button explaining itself, and started failing the
+    # moment that description was reworded. What the test is actually about is
+    # WHICH error the screen shows, so it reads the error.
+    alerts = " ".join(
+        _text(alert)
+        for alert in re.findall(r'<div class="notice notice--error".*?</div>',
+                                response.text, re.S)
+    )
+    assert alerts, "the ceiling was refused without showing the reader an error"
+    assert "maximum" in alerts
+    assert "only authenticator" not in alerts
     db_session.commit()
     assert len(_devices(db_session, me.staff.username)) == MAX_TOTP_DEVICES
 

@@ -887,45 +887,190 @@ def test_step_three_asks_what_the_stage_put_through(page_at):
     assert box["y"] < page.evaluate("window.innerHeight")
 
 
-def test_step_three_controls_share_a_baseline_when_copy_wraps(page_at):
-    """The three primary controls are one row even when their copy is not.
+def test_step_three_forms_two_aligned_groups_above_the_breakpoint(page_at):
+    """Two vertical groups, not a three-column row and not five equal cells.
 
-    At this width ``Waste amount`` has a one-line label and hint while the
-    production-total label and the unit hint wrap. Normal document flow put
-    the three controls on three different baselines, which is the misalignment
-    the client and professor reported. Shared grid rows let the copy take the
-    space it needs while keeping the controls together.
+    ``.mass-fields`` (waste amount, unit, production total) and
+    ``.money-fields`` (the two optional NZ$ figures) are each a single item in
+    ``.amount-grid``'s two-column row at ``min-width: 650px``. Every field in
+    the first group shares one inline-start edge; the money pair shares a
+    second, greater one — a distinct column, not a third field dropped into
+    the same row. This replaces
+    ``test_step_three_controls_share_a_baseline_when_copy_wraps``, which
+    pinned the old three-column row's shared *baseline* — a property that
+    stopped being true the moment the production total moved under the unit
+    instead of beside it.
 
-    The container case is measured separately because it adds live feedback
-    below the amount input. A layout that aligns only the initial three-child
-    fields moves that control again as soon as a visitor chooses a bin.
-
-    Mutation: set these fields back to ``display: block`` and both measurements
-    spread by more than one line-height.
+    Mutation: restoring ``.amount-grid { grid-template-columns: 1fr 1fr 1fr }``
+    (the old three-column template, with no ``.mass-fields``/``.money-fields``
+    grouping) puts ``#total-input`` in its own column, equal to neither the
+    amount field's edge nor the money pair's, and this test fails.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
 
-    def control_tops():
-        return page.locator("#total-waste, #unit-count, #total-unit, #total-input").evaluate_all(
-            "controls => controls.map(control => Math.round(control.getBoundingClientRect().top))"
-        )
+    def edges(ids):
+        return [
+            round(page.locator(f"#{control_id}").bounding_box()["x"])
+            for control_id in ids
+            if page.locator(f"#{control_id}").count()
+        ]
 
-    initial = control_tops()
-    assert max(initial) - min(initial) <= 1, (
-        f"step 3 controls do not share a baseline: {initial}"
+    mass_edges = edges(["total-waste", "unit-count", "total-unit", "total-input"])
+    money_edges = edges(["total-value", "wasted-value"])
+
+    assert max(mass_edges) - min(mass_edges) <= 1, (
+        f"the mass fields do not share one inline-start edge: {mass_edges}"
+    )
+    assert max(money_edges) - min(money_edges) <= 1, (
+        f"the money fields do not share one inline-start edge: {money_edges}"
+    )
+    assert min(money_edges) - max(mass_edges) > 20, (
+        "the money group is not a distinct column further along the inline "
+        f"axis than the mass group: mass={mass_edges} money={money_edges}"
     )
 
-    preset = page.locator("#total-unit option").evaluate_all(
+
+def test_step_three_the_two_groups_first_labels_share_a_baseline(page_at):
+    """The two groups' own outer boxes align exactly (top-aligned by
+    ``align-items: start``), but that alone does not put their *first
+    labels* on one line — each group's own margin rhythm does, and the two
+    used to disagree. ``.money-fields .form-field`` was ``margin: 16px 0``,
+    tighter than ``.form-field``'s own ``25px 0``, from when the money pair
+    sat in its own row *below* the primary one and the tighter margin read
+    as "these two lean on each other". Now the two groups are side-by-side
+    columns, not stacked, and the 9px the two margins disagreed by (25 - 16)
+    showed up as exactly that: the mass group's first label starting 9px
+    lower than the money group's — a misalignment that reads as a bug, not
+    a deliberate difference in weight.
+
+    This does not require every control to line up: the two groups are
+    independent vertical flows, and their hints may wrap differently further
+    down (see ``test_step_three_unit_control_is_narrower_than_its_neighbours``
+    and the comment in ``styles.css`` above ``.mass-fields``/``.money-fields``).
+    Only the shared starting point is pinned here.
+
+    Mutation: reverting ``.money-fields .form-field`` to ``margin: 16px 0``
+    pulls the money group's first label 9px above the mass group's, and this
+    test fails.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    mass_top = round(page.locator('label[for="total-waste"]').bounding_box()["y"])
+    money_top = round(page.locator('label[for="total-value"]').bounding_box()["y"])
+    assert abs(mass_top - money_top) <= 1, (
+        f"the two groups' first labels do not share a baseline: mass={mass_top} money={money_top}"
+    )
+
+
+def test_step_three_unit_control_is_narrower_than_its_neighbours(page_at):
+    """The unit sits between the two quantities it governs, and is visibly
+    narrower than either — the placement that says "this is the unit of the
+    fields above and below it", not a third quantity beside them.
+
+    Mutation: dropping ``.unit-field select { inline-size: 50% }`` back to the
+    site-wide ``input, select { width: 100% }`` makes the unit control as wide
+    as its neighbours, and this test fails.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    amount_width = page.locator("#total-waste").bounding_box()["width"]
+    unit_width = page.locator("#total-unit").bounding_box()["width"]
+    total_width = page.locator("#total-input").bounding_box()["width"]
+
+    assert unit_width < amount_width * 0.75, (
+        f"the unit control is not visibly narrower than the waste amount field: "
+        f"unit={unit_width} amount={amount_width}"
+    )
+    assert unit_width < total_width * 0.75, (
+        f"the unit control is not visibly narrower than the production total field: "
+        f"unit={unit_width} total={total_width}"
+    )
+
+
+def test_step_three_unit_select_title_carries_the_full_selected_label(page_at):
+    """``#total-unit`` may truncate its closed-state text - the owner's own
+    decision, and measured elsewhere to land anywhere from `kilograms` in
+    full down to `23 L kerbsi…` depending on viewport width - so `title`
+    carries the full text of whichever option is currently selected, for
+    hover and assistive technology. It is hover-only and no substitute for
+    opening the list, but it should at least say what it claims to.
+
+    Checked in both directions: the default (a weight, never truncated, so
+    an easy case to get right by accident) and after switching to a
+    container preset (where the label is long enough to actually truncate,
+    and where a `title` that was set once at first render and never
+    recomputed would go stale).
+
+    Mutation: removing the ``title`` attribute from ``#total-unit`` (the
+    pre-fix markup) makes ``get_attribute("title")`` return ``None`` in both
+    cases, and both assertions fail.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    select = page.locator("#total-unit")
+
+    def option_text(value):
+        return select.locator(f'option[value="{value}"]').text_content()
+
+    assert select.get_attribute("title") == option_text("kilograms"), (
+        f"the select's title does not match the selected 'kilograms' option: "
+        f"{select.get_attribute('title')!r}"
+    )
+
+    preset = select.locator("option").evaluate_all(
         "options => options.map(option => option.value).find(value => value.startsWith('preset:'))"
     )
     assert preset, "step 3 offers no container preset"
     page.select_option("#total-unit", preset)
     page.wait_for_selector("#unit-count")
 
-    with_container_feedback = control_tops()
-    assert max(with_container_feedback) - min(with_container_feedback) <= 1, (
-        "container feedback moved the amount control off the shared baseline: "
-        f"{with_container_feedback}"
+    assert select.get_attribute("title") == option_text(preset), (
+        f"the select's title did not update to the newly selected preset's own label: "
+        f"{select.get_attribute('title')!r} != {option_text(preset)!r}"
+    )
+
+
+def test_step_three_is_a_single_column_below_the_breakpoint(page_at):
+    """Below ``min-width: 650px`` neither group does anything: source order is
+    already waste amount, unit, total produced, then the two money fields —
+    the correct single-column reading order — so every field shares one
+    inline-start edge, mass and money fields alike.
+
+    **Also pins the vertical rhythm between fields, not only their shared
+    edge.** ``.form-field``'s own declared margin is ``25px 0`` and always
+    was; what changed is whether adjoining margins collapse. Under the old
+    three-column template each ``.form-field`` was a grid item
+    (``grid-row: span 5``), and adjoining margins never collapse between
+    grid items, so two 25px margins summed to a 50px gap. They are ordinary
+    block siblings now, so adjoining margins collapse to one 25px gap — the
+    same rhythm the rest of the page already uses, not a new or smaller one.
+    Pinned here rather than left as an unremarked side effect, so a future
+    change that puts these fields back onto a grid (and silently doubles the
+    gap again) is caught.
+
+    Mutation: forcing ``.amount-grid``'s ``grid-template-columns`` on at this
+    width splits the money fields onto a second, greater edge, and the first
+    assertion below fails. Forcing ``.amount-grid { display: grid }``
+    unconditionally (rather than only above the breakpoint) restores
+    ``.mass-fields``/``.money-fields`` as grid items even in the single
+    column, which traps the collapse inside each of them and reproduces
+    the exact defect this test was written against: gaps of
+    ``[25, 25, 50, 25]`` - every join 25px except the one between the two
+    groups, silently doubled - and the second assertion fails.
+    """
+    page = advance_to(page_at(390, 700, 3.0), 2)
+
+    edges = page.locator(
+        "#total-waste, #unit-count, #total-unit, #total-input, #total-value, #wasted-value"
+    ).evaluate_all("controls => controls.map(control => Math.round(control.getBoundingClientRect().x))")
+
+    assert max(edges) - min(edges) <= 1, (
+        f"step 3 fields do not share one inline-start edge below the breakpoint: {edges}"
+    )
+
+    boxes = page.locator(".amount-grid .form-field").evaluate_all(
+        "els => els.map(el => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom}; })"
+    )
+    gaps = [round(boxes[i + 1]["top"] - boxes[i]["bottom"]) for i in range(len(boxes) - 1)]
+    assert all(abs(gap - 25) <= 1 for gap in gaps), (
+        f"adjacent fields do not collapse to a single 25px margin below the breakpoint: {gaps}"
     )
 
 
@@ -935,10 +1080,16 @@ def test_step_three_container_feedback_does_not_overlap_its_error(page_at):
     ``amountStep()`` (web/js/calculator.js) renders the first field as
     label, hint, control, then — in container mode, with a client-side
     validation error showing — *both* ``p.field-error`` and
-    ``p.container-total``, in that order. A subgrid has no implicit tracks:
-    whatever the field's ``grid-row: span`` count is, a later child than
-    that count is clamped into the last track it was given, landing on top
-    of whatever else is already there rather than below it.
+    ``p.container-total``, in that order. The field's children are ordinary
+    block flow inside ``.mass-fields`` (no grid, no subgrid, no row-span
+    count), so this is not a track a fifth child can run out of and be
+    clamped into — each child simply follows the one before it — but this
+    test measures the two paragraphs' own geometry rather than assume the
+    absence of a mechanism guarantees the absence of a defect. A prior grid
+    based on ``grid-row: span`` did carry exactly this failure mode at one
+    and two tracks short of the five the field can render; this test is
+    what caught it then and is kept as the direct check now that the
+    mechanism has changed.
 
     Reached from an ordinary path: pick a container preset, then type a
     count that is refused — ``0`` here, ``1`` past ``containerLimit()``
@@ -947,14 +1098,9 @@ def test_step_three_container_feedback_does_not_overlap_its_error(page_at):
     ``p.field-error`` *and* ``p.container-total`` at once; only one of them
     needs testing here since the clamp is the same defect either way.
 
-    Mutation: this is the test that must die at *both* ``grid-row: span 3``
-    and ``grid-row: span 4`` — one and two tracks short of the five the
-    field can render — and pass only at ``span 5``. A prior version of this
-    rule shipped at ``span 4`` with a passing suite: the sibling test above
-    measures only the three always-present controls, so a fourth or fifth
-    child clamping into the same track as a third moved no control and
-    tripped nothing. This test measures the two feedback paragraphs
-    directly instead.
+    Mutation: giving ``.container-total`` a negative ``margin-block-start``
+    large enough to climb back over ``#amount-error`` reproduces the
+    original overlap, and this test fails.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
 
@@ -2280,6 +2426,54 @@ def test_the_range_gets_more_room_than_the_select_in_unit_mode(page_at_locale, w
         f"({select_box['x'] + select_box['width']}) sits outside its list container's own "
         f"right edge ({list_box['x'] + list_box['width']}) - it is being clipped, not "
         "merely narrow"
+    )
+
+
+@pytest.mark.parametrize("lang", ["de", "ar"])
+@pytest.mark.parametrize("width,height,dpr", _FIVE_WIDTHS)
+def test_a_step_heading_does_not_overflow_in_translation(page_at_locale, width, height, dpr, lang):
+    """Every step's `<h1>` shares one rule (`h1` in ``styles.css``), and until
+    now that rule had no ``overflow-wrap`` at all — unlike every other
+    long-content-risk element on this site (``.destination-group__name``,
+    ``.review-destinations dd``, ``.home-page .home-hero h1``), which already
+    carry ``overflow-wrap: anywhere``.
+
+    **German at 320px is where this actually broke**, on the food-category
+    step: "Welche Art von Lebensmittelabfall erfassen Sie?" puts
+    ``Lebensmittelabfall`` alone past the 280px column
+    ``.main-content``'s own padding leaves at that width, and with nowhere to
+    break, the *word* — not the `<h1>`'s own box, which never moved — carried
+    22px past its right edge. 20px of that lands back inside
+    ``.main-content``'s own right padding; the last 2px is exactly the
+    ``documentElement.scrollWidth`` overflow this file's own
+    ``test_no_horizontal_overflow_at_any_breakpoint`` never caught, because
+    that test runs English only, at three widths, and the word that does not
+    fit is German, at a fourth and fifth this file otherwise only exercises
+    through ``test_the_range_gets_more_room_than_the_select_in_unit_mode``.
+
+    This reuses that test's own ``_FIVE_WIDTHS`` and ``page_at_locale``
+    rather than adding a parallel width/language mechanism, and checks the
+    food-category step specifically — the step this defect was actually
+    found on — rather than asserting only in general.
+
+    Mutation: dropping ``overflow-wrap: anywhere`` from the `h1` rule
+    reproduces the exact 2px overflow this test is pinned against, and it
+    fails.
+    """
+    page = page_at_locale(width, height, dpr, lang)
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    page.evaluate("document.querySelector('input[name=sector]').click()")
+    page.wait_for_timeout(60)
+    page.click('[data-action="continue"]')
+    page.wait_for_selector('input[name="food-category"]')
+
+    measured = page.evaluate(
+        "() => ({scroll: document.documentElement.scrollWidth, client: document.documentElement.clientWidth})"
+    )
+    assert measured["scroll"] <= measured["client"], (
+        f"[{lang}@{width}px] the food-category step overflows by "
+        f"{measured['scroll'] - measured['client']}px"
     )
 
 

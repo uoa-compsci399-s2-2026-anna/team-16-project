@@ -237,7 +237,24 @@ button:disabled { cursor: not-allowed; color: rgba(0, 50, 35, 0.56); background:
 
 h1, h2, h3, p { margin-top: 0; }
 h1, h2, h3, .brand, .eyebrow { font-family: var(--font-heading); font-weight: 700; }
-h1 { max-width: 760px; margin-bottom: 18px; font-size: clamp(2.15rem, 8vw, 4.4rem); line-height: 1.03; letter-spacing: -0.04em; }
+/* `overflow-wrap: anywhere` - not load-bearing over `break-word` here specifically:
+   this is a plain block-level `<h1>`, not a shrink-to-fit context, so the two would
+   break the same word in the same place (`break-word`'s difference from `anywhere`
+   only shows up when it changes an element's own preferred/min-content size, which
+   a block box sized by its container never asks it to). `anywhere` is used simply
+   because it is what every other long-content rule on this sheet already uses
+   (`.destination-group__name`, `.review-destinations dd`, `.home-page .home-hero h1`)
+   - one property for "this text may need to break mid-word", not two. Every step's
+   own `<h1>` shares this rule (`amountStep()` and its four siblings all render a
+   plain `<h1>`, styled only here), and German is why it is not optional: "Welche Art
+   von Lebensmittelabfall erfassen Sie?" at 320px puts `Lebensmittelabfall` alone past
+   the 280px column `.main-content`'s padding leaves at that width: the word - not the
+   box - carries 22px past the `<h1>`'s own right edge, of which 20px lands back
+   inside `.main-content`'s own right padding and the last 2px is what actually
+   crosses the viewport's edge - the entire `documentElement.scrollWidth` overflow
+   measured there. The heading's own border box never left its column; only its
+   unbroken text did. */
+h1 { max-width: 760px; margin-bottom: 18px; font-size: clamp(2.15rem, 8vw, 4.4rem); line-height: 1.03; letter-spacing: -0.04em; overflow-wrap: anywhere; }
 h2 { margin-bottom: 16px; font-size: clamp(1.3rem, 3vw, 1.65rem); letter-spacing: -0.02em; }
 h3 { margin-bottom: 0; font-size: 1.2rem; }
 p { line-height: 1.65; }
@@ -607,13 +624,64 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .simple-choice > span:nth-of-type(1) { display: grid; gap: 4px; }
 .simple-choice small { color: var(--muted); line-height: 1.45; }
 
-.amount-grid { display: grid; gap: 0 20px; }
-/* The two money fields are one grid item here, not two - see `amountStep()`'s own
-   docstring for why. Below `min-width: 650px` `.amount-grid` has no column
-   template at all, so this group and its own children just stack in source
-   order like every other `.form-field`; the split into two only happens
-   alongside `.amount-grid`'s own three-column rule, below. */
-.money-fields { min-width: 0; }
+.amount-grid { gap: 0 20px; }
+/* Two vertical groups, not a grid of equal cells - `.mass-fields` holds the
+   three fields the unit governs (waste amount, unit, total produced) and
+   `.money-fields` the two that may be left empty (see `amountStep()`'s own
+   docstring for why the money pair is one grid item rather than two). Below
+   `min-width: 650px` `.amount-grid` has no column template at all, so both
+   groups and their own children just stack in source order like every other
+   `.form-field`; the side-by-side split only happens alongside
+   `.amount-grid`'s own two-column rule, below.
+
+   No `min-inline-size: 0` here (the usual companion to a `minmax(0, 1fr)`
+   track, to stop a child's own min-content size from forcing the track
+   wider than the fraction asks for): every field inside either group sizes
+   itself as a percentage of its container - `input, select { width: 100% }`
+   site-wide, `.unit-field select`'s own `50%` below - never to its content's
+   min-content width, so there is nothing here for a track to blow out on.
+   Checked at 650/660/700/938/1278px in German, including the longest seeded
+   container label, with `min-inline-size` forced back to `auto`: no change
+   in `documentElement.scrollWidth` at any of them. If a future field in
+   either group ever sizes to its own content instead, this is where that
+   guard would need to come back.
+
+   Every field's own children - label, hint, control, then an error and/or
+   the container total - are ordinary block flow at every width, not only
+   above the breakpoint: label, hint, control, error and container-total
+   simply stack in source order, one under the next, inside whichever group
+   the field sits in. That is also what keeps a field error and the
+   container total from ever landing on top of each other (pick a container
+   preset, then type `0` or an over-limit count, to render both at once):
+   nothing here is a shared track a later child can run out of and get
+   clamped into, so there is nothing left to fall short.
+
+   **Below the breakpoint, adjacent `.form-field`s collapse their margins to
+   one 25px gap, not two 25px margins summed to 50px.** They were grid items
+   under the old three-column template (`grid-row: span 5`), and adjoining
+   margins never collapse between grid items; now they are ordinary block
+   siblings, where adjoining margins do collapse by default. `25px` is still
+   `.form-field`'s own declared rhythm - nothing here doubles it back up -
+   and the halved gap is the correct, intentional result: the card's
+   internal spacing is now consistent with every other single-margin gap on
+   the page, not a wider special case left over from a layout that no longer
+   exists. `test_step_three_is_a_single_column_below_the_breakpoint` pins
+   the 25px gap directly, so a future change that stops the collapse (moving
+   these back onto a grid, for instance) is caught rather than shipped as an
+   unremarked spacing change.
+
+   **`.amount-grid` is only `display: grid` above the breakpoint, in the
+   media rule below, for the same reason.** A grid item's contents are their
+   own formatting context, so if `.amount-grid` were unconditionally grid,
+   `.mass-fields` and `.money-fields` would still be grid items below the
+   breakpoint too (one column, but still grid items), and the collapse
+   above would stop dead at the boundary between them: `.mass-fields`'s
+   last field's bottom margin cannot escape `.mass-fields`'s own box to
+   reach `.money-fields`'s first field at all, so that one join would keep
+   its full 50px while every other join in the column read 25px - the
+   single-column list quietly carrying one doubled gap in the middle of it.
+   Plain block below the breakpoint lets the collapse run the whole column
+   through, including that join. */
 
 /* The running kilogram total, under the amount row when a container is chosen.
 
@@ -1232,42 +1300,44 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
 
 @media (min-width: 650px) {
   .results-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  /* Three columns, not two-plus-a-wrapped-row: the production total is a third
-     field on this step, and letting it fall onto a row of its own is what
-     pushed a step that used to fit `1278x983` into a scrollbar - the layout a
-     step-3 field must not cause, per `amountStep()`'s own docstring. */
-  .amount-grid { grid-template-columns: 1fr 1fr 1fr; }
-  /* Each field borrows the same five row tracks from its parent: label, hint,
-     control, then validation and container feedback as two separate tracks.
-     The longest label or hint therefore grows that row for all three columns
-     and the controls keep one baseline without a language-specific min-height
-     or one-off margin. **Five, not four**: `amountStep()` can render a field
-     error and the container total in the same field at once — pick a
-     container preset, then type `0` or an over-limit count — and a subgrid
-     has no implicit tracks of its own, so a track short clamps the fifth
-     child into the fourth and prints it over the container total instead of
-     below it. Five is every state this field's markup can be in: label,
-     hint, control, error, container-total is the longest sequence it ever
-     emits (`amountStep()` in web/js/calculator.js), so this cannot fall one
-     track short again without the markup itself growing a sixth node. */
-  .amount-grid > .form-field,
-  .amount-grid .money-fields > .form-field {
-    display: grid;
-    grid-template-rows: subgrid;
-    grid-row: span 5;
-  }
-  /* The pair spans the whole row rather than taking one of the three tracks
-     above and leaving the other two empty - a full-width row split evenly in
-     two, not a ragged one-of-three. */
-  .amount-grid .money-fields { grid-column: 1 / -1; display: grid; grid-template-columns: 1fr 1fr; gap: 0 20px; }
+  /* Two groups, inline-start to inline-end - `.mass-fields` (waste amount,
+     unit, total produced) and `.money-fields` (the two optional NZ$ figures),
+     each a single grid item, **not** a grid of five equal cells. The former
+     three-column template put the production total in its own column and
+     forced a subgrid down every field to keep the three columns' labels and
+     hints on a shared baseline; that machinery aligned columns this layout no
+     longer has; see `amountStep()`'s own docstring for why the two groups are
+     not a plain 50/50 split of five peers.
+     `align-items: start` keeps the two groups top-aligned without stretching
+     the shorter `.money-fields` column to match `.mass-fields`'s height - it
+     may be left entirely empty and is not padded out to look otherwise. */
+  .amount-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; }
+  /* The unit sits between the two quantities it governs and is visibly
+     narrower than the inputs above and below it - that is the point of the
+     placement: it is the unit of the waste amount and the production total,
+     not a third quantity beside them. Half the field's own inline-size reads
+     as narrow against a 100%-wide sibling at every width this rule applies
+     from; the closed control may still truncate a long container label
+     (`title` on the select carries the full text - see `amountStep()`). */
+  .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 }
 
-/* A secondary pair, set slightly closer together than the primary row above
-   it - `25px` is `.form-field`'s rhythm for a step's own required and
-   load-bearing questions; these two are optional statistics that lean on
-   each other, so `16px` reads as one paired unit rather than two more
-   fields competing for the same weight as `Waste amount` or `Unit`. */
-.money-fields .form-field { margin: 16px 0; }
+/* No margin override here any more - `.money-fields .form-field` used to be
+   `16px 0`, tighter than `.form-field`'s own `25px 0`, back when the money
+   pair sat in its own row below the three-column primary one and the
+   tighter margin read as "these two lean on each other" against a row of
+   independent questions above. Now the two groups are side-by-side columns,
+   not stacked, and the 9px the two margins disagreed by showed up as the
+   groups' first labels landing on two different lines - a misalignment that
+   reads as a bug, not a deliberate difference in weight. Both groups now
+   share `.form-field`'s one rhythm, so their first labels share a line.
+
+   **Their controls will still not share a line further down**, because the
+   mass group's hints wrap to one line at this width and the money group's
+   wrap to two - and that is correct, not a regression to fix. The two
+   groups are independent vertical flows now; forcing every control onto a
+   shared baseline across them is exactly what the old subgrid did, and
+   exactly what removing it was for. */
 
 @media (min-width: 650px) {
   .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

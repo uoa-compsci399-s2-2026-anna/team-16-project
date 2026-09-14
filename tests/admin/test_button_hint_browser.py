@@ -178,6 +178,40 @@ def _log_in(page, password: str) -> None:
     )
 
 
+# --- Playwright, MODULE-scoped, and only here -----------------------------
+#
+# Not tests/admin/conftest.py, and not `scope="package"`: this file is the
+# only place in tests/admin/ that drives a browser, but the *package* also
+# holds every one of tests/admin's async, pytest-asyncio-backed HTTP tests -
+# `admin_client`, `staff_client`, the lot. A `scope="package"` fixture here
+# would open its `sync_playwright()` context on this module's first test and
+# not close it until the LAST test in the WHOLE tests/admin package finishes,
+# not the last test that actually requested it. Playwright's sync API keeps
+# an asyncio loop "running" on this OS thread for as long as that context
+# stays open (tests/web/conftest.py's docstring explains why in full), so
+# every async test collected after this module - which is most of
+# tests/admin, alphabetically - failed at fixture setup with "Runner.run()
+# cannot be called from a running event loop" the first time this ran as
+# part of the whole suite, not in isolation. `scope="module"` closes the
+# context as soon as this module's own last test finishes, before pytest
+# ever moves on to collect the next file.
+
+
+@pytest.fixture(scope="module")
+def _playwright():
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as p:
+        yield p
+
+
+@pytest.fixture(scope="module")
+def browser(_playwright):
+    instance = _playwright.chromium.launch()
+    yield instance
+    instance.close()
+
+
 @pytest.fixture(scope="module")
 def _hint_account():
     """Create the throwaway account once for the whole module, remove it

@@ -930,6 +930,37 @@ def test_step_three_forms_two_aligned_groups_above_the_breakpoint(page_at):
     )
 
 
+def test_step_three_the_two_groups_first_labels_share_a_baseline(page_at):
+    """The two groups' own outer boxes align exactly (top-aligned by
+    ``align-items: start``), but that alone does not put their *first
+    labels* on one line — each group's own margin rhythm does, and the two
+    used to disagree. ``.money-fields .form-field`` was ``margin: 16px 0``,
+    tighter than ``.form-field``'s own ``25px 0``, from when the money pair
+    sat in its own row *below* the primary one and the tighter margin read
+    as "these two lean on each other". Now the two groups are side-by-side
+    columns, not stacked, and the 9px the two margins disagreed by (25 - 16)
+    showed up as exactly that: the mass group's first label starting 9px
+    lower than the money group's — a misalignment that reads as a bug, not
+    a deliberate difference in weight.
+
+    This does not require every control to line up: the two groups are
+    independent vertical flows, and their hints may wrap differently further
+    down (see ``test_step_three_unit_control_is_narrower_than_its_neighbours``
+    and the comment in ``styles.css`` above ``.mass-fields``/``.money-fields``).
+    Only the shared starting point is pinned here.
+
+    Mutation: reverting ``.money-fields .form-field`` to ``margin: 16px 0``
+    pulls the money group's first label 9px above the mass group's, and this
+    test fails.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    mass_top = round(page.locator('label[for="total-waste"]').bounding_box()["y"])
+    money_top = round(page.locator('label[for="total-value"]').bounding_box()["y"])
+    assert abs(mass_top - money_top) <= 1, (
+        f"the two groups' first labels do not share a baseline: mass={mass_top} money={money_top}"
+    )
+
+
 def test_step_three_unit_control_is_narrower_than_its_neighbours(page_at):
     """The unit sits between the two quantities it governs, and is visibly
     narrower than either — the placement that says "this is the unit of the

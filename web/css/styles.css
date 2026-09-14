@@ -1198,12 +1198,22 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
 }
 
-/* A secondary pair, set slightly closer together than the primary row above
-   it - `25px` is `.form-field`'s rhythm for a step's own required and
-   load-bearing questions; these two are optional statistics that lean on
-   each other, so `16px` reads as one paired unit rather than two more
-   fields competing for the same weight as `Waste amount` or `Unit`. */
-.money-fields .form-field { margin: 16px 0; }
+/* No margin override here any more - `.money-fields .form-field` used to be
+   `16px 0`, tighter than `.form-field`'s own `25px 0`, back when the money
+   pair sat in its own row below the three-column primary one and the
+   tighter margin read as "these two lean on each other" against a row of
+   independent questions above. Now the two groups are side-by-side columns,
+   not stacked, and the 9px the two margins disagreed by showed up as the
+   groups' first labels landing on two different lines - a misalignment that
+   reads as a bug, not a deliberate difference in weight. Both groups now
+   share `.form-field`'s one rhythm, so their first labels share a line.
+
+   **Their controls will still not share a line further down**, because the
+   mass group's hints wrap to one line at this width and the money group's
+   wrap to two - and that is correct, not a regression to fix. The two
+   groups are independent vertical flows now; forcing every control onto a
+   shared baseline across them is exactly what the old subgrid did, and
+   exactly what removing it was for. */
 
 @media (min-width: 650px) {
   .equivalent-grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }

@@ -793,6 +793,29 @@ def test_setting_the_flag_never_commits(_committed_session, one_draft):
 # staff to clone the published set again and abandon the spoiled draft.
 
 
+#: The five child kinds, written out rather than read from `CHILD_MODELS`.
+#:
+#: The tests below used to loop over `CHILD_MODELS` itself, which is the list
+#: the implementation loops over too - so deleting a model from it deleted the
+#: assertions that would have caught the deletion, and all sixteen import
+#: tests stayed green while `Equivalence` rows silently stopped being copied.
+#: A draft left carrying one table's worth of its own old numbers and four
+#: tables' worth of the published set's is a silent hybrid, and nothing on
+#: screen says so. An expected-value list has to be written down somewhere for
+#: a test to mean anything; here it is.
+_EVERY_CHILD_KIND = (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence)
+
+
+def test_child_models_names_exactly_the_five_child_kinds():
+    """`CHILD_MODELS` drives both the copy and the delete in
+    `import_published_into`, and the clone before it. Adding a sixth child
+    table without adding it here means clone and import both quietly ignore
+    it; removing one means they quietly leave it behind. Either way the
+    factor set stops being versioned atomically, which is the property
+    `docs/architecture.md` rests the whole draft/publish model on."""
+    assert CHILD_MODELS == _EVERY_CHILD_KIND
+
+
 def _snapshot(session, model, factor_set_id):
     """Every column of every row of `model` belonging to `factor_set_id`,
     ordered by id - `id`/`factor_set_id` included this time, unlike
@@ -815,7 +838,7 @@ def test_import_replaces_every_child_row(_committed_session, taxonomy_for_factor
     import_published_into(session, draft.id, actor="kim")
     session.flush()
 
-    for model in CHILD_MODELS:
+    for model in _EVERY_CHILD_KIND:
         source_count = session.scalar(
             select(func.count()).select_from(model).where(model.factor_set_id == live.id)
         )
@@ -835,7 +858,7 @@ def test_import_copies_every_column_value(_committed_session, taxonomy_for_facto
     import_published_into(session, draft.id, actor="kim")
     session.flush()
 
-    for model in CHILD_MODELS:
+    for model in _EVERY_CHILD_KIND:
         source_row = session.scalar(select(model).where(model.factor_set_id == live.id))
         target_row = session.scalar(select(model).where(model.factor_set_id == draft.id))
         source_fields = {
@@ -857,7 +880,7 @@ def test_import_is_a_full_replacement_not_a_merge(
     names as the single most important behavioural claim after "the source
     is untouched".
 
-    Mutating this test's target by deleting the `for model in CHILD_MODELS:
+    Mutating this test's target by deleting the `for model in _EVERY_CHILD_KIND:
     session.execute(delete(model)...)` loop out of import_published_into
     (admin/factor_lifecycle.py) turns it red: the extra row below would
     still be there afterwards, so `remaining` would be non-empty.
@@ -913,15 +936,15 @@ def test_import_does_not_touch_the_source_set(
     session = _committed_session
     live, draft = two_sets
 
-    before = {model: _snapshot(session, model, live.id) for model in CHILD_MODELS}
+    before = {model: _snapshot(session, model, live.id) for model in _EVERY_CHILD_KIND}
     assert all(rows for rows in before.values()), "anchor: the source starts populated"
 
     import_published_into(session, draft.id, actor="kim")
     session.flush()
     session.expire_all()
 
-    after = {model: _snapshot(session, model, live.id) for model in CHILD_MODELS}
-    for model in CHILD_MODELS:
+    after = {model: _snapshot(session, model, live.id) for model in _EVERY_CHILD_KIND}
+    for model in _EVERY_CHILD_KIND:
         assert after[model] == before[model], (
             f"{model.__tablename__}: the published source set changed"
         )

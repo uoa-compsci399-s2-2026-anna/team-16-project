@@ -33,14 +33,16 @@ from admin.auth import SESSION_KEY, reauthenticate
 from admin.csrf import check_token, issue_token
 from admin.expressions import ExpressionError, validate_expression
 from admin.factor_lifecycle import (
-    LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
-    revalidate_formulas, rollback_to, set_placeholder_flag,
+    LifecycleError, archive_factor_set, clone_factor_set, count_child_rows,
+    import_published_into, publish_factor_set, revalidate_formulas,
+    rollback_to, set_placeholder_flag,
 )
 from admin.runtime import get_runtime
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
 )
+from admin.models import AuditLog
 from admin.modelviews import AuditedModelView
 from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
@@ -945,6 +947,12 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     # how a version leaves service.
     can_delete = False
 
+    #: The published-set panel above the list (brand/factor_set_list.html) -
+    #: what is live, who published it and when, and when its numbers were
+    #: last touched before that. `list_context` below is where the query
+    #: behind it lives; this is only the template that reads the result.
+    list_template = "brand/factor_set_list.html"
+
     column_list = [FactorSet.version_label, FactorSet.status, FactorSet.is_mock,
                    FactorSet.published_at, FactorSet.published_by]
     column_details_list = [FactorSet.version_label, FactorSet.status,
@@ -1046,6 +1054,69 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
                 "still change on a live set is its placeholder-data flag, "
                 "and that has its own button on the factor-set list."
             )
+
+    async def list_context(self, request) -> dict:
+        """Extra context for `list_template` above: what is published right
+        now, for the panel `brand/factor_set_list.html` renders over the
+        ordinary table.
+
+        `factor_set` carries no modified-time column (id, version_label,
+        status, is_mock, effective_from, published_at, published_by, notes -
+        nothing else), and adding one for a single summary panel would be a
+        migration for a value `audit_log` already has: every write already
+        produces an entry there, so the published set's own most recent
+        *content* change names the moment it was last touched - which, since
+        a published set is read-only (`_refuse_if_factor_set_not_draft`
+        above), is necessarily some moment *before* it was published, not
+        since.
+
+        **"Most recent", not "most recent of any kind".** The naive query -
+        the newest `audit_log` row naming this factor_set at all - answers a
+        different question than the one this panel is trying to show. The
+        newest such row is routinely the `publish` (or `rollback`) entry
+        itself, which is simultaneous with publication, not before it; later
+        still, it can be a `flag_placeholder`/`clear_placeholder` entry from
+        days *after* publication, since those actions are legal on a
+        published set (`set_placeholder_flag`'s own docstring). Either would
+        print a timestamp under a label that says "before it was published"
+        and be wrong. Excluding `publish`/`rollback` and requiring
+        `at <= published_at` is what actually answers "when was this row
+        last changed, before it went live".
+
+        Returns `{"published_summary": None}` when nothing is published - a
+        fresh deployment's normal state (see `publish_factor_set`'s own
+        docstring on `NO_PUBLISHED_FACTOR_SET`) - so the template can say so
+        in words rather than rendering a blank section that reads as a
+        failed load.
+        """
+        with self.session_maker() as session:
+            published = session.scalar(
+                select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
+            )
+            if published is None:
+                return {"published_summary": None}
+
+            last_modified = session.scalar(
+                select(AuditLog.at)
+                .where(AuditLog.table_name == "factor_set",
+                      AuditLog.row_id == published.id,
+                      AuditLog.action.notin_(("publish", "rollback")),
+                      AuditLog.at <= published.published_at)
+                .order_by(AuditLog.at.desc())
+                .limit(1)
+            )
+            return {
+                "published_summary": {
+                    "version_label": published.version_label,
+                    "published_at": published.published_at,
+                    "published_by": published.published_by,
+                    "effective_from": published.effective_from,
+                    "last_modified_before_publication": last_modified,
+                    "detail_url": str(request.url_for(
+                        "admin:details", identity=self.identity, pk=published.id
+                    )),
+                },
+            }
 
     def _require_accessible(self, request) -> None:
         if not self.is_accessible(request):
@@ -1458,6 +1529,155 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
             try:
                 set_placeholder_flag(session, pk, is_mock=False, actor=actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await refuse(str(exc))
+            session.commit()
+
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    # --- Importing the published set into a draft ---------------------------
+    #
+    # The fix for a draft a staff member has edited and now regrets: before
+    # this existed, the only way to bring the published numbers back into it
+    # was cloning the published set *again*, which produces a second draft
+    # and leaves the spoiled one sitting in the list. See
+    # admin/factor_lifecycle.py's import_published_into for the operation
+    # itself; what lives here is the same two-step shape
+    # clear_placeholder_action/clear_placeholder_page above use, and for the
+    # same underlying reason: sqladmin's `confirmation_message` is a plain
+    # string fixed when the class is defined, and this confirmation has to
+    # name how many rows it is about to discard - a number that is different
+    # for every draft, on every day. There is nowhere in a static string to
+    # put a per-request count.
+
+    @action(name="import-published", label="Import the published set")
+    async def import_published_action(self, request):
+        """Carry the selection to the confirmation page below.
+
+        **Performs nothing**, for the reason `clear_placeholder_action` above
+        does: the confirmation this operation owes (this section's own header
+        comment) cannot be a static `confirmation_message`, which means a
+        page of its own, which means a POST - and sqladmin registers an
+        `@action` with `methods=["GET"]` only.
+        """
+        self._require_accessible(request)
+        try:
+            self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+        pks = request.query_params.get("pks", "")
+        return RedirectResponse(
+            str(request.url_for("admin:view-factor-set-import_published_page"))
+            + f"?pks={pks}",
+            status_code=302,
+        )
+
+    async def _render_import_published_page(self, request, context, status_code=200):
+        return await self.templates.TemplateResponse(
+            request, "brand/factor_set_import_published.html", context,
+            status_code=status_code,
+        )
+
+    # sqladmin names an @expose route on a ModelView
+    # `view-{identity}-{func.__name__}` (see clear_placeholder_page's own
+    # comment on this rule, a few screens up) - so this is
+    # `admin:view-factor-set-import_published_page`, and
+    # import_published_action above resolves that name.
+    @expose("/import-published", methods=["GET", "POST"])
+    async def import_published_page(self, request):
+        """Show what importing the published set into this draft would
+        discard, then - once confirmed - do it. Contract: see
+        admin/factor_lifecycle.py's import_published_into for the operation
+        and the reasoning behind each of its rules.
+
+        **No reauthentication proof**, unlike clear_placeholder_page above.
+        That page removes a warning from a page the public is already
+        reading - an outward-facing consequence the instant it happens. This
+        one only replaces one draft's own numbers with the published set's;
+        nothing a member of the public can see changes, and a draft has no
+        public consequence of its own (the same distinction
+        clear_placeholder_page's own docstring draws, the other way round).
+        What this weight of action still owes is naming exactly what it is
+        about to throw away before it does - which is what the counts below,
+        and the confirmation dialog built from them, are for.
+
+        Renders the same page whether the selected set can be imported into
+        or not, the same way clear_placeholder_page renders its own "nothing
+        to clear" branch rather than a hard refusal: "id does not exist" and
+        "more than one selected" still go through `_refused` (`_one_pk_from`),
+        but "this set is not a draft" and "nothing is published" are
+        ordinary, expected states worth explaining in words rather than
+        stopping the page on.
+        """
+        self._require_accessible(request)
+
+        raw = request.query_params.get("pks", "")
+        form = None
+        if request.method == "POST":
+            form = await request.form()
+            raw = form.get("pks") or ""
+
+        try:
+            pk = self._one_pk_from(raw)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            target = session.get(FactorSet, pk)
+            if target is None:
+                return await self._refused(
+                    request, f"No factor set with id {pk} exists to import into."
+                )
+
+            is_draft = target.status is FactorSetStatus.draft
+            published = session.scalar(
+                select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
+            )
+
+            context = {
+                "factor_set": {
+                    "id": target.id,
+                    "version_label": target.version_label,
+                    "status": target.status.value,
+                },
+                "is_draft": is_draft,
+                "published": (
+                    {"version_label": published.version_label}
+                    if published is not None else None
+                ),
+                # Only meaningful - and only computed - when there is
+                # something to confirm: a target that is not a draft, or no
+                # published set to copy from, ends this page on an
+                # explanation instead of a dialog, and counting rows nobody
+                # is about to lose would be a query with nothing to answer.
+                "counts": (
+                    count_child_rows(session, target.id)
+                    if is_draft and published is not None else None
+                ),
+                "pks": str(target.id),
+                "error": None,
+                "open_dialog": None,
+                "list_url": self._list_url(request),
+                "csrf_token": issue_token(request.session),
+            }
+
+            if request.method == "GET":
+                return await self._render_import_published_page(request, context)
+
+            async def refuse(message, status_code=400):
+                return await self._render_import_published_page(
+                    request, {**context, "error": message, "open_dialog": "confirm"},
+                    status_code=status_code,
+                )
+
+            if not check_token(request.session, form.get("csrf_token")):
+                session.rollback()
+                return await refuse("That form expired. Please try again.")
+
+            try:
+                import_published_into(session, pk, actor)
             except LifecycleError as exc:
                 session.rollback()
                 return await refuse(str(exc))

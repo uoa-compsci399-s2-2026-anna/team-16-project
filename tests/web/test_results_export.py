@@ -331,6 +331,18 @@ def test_the_equivalence_is_copied_as_the_engine_worded_it(report):
 
 
 @node
+def test_the_equivalence_name_reaches_the_text_export(report):
+    """The final review's other divergence (§1b): the page and the PDF each
+    print a third fact beside `Total` and `Per unit` -- the equivalence's own
+    `name` -- and the text export printed only the first two. `18596.82`
+    rounds the same way the engine's own label interpolation does (whole
+    number, half rounds up), so `18,597` here is not a coincidence with the
+    `Equivalent to driving 18,597 km` line above -- it is the same figure,
+    named rather than folded into a sentence."""
+    assert re.search(r"^      Kilometres driven: 18,597$", report, re.M)
+
+
+@node
 def test_each_destination_carries_its_own_computed_figures(report):
     """The destination breakdown table, in text.
 
@@ -490,6 +502,20 @@ def test_the_placeholder_notice_is_absent_from_a_real_export(tmp_path):
     report = report_for(tmp_path, build_state(is_mock=False))
     assert NOTICE not in report
     assert re.search(r"^  - Greenhouse gases: 4,449\.0 kg CO2e$", report, re.M)
+
+
+@node
+def test_the_equivalence_disclaimer_is_absent_from_a_real_export(tmp_path):
+    """The equivalence caveat's own negative case (L52). Gated on `is_mock`
+    the same way `NOTICE` is above, but until now only
+    `tests/api/test_pdf_render.py::test_a_real_factor_set_carries_no_warning`
+    proved the gate holds - the page and this export were only ever asserted
+    with `is_mock` true. The basis note itself is not gated and must still
+    print; only the placeholder sentence goes."""
+    report = report_for(tmp_path, build_state(is_mock=False))
+    assert "The conversion factor comes from the client" not in report
+    assert "placeholder factors" not in report
+    assert "PLACEHOLDER. Open item O-3" in report
 
 
 # ------------------------------------------------- the unit each row was measured in
@@ -2403,5 +2429,401 @@ def test_neither_download_button_overflows_in_german(browser, width):
             assert box["x"] + box["width"] <= de["client"] + 1, (
                 f"{action} overflows its own viewport at {width}px in German: {box}"
             )
+    finally:
+        context.close()
+
+
+# --------------------------------------------------------------- the equivalence disclosure
+#
+# Task 6. Every equivalence carries a question mark that opens onto how it was worked
+# out (contract v1.52, Task 3). Browser tests never reach the real engine - `page_at`
+# fulfils `/api/v1/calculate` in-browser - so the factor and basis text asserted below
+# come from the response THIS FILE builds, modelled on the client's own "vehicles_year"
+# conversion (Task 4), not from `tests/fixtures/*.json`'s `km_driven` row, which is still
+# on the old `4.1800000000` factor.
+
+
+def _equivalence_response(*, source_note, is_mock: bool = True):
+    """A deep copy of `calculate_response.json` with its one equivalence replaced.
+
+    `co2e`'s total in that fixture is `4449.0000000000` at one decimal place
+    (`kg CO2e`), so `equivalenceBasis` has a real metric to read `source_metric`
+    against. The factor itself - `0.0004149378`, displayed as `0.000414938` - and
+    the source note are copied verbatim from the client's document via
+    `data/upstream-factors-draft/build_upstream_factors_draft.py`'s `vehicles_year`
+    row, not retyped from memory.
+
+    `is_mock` defaults to the fixture's own `True` - the disclaimer beside the
+    basis is gated on it (`equivalenceBasis`, `web/js/results.js`), the same
+    gate `_EQUIVALENCE_DISCLAIMER` enforces in the PDF, so a caller can flip
+    it to prove the negative case without hand-building a whole response.
+    """
+    response = copy.deepcopy(_fixture("calculate_response.json"))
+    response["factor_set"] = dict(response["factor_set"], is_mock=is_mock)
+    response["totals"]["current"]["equivalences"] = [
+        {
+            "code": "vehicles_year",
+            "name": "Passenger vehicles for a year",
+            "label": "Equivalent to running 1 passenger vehicles for a year",
+            "value": "1.0000000000",
+            "value_per_unit": "0.0004149378",
+            "value_per_unit_display": "0.000414938",
+            "source_metric": "co2e",
+            "source_note": source_note,
+        }
+    ]
+    return response
+
+
+#: Copied verbatim from `data/upstream-factors-draft/upstream_factors_draft.json`'s
+#: `vehicles_year` row - not retyped, so a transcription slip cannot make this test
+#: pass against text the client never approved.
+_VEHICLE_SOURCE_NOTE = (
+    "Client, Data sources for impact calculator (2026-08-29): "
+    "\"Passenger vehicles on the road: GHG emissions (t CO2e) / "
+    "2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, "
+    "so the divisor here is 2,410."
+)
+
+
+@pytest.fixture
+def results_page(page_at):
+    """The results page, reached with one equivalence that carries a recorded basis."""
+    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE))
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.fixture
+def results_page_without_basis(page_at):
+    """O-3 is open and `source_note` is nullable - the same equivalence, unrecorded."""
+    page = page_at(_equivalence_response(source_note=None))
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.fixture
+def results_page_on_a_real_factor_set(page_at):
+    """The negative case for the equivalence disclaimer - L52. Only the PDF
+    (`tests/api/test_pdf_render.py::test_a_real_factor_set_carries_no_
+    warning`) had a test proving the gate holds in the direction that matters
+    most: a real, published factor set once described itself as
+    "placeholder" and the mistake shipped. The page and the text export were
+    asserted only with `is_mock` true."""
+    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE, is_mock=False))
+    _submit_two_entries(page)
+    return page
+
+
+@pytest.mark.browser
+def test_each_equivalence_offers_an_explanation_that_starts_closed(results_page):
+    """A long explanation beside every figure is what the client asked to be
+    spared; the disclosure is closed until asked for."""
+    rows = results_page.locator(".equivalent-grid article")
+    assert rows.count() > 0
+    for i in range(rows.count()):
+        details = rows.nth(i).locator("details.equivalent-basis")
+        assert details.count() == 1
+        assert details.get_attribute("open") is None
+
+
+@pytest.mark.browser
+def test_the_explanation_shows_the_total_the_factor_and_the_basis(results_page):
+    """Asserts what a person can SEE, not that the text is in the DOM. A closed
+    <details> still contains its text -- that is exactly how a folded warning
+    passed tests/admin/test_guidance.py once already."""
+    first = results_page.locator(".equivalent-grid article").first
+    body = first.locator(".equivalent-basis__body")
+    assert not body.is_visible()
+    first.locator("details.equivalent-basis > summary").click()
+    assert body.is_visible()
+    assert "0.000414938" in body.inner_text()
+    assert "Client, Data sources for impact calculator" in body.inner_text()
+
+
+@pytest.mark.browser
+def test_the_last_row_shows_the_figure_and_does_not_repeat_the_whole_sentence(results_page):
+    """The final review's own finding: this row used to render `row.name` /
+    `= row.label` -- `Passenger vehicles for a year = Equivalent to running 1
+    passenger vehicles for a year` -- restating the whole heading sentence
+    where a reader following the arithmetic (`Total` x `Per unit` = ?) expects
+    the answer. It now shows just the figure the equivalence rounds to,
+    `formatNumber(row.value, 0)` -- `1`, for this fixture's `vehicles_year`
+    row (`_equivalence_response`'s `"value": "1.0000000000"`) -- and the
+    sentence itself is not repeated a second time in this row."""
+    first = results_page.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    rows = first.locator(".equivalent-basis__body dl > div")
+    last_row = rows.nth(rows.count() - 1)
+    assert last_row.locator("dt").inner_text() == "Passenger vehicles for a year"
+    assert last_row.locator("dd").inner_text() == "= 1"
+
+
+@pytest.mark.browser
+def test_a_real_factor_set_carries_no_equivalence_warning(results_page_on_a_real_factor_set):
+    """The negative case, on the page: the factor and the basis still show,
+    but the sentence that says the total comes from placeholder factors does
+    not, because the factor set is not one."""
+    first = results_page_on_a_real_factor_set.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    body = first.locator(".equivalent-basis__body").inner_text()
+    assert "0.000414938" in body
+    assert "Client, Data sources for impact calculator" in body
+    assert "placeholder factors" not in body
+
+
+@pytest.mark.browser
+def test_an_equivalence_with_no_basis_says_so_rather_than_opening_onto_nothing(
+    results_page_without_basis,
+):
+    """O-3 is open and source_note is nullable. A question mark that opens onto
+    nothing is worse than no question mark."""
+    first = results_page_without_basis.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    body = first.locator(".equivalent-basis__body")
+    assert body.is_visible()
+    assert "0.000414938" in body.inner_text()
+    assert "not recorded" in body.inner_text().lower()
+
+
+def _extract_pdf_text(path) -> str:
+    """The same normalisation `tests/support/pdf.py::extract_text` applies,
+    read off a file the browser downloaded rather than in-process bytes -
+    this suite drives a real browser against the running container, so there
+    is no in-process PDF to hand the shared helper directly."""
+    from tests.support.pdf import extract_text
+
+    return extract_text(Path(path).read_bytes())
+
+
+def _submit_two_entries_of_different_sectors(page):
+    """The same wizard walk `_submit_two_entries` does, except the two entries
+    choose different sectors.
+
+    Only this test needs it: it is the one test in this file whose PDF
+    download reaches the real `/export/pdf` route rather than a routed stub
+    (see the test's own docstring), and that route re-runs the calculation
+    for real, where `POST /api/v1/calculate`'s own `duplicate_entry` check
+    refuses two entries sharing one `(sector, food_category)` pair -
+    `_submit_two_entries`'s default first radio button, chosen twice, is
+    exactly that pair, and the mocked `/calculate` route the other tests in
+    this file use never enforces it.
+    """
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    sectors = page.locator('input[name="sector"]').element_handles()
+    codes = [handle.get_attribute("value") for handle in sectors[:2]]
+    assert len(codes) == 2 and codes[0] != codes[1], (
+        f"need two distinct sectors to submit two entries without tripping "
+        f"the real API's duplicate_entry check, got {codes}"
+    )
+    for index, code in enumerate(codes):
+        page.check(f'input[name="sector"][value="{code}"]')
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('input[name="food-category"]')
+        page.click('[data-action="continue"]')
+        page.wait_for_selector("#total-waste")
+        page.fill("#total-waste", "1000")
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-line-field="amount"]')
+        page.fill('[data-line-field="amount"] >> nth=0', "1000")
+        page.wait_for_timeout(60)
+        page.click('[data-action="continue"]')
+        page.wait_for_selector('[data-action="calculate"]')
+        if index == 0:
+            page.click('[data-action="add-entry"]')
+            page.wait_for_selector('input[name="sector"]')
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector(".results-page", timeout=15000)
+
+
+@pytest.mark.browser
+def test_the_page_the_text_export_and_the_pdf_tell_the_same_story_about_an_equivalence(page_at):
+    """One submission, three surfaces, one set of facts. Asserting each surface
+    on its own is how saving_nzd shipped a disagreement: the page printed
+    nothing where the PDF printed a sentence, and every test was green.
+
+    The page and the text export are read straight off the mocked `/calculate`
+    response, the same as every other test in this file - but the PDF button
+    posts to the real `/export/pdf` route (see `page_at`'s own docstring: the
+    results view is reached by fulfilling `/calculate` in-browser, not by
+    driving the real API), which re-runs the calculation against whatever
+    factor set is actually published. The point of the test is that all three
+    surfaces agree regardless of which one had to go back to the server for
+    its numbers.
+    """
+    page = page_at(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE))
+    _submit_two_entries_of_different_sectors(page)
+
+    first = page.locator(".equivalent-grid article").first
+    first.locator("details.equivalent-basis > summary").click()
+    on_screen = first.locator(".equivalent-basis__body").inner_text()
+
+    with page.expect_download() as text_download:
+        page.click("[data-action='download-results']")
+    text = text_download.value.path().read_text(encoding="utf-8")
+
+    with page.expect_download() as pdf_download:
+        page.click("[data-action='download-pdf']")
+    pdf = _extract_pdf_text(pdf_download.value.path())
+
+    factor = "0.000414938"
+    basis = "Client, Data sources for impact calculator"
+    disclaimer = "The conversion factor comes from the client. The total it is applied to comes from placeholder factors."
+    # `row.name` (§1b): the page and the PDF both print it; the text export
+    # did not until this fix. Fixed by the equivalence's own definition
+    # (published set), not by the entries submitted, so it is safe to assert
+    # as one literal string on all three surfaces the same way `factor` and
+    # `basis` already are.
+    name = "Passenger vehicles for a year"
+    # The `Total` line (§1a): `api/pdf_render.py` printed `source.total` raw
+    # -- `4449.0000000000 kg CO2e` -- where the page and the text export both
+    # format it through the metric's own `display_precision`. Unlike `factor`
+    # and `basis`, this figure is the co2e metric's rolled-up total for
+    # *these two entries*: the page and the text export read it off the
+    # mocked `/calculate` response, but the PDF button reaches the real
+    # `/export/pdf` route, which recomputes it against the published factor
+    # set (`api/export.py`'s own module docstring: "the endpoint recalculates
+    # instead of trusting the client") -- so the three surfaces are not
+    # guaranteed to print the *same number*, only the same *shape*: grouped
+    # thousands, a bounded number of fraction digits, never the engine's raw
+    # ten-digit `Decimal`. That shape is exactly what the f-string this fix
+    # replaces would fail to produce.
+    total_line = re.compile(r"([\d,]+\.\d+) kg CO2e")
+    for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
+        assert factor in content, f"{surface} is missing the conversion factor"
+        assert basis in content, f"{surface} is missing the basis"
+        assert disclaimer in content, f"{surface} is missing the disclaimer"
+        assert name in content, f"{surface} is missing the equivalence's name"
+        match = total_line.search(content)
+        assert match, f"{surface} is missing a formatted total for co2e"
+        fraction_digits = len(match.group(1).split(".")[1])
+        assert fraction_digits <= 3, (
+            f"{surface}'s total {match.group(1)!r} is not display-formatted "
+            f"-- {fraction_digits} fraction digits is the engine's own scale, "
+            f"not a metric's display_precision"
+        )
+
+    # The sixth divergence, found by the scoped re-review that closed the
+    # fifth: fixing the page's stuttering last row and leaving the PDF's
+    # turned a wart both surfaces shared into a fresh disagreement between
+    # them. The last row's content is the equivalence's own figure -- not
+    # `row.label` printed a second time.
+    #
+    # The label sentence itself cannot be pinned to one literal string here,
+    # for the same reason the Total line above cannot: the page and the text
+    # export interpolate it from the mocked `value` ("1"), but the PDF's
+    # route recomputes against the real entries and the real published
+    # `vehicles_year` factor, so its own `value` -- and the whole numeral
+    # inside the sentence -- is whatever that real division comes to. A
+    # regex extracts each surface's own sentence rather than assuming it.
+    label_pattern = re.compile(r"Equivalent to running [\d,.]+ passenger vehicles for a year")
+    # `on_screen` is `.equivalent-basis__body`'s own text, and the card's
+    # `<h3>` heading sits outside that element -- so the label sentence has
+    # no reason to appear inside it at all once fixed. It used to, because
+    # the dd literally contained `row.label`.
+    assert not label_pattern.search(on_screen), (
+        "screen repeats the label sentence inside the disclosure body"
+    )
+    # The text export and the PDF both print the label once, as their own
+    # heading line; a second occurrence there is exactly the stutter.
+    for surface, content in (("text", text), ("pdf", pdf)):
+        match = label_pattern.search(content)
+        assert match, f"{surface} is missing the equivalence's own label sentence"
+        occurrences = content.count(match.group(0))
+        assert occurrences == 1, (
+            f"{surface} prints {match.group(0)!r} {occurrences} times -- it "
+            f"should be the heading only, not repeated as the figure row too"
+        )
+    # And the figure row itself: `name` followed by `=` (pdf, screen) or `:`
+    # (text) and a NUMBER, never the word "Equivalent" -- which is what the
+    # stutter would put there instead.
+    figure_pattern = re.compile(rf"{re.escape(name)}\s*[:=]\s*([\d,.]+)\b")
+    for surface, content in (("screen", on_screen), ("text", text), ("pdf", pdf)):
+        match = figure_pattern.search(content)
+        assert match, f"{surface} is missing the equivalence's own figure beside its name"
+
+
+#: The plan's own five widths, checked in both an RTL and an LTR language - the same
+#: reason `test_horizontal_overflow.py` checks Arabic and German rather than English
+#: alone: a physical `left`/`right` property reads correctly in one direction and
+#: overflows, or sits on the wrong side, in the other.
+EQUIVALENT_BASIS_WIDTHS = (320, 390, 700, 938, 1278)
+
+
+@pytest.mark.browser
+@pytest.mark.parametrize("width", EQUIVALENT_BASIS_WIDTHS)
+@pytest.mark.parametrize("language", ("de", "ar"))
+def test_the_equivalence_explanation_does_not_overflow(browser, language, width):
+    """Measured, not reasoned about - `test_horizontal_overflow.py`'s own rule.
+    Checked with the disclosure open: the open body is the box `test_horizontal_
+    overflow.py`'s own docstring warns an absolutely-positioned version of this
+    exact affordance once overflowed by about 27px at 320px."""
+    context = browser.new_context(
+        viewport={"width": width, "height": 900},
+        locale=language,
+        extra_http_headers={"Accept-Language": f"{language},en;q=0.5"},
+        bypass_csp=True,
+    )
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json",
+                body=json.dumps(_equivalence_response(source_note=_VEHICLE_SOURCE_NOTE)),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.add_style_tag(content=FORCE_AUTO_SCROLL)
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+
+        summary = page.locator(".equivalent-grid article").first.locator(
+            "details.equivalent-basis > summary"
+        )
+        summary.click()
+        page.wait_for_selector(".equivalent-basis__body")
+
+        measured = page.evaluate(
+            "() => ({scroll: document.documentElement.scrollWidth, "
+            "client: document.documentElement.clientWidth})"
+        )
+        assert measured["scroll"] <= max(measured["client"], 320), (
+            f"the results page scrolls sideways at {width}px in {language} with the "
+            f"explanation open: scrollWidth={measured['scroll']} "
+            f"clientWidth={measured['client']}"
+        )
+
+        body_box = page.locator(".equivalent-basis__body").first.bounding_box()
+        assert body_box is not None
+        assert body_box["x"] >= -1, (
+            f"the open explanation starts off-screen at {width}px in {language}: {body_box}"
+        )
+        assert body_box["x"] + body_box["width"] <= measured["client"] + 1, (
+            f"the open explanation overflows its own viewport at {width}px in {language}: {body_box}"
+        )
+
+        #: The summary sits at its row's own INLINE END: in English/German (LTR)
+        #: that is nearer the article's right edge than its left, and in Arabic
+        #: (RTL) the reverse - `text-align: end`, a logical property, is what
+        #: makes both true without a direction-specific rule. Compared as
+        #: "nearer one edge than the other" rather than against a fixed pixel
+        #: gap, so the article's own padding does not have to be hard-coded here.
+        article_box = page.locator(".equivalent-grid article").first.bounding_box()
+        summary_box = summary.bounding_box()
+        assert article_box is not None and summary_box is not None
+        gap_from_start = summary_box["x"] - article_box["x"]
+        gap_from_end = (article_box["x"] + article_box["width"]) - (summary_box["x"] + summary_box["width"])
+        near_end = gap_from_end < gap_from_start if language != "ar" else gap_from_start < gap_from_end
+        assert near_end, (
+            f"the summary is not at the article's inline end at {width}px in "
+            f"{language}: {gap_from_start}px from the start, {gap_from_end}px from "
+            f"the end ({summary_box} in {article_box})"
+        )
     finally:
         context.close()

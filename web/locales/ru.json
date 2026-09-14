@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Вы указали, что это охватывает в общей сложности 0 кг, поэтому долю отходов показать нельзя.",
     "The total value was zero, so this cannot be calculated.": "Общая стоимость составила ноль, поэтому это нельзя рассчитать.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "Стоимость отходов превышает стоимость произведённого на NZ$%(excess)s.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Объём отходов превышает общее произведённое количество на %(excess)s %(unit)s."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "Объём отходов превышает общее произведённое количество на %(excess)s %(unit)s.",
+    "How this comparison was worked out": "Как было получено это сравнение",
+    "Total": "Итого",
+    "Per unit": "За единицу",
+    "Basis:": "Основание:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "Коэффициент пересчёта предоставлен клиентом. Итоговое значение, к которому он применяется, получено из условных коэффициентов.",
+    "The basis for this conversion is not recorded yet.": "Основание для этого пересчёта пока не указано."
   }
 }

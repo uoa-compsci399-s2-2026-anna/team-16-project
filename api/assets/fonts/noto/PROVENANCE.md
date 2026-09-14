@@ -203,3 +203,41 @@ untouched (`정의되지 않음`, the Korean translation of `Undefined`, compose
 entirely from syllables the existing subset already drew); the other three
 grew a handful of characters each: jp 228,432 B (was 228,224), sc 201,112 B
 (was 200,708), tc 261,488 B (was 261,024).
+
+## Re-cut, 2026-09-11 (equivalence basis, Task 7)
+
+Task 6 keyed four new page strings for the equivalence disclosure —
+`Total`, `Per unit`, `Basis:`, and the fallback sentence "The basis for
+this conversion is not recorded yet." — and Task 7 wired the same four,
+plus the standing caveat "The conversion factor comes from the client. The
+total it is applied to comes from placeholder factors.", into the PDF and
+the text export as well, so a document read months later can say which
+figures are measured and which are borrowed (§6.3). Two of the eight new
+strings' Korean and Japanese translations (`근거:`/`근거는` for `ko`'s
+`Basis:` and its fallback sentence) contain a Hangul syllable, `U+ADFC`
+(근), that the existing `jp`/`kr` subsets did not carry, and rendering
+either raised `UndrawableCharacterError` before this re-cut.
+
+Re-cut the same way as both 2026-09-04 entries above:
+`recut_cjk_subsets.py`, run inside the `api` container with
+`fonts-noto-cjk` installed fresh. Compared character-for-character against
+the faces this replaces, per the module's own worry above ("What stops it
+being silent"): **nothing was lost.**
+
+| Face | Characters before | Characters after | Lost |
+| --- | --- | --- | --- |
+| `NotoSansCJKjp-Regular.woff2` | 631 | 634 | 0 |
+| `NotoSansCJKkr-Regular.woff2` | 554 | 556 | 0 |
+| `NotoSansCJKsc-Regular.woff2` | 694 | 694 | 0 |
+| `NotoSansCJKtc-Regular.woff2` | 689 | 690 | 0 |
+
+`sc` is untouched — none of the eight new strings' Simplified Chinese
+translations introduced a character the existing subset lacked. `tc`
+gained one character, `套` (`U+5957`, "set of"), not from a *new* string
+this task added to `DOCUMENT_STRINGS`, but because `recut_cjk_subsets.py`
+cuts each face from its language's **whole catalogue** (`catalogue_
+characters`, above) rather than only the subset a given render happens to
+use — and Task 6's disclaimer sentence, already present in `zh-Hant.json`
+for the page, had never previously been cut into this face at all. `jp`
+and `kr` each gained the handful of characters their own translations of
+the eight strings above actually use.

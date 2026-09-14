@@ -3797,5 +3797,33 @@
       "data_quality": "definitional"
     }
   ],
-  "equivalences": []
+  "equivalences": [
+    {
+      "code": "vehicles_year",
+      "name": "Passenger vehicles for a year",
+      "source_metric": "co2e",
+      "value_per_unit": "0.0004149378",
+      "label_template": "Equivalent to running {value} passenger vehicles for a year",
+      "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410.",
+      "sort_order": 10
+    },
+    {
+      "code": "olympic_pools",
+      "name": "Olympic swimming pools",
+      "source_metric": "water",
+      "value_per_unit": "4.000E-7",
+      "label_template": "Equivalent to {value} Olympic swimming pools of water",
+      "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\".",
+      "sort_order": 20
+    },
+    {
+      "code": "meals",
+      "name": "Meals",
+      "source_metric": "mass",
+      "value_per_unit": "2.2222222222",
+      "label_template": "Equivalent to {value} meals",
+      "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\".",
+      "sort_order": 30
+    }
+  ]
 }

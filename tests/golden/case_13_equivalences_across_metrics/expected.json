@@ -1,34 +1,33 @@
 {
-  "factor_set": {
-    "version_label": "MOCK-v0 — PLACEHOLDER",
-    "is_mock": true
-  },
+  "factor_set_version": "MOCK-v0 — PLACEHOLDER",
+  "is_mock": true,
   "gwp_horizon": 100,
   "totals": {
-    "total_kg": "2300.000",
     "current": {
+      "total_kg": "2300.000",
       "metrics": {
         "co2e": {
+          "metric_code": "co2e",
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "4449.0000000000",
           "by_destination": [
             {
-              "destination": "landfill",
+              "destination_code": "landfill",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "3468.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "525.0000000000"
             },
             {
-              "destination": "not_harvested",
+              "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -37,26 +36,27 @@
           ]
         },
         "ch4": {
+          "metric_code": "ch4",
           "unit": "kg CH4",
           "display_precision": 1,
           "total": "32.4000000000",
           "by_destination": [
             {
-              "destination": "landfill",
+              "destination_code": "landfill",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "32.4000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "0.0000000000"
             },
             {
-              "destination": "not_harvested",
+              "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -65,26 +65,27 @@
           ]
         },
         "water": {
+          "metric_code": "water",
           "unit": "L",
           "display_precision": 0,
           "total": "1787600.0000000000",
           "by_destination": [
             {
-              "destination": "landfill",
+              "destination_code": "landfill",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "1224000.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "306000.0000000000"
             },
             {
-              "destination": "not_harvested",
+              "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -93,26 +94,27 @@
           ]
         },
         "cost": {
+          "metric_code": "cost",
           "unit": "NZD",
           "display_precision": 0,
           "total": "72.0000000000",
           "by_destination": [
             {
-              "destination": "landfill",
+              "destination_code": "landfill",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "72.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "0.0000000000"
             },
             {
-              "destination": "not_harvested",
+              "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -121,26 +123,27 @@
           ]
         },
         "mass": {
+          "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2300.0000000000",
           "by_destination": [
             {
-              "destination": "landfill",
+              "destination_code": "landfill",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "1200.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "300.0000000000"
             },
             {
-              "destination": "not_harvested",
+              "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -151,40 +154,62 @@
       },
       "equivalences": [
         {
-          "code": "km_driven",
-          "name": "Kilometres driven",
-          "label": "Equivalent to driving 18,597 km",
-          "value": "18596.8200000000",
-          "value_per_unit": "4.1800000000",
-          "value_per_unit_display": "4.18",
-          "source_metric": "co2e",
-          "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+          "code": "vehicles_year",
+          "label": "Equivalent to running 2 passenger vehicles for a year",
+          "value": "1.8460582722",
+          "source_metric_code": "co2e",
+          "name": "Passenger vehicles for a year",
+          "value_per_unit": "0.0004149378",
+          "value_per_unit_display": "0.000414938",
+          "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410."
+        },
+        {
+          "code": "olympic_pools",
+          "label": "Equivalent to 1 Olympic swimming pools of water",
+          "value": "0.7150400000",
+          "source_metric_code": "water",
+          "name": "Olympic swimming pools",
+          "value_per_unit": "0.0000004000",
+          "value_per_unit_display": "0.0000004",
+          "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+        },
+        {
+          "code": "meals",
+          "label": "Equivalent to 5,111 meals",
+          "value": "5111.1111110600",
+          "source_metric_code": "mass",
+          "name": "Meals",
+          "value_per_unit": "2.2222222222",
+          "value_per_unit_display": "2.22222",
+          "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\"."
         }
       ]
     },
     "alternative": {
+      "total_kg": "2300.000",
       "metrics": {
         "co2e": {
+          "metric_code": "co2e",
           "unit": "kg CO2e",
           "display_precision": 1,
           "total": "2889.0000000000",
           "by_destination": [
             {
-              "destination": "anaerobic_digestion",
+              "destination_code": "anaerobic_digestion",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "2364.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "525.0000000000"
             },
             {
-              "destination": "prevention",
+              "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -193,26 +218,27 @@
           ]
         },
         "ch4": {
+          "metric_code": "ch4",
           "unit": "kg CH4",
           "display_precision": 1,
           "total": "1.2000000000",
           "by_destination": [
             {
-              "destination": "anaerobic_digestion",
+              "destination_code": "anaerobic_digestion",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "1.2000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "0.0000000000"
             },
             {
-              "destination": "prevention",
+              "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -221,26 +247,27 @@
           ]
         },
         "water": {
+          "metric_code": "water",
           "unit": "L",
           "display_precision": 0,
           "total": "1530000.0000000000",
           "by_destination": [
             {
-              "destination": "anaerobic_digestion",
+              "destination_code": "anaerobic_digestion",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "1224000.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "306000.0000000000"
             },
             {
-              "destination": "prevention",
+              "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -249,26 +276,27 @@
           ]
         },
         "cost": {
+          "metric_code": "cost",
           "unit": "NZD",
           "display_precision": 0,
           "total": "54.0000000000",
           "by_destination": [
             {
-              "destination": "anaerobic_digestion",
+              "destination_code": "anaerobic_digestion",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "54.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "0.0000000000"
             },
             {
-              "destination": "prevention",
+              "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -277,26 +305,27 @@
           ]
         },
         "mass": {
+          "metric_code": "mass",
           "unit": "kg",
           "display_precision": 1,
           "total": "2300.0000000000",
           "by_destination": [
             {
-              "destination": "anaerobic_digestion",
+              "destination_code": "anaerobic_digestion",
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "1200.0000000000"
             },
             {
-              "destination": "animal_feed",
+              "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
               "value": "300.0000000000"
             },
             {
-              "destination": "prevention",
+              "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
@@ -307,14 +336,34 @@
       },
       "equivalences": [
         {
-          "code": "km_driven",
-          "name": "Kilometres driven",
-          "label": "Equivalent to driving 12,076 km",
-          "value": "12076.0200000000",
-          "value_per_unit": "4.1800000000",
-          "value_per_unit_display": "4.18",
-          "source_metric": "co2e",
-          "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+          "code": "vehicles_year",
+          "label": "Equivalent to running 1 passenger vehicles for a year",
+          "value": "1.1987553042",
+          "source_metric_code": "co2e",
+          "name": "Passenger vehicles for a year",
+          "value_per_unit": "0.0004149378",
+          "value_per_unit_display": "0.000414938",
+          "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410."
+        },
+        {
+          "code": "olympic_pools",
+          "label": "Equivalent to 1 Olympic swimming pools of water",
+          "value": "0.6120000000",
+          "source_metric_code": "water",
+          "name": "Olympic swimming pools",
+          "value_per_unit": "0.0000004000",
+          "value_per_unit_display": "0.0000004",
+          "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+        },
+        {
+          "code": "meals",
+          "label": "Equivalent to 5,111 meals",
+          "value": "5111.1111110600",
+          "source_metric_code": "mass",
+          "name": "Meals",
+          "value_per_unit": "2.2222222222",
+          "value_per_unit_display": "2.22222",
+          "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\"."
         }
       ]
     },
@@ -325,42 +374,38 @@
       "cost": "18.0000000000",
       "mass": "0.0000000000"
     },
-    "money": {
-      "total_value_nzd": "50000.00",
-      "wasted_value_nzd": "10750.00",
-      "wasted_share_percent": "21.50",
-      "saving_nzd": "4000.00"
-    },
+    "money": null,
     "production_share_percent": null,
     "data_state": {
-      "production_share_percent": "incomplete",
-      "total_value_nzd": "complete",
-      "wasted_value_nzd": "complete",
-      "wasted_share_percent": "complete",
-      "saving_nzd": "complete"
+      "production_share_percent": "not_supplied",
+      "total_value_nzd": "not_supplied",
+      "wasted_value_nzd": "not_supplied",
+      "wasted_share_percent": "not_supplied",
+      "saving_nzd": "not_supplied"
     }
   },
   "entries": [
     {
-      "sector": "processing",
-      "food_category": "dairy",
+      "sector_code": "processing",
+      "food_category_code": "dairy",
       "current": {
         "total_kg": "1500.000",
         "metrics": {
           "co2e": {
+            "metric_code": "co2e",
             "unit": "kg CO2e",
             "display_precision": 1,
             "total": "3993.0000000000",
             "by_destination": [
               {
-                "destination": "landfill",
+                "destination_code": "landfill",
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
                 "value": "3468.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1.9000000000",
                 "downstream": "-0.1500000000",
@@ -369,19 +414,20 @@
             ]
           },
           "ch4": {
+            "metric_code": "ch4",
             "unit": "kg CH4",
             "display_precision": 1,
             "total": "32.4000000000",
             "by_destination": [
               {
-                "destination": "landfill",
+                "destination_code": "landfill",
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0270000000",
                 "value": "32.4000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -390,19 +436,20 @@
             ]
           },
           "water": {
+            "metric_code": "water",
             "unit": "L",
             "display_precision": 0,
             "total": "1530000.0000000000",
             "by_destination": [
               {
-                "destination": "landfill",
+                "destination_code": "landfill",
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
                 "value": "1224000.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
@@ -411,19 +458,20 @@
             ]
           },
           "cost": {
+            "metric_code": "cost",
             "unit": "NZD",
             "display_precision": 0,
             "total": "72.0000000000",
             "by_destination": [
               {
-                "destination": "landfill",
+                "destination_code": "landfill",
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0600000000",
                 "value": "72.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -432,19 +480,20 @@
             ]
           },
           "mass": {
+            "metric_code": "mass",
             "unit": "kg",
             "display_precision": 1,
             "total": "1500.0000000000",
             "by_destination": [
               {
-                "destination": "landfill",
+                "destination_code": "landfill",
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
                 "value": "1200.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -455,14 +504,34 @@
         },
         "equivalences": [
           {
-            "code": "km_driven",
-            "name": "Kilometres driven",
-            "label": "Equivalent to driving 16,691 km",
-            "value": "16690.7400000000",
-            "value_per_unit": "4.1800000000",
-            "value_per_unit_display": "4.18",
-            "source_metric": "co2e",
-            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+            "code": "vehicles_year",
+            "label": "Equivalent to running 2 passenger vehicles for a year",
+            "value": "1.6568466354",
+            "source_metric_code": "co2e",
+            "name": "Passenger vehicles for a year",
+            "value_per_unit": "0.0004149378",
+            "value_per_unit_display": "0.000414938",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410."
+          },
+          {
+            "code": "olympic_pools",
+            "label": "Equivalent to 1 Olympic swimming pools of water",
+            "value": "0.6120000000",
+            "source_metric_code": "water",
+            "name": "Olympic swimming pools",
+            "value_per_unit": "0.0000004000",
+            "value_per_unit_display": "0.0000004",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+          },
+          {
+            "code": "meals",
+            "label": "Equivalent to 3,333 meals",
+            "value": "3333.3333333000",
+            "source_metric_code": "mass",
+            "name": "Meals",
+            "value_per_unit": "2.2222222222",
+            "value_per_unit_display": "2.22222",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\"."
           }
         ]
       },
@@ -470,19 +539,20 @@
         "total_kg": "1500.000",
         "metrics": {
           "co2e": {
+            "metric_code": "co2e",
             "unit": "kg CO2e",
             "display_precision": 1,
             "total": "2889.0000000000",
             "by_destination": [
               {
-                "destination": "anaerobic_digestion",
+                "destination_code": "anaerobic_digestion",
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.0700000000",
                 "value": "2364.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1.9000000000",
                 "downstream": "-0.1500000000",
@@ -491,19 +561,20 @@
             ]
           },
           "ch4": {
+            "metric_code": "ch4",
             "unit": "kg CH4",
             "display_precision": 1,
             "total": "1.2000000000",
             "by_destination": [
               {
-                "destination": "anaerobic_digestion",
+                "destination_code": "anaerobic_digestion",
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0010000000",
                 "value": "1.2000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -512,19 +583,20 @@
             ]
           },
           "water": {
+            "metric_code": "water",
             "unit": "L",
             "display_precision": 0,
             "total": "1530000.0000000000",
             "by_destination": [
               {
-                "destination": "anaerobic_digestion",
+                "destination_code": "anaerobic_digestion",
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
                 "value": "1224000.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
@@ -533,19 +605,20 @@
             ]
           },
           "cost": {
+            "metric_code": "cost",
             "unit": "NZD",
             "display_precision": 0,
             "total": "54.0000000000",
             "by_destination": [
               {
-                "destination": "anaerobic_digestion",
+                "destination_code": "anaerobic_digestion",
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0450000000",
                 "value": "54.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -554,19 +627,20 @@
             ]
           },
           "mass": {
+            "metric_code": "mass",
             "unit": "kg",
             "display_precision": 1,
             "total": "1500.0000000000",
             "by_destination": [
               {
-                "destination": "anaerobic_digestion",
+                "destination_code": "anaerobic_digestion",
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
                 "value": "1200.0000000000"
               },
               {
-                "destination": "animal_feed",
+                "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -577,14 +651,34 @@
         },
         "equivalences": [
           {
-            "code": "km_driven",
-            "name": "Kilometres driven",
-            "label": "Equivalent to driving 12,076 km",
-            "value": "12076.0200000000",
-            "value_per_unit": "4.1800000000",
-            "value_per_unit_display": "4.18",
-            "source_metric": "co2e",
-            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+            "code": "vehicles_year",
+            "label": "Equivalent to running 1 passenger vehicles for a year",
+            "value": "1.1987553042",
+            "source_metric_code": "co2e",
+            "name": "Passenger vehicles for a year",
+            "value_per_unit": "0.0004149378",
+            "value_per_unit_display": "0.000414938",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410."
+          },
+          {
+            "code": "olympic_pools",
+            "label": "Equivalent to 1 Olympic swimming pools of water",
+            "value": "0.6120000000",
+            "source_metric_code": "water",
+            "name": "Olympic swimming pools",
+            "value_per_unit": "0.0000004000",
+            "value_per_unit_display": "0.0000004",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+          },
+          {
+            "code": "meals",
+            "label": "Equivalent to 3,333 meals",
+            "value": "3333.3333333000",
+            "source_metric_code": "mass",
+            "name": "Meals",
+            "value_per_unit": "2.2222222222",
+            "value_per_unit_display": "2.22222",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\"."
           }
         ]
       },
@@ -595,21 +689,22 @@
         "cost": "18.0000000000",
         "mass": "0.0000000000"
       },
-      "production_share_percent": "15.00"
+      "production_share_percent": null
     },
     {
-      "sector": "primary_production",
-      "food_category": "vegetables",
+      "sector_code": "primary_production",
+      "food_category_code": "vegetables",
       "current": {
         "total_kg": "800.000",
         "metrics": {
           "co2e": {
+            "metric_code": "co2e",
             "unit": "kg CO2e",
             "display_precision": 1,
             "total": "456.0000000000",
             "by_destination": [
               {
-                "destination": "not_harvested",
+                "destination_code": "not_harvested",
                 "qty_kg": "800.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.1200000000",
@@ -618,12 +713,13 @@
             ]
           },
           "ch4": {
+            "metric_code": "ch4",
             "unit": "kg CH4",
             "display_precision": 1,
             "total": "0.0000000000",
             "by_destination": [
               {
-                "destination": "not_harvested",
+                "destination_code": "not_harvested",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -632,12 +728,13 @@
             ]
           },
           "water": {
+            "metric_code": "water",
             "unit": "L",
             "display_precision": 0,
             "total": "257600.0000000000",
             "by_destination": [
               {
-                "destination": "not_harvested",
+                "destination_code": "not_harvested",
                 "qty_kg": "800.000",
                 "upstream": "322.0000000000",
                 "downstream": "0.0000000000",
@@ -646,12 +743,13 @@
             ]
           },
           "cost": {
+            "metric_code": "cost",
             "unit": "NZD",
             "display_precision": 0,
             "total": "0.0000000000",
             "by_destination": [
               {
-                "destination": "not_harvested",
+                "destination_code": "not_harvested",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -660,12 +758,13 @@
             ]
           },
           "mass": {
+            "metric_code": "mass",
             "unit": "kg",
             "display_precision": 1,
             "total": "800.0000000000",
             "by_destination": [
               {
-                "destination": "not_harvested",
+                "destination_code": "not_harvested",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -676,14 +775,34 @@
         },
         "equivalences": [
           {
-            "code": "km_driven",
-            "name": "Kilometres driven",
-            "label": "Equivalent to driving 1,906 km",
-            "value": "1906.0800000000",
-            "value_per_unit": "4.1800000000",
-            "value_per_unit_display": "4.18",
-            "source_metric": "co2e",
-            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+            "code": "vehicles_year",
+            "label": "Equivalent to running 0 passenger vehicles for a year",
+            "value": "0.1892116368",
+            "source_metric_code": "co2e",
+            "name": "Passenger vehicles for a year",
+            "value_per_unit": "0.0004149378",
+            "value_per_unit_display": "0.000414938",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410."
+          },
+          {
+            "code": "olympic_pools",
+            "label": "Equivalent to 0 Olympic swimming pools of water",
+            "value": "0.1030400000",
+            "source_metric_code": "water",
+            "name": "Olympic swimming pools",
+            "value_per_unit": "0.0000004000",
+            "value_per_unit_display": "0.0000004",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+          },
+          {
+            "code": "meals",
+            "label": "Equivalent to 1,778 meals",
+            "value": "1777.7777777600",
+            "source_metric_code": "mass",
+            "name": "Meals",
+            "value_per_unit": "2.2222222222",
+            "value_per_unit_display": "2.22222",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\"."
           }
         ]
       },
@@ -691,12 +810,13 @@
         "total_kg": "800.000",
         "metrics": {
           "co2e": {
+            "metric_code": "co2e",
             "unit": "kg CO2e",
             "display_precision": 1,
             "total": "0.0000000000",
             "by_destination": [
               {
-                "destination": "prevention",
+                "destination_code": "prevention",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -705,12 +825,13 @@
             ]
           },
           "ch4": {
+            "metric_code": "ch4",
             "unit": "kg CH4",
             "display_precision": 1,
             "total": "0.0000000000",
             "by_destination": [
               {
-                "destination": "prevention",
+                "destination_code": "prevention",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -719,12 +840,13 @@
             ]
           },
           "water": {
+            "metric_code": "water",
             "unit": "L",
             "display_precision": 0,
             "total": "0.0000000000",
             "by_destination": [
               {
-                "destination": "prevention",
+                "destination_code": "prevention",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -733,12 +855,13 @@
             ]
           },
           "cost": {
+            "metric_code": "cost",
             "unit": "NZD",
             "display_precision": 0,
             "total": "0.0000000000",
             "by_destination": [
               {
-                "destination": "prevention",
+                "destination_code": "prevention",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -747,12 +870,13 @@
             ]
           },
           "mass": {
+            "metric_code": "mass",
             "unit": "kg",
             "display_precision": 1,
             "total": "800.0000000000",
             "by_destination": [
               {
-                "destination": "prevention",
+                "destination_code": "prevention",
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
@@ -763,14 +887,34 @@
         },
         "equivalences": [
           {
-            "code": "km_driven",
-            "name": "Kilometres driven",
-            "label": "Equivalent to driving 0 km",
+            "code": "vehicles_year",
+            "label": "Equivalent to running 0 passenger vehicles for a year",
             "value": "0.0000000000",
-            "value_per_unit": "4.1800000000",
-            "value_per_unit_display": "4.18",
-            "source_metric": "co2e",
-            "source_note": "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion is not settled. Roughly one kilometre of an average light petrol vehicle per 0.24 kg CO2e."
+            "source_metric_code": "co2e",
+            "name": "Passenger vehicles for a year",
+            "value_per_unit": "0.0004149378",
+            "value_per_unit_display": "0.000414938",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Passenger vehicles on the road: GHG emissions (t CO2e) / 2.41 (t CO2e/passenger vehicle/year)\". Applied per kilogram, so the divisor here is 2,410."
+          },
+          {
+            "code": "olympic_pools",
+            "label": "Equivalent to 0 Olympic swimming pools of water",
+            "value": "0.0000000000",
+            "source_metric_code": "water",
+            "name": "Olympic swimming pools",
+            "value_per_unit": "0.0000004000",
+            "value_per_unit_display": "0.0000004",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+          },
+          {
+            "code": "meals",
+            "label": "Equivalent to 1,778 meals",
+            "value": "1777.7777777600",
+            "source_metric_code": "mass",
+            "name": "Meals",
+            "value_per_unit": "2.2222222222",
+            "value_per_unit_display": "2.22222",
+            "source_note": "Client, Data sources for impact calculator (2026-08-29): \"Meals: 450g per meal\"."
           }
         ]
       },
@@ -783,7 +927,5 @@
       },
       "production_share_percent": null
     }
-  ],
-  "factor_source": "published",
-  "token": "8f6d0a2c-2f4e-4c3a-9f21-6b1c5d7e0a44"
+  ]
 }

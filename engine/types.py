@@ -110,6 +110,17 @@ class EquivalenceResult:
     label: str
     value: Decimal
     source_metric_code: str
+    #: The short label (`Kilometres driven`). `label_template` is a whole
+    #: sentence, so a consumer building a heading has nothing else.
+    name: str = ""
+    #: The conversion factor, raw and then formatted. The pair mirrors
+    #: `value`/`label` above: full precision on the wire, one server-side
+    #: decision about what the reader sees (§7.6 rule 1).
+    value_per_unit: Decimal = Decimal(0)
+    value_per_unit_display: str = ""
+    #: Basis for the conversion, verbatim. `None` where none is recorded --
+    #: O-3 is open, and an absence the surfaces can name beats a blank.
+    source_note: str | None = None
 
 
 @dataclass(frozen=True)
@@ -331,3 +342,5 @@ class EquivalenceSpec:
     source_metric_code: str
     value_per_unit: Decimal
     label_template: str
+    name: str = ""
+    source_note: str | None = None

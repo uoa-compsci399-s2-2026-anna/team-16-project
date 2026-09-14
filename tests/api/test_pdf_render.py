@@ -325,6 +325,52 @@ def test_every_figure_comes_from_the_result():
 
 
 @requires_weasyprint
+def test_the_equivalence_total_is_display_formatted_not_raw():
+    """The fifth surface divergence the final review found: `_equivalence_
+    rows` built its `total` field with `f"{source.total} {source.unit}"`,
+    bypassing `_figure` entirely, so a `Decimal` at the engine's own
+    `DECIMAL(20,10)` scale printed with all ten fraction digits and no
+    thousands separator - `4449.0000000000 kg CO2e` - where the page and the
+    text export both print `4,449.0 kg CO2e`.
+
+    `test_every_figure_comes_from_the_result` above does not catch this: its
+    default `co2e` total, `"4449.0"`, already has no grouping to lose and no
+    trailing zeros to trim, and the same figure is printed a second time,
+    correctly, in the ordinary metrics block - so `"4,449.0"` was already
+    somewhere in the document regardless of what the equivalence block did.
+    This uses the shape a real `MetricResult.total` actually has.
+    """
+    text = extract_text(
+        render_results_pdf(_result(co2e="4449.0000000000"), _taxonomy(), "en")
+    )
+    assert "4,449.0 kg CO2e" in text
+    assert "4449.0000000000" not in text
+
+
+@requires_weasyprint
+def test_the_equivalence_figure_row_does_not_repeat_the_whole_sentence():
+    """The sixth divergence the final review found, caught by a scoped
+    re-review: fixing the page's stutter and leaving the PDF's turned a wart
+    both surfaces shared into a fresh disagreement between them.
+    `api/templates/results.html.j2`'s last `<dd>` used to print `row.label` a
+    second time -- the card's own heading, already printed once, two lines
+    above -- where the page now prints just the figure the equivalence
+    carries. `_equivalence_rows`'s new `figure` field
+    (`_figure(item.value, 0)`) is what the template renders there now, the
+    same operation `web/js/results.js::equivalenceBasis` performs with
+    `formatNumber(row.value, 0)` for the page's own last row.
+
+    `_scenario()`'s equivalence stand-in fixes `value=Decimal("1")`, so the
+    figure this document must print is `1` -- and the label sentence itself
+    must appear exactly once (the heading), not twice.
+    """
+    label = "Equivalent to 18,024 km driven in an average car"
+    text = extract_text(render_results_pdf(_result(), _taxonomy(), "en"))
+    assert text.count(label) == 1, f"the label sentence appears {text.count(label)} times, not once"
+    assert re.search(r"=\s*1\b", text), f"no `= 1` figure row in: {text!r}"
+
+
+@requires_weasyprint
 def test_no_text_runs_off_the_page():
     """**Defect one.** A German compound of 70-odd characters, typed by staff
     into a destination name, laid out at A4.
@@ -911,7 +957,18 @@ def test_no_locale_falls_back_to_english(locale):
             f"{locale}: {source!r} did not reach the document"
         )
         if locale != "en" and translated != source:
-            assert str(escape(source)) not in html, (
+            # A plain substring check false-positives once `source` is short
+            # enough to be a shared cognate's prefix: Task 7's "Total" is
+            # correctly translated to Afrikaans/Dutch "Totaal", but "Total"
+            # is also a literal substring of "Totale"/"Totaal" wherever
+            # *another*, unrelated key (`Total food waste`) is rendered
+            # nearby -- neither of those words IS the untranslated English
+            # source. Bounded on both sides by a non-letter/digit, the same
+            # check that finds the real defect (an untranslated whole word
+            # sitting in the document) stops finding a translated word that
+            # merely starts with it.
+            pattern = r"(?<![A-Za-z0-9])" + re.escape(str(escape(source))) + r"(?![A-Za-z0-9])"
+            assert not re.search(pattern, html), (
                 f"{locale}: the English source of {source!r} is in the document"
             )
 

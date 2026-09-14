@@ -636,7 +636,14 @@ def one_metric_bundle(equivalences, formula="qty_kg"):
     return FactorBundle.from_json(document)
 
 
-def equivalence_for(qty, value_per_unit="1.0000000000", template="{value}", formula="qty_kg"):
+def equivalence_for(
+    qty,
+    value_per_unit="1.0000000000",
+    template="{value}",
+    formula="qty_kg",
+    name="",
+    source_note=None,
+):
     """The single `EquivalenceResult` a one-line scenario of `qty` produces."""
     loaded = one_metric_bundle(
         [
@@ -646,6 +653,8 @@ def equivalence_for(qty, value_per_unit="1.0000000000", template="{value}", form
                 "value_per_unit": value_per_unit,
                 "label_template": template,
                 "sort_order": 10,
+                "name": name,
+                "source_note": source_note,
             }
         ],
         formula=formula,
@@ -699,6 +708,33 @@ def test_an_equivalence_added_to_the_bundle_needs_no_code_change(bundle):
     assert after.equivalences[0] == before.equivalences[0]
 
 
+def test_an_equivalence_carries_its_name_factor_and_basis():
+    """The reader is shown how the conversion was done, so the pieces of the
+    conversion have to survive the bundle parse. `name` and `source_note` are
+    already in every bundle the repository writes; the spec used to drop them."""
+    equivalence = equivalence_for(
+        "100.000",
+        value_per_unit="0.00041493775933609958",
+        name="Passenger vehicles",
+        source_note="GHG (t CO2e) / 2.41 t CO2e per vehicle per year.",
+    )
+    assert equivalence.name == "Passenger vehicles"
+    assert equivalence.source_note == "GHG (t CO2e) / 2.41 t CO2e per vehicle per year."
+    assert equivalence.value_per_unit == Decimal("0.00041493775933609958")
+    assert equivalence.value_per_unit_display == "0.000414938"
+
+
+def test_an_equivalence_with_no_recorded_basis_still_reports_its_factor():
+    """O-3 is open and `equivalence.source_note` is nullable. A missing basis
+    must reach the surfaces as an absence they can speak about, not as a
+    silently dropped field."""
+    equivalence = equivalence_for(
+        "100.000", value_per_unit="4.1800000000", name="Kilometres driven", source_note=None,
+    )
+    assert equivalence.source_note is None
+    assert equivalence.value_per_unit_display == "4.18"
+
+
 #: The three equivalence codes §2.2 names and `admin/seed.py` ships.
 SHIPPED_EQUIVALENCE_CODES = ("km_driven", "meals", "showers")
 
@@ -733,6 +769,27 @@ def test_an_equivalence_naming_a_metric_the_bundle_does_not_compute_is_skipped()
     )
     assert loaded.validate() != []
     assert scenario(loaded, (line("landfill", "1000.000"),)).equivalences == ()
+
+
+def test_the_vehicle_equivalence_divides_by_kilograms_not_tonnes():
+    """The client states 2.41 t CO2e per vehicle per year; this system's
+    `co2e` metric is in KILOGRAMS, so the divisor is 2410. Getting this wrong
+    is a factor of a thousand that renders as a plausible number -- the same
+    class of error this repository already shipped once, when the
+    `display_unit` rows read 't CO2e' against totals the engine returns in kg.
+
+    `one_metric_bundle`'s only metric is `mass`, not `co2e`, but that does not
+    weaken the test: what is being pinned here is the divisor's magnitude, and
+    `equivalence_for` lets the scenario's total be chosen exactly, so 2,410 kg
+    is one vehicle-year by construction."""
+    factor = Decimal(1) / Decimal(2410)
+    item = equivalence_for(
+        "2410",
+        value_per_unit=str(factor),
+        template="Equivalent to running {value} passenger vehicles for a year",
+        name="Passenger vehicles for a year",
+    )
+    assert item.label == "Equivalent to running 1 passenger vehicles for a year"
 
 
 # --------------------------------------- the value: §4.2's roll-up rule

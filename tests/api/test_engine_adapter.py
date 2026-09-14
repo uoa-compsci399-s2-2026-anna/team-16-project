@@ -50,6 +50,15 @@ def _metric(total, by_destination=()):
     )
 
 
+#: v1.52. Verbatim from `tests/fixtures/factors.json`'s `km_driven` row --
+#: it contains an em dash, so it is copied rather than retyped.
+KM_DRIVEN_SOURCE_NOTE = (
+    "PLACEHOLDER. Open item O-3 — the New Zealand basis for this conversion "
+    "is not settled. Roughly one kilometre of an average light petrol "
+    "vehicle per 0.24 kg CO2e."
+)
+
+
 def _scenario(total_kg, metric, equivalence_value):
     return SimpleNamespace(
         total_kg=Decimal(total_kg),
@@ -60,9 +69,70 @@ def _scenario(total_kg, metric, equivalence_value):
                 label="Equivalent to driving 14,500 km",
                 value=Decimal(equivalence_value),
                 source_metric_code="co2e",
+                name="Kilometres driven",
+                value_per_unit=Decimal("4.1800000000"),
+                value_per_unit_display="4.18",
+                source_note=KM_DRIVEN_SOURCE_NOTE,
             ),
         ),
     )
+
+
+def _result_with_equivalence(**kwargs):
+    """v1.52. A one-entry, one-scenario result whose single equivalence
+    carries the given fields, defaulted to the `km_driven` fixture values
+    where not overridden -- so a test only names what it is exercising."""
+    fields = dict(
+        code="km_driven",
+        label="Equivalent to driving 14,500 km",
+        value=Decimal("14500.0000000000"),
+        source_metric_code="co2e",
+        name="Kilometres driven",
+        value_per_unit=Decimal("4.1800000000"),
+        value_per_unit_display="4.18",
+        source_note=KM_DRIVEN_SOURCE_NOTE,
+    )
+    fields.update(kwargs)
+    scenario = SimpleNamespace(
+        total_kg=Decimal("100.000"),
+        metrics={"co2e": _metric("100.0000000000")},
+        equivalences=(SimpleNamespace(**fields),),
+    )
+    entry = SimpleNamespace(
+        sector_code="processing",
+        food_category_code="dairy",
+        current=scenario,
+        alternative=None,
+        net_benefit=None,
+        production_share_percent=None,
+    )
+    totals = SimpleNamespace(
+        current=scenario,
+        alternative=None,
+        net_benefit=None,
+        money=None,
+        production_share_percent=None,
+        data_state=SimpleNamespace(
+            production_share_percent="not_supplied",
+            total_value_nzd="not_supplied",
+            wasted_value_nzd="not_supplied",
+            wasted_share_percent="not_supplied",
+            saving_nzd="not_supplied",
+        ),
+    )
+    return SimpleNamespace(
+        factor_set_version="MOCK-v0 — PLACEHOLDER",
+        is_mock=True,
+        gwp_horizon=100,
+        totals=totals,
+        entries=(entry,),
+    )
+
+
+def _scenario_body_for(result):
+    """The wire-format `current` scenario body -- the level `equivalences`
+    actually lives at, so a caller can index straight into it."""
+    return DefaultEngineAdapter().serialize_result(result)["totals"]["current"]
 
 
 def _result(*, with_alternative=True):
@@ -324,9 +394,13 @@ def test_the_engines_trailing_code_suffixes_are_dropped_on_the_wire():
     assert "metric_code" not in entry["current"]["metrics"]["co2e"]
     assert entry["current"]["equivalences"][0] == {
         "code": "km_driven",
+        "name": "Kilometres driven",
         "label": "Equivalent to driving 14,500 km",
         "value": Decimal("14500.0000000000"),
+        "value_per_unit": Decimal("4.1800000000"),
+        "value_per_unit_display": "4.18",
         "source_metric": "co2e",
+        "source_note": KM_DRIVEN_SOURCE_NOTE,
     }
 
 
@@ -414,3 +488,27 @@ def test_the_adapter_carries_the_new_entry_numbers_into_the_engine():
     assert not hasattr(request, "time_frame"), (
         "the engine must not be handed a value it is required never to use"
     )
+
+
+def test_an_equivalence_reaches_the_wire_with_its_basis():
+    """v1.52. All four fields are additive -- a v1.51 consumer reading only
+    code/label/value/source_metric is unaffected."""
+    body = _scenario_body_for(_result_with_equivalence(
+        name="Passenger vehicles",
+        value_per_unit=Decimal("0.00041493775933609958"),
+        value_per_unit_display="0.000414938",
+        source_note="GHG (t CO2e) / 2.41 t CO2e per vehicle per year.",
+    ))
+    row = body["equivalences"][0]
+    assert row["name"] == "Passenger vehicles"
+    assert row["value_per_unit"] == Decimal("0.00041493775933609958")
+    assert row["value_per_unit_display"] == "0.000414938"
+    assert row["source_note"] == "GHG (t CO2e) / 2.41 t CO2e per vehicle per year."
+
+
+def test_a_missing_basis_is_null_on_the_wire_not_absent():
+    """A key that disappears makes a consumer branch on presence; a null lets
+    it branch on the value, which is what the three surfaces do."""
+    row = _scenario_body_for(_result_with_equivalence(source_note=None))["equivalences"][0]
+    assert "source_note" in row
+    assert row["source_note"] is None

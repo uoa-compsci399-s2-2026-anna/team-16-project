@@ -27,13 +27,21 @@
           "code": "km_driven",
           "label": "Equivalent to driving -209 km",
           "value": "-209.0000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         },
         {
           "code": "showers",
           "label": "About 0 showers taken",
           "value": "-0.4000000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Showers",
+          "value_per_unit": "0.0080000000",
+          "value_per_unit_display": "0.008",
+          "source_note": "Scaled so that this equivalence lands at -0.4, which rounds to zero FROM BELOW. Contract 3 rule 5 requires the label to read `0` and not `-0`, while `value` keeps its sign at full precision."
         }
       ]
     },
@@ -77,13 +85,21 @@
             "code": "km_driven",
             "label": "Equivalent to driving -209 km",
             "value": "-209.0000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           },
           {
             "code": "showers",
             "label": "About 0 showers taken",
             "value": "-0.4000000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Showers",
+            "value_per_unit": "0.0080000000",
+            "value_per_unit_display": "0.008",
+            "source_note": "Scaled so that this equivalence lands at -0.4, which rounds to zero FROM BELOW. Contract 3 rule 5 requires the label to read `0` and not `-0`, while `value` keeps its sign at full precision."
           }
         ]
       },

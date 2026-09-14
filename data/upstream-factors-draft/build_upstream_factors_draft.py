@@ -1190,6 +1190,25 @@ def _assert_completeness(data: dict) -> None:
                     f"{downstream_counts.get(key, 0)}, expected 1"
                 )
 
+    # Task 4: an equivalence is data too, and the same two ways it can go
+    # silently wrong -- a `source_metric` this set never computes, or a
+    # missing `source_note` -- are exactly the kind of thing this function
+    # exists to catch mechanically rather than by inspection.
+    known_metrics = {formula["metric"] for formula in data["formulas"]}
+    for equivalence in data.get("equivalences", []):
+        code = equivalence.get("code", "<no code>")
+        source_metric = equivalence.get("source_metric")
+        if source_metric not in known_metrics:
+            missing.append(
+                f"equivalence {code}: source_metric {source_metric!r} is not "
+                f"one of this set's metrics {sorted(known_metrics)}"
+            )
+        if not equivalence.get("source_note"):
+            missing.append(
+                f"equivalence {code}: source_note is missing -- every "
+                "shipped equivalence must record where its factor came from"
+            )
+
     if missing:
         raise SystemExit(
             "Completeness check failed -- this factor set is missing (or "
@@ -1649,7 +1668,55 @@ def build() -> dict:
     }
     data["upstream"] = upstream
     data["downstream"] = downstream
-    data["equivalences"] = []
+
+    # The client's own conversions, from "Data sources for impact calculator"
+    # received 2026-08-29. This closes the vehicle and meal halves of O-3:
+    # the document states both the factor and its basis, which is exactly
+    # what `source_note` is for.
+    #
+    # THE DIVISOR FOR VEHICLES IS 2410, NOT 2.41. The client states the
+    # figure per TONNE of CO2e; this system's `co2e` metric is in
+    # kilograms.
+    data["equivalences"] = [
+        {
+            "code": "vehicles_year",
+            "name": "Passenger vehicles for a year",
+            "source_metric": "co2e",
+            "value_per_unit": str((Decimal(1) / Decimal(2410)).quantize(Decimal("1E-10"))),
+            "label_template": "Equivalent to running {value} passenger vehicles for a year",
+            "source_note": (
+                "Client, Data sources for impact calculator (2026-08-29): "
+                "\"Passenger vehicles on the road: GHG emissions (t CO2e) / "
+                "2.41 (t CO2e/passenger vehicle/year)\". Applied per "
+                "kilogram, so the divisor here is 2,410."
+            ),
+            "sort_order": 10,
+        },
+        {
+            "code": "olympic_pools",
+            "name": "Olympic swimming pools",
+            "source_metric": "water",
+            "value_per_unit": str((Decimal(1) / Decimal(2500000)).quantize(Decimal("1E-10"))),
+            "label_template": "Equivalent to {value} Olympic swimming pools of water",
+            "source_note": (
+                "Client, Data sources for impact calculator (2026-08-29): "
+                "\"Olympic swimming pools: = (Water Used (L)) / 2,500,000\"."
+            ),
+            "sort_order": 20,
+        },
+        {
+            "code": "meals",
+            "name": "Meals",
+            "source_metric": "mass",
+            "value_per_unit": str((Decimal(1) / Decimal("0.45")).quantize(Decimal("1E-10"))),
+            "label_template": "Equivalent to {value} meals",
+            "source_note": (
+                "Client, Data sources for impact calculator (2026-08-29): "
+                "\"Meals: 450g per meal\"."
+            ),
+            "sort_order": 30,
+        },
+    ]
 
     _assert_completeness(data)
     return data

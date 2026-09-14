@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-04 (v1.51 draft)"
+date: "2026-09-11 (v1.52 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,20 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.52 — 2026-09-11 (an equivalence carries the factor and basis it was converted with; affects A, B)
+
+The client's *Tangible equivalents* block ("how do you get to that many glasses?") is gaining an on-page explanation of each conversion. The explanation is one step deep — metric total to equivalence value, not the metric's own formula unrolled further — and everything it shows has to be a number the engine formatted, never one the browser rounds. This revision is the wire half of that: the engine already computes the four fields below (a prior revision to `engine/`), and this one puts them on `POST /calculate`'s response and states the one formatting rule that goes with them.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **Each object in `equivalences[]` (both at `totals` and per entry) gains four fields: `name`, `value_per_unit`, `value_per_unit_display`, `source_note`.** All four are additive — no existing field's type or meaning changes, so a v1.51 consumer reading only `code` / `label` / `value` / `source_metric` is unaffected. `name` is the short label (`Kilometres driven`) already carried by `GET /factors` (§6.3) and now carried here too; `value_per_unit` is the raw conversion factor at full precision, the same pairing `value` already has with `label`; `source_note` is the verbatim basis for the conversion, nullable, never translated (§7.6 rule 9) | §3, §6.2 |
+| 2 | **`value_per_unit_display` states, in the contract, the one formatting decision `value_per_unit` cannot be left without.** The conversion factors this feature ships span seven orders of magnitude — `1/2,500,000` for an Olympic pool of water against `1/0.45` for a meal — and a browser choosing its own precision would be choosing how many digits a reader gets to check the arithmetic with, which is rounding, which is arithmetic, which §7.6 rule 1 reserves for the server. **The rule, stated exactly as §3 rule 5 states the label's: six significant figures, `ROUND_HALF_UP` on the `Decimal` (never through `float`), trailing zeros after the point trimmed, a comma thousands separator on the integer part.** It is written down rather than left to a default for the same reason rule 5 is: no value in this contract's fixture set lands on a rounding boundary, so no fixture could pin the mode on its own | §3, §6.2 |
+| 3 | **The source metric's own total is deliberately not duplicated onto the equivalence.** It is already on the same response, at `totals.current.metrics[<source_metric>].total` (and per entry, per scenario), and §6.2 already states that an equivalence is computed from that same rolled-up total — sending it a second time would give one number two places to arrive from and two roundings to disagree about | §6.2 |
+
+> **`db/repository.py` already emitted `name` and `source_note`, and this revision does not touch it.** The gap was one layer up: `engine/bundle.py` built `EquivalenceSpec` from three of the five columns the repository already supplied and silently discarded the other two, and `EquivalenceResult` carried neither through to a result. A reader tracing either field back to its source finds the fix there, not in the repository.
+>
+> **Partially closes O-3.** This revision shipped as the wire and the contract only, but the rest of the same branch landed before merge: the results page now carries a disclosure beside every equivalence, behind a closed `<details>`, and the text export and the PDF print the same total, per-unit factor and basis outright, since paper has no "open" gesture. `docker/mock-factors.json` and `data/upstream-factors-draft/upstream_factors_draft.json` both now ship three of the client's own conversions — `vehicles_year`, `olympic_pools` and `meals`, from their *Data sources for impact calculator* (2026-08-29) — each carrying the fields this revision added, `source_note` included, printed verbatim and never translated (§7.6 rule 9). `km_driven` — the one equivalence this repository had before with no NZ-sourced basis, its `source_note` a bare reference to this open item — is retired from `docker/mock-factors.json` for exactly that reason: `vehicles_year` now covers the same ground with the client's own, sourced conversion, and no fresh deployment should read an internal issue number where the client asked for an explanation. It remains only as example data in `tests/fixtures/` and the golden bundles, unchanged. O-3 is not fully closed — "showers" was never supplied, and the set is not claimed to be complete. A standing caveat — "The conversion factor comes from the client. The total it is applied to comes from placeholder factors." — now prints beside every equivalence on all three surfaces, gated on `is_mock`: the factor is the client's regardless of which factor set is active, but the total it multiplies is still a mock upstream/downstream figure until O-1 closes, so O-3 cannot be fully realised ahead of O-1 either.
 
 ### v1.51 — 2026-09-04 (a fourth `data_state`, for a zero that answered rather than a question nobody asked; affects A, C, D)
 
@@ -2672,8 +2686,11 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
         }
       },
       "equivalences": [
-        { "code": "km_driven", "label": "Equivalent to driving 21,400 km",
-          "value": "21400.0000000000", "source_metric": "co2e" }
+        { "code": "km_driven", "name": "Kilometres driven",
+          "label": "Equivalent to driving 21,400 km",
+          "value": "21400.0000000000",
+          "value_per_unit": "4.1800000000", "value_per_unit_display": "4.18",
+          "source_metric": "co2e", "source_note": "…" }
       ]
     },
     "alternative": { "… same shape as current …" },
@@ -2712,8 +2729,11 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
           }
         },
         "equivalences": [
-          { "code": "km_driven", "label": "Equivalent to driving 14,500 km",
-            "value": "14500.0000000000", "source_metric": "co2e" }
+          { "code": "km_driven", "name": "Kilometres driven",
+            "label": "Equivalent to driving 14,500 km",
+            "value": "14500.0000000000",
+            "value_per_unit": "4.1800000000", "value_per_unit_display": "4.18",
+            "source_metric": "co2e", "source_note": "…" }
         ]
       },
       "alternative": { "… same shape as current …" },
@@ -2727,6 +2747,17 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
 **`totals` is what the headline figures are rendered from; `entries` is what the breakdown table is rendered from.** Both are computed by the engine. The client adds nothing together — it has no correct way to, because a decimal transmitted as a string (§1.2) cannot be summed in JavaScript without going through `Number`, and because the golden suite (§10.1) can only cover a number the engine produced.
 
 **`totals.current.metrics[code].by_destination` is populated from v1.48, per metric, and its two rate fields are zero** (§3 rule 2). `qty_kg` and `value` are summed across the entries that used that destination, so the rows partition the metric total they sit beside exactly. `upstream` and `downstream` are `"0.0000000000"` — present, at full scale, and **meaningless as rates**: the entries sharing a destination draw different factors, and there is no single rate behind a rolled-up row. A front end that renders a rate column from `totals` is rendering zeros; the rates live in `entries[]`, which is where a rate has a meaning. The client asked for a cross-entry destination view, and this is it: a field the engine fills, not a loop in the browser.
+
+**`equivalences[]` gained four fields at v1.52: `name`, `value_per_unit`, `value_per_unit_display`, `source_note`.** All four are additive — no existing field's type or meaning changes, so a client written against v1.51, reading only `code` / `label` / `value` / `source_metric`, is unaffected by any of them.
+
+| Field | Type | Notes |
+| --- | --- | --- |
+| `name` | string | The short label (`Kilometres driven`). Already on `GET /factors` (§6.3); `label_template` is a whole sentence, so a consumer building a heading or a legend has nothing else to use |
+| `value_per_unit` | decimal-string | The raw conversion factor at full precision — the same pairing `value` already has with `label`: one field at the precision a machine keeps, one formatted for a reader |
+| `value_per_unit_display` | string | **Engine-formatted, not a decimal-string.** Six significant figures, `ROUND_HALF_UP` on the `Decimal` (never through `float`), trailing zeros after the point trimmed, a comma thousands separator on the integer part — the same style §3 rule 5 fixes for `label`'s own number. A conversion factor in this set spans seven orders of magnitude (`1/2,500,000` against `1/0.45`), so a browser choosing its own precision would be choosing how many digits a reader gets to verify the arithmetic with, which is rounding, which §7.6 rule 1 reserves for the server. Written down rather than left to a default for the reason rule 5 already is: no value in this contract's fixture set lands on a rounding boundary, so no fixture could pin the mode by itself |
+| `source_note` | string \| null | The basis for the conversion, verbatim from `equivalence.source_note` (§2.2) — present-and-null where none is recorded, never omitted, on the same terms as every other nullable provenance field this contract carries. Never translated (§7.6 rule 9): it is the client's approved wording, not interface text |
+
+**The source metric's own total is deliberately not carried onto the equivalence a second time.** It is already on this same response, at `metrics[<source_metric>].total` beside the equivalence that names it (§3: `source_metric_code`, here `source_metric`) — and this section already states that an equivalence's `value` is computed from that same rolled-up total. Sending the total again would give one number two places to arrive from on one response body, and two roundings to disagree about if they ever did.
 
 `totals.money` is §4.5's block. It is `null` when no entry supplied a money figure, and each of its own four fields is `null` unless every entry that field needs supplied it — **a behaviour change from v1.49, where a field could carry a sum over only the entries that answered and present it as the whole submission's figure.** `totals.data_state` (§4.6, v1.50) says which of `complete`, `incomplete`, `not_supplied` or `undefined` (v1.51) each of those four fields is in, alongside `production_share_percent`; `entries[].production_share_percent` carries the same figure per entry, with no state of its own. **It carries two decimal places, not ten** — it is dollars and cents, not a metric value.
 

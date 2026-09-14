@@ -436,7 +436,25 @@ tr.net td { border-block-end: 1pt solid var(--kale); }
 
 /* ----------------------------------------------------------- equivalences */
 .equivalences { margin: 0; padding-inline-start: 5mm; }
-.equivalences li { margin-block-end: 1mm; }
+.equivalences li { margin-block-end: 3mm; break-inside: avoid; }
+
+/* Task 7: the three facts behind each equivalence (§6.3) -- the same total,
+ * per-unit factor and basis `web/js/results.js::equivalenceBasis` renders
+ * behind the page's disclosure. Logical properties throughout: `dd` sits at
+ * the row's own INLINE END, so it reads on the right in English and the
+ * left in Arabic and Urdu without a direction-specific rule, and nothing
+ * here is positioned outside the normal flow. */
+.equivalence__label { font-weight: 700; margin: 0 0 1mm; }
+.equivalence-basis { margin: 0 0 1mm; }
+.equivalence-basis > div {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 1mm 4mm;
+}
+.equivalence-basis dt { font-weight: 700; margin: 0; }
+.equivalence-basis dd { margin: 0; text-align: end; }
+.equivalence-basis__note { margin: 0; font-size: 8.5pt; color: #4A6660; }
 
 /* ----------------------------------------------------------------- entries */
 .entry { break-inside: avoid; margin-block-end: 5mm; }

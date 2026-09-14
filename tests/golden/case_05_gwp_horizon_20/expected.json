@@ -42,7 +42,11 @@
           "code": "km_driven",
           "label": "Equivalent to driving 14,496 km",
           "value": "14496.2400000000",
-          "source_metric_code": "co2e"
+          "source_metric_code": "co2e",
+          "name": "Kilometres driven",
+          "value_per_unit": "4.1800000000",
+          "value_per_unit_display": "4.18",
+          "source_note": null
         }
       ]
     },
@@ -101,7 +105,11 @@
             "code": "km_driven",
             "label": "Equivalent to driving 14,496 km",
             "value": "14496.2400000000",
-            "source_metric_code": "co2e"
+            "source_metric_code": "co2e",
+            "name": "Kilometres driven",
+            "value_per_unit": "4.1800000000",
+            "value_per_unit_display": "4.18",
+            "source_note": null
           }
         ]
       },

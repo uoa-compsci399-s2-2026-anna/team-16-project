@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "คุณระบุว่ารายการนี้ครอบคลุมอาหารรวม 0 กก. จึงไม่สามารถแสดงสัดส่วนของเสียได้",
     "The total value was zero, so this cannot be calculated.": "มูลค่ารวมเป็นศูนย์ จึงไม่สามารถคำนวณค่านี้ได้",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "มูลค่าของเสียเกินมูลค่าการผลิตอยู่ NZ$%(excess)s",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "ปริมาณขยะเกินปริมาณรวมที่ผลิตได้อยู่ %(excess)s %(unit)s"
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "ปริมาณขยะเกินปริมาณรวมที่ผลิตได้อยู่ %(excess)s %(unit)s",
+    "How this comparison was worked out": "วิธีที่ได้มาซึ่งค่าเปรียบเทียบนี้",
+    "Total": "รวม",
+    "Per unit": "ต่อหน่วย",
+    "Basis:": "ที่มา:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "ค่าตัวคูณแปลงมาจากลูกค้า ส่วนยอดรวมที่นำค่านี้ไปใช้มาจากค่าตัวประกอบชั่วคราว",
+    "The basis for this conversion is not recorded yet.": "ยังไม่มีการบันทึกที่มาของการแปลงค่านี้"
   }
 }

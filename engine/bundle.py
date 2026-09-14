@@ -347,6 +347,12 @@ class FactorBundle:
                         source_metric_code=_code(row, "source_metric", where),
                         value_per_unit=_decimal(row, "value_per_unit", where),
                         label_template=_text(row, "label_template", where),
+                        # §10.2: a hand-written bundle may omit either. `name`
+                        # falls back to the code rather than raising, because
+                        # every producer in the tree emits it and a golden
+                        # bundle that forgot it should still calculate.
+                        name=str(row.get("name") or code),
+                        source_note=row.get("source_note"),
                     ),
                 )
             )

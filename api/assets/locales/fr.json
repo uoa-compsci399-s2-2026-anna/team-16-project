@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "Vous avez indiqué que cela concernait 0 kg au total, la part du gaspillage ne peut donc pas être affichée.",
     "The total value was zero, so this cannot be calculated.": "La valeur totale était nulle, ce chiffre ne peut donc pas être calculé.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "La valeur du gaspillage dépasse la valeur de la production de NZ$%(excess)s.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "La quantité de déchets dépasse la quantité totale produite de %(excess)s %(unit)s."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "La quantité de déchets dépasse la quantité totale produite de %(excess)s %(unit)s.",
+    "How this comparison was worked out": "Comment cette comparaison a été établie",
+    "Total": "Montant total",
+    "Per unit": "Par unité",
+    "Basis:": "Base :",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "Le facteur de conversion provient du client. Le total auquel il est appliqué provient de facteurs provisoires.",
+    "The basis for this conversion is not recorded yet.": "La base de cette conversion n'a pas encore été enregistrée."
   }
 }

@@ -356,6 +356,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "ذكرت أن هذا يغطي 0 كجم إجمالاً، لذا لا يمكن عرض نسبة الهدر.",
     "The total value was zero, so this cannot be calculated.": "كانت القيمة الإجمالية صفراً، لذا لا يمكن حساب هذا.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "قيمة الهدر تتجاوز قيمة الإنتاج بمقدار NZ$%(excess)s.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "كمية الهدر تتجاوز إجمالي الكمية المنتجة بمقدار %(excess)s %(unit)s."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "كمية الهدر تتجاوز إجمالي الكمية المنتجة بمقدار %(excess)s %(unit)s.",
+    "How this comparison was worked out": "كيفية التوصل إلى هذه المقارنة",
+    "Total": "الإجمالي",
+    "Per unit": "لكل وحدة",
+    "Basis:": "الأساس:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "يأتي عامل التحويل من العميل، أمّا الإجمالي الذي يُطبَّق عليه فيأتي من عوامل مؤقتة.",
+    "The basis for this conversion is not recorded yet.": "لم يُسجَّل بعد أساس هذا التحويل."
   }
 }

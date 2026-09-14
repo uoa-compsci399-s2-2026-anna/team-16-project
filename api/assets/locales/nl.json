@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "U hebt aangegeven dat dit in totaal 0 kg betrof, dus een aandeel van de verspilling kan niet worden getoond.",
     "The total value was zero, so this cannot be calculated.": "De totale waarde was nul, dus dit kan niet worden berekend.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "De waarde van de verspilling overschrijdt de waarde van de productie met NZ$%(excess)s.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "De hoeveelheid afval overschrijdt de totale geproduceerde hoeveelheid met %(excess)s %(unit)s."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "De hoeveelheid afval overschrijdt de totale geproduceerde hoeveelheid met %(excess)s %(unit)s.",
+    "How this comparison was worked out": "Hoe deze vergelijking is berekend",
+    "Total": "Totaal",
+    "Per unit": "Per eenheid",
+    "Basis:": "Grondslag:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "De omrekeningsfactor is afkomstig van de klant. Het totaal waarop deze wordt toegepast, is afkomstig van voorlopige factoren.",
+    "The basis for this conversion is not recorded yet.": "De grondslag voor deze omrekening is nog niet vastgelegd."
   }
 }

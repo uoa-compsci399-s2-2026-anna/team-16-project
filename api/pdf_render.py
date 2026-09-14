@@ -389,7 +389,35 @@ _LABELS = {
     #: checks the catalogues against what the front end actually calls `t()`
     #: with).
     "production_share": "Percentage waste",
+    #: The three facts behind each equivalence (Task 7) - the same words
+    #: `web/js/results.js::equivalenceBasis` renders behind the page's
+    #: disclosure and `buildResultsReport` prints in the text export, so the
+    #: reader sees the identical labels regardless of which of the three
+    #: surfaces they are holding.
+    "equivalence_total": "Total",
+    "equivalence_per_unit": "Per unit",
+    "equivalence_basis": "Basis:",
 }
+
+#: The fallback when `EquivalenceResult.source_note` is `None` - O-3 is open,
+#: and this says so rather than leaving the basis line blank. Worded
+#: identically to `web/js/results.js`'s own fallback (Task 6 reworded it from
+#: "has not been recorded yet" to "is not recorded yet" so a test's
+#: contiguous `not recorded` substring match holds; this copies that wording,
+#: not the plan's).
+_EQUIVALENCE_BASIS_MISSING = "The basis for this conversion is not recorded yet."
+
+#: The standing caveat `web/js/results.js::equivalenceBasis` prints beside
+#: every basis note on the page (Task 6). It was missing from both exports
+#: until a review of this task found it - a fourth fact the three surfaces
+#: disagreed on, inside the task written to end exactly that disagreement -
+#: so it is printed, the same words, beside every equivalence in both the text
+#: export and here -- gated on `is_mock`, the same words either way, never on
+#: a real, published factor set (see `_equivalence_rows`'s own docstring).
+_EQUIVALENCE_DISCLAIMER = (
+    "The conversion factor comes from the client. The total it is applied "
+    "to comes from placeholder factors."
+)
 
 #: §4.6's four states for a totals-level figure, worded to match
 #: `web/js/results.js::productionShareText` and `::moneyFieldText` exactly -
@@ -476,6 +504,8 @@ DOCUMENT_STRINGS: tuple[str, ...] = (
     _PRODUCTION_SHARE_UNDEFINED_NOTE,
     _MONEY_INCOMPLETE_NOTE,
     _MONEY_UNDEFINED_NOTE,
+    _EQUIVALENCE_BASIS_MISSING,
+    _EQUIVALENCE_DISCLAIMER,
     *_LABELS.values(),
     *(key for _attribute, key, _kind in _MONEY_LABELS),
 )
@@ -594,6 +624,47 @@ def _money_rows(money: Any, data_state: Any, translate: Any) -> list[dict[str, A
             rows.append(
                 {"name": translate(label), "value": translate(_MONEY_UNDEFINED_NOTE), "is_note": True}
             )
+    return rows
+
+
+def _equivalence_rows(scenario: Any, is_mock: bool, translate: Any) -> list[dict[str, Any]]:
+    """§6.3: a calculator that cannot say which numbers are measured and which
+    are borrowed cannot be defended in public, and the PDF is the copy that
+    travels. `source_note` is the client's wording and is not translated
+    (§7.6 rule 9); the labels around it are.
+
+    `item.source_metric_code` is the engine's own attribute name - this
+    function reads the engine's result object directly (`api/export.py`
+    re-runs the calculation and hands this module the object, not the wire
+    response), so it is `source_metric_code` here and never the wire's
+    `source_metric`.
+
+    `disclaimer` is empty outside `is_mock`. The sentence is two facts: the
+    conversion factor comes from the client (true regardless), and the total
+    it multiplies comes from PLACEHOLDER factors (true only while mock).
+    Printing it unconditionally is exactly what `test_a_real_factor_set_
+    carries_no_warning` exists to catch - a real, published factor set
+    saying "placeholder factors" about itself.
+
+    `figure` is the equivalence's own value, at whole-number precision -
+    `_figure(item.value, 0)`, the same operation `web/js/results.js::
+    equivalenceBasis` performs with `formatNumber(row.value, 0)` for the
+    page's own last row. It exists so the template's `<dd>` has a number to
+    print instead of reprinting `label` (the whole interpolated sentence,
+    already the card's own heading two lines up) a second time.
+    """
+    rows = []
+    for item in scenario.equivalences:
+        source = scenario.metrics.get(item.source_metric_code)
+        rows.append({
+            "label": item.label,
+            "name": item.name,
+            "total": f"{_figure(source.total, source.display_precision)} {source.unit}" if source else "",
+            "per_unit": item.value_per_unit_display,
+            "figure": _figure(item.value, 0),
+            "basis": item.source_note or translate(_EQUIVALENCE_BASIS_MISSING),
+            "disclaimer": translate(_EQUIVALENCE_DISCLAIMER) if is_mock else "",
+        })
     return rows
 
 
@@ -739,7 +810,7 @@ def build_context(
         ),
         "destinations": _destination_rows(totals, names),
         "money": _money_rows(getattr(totals, "money", None), getattr(totals, "data_state", None), translate),
-        "equivalences": [item.label for item in totals.current.equivalences],
+        "equivalences": _equivalence_rows(totals.current, bool(result.is_mock), translate),
         "entries": entries,
         "colophon": translate(_COLOPHON),
     }

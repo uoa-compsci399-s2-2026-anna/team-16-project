@@ -355,6 +355,12 @@
     "You said this covered 0 kg in total, so a share of waste cannot be shown.": "இது மொத்தம் 0 கிலோ என்று நீங்கள் குறிப்பிட்டீர்கள், எனவே வீணான பங்கைக் காட்ட முடியாது.",
     "The total value was zero, so this cannot be calculated.": "மொத்த மதிப்பு பூஜ்ஜியமாக இருந்தது, எனவே இதைக் கணக்கிட முடியாது.",
     "Value of the waste exceeds value of production by NZ$%(excess)s.": "விரயத்தின் மதிப்பு, உற்பத்தியின் மதிப்பை விட NZ$%(excess)s அதிகமாக உள்ளது.",
-    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "கழிவின் அளவு, உற்பத்தி செய்யப்பட்ட மொத்த அளவை விட %(excess)s %(unit)s அதிகமாக உள்ளது."
+    "Waste amount exceeds total amount produced by %(excess)s %(unit)s.": "கழிவின் அளவு, உற்பத்தி செய்யப்பட்ட மொத்த அளவை விட %(excess)s %(unit)s அதிகமாக உள்ளது.",
+    "How this comparison was worked out": "இந்த ஒப்பீடு எவ்வாறு கணக்கிடப்பட்டது",
+    "Total": "மொத்தம்",
+    "Per unit": "ஒரு அலகுக்கு",
+    "Basis:": "அடிப்படை:",
+    "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "மாற்று காரணி வாடிக்கையாளரிடமிருந்து வருகிறது. இது பயன்படுத்தப்படும் மொத்த தொகை இடைநிலை காரணிகளிலிருந்து வருகிறது.",
+    "The basis for this conversion is not recorded yet.": "இந்த மாற்றத்திற்கான அடிப்படை இதுவரை பதிவு செய்யப்படவில்லை."
   }
 }

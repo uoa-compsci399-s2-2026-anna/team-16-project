@@ -351,7 +351,7 @@ def test_the_collapsed_and_revealed_widths_are_nowhere_near_this_threshold():
     [
         ("add-authenticator", "lost phone"),
         ("remove-authenticator", "immediately"),
-        ("change-password", "old one afterwards"),
+        ("change-password", "signs out every other session"),
         ("rename-authenticator", "label this list uses"),
     ],
 )
@@ -496,3 +496,186 @@ def test_the_scrollbar_browser_is_actually_drawing_a_scrollbar(
         f"the browser is not drawing a scrollbar: clientWidth "
         f"{measured['client']} equals innerWidth {measured['inner']}"
     )
+
+
+# --- The pages this file used to not visit ---------------------------------
+#
+# Everything above measures /admin/security, and /admin/security is the one
+# page in scope where the reveal mechanism happened to work. Three controls
+# elsewhere revealed nothing at all on hover while every test here was green,
+# for a reason no stylesheet reading finds: the collapsed description is an
+# absolutely positioned 1px box, and inside a `position: sticky` ancestor
+# Chromium's hover hit-test resolved to IT rather than to the button 40px
+# away. The button never entered `:hover`, so the reveal rule never matched -
+# and the button's own hover styling died with it.
+#
+# A reveal test that only ever visits the page where the mechanism works is
+# the same shape of gap as the closed-`<details>` bug this file was written to
+# catch. These cases visit the pages that broke.
+
+
+@pytest.fixture
+def dry_run_page(browser, authed_storage_state):
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    page.goto(f"{BASE}/admin/try", wait_until="networkidle")
+    yield page
+    context.close()
+
+
+def _box(page, selector):
+    """Document-relative geometry, so a page that scrolls under Playwright's
+    own scroll-into-view does not read as a layout change."""
+    return page.evaluate(
+        "(sel) => { const r = document.querySelector(sel).getBoundingClientRect();"
+        "  return [Math.round(r.width), Math.round(r.height),"
+        "          Math.round(r.x + window.scrollX), Math.round(r.y + window.scrollY)]; }",
+        selector,
+    )
+
+
+#: The Reset link in the sticky dry-run bar - one of the three controls that
+#: showed nothing at all, on the page whose `position: sticky` bar caused it.
+_RESET = "[aria-describedby=dry-run-reset-hint]"
+
+
+def test_a_description_in_the_sticky_dry_run_bar_appears_on_hover(dry_run_page):
+    """Was 1x1 - no reveal at all - while every /admin/security case passed."""
+    dry_run_page.hover(_RESET)
+    width = _rendered_width(dry_run_page, "#dry-run-reset-hint")
+    assert width >= _REVEALED_WIDTH_THRESHOLD, (
+        f"hovering Reset in the sticky bar revealed nothing ({width}px wide)"
+    )
+
+
+def test_a_description_in_the_sticky_dry_run_bar_appears_on_keyboard_focus(dry_run_page):
+    dry_run_page.focus(_RESET)
+    width = _rendered_width(dry_run_page, "#dry-run-reset-hint")
+    assert width >= _REVEALED_WIDTH_THRESHOLD, (
+        f"focusing Reset revealed nothing ({width}px wide)"
+    )
+
+
+def test_the_control_keeps_its_own_hover_state(dry_run_page):
+    """The half of this defect that is not about descriptions at all.
+
+    With the hit-test landing on the collapsed description, the control never
+    entered `:hover`, so its own hover styling stopped working - measured on
+    the dry-run result page's primary action, which stayed Kale under the
+    pointer instead of going Blueberry. Adding descriptions to this panel had
+    silently removed a hover affordance three of its buttons already had.
+    """
+    dry_run_page.hover(_RESET)
+    assert dry_run_page.evaluate(
+        f"document.querySelector('{_RESET}').matches(':hover')"
+    ), (
+        "the control is not in :hover while the pointer is on it - the "
+        "description beside it is taking the hit-test, which kills both the "
+        "reveal and the control's own hover styling"
+    )
+
+
+def test_revealing_a_description_does_not_move_the_buttons_in_a_sticky_bar(dry_run_page):
+    """The sticky bar is pinned to the foot of the page, so an in-flow reveal
+    grew it upwards and pushed the buttons out from under the pointer that had
+    just arrived - which unhovers the control, collapses the card, shrinks the
+    row and starts again. Playwright called that "element is not stable" and
+    gave up after 60 retries, on a submit button."""
+    before = _box(dry_run_page, ".dry-run-primary")
+    dry_run_page.hover(_RESET)
+    dry_run_page.wait_for_timeout(150)
+    assert _box(dry_run_page, ".dry-run-primary") == before, (
+        "revealing Reset's description moved the Run test button beside it"
+    )
+
+
+#: The Add-an-authenticator dialog's own submit, inside `.dialog__actions` -
+#: a `flex-wrap: nowrap` row that cannot put the card anywhere but in line
+#: with the buttons.
+_DIALOG_SUBMIT = "[aria-describedby=confirm-add-authenticator-hint]"
+
+
+def test_revealing_a_description_in_a_dialog_moves_neither_button_nor_dialog(security_page):
+    """Measured before the fix: the hovered submit went 192x50 -> 114x142,
+    moved 28px inline-start and 46px up, both labels wrapped to three lines,
+    and the dialog itself grew 92px and re-centred - all while the reader was
+    aiming at the button."""
+    security_page.click("#add-authenticator")
+    security_page.wait_for_timeout(200)
+    button_before = _box(security_page, _DIALOG_SUBMIT)
+    dialog_before = _box(security_page, "dialog[open]")
+
+    security_page.hover(_DIALOG_SUBMIT)
+    security_page.wait_for_timeout(150)
+
+    assert _rendered_width(security_page, "#confirm-add-authenticator-hint") >= (
+        _REVEALED_WIDTH_THRESHOLD
+    ), "the dialog's description did not appear at all"
+    assert _box(security_page, _DIALOG_SUBMIT) == button_before, (
+        "the description crushed or moved the submit button under the pointer"
+    )
+    assert _box(security_page, "dialog[open]") == dialog_before, (
+        "the description resized the dialog"
+    )
+
+
+def test_a_bare_button_element_reveals_its_description(browser, authed_storage_state):
+    """`block_ip.html`'s Block carries no `button`/`button--quiet` class, so it
+    matched none of the reveal selectors and was the one described button in
+    the panel that answered neither hover nor focus - visibly inconsistent
+    with every other one."""
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}/admin/ip-block/block", wait_until="networkidle")
+        page.hover("[aria-describedby=block-hint]")
+        width = _rendered_width(page, "#block-hint")
+        assert width >= _REVEALED_WIDTH_THRESHOLD, (
+            f"hovering Block revealed nothing ({width}px wide)"
+        )
+    finally:
+        context.close()
+
+
+# --- The actions sqladmin draws itself -------------------------------------
+
+
+@pytest.mark.parametrize("path,expected", [
+    ("/admin/factor-set/list", 7),
+    ("/admin/staff/list", 6),
+    ("/admin/sector/list", 2),
+    ("/admin/ip-block/list", 1),
+])
+def test_every_action_in_the_menu_shows_its_description(
+    browser, authed_storage_state, path, expected
+):
+    """Publish, Roll back, Archive, Clone and the rest live in sqladmin\'s own
+    dropdown, where `brand/`\'s help-tip mechanism cannot reach them; their
+    description travels inside the label instead (`admin/modelviews.py`\'s
+    `described()`). A menu is already a disclosure, so there is no second
+    gesture here - the description is simply rendered, and this measures that
+    it is rendered with a HEIGHT rather than merely present in the DOM,
+    because Tabler\'s `.dropdown-item` is `white-space: nowrap` and a sentence
+    inside one is exactly the kind of thing that collapses or overflows.
+    """
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        page.click("#dropdownMenuButton")
+        page.wait_for_timeout(200)
+        notes = page.evaluate(
+            "() => [...document.querySelectorAll(\'.dropdown-item .action-item__note\')]"
+            "        .map(n => Math.round(n.getBoundingClientRect().height))"
+        )
+        assert len(notes) == expected, (
+            f"{path}: expected {expected} described actions, found {len(notes)}"
+        )
+        assert all(height > 0 for height in notes), (
+            f"{path}: a description rendered with no height: {notes}"
+        )
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+        ), f"{path}: the open menu pushed the page sideways"
+    finally:
+        context.close()

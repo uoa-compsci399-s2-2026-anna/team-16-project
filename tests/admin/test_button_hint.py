@@ -25,6 +25,8 @@ reveal, only of consistent wiring.
 import re
 from pathlib import Path
 
+import pytest
+
 BRAND_DIR = Path(__file__).resolve().parents[2] / "admin" / "templates" / "brand"
 CSS_PATH = Path(__file__).resolve().parents[2] / "admin" / "static" / "brand.css"
 MACRO_PATH = BRAND_DIR / "_help_tip.html"
@@ -325,3 +327,59 @@ def test_the_macro_never_nests_the_body_inside_details_again():
         "inside it can ever be revealed by hover or focus without opening "
         "it; keep .help-tip__body as <details>'s sibling, not its child"
     )
+
+
+# --- The actions sqladmin renders, not brand/ ------------------------------
+#
+# The controls this panel's `@action` decorator registers are drawn by
+# sqladmin's own list template, so none of the assertions above can see them -
+# and that is how Publish, which changes what every public visitor's next
+# calculation returns, came to be the only kind of button in the panel with
+# nothing to say for itself. `admin/modelviews.py`'s `described()` is how they
+# get a description; these two tests are what stop the next one being added
+# without one.
+
+_VIEW_SOURCES = sorted(
+    (Path(__file__).resolve().parents[2] / "admin").glob("*_view*.py")
+)
+
+
+def test_every_registered_action_carries_a_description():
+    """A new `@action(name=..., label="Verb")` is a new consequence-bearing
+    control in a dropdown with no explanation anywhere. This fails until its
+    label goes through `described()`.
+
+    Source-scanned rather than read off the live views: `_custom_actions_in_list`
+    holds the already-rendered label, so by the time it is readable the
+    difference between "described" and "not described" is a substring search
+    over markup. The declaration is the thing worth pinning.
+    """
+    undescribed = []
+    for path in _VIEW_SOURCES:
+        source = path.read_text(encoding="utf-8")
+        for match in re.finditer(r'@action\((.*?)\n    \)|@action\(([^\n]*)\)',
+                                 source, re.S):
+            body = match.group(1) or match.group(2)
+            if "label=" not in body:
+                continue
+            if "label=described(" not in body:
+                name = re.search(r'name="([^"]+)"', body)
+                undescribed.append(f"{path.name}:{name.group(1) if name else body[:40]}")
+    assert not undescribed, (
+        "these list actions have a bare label and so explain themselves "
+        "nowhere: " + ", ".join(undescribed)
+    )
+
+
+@pytest.mark.parametrize("hostile", ['<script>alert(1)</script>', 'a " quote', "5 < 6"])
+def test_described_escapes_what_it_is_given(hostile):
+    """`described()` returns `Markup`, which sqladmin's `autoescape=True`
+    environment renders verbatim - so the escaping that the environment would
+    otherwise have done has to happen inside it instead. `Markup.format()`
+    escapes its arguments; this is what says so, because the failure mode is
+    silent and is an injection."""
+    from admin.modelviews import described
+
+    rendered = str(described(hostile, hostile))
+    assert "<script>" not in rendered
+    assert rendered.count("<span") == 2, "the wrapper markup itself must survive"

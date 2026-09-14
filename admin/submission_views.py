@@ -78,7 +78,7 @@ from starlette.responses import Response as StarletteResponse
 
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY
-from admin.modelviews import AuditedModelView
+from admin.modelviews import described, AuditedModelView
 from db.models import Scenario, Sector, Submission, SubmissionEntry, SubmissionLine, utcnow
 
 #: The panel's own grouping. Submissions are neither taxonomy nor factors: they
@@ -703,7 +703,10 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
 
     @action(
         name="exclude",
-        label="Exclude from public statistics",
+        label=described(
+            "Exclude from public statistics",
+            "Opens a confirmation page for stopping the selected submissions counting towards the public statistics. Nothing is deleted, and it can be undone from that same screen.",
+        ),
         add_in_detail=True,
         add_in_list=True,
     )
@@ -717,7 +720,10 @@ class SubmissionAdmin(AuditedModelView, model=Submission):
 
     @action(
         name="include",
-        label="Return to public statistics",
+        label=described(
+            "Return to public statistics",
+            "Opens a confirmation page for putting the selected submissions back into the public statistics. Nothing about the submissions themselves changes.",
+        ),
         add_in_detail=True,
         add_in_list=True,
     )

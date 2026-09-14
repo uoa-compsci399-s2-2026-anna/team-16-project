@@ -484,7 +484,8 @@ button:hover { background: var(--blueberry); }
 .guidance-disclosure__body { padding-block: 0.75rem 0.25rem; padding-inline: 0.15rem; }
 .guidance-disclosure__body p:last-child { margin-bottom: 0; }
 
-/* The small "?" beside a button (brand/_help_tip.html).
+/* The description beside a button (brand/_help_tip.html) - a visible "?" on
+   some buttons, hover and keyboard focus on every one of them.
 
    THIS USED TO BE `position: absolute`, floating the explanation over the
    page instead of pushing anything else down. Measured at a 320px-wide
@@ -496,19 +497,43 @@ button:hover { background: var(--blueberry); }
    the viewport. That is exactly the failure this panel was told to avoid -
    "a help marker that pushes a button off a narrow screen is worse than no
    help marker" - just sideways rather than by literally displacing the
-   button.
+   button. The rule that follows from it, unchanged by hover and focus being
+   added below: **revealed, this is a normal in-flow block, never a floating
+   card.** A block box is never wider than its own containing block, so it
+   cannot overflow the page at any width - the same guarantee
+   `.guidance-disclosure` above already relies on, and proven the same way:
+   measured with no horizontal scrollbar at 320px. The trade a floating card
+   would have kept is that revealing one no longer leaves the row's other
+   buttons in place; they wrap below it instead.
 
-   So this is a normal, in-flow block instead: closed, `.help-tip` is a tiny
-   inline-block next to the button, adding negligible width. Open, it
-   BECOMES a block box - `flex-basis: 100%` also throws it onto its own row
-   when the button sits in a `.actions` flex row, which every one of them
-   does bar one. Either way a block box is never wider than its own
-   containing block, so it cannot overflow the page at any width - the same
-   guarantee `.guidance-disclosure` above already relies on, and proven the
-   same way: measured with no horizontal scrollbar at 320px. The trade a
-   floating card would have kept is that opening one no longer leaves the
-   row's other buttons in place; they wrap below it instead. */
-.help-tip {
+   `.help-tip` (glyph) and `.help-tip--bare` (no glyph) are the two shapes
+   `_help_tip.html` renders - see that file for which buttons get which and
+   why. Both wrap one `.help-tip__body`, and it is the SAME element every
+   path reveals: `aria-describedby` on the button names its `id` regardless
+   of shape, so a screen reader reaches it the moment the button is focused,
+   before any glyph is opened. That is why `.help-tip__body` does not rely on
+   `<details>`'s native open/closed hiding at all - a screen reader does not
+   announce a `display: none` node, whether or not it is `aria-describedby`'s
+   target, so relying on that would mean the description is only announced
+   after the glyph has already been opened, on the buttons that have one, and
+   never on the buttons that do not. It is visually collapsed instead, with
+   the same clip-rect technique `.sr-only` above uses - in the accessibility
+   tree at all times, showing nothing on screen - and revealed to sighted
+   users on `[open]`, on hovering the button beside it, and on focusing that
+   button. `:focus` rather than `:focus-visible`: a description is not an
+   outline ring, and there is no case where showing it on a focus a browser
+   judges "not visible enough to ring" is the wrong call.
+
+   The collapse has to fight `<details>`'s own UA stylesheet rule,
+   `details:not([open]) > *:not(summary) { display: none }`, which sets
+   `display` and nothing else the rules below touch - so `.help-tip
+   .help-tip__body, .help-tip--bare .help-tip__body` states its own `display`
+   at two selector classes deep specifically to outrank it (a type-selector
+   UA rule loses to a two-class author rule at the class tier, before the
+   type tier is ever compared), and every reveal selector below is deeper
+   still. */
+.help-tip,
+.help-tip--bare {
   display: inline-block;
   vertical-align: middle;
   margin-inline-start: 0.4rem;
@@ -537,13 +562,33 @@ button:hover { background: var(--blueberry); }
   outline-offset: 2px;
 }
 .help-tip[open] summary { background: var(--kale); color: var(--white); }
-.help-tip[open] {
+/* Thrown onto its own row, exactly as `[open]` already does, the moment the
+   button beside it is hovered or focused - not only once it has been
+   clicked or tapped open. `:is()` takes the trigger classes this task is
+   scoped to (button, button--quiet, button--danger); a button outside that
+   scope reveals nothing here because none of these selectors ever match it. */
+.help-tip[open],
+:is(.button, .button--quiet, .button--danger):hover + .help-tip,
+:is(.button, .button--quiet, .button--danger):focus + .help-tip,
+:is(.button, .button--quiet, .button--danger):hover + .help-tip--bare,
+:is(.button, .button--quiet, .button--danger):focus + .help-tip--bare {
   display: block;
   flex-basis: 100%;
   margin-inline-start: 0;
   margin-block-start: 0.5rem;
 }
-.help-tip__body {
+.help-tip .help-tip__body,
+.help-tip--bare .help-tip__body {
+  /* Visually collapsed by default: present for `aria-describedby`, invisible
+     on screen. See the section comment above for why this cannot be
+     `display: none`. */
+  display: block;
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
   margin-block-start: 0.5rem;
   max-inline-size: 34rem;
   padding-block: 0.55rem;
@@ -557,6 +602,18 @@ button:hover { background: var(--blueberry); }
   font-weight: 400;
   line-height: 1.4;
   text-align: start;
+}
+.help-tip[open] > .help-tip__body,
+:is(.button, .button--quiet, .button--danger):hover + .help-tip .help-tip__body,
+:is(.button, .button--quiet, .button--danger):focus + .help-tip .help-tip__body,
+:is(.button, .button--quiet, .button--danger):hover + .help-tip--bare .help-tip__body,
+:is(.button, .button--quiet, .button--danger):focus + .help-tip--bare .help-tip__body {
+  position: static;
+  inline-size: auto;
+  block-size: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
 }
 
 /* One-time secrets: initial passwords, recovery codes. */

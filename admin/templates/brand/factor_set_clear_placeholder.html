@@ -116,7 +116,8 @@
     <div class="actions">
       <button type="button" id="clear-placeholder" class="button button--danger"
               data-dialog="dialog-confirm" aria-haspopup="dialog"
-              aria-controls="dialog-confirm">Clear the placeholder flag</button>{{ help.help_tip(_("What Clear the placeholder flag does"), _("Removes the placeholder-data warning that currently appears on every public result and export, all at once. Only do this once every number in this version is real — if you are wrong, Flag as placeholder data on the Factor sets screen puts the warning straight back.")) }}
+              aria-controls="dialog-confirm"
+              aria-describedby="clear-placeholder-hint">Clear the placeholder flag</button>{{ help.help_tip(_("What Clear the placeholder flag does"), _("Removes the placeholder-data warning that currently appears on every public result and export, all at once. Only do this once every number in this version is real — if you are wrong, Flag as placeholder data on the Factor sets screen puts the warning straight back."), id="clear-placeholder-hint") }}
       <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
     </div>
 
@@ -163,7 +164,8 @@
 
       <div class="dialog__actions">
         <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
-        <button type="submit" class="button button--danger">Clear the flag</button>
+        <button type="submit" class="button button--danger"
+                aria-describedby="confirm-clear-flag-hint">Clear the flag</button>{{ help.help_tip(_("What Clear the flag does"), _("Removes the placeholder warning now that your proof has checked out. If this set is published, visitors stop seeing it on their very next calculation."), id="confirm-clear-flag-hint", glyph=false) }}
       </div>
     </dialog>
   </form>

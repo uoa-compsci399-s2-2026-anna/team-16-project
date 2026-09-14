@@ -86,9 +86,10 @@
         recognised it — not just that it was wrong. This is the only record of
         why the public statistics differ from the raw data.
       </p>
-      <button type="submit" class="button">
+      <button type="submit" class="button"
+              aria-describedby="moderate-submit-hint">
         {% if excluding %}Exclude{% else %}Return to statistics{% endif %}
-      </button>{% if excluding %}{{ help.help_tip(_("What Exclude does"), _("Stops these submissions counting towards the public statistics from now on. Nothing is deleted, and you can bring them back from this same screen at any time.")) }}{% else %}{{ help.help_tip(_("What Return to statistics does"), _("Makes these submissions count towards the public statistics again, starting now.")) }}{% endif %}
+      </button>{% if excluding %}{{ help.help_tip(_("What Exclude does"), _("Stops these submissions counting towards the public statistics from now on. Nothing is deleted, and you can bring them back from this same screen at any time."), id="moderate-submit-hint") }}{% else %}{{ help.help_tip(_("What Return to statistics does"), _("Makes these submissions count towards the public statistics again, starting now."), id="moderate-submit-hint") }}{% endif %}
       <a class="button button--secondary" href="{{ list_url }}">Cancel</a>
     </form>
   {% else %}

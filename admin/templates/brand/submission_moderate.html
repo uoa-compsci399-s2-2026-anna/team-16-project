@@ -89,7 +89,7 @@
       <button type="submit" class="button"
               aria-describedby="moderate-submit-hint">
         {% if excluding %}Exclude{% else %}Return to statistics{% endif %}
-      </button>{% if excluding %}{{ help.help_tip(_("What Exclude does"), _("Stops these submissions counting towards the public statistics from now on. Nothing is deleted, and you can bring them back from this same screen at any time."), id="moderate-submit-hint") }}{% else %}{{ help.help_tip(_("What Return to statistics does"), _("Makes these submissions count towards the public statistics again, starting now."), id="moderate-submit-hint") }}{% endif %}
+      </button>{% if excluding %}{{ help.help_tip(_("What Exclude does"), _("Stops these submissions counting towards the public statistics from now on. Nothing is deleted, and you can bring them back from this same screen at any time."), id="moderate-submit-hint") }}{% else %}{{ help.help_tip(_("What Return to statistics does"), _("Puts these submissions back into the public statistics from now on. Nothing about the submissions themselves changes, and you can exclude them again from this same screen."), id="moderate-submit-hint") }}{% endif %}
       <a class="button button--secondary" href="{{ list_url }}">Cancel</a>
     </form>
   {% else %}

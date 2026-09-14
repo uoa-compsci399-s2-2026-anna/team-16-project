@@ -214,12 +214,26 @@ def test_css_never_hides_the_description_with_display_none():
     )
 
 
-def test_css_reveal_is_a_normal_in_flow_block_not_a_floating_card():
-    """The measured failure `_help_tip.html`'s header comment and
-    `brand.css`'s own section comment both record: a floating,
-    absolutely-positioned explanation overflowed the page horizontally at
-    320px. The revealed state must stay `position: static` - normal flow,
-    never wider than its own containing block at any width."""
+def test_css_reveal_is_anchored_and_width_clamped_rather_than_free_floating():
+    """**This test used to require the opposite** - `position: static`, on
+    the reasoning that an in-flow block can never be wider than its
+    containing block and so can never overflow the page at 320px. The width
+    argument was right and is still the thing being protected here. What it
+    missed is that an in-flow reveal *resizes the row it appears in*, and
+    two of the four rows cannot absorb that: a `flex-wrap: nowrap` dialog
+    footer crushed the hovered submit button from 192x50 to 114x142 and
+    moved it out from under the pointer, and the sticky dry-run bar grew
+    upwards into a live hover oscillation Playwright gave up on after 60
+    retries. Both measured in a real browser; neither is visible to a
+    stylesheet reading. See `brand.css`'s own comment on the revealed rule.
+
+    So the reveal is `position: absolute` now, and the overflow guarantee is
+    carried by an explicit width clamp instead of by normal flow. That is
+    what this test pins: absolute is only safe while the clamp is there, and
+    a future edit that drops the clamp gets the old 320px defect back with
+    nothing to notice it but this assertion and the browser test at 320px
+    (`test_button_hint_browser.py`'s own overflow case).
+    """
     css = CSS_PATH.read_text(encoding="utf-8")
     section = css[css.index(".help-tip {"):]
     section = section[: section.index("/* One-time secrets")]
@@ -231,11 +245,28 @@ def test_css_reveal_is_a_normal_in_flow_block_not_a_floating_card():
         r"\.help-tip\[open\] \+ \.help-tip__body,.*?\{([^}]*)\}", section, re.S
     )
     assert reveal_rule, "no reveal rule found for .help-tip__body"
-    assert "position: static" in reveal_rule.group(1), (
-        "the revealed .help-tip__body is no longer position: static - a "
-        "floating reveal is the exact defect this mechanism exists to avoid"
+    declarations = reveal_rule.group(1)
+    assert "position: absolute" in declarations, (
+        "the revealed .help-tip__body is not positioned - in flow it resizes "
+        "the button row it sits in; see this test's own docstring"
     )
-    assert "position: fixed" not in section and "position: absolute" not in reveal_rule.group(1)
+    assert "max-inline-size" in declarations, (
+        "the revealed .help-tip__body has no width clamp. Absolutely "
+        "positioned, nothing else stops it being wider than the viewport, "
+        "which is the 320px horizontal-overflow defect this mechanism was "
+        "first written to avoid"
+    )
+    # Absolute against WHAT: every container that directly holds a body has to
+    # establish a containing block, or the card is positioned against the page
+    # and lands nowhere near its button. `:where()` so this can never win
+    # against a container's own `position` - `.dialog__actions` is `sticky`
+    # and must stay that way.
+    assert ":where(:has(> .help-tip__body)) { position: relative; }" in section, (
+        "nothing gives the row holding a .help-tip__body a positioning "
+        "context, so an absolutely positioned reveal is anchored to the page"
+    )
+    # `position: fixed` would escape the row entirely and follow the viewport.
+    assert "position: fixed" not in section
     # And the descendant form must never reappear - it is what silently
     # broke revealing the glyph shape by hover or focus the first time.
     assert ".help-tip[open] > .help-tip__body" not in section, (

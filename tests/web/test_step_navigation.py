@@ -887,45 +887,91 @@ def test_step_three_asks_what_the_stage_put_through(page_at):
     assert box["y"] < page.evaluate("window.innerHeight")
 
 
-def test_step_three_controls_share_a_baseline_when_copy_wraps(page_at):
-    """The three primary controls are one row even when their copy is not.
+def test_step_three_forms_two_aligned_groups_above_the_breakpoint(page_at):
+    """Two vertical groups, not a three-column row and not five equal cells.
 
-    At this width ``Waste amount`` has a one-line label and hint while the
-    production-total label and the unit hint wrap. Normal document flow put
-    the three controls on three different baselines, which is the misalignment
-    the client and professor reported. Shared grid rows let the copy take the
-    space it needs while keeping the controls together.
+    ``.mass-fields`` (waste amount, unit, production total) and
+    ``.money-fields`` (the two optional NZ$ figures) are each a single item in
+    ``.amount-grid``'s two-column row at ``min-width: 650px``. Every field in
+    the first group shares one inline-start edge; the money pair shares a
+    second, greater one — a distinct column, not a third field dropped into
+    the same row. This replaces
+    ``test_step_three_controls_share_a_baseline_when_copy_wraps``, which
+    pinned the old three-column row's shared *baseline* — a property that
+    stopped being true the moment the production total moved under the unit
+    instead of beside it.
 
-    The container case is measured separately because it adds live feedback
-    below the amount input. A layout that aligns only the initial three-child
-    fields moves that control again as soon as a visitor chooses a bin.
-
-    Mutation: set these fields back to ``display: block`` and both measurements
-    spread by more than one line-height.
+    Mutation: restoring ``.amount-grid { grid-template-columns: 1fr 1fr 1fr }``
+    (the old three-column template, with no ``.mass-fields``/``.money-fields``
+    grouping) puts ``#total-input`` in its own column, equal to neither the
+    amount field's edge nor the money pair's, and this test fails.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
 
-    def control_tops():
-        return page.locator("#total-waste, #unit-count, #total-unit, #total-input").evaluate_all(
-            "controls => controls.map(control => Math.round(control.getBoundingClientRect().top))"
-        )
+    def edges(ids):
+        return [
+            round(page.locator(f"#{control_id}").bounding_box()["x"])
+            for control_id in ids
+            if page.locator(f"#{control_id}").count()
+        ]
 
-    initial = control_tops()
-    assert max(initial) - min(initial) <= 1, (
-        f"step 3 controls do not share a baseline: {initial}"
+    mass_edges = edges(["total-waste", "unit-count", "total-unit", "total-input"])
+    money_edges = edges(["total-value", "wasted-value"])
+
+    assert max(mass_edges) - min(mass_edges) <= 1, (
+        f"the mass fields do not share one inline-start edge: {mass_edges}"
+    )
+    assert max(money_edges) - min(money_edges) <= 1, (
+        f"the money fields do not share one inline-start edge: {money_edges}"
+    )
+    assert min(money_edges) - max(mass_edges) > 20, (
+        "the money group is not a distinct column further along the inline "
+        f"axis than the mass group: mass={mass_edges} money={money_edges}"
     )
 
-    preset = page.locator("#total-unit option").evaluate_all(
-        "options => options.map(option => option.value).find(value => value.startsWith('preset:'))"
-    )
-    assert preset, "step 3 offers no container preset"
-    page.select_option("#total-unit", preset)
-    page.wait_for_selector("#unit-count")
 
-    with_container_feedback = control_tops()
-    assert max(with_container_feedback) - min(with_container_feedback) <= 1, (
-        "container feedback moved the amount control off the shared baseline: "
-        f"{with_container_feedback}"
+def test_step_three_unit_control_is_narrower_than_its_neighbours(page_at):
+    """The unit sits between the two quantities it governs, and is visibly
+    narrower than either — the placement that says "this is the unit of the
+    fields above and below it", not a third quantity beside them.
+
+    Mutation: dropping ``.unit-field select { inline-size: 50% }`` back to the
+    site-wide ``input, select { width: 100% }`` makes the unit control as wide
+    as its neighbours, and this test fails.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    amount_width = page.locator("#total-waste").bounding_box()["width"]
+    unit_width = page.locator("#total-unit").bounding_box()["width"]
+    total_width = page.locator("#total-input").bounding_box()["width"]
+
+    assert unit_width < amount_width * 0.75, (
+        f"the unit control is not visibly narrower than the waste amount field: "
+        f"unit={unit_width} amount={amount_width}"
+    )
+    assert unit_width < total_width * 0.75, (
+        f"the unit control is not visibly narrower than the production total field: "
+        f"unit={unit_width} total={total_width}"
+    )
+
+
+def test_step_three_is_a_single_column_below_the_breakpoint(page_at):
+    """Below ``min-width: 650px`` neither group does anything: source order is
+    already waste amount, unit, total produced, then the two money fields —
+    the correct single-column reading order — so every field shares one
+    inline-start edge, mass and money fields alike.
+
+    Mutation: forcing ``.amount-grid`` into its above-breakpoint two-column
+    template at this width splits the money fields onto a second, greater
+    edge, and this test fails.
+    """
+    page = advance_to(page_at(390, 700, 3.0), 2)
+
+    edges = page.locator(
+        "#total-waste, #unit-count, #total-unit, #total-input, #total-value, #wasted-value"
+    ).evaluate_all("controls => controls.map(control => Math.round(control.getBoundingClientRect().x))")
+
+    assert max(edges) - min(edges) <= 1, (
+        f"step 3 fields do not share one inline-start edge below the breakpoint: {edges}"
     )
 
 
@@ -935,10 +981,16 @@ def test_step_three_container_feedback_does_not_overlap_its_error(page_at):
     ``amountStep()`` (web/js/calculator.js) renders the first field as
     label, hint, control, then — in container mode, with a client-side
     validation error showing — *both* ``p.field-error`` and
-    ``p.container-total``, in that order. A subgrid has no implicit tracks:
-    whatever the field's ``grid-row: span`` count is, a later child than
-    that count is clamped into the last track it was given, landing on top
-    of whatever else is already there rather than below it.
+    ``p.container-total``, in that order. The field's children are ordinary
+    block flow inside ``.mass-fields`` (no grid, no subgrid, no row-span
+    count), so this is not a track a fifth child can run out of and be
+    clamped into — each child simply follows the one before it — but this
+    test measures the two paragraphs' own geometry rather than assume the
+    absence of a mechanism guarantees the absence of a defect. A prior grid
+    based on ``grid-row: span`` did carry exactly this failure mode at one
+    and two tracks short of the five the field can render; this test is
+    what caught it then and is kept as the direct check now that the
+    mechanism has changed.
 
     Reached from an ordinary path: pick a container preset, then type a
     count that is refused — ``0`` here, ``1`` past ``containerLimit()``
@@ -947,14 +999,9 @@ def test_step_three_container_feedback_does_not_overlap_its_error(page_at):
     ``p.field-error`` *and* ``p.container-total`` at once; only one of them
     needs testing here since the clamp is the same defect either way.
 
-    Mutation: this is the test that must die at *both* ``grid-row: span 3``
-    and ``grid-row: span 4`` — one and two tracks short of the five the
-    field can render — and pass only at ``span 5``. A prior version of this
-    rule shipped at ``span 4`` with a passing suite: the sibling test above
-    measures only the three always-present controls, so a fourth or fifth
-    child clamping into the same track as a third moved no control and
-    tripped nothing. This test measures the two feedback paragraphs
-    directly instead.
+    Mutation: giving ``.container-total`` a negative ``margin-block-start``
+    large enough to climb back over ``#amount-error`` reproduces the
+    original overlap, and this test fails.
     """
     page = advance_to(page_at(1278, 983, 1.25), 2)
 

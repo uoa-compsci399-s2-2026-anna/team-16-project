@@ -506,34 +506,37 @@ button:hover { background: var(--blueberry); }
    would have kept is that revealing one no longer leaves the row's other
    buttons in place; they wrap below it instead.
 
-   `.help-tip` (glyph) and `.help-tip--bare` (no glyph) are the two shapes
-   `_help_tip.html` renders - see that file for which buttons get which and
-   why. Both wrap one `.help-tip__body`, and it is the SAME element every
-   path reveals: `aria-describedby` on the button names its `id` regardless
-   of shape, so a screen reader reaches it the moment the button is focused,
-   before any glyph is opened. That is why `.help-tip__body` does not rely on
-   `<details>`'s native open/closed hiding at all - a screen reader does not
-   announce a `display: none` node, whether or not it is `aria-describedby`'s
-   target, so relying on that would mean the description is only announced
-   after the glyph has already been opened, on the buttons that have one, and
-   never on the buttons that do not. It is visually collapsed instead, with
-   the same clip-rect technique `.sr-only` above uses - in the accessibility
-   tree at all times, showing nothing on screen - and revealed to sighted
-   users on `[open]`, on hovering the button beside it, and on focusing that
-   button. `:focus` rather than `:focus-visible`: a description is not an
-   outline ring, and there is no case where showing it on a focus a browser
-   judges "not visible enough to ring" is the wrong call.
+   `.help-tip` is the "?" pill (`glyph=true` only); `.help-tip__body` is the
+   description itself, for both shapes, and it is the SAME element every
+   path reveals - `aria-describedby` on the button names its `id` regardless
+   of shape, so a screen reader reaches it the moment the button is focused.
 
-   The collapse has to fight `<details>`'s own UA stylesheet rule,
-   `details:not([open]) > *:not(summary) { display: none }`, which sets
-   `display` and nothing else the rules below touch - so `.help-tip
-   .help-tip__body, .help-tip--bare .help-tip__body` states its own `display`
-   at two selector classes deep specifically to outrank it (a type-selector
-   UA rule loses to a two-class author rule at the class tier, before the
-   type tier is ever compared), and every reveal selector below is deeper
-   still. */
-.help-tip,
-.help-tip--bare {
+   `.help-tip__body` IS A SIBLING OF `.help-tip`, NEVER A CHILD OF IT - this
+   is load-bearing and was wrong once already. `_help_tip.html`'s header
+   comment tells the story: nesting the body inside `<details>` and
+   overriding `display` in CSS reads as though it should work, and does not -
+   Chromium does not render a closed `<details>`'s non-summary content
+   through ANY author CSS, `display` included, and `Element.checkVisibility()`
+   (what `tests/admin/test_button_hint_browser.py` actually measures) agrees
+   with the browser, not with the stylesheet. So `<details>` here holds
+   nothing but its own `<summary>`, `.help-tip__body` sits immediately after
+   it as a plain, always-connected sibling, and every reveal below is a
+   sibling combinator, never a descendant one - `.help-tip[open] +
+   .help-tip__body`, not `.help-tip[open] > .help-tip__body`.
+
+   `.help-tip__body` does not rely on ANY native open/closed hiding to be
+   collapsed, either - a screen reader does not announce a `display: none`
+   node, `aria-describedby` target or not, so relying on one would mean the
+   description is only announced after the glyph has already been opened, on
+   the buttons that have one, and never on the buttons that do not. It is
+   visually collapsed instead, with the same clip-rect technique `.sr-only`
+   above uses - in the accessibility tree at all times, showing nothing on
+   screen - and revealed to sighted users on `[open]`, on hovering the button
+   beside it, and on focusing that button. `:focus` rather than
+   `:focus-visible`: a description is not an outline ring, and there is no
+   case where showing it on a focus a browser judges "not visible enough to
+   ring" is the wrong call. */
+.help-tip {
   display: inline-block;
   vertical-align: middle;
   margin-inline-start: 0.4rem;
@@ -562,26 +565,20 @@ button:hover { background: var(--blueberry); }
   outline-offset: 2px;
 }
 .help-tip[open] summary { background: var(--kale); color: var(--white); }
-/* Thrown onto its own row, exactly as `[open]` already does, the moment the
-   button beside it is hovered or focused - not only once it has been
-   clicked or tapped open. `:is()` takes the trigger classes this task is
-   scoped to (button, button--quiet, button--danger); a button outside that
-   scope reveals nothing here because none of these selectors ever match it. */
-.help-tip[open],
-:is(.button, .button--quiet, .button--danger):hover + .help-tip,
-:is(.button, .button--quiet, .button--danger):focus + .help-tip,
-:is(.button, .button--quiet, .button--danger):hover + .help-tip--bare,
-:is(.button, .button--quiet, .button--danger):focus + .help-tip--bare {
-  display: block;
-  flex-basis: 100%;
-  margin-inline-start: 0;
-  margin-block-start: 0.5rem;
-}
-.help-tip .help-tip__body,
-.help-tip--bare .help-tip__body {
+.help-tip__body {
   /* Visually collapsed by default: present for `aria-describedby`, invisible
-     on screen. See the section comment above for why this cannot be
-     `display: none`. */
+     on screen. The clip-rect technique, not `display: none` - see the
+     section comment above for why a screen reader needs the difference.
+
+     NO PADDING, BORDER OR BACKGROUND HERE - measured, not stylistic. Those
+     live on the revealed rule below instead, because `box-sizing: border-box`
+     cannot shrink a box below its own padding plus border: with the
+     revealed rule's 0.75rem inline padding and 1px border also sitting on
+     this rule, `inline-size: 1px` clamped to the ~26px their combined
+     minimum forced regardless, and this "collapsed" state rendered at
+     visible size the entire time hover and focus were being tested by
+     reading markup rather than a real box. */
+  box-sizing: border-box;
   display: block;
   position: absolute;
   inline-size: 1px;
@@ -590,30 +587,52 @@ button:hover { background: var(--blueberry); }
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
   margin-block-start: 0.5rem;
-  max-inline-size: 34rem;
-  padding-block: 0.55rem;
-  padding-inline: 0.75rem;
-  border: 1px solid rgba(0, 50, 35, 0.16);
-  border-radius: var(--radius);
-  background: var(--white);
   color: var(--kale);
-  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
   font-size: 0.85rem;
   font-weight: 400;
   line-height: 1.4;
   text-align: start;
 }
-.help-tip[open] > .help-tip__body,
-:is(.button, .button--quiet, .button--danger):hover + .help-tip .help-tip__body,
-:is(.button, .button--quiet, .button--danger):focus + .help-tip .help-tip__body,
-:is(.button, .button--quiet, .button--danger):hover + .help-tip--bare .help-tip__body,
-:is(.button, .button--quiet, .button--danger):focus + .help-tip--bare .help-tip__body {
+/* Revealed: a normal in-flow block, on its own row (`flex-basis: 100%`
+   throws it there inside a `.actions`/`.dialog__actions` flex row, which
+   every one of them is). Three ways in, matching `_help_tip.html`'s two
+   shapes:
+   - `.help-tip[open] + .help-tip__body` - the glyph shape, clicked or
+     tapped open; `.help-tip__body` is `<details>`'s next sibling, not its
+     child, so this is a sibling combinator on purpose.
+   - `TRIGGER:hover|:focus + .help-tip + .help-tip__body` - the glyph shape,
+     revealed without opening it: button, then the (still closed) `<details>`
+     pill, then the body - three flat siblings, chained.
+   - `TRIGGER:hover|:focus + .help-tip__body` - the bare shape (`glyph=false`):
+     button, then the body directly, with no `<details>` in between.
+   `:is()` takes the trigger classes this task is scoped to (button,
+   button--quiet, button--danger); a button outside that scope reveals
+   nothing here because none of these selectors ever match it.
+
+   The padding, border, background and shadow that make this read as a card
+   are declared HERE rather than on `.help-tip__body` itself, for the reason
+   that rule's own comment gives: on a 1px collapsed box they force a
+   minimum rendered size no `clip` then hides. */
+.help-tip[open] + .help-tip__body,
+:is(.button, .button--quiet, .button--danger):hover + .help-tip + .help-tip__body,
+:is(.button, .button--quiet, .button--danger):focus + .help-tip + .help-tip__body,
+:is(.button, .button--quiet, .button--danger):hover + .help-tip__body,
+:is(.button, .button--quiet, .button--danger):focus + .help-tip__body {
+  display: block;
   position: static;
   inline-size: auto;
   block-size: auto;
+  max-inline-size: 34rem;
   overflow: visible;
   clip: auto;
   white-space: normal;
+  flex-basis: 100%;
+  padding-block: 0.55rem;
+  padding-inline: 0.75rem;
+  border: 1px solid rgba(0, 50, 35, 0.16);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
 }
 
 /* One-time secrets: initial passwords, recovery codes. */

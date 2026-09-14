@@ -985,15 +985,75 @@ def test_step_three_unit_control_is_narrower_than_its_neighbours(page_at):
     )
 
 
+def test_step_three_unit_select_title_carries_the_full_selected_label(page_at):
+    """``#total-unit`` may truncate its closed-state text - the owner's own
+    decision, and measured elsewhere to land anywhere from `kilograms` in
+    full down to `23 L kerbsi…` depending on viewport width - so `title`
+    carries the full text of whichever option is currently selected, for
+    hover and assistive technology. It is hover-only and no substitute for
+    opening the list, but it should at least say what it claims to.
+
+    Checked in both directions: the default (a weight, never truncated, so
+    an easy case to get right by accident) and after switching to a
+    container preset (where the label is long enough to actually truncate,
+    and where a `title` that was set once at first render and never
+    recomputed would go stale).
+
+    Mutation: removing the ``title`` attribute from ``#total-unit`` (the
+    pre-fix markup) makes ``get_attribute("title")`` return ``None`` in both
+    cases, and both assertions fail.
+    """
+    page = advance_to(page_at(1278, 983, 1.25), 2)
+    select = page.locator("#total-unit")
+
+    def option_text(value):
+        return select.locator(f'option[value="{value}"]').text_content()
+
+    assert select.get_attribute("title") == option_text("kilograms"), (
+        f"the select's title does not match the selected 'kilograms' option: "
+        f"{select.get_attribute('title')!r}"
+    )
+
+    preset = select.locator("option").evaluate_all(
+        "options => options.map(option => option.value).find(value => value.startsWith('preset:'))"
+    )
+    assert preset, "step 3 offers no container preset"
+    page.select_option("#total-unit", preset)
+    page.wait_for_selector("#unit-count")
+
+    assert select.get_attribute("title") == option_text(preset), (
+        f"the select's title did not update to the newly selected preset's own label: "
+        f"{select.get_attribute('title')!r} != {option_text(preset)!r}"
+    )
+
+
 def test_step_three_is_a_single_column_below_the_breakpoint(page_at):
     """Below ``min-width: 650px`` neither group does anything: source order is
     already waste amount, unit, total produced, then the two money fields —
     the correct single-column reading order — so every field shares one
     inline-start edge, mass and money fields alike.
 
-    Mutation: forcing ``.amount-grid`` into its above-breakpoint two-column
-    template at this width splits the money fields onto a second, greater
-    edge, and this test fails.
+    **Also pins the vertical rhythm between fields, not only their shared
+    edge.** ``.form-field``'s own declared margin is ``25px 0`` and always
+    was; what changed is whether adjoining margins collapse. Under the old
+    three-column template each ``.form-field`` was a grid item
+    (``grid-row: span 5``), and adjoining margins never collapse between
+    grid items, so two 25px margins summed to a 50px gap. They are ordinary
+    block siblings now, so adjoining margins collapse to one 25px gap — the
+    same rhythm the rest of the page already uses, not a new or smaller one.
+    Pinned here rather than left as an unremarked side effect, so a future
+    change that puts these fields back onto a grid (and silently doubles the
+    gap again) is caught.
+
+    Mutation: forcing ``.amount-grid``'s ``grid-template-columns`` on at this
+    width splits the money fields onto a second, greater edge, and the first
+    assertion below fails. Forcing ``.amount-grid { display: grid }``
+    unconditionally (rather than only above the breakpoint) restores
+    ``.mass-fields``/``.money-fields`` as grid items even in the single
+    column, which traps the collapse inside each of them and reproduces
+    the exact defect this test was written against: gaps of
+    ``[25, 25, 50, 25]`` - every join 25px except the one between the two
+    groups, silently doubled - and the second assertion fails.
     """
     page = advance_to(page_at(390, 700, 3.0), 2)
 
@@ -1003,6 +1063,14 @@ def test_step_three_is_a_single_column_below_the_breakpoint(page_at):
 
     assert max(edges) - min(edges) <= 1, (
         f"step 3 fields do not share one inline-start edge below the breakpoint: {edges}"
+    )
+
+    boxes = page.locator(".amount-grid .form-field").evaluate_all(
+        "els => els.map(el => { const r = el.getBoundingClientRect(); return {top: r.top, bottom: r.bottom}; })"
+    )
+    gaps = [round(boxes[i + 1]["top"] - boxes[i]["bottom"]) for i in range(len(boxes) - 1)]
+    assert all(abs(gap - 25) <= 1 for gap in gaps), (
+        f"adjacent fields do not collapse to a single 25px margin below the breakpoint: {gaps}"
     )
 
 

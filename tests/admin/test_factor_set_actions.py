@@ -775,11 +775,18 @@ async def test_selecting_more_than_one_set_to_import_is_refused(
 
 
 @pytest.mark.asyncio
-async def test_a_plain_staff_member_can_reach_the_import_routes(
+async def test_a_plain_staff_member_is_refused_the_import_routes(
     session, staff_client, two_sets
 ):
-    """Contract §8.3: available to both roles, the same as the other four
-    lifecycle actions on this screen."""
+    """Unlike clone/publish/rollback/archive/the placeholder flag - all
+    both-roles by §8.3 decision 4 - import discards a draft's own data with
+    no undo, the same shape as StaffAdmin's administrator-only `delete`.
+    tests/admin/test_role_matrix.py carries the same two routes in
+    `_ADMIN_ONLY` and drives this same refusal generically; this copy is
+    the bespoke, in-context version the task asked for, driven through the
+    real app exactly like every other role test in this project - not an
+    assertion that a decorator is present.
+    """
     live, draft = two_sets
     session.commit()
 
@@ -787,8 +794,26 @@ async def test_a_plain_staff_member_can_reach_the_import_routes(
         f"/admin/factor-set/action/import-published?pks={draft.id}",
         f"/admin/factor-set/import-published?pks={draft.id}",
     ):
-        response = await staff_client.get(url)
-        assert response.status_code in (200, 302, 400), url
+        response = await staff_client.get(url, follow_redirects=False)
+        assert response.status_code == 403, url
+
+
+@pytest.mark.asyncio
+async def test_an_administrator_can_still_reach_the_import_routes(
+    session, admin_client, two_sets
+):
+    """The other half - a test that only proves refusal would also pass
+    against a route that refuses everyone, which would be a worse defect
+    than the one this whole exchange started from."""
+    live, draft = two_sets
+    session.commit()
+
+    for url in (
+        f"/admin/factor-set/action/import-published?pks={draft.id}",
+        f"/admin/factor-set/import-published?pks={draft.id}",
+    ):
+        response = await admin_client.get(url, follow_redirects=False)
+        assert response.status_code != 403, url
 
 
 @pytest.mark.asyncio

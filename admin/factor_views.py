@@ -42,7 +42,7 @@ from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
 )
-from admin.models import AuditLog
+from admin.models import AuditLog, StaffRole
 from admin.modelviews import AuditedModelView
 from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
@@ -878,6 +878,14 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     (ModelView.is_accessible: "By default, it will allow access for
     everyone") - both an administrator and a plain staff member pass.
 
+    **`import_published_action`/`import_published_page` are the one
+    exception**, gated by `_require_admin_for_import` instead - see that
+    method's own docstring. Every action named above this paragraph moves a
+    factor set between states; import is the only one that discards data
+    outright with no undo, which is the same shape as StaffAdmin's own
+    administrator-only `delete_action` ("deletion is irreversible"), not the
+    shape of publish/rollback/archive/the placeholder flag.
+
     A LifecycleError from any of the four service functions is caught and
     rendered through brand/action_refused.html rather than left to
     propagate: sqladmin's own exception_handlers map only HTTPException
@@ -1120,6 +1128,57 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     def _require_accessible(self, request) -> None:
         if not self.is_accessible(request):
+            raise HTTPException(status_code=403)
+
+    def _require_admin_for_import(self, request) -> None:
+        """The one pair of routes on this screen gated to `role = admin`
+        rather than `_require_accessible`'s both-roles default every other
+        action here uses.
+
+        **Compared against this class's own siblings, not decided by
+        taste.** Clone, publish, roll back, archive and both directions of
+        the placeholder flag are all both-roles (§8.3 decision 4,
+        `_require_accessible` above) because none of them destroys
+        anything: a published set's own numbers are untouched by publishing
+        it, archiving it or clearing its flag, and roll back is deliberately
+        the undo for a bad publish - `audit_log` plus one-click rollback are
+        §8.3's own stated reason accountability alone is enough there.
+        Import has no such undo: `import_published_into`
+        (admin/factor_lifecycle.py) deletes the target draft's own factor,
+        constant, formula and equivalence rows outright, and the only way
+        back is whatever the staff member who typed them remembers well
+        enough to retype. That is the same shape as `/admin/staff/action/
+        delete` ("deletion is irreversible") and `/admin/ip-block/action/
+        unblock`, both administrator-only in
+        tests/admin/test_role_matrix.py's `_ADMIN_ONLY` - not the same
+        shape as this class's own four state-transition actions, even
+        though it lives on the same screen as them.
+
+        Same predicate as `AdministratorOnly._is_admin` (admin/modelviews.py),
+        rewritten locally rather than borrowed by calling that method with
+        `self` bound to a `FactorSetAdmin` - `_is_admin` reads
+        `self._session_maker_for(request)`, a method only `AdministratorOnly`
+        itself defines, so an unbound call against a `FactorSetAdmin`
+        instance would raise `AttributeError` rather than fall back to
+        anything. Mixing `AdministratorOnly` into `FactorSetAdmin` properly
+        was the other option and was rejected: it would also override
+        `is_visible`/`is_accessible` for this entire view, and §8.3 keeps
+        every other route on this screen open to both roles - only these two
+        routes need the floor, not the class. The role re-read from the
+        database on every request, not trusted from the session cookie, for
+        the same reason `AdministratorOnly`'s own docstring gives: a session
+        minted while somebody was an administrator must not keep the
+        capability after the role is taken away.
+        """
+        username = request.session.get(SESSION_KEY)
+        is_admin = False
+        if username:
+            with self.session_maker() as session:
+                try:
+                    is_admin = get_staff(session, username).role is StaffRole.admin
+                except UnknownStaffError:
+                    is_admin = False
+        if not is_admin:
             raise HTTPException(status_code=403)
 
     def _list_url(self, request):
@@ -1560,8 +1619,12 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         comment) cannot be a static `confirmation_message`, which means a
         page of its own, which means a POST - and sqladmin registers an
         `@action` with `methods=["GET"]` only.
+
+        `_require_admin_for_import`, not `_require_accessible` - see that
+        method's own docstring for why this pair of routes is gated
+        differently from every other action on this screen.
         """
-        self._require_accessible(request)
+        self._require_admin_for_import(request)
         try:
             self._one_pk(request)
         except LifecycleError as exc:
@@ -1591,16 +1654,18 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         admin/factor_lifecycle.py's import_published_into for the operation
         and the reasoning behind each of its rules.
 
-        **No reauthentication proof**, unlike clear_placeholder_page above.
-        That page removes a warning from a page the public is already
-        reading - an outward-facing consequence the instant it happens. This
-        one only replaces one draft's own numbers with the published set's;
-        nothing a member of the public can see changes, and a draft has no
-        public consequence of its own (the same distinction
-        clear_placeholder_page's own docstring draws, the other way round).
-        What this weight of action still owes is naming exactly what it is
-        about to throw away before it does - which is what the counts below,
-        and the confirmation dialog built from them, are for.
+        **`role = admin`, not a reauthentication proof.** Unlike
+        clear_placeholder_page above, nothing a member of the public can see
+        changes here - a draft has no public consequence of its own (the
+        same distinction that page's own docstring draws, the other way
+        round), so there is no "a stolen session shows the public something
+        it should not" argument for a password or a live code. What this
+        weight of action owes instead is the floor `_require_admin_for_import`
+        gives it: the operation is irreversible for the draft it targets -
+        every other action on this screen moves a factor set between states,
+        this one discards data outright - and naming exactly what it is
+        about to throw away before it does, which is what the counts below
+        and the confirmation dialog built from them are for.
 
         Renders the same page whether the selected set can be imported into
         or not, the same way clear_placeholder_page renders its own "nothing
@@ -1610,7 +1675,7 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
         ordinary, expected states worth explaining in words rather than
         stopping the page on.
         """
-        self._require_accessible(request)
+        self._require_admin_for_import(request)
 
         raw = request.query_params.get("pks", "")
         form = None

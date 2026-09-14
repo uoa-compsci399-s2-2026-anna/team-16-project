@@ -586,33 +586,28 @@ button:hover { background: var(--blueberry); }
   overflow: hidden;
   clip: rect(0, 0, 0, 0);
   white-space: nowrap;
-  /* NOT HIT-TESTABLE, IN EITHER STATE - measured, not stylistic, and the
-     second defect in this mechanism that only a real pointer could find.
+  /* WHY THE COLLAPSED BOX IS NOT WHAT STEALS THE HOVER ANY MORE. It is
+     `position: absolute` with no insets, so it sits at its static position -
+     and until the revealed rule below gave every row holding one a
+     `position: relative` of its own, its containing block was whichever
+     ancestor happened to be positioned. On `/admin/try` that was
+     `.dry-run-action`, the `position: sticky` bar, and in that configuration
+     Chromium's hover hit-test resolved to this 1px box rather than to the
+     control 40px away: `document.querySelectorAll(':hover')` ended at
+     `.help-tip__body` and did not contain the button at all. Two things broke
+     at once - the reveal rules are written as `TRIGGER:hover + ...`, so the
+     description never appeared on Reset or on either dry-run result action,
+     and the controls' OWN hover styling died with it (`Run another test`
+     stayed Kale under the pointer instead of going Blueberry, an affordance
+     it had before descriptions were added to it).
 
-     Collapsed, this is an `position: absolute` 1px box sitting at its static
-     position, which on a page whose row has a `position: sticky` ancestor
-     (`.dry-run-action`) is painted above the button beside it. Chromium's
-     hover hit-test then resolved to THIS box rather than to the control,
-     from 40px away: `document.querySelectorAll(':hover')` ended at
-     `.help-tip__body` and did not contain the button at all. Two things
-     broke at once. The reveal rules below are written as
-     `TRIGGER:hover + ...`, so with the trigger never entering `:hover` the
-     description could not appear - dead on `/admin/try`'s Reset and on both
-     dry-run result actions. And the control's OWN hover styling was dead
-     with it: `Run another test` stayed Kale (0,50,35) under the pointer
-     instead of going Blueberry (0,90,230), an affordance this panel had
-     before descriptions were added to it.
-
-     Revealed, the same property stops a second failure: a card that appears
-     under the pointer takes the hover, the trigger loses it, the card
-     collapses, the pointer is over the button again - an oscillation
-     Playwright reported as "element is not stable" and gave up on after 60
-     attempts, on a submit button.
-
-     Restored only for the glyph shape once it is explicitly opened, below:
-     that path does not depend on hover at all, and text a reader deliberately
-     opened should be selectable. */
-  pointer-events: none;
+     Anchoring the card to its row fixed both, and `pointer-events: none`
+     here does NOT: it was tried first, and restoring `pointer-events: auto`
+     with the anchoring in place turns no test red and changes nothing a
+     pointer can observe, because a revealed card is only ever up while the
+     pointer is on the button beside it. It is not kept for a fix it does not
+     make. See `tests/admin/test_button_hint_browser.py`'s
+     `test_the_control_keeps_its_own_hover_state`. */
   margin-block-start: 0.5rem;
   color: var(--kale);
   font-size: 0.85rem;
@@ -695,11 +690,6 @@ button:hover { background: var(--blueberry); }
   background: var(--white);
   box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
 }
-/* Deliberately opened, the glyph shape's text is selectable again - see the
-   `pointer-events` note on `.help-tip__body` above for why every other path
-   is not. Nothing here depends on hover, so nothing here can oscillate. */
-.help-tip[open] + .help-tip__body { pointer-events: auto; }
-
 /* ABOVE THE ROW, not below it, where the row is the last thing in its
    container: a dialog's action row sits on the dialog's bottom edge and the
    dry-run bar is pinned to the foot of the page, so a card placed below

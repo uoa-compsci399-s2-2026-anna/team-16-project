@@ -77,7 +77,7 @@
     <div class="actions">
       <button type="button" id="import-published" class="button button--danger"
               data-dialog="dialog-confirm" aria-haspopup="dialog"
-              aria-controls="dialog-confirm">{{ _("Import the published set") }}</button>{{ help.help_tip(_("What Import the published set does"), _("Deletes every factor, constant, formula and equivalence currently in this draft and replaces them with the published set's own. Version label and notes are kept; everything else in this draft is discarded.")) }}
+              aria-controls="dialog-confirm" aria-describedby="import-published-hint">{{ _("Import the published set") }}</button>{{ help.help_tip(_("What Import the published set does"), _("Deletes every factor, constant, formula and equivalence currently in this draft and replaces them with the published set's own. Version label and notes are kept; everything else in this draft is discarded."), id="import-published-hint") }}
       <a class="button button--quiet" href="{{ list_url }}">{{ _("Cancel") }}</a>
     </div>
 
@@ -101,7 +101,7 @@
 
       <div class="dialog__actions">
         <button type="button" class="button button--quiet" data-close-dialog>{{ _("Cancel") }}</button>
-        <button type="submit" class="button button--danger">{{ _("Import and discard this draft's own numbers") }}</button>
+        <button type="submit" class="button button--danger" aria-describedby="confirm-import-published-hint">{{ _("Import and discard this draft's own numbers") }}</button>{{ help.help_tip("What Import and discard does, once confirmed", _("Deletes this draft's own factors, constants, formulas and equivalences and writes the published set's in their place, once your proof checks out. The published set is only read. There is no undo, and no further confirmation after this."), id="confirm-import-published-hint", glyph=false) }}
       </div>
     </dialog>
   </form>

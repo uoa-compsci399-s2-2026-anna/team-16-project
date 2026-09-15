@@ -43,7 +43,7 @@ from admin.factor_models import (
     FactorUpstream, Formula,
 )
 from admin.models import AuditLog, StaffRole
-from admin.modelviews import AuditedModelView
+from admin.modelviews import AuditedModelView, described
 from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
 
@@ -1631,7 +1631,13 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     # for every draft, on every day. There is nowhere in a static string to
     # put a per-request count.
 
-    @action(name="import-published", label="Import the published set")
+    @action(name="import-published", label=described(
+        "Import the published set",
+        "Opens a confirmation page for replacing this draft's own factors, "
+        "constants, formulas and equivalences with the published set's. It is "
+        "how a draft that has been edited wrongly is put back; the published "
+        "set itself is only read.",
+    ))
     async def import_published_action(self, request):
         """Carry the selection to the confirmation page below.
 

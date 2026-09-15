@@ -343,6 +343,7 @@
     "Removes the device you selected, once your proof checks out. Only devices that can safely be removed are offered here, so your remaining authenticators still sign you in.": "在你的凭证通过核验后，移除你选择的设备。这里只列出可以安全移除的设备，所以你剩下的验证器仍然能让你登录。",
     "Removes the placeholder warning, once your proof checks out. If this set is published, visitors stop seeing it on their very next calculation.": "在你的凭证通过核验后移除占位数据警告。如果这个集合已发布，访客在下一次计算时就不会再看到它。",
     "Replaces your password once you confirm your current one, and signs out every other session using this account. Nobody can see or recover the old password afterwards.": "在你确认当前密码后替换它，并登出使用该账户的其他所有会话。此后没有人能看到或找回旧密码。",
-    "Replaces your password, once your current one checks out, and signs out every other session using this account.": "在你当前的密码通过核验后替换它，并登出使用该账户的其他所有会话。"
+    "Replaces your password, once your current one checks out, and signs out every other session using this account.": "在你当前的密码通过核验后替换它，并登出使用该账户的其他所有会话。",
+    "Deletes this draft's own factors, constants, formulas and equivalences and writes the published set's in their place, once your proof checks out. The published set is only read. There is no undo, and no further confirmation after this.": "在你的凭证通过核验后，删除这份 draft 自己的因子、常量、公式和等价关系，并写入已发布集合的对应内容。已发布的集合只会被读取。此操作无法撤销，之后也不会再有确认。"
   }
 }

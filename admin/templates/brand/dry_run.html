@@ -1,4 +1,5 @@
 {% extends "brand/base.html" %}
+{% import "brand/_help_tip.html" as help %}
 {#- The heading matches `DryRunView.name` in admin/dryrun_views.py, which is
     what the sidebar shows and what brand/compare.html links to as "Try a single
     scenario" - pinned by tests/admin/test_compare_view.py. A page whose title
@@ -64,7 +65,7 @@
     </section>
     <section class="dry-run-action" aria-labelledby="run-title">
       <div><span class="dry-run-step">02</span><h2 id="run-title">Run this scenario</h2><p>The request is marked as a dry run and will not affect public statistics.</p></div>
-      <div class="dry-run-action__buttons"><a class="button button--quiet" href="/admin/try">Reset</a><button class="dry-run-primary" type="submit">Run test <span aria-hidden="true">→</span></button></div>
+      <div class="dry-run-action__buttons"><a class="button button--quiet" href="/admin/try" aria-describedby="dry-run-reset-hint">Reset</a>{{ help.help_tip("What Reset does", _("Reloads this page with every field back to its starting value: quantity 1000.000, the first sector and destination in each list, Standard mix, and a 100-year methane horizon. Anything you have typed here is discarded."), id="dry-run-reset-hint", glyph=false) }}<button class="dry-run-primary" type="submit">Run test <span aria-hidden="true">→</span></button></div>
     </section>
   </form>
 </main>

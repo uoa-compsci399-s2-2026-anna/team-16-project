@@ -112,7 +112,8 @@
     <div class="actions">
       <button type="button" id="delete-accounts" class="button button--danger"
               data-dialog="dialog-confirm" aria-haspopup="dialog"
-              aria-controls="dialog-confirm">Delete permanently</button>{{ help.help_tip(_("What Delete permanently does"), _("Removes the selected account for good and frees its username. This cannot be undone — Deactivate is the reversible version of this action.")) }}
+              aria-controls="dialog-confirm"
+              aria-describedby="delete-accounts-hint">Delete permanently</button>{{ help.help_tip(_("What Delete permanently does"), _("Removes the selected account for good and frees its username. This cannot be undone — Deactivate is the reversible version of this action."), id="delete-accounts-hint") }}
       <a class="button button--quiet" href="{{ list_url }}">Cancel</a>
     </div>
 
@@ -151,7 +152,8 @@
 
       <div class="dialog__actions">
         <button type="button" class="button button--quiet" data-close-dialog>Cancel</button>
-        <button type="submit" class="button button--danger">Delete permanently</button>
+        <button type="submit" class="button button--danger"
+                aria-describedby="confirm-delete-hint">Delete permanently</button>{{ help.help_tip("What Delete permanently does, once confirmed", _("Deletes the accounts listed above, once the code or password you enter here checks out. Nothing further is asked, and the deletion cannot be undone."), id="confirm-delete-hint", glyph=false) }}
       </div>
     </dialog>
   </form>

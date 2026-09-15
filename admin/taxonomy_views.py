@@ -30,7 +30,7 @@ from starlette.responses import RedirectResponse
 
 from admin.audit import row_to_dict, write_audit
 from admin.auth import SESSION_KEY
-from admin.modelviews import AuditedModelView
+from admin.modelviews import described, AuditedModelView
 from admin.taxonomy_models import (
     Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
 )
@@ -213,7 +213,10 @@ class _TaxonomyAdmin(AuditedModelView):
 
     @action(
         name="deactivate",
-        label="Deactivate",
+        label=described(
+            "Deactivate",
+            "Drops the selected rows out of the calculator's own lists and this panel's forms. Anything that already refers to one - a historical result, for instance - still resolves it.",
+        ),
         confirmation_message=(
             "This deactivates every selected row. A deactivated row stays "
             "resolvable by anything that already refers to it - a historical "
@@ -226,7 +229,10 @@ class _TaxonomyAdmin(AuditedModelView):
 
     @action(
         name="activate",
-        label="Activate",
+        label=described(
+            "Activate",
+            "Puts the selected rows back into the calculator's lists and this panel's forms, so they can be chosen again.",
+        ),
         confirmation_message="This activates every selected row.",
     )
     async def activate_action(self, request):

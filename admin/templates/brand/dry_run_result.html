@@ -1,4 +1,5 @@
 {% extends "brand/base.html" %}
+{% import "brand/_help_tip.html" as help %}
 {% block title %}{{ _("Dry run result") }}{% endblock %}
 {% block shell %}
 {#- THE STATE IS DECIDED HERE, ONCE, BEFORE ANYTHING IS DRAWN.
@@ -82,6 +83,6 @@
       <div class="metric-grid">{% for metric_code, metric in current_metrics.items() %}<article class="metric-card"><span>{{ metric_code }}</span><strong>{{ metric.total }}</strong><small>{{ metric.unit }}</small></article>{% else %}<p class="muted">{{ _("No calculated metrics were returned.") }}</p>{% endfor %}</div>
     </section>
   {% endif %}
-  <div class="result-actions"><a class="button button--quiet" href="/admin/try">← {{ _("Change configuration") }}</a><a class="button dry-run-primary" href="/admin/try">{{ _("Run another test") }}</a></div>
+  <div class="result-actions"><a class="button button--quiet" href="/admin/try" aria-describedby="change-configuration-hint">← {{ _("Change configuration") }}</a>{{ help.help_tip("What Change configuration does", _("Goes back to the test form, so you can change the factor set, sector, destination or quantity and run it again. This result is not kept."), id="change-configuration-hint", glyph=false) }}<a class="button dry-run-primary" href="/admin/try" aria-describedby="run-another-test-hint">{{ _("Run another test") }}</a>{{ help.help_tip("What Run another test does", _("Goes back to the test form — the same place Change configuration goes, offered at this end of the row too. This result is not kept, and no dry run is ever saved or counted in the public statistics."), id="run-another-test-hint", glyph=false) }}</div>
 </main>
 {% endblock %}

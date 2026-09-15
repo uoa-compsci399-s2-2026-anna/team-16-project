@@ -484,7 +484,8 @@ button:hover { background: var(--blueberry); }
 .guidance-disclosure__body { padding-block: 0.75rem 0.25rem; padding-inline: 0.15rem; }
 .guidance-disclosure__body p:last-child { margin-bottom: 0; }
 
-/* The small "?" beside a button (brand/_help_tip.html).
+/* The description beside a button (brand/_help_tip.html) - a visible "?" on
+   some buttons, hover and keyboard focus on every one of them.
 
    THIS USED TO BE `position: absolute`, floating the explanation over the
    page instead of pushing anything else down. Measured at a 320px-wide
@@ -496,18 +497,45 @@ button:hover { background: var(--blueberry); }
    the viewport. That is exactly the failure this panel was told to avoid -
    "a help marker that pushes a button off a narrow screen is worse than no
    help marker" - just sideways rather than by literally displacing the
-   button.
+   button. The rule that follows from it, unchanged by hover and focus being
+   added below: **revealed, this is a normal in-flow block, never a floating
+   card.** A block box is never wider than its own containing block, so it
+   cannot overflow the page at any width - the same guarantee
+   `.guidance-disclosure` above already relies on, and proven the same way:
+   measured with no horizontal scrollbar at 320px. The trade a floating card
+   would have kept is that revealing one no longer leaves the row's other
+   buttons in place; they wrap below it instead.
 
-   So this is a normal, in-flow block instead: closed, `.help-tip` is a tiny
-   inline-block next to the button, adding negligible width. Open, it
-   BECOMES a block box - `flex-basis: 100%` also throws it onto its own row
-   when the button sits in a `.actions` flex row, which every one of them
-   does bar one. Either way a block box is never wider than its own
-   containing block, so it cannot overflow the page at any width - the same
-   guarantee `.guidance-disclosure` above already relies on, and proven the
-   same way: measured with no horizontal scrollbar at 320px. The trade a
-   floating card would have kept is that opening one no longer leaves the
-   row's other buttons in place; they wrap below it instead. */
+   `.help-tip` is the "?" pill (`glyph=true` only); `.help-tip__body` is the
+   description itself, for both shapes, and it is the SAME element every
+   path reveals - `aria-describedby` on the button names its `id` regardless
+   of shape, so a screen reader reaches it the moment the button is focused.
+
+   `.help-tip__body` IS A SIBLING OF `.help-tip`, NEVER A CHILD OF IT - this
+   is load-bearing and was wrong once already. `_help_tip.html`'s header
+   comment tells the story: nesting the body inside `<details>` and
+   overriding `display` in CSS reads as though it should work, and does not -
+   Chromium does not render a closed `<details>`'s non-summary content
+   through ANY author CSS, `display` included, and `Element.checkVisibility()`
+   (what `tests/admin/test_button_hint_browser.py` actually measures) agrees
+   with the browser, not with the stylesheet. So `<details>` here holds
+   nothing but its own `<summary>`, `.help-tip__body` sits immediately after
+   it as a plain, always-connected sibling, and every reveal below is a
+   sibling combinator, never a descendant one - `.help-tip[open] +
+   .help-tip__body`, not `.help-tip[open] > .help-tip__body`.
+
+   `.help-tip__body` does not rely on ANY native open/closed hiding to be
+   collapsed, either - a screen reader does not announce a `display: none`
+   node, `aria-describedby` target or not, so relying on one would mean the
+   description is only announced after the glyph has already been opened, on
+   the buttons that have one, and never on the buttons that do not. It is
+   visually collapsed instead, with the same clip-rect technique `.sr-only`
+   above uses - in the accessibility tree at all times, showing nothing on
+   screen - and revealed to sighted users on `[open]`, on hovering the button
+   beside it, and on focusing that button. `:focus` rather than
+   `:focus-visible`: a description is not an outline ring, and there is no
+   case where showing it on a focus a browser judges "not visible enough to
+   ring" is the wrong call. */
 .help-tip {
   display: inline-block;
   vertical-align: middle;
@@ -537,27 +565,170 @@ button:hover { background: var(--blueberry); }
   outline-offset: 2px;
 }
 .help-tip[open] summary { background: var(--kale); color: var(--white); }
-.help-tip[open] {
-  display: block;
-  flex-basis: 100%;
-  margin-inline-start: 0;
-  margin-block-start: 0.5rem;
-}
 .help-tip__body {
+  /* Visually collapsed by default: present for `aria-describedby`, invisible
+     on screen. The clip-rect technique, not `display: none` - see the
+     section comment above for why a screen reader needs the difference.
+
+     NO PADDING, BORDER OR BACKGROUND HERE - measured, not stylistic. Those
+     live on the revealed rule below instead, because `box-sizing: border-box`
+     cannot shrink a box below its own padding plus border: with the
+     revealed rule's 0.75rem inline padding and 1px border also sitting on
+     this rule, `inline-size: 1px` clamped to the ~26px their combined
+     minimum forced regardless, and this "collapsed" state rendered at
+     visible size the entire time hover and focus were being tested by
+     reading markup rather than a real box. */
+  box-sizing: border-box;
+  display: block;
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  /* WHY THE COLLAPSED BOX IS NOT WHAT STEALS THE HOVER ANY MORE. It is
+     `position: absolute` with no insets, so it sits at its static position -
+     and until the revealed rule below gave every row holding one a
+     `position: relative` of its own, its containing block was whichever
+     ancestor happened to be positioned. On `/admin/try` that was
+     `.dry-run-action`, the `position: sticky` bar, and in that configuration
+     Chromium's hover hit-test resolved to this 1px box rather than to the
+     control 40px away: `document.querySelectorAll(':hover')` ended at
+     `.help-tip__body` and did not contain the button at all. Two things broke
+     at once - the reveal rules are written as `TRIGGER:hover + ...`, so the
+     description never appeared on Reset or on either dry-run result action,
+     and the controls' OWN hover styling died with it (`Run another test`
+     stayed Kale under the pointer instead of going Blueberry, an affordance
+     it had before descriptions were added to it).
+
+     Anchoring the card to its row fixed both, and `pointer-events: none`
+     here does NOT: it was tried first, and restoring `pointer-events: auto`
+     with the anchoring in place turns no test red and changes nothing a
+     pointer can observe, because a revealed card is only ever up while the
+     pointer is on the button beside it. It is not kept for a fix it does not
+     make. See `tests/admin/test_button_hint_browser.py`'s
+     `test_the_control_keeps_its_own_hover_state`. */
   margin-block-start: 0.5rem;
-  max-inline-size: 34rem;
-  padding-block: 0.55rem;
-  padding-inline: 0.75rem;
-  border: 1px solid rgba(0, 50, 35, 0.16);
-  border-radius: var(--radius);
-  background: var(--white);
   color: var(--kale);
-  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
   font-size: 0.85rem;
   font-weight: 400;
   line-height: 1.4;
   text-align: start;
 }
+/* Revealed: a card that LEAVES THE FLOW, anchored to the row the button sits
+   in. Three ways in, matching `_help_tip.html`'s two shapes:
+   - `.help-tip[open] + .help-tip__body` - the glyph shape, clicked or
+     tapped open; `.help-tip__body` is `<details>`'s next sibling, not its
+     child, so this is a sibling combinator on purpose.
+   - `TRIGGER:hover|:focus + .help-tip + .help-tip__body` - the glyph shape,
+     revealed without opening it: button, then the (still closed) `<details>`
+     pill, then the body - three flat siblings, chained.
+   - `TRIGGER:hover|:focus + .help-tip__body` - the bare shape (`glyph=false`):
+     button, then the body directly, with no `<details>` in between.
+   `:is()` takes this panel's button classes plus the bare `button` element,
+   so a control styled as a button reveals its description whether or not it
+   carries a class - `block_ip.html`'s Block is a bare `<button>` and read as
+   an inconsistency next to every other described button until it did. None of
+   these selectors matches anything without a `.help-tip__body` beside it, so
+   widening the trigger describes no button that was not given a description.
+
+   OUT OF FLOW, NOT IN FLOW - reversed here, and the reversal is the whole
+   point. This started as "a normal in-flow block, never a floating card", on
+   the reasoning that a block box can never be wider than its containing block
+   and so can never overflow the page. The width argument is sound; what it
+   missed is that an in-flow reveal RESIZES THE ROW, and three of the four
+   rows it appears in cannot absorb that:
+
+   - `.dialog__actions` is `flex-wrap: nowrap`, with a standing warning
+     against changing that from a 400px-viewport-height measurement. The card
+     became a third item on a row that will not wrap, and flexbox found its
+     width out of the buttons: the hovered submit went 192x50 -> 114x142,
+     moved 28px inline-start and 46px up, both labels wrapped to three lines,
+     and the dialog grew 92px and re-centred.
+   - `.dry-run-action` is `position: sticky` at the foot of the page. Letting
+     its row grow pushes the buttons UP, out from under the pointer that just
+     arrived on them - the control unhovers, the card collapses, the row
+     shrinks, the control is hovered again. A live oscillation: Playwright
+     reported "element is not stable", retried 60 times and gave up, on a
+     submit button.
+   - `.actions` does wrap, and the card landing on its own row still dropped
+     the two buttons after it by 154px while the reader was aiming at one.
+
+   So the card is `position: absolute` against the row, and the row's own box
+   never changes. Nothing moves when a description appears. The overflow
+   guarantee the in-flow version was chosen for is kept by other means:
+   `inline-size` is the row's own width and `max-inline-size` clamps it, so
+   the card is never wider than the row that anchors it, at any viewport -
+   still measured with no horizontal scrollbar at 320px.
+
+   The padding, border, background and shadow that make this read as a card
+   are declared HERE rather than on `.help-tip__body` itself, for the reason
+   that rule's own comment gives: on a 1px collapsed box they force a
+   minimum rendered size no `clip` then hides. */
+:where(:has(> .help-tip__body)) { position: relative; }
+.help-tip[open] + .help-tip__body,
+:is(.button, .button--quiet, .button--danger, button):hover + .help-tip + .help-tip__body,
+:is(.button, .button--quiet, .button--danger, button):focus + .help-tip + .help-tip__body,
+:is(.button, .button--quiet, .button--danger, button):hover + .help-tip__body,
+:is(.button, .button--quiet, .button--danger, button):focus + .help-tip__body {
+  display: block;
+  position: absolute;
+  inset-block-start: calc(100% + 0.5rem);
+  inset-inline-start: 0;
+  inline-size: 100%;
+  max-inline-size: 34rem;
+  block-size: auto;
+  overflow: visible;
+  clip: auto;
+  white-space: normal;
+  margin-block-start: 0;
+  z-index: 3;
+  padding-block: 0.55rem;
+  padding-inline: 0.75rem;
+  border: 1px solid rgba(0, 50, 35, 0.16);
+  border-radius: var(--radius);
+  background: var(--white);
+  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
+}
+/* ABOVE THE ROW, not below it, where the row is the last thing in its
+   container: a dialog's action row sits on the dialog's bottom edge and the
+   dry-run bar is pinned to the foot of the page, so a card placed below
+   either one renders outside the thing it belongs to - clipped by the
+   dialog's own `overflow-y: auto`, or off the bottom of the viewport. Above,
+   it opens over the form it is explaining, which is the content the reader
+   has just finished with. `:where()` keeps this at the same specificity as
+   the rule above so source order alone decides, and `.dialog__actions`'s
+   `position: sticky` is left intact by the zero-specificity `:where()`
+   positioning rule above rather than overridden to `relative`. */
+:is(.dialog__actions, .dry-run-action, .result-actions) :is(
+  .help-tip[open] + .help-tip__body,
+  :is(.button, .button--quiet, .button--danger, button):is(:hover, :focus) + .help-tip + .help-tip__body,
+  :is(.button, .button--quiet, .button--danger, button):is(:hover, :focus) + .help-tip__body
+) {
+  inset-block-start: auto;
+  inset-block-end: calc(100% + 0.5rem);
+}
+
+/* END-ANCHORED WHERE THE ROW IS END-ALIGNED. The two dry-run rows sit hard
+   against the page's inline-end edge and are only as wide as their own
+   buttons, so a card taking `inline-size: 100%` of them came out 243px wide
+   and three lines tall for a sentence that reads comfortably in one. Anchored
+   to the row's END instead, the card grows back towards the page rather than
+   off it, so it can take its natural width. `min()` against the viewport is
+   what keeps that safe at 320px: the anchor is already inside the page
+   gutter, so a card no wider than the viewport less its gutters cannot reach
+   the inline-start edge either. */
+:is(.dry-run-action, .result-actions) :is(
+  .help-tip[open] + .help-tip__body,
+  :is(.button, .button--quiet, .button--danger, button):is(:hover, :focus) + .help-tip + .help-tip__body,
+  :is(.button, .button--quiet, .button--danger, button):is(:hover, :focus) + .help-tip__body
+) {
+  inset-inline-start: auto;
+  inset-inline-end: 0;
+  inline-size: max-content;
+  max-inline-size: min(34rem, calc(100vw - 2rem));
+}
+
 
 /* One-time secrets: initial passwords, recovery codes. */
 .secrets {

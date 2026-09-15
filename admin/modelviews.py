@@ -29,6 +29,7 @@ session this class did not create.
 import contextvars
 from typing import Any
 
+from markupsafe import Markup
 from sqladmin import ModelView
 from sqladmin.filters import OperationColumnFilter
 from sqlalchemy import event
@@ -544,3 +545,46 @@ class AuditLogAdmin(AdministratorOnly, ModelView, model=AuditLog):
         OperationColumnFilter(AuditLog.at),
     ]
     page_size = 50
+
+
+def described(label: str, description: str) -> Markup:
+    """An `@action` label that carries its own one-line description.
+
+    WHY THE DESCRIPTION IS IN THE LABEL. Every screen in `brand/` puts a
+    button's description beside the button, through `brand/_help_tip.html`.
+    The `@action` entries cannot use that: sqladmin renders them itself,
+    from its own `sqladmin/list.html`, as `<a class="dropdown-item">{{ label
+    }}</a>` inside a Bootstrap dropdown, and `brand/` never sees the markup.
+    That is how the panel's most consequential controls - Publish, which
+    changes what every public visitor's next calculation returns, and Roll
+    back and Archive, which change it again - came to be the only ones with
+    nothing to say for themselves.
+
+    The three ways to reach them were: fork `sqladmin/list.html` into this
+    repository, which means carrying ~290 lines of somebody else's template
+    that will rot silently at the next upgrade, for one span; add JavaScript
+    that rewrites the menu after render, which puts text a reader depends on
+    behind a script; or hand sqladmin a label that is already the markup we
+    want. `sqladmin.application` stores `_label` verbatim and its Jinja
+    environment is `autoescape=True`, so a `Markup` passes through and a
+    plain string still escapes - this widens nothing and changes no default.
+
+    NOT A HOVER REVEAL, AND THAT IS THE POINT. A dropdown menu is already a
+    disclosure: it is shut until the reader opens it, and when they open it
+    they are choosing between the items in it. That is the moment the
+    description is worth reading, so it is simply there, on a second line
+    under the label, for a mouse, a keyboard, a touchscreen and a screen
+    reader alike, with no second gesture to discover. Hovering an item in a
+    menu to find out what it does would also mean a card appearing over the
+    items next to it - the ones the reader is comparing it against.
+
+    The description is not translated, for the same reason `label` is not:
+    sqladmin reads both at import time, long before a request exists to
+    negotiate a language from. That is a pre-existing gap in this panel, not
+    one this function opens, and closing it means translating labels and
+    descriptions together.
+    """
+    return Markup(
+        '<span class="action-item__label">{label}</span>'
+        '<span class="action-item__note">{note}</span>'
+    ).format(label=label, note=description)

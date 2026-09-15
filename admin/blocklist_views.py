@@ -81,7 +81,7 @@ from sqlalchemy import select
 
 from admin.audit import write_audit
 from admin.auth import SESSION_KEY
-from admin.modelviews import AdministratorOnly, AuditedModelView
+from admin.modelviews import described, AdministratorOnly, AuditedModelView
 from admin.runtime import get_runtime
 from db.blocklist import InvalidAddressError, block_ip, ip_fingerprint, normalise_ip
 from db.blocklist_models import IpBlock
@@ -169,7 +169,10 @@ class IpBlockAdmin(AdministratorOnly, AuditedModelView, model=IpBlock):
 
     @action(
         name="unblock",
-        label="Unblock",
+        label=described(
+            "Unblock",
+            "Lets this address reach the panel again, immediately. The block itself stays in the audit trail.",
+        ),
         confirmation_message=(
             "This removes the block. The address becomes reachable again "
             "immediately."

@@ -1263,7 +1263,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     @action(
         name="clone",
-        label="Clone",
+        label=described(
+            "Clone",
+            "Copies this set into a new draft you can edit. The original is left exactly as it is, and nothing the public sees changes.",
+        ),
         confirmation_message=(
             "This creates a new draft with every factor, constant, formula "
             "and equivalence from this set duplicated. Nothing the public "
@@ -1301,7 +1304,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     @action(
         name="publish",
-        label="Publish",
+        label=described(
+            "Publish",
+            "Makes this set live and archives whatever is published now. Every calculation from this point on uses its numbers.",
+        ),
         confirmation_message=(
             "This makes this set live and archives whatever is currently "
             "published. Every calculation from this point on uses its "
@@ -1326,7 +1332,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     @action(
         name="rollback",
-        label="Roll back",
+        label=described(
+            "Roll back",
+            "Puts this archived set back to published, archiving whatever is published now in its place.",
+        ),
         confirmation_message=(
             "This restores this archived set to published, archiving "
             "whatever is currently published in its place."
@@ -1350,7 +1359,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     @action(
         name="archive",
-        label="Archive",
+        label=described(
+            "Archive",
+            "Retires this set with nothing promoted to take its place. If it is the published one, the calculator shows a maintenance message until another set is published.",
+        ),
         confirmation_message=(
             "This archives this factor set on its own, with nothing else "
             "promoted to take its place. If this set is currently "
@@ -1376,7 +1388,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     @action(
         name="compare",
-        label="Compare with published",
+        label=described(
+            "Compare with published",
+            "Opens this set side by side with the published one. It changes nothing, and it is the last check worth making before publishing.",
+        ),
     )
     async def compare_action(self, request):
         """Contract §8.2: the last gate before publishing. Redirects to
@@ -1420,7 +1435,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
     @action(
         name="flag-placeholder",
-        label="Flag as placeholder data",
+        label=described(
+            "Flag as placeholder data",
+            "Adds the placeholder-data warning to every public result and export calculated from this set, immediately, and a visitor cannot dismiss it.",
+        ),
         confirmation_message=(
             "This adds the placeholder-data warning to every public result "
             "and export calculated from this set, and a visitor cannot "
@@ -1453,7 +1471,10 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
             session.commit()
         return RedirectResponse(self._list_url(request), status_code=302)
 
-    @action(name="clear-placeholder", label="Clear placeholder flag")
+    @action(name="clear-placeholder", label=described(
+            "Clear placeholder flag",
+            "Opens a confirmation page for removing that warning. Only do it once every number in this set is real.",
+        ))
     async def clear_placeholder_action(self, request):
         """Hand the selection to the confirmation page below.
 

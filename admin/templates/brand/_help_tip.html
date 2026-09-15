@@ -1,14 +1,51 @@
-{# A small "?" beside a control, carrying one or two plain-language sentences
-   about what pressing it does. Task: admin usability - the client and their
-   staff, not engineers, are who this is for.
+{# A description beside a control, carrying one or two plain-language
+   sentences about what pressing it does. Task: admin usability - the client
+   and their staff, not engineers, are who this is for, and the failure mode
+   this guards against is not danger. It is a button whose name is abstract
+   enough that a month later nobody remembers which one it was.
 
-   WHY <details>/<summary> AND NOT A `title` ATTRIBUTE OR A HOVER TOOLTIP.
-   `title` is invisible to touch - there is no long-press-to-reveal affordance
-   most people ever discover - and it is slow for everyone else, gated behind
-   a timed hover delay with no keyboard path at all: Tab moves focus onto the
-   element but nothing then shows the text. A hover-only CSS tooltip
-   (:hover/:focus) fails the same population a different way: there is no
-   hover on a touchscreen, so the explanation never appears there either.
+   ONE DECLARATION, THREE PATHS TO IT. Every call passes `name` and `text`
+   once; the macro is what turns that single pair into everything a reader
+   might use to find it - `aria-describedby` for a screen reader, a hover
+   reveal for a mouse, a focus reveal for a keyboard. There is nowhere in
+   this file a button could say one thing on hover and a different thing
+   once opened, because there is only ever one `.help-tip__body` node:
+   `admin/static/brand.css` shows and hides it, it never duplicates it.
+
+   `id` is required and is not translated - it is what the calling template's
+   button wires into its own `aria-describedby`, so the two have to agree.
+   The convention every call site below follows is `<button id>-hint`.
+
+   `glyph` (default `true`) chooses which of two shapes this renders:
+
+   * `glyph=true` - a `<details>` carrying a visible "?", for a button whose
+     consequence is worth a touch-reachable, explicitly opened explanation:
+     the eight calls this macro already had before hover was added. Tapping
+     or clicking the "?" opens the very element `aria-describedby` already
+     points at - not a copy of it.
+   * `glyph=false` - no visible glyph at all, for a button whose action is
+     not worth a permanent glyph beside it. Reachable by mouse (hover) and by
+     keyboard (focus) exactly as the glyph shape is, and by a screen reader
+     at either the button or the description exactly as before -
+     `aria-describedby` does not care which shape rendered it. What it costs
+     is the one path `glyph=true` buttons keep and these do not: a tap that
+     reveals the text without also acting on the button, so it is not
+     offered on a button whose consequence would justify it.
+
+   WHY <details>/<summary> AND NOT A `title` ATTRIBUTE OR A HOVER-ONLY CSS
+   TOOLTIP, FOR THE GLYPH SHAPE. `title` is invisible to touch - there is no
+   long-press-to-reveal affordance most people ever discover - and it is slow
+   for everyone else, gated behind a timed hover delay with no keyboard path
+   at all. A hover-only CSS tooltip (:hover/:focus with nothing else) fails
+   the same population a different way: there is no hover on a touchscreen,
+   so the explanation never appears there either. That argument still holds,
+   and this file does not overrule it - it is why the glyph shape exists at
+   all and stays the touch path and the home for longer copy on the buttons
+   that carry one. What changed is that hover and focus are now ALSO wired,
+   as a shortcut for a mouse or a keyboard, never as the only path: a person
+   tabbing through the page with no mouse still reaches every description,
+   glyph or no glyph, because `aria-describedby` and the focus reveal do not
+   depend on the glyph being there.
 
    `<summary>` is natively focusable, and toggles open and closed on a mouse
    click, on a touch tap, and on Enter or Space once focused - the three
@@ -17,24 +54,64 @@
    brand/enrol_done.html, brand/guidance/), so a help marker behaves the same
    way as every other fold in the panel rather than inventing a second one.
 
-   ACCESSIBLE NAME. The visible glyph is "?" alone - a label that announces
-   as "question mark" to a screen reader and tells nobody what it explains.
-   `name` is required and becomes the summary's `aria-label`, so it must say
-   what the control does ("Delete this account for good" rather than "Help"
-   or "More info") - a person tabbing through several of these on one page
-   needs the name alone to tell them apart.
+   THE BODY IS A SIBLING OF `<details>`, NOT A CHILD OF IT - measured, not
+   assumed. The first version of this macro nested `.help-tip__body` inside
+   `<details>`, on the reasoning that overriding `display` in CSS would beat
+   the UA stylesheet's `details:not([open]) > *:not(summary) { display: none
+   }`. That reasoning was wrong in a way a stylesheet reading cannot catch,
+   only a real browser can: Chromium does not merely apply `display: none` to
+   a closed `<details>`'s non-summary content, and no author CSS - `display`
+   included - makes that content visible, or reachable by `Element.
+   checkVisibility()`, while the element stays closed. A `glyph=true`
+   button's description was consequently unrevealable by hover or focus at
+   all, the whole time its markup, its `aria-describedby`, and every static
+   test over the template source read as correct - because none of those
+   check what a browser actually renders. `tests/admin/
+   test_button_hint_browser.py` is what found it, by reading `is_visible()`
+   in a real Chromium instead of the page's HTML.
 
-   LAYOUT. Closed, `.help-tip` is a tiny inline circle next to the button and
-   adds negligible width. Open, it becomes a normal block box - full width of
-   whatever row it sits in, wrapping onto its own line - rather than a
-   floating card. See brand.css's own comment on `.help-tip` for why: a
-   floating, absolutely-positioned version of this was tried first and
-   measured to overflow the page horizontally at 320px whenever the marker
-   sat away from the row's left edge, which is the concrete failure this task
-   warns against, just sideways instead of literally displacing the button. #}
-{% macro help_tip(name, text) -%}
-<details class="help-tip">
-  <summary aria-label="{{ name }}"><span aria-hidden="true">?</span></summary>
-  <div class="help-tip__body">{{ text }}</div>
-</details>
+   So `.help-tip__body` sits immediately AFTER `<details>` in the markup, as
+   a plain sibling, and `admin/static/brand.css` reveals it with sibling
+   combinators (`:is(...):hover + .help-tip + .help-tip__body`, `.help-tip
+   [open] + .help-tip__body`) rather than a descendant one. `<details>`
+   itself then holds nothing but its own `<summary>` - clicking it still
+   toggles `[open]` with no JavaScript, exactly as before - and the element
+   `aria-describedby` names is never inside it, so nothing about revealing it
+   can ever depend on `<details>` being open.
+
+   ACCESSIBLE NAME. On the glyph shape the visible glyph is "?" alone - a
+   label that announces as "question mark" to a screen reader and tells
+   nobody what it explains. `name` becomes the summary's `aria-label`, so it
+   must say what the control does ("Delete this account for good" rather
+   than "Help" or "More info") - a person tabbing through several of these on
+   one page needs the name alone to tell them apart. On the bare shape `name`
+   is not rendered anywhere - there is no glyph to label - but every call
+   still passes one, so the two shapes read as one convention in the source
+   rather than two, and so a call site can move from one shape to the other
+   without inventing a name it never had.
+
+   `name` IS TRANSLATED ON THE GLYPH SHAPE AND NOT ON THE BARE ONE, and the
+   asymmetry is deliberate. On the glyph shape it becomes a real
+   `aria-label` a screen reader reads out, so it is interface text and goes
+   through `_()` like any other. On the bare shape it reaches no user by any
+   path at all, and wrapping it in `_()` put thirteen strings into
+   `admin/locales/zh.json` for a translator to render into Chinese that
+   nothing would ever display. A bare call therefore passes its name as a
+   plain literal: the convention above is kept in the source, and the
+   catalogue carries only strings somebody can actually read.
+
+   LAYOUT. See admin/static/brand.css's own comment on the revealed rule.
+   Short version, and it is the reverse of what stood here when this
+   mechanism shipped: the reveal is a card OUT OF FLOW, anchored to the row
+   its button sits in, because an in-flow one resizes that row - which
+   crushed the buttons in a `flex-wrap: nowrap` dialog footer and set up a
+   live hover oscillation in the sticky dry-run bar, where growing the row
+   pushes the button out from under the pointer that just reached it.
+   Nothing moves now when a description appears. #}
+{% macro help_tip(name, text, id, glyph=true) -%}
+{%- if glyph -%}
+<details class="help-tip"><summary aria-label="{{ name }}"><span aria-hidden="true">?</span></summary></details><div class="help-tip__body" id="{{ id }}">{{ text }}</div>
+{%- else -%}
+<div class="help-tip__body" id="{{ id }}">{{ text }}</div>
+{%- endif -%}
 {%- endmacro %}

@@ -207,4 +207,40 @@
       margin-top: 1rem;
     }
   }
+
+  /* ------------------------------------------------------------------
+     AN ACTION IN THE MENU SAYS WHAT IT DOES.
+
+     `Publish` changes what every public visitor's next calculation
+     returns; `Roll back` and `Archive` change it again; `Delete
+     permanently` frees a username for good. Until this, each of them was
+     a bare verb in a dropdown, and the only explanation anywhere was the
+     confirmation modal you reach by committing to the thing first - and
+     two of them have no modal at all.
+
+     The label is now two lines: the verb, and one sentence under it. See
+     `admin/modelviews.py`'s `described()` for why the description travels
+     inside the label rather than beside the button the way every
+     `brand/` screen does it, and why a menu gets its description
+     outright instead of on hover.
+
+     Tabler's `.dropdown-item` is `white-space: nowrap`, which is right
+     for a one-word menu and turns a sentence into one long line that
+     pushes the menu off the screen. It is relaxed here only for items
+     that actually carry a note, so a menu of plain items is untouched.
+     ------------------------------------------------------------------ */
+  .dropdown-item:has(.action-item__note) {
+    white-space: normal;
+    /* Wide enough for a sentence to break two or three times, and no
+       wider than a narrow viewport can hold. */
+    max-inline-size: min(26rem, calc(100vw - 3rem));
+  }
+  .action-item__label { display: block; }
+  .action-item__note {
+    display: block;
+    margin-block-start: 0.15rem;
+    font-size: 0.8rem;
+    line-height: 1.35;
+    opacity: 0.78;
+  }
 </style>

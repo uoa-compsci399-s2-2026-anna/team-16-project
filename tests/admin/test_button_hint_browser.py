@@ -641,7 +641,10 @@ def test_a_bare_button_element_reveals_its_description(browser, authed_storage_s
 
 
 @pytest.mark.parametrize("path,expected", [
-    ("/admin/factor-set/list", 7),
+    # 8, not 7: the import-published action merged in from #60 and was
+    # given its description here too - it is the most destructive action
+    # on this screen.
+    ("/admin/factor-set/list", 8),
     ("/admin/staff/list", 6),
     ("/admin/sector/list", 2),
     ("/admin/ip-block/list", 1),

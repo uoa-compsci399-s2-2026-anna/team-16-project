@@ -95,6 +95,28 @@ _ADMIN_ONLY: list[tuple[str, str, str]] = [
     ("GET", "/admin/ip-block/block", "a manual block is an administrator's decision"),
     ("POST", "/admin/ip-block/block", "the GET being refused does not refuse the POST"),
     ("GET", "/admin/ip-block/action/unblock", "removing a block is administrator-only"),
+    # --- importing the published set into a draft (factor-set import) -------
+    # The one action on FactorSetAdmin that discards data with no undo -
+    # every other action on that screen (clone/publish/rollback/archive/the
+    # placeholder flag, all in _BOTH_ROLES below) moves a factor set between
+    # states without destroying anything. Matched against StaffAdmin's own
+    # `delete` action just above ("deletion is irreversible"), not against
+    # this screen's own siblings - see admin/factor_views.py's
+    # `_require_admin_for_import`.
+    ("GET", "/admin/factor-set/action/import-published",
+     "discards a draft's own factors with no undo, unlike this screen's other actions"),
+    ("GET", "/admin/factor-set/import-published",
+     "the confirmation page the action above redirects to; same floor"),
+    # The POST is the one that actually destroys the draft's rows, and
+    # `_concrete_admin_routes` below matches on path rather than method - so
+    # naming only the GET leaves the destructive half invisible to
+    # `test_every_registered_route_is_named_here`. The guard is a
+    # `_require_admin_for_import` call inside the handler, ahead of the CSRF
+    # check, and it covers both methods; this line is what notices if the
+    # `@expose` keeps `methods=["GET", "POST"]` while the guard moves or
+    # narrows.
+    ("POST", "/admin/factor-set/import-published",
+     "the GET being refused does not refuse the POST, and the POST is the destructive half"),
 ]
 
 

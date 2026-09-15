@@ -33,14 +33,16 @@ from admin.auth import SESSION_KEY, reauthenticate
 from admin.csrf import check_token, issue_token
 from admin.expressions import ExpressionError, validate_expression
 from admin.factor_lifecycle import (
-    LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
-    revalidate_formulas, rollback_to, set_placeholder_flag,
+    LifecycleError, archive_factor_set, clone_factor_set, count_child_rows,
+    import_published_into, publish_factor_set, revalidate_formulas,
+    rollback_to, set_placeholder_flag,
 )
 from admin.runtime import get_runtime
 from admin.factor_models import (
     Constant, Equivalence, FactorDownstream, FactorSet, FactorSetStatus,
     FactorUpstream, Formula,
 )
+from admin.models import AuditLog, StaffRole
 from admin.modelviews import AuditedModelView
 from admin.taxonomy_models import Sector
 from admin.taxonomy_rules import TaxonomyInvariantError, check_single_published_set
@@ -876,6 +878,14 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     (ModelView.is_accessible: "By default, it will allow access for
     everyone") - both an administrator and a plain staff member pass.
 
+    **`import_published_action`/`import_published_page` are the one
+    exception**, gated by `_require_admin_for_import` instead - see that
+    method's own docstring. Every action named above this paragraph moves a
+    factor set between states; import is the only one that discards data
+    outright with no undo, which is the same shape as StaffAdmin's own
+    administrator-only `delete_action` ("deletion is irreversible"), not the
+    shape of publish/rollback/archive/the placeholder flag.
+
     A LifecycleError from any of the four service functions is caught and
     rendered through brand/action_refused.html rather than left to
     propagate: sqladmin's own exception_handlers map only HTTPException
@@ -944,6 +954,12 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
     # deleted set strands every historical result naming it. Archiving is
     # how a version leaves service.
     can_delete = False
+
+    #: The published-set panel above the list (brand/factor_set_list.html) -
+    #: what is live, who published it and when, and when its numbers were
+    #: last touched before that. `list_context` below is where the query
+    #: behind it lives; this is only the template that reads the result.
+    list_template = "brand/factor_set_list.html"
 
     column_list = [FactorSet.version_label, FactorSet.status, FactorSet.is_mock,
                    FactorSet.published_at, FactorSet.published_by]
@@ -1047,8 +1063,122 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
                 "and that has its own button on the factor-set list."
             )
 
+    async def list_context(self, request) -> dict:
+        """Extra context for `list_template` above: what is published right
+        now, for the panel `brand/factor_set_list.html` renders over the
+        ordinary table.
+
+        `factor_set` carries no modified-time column (id, version_label,
+        status, is_mock, effective_from, published_at, published_by, notes -
+        nothing else), and adding one for a single summary panel would be a
+        migration for a value `audit_log` already has: every write already
+        produces an entry there, so the published set's own most recent
+        *content* change names the moment it was last touched - which, since
+        a published set is read-only (`_refuse_if_factor_set_not_draft`
+        above), is necessarily some moment *before* it was published, not
+        since.
+
+        **"Most recent", not "most recent of any kind".** The naive query -
+        the newest `audit_log` row naming this factor_set at all - answers a
+        different question than the one this panel is trying to show. The
+        newest such row is routinely the `publish` (or `rollback`) entry
+        itself, which is simultaneous with publication, not before it; later
+        still, it can be a `flag_placeholder`/`clear_placeholder` entry from
+        days *after* publication, since those actions are legal on a
+        published set (`set_placeholder_flag`'s own docstring). Either would
+        print a timestamp under a label that says "before it was published"
+        and be wrong. Excluding `publish`/`rollback` and requiring
+        `at <= published_at` is what actually answers "when was this row
+        last changed, before it went live".
+
+        Returns `{"published_summary": None}` when nothing is published - a
+        fresh deployment's normal state (see `publish_factor_set`'s own
+        docstring on `NO_PUBLISHED_FACTOR_SET`) - so the template can say so
+        in words rather than rendering a blank section that reads as a
+        failed load.
+        """
+        with self.session_maker() as session:
+            published = session.scalar(
+                select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
+            )
+            if published is None:
+                return {"published_summary": None}
+
+            last_modified = session.scalar(
+                select(AuditLog.at)
+                .where(AuditLog.table_name == "factor_set",
+                      AuditLog.row_id == published.id,
+                      AuditLog.action.notin_(("publish", "rollback")),
+                      AuditLog.at <= published.published_at)
+                .order_by(AuditLog.at.desc())
+                .limit(1)
+            )
+            return {
+                "published_summary": {
+                    "version_label": published.version_label,
+                    "published_at": published.published_at,
+                    "published_by": published.published_by,
+                    "effective_from": published.effective_from,
+                    "last_modified_before_publication": last_modified,
+                    "detail_url": str(request.url_for(
+                        "admin:details", identity=self.identity, pk=published.id
+                    )),
+                },
+            }
+
     def _require_accessible(self, request) -> None:
         if not self.is_accessible(request):
+            raise HTTPException(status_code=403)
+
+    def _require_admin_for_import(self, request) -> None:
+        """The one pair of routes on this screen gated to `role = admin`
+        rather than `_require_accessible`'s both-roles default every other
+        action here uses.
+
+        **Compared against this class's own siblings, not decided by
+        taste.** Clone, publish, roll back, archive and both directions of
+        the placeholder flag are all both-roles (§8.3 decision 4,
+        `_require_accessible` above) because none of them destroys
+        anything: a published set's own numbers are untouched by publishing
+        it, archiving it or clearing its flag, and roll back is deliberately
+        the undo for a bad publish - `audit_log` plus one-click rollback are
+        §8.3's own stated reason accountability alone is enough there.
+        Import has no such undo: `import_published_into`
+        (admin/factor_lifecycle.py) deletes the target draft's own factor,
+        constant, formula and equivalence rows outright, and the only way
+        back is whatever the staff member who typed them remembers well
+        enough to retype. That is the same shape as `/admin/staff/action/
+        delete` ("deletion is irreversible") and `/admin/ip-block/action/
+        unblock`, both administrator-only in
+        tests/admin/test_role_matrix.py's `_ADMIN_ONLY` - not the same
+        shape as this class's own four state-transition actions, even
+        though it lives on the same screen as them.
+
+        Same predicate as `AdministratorOnly._is_admin` (admin/modelviews.py),
+        rewritten locally rather than borrowed by calling that method with
+        `self` bound to a `FactorSetAdmin` - `_is_admin` reads
+        `self._session_maker_for(request)`, a method only `AdministratorOnly`
+        itself defines, so an unbound call against a `FactorSetAdmin`
+        instance would raise `AttributeError` rather than fall back to
+        anything. Mixing `AdministratorOnly` into `FactorSetAdmin` properly
+        was the other option and was rejected: it would also override
+        `is_visible`/`is_accessible` for this entire view, and §8.3 keeps
+        every other route on this screen open to both roles - only these two
+        routes need the floor, not the class. The role re-read from the
+        database on every request, not trusted from the session cookie, for
+        the same reason `AdministratorOnly`'s own docstring gives: a session
+        minted while somebody was an administrator must not keep the
+        capability after the role is taken away.
+        """
+        username = request.session.get(SESSION_KEY)
+        is_admin = False
+        if username:
+            with self.session_maker() as session:
+                try:
+                    is_admin = get_staff(session, username).role is StaffRole.admin
+                except UnknownStaffError:
+                    is_admin = False
+        if not is_admin:
             raise HTTPException(status_code=403)
 
     def _list_url(self, request):
@@ -1458,6 +1588,161 @@ class FactorSetAdmin(AuditedModelView, model=FactorSet):
 
             try:
                 set_placeholder_flag(session, pk, is_mock=False, actor=actor)
+            except LifecycleError as exc:
+                session.rollback()
+                return await refuse(str(exc))
+            session.commit()
+
+        return RedirectResponse(self._list_url(request), status_code=302)
+
+    # --- Importing the published set into a draft ---------------------------
+    #
+    # The fix for a draft a staff member has edited and now regrets: before
+    # this existed, the only way to bring the published numbers back into it
+    # was cloning the published set *again*, which produces a second draft
+    # and leaves the spoiled one sitting in the list. See
+    # admin/factor_lifecycle.py's import_published_into for the operation
+    # itself; what lives here is the same two-step shape
+    # clear_placeholder_action/clear_placeholder_page above use, and for the
+    # same underlying reason: sqladmin's `confirmation_message` is a plain
+    # string fixed when the class is defined, and this confirmation has to
+    # name how many rows it is about to discard - a number that is different
+    # for every draft, on every day. There is nowhere in a static string to
+    # put a per-request count.
+
+    @action(name="import-published", label="Import the published set")
+    async def import_published_action(self, request):
+        """Carry the selection to the confirmation page below.
+
+        **Performs nothing**, for the reason `clear_placeholder_action` above
+        does: the confirmation this operation owes (this section's own header
+        comment) cannot be a static `confirmation_message`, which means a
+        page of its own, which means a POST - and sqladmin registers an
+        `@action` with `methods=["GET"]` only.
+
+        `_require_admin_for_import`, not `_require_accessible` - see that
+        method's own docstring for why this pair of routes is gated
+        differently from every other action on this screen.
+        """
+        self._require_admin_for_import(request)
+        try:
+            self._one_pk(request)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+        pks = request.query_params.get("pks", "")
+        return RedirectResponse(
+            str(request.url_for("admin:view-factor-set-import_published_page"))
+            + f"?pks={pks}",
+            status_code=302,
+        )
+
+    async def _render_import_published_page(self, request, context, status_code=200):
+        return await self.templates.TemplateResponse(
+            request, "brand/factor_set_import_published.html", context,
+            status_code=status_code,
+        )
+
+    # sqladmin names an @expose route on a ModelView
+    # `view-{identity}-{func.__name__}` (see clear_placeholder_page's own
+    # comment on this rule, a few screens up) - so this is
+    # `admin:view-factor-set-import_published_page`, and
+    # import_published_action above resolves that name.
+    @expose("/import-published", methods=["GET", "POST"])
+    async def import_published_page(self, request):
+        """Show what importing the published set into this draft would
+        discard, then - once confirmed - do it. Contract: see
+        admin/factor_lifecycle.py's import_published_into for the operation
+        and the reasoning behind each of its rules.
+
+        **`role = admin`, not a reauthentication proof.** Unlike
+        clear_placeholder_page above, nothing a member of the public can see
+        changes here - a draft has no public consequence of its own (the
+        same distinction that page's own docstring draws, the other way
+        round), so there is no "a stolen session shows the public something
+        it should not" argument for a password or a live code. What this
+        weight of action owes instead is the floor `_require_admin_for_import`
+        gives it: the operation is irreversible for the draft it targets -
+        every other action on this screen moves a factor set between states,
+        this one discards data outright - and naming exactly what it is
+        about to throw away before it does, which is what the counts below
+        and the confirmation dialog built from them are for.
+
+        Renders the same page whether the selected set can be imported into
+        or not, the same way clear_placeholder_page renders its own "nothing
+        to clear" branch rather than a hard refusal: "id does not exist" and
+        "more than one selected" still go through `_refused` (`_one_pk_from`),
+        but "this set is not a draft" and "nothing is published" are
+        ordinary, expected states worth explaining in words rather than
+        stopping the page on.
+        """
+        self._require_admin_for_import(request)
+
+        raw = request.query_params.get("pks", "")
+        form = None
+        if request.method == "POST":
+            form = await request.form()
+            raw = form.get("pks") or ""
+
+        try:
+            pk = self._one_pk_from(raw)
+        except LifecycleError as exc:
+            return await self._refused(request, str(exc))
+
+        actor = request.session.get(SESSION_KEY, "unknown")
+        with self.session_maker() as session:
+            target = session.get(FactorSet, pk)
+            if target is None:
+                return await self._refused(
+                    request, f"No factor set with id {pk} exists to import into."
+                )
+
+            is_draft = target.status is FactorSetStatus.draft
+            published = session.scalar(
+                select(FactorSet).where(FactorSet.status == FactorSetStatus.published)
+            )
+
+            context = {
+                "factor_set": {
+                    "id": target.id,
+                    "version_label": target.version_label,
+                    "status": target.status.value,
+                },
+                "is_draft": is_draft,
+                "published": (
+                    {"version_label": published.version_label}
+                    if published is not None else None
+                ),
+                # Only meaningful - and only computed - when there is
+                # something to confirm: a target that is not a draft, or no
+                # published set to copy from, ends this page on an
+                # explanation instead of a dialog, and counting rows nobody
+                # is about to lose would be a query with nothing to answer.
+                "counts": (
+                    count_child_rows(session, target.id)
+                    if is_draft and published is not None else None
+                ),
+                "pks": str(target.id),
+                "error": None,
+                "open_dialog": None,
+                "list_url": self._list_url(request),
+                "csrf_token": issue_token(request.session),
+            }
+
+            if request.method == "GET":
+                return await self._render_import_published_page(request, context)
+
+            async def refuse(message, status_code=400):
+                return await self._render_import_published_page(
+                    request, {**context, "error": message, "open_dialog": "confirm"},
+                    status_code=status_code,
+                )
+
+            if not check_token(request.session, form.get("csrf_token")):
+                session.rollback()
+                return await refuse("That form expired. Please try again.")
+
+            try:
+                import_published_into(session, pk, actor)
             except LifecycleError as exc:
                 session.rollback()
                 return await refuse(str(exc))

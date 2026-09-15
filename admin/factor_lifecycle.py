@@ -35,7 +35,7 @@ does not rely on one — see `db/repository.load_factor_bundle`, which
 re-reads this one flag on every cache hit for exactly this reason.
 """
 
-from sqlalchemy import select
+from sqlalchemy import delete, func, select
 from sqlalchemy.orm import Session
 
 from admin.audit import row_to_dict, write_audit
@@ -396,6 +396,177 @@ def rollback_to(session: Session, factor_set_id: int, actor: str) -> None:
             session, actor=actor, action=action, table_name="factor_set",
             row_id=row.id, before=before, after=row_to_dict(row),
         )
+
+
+#: The five child kinds a factor set's numbers are made of - the tables
+#: `clone_factor_set` above copies once each, in this order, and the same
+#: five `import_published_into` below empties and refills. Named once and
+#: shared with admin/factor_views.py's confirmation page, which counts each
+#: of them for the "this discards ... N upstream factors, ..." message - so
+#: the page that counts what a staff member is about to lose can never name a
+#: different set of tables than the function that actually discards them.
+CHILD_MODELS = (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence)
+
+
+def count_child_rows(session, factor_set_id: int) -> dict[str, int]:
+    """`{table_name: row count}` for each of the five child kinds above,
+    for one factor_set.
+
+    Read-only, and takes no lock of its own - a caller that needs the count
+    to describe a consistent snapshot (`import_published_into` below, mid
+    transaction) takes `_lock_factor_sets` itself first; a caller that only
+    wants a number to print on a confirmation page (`admin/factor_views.py`)
+    has nothing to lock in the first place, since nothing is being changed
+    yet.
+    """
+    return {
+        model.__tablename__: session.scalar(
+            select(func.count()).select_from(model)
+            .where(model.factor_set_id == factor_set_id)
+        )
+        for model in CHILD_MODELS
+    }
+
+
+#: The `audit_log.action` this operation is recorded under - its own verb,
+#: not `update`, for the same reason `FLAG_PLACEHOLDER_ACTION` below is not:
+#: an entry that said `update factor_set#3` would be indistinguishable from
+#: somebody fixing a typo in that draft's notes, when what actually happened
+#: is every one of its numbers was thrown away and replaced.
+IMPORT_PUBLISHED_ACTION = "import_published"
+
+
+def import_published_into(session: Session, factor_set_id: int, actor: str) -> None:
+    """Overwrite `factor_set_id`'s own numbers with the currently published
+    set's. Contract §5.2's gap: staff clone a published set to a draft, edit
+    it, and regret the edits - and until this existed the only way back was
+    cloning the published set *again*, which produces a second draft and
+    leaves the spoiled one sitting in the list.
+
+    **Full replacement, not a merge.** Every row of this draft's own
+    `factor_upstream`, `factor_downstream`, `constant`, `formula` and
+    `equivalence` is deleted first, and the published set's own rows are
+    copied into their place with `_clone_children` - the same routine
+    `clone_factor_set` above uses, called once per named model in
+    `CHILD_MODELS` and never in a loop over `Base.metadata`, for the same
+    reason that function's own docstring gives: a loop would silently sweep
+    up a table like `submission`, which must keep pointing at this id
+    regardless of what happens to its children. Afterwards this draft's data
+    is bit-for-bit the published set's, and a row the draft had added of its
+    own - with no counterpart in the published set - is gone.
+
+    **The target must be a draft.** The same reason
+    `_refuse_if_factor_set_not_draft` (admin/factor_views.py) refuses editing
+    a published or archived row in place: every submission stamped with a
+    version's id has to keep reproducing years later, and overwriting a
+    published or archived set's own numbers breaks that as surely as an edit
+    through the generic form would.
+
+    **The source is whichever set is currently published, not a parameter.**
+    There is never more than one, so naming it explicitly would only let a
+    caller import from an *archived* set instead - a different operation
+    (clone, from that archived set, already covers it) that this function
+    does not perform. Refused, via LifecycleError, when nothing is published
+    at all (nothing to import) or - the pre-existing "at most one published"
+    violation `publish_factor_set` above also refuses rather than silently
+    resolving - when more than one row already claims to be.
+
+    **Takes `_lock_factor_sets`, the same lock clone/publish/rollback/archive
+    above take.** Without it, a publish landing mid-way through this
+    function's own read of "which set is published" could let this copy from
+    one set while a concurrent publish is already promoting a different one
+    - reading the row a fraction of a second before it moves, and copying
+    half of one factor set's numbers under the name of another. Locking
+    every row settles what is published for the rest of this transaction
+    before a single child row is touched.
+
+    **`revalidate_formulas` runs on the target only after the copy**, not
+    before: the formula rows it checks are the ones this function just wrote,
+    wholesale, so there is nothing meaningful to check beforehand. The source
+    already passed this same check when it was published, and after the
+    delete-and-copy above the target's constants are the source's own, so
+    this should always pass - run anyway as defence in depth, the same
+    reasoning `rollback_to` above gives for running it unconditionally too.
+
+    **Set-level fields.** `version_label` and `notes` are left untouched -
+    they name and annotate this draft, not its numbers, and a staff member
+    importing to fix a mistake should not lose the label they gave it in the
+    process. `is_mock` is copied from the source, because it describes the
+    numbers and the numbers are exactly what changed. `published_at` and
+    `published_by` are never written here - the target stays a draft, and
+    those columns describe an event that has not happened to it.
+
+    **One `audit_log` entry**, naming the target, the source, and the row
+    counts discarded and written for each of the five child kinds - not the
+    ordinary `row_to_dict` before/after pair alone, because "is_mock changed
+    from X to Y" says nothing about the numbers underneath it, which are the
+    entire point of this operation.
+
+    Never commits - the caller owns the transaction, matching every other
+    function in this module.
+    """
+    rows = _lock_factor_sets(session)
+    by_id = {row.id: row for row in rows}
+
+    target = by_id.get(factor_set_id)
+    if target is None:
+        raise LifecycleError(
+            f"No factor set with id {factor_set_id} exists to import into."
+        )
+    if target.status is not FactorSetStatus.draft:
+        raise LifecycleError(
+            f"'{target.version_label}' is {target.status.value}, not draft. "
+            "Only a draft can be overwritten this way - its numbers must "
+            "not change in place once published. Clone a set into a new "
+            "draft first."
+        )
+
+    published = [row for row in rows if row.status is FactorSetStatus.published]
+    if not published:
+        raise LifecycleError(
+            "No factor set is currently published, so there is nothing to "
+            "import."
+        )
+    if len(published) > 1:
+        labels = ", ".join(sorted(row.version_label for row in published))
+        raise LifecycleError(
+            f"{len(published)} factor sets are already marked as published "
+            f"({labels}). Exactly one may be published at a time - archive "
+            "all but one before importing."
+        )
+    source = published[0]
+
+    discarded = count_child_rows(session, target.id)
+    before_target = row_to_dict(target)
+
+    for model in CHILD_MODELS:
+        session.execute(delete(model).where(model.factor_set_id == target.id))
+    session.flush()
+
+    for model in CHILD_MODELS:
+        _clone_children(session, model, source.id, target.id)
+
+    target.is_mock = source.is_mock
+    session.flush()
+
+    try:
+        revalidate_formulas(session, target.id)
+    except TaxonomyInvariantError as exc:
+        raise LifecycleError(str(exc)) from exc
+
+    written = count_child_rows(session, target.id)
+
+    write_audit(
+        session, actor=actor, action=IMPORT_PUBLISHED_ACTION, table_name="factor_set",
+        row_id=target.id,
+        before={
+            **before_target,
+            "source_factor_set_id": source.id,
+            "source_version_label": source.version_label,
+            "discarded": discarded,
+        },
+        after={**row_to_dict(target), "written": written},
+    )
 
 
 def archive_factor_set(session: Session, factor_set_id: int, actor: str) -> None:

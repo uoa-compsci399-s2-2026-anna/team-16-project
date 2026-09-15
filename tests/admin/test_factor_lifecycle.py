@@ -17,13 +17,17 @@ would sit outside that net forever, silently poisoning every later run of
 `test_a_duplicate_label_is_refused`.
 """
 
+import threading
+import time
 from decimal import Decimal
 
 import pytest
 from sqlalchemy import func, select
 
+from admin.audit import row_to_dict
 from admin.factor_lifecycle import (
-    LifecycleError, archive_factor_set, clone_factor_set, publish_factor_set,
+    CHILD_MODELS, LifecycleError, archive_factor_set, clone_factor_set,
+    count_child_rows, import_published_into, publish_factor_set,
     rollback_to, set_placeholder_flag,
 )
 from admin.factor_models import (
@@ -780,3 +784,462 @@ def test_setting_the_flag_never_commits(_committed_session, one_draft):
     session.rollback()
 
     assert session.get(FactorSet, one_draft.id).is_mock is True
+
+
+# --- Importing the published set into a draft ------------------------------
+#
+# The fix for a draft a staff member has edited and now regrets: brings the
+# published set's own numbers back into it, in place, rather than leaving
+# staff to clone the published set again and abandon the spoiled draft.
+
+
+#: The five child kinds, written out rather than read from `CHILD_MODELS`.
+#:
+#: The tests below used to loop over `CHILD_MODELS` itself, which is the list
+#: the implementation loops over too - so deleting a model from it deleted the
+#: assertions that would have caught the deletion, and all sixteen import
+#: tests stayed green while `Equivalence` rows silently stopped being copied.
+#: A draft left carrying one table's worth of its own old numbers and four
+#: tables' worth of the published set's is a silent hybrid, and nothing on
+#: screen says so. An expected-value list has to be written down somewhere for
+#: a test to mean anything; here it is.
+_EVERY_CHILD_KIND = (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence)
+
+
+def test_child_models_names_exactly_the_five_child_kinds():
+    """`CHILD_MODELS` drives both the copy and the delete in
+    `import_published_into`, and the clone before it. Adding a sixth child
+    table without adding it here means clone and import both quietly ignore
+    it; removing one means they quietly leave it behind. Either way the
+    factor set stops being versioned atomically, which is the property
+    `docs/architecture.md` rests the whole draft/publish model on."""
+    assert CHILD_MODELS == _EVERY_CHILD_KIND
+
+
+def _snapshot(session, model, factor_set_id):
+    """Every column of every row of `model` belonging to `factor_set_id`,
+    ordered by id - `id`/`factor_set_id` included this time, unlike
+    test_a_clone_copies_every_column_value's own use of row_to_dict, because
+    what test_import_does_not_touch_the_source_set below needs to prove is
+    that the SOURCE's rows are byte-for-byte what they were, ids and all -
+    not merely that some row somewhere still carries the same values."""
+    rows = session.scalars(
+        select(model).where(model.factor_set_id == factor_set_id).order_by(model.id)
+    ).all()
+    return [row_to_dict(row) for row in rows]
+
+
+def test_import_replaces_every_child_row(_committed_session, taxonomy_for_factors, two_sets):
+    """The ordinary case: a clean draft ends up an exact copy of the
+    published set, for all five child kinds."""
+    session = _committed_session
+    live, draft = two_sets
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    for model in _EVERY_CHILD_KIND:
+        source_count = session.scalar(
+            select(func.count()).select_from(model).where(model.factor_set_id == live.id)
+        )
+        target_count = session.scalar(
+            select(func.count()).select_from(model).where(model.factor_set_id == draft.id)
+        )
+        assert target_count == source_count > 0, f"{model.__tablename__} not copied"
+
+
+def test_import_copies_every_column_value(_committed_session, taxonomy_for_factors, two_sets):
+    """Row counts alone cannot tell a real copy from one that drops every
+    optional column - the same reasoning test_a_clone_copies_every_column_value
+    gives for clone_factor_set."""
+    session = _committed_session
+    live, draft = two_sets
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    for model in _EVERY_CHILD_KIND:
+        source_row = session.scalar(select(model).where(model.factor_set_id == live.id))
+        target_row = session.scalar(select(model).where(model.factor_set_id == draft.id))
+        source_fields = {
+            k: v for k, v in row_to_dict(source_row).items()
+            if k not in ("id", "factor_set_id")
+        }
+        target_fields = {
+            k: v for k, v in row_to_dict(target_row).items()
+            if k not in ("id", "factor_set_id")
+        }
+        assert target_fields == source_fields, f"{model.__tablename__} column mismatch"
+
+
+def test_import_is_a_full_replacement_not_a_merge(
+    _committed_session, taxonomy_for_factors, two_sets
+):
+    """The row that exists only in the draft must be gone afterwards - the
+    property that separates this from a merge, and the one the task brief
+    names as the single most important behavioural claim after "the source
+    is untouched".
+
+    Mutating this test's target by deleting the `for model in _EVERY_CHILD_KIND:
+    session.execute(delete(model)...)` loop out of import_published_into
+    (admin/factor_lifecycle.py) turns it red: the extra row below would
+    still be there afterwards, so `remaining` would be non-empty.
+    """
+    from admin.taxonomy_models import Metric
+
+    session = _committed_session
+    live, draft = two_sets
+
+    extra_metric = Metric(code="e6_extra_only_in_draft", name="Extra", unit="x")
+    session.add(extra_metric)
+    session.flush()
+    session.add(FactorUpstream(
+        factor_set_id=draft.id,
+        sector_id=taxonomy_for_factors.sector.id,
+        food_category_id=taxonomy_for_factors.category.id,
+        metric_id=extra_metric.id,
+        value_per_kg=Decimal("42.0000000000"),
+        source_note="only the draft has this row",
+        data_quality="draft-only",
+    ))
+    session.flush()
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    remaining = session.scalars(
+        select(FactorUpstream).where(
+            FactorUpstream.factor_set_id == draft.id,
+            FactorUpstream.metric_id == extra_metric.id,
+        )
+    ).all()
+    assert remaining == [], (
+        "a row that existed only in the draft survived the import - this "
+        "is a merge, not a replacement"
+    )
+
+
+def test_import_does_not_touch_the_source_set(
+    _committed_session, taxonomy_for_factors, two_sets
+):
+    """The most important assertion in the task: an import that wrote back
+    into the published set would corrupt live data and break the
+    reproducibility of every submission stamped with it.
+
+    Compared by content, not count: `before`/`after` are full column
+    snapshots of every one of the source's own rows, ids included. A buggy
+    implementation that *moved* rows into the draft instead of copying them
+    (UPDATE ... SET factor_set_id = draft.id rather than INSERT a duplicate)
+    would leave `after` empty for every model - `before == after` catches
+    that as surely as it catches a value quietly overwritten in place.
+    """
+    session = _committed_session
+    live, draft = two_sets
+
+    before = {model: _snapshot(session, model, live.id) for model in _EVERY_CHILD_KIND}
+    assert all(rows for rows in before.values()), "anchor: the source starts populated"
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+    session.expire_all()
+
+    after = {model: _snapshot(session, model, live.id) for model in _EVERY_CHILD_KIND}
+    for model in _EVERY_CHILD_KIND:
+        assert after[model] == before[model], (
+            f"{model.__tablename__}: the published source set changed"
+        )
+
+    # And the row itself - status, is_mock, the lot - untouched too.
+    session.refresh(live)
+    assert live.status is FactorSetStatus.published
+    assert live.version_label == "e6-live"
+
+
+def test_import_refuses_a_published_target(_committed_session, two_sets):
+    """Same reason every one of the five factor-row views refuses editing a
+    published row in place: every submission stamped with a version's id has
+    to keep reproducing years later."""
+    session = _committed_session
+    live, _ = two_sets
+
+    with pytest.raises(LifecycleError) as excinfo:
+        import_published_into(session, live.id, actor="kim")
+
+    assert "not draft" in str(excinfo.value)
+    # Refused before anything was touched - not merely refused in the end.
+    assert session.scalar(
+        select(func.count()).select_from(FactorUpstream)
+        .where(FactorUpstream.factor_set_id == live.id)
+    ) > 0
+
+
+def test_import_refuses_an_archived_target(_committed_session, two_sets):
+    session = _committed_session
+    live, draft = two_sets
+    draft.status = FactorSetStatus.archived
+    session.flush()
+
+    with pytest.raises(LifecycleError) as excinfo:
+        import_published_into(session, draft.id, actor="kim")
+
+    assert "not draft" in str(excinfo.value)
+
+
+def test_import_refuses_when_nothing_is_published(_committed_session, one_draft):
+    session = _committed_session
+
+    with pytest.raises(LifecycleError) as excinfo:
+        import_published_into(session, one_draft.id, actor="kim")
+
+    assert "published" in str(excinfo.value)
+
+
+def test_import_refuses_when_two_sets_are_already_published(
+    _committed_session, taxonomy_for_factors, two_sets
+):
+    session = _committed_session
+    live, draft = two_sets
+    third = FactorSet(version_label="e6-third-published",
+                      status=FactorSetStatus.published, is_mock=True)
+    session.add(third)
+    session.flush()
+
+    with pytest.raises(LifecycleError):
+        import_published_into(session, draft.id, actor="kim")
+
+
+def test_import_refuses_a_target_that_does_not_exist(_committed_session):
+    with pytest.raises(LifecycleError):
+        import_published_into(_committed_session, 9999, actor="kim")
+
+
+def test_import_is_mock_follows_the_source(_committed_session, taxonomy_for_factors, two_sets):
+    session = _committed_session
+    live, draft = two_sets
+    live.is_mock = False
+    draft.is_mock = True
+    session.flush()
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    assert session.get(FactorSet, draft.id).is_mock is False
+
+
+def test_import_leaves_version_label_and_notes_untouched(
+    _committed_session, taxonomy_for_factors, two_sets
+):
+    session = _committed_session
+    live, draft = two_sets
+    draft.notes = "kept exactly as the staff member wrote it"
+    session.flush()
+    original_label = draft.version_label
+    original_notes = draft.notes
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    refreshed = session.get(FactorSet, draft.id)
+    assert refreshed.version_label == original_label
+    assert refreshed.notes == original_notes
+
+
+def test_import_leaves_publication_stamps_untouched(
+    _committed_session, taxonomy_for_factors, two_sets
+):
+    """The target stays a draft: published_at/published_by describe an
+    event that has not happened to it, the same reasoning
+    test_a_clone_does_not_inherit_publication_stamps gives for clone."""
+    session = _committed_session
+    live, draft = two_sets
+    assert draft.published_at is None
+    assert draft.published_by is None
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    refreshed = session.get(FactorSet, draft.id)
+    assert refreshed.published_at is None
+    assert refreshed.published_by is None
+    assert refreshed.status is FactorSetStatus.draft
+
+
+def test_import_never_commits(_committed_session, taxonomy_for_factors, two_sets):
+    """Module docstring: every function here leaves the transaction to its
+    caller - proven the same way test_archive_never_commits proves it."""
+    session = _committed_session
+    live, draft = two_sets
+    live.is_mock = False
+    draft.is_mock = True
+    session.commit()
+
+    import_published_into(session, draft.id, actor="kim")
+    session.rollback()
+
+    assert session.get(FactorSet, draft.id).is_mock is True
+
+
+def test_import_writes_one_audit_entry_naming_target_source_and_counts(
+    _committed_session, taxonomy_for_factors, two_sets
+):
+    """`discarded` and `written` are asserted as full dicts, not just their
+    totals - and the draft is given an extra row first so the two counts
+    are genuinely different, not two dicts that happen to agree because a
+    freshly-built `two_sets` starts both sides at exactly one row of each
+    kind. Swap `written`'s source for `discarded`'s own value
+    (`written = discarded` rather than a fresh `count_child_rows(session,
+    target.id)` read) and this test is what catches it - with the fixture
+    alone, that mutation is invisible.
+    """
+    from admin.models import AuditLog
+    from admin.taxonomy_models import Metric
+
+    session = _committed_session
+    live, draft = two_sets
+    extra_metric = Metric(code="e6_extra_for_audit_counts", name="Extra", unit="x")
+    session.add(extra_metric)
+    session.flush()
+    session.add(FactorUpstream(
+        factor_set_id=draft.id,
+        sector_id=taxonomy_for_factors.sector.id,
+        food_category_id=taxonomy_for_factors.category.id,
+        metric_id=extra_metric.id,
+        value_per_kg=Decimal("7.0000000000"),
+        source_note="makes discarded != written for this test",
+        data_quality="draft-only",
+    ))
+    session.flush()
+
+    discarded_before = count_child_rows(session, draft.id)
+    written_expected = count_child_rows(session, live.id)
+    assert discarded_before != written_expected, (
+        "anchor: the draft and the source must differ for this test to mean "
+        "anything"
+    )
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    entry = session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.row_id == draft.id,
+                               AuditLog.action == "import_published")
+    )
+    assert entry is not None
+    assert entry.actor == "kim"
+    assert entry.before_json["source_factor_set_id"] == live.id
+    assert entry.before_json["source_version_label"] == live.version_label
+    assert entry.before_json["discarded"] == discarded_before
+    assert entry.after_json["written"] == written_expected
+    # And the counts are not trivially equal by both being empty.
+    assert sum(discarded_before.values()) > 0
+    assert sum(written_expected.values()) > 0
+
+
+def test_a_refused_import_writes_no_audit_entry(_committed_session, two_sets):
+    from admin.models import AuditLog
+
+    session = _committed_session
+    live, _ = two_sets
+
+    with pytest.raises(LifecycleError):
+        import_published_into(session, live.id, actor="kim")
+
+    assert session.scalar(
+        select(AuditLog).where(AuditLog.table_name == "factor_set",
+                               AuditLog.action == "import_published")
+    ) is None
+
+
+def test_a_concurrent_operation_on_the_published_row_blocks_the_import(
+    admin_app, _committed_session, taxonomy_for_factors, two_sets
+):
+    """The lock, exercised directly for the first time in this file (no
+    existing lifecycle test drives real concurrency; every other guarantee
+    here is proven through the outcome a *single* transaction leaves
+    behind). Two real threads, two real connections, a real MySQL row lock.
+
+    **Deliberately narrow, and the narrowness is the point.** Thread 1 does
+    not hold the same broad `_lock_factor_sets()` this test is trying to
+    prove `import_published_into` also takes - that would pass even if
+    `import_published_into` took no lock of its own at all, because its
+    later, ordinary write to the *target* row (`target.is_mock = ...`)
+    would still collide with thread 1's hold over every row, target
+    included, and the test would say nothing about whether the read that
+    decides `source` was locked. Thread 1 instead holds `SELECT ... FOR
+    UPDATE` on `live`'s row alone - the one row a concurrent publish or
+    rollback would be about to archive - and never touches `draft`'s.
+
+    If `import_published_into` decided `source` from a plain, unlocked read
+    (or a lock scoped to the target row only), nothing here would block it:
+    `live`'s row is never written by this function, so a lock on it alone
+    could never collide with anything `import_published_into` writes.
+    Blocking can only happen if `import_published_into` itself takes a lock
+    that includes `live`'s row before deciding what is published - which is
+    exactly what `_lock_factor_sets()`'s "every row, not just the obvious
+    one" does. Measured, not assumed, by timing how long the import actually
+    took.
+    """
+    session = _committed_session
+    live, draft = two_sets
+    session.commit()
+
+    factory = admin_app.state.session_factory
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+    result: dict = {}
+
+    def hold_the_published_rows_lock():
+        with factory() as locker:
+            locker.execute(
+                select(FactorSet).where(FactorSet.id == live.id).with_for_update()
+            )
+            lock_acquired.set()
+            release_lock.wait(timeout=5)
+            locker.rollback()
+
+    def run_import():
+        assert lock_acquired.wait(timeout=5), "thread 1 never acquired the lock"
+        with factory() as importer:
+            started = time.monotonic()
+            import_published_into(importer, draft.id, actor="kim")
+            result["elapsed"] = time.monotonic() - started
+            importer.commit()
+
+    holder = threading.Thread(target=hold_the_published_rows_lock)
+    runner = threading.Thread(target=run_import)
+    try:
+        holder.start()
+        assert lock_acquired.wait(timeout=5), "the locking thread never signalled"
+        runner.start()
+
+        # thread 2 must still be blocked a moment later - not finished.
+        time.sleep(0.4)
+        assert "elapsed" not in result, (
+            "import_published_into ran to completion while another "
+            "transaction held only the published row's lock - its own "
+            "decision of what is published was not made under a lock "
+            "covering that row"
+        )
+    finally:
+        release_lock.set()
+        holder.join(timeout=5)
+        runner.join(timeout=5)
+
+    assert "elapsed" in result, "the import never completed after the lock was released"
+    assert result["elapsed"] > 0.3, (
+        f"import_published_into returned in {result['elapsed']:.3f}s - too fast to "
+        "have actually waited on the held lock"
+    )
+    _resync_after_threads(session)
+    assert session.get(FactorSet, draft.id).status is FactorSetStatus.draft
+    assert session.get(FactorSet, draft.id).is_mock == session.get(FactorSet, live.id).is_mock
+
+
+def _resync_after_threads(session):
+    """The two threads above committed/rolled back on their own connections;
+    this session's own MySQL REPEATABLE READ snapshot predates both, so a
+    plain re-query would still see the pre-thread state. Same fix
+    tests/admin/conftest.py's own `_resync` uses."""
+    session.commit()
+    session.expire_all()

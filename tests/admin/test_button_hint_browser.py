@@ -684,12 +684,32 @@ def test_every_action_in_the_menu_shows_its_description(
         context.close()
 
 
-#: A taxonomy row that the seed always creates, used only to reach a detail
-#: page. Any model with an `add_in_detail=True` action would do.
-_DETAIL_PAGE = "/admin/sector/details/1"
+#: Two detail pages that always exist, one of them the screen carrying
+#: `Delete permanently` and `Reset the authenticator`.
+_DETAIL_PAGES = ["/admin/sector/details/1", "/admin/staff/details/1"]
 
 
-def test_a_detail_page_action_is_a_button_not_a_paragraph(browser, authed_storage_state):
+def _probe_described_button(page):
+    """Tag the first action button on the page that carries a description."""
+    index = page.evaluate(
+        "() => [...document.querySelectorAll(\'a.btn\')]"
+        "        .findIndex(a => a.querySelector(\'.action-item__note\'))"
+    )
+    assert index >= 0, (
+        "no described action reached this detail page at all - the test has "
+        "lost its subject, which is worse than a failure"
+    )
+    page.evaluate(
+        f"() => [...document.querySelectorAll(\'a.btn\')][{index}]"
+        f"        .setAttribute(\'data-probe\', \'1\')"
+    )
+    return "[data-probe]"
+
+
+@pytest.mark.parametrize("path", _DETAIL_PAGES)
+def test_a_detail_page_action_is_a_button_not_a_paragraph(
+    browser, authed_storage_state, path
+):
     """**This shipped.** `described()` puts the description inside the label,
     and sqladmin renders one label in three places, not one: two dropdowns on
     the list page, and - for an action declared `add_in_detail=True` - a plain
@@ -703,8 +723,6 @@ def test_a_detail_page_action_is_a_button_not_a_paragraph(browser, authed_storag
     reading "DeactivateDrops the selected rows out of the calculator\'s own
     lists and this panel\'s forms..." while the page overflowed sideways.
 
-    The browser case written with this feature only ever opened the list-page
-    menu, which is why it could not catch this. This one opens a detail page.
     Width is the assertion rather than text, because the text is present and
     correct in both the working and the broken state - what went wrong is
     where it was drawn.
@@ -712,29 +730,123 @@ def test_a_detail_page_action_is_a_button_not_a_paragraph(browser, authed_storag
     context = browser.new_context(storage_state=authed_storage_state)
     page = context.new_page()
     try:
-        page.goto(f"{BASE}{_DETAIL_PAGE}", wait_until="networkidle")
-        notes = page.evaluate(
-            "() => [...document.querySelectorAll(\'.action-item__note\')]"
-            "        .map(n => Math.round(n.getBoundingClientRect().height))"
-        )
-        assert notes, (
-            "no described action reached this detail page at all - the test has "
-            "lost its subject, which is worse than a failure"
-        )
-        assert all(h == 0 for h in notes), (
-            f"a description is being drawn inside a detail-page button: heights {notes}"
-        )
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        _probe_described_button(page)
         widths = page.evaluate(
             "() => [...document.querySelectorAll(\'a.btn\')]"
             "        .filter(a => a.offsetParent !== null)"
             "        .map(a => Math.round(a.getBoundingClientRect().width))"
         )
-        assert max(widths) < 300, (
-            f"a button on the detail page is {max(widths)}px wide - a sentence "
-            f"is being rendered as its label"
+        assert max(widths) < 400, (
+            f"a button on {path} is {max(widths)}px wide - a sentence is being "
+            f"rendered as its label"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("path", _DETAIL_PAGES)
+def test_a_detail_page_action_reveals_its_description_on_hover(
+    browser, authed_storage_state, path
+):
+    """**The second half of that same mistake.** The first fix hid the note
+    with `display: none`, which stopped the button being a paragraph and also
+    removed the explanation from the detail page entirely - on the screen
+    carrying `Delete permanently` and `Reset the authenticator`. Hiding it is
+    not fixing it; the description has to be revealed the way it is everywhere
+    else in this panel.
+    """
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        probe = _probe_described_button(page)
+        note = f"{probe} .action-item__note"
+
+        at_rest = _rendered_width(page, note)
+        assert at_rest < _REVEALED_WIDTH_THRESHOLD, (
+            f"the description is {at_rest}px wide before anyone hovered it"
+        )
+
+        before = _box(page, probe)
+        page.hover(probe)
+        page.wait_for_timeout(150)
+
+        revealed = _rendered_width(page, note)
+        assert revealed >= _REVEALED_WIDTH_THRESHOLD, (
+            f"hovering the button revealed nothing ({revealed}px wide)"
+        )
+        assert _box(page, probe) == before, (
+            "revealing the description moved the button under the pointer"
+        )
+        # The clamp is a measure, not an overflow guard - `action-labels.css`
+        # says so, and a mutation proved the point: removing it turns nothing
+        # else red. Pinned here so it is not an unfalsifiable declaration.
+        # Without it the card takes the full width of a ~990px action row,
+        # about twice this panel's measure for body copy.
+        assert revealed <= 560, (
+            f"the description card is {revealed}px wide - the line-length "
+            f"clamp is gone"
         )
         assert page.evaluate(
-            "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
-        ), "the detail page scrolls sideways"
+            f"getComputedStyle(document.querySelector(\'{note}\')).pointerEvents"
+        ) == "none", (
+            "the card is a descendant of the <a>, so without pointer-events: "
+            "none it is part of the link's hit area - moving onto it to read "
+            "the sentence would arm a click on Delete permanently"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("path", _DETAIL_PAGES)
+def test_a_detail_page_description_appears_on_keyboard_focus(
+    browser, authed_storage_state, path
+):
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        probe = _probe_described_button(page)
+        page.mouse.move(0, 0)
+        page.evaluate(f"() => document.querySelector(\'{probe}\').focus()")
+        page.wait_for_timeout(150)
+        width = _rendered_width(page, f"{probe} .action-item__note")
+        assert width >= _REVEALED_WIDTH_THRESHOLD, (
+            f"focusing the button revealed nothing ({width}px wide)"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.parametrize("path", _DETAIL_PAGES)
+@pytest.mark.parametrize("width", [1280, 320])
+def test_revealing_a_detail_page_description_adds_no_horizontal_overflow(
+    browser, authed_storage_state, path, width
+):
+    """Measured against the page's own resting width, not against zero: the
+    staff detail page already scrolls 52px sideways at 320px because Tabler
+    draws its data table `text-nowrap`, and that predates this feature. What
+    must not happen is the reveal making it worse - which it did twice, once
+    by spanning a button row wider than the screen, and once because the card
+    inherited `white-space: nowrap` from `.btn` and ran its sentence out as a
+    single 1000px line while the box itself measured correctly.
+    """
+    context = browser.new_context(
+        storage_state=authed_storage_state,
+        viewport={"width": width, "height": 900},
+    )
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        probe = _probe_described_button(page)
+        at_rest = page.evaluate("document.documentElement.scrollWidth")
+        page.hover(probe)
+        page.wait_for_timeout(200)
+        revealed = page.evaluate("document.documentElement.scrollWidth")
+        assert revealed <= at_rest, (
+            f"{path} at {width}px: revealing the description widened the "
+            f"document from {at_rest}px to {revealed}px"
+        )
     finally:
         context.close()

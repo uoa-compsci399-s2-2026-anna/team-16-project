@@ -26,18 +26,92 @@
    caught it; `tests/admin/test_button_hint_browser.py` now opens a detail
    page too. */
 
-/* The note is hidden by default and shown only inside a menu item. A menu is
-   a disclosure a reader opens while choosing between actions, which is when
-   an explanation is worth reading; a detail page has already been navigated
-   to deliberately, and a whole sentence is not a button label there.
+/* Collapsed by default, and revealed differently in each of the two places a
+   label renders. `display: none` was tried here first and was wrong twice
+   over: it removed the explanation from the detail page altogether, which is
+   the whole feature, and it did so on the screen carrying `Delete
+   permanently` and `Reset the authenticator`.
 
-   `display: none` rather than a visual trick, because it also takes the note
-   out of the accessible name: the detail-page button announces "Activate",
-   not the entire paragraph after it. */
-.action-item__note { display: none; }
+   Clip-hidden rather than `display: none` so the text stays in the
+   accessible tree. It is inside the `<a>`, so it becomes part of the
+   button's accessible name: a screen reader announces "Delete permanently
+   Removes this account for good and frees its username. This cannot be
+   undone - Deactivate is the reversible version of it." Verbose, but it is
+   the same thing a sighted reader gets on hover, and `aria-describedby` is
+   not reachable from here - sqladmin renders the `<a>` and this file only
+   controls what goes inside it. */
+.action-item__note {
+  position: absolute;
+  inline-size: 1px;
+  block-size: 1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+}
+
+/* ON A DETAIL PAGE: a card above the row, on hover and on keyboard focus.
+
+   Anchored to the `.row` that holds every action rather than to the button,
+   so its width is the row's width and it cannot push the page sideways at
+   any viewport - the same guarantee `brand.css` makes for the help tips on
+   the hand-written screens. Tabler makes `.btn` and `.col-auto` positioned,
+   which would otherwise capture the anchor, so both are put back to `static`
+   only where they carry a note.
+
+   `pointer-events: none` IS LOAD-BEARING HERE, unlike on the brand screens.
+   The card is a descendant of the `<a>`, so without it the card is part of
+   the link's hit area: moving onto it to read the sentence would arm a click
+   on `Delete permanently`. It also stops the card taking the hover that is
+   revealing it, which would oscillate. */
+.row:has(.action-item__note) { position: relative; }
+.col-auto:has(.action-item__note) { position: static; }
+.btn:has(.action-item__note) { position: static; }
+.btn:hover .action-item__note,
+.btn:focus .action-item__note {
+  inset-block-end: calc(100% + 0.5rem);
+  inset-inline-start: 0;
+  inline-size: auto;
+  /* A MEASURE, NOT AN OVERFLOW GUARD - stated precisely because the first
+     version of this comment claimed the latter and a mutation proved it
+     wrong: removing this clamp turns no test red. What actually keeps the
+     card inside the screen is `white-space: normal` below; without it the
+     box measured correctly and the sentence ran out of it as a single line.
+
+     What the clamp does do is cap the line length. The action row is nearly
+     a thousand pixels wide on a laptop, and a shrink-to-fit card would take
+     all of it - one unbroken line of 0.85rem text across the whole screen,
+     which is about twice the measure this panel sets for body copy
+     everywhere else. The viewport term keeps that honest on a phone. */
+  max-inline-size: min(34rem, calc(100vw - 2rem));
+  block-size: auto;
+  overflow: visible;
+  clip: auto;
+  /* Tabler's `.btn` is `white-space: nowrap`, which the card inherits:
+     the box clamped correctly to 288px while the sentence inside it ran
+     out as a single line and pushed the document to 1011px at a 320px
+     viewport. The box was never the thing overflowing. */
+  white-space: normal;
+  z-index: 3;
+  pointer-events: none;
+  padding-block: 0.55rem;
+  padding-inline: 0.75rem;
+  border: 1px solid rgba(0, 50, 35, 0.16);
+  border-radius: 8px;
+  background: #fff;
+  color: #003223;
+  font-size: 0.85rem;
+  font-weight: 400;
+  line-height: 1.4;
+  text-align: start;
+  box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
+}
 
 .dropdown-item .action-item__label { display: block; }
 .dropdown-item .action-item__note {
+  position: static;
+  inline-size: auto;
+  block-size: auto;
+  overflow: visible;
+  clip: auto;
   display: block;
   margin-block-start: 0.15rem;
   font-size: 0.8rem;

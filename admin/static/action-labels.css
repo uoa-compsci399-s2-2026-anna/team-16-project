@@ -1,0 +1,57 @@
+/* An `@action` label that carries its own description.
+
+   See `admin/modelviews.py`'s `described()` for why the description travels
+   inside the label at all: sqladmin renders these controls from its own
+   templates, which `admin/templates/brand/` never sees, and that is how
+   Publish - which changes what every public visitor's next calculation
+   returns - came to be a bare verb in a dropdown with nothing to explain it.
+
+   WHY THIS IS ITS OWN FILE, LINKED FROM `sqladmin/layout.html`.
+
+   sqladmin renders one label in THREE places, not one: the bulk-actions
+   dropdown and the per-row dropdown on the list page, and - for any action
+   declared `add_in_detail=True` - a plain `<a class="btn btn-secondary">` on
+   the DETAIL page. These rules first lived inside
+   `brand/_list_table_css.html`, which reaches the list chain only, so the
+   detail page got the markup and none of the styling: both spans rendered
+   inline inside the button and the taxonomy detail page grew a 1209px bar
+   reading "DeactivateDrops the selected rows out of the calculator's own
+   lists and this panel's forms..." with the page overflowing sideways.
+   `layout.html` is the one template every sqladmin screen passes through,
+   and its own comment already states the rule this file follows: a `<link>`
+   for something on every screen, an inlined `<style>` only for the list.
+
+   Found in production rather than by a test. The browser case written with
+   this feature only ever opened the list-page menu, so it could not have
+   caught it; `tests/admin/test_button_hint_browser.py` now opens a detail
+   page too. */
+
+/* The note is hidden by default and shown only inside a menu item. A menu is
+   a disclosure a reader opens while choosing between actions, which is when
+   an explanation is worth reading; a detail page has already been navigated
+   to deliberately, and a whole sentence is not a button label there.
+
+   `display: none` rather than a visual trick, because it also takes the note
+   out of the accessible name: the detail-page button announces "Activate",
+   not the entire paragraph after it. */
+.action-item__note { display: none; }
+
+.dropdown-item .action-item__label { display: block; }
+.dropdown-item .action-item__note {
+  display: block;
+  margin-block-start: 0.15rem;
+  font-size: 0.8rem;
+  line-height: 1.35;
+  opacity: 0.78;
+}
+
+/* Tabler's `.dropdown-item` is `white-space: nowrap`, which is right for a
+   one-word menu and turns a sentence into one long line that pushes the menu
+   off the screen. Relaxed only for items that actually carry a note, so a
+   menu of plain items is untouched. */
+.dropdown-item:has(.action-item__note) {
+  white-space: normal;
+  /* Wide enough for a sentence to break two or three times, and no wider than
+     a narrow viewport can hold. */
+  max-inline-size: min(26rem, calc(100vw - 3rem));
+}

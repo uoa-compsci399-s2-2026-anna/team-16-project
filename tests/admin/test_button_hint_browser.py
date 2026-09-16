@@ -682,3 +682,59 @@ def test_every_action_in_the_menu_shows_its_description(
         ), f"{path}: the open menu pushed the page sideways"
     finally:
         context.close()
+
+
+#: A taxonomy row that the seed always creates, used only to reach a detail
+#: page. Any model with an `add_in_detail=True` action would do.
+_DETAIL_PAGE = "/admin/sector/details/1"
+
+
+def test_a_detail_page_action_is_a_button_not_a_paragraph(browser, authed_storage_state):
+    """**This shipped.** `described()` puts the description inside the label,
+    and sqladmin renders one label in three places, not one: two dropdowns on
+    the list page, and - for an action declared `add_in_detail=True` - a plain
+    `<a class="btn btn-secondary">` on the DETAIL page, with no
+    `.dropdown-item` around it.
+
+    The rules that turn the label into two lines first lived in
+    `brand/_list_table_css.html`, which reaches the list chain only. So the
+    detail page got the markup and none of the styling: both spans rendered
+    inline inside the button, and the taxonomy detail page grew a 1209px bar
+    reading "DeactivateDrops the selected rows out of the calculator\'s own
+    lists and this panel\'s forms..." while the page overflowed sideways.
+
+    The browser case written with this feature only ever opened the list-page
+    menu, which is why it could not catch this. This one opens a detail page.
+    Width is the assertion rather than text, because the text is present and
+    correct in both the working and the broken state - what went wrong is
+    where it was drawn.
+    """
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{_DETAIL_PAGE}", wait_until="networkidle")
+        notes = page.evaluate(
+            "() => [...document.querySelectorAll(\'.action-item__note\')]"
+            "        .map(n => Math.round(n.getBoundingClientRect().height))"
+        )
+        assert notes, (
+            "no described action reached this detail page at all - the test has "
+            "lost its subject, which is worse than a failure"
+        )
+        assert all(h == 0 for h in notes), (
+            f"a description is being drawn inside a detail-page button: heights {notes}"
+        )
+        widths = page.evaluate(
+            "() => [...document.querySelectorAll(\'a.btn\')]"
+            "        .filter(a => a.offsetParent !== null)"
+            "        .map(a => Math.round(a.getBoundingClientRect().width))"
+        )
+        assert max(widths) < 300, (
+            f"a button on the detail page is {max(widths)}px wide - a sentence "
+            f"is being rendered as its label"
+        )
+        assert page.evaluate(
+            "document.documentElement.scrollWidth <= document.documentElement.clientWidth"
+        ), "the detail page scrolls sideways"
+    finally:
+        context.close()

@@ -850,3 +850,101 @@ def test_revealing_a_detail_page_description_adds_no_horizontal_overflow(
         )
     finally:
         context.close()
+
+
+#: Every width the panel is realistically opened at, plus the two ends. The
+#: failures this covers were at 768-1024, which is exactly the band a
+#: 1280-and-320 pair steps over: the action row has begun to wrap but is not
+#: yet a stack.
+_DETAIL_WIDTHS = [1920, 1280, 1024, 768, 375]
+
+
+@pytest.mark.parametrize("path", _DETAIL_PAGES)
+@pytest.mark.parametrize("width", _DETAIL_WIDTHS)
+def test_every_detail_page_card_lands_on_the_button_it_explains(
+    browser, authed_storage_state, path, width
+):
+    """**The assertion that was missing while three fixes went out.**
+
+    Each earlier round asserted that the card appeared, that the button did
+    not move, and that nothing overflowed - and every one of those passed
+    while the card was rendering at the start of the action row, up to a
+    thousand pixels from the control it described. Hovering `Show the password
+    waiting to be collected` put its explanation above `Go Back`. A tooltip
+    that does not say which control it belongs to is not a tooltip, and no
+    amount of "it is visible" catches that: the missing comparison is between
+    the card's position and its OWN button's.
+
+    Every described button is driven, not the first one, because the defects
+    lived at the ends of the row and in whichever button happened to sit at
+    the visual edge once the row wrapped.
+    """
+    context = browser.new_context(
+        storage_state=authed_storage_state,
+        viewport={"width": width, "height": 900},
+    )
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{path}", wait_until="networkidle")
+        count = page.evaluate(
+            "() => [...document.querySelectorAll(\'a.btn\')]"
+            "        .filter(a => a.querySelector(\'.action-item__note\')).length"
+        )
+        assert count, f"{path} has no described action button to test"
+
+        for index in range(count):
+            page.evaluate(
+                "(i) => {"
+                "  document.querySelectorAll(\'[data-probe]\')"
+                "    .forEach(e => e.removeAttribute(\'data-probe\'));"
+                "  [...document.querySelectorAll(\'a.btn\')]"
+                "    .filter(a => a.querySelector(\'.action-item__note\'))[i]"
+                "    .setAttribute(\'data-probe\', \'1\');"
+                "}",
+                index,
+            )
+            page.hover("[data-probe]")
+            page.wait_for_timeout(120)
+            placed = page.evaluate(
+                "() => {"
+                "  const b = document.querySelector(\'[data-probe]\');"
+                "  const n = b.querySelector(\'.action-item__note\');"
+                "  const bb = b.getBoundingClientRect(), nn = n.getBoundingClientRect();"
+                "  return {"
+                "    label: (b.querySelector(\'.action-item__label\') || b).innerText.trim(),"
+                "    overlap: Math.round(Math.max(0,"
+                "      Math.min(bb.right, nn.right) - Math.max(bb.left, nn.left))),"
+                "    offscreen: nn.left < -0.5 || nn.right > window.innerWidth + 0.5"
+                "               || nn.top < -0.5,"
+                "  };"
+                "}"
+            )
+            assert not placed["offscreen"], (
+                f"{path} at {width}px: the card for {placed['label']!r} is "
+                f"partly off screen"
+            )
+            assert placed["overlap"] >= 20, (
+                f"{path} at {width}px: the card for {placed['label']!r} shares "
+                f"only {placed['overlap']}px of horizontal span with the button "
+                f"it explains - it is describing a control the reader is not "
+                f"pointing at"
+            )
+    finally:
+        context.close()
+
+
+def test_the_positioner_is_loaded_and_announces_itself(browser, authed_storage_state):
+    """The stylesheet has two modes and picks between them on this class, so a
+    script that silently failed to load would leave the panel in the fallback
+    without anything saying so. The fallback is legible - that is the point of
+    having one - which is exactly why its presence needs asserting rather than
+    eyeballing."""
+    context = browser.new_context(storage_state=authed_storage_state)
+    page = context.new_page()
+    try:
+        page.goto(f"{BASE}{_DETAIL_PAGES[0]}", wait_until="networkidle")
+        assert page.evaluate(
+            "document.documentElement.classList.contains(\'js-action-tips\')"
+        ), "action-labels.js did not run, so every card is in the CSS fallback"
+    finally:
+        context.close()

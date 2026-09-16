@@ -48,47 +48,47 @@
   clip: rect(0, 0, 0, 0);
 }
 
-/* ON A DETAIL PAGE: a card above the row, on hover and on keyboard focus.
+/* ON A DETAIL PAGE: a card above the button, on hover and on keyboard focus.
 
-   Anchored to the `.row` that holds every action rather than to the button,
-   so its width is the row's width and it cannot push the page sideways at
-   any viewport - the same guarantee `brand.css` makes for the help tips on
-   the hand-written screens. Tabler makes `.btn` and `.col-auto` positioned,
-   which would otherwise capture the anchor, so both are put back to `static`
-   only where they carry a note.
+   ANCHORED TO THE BUTTON, NOT TO THE ROW - corrected after the first version
+   shipped. Anchoring to the `.row` guaranteed the card could never push the
+   page sideways, and I tested exactly that and nothing else: the button did
+   not move, nothing overflowed, the description appeared. It appeared at the
+   START OF THE ROW every time, so hovering `Show the password waiting to be
+   collected` at the right-hand end of six buttons put its explanation about
+   a thousand pixels away, above `Go Back`. A tooltip that does not say which
+   control it belongs to is not a tooltip. No assertion caught it because
+   none of them compared the card's position with its own button's.
+
+   Tabler makes `.btn` and `.col-auto` positioned, which is now what we want
+   for `.btn` and still not what we want for `.col-auto`.
 
    `pointer-events: none` IS LOAD-BEARING HERE, unlike on the brand screens.
    The card is a descendant of the `<a>`, so without it the card is part of
    the link's hit area: moving onto it to read the sentence would arm a click
    on `Delete permanently`. It also stops the card taking the hover that is
    revealing it, which would oscillate. */
-.row:has(.action-item__note) { position: relative; }
 .col-auto:has(.action-item__note) { position: static; }
-.btn:has(.action-item__note) { position: static; }
+.btn:has(.action-item__note) { position: relative; }
 .btn:hover .action-item__note,
 .btn:focus .action-item__note {
   inset-block-end: calc(100% + 0.5rem);
   inset-inline-start: 0;
-  inline-size: auto;
-  /* A MEASURE, NOT AN OVERFLOW GUARD - stated precisely because the first
-     version of this comment claimed the latter and a mutation proved it
-     wrong: removing this clamp turns no test red. What actually keeps the
-     card inside the screen is `white-space: normal` below; without it the
-     box measured correctly and the sentence ran out of it as a single line.
-
-     What the clamp does do is cap the line length. The action row is nearly
-     a thousand pixels wide on a laptop, and a shrink-to-fit card would take
-     all of it - one unbroken line of 0.85rem text across the whole screen,
-     which is about twice the measure this panel sets for body copy
-     everywhere else. The viewport term keeps that honest on a phone. */
-  max-inline-size: min(34rem, calc(100vw - 2rem));
+  inline-size: max-content;
+  /* A MEASURE, AND A VIEWPORT GUARD. The line-length part: the action row is
+     most of a laptop's width, and a shrink-to-fit card would take all of it -
+     one unbroken line of 0.85rem text across the screen, about twice the
+     measure this panel sets for body copy everywhere else. The viewport term
+     is what keeps a card anchored to a button near the right-hand edge from
+     running off it; the rule below handles the rest. */
+  max-inline-size: min(26rem, calc(100vw - 2rem));
   block-size: auto;
   overflow: visible;
   clip: auto;
-  /* Tabler's `.btn` is `white-space: nowrap`, which the card inherits:
-     the box clamped correctly to 288px while the sentence inside it ran
-     out as a single line and pushed the document to 1011px at a 320px
-     viewport. The box was never the thing overflowing. */
+  /* Tabler's `.btn` is `white-space: nowrap`, which the card inherits: the
+     box clamped correctly to 288px while the sentence inside it ran out as a
+     single line and pushed the document to 1011px at a 320px viewport. The
+     box was never the thing overflowing. */
   white-space: normal;
   z-index: 3;
   pointer-events: none;
@@ -105,18 +105,35 @@
   box-shadow: 0 4px 14px rgba(0, 50, 35, 0.12);
 }
 
-.dropdown-item .action-item__label { display: block; }
-.dropdown-item .action-item__note {
-  position: static;
+/* WITH THE POSITIONER RUNNING, the card is placed against the viewport and
+   every rule that tried to guess a safe side becomes dead weight. See
+   `admin/static/action-labels.js` for why guessing could not be made to work:
+   once the action row wraps, the button at the visual edge is not the
+   DOM-last child, and `:nth-last-child` flips the wrong one.
+
+   `position: fixed` rather than absolute, so the coordinates the script sets
+   are the viewport's and no ancestor's positioning can move them. */
+.js-action-tips .btn:hover .action-item__note,
+.js-action-tips .btn:focus .action-item__note {
+  position: fixed;
+  inset-block-end: auto;
+  inset-inline-start: auto;
+  inset-inline-end: auto;
+  max-inline-size: min(26rem, calc(100vw - 2rem));
+}
+
+/* WITHOUT IT - no JavaScript - the card is still revealed and still readable;
+   it is anchored to the footer, spanning it, rather than to the button. That
+   is the fallback this file had before the positioner existed, kept because a
+   description that appears in a slightly less precise place is worth far more
+   than one that does not appear. */
+html:not(.js-action-tips) .card-footer:has(.action-item__note) { position: relative; }
+html:not(.js-action-tips) .btn:has(.action-item__note) { position: static; }
+html:not(.js-action-tips) .btn:hover .action-item__note,
+html:not(.js-action-tips) .btn:focus .action-item__note {
+  inset-inline: 0;
   inline-size: auto;
-  block-size: auto;
-  overflow: visible;
-  clip: auto;
-  display: block;
-  margin-block-start: 0.15rem;
-  font-size: 0.8rem;
-  line-height: 1.35;
-  opacity: 0.78;
+  max-inline-size: none;
 }
 
 /* Tabler's `.dropdown-item` is `white-space: nowrap`, which is right for a

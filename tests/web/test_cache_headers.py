@@ -148,3 +148,86 @@ def test_the_static_rule_does_not_reach_the_api():
     assert "no-cache" not in (response.headers.get("Cache-Control") or "").lower(), (
         dict(response.headers)
     )
+
+
+# --- The admin panel, which had the same defect and kept it longer ----------
+#
+# `location /` was fixed; `location /admin` was not, and it is a `proxy_pass`
+# that emitted no cache directive at all. The panel's assets are not
+# fingerprinted either - `brand.css` is `brand.css` in every release - and the
+# admin container answers with `Last-Modified` and `ETag` and nothing else,
+# which is the exact shape RFC 9111 4.2.2 lets a cache invent a freshness
+# lifetime from.
+#
+# Observed rather than theorised: a stylesheet rewritten in one release was
+# still being served from the previous one forty minutes after the deploy, so
+# a fix that was correct at the origin was invisible to the person who had
+# reported the bug.
+
+#: One of each kind of thing the panel serves through `/admin`: a page, the
+#: two stylesheets, a script, and the font - the asset a narrower fix would
+#: have excepted, exactly as `location /`'s own comment says of its woff2.
+ADMIN_PATHS = [
+    "/admin/login",
+    "/admin/static/brand.css",
+    "/admin/static/action-labels.css",
+    "/admin/static/security.js",
+    "/admin/static/fonts/geologica-bold.woff2",
+]
+
+#: A browser-shaped request, because `db/detection.py` refuses `Accept:
+#: text/html` with no `Sec-Fetch-Mode` and would otherwise answer 403 - which
+#: carries headers of its own and would make these assertions meaningless.
+_BROWSERISH = {
+    "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 "
+                  "(KHTML, like Gecko) Chrome/131.0 Safari/537.36",
+    "Accept": "text/html,application/xhtml+xml",
+    "Sec-Fetch-Mode": "navigate",
+}
+
+
+@pytest.mark.parametrize("path", ADMIN_PATHS)
+def test_the_panel_also_forbids_silent_reuse(path):
+    """The same assertion as the public site, on the other half of the origin."""
+    response = _head(path, _BROWSERISH)
+    directive = (response.headers.get("Cache-Control") or "").lower()
+    assert directive, f"{path} carries no Cache-Control at all: {dict(response.headers)}"
+    assert "no-cache" in directive, f"{path} -> {directive!r}"
+    assert "immutable" not in directive, f"{path} -> {directive!r}"
+    for token in directive.replace(" ", "").split(","):
+        if token.startswith("max-age="):
+            assert token == "max-age=0", f"{path} may be reused unasked: {directive!r}"
+
+
+@pytest.mark.parametrize("path", ADMIN_PATHS)
+def test_the_panel_keeps_its_baseline_security_headers(path):
+    """**The trap that makes the fix above dangerous to write.**
+
+    A location-level `add_header` cancels every `add_header` inherited from
+    the server block. `/admin` had none of its own, so it was inheriting
+    nosniff, SAMEORIGIN and the referrer policy; adding the cache directive
+    alone would have silently removed all three from every page of the admin
+    panel, and nothing in this suite would have noticed. They are repeated in
+    the block, and this is what says so.
+    """
+    response = _head(path, _BROWSERISH)
+    assert response.headers.get("X-Content-Type-Options") == "nosniff", dict(response.headers)
+    assert response.headers.get("X-Frame-Options") == "SAMEORIGIN", dict(response.headers)
+    assert response.headers.get("Referrer-Policy") == "strict-origin-when-cross-origin", (
+        dict(response.headers)
+    )
+
+
+def test_the_panel_revalidates_cheaply_too():
+    """`no-cache` must cost a conditional request, not a re-download - and the
+    admin container has to supply the validator that makes that possible,
+    since nginx is proxying rather than serving from disk here."""
+    first = _head("/admin/static/brand.css", _BROWSERISH)
+    etag = first.headers.get("ETag")
+    directive = (first.headers.get("Cache-Control") or "").lower()
+    assert "no-store" not in directive, directive
+    assert etag, f"no validator to revalidate against: {dict(first.headers)}"
+    again = _head("/admin/static/brand.css", dict(_BROWSERISH, **{"If-None-Match": etag}))
+    assert getattr(again, "status", getattr(again, "code", None)) == 304, (
+        f"revalidation re-sent the body: {getattr(again, 'status', None)}"
+    )

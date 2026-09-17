@@ -29,9 +29,11 @@ This document defines **what every person's code receives and what it returns.**
 
 Stage 2 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order, with owner decision 6 (§10) folded in: **step 4 forks too, and so does the improvement panel.** It is numbered v1.55 rather than "v1.54 part one", which is already this document's name for the schema landing that merged first — a revision identity that names two different changes cannot be checked in either direction.
 
-**`web/`, and two lines of `api/pdf_render.py` (row 7).** No table, no migration, no route, no engine change, and **no request or response shape changes**: a chain that names several food categories sends one `entries[]` element per category, which is what §6.2 has always accepted. `MAX_ENTRIES` is unchanged at 20 and now counts leaves rather than chains, which the form restates client-side so a twenty-first leaf is refused at the tick rather than as a 400 two screens later. `tests/fixtures/*.json` are therefore untouched, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
+**`web/`, and two lines of `api/pdf_render.py` (row 7).** No table, no migration, no route, no engine change, and **no request or response shape changes**: a chain that names several food categories sends one `entries[]` element per category, which is what §6.2 has always accepted. `MAX_ENTRIES` is unchanged at 20 and now counts leaves rather than chains, which the form restates client-side so a twenty-first leaf is refused at the tick rather than as a 400 two screens later. `tests/fixtures/*.json` are therefore untouched, and the contract-change process's third step is a no-op for this revision by intent rather than by omission — checked rather than assumed, because a fixture is the executable form of this contract and a forked chain is the first thing on this branch that changes what a *visitor* builds. The one wire shape a fork newly makes common is **several `entries[]` elements sharing a `sector`**, and `calculate_request.json`'s two entries name two different sectors. It is not added: §6.2's duplicate rule is on the `(sector, food_category)` pair and has always permitted it, `api/` enforces the pair and not the sector, and every element a fork produces is byte-for-byte an entry the existing fixtures already exemplify, so a new file would restate what `calculate_request.json` already says. It would not rot unnoticed — `tests/api/test_fixture_consistency.py` reads this directory and checks it against the contract, which is the reason a fixture is worth adding when it carries something new and worth leaving out when it does not. Every element a fork produces is byte-for-byte an entry the existing fixtures already exemplify; the fan-out is `web/`'s, and `web/` is not on the wire.
 
-**The translatable surface**, counted rather than estimated, because §7.7.1 makes the English source string the key and a reworded sentence orphans every translation of it. Against `web/locales/*.json` as they stand, the fork adds **35** keys and retires **11**; `tests/web/test_i18n_web.py` is therefore red for twenty locales until the translation pass runs, which is known, separate work.
+**The translatable surface**, counted rather than estimated, because §7.7.1 makes the English source string the key and a reworded sentence orphans every translation of it. Against `web/locales/*.json` as they stand, the fork adds **35** keys and retires **11**; The translation pass has since landed all 35 in all twenty catalogues and removed all 11, mirrored byte-for-byte into `api/assets/locales/`, so the suite is green rather than knowingly red.
+
+> Three of the 35 carry no translatable word at all — `%(sector)s — %(food)s`, `, ` and `%(food)s: %(message)s` are placeholders and punctuation. Their correct value is character-identical to the English in most languages, which `test_no_entry_is_blank_or_still_english` reads as an untranslated entry. That test now exempts a string with no letter outside its placeholders, structurally, rather than by declaring the coincidence per language: `IDENTICAL_BY_DESIGN` is for words that happen to spell the same in two languages and could stop doing so, and burying three tautologies among them would hide the real ones. Five catalogues had answered the failure by swapping the em dash and the colon so as to differ from English — one interface made worse in five languages to make one suite green — and are restored.
 
 Four of the 35 belong to this revision specifically, and each closes a defect rather than adding a feature:
 
@@ -51,6 +53,11 @@ Three of the 11 retirements are `leafDisplayName` absorbing them: `Standard mix 
 | 5 | **`submissionLeaves(chains)`** — the one crossing from chains to `entries[]`; and **`submissionPayload`'s `alternativeFor` is now `(leaf, index)`**, because the improvement panel selects a leaf's own allocation by its position in the submission | §7.3b |
 | 6 | **`draftLinePaths()` replaces `draftFieldPaths()`'s description**, keyed by line `id` and rooted at each row's own leaf's request index. The draft now occupies a *range* of `entries[]` indices, so the old root `entries[state.entries.length]` bound every leaf's rows to the first leaf | §7.3a |
 | 7 | **The PDF stops printing an absent `food_category` as the standard mix.** The engine still resolves a NULL category to the standard mix, but the two are now separate *answers* a visitor gives with separate checkboxes and they are distinguishable on the wire — the standard mix sends its own `code`, "I do not know" sends `null` — so substituting printed them byte-identically. An unstated food type prints as `ABSENT`, the document's existing convention, and **no new catalogue string is involved**: `Catalogue.gettext` raises rather than falling back to English, so a new string on this path would refuse to render the document in every language that had not translated it yet | §6.2.3 |
+| 8 | **The improvement panel's three inputs are each taken per leaf.** `currentAllocationPercentages` returns one destination-to-percentage map **per leaf** rather than one for the submission, and `improvementValidation` checks 100% and §6.2's 0.010 kg mass conservation per leaf and names the food when there is more than one. Module-private `leafShares` and `leafAllocations` are the reconciliation: an allocation held from a submission with different leaves, or stored in the pre-fork shape, cannot be read as some other leaf's | §7.3a |
+| 9 | **Unticking a food category PARKS its figures rather than discarding them, and parked is not durable.** `leafFigures` is keyed by the leaf, so a kept record can only return to the food it was typed for — which is what separates it from the migration defect that prompted the first fix, where a record reached a *different* leaf. `entryPatch` prunes to the loaded entry's own leaves, so loading an entry destroys every parked record; `loadingGivesBackTheDraft` counts them and `hasData` reads `leafFigures` whole for that reason, and `draftEntry()` prunes at the request boundary so nothing parked is ever sent | §7.2 |
+| 10 | **A catalogue key may be punctuation, and a *description* of a string is never a key.** `t('List separator')` printed the literal words on screen, because §7.7.1's rule is that the English key **is** the English output. The separator is now `t(', ')`, overridable like any other entry — Arabic sets `، `, Chinese and Japanese often `、` | §7.7.1 |
+
+**The sections this revision changes, in both directions:** §6.2.3, §7.2, §7.3a, §7.3b and §7.7.1 — every one of them cited by a row above, and no row above citing anything else. §6.1, §6.2 and every part of §2 through §5 are deliberately untouched: the request and response shapes, the schema, the repository and the engine are all unchanged by a fork that happens entirely in `web/`.
 
 ### v1.54 part one — 2026-09-17 (the schema learns the food item level, and nothing else changes; affects B and E, and A, C and D only as advance notice)
 
@@ -3015,6 +3022,10 @@ No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather t
 
 **The document renders in the resolved locale, and one thing inside it never does.** The chrome — headings, unit labels, the mock-data warning banner, and the running header and footer on every page — is drawn from the same catalogues that serve the page, a byte-identical copy of `web/locales/*.json` under `api/assets/locales/` (a hash-comparison test holds the two in step). A Tamil-reading visitor therefore reads the document in Tamil. **The taxonomy names printed inside it — sector, food category and destination labels — are staff-typed database rows, supplied by `db/repository.get_taxonomy`, and are never translated in any locale: they are printed exactly as staff typed them.** Unlike the page, a missing catalogue key is not silently rendered in its English source here — `api/i18n.py`'s `Catalogue.gettext` raises rather than falling back, because a document read later by someone who cannot ask a follow-up is the one place a silently half-English render is worse than a failed request.
 
+**An unstated food type prints as `ABSENT`, and no longer as the standard mix (v1.55).** `food_category: null` on an entry and the standard-mix category's own `code` are two different *answers* as of the multi-select: step 2 offers them as two separate boxes, because §5.4 requires "I do not know, or my waste is not broken down by type" to be its own bucket rather than a category the visitor picked. `api/pdf_render.py` substituted the standard-mix row's own name for a NULL — right while a NULL could only *mean* the standard mix, and wrong the moment a submission could carry both, because it then printed two rows a reader could not tell apart carrying different figures. A NULL category now reaches `_look_up` like any other unstated field and prints `ABSENT` (an en dash, `–`), which is already what this document prints for a metric an entry did not carry. **The engine's own resolution is unchanged** — a NULL category is still priced as the standard mix (§4.1) — because what the document *prints* and what the engine *prices* are two questions, and this revision only answers the first.
+
+> **No new catalogue string is involved, and that is a constraint rather than a convenience.** The obvious rendering is a translated sentence such as "not broken down by type", which is what the screen shows. It cannot be used here: `Catalogue.gettext` raises rather than falling back to English (above), so a key added on this path would make the whole document fail to render in every language whose catalogue had not yet caught up — and a catalogue pass always lands after the code that needs it. `ABSENT` is a glyph, carries no language, and is already on four other paths in the same document.
+
 **The placeholder-data warning is mandatory here on the same terms as everywhere else (§2.2).** `render_export_pdf` reads `result.is_mock` unconditionally — there is no parameter, keyword or locale that suppresses it — and the renderer re-reads its own rendered output and refuses to produce a document that is missing the banner, rather than shipping one silently without it.
 
 **The document opens with a title block (v1.50), addressing the client's second-round feedback that it "lacks brand character".** Four facts, in the resolved locale, ahead of every figure:
@@ -3284,9 +3295,12 @@ export function resetCalculator();
  * exactly one place on the way to the wire, `submissionLeaves` (§7.3b).
  *
  * **It prunes `leafFigures` to `entryLeaves()`.** A category ticked, filled and then
- * unticked leaves a record behind; unpruned it is fingerprinted, makes the back-out
- * confirmation fire on a Back that discards nothing, and is silently restored on a
- * re-tick.
+ * unticked leaves a record behind — deliberately, so that re-ticking hands the work
+ * back (the note below). The prune is what stops that record crossing the boundary:
+ * unpruned it is fingerprinted, so the back-out confirmation fires on a Back that
+ * discards nothing, and it travels into a saved chain, where re-opening the entry would
+ * surface figures under a food the visitor had abandoned. Parked in the live draft,
+ * never in a committed one.
  *
  * **It lives here rather than in `calculator.js` because two modules build
  * submissions.** It was private to `calculator.js`, and `improvement.js` carried
@@ -3418,6 +3432,28 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 > matches neither Current column. The identity is an array and not a map keyed by the leaf's
 > name, because two chains may legitimately carry the same sector and the same food — the
 > duplicate notice warns about that and does not forbid it.
+>
+> **Unticking a category PARKS its figures rather than discarding them, and parked is not
+> safe.** This took two passes and the reasoning is the part worth keeping. The defect that
+> started it was a **migration**: 400 kg typed under one category reappeared under the next
+> one, because a record was reaching a *different* leaf. The first fix pruned
+> `state.leafFigures` on the untick — which stopped the migration and then destroyed work
+> instead: untick a category and the amount was gone, silently, and re-ticking the same
+> category did not bring it back. `leafFigures` is keyed by the leaf (`leafKey`), so a kept
+> record can only ever return to the food it was typed for; the two cases are distinct and
+> only one of them is a fault. So an untick keeps the record and a re-tick hands it back.
+>
+> **What "not safe" means, and the three readers that have to agree about it.**
+> `calculator.js`'s `entryPatch` (§7.3a) overwrites every key of the draft from the entry
+> being loaded, and that entry carries only its own leaves — so **loading a saved entry
+> destroys every parked record.** `loadingGivesBackTheDraft` therefore counts parked
+> records before deciding whether that door may open silently, and `hasData` reads
+> `leafFigures` **whole** — live
+> leaves and parked ones alike — because start-over destroys them too and the clear-all
+> control must not hide itself while there is work to clear. `draftEntry()` prunes at the
+> **request boundary** instead, so nothing parked is ever sent, fingerprinted, or committed
+> to `state.entries`. Parked figures live in exactly one place, the draft on screen, and the
+> visitor is never told a parked record is durable because it is not.
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
@@ -3819,11 +3855,32 @@ function goToStep(step, jumped = false);
  *  stepProblem. What `edit-entry` swaps on, rather than overwrites. v1.53. */
 const draftIsComplete = ();
 
+/** Every draft key a saved chain sets, as one patch - the one way the draft is
+ *  replaced wholesale, by `loadEntry` and by backing out of a jump. It PRUNES
+ *  `leafFigures` to `entryLeaves(entry)` on the way in as well as on the way
+ *  out, so a chain written before a category was unticked cannot carry that
+ *  category's figures back into the draft. Line ids are re-minted, so nothing
+ *  may key on their identity across a render. v1.55. */
+const entryPatch = entry;
+
+/** Figures held for a leaf that is not currently ticked - the parked records
+ *  (§7.2). `entryPatch` destroys them, so anything that replaces the draft
+ *  wholesale has to count them first. v1.55. */
+const parkedFigures = ();
+
+/** Whether there is anything for "Clear all data" to clear. Reads `leafFigures`
+ *  WHOLE - live leaves and parked ones alike (§7.2) - because start-over
+ *  destroys parked records too, and a control hidden while there is work to
+ *  clear is a control that cannot undo it. */
+const hasData = ();
+
 /** Whether opening `entry` hands the draft slot back everything it holds, so
  *  that overwriting it destroys nothing - an untouched draft, or one that is
- *  only the (sector, foodCategory) pair `entry` already carries. Not a second
+ *  only the (sector, food selection) `entry` already carries. Not a second
  *  definition of "complete": this asks whether there is anything to keep. It
- *  is what decides whether the third v1.53 string is shown. */
+ *  is what decides whether the third v1.53 string is shown. Since v1.55 a
+ *  parked record is something to keep, and the pair it matches on is the whole
+ *  food selection rather than one category. */
 const loadingGivesBackTheDraft = entry;
 ```
 
@@ -3909,6 +3966,8 @@ export function downloadResults(state);
 export async function downloadPdf(state);
 ```
 
+> **"Per entry" on this screen means per LEAF, not per chain (v1.55).** A supply-chain chain that names three food categories is three `entries[]` elements and therefore three breakdown sections and three rows in the text report, each named by `leafDisplayName` (§7.2) rather than by a label this module decides. That is what closed two defects at once here: a leaf carried one name on step 3, another on step 4 and a third on the review step, and `Standard mix / not specified` was returned both for a NULL `food_category` and for the `standard_mix` category — two answers step 2 offers as two separate boxes, rendering byte-identically on a page whose rows carry different numbers. The pairing itself is `entryResultsFrom`'s (§7.2), which must be handed the leaves the request was built from; handed chains it pairs by index against a longer response and attaches every figure to the wrong entry, silently.
+>
 > **The export used to contain no results.** It printed the total mass, the entries, their destinations and quantities, the factor version and the placeholder warning, and not one output number — under a file name that says "results". `buildResultsReport` exists as a separate export because that is the half a test can assert on: `tests/web/test_results_export.py` runs this module under Node against the §10 fixtures and matches whole anchored lines, so a report that printed the label without the figure, or the figure without its unit, fails. A test that greps this file for a heading would have passed on the broken version.
 
 > **The client-side aggregation layer is gone.** This module summed engine-computed metric totals, equivalence values and destination rows across entries; the two largest numbers on the page were numbers the engine never produced. It now reads `totals` and `net_benefit` from §6.2, and the destination tab is rendered per entry per the ruling there. `aggregateResults` and `differenceData` no longer exist.
@@ -3922,7 +3981,15 @@ export async function downloadPdf(state);
 ### `improvement.js` — the alternative scenario
 
 ```js
-export function currentAllocationPercentages(state);  // {destinationCode: number}
+/** **One map per leaf, in submission order** — not one map for the submission.
+ *  A submission-wide split applied to every leaf's own mass stopped being an
+ *  identity the moment a chain forked: 100 kg of dairy sent entirely to landfill
+ *  and 200 kg of fruit sent entirely to animal feed came back as one 33/67 pair
+ *  applied to both, which describes neither and matches neither Current column.
+ *  An array and not a map keyed by the leaf's name, because two chains may
+ *  legitimately carry the same sector and the same food — position in `entries[]`
+ *  is the identity, and it is the position `entry_results[]` uses too. v1.55. */
+export function currentAllocationPercentages(state);  // [{destinationCode: number}]
 /** Opens the panel with every destination at 0, not the current share. The
  *  client asked for every slider to start at 0: a visitor modelling an
  *  improvement is choosing a new allocation, and seeding from the old one
@@ -3940,6 +4007,13 @@ export function resetImprovement(state);
  *  total and inline error, enables/disables Compare — all without setState. */
 export function updateImprovementInput(control, state);
 export function allocationTotal(allocations);
+/** '' when valid. **Every rule is per leaf since v1.55**: each leaf's own sliders
+ *  must total 100% of *its* mass and conserve *its* mass to §6.2's 0.010 kg, which
+ *  is what the server checks per entry — one submission-wide total of 100% says
+ *  nothing about whether any individual entry conserves its own mass, and it is the
+ *  entry the API refuses. The message names the food when there is more than one
+ *  leaf (`%(food)s: %(message)s`), because "allocations must total 100%" pointing at
+ *  no particular card is unactionable on a five-column panel. */
 export function improvementValidation(state);         // '' when valid
 /** @param {object} state
  *  @param {(e: Error & {code?: string}) => string} [toPublicMessage]
@@ -3968,7 +4042,9 @@ export function ComparisonResults(state);             // '' until a comparison e
 >
 > **`mass` is held out of the comparison lists** because §6.2 requires an entry's two scenarios to describe the same mass, so its `net_benefit` is zero by construction — "Mass: No change" on every comparison, in a list whose subject is what changed. Same exclusion as `results.js`, different reason.
 >
-> **The mass check is §6.2's own rule, applied in kilograms.** `improvementValidation` compared allocation percentages to within ±0.01 **percentage points**, which is a different rule at every tonnage: 0.01 points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's absolute 0.010 kg limit, so the panel enabled Compare on a submission the server then refused with a 400 — for the whole submission, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. The seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so `currentAllocationPercentages` gives the rounding remainder to the largest share, and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3 — step 4 deliberately permits allocating less than the total, and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario.
+> **The panel forks with the chain (v1.55), and all three of its inputs are taken per leaf.** `submissionEntries(state)` returns the submission's **leaves** (§7.3b), and the seeded shares, `improvedLines`'s base mass and the mass-conservation check are each computed against one leaf's own current scenario. `state.improvedAllocations` is the matching array (§7.2). Two module-private functions carry the reconciliation: `leafShares` is one leaf's own current percentages, and `leafAllocations` reconciles whatever `improvedAllocations` holds to the leaves the submission actually has — so a panel opened on three leaves and re-rendered after one was removed cannot read a fourth leaf's allocation, and an allocation stored in the pre-fork shape (a bare object) is not mistaken for leaf zero's. `improvementChartExpanded` is `null`-or-an-index for the same reason: leaf 0 is a real answer, so a boolean cannot say which donut is open.
+>
+> > **The mass check is §6.2's own rule, applied in kilograms.** `improvementValidation` compared allocation percentages to within ±0.01 **percentage points**, which is a different rule at every tonnage: 0.01 points is 0.15 kg on a 1,500 kg entry, fifteen times §6.2's absolute 0.010 kg limit, so the panel enabled Compare on a submission the server then refused with a 400 — for the whole submission, after the user had left the screen with the numbers on it. It now sums the lines that will actually be sent. The seeded allocation was itself invalid under the corrected check (52.17 + 34.78 + 13.04 = 99.99%), so `currentAllocationPercentages` gives the rounding remainder to the largest share, and `improvedLines` anchors on the entry's **allocated** current mass rather than the total typed at step 3 — step 4 deliberately permits allocating less than the total, and anchoring on the typed total made every under-allocated entry send an alternative heavier than its current scenario.
 >
 > The alternative lines are built as `(totalKg × percentage / 100).toFixed(3)` **per line independently**, so Σ parts can differ from the entry total by up to 0.0005 × n. The dual-scenario design depends on the two scenarios conserving mass; this can break it by fractions of a gram. **Settled in v1.2, in C's favour:** §6.2's mass-conservation rule is derived from exactly this behaviour and its 0.010 kg tolerance is 20 lines × 0.0005 kg, so the drift this module produces is accepted rather than rejected — but only because §6.2 also caps a scenario at 20 lines per entry. The worst case sits on the boundary, and the comparison is `<=`. If that cap ever rises, this allocation must round to a running remainder instead.
 
@@ -4205,6 +4281,8 @@ Owners: C and D on the calculator, E on the panel. Open item O-8.
 ### 7.7.1 The shape of a catalogue
 
 **The English source string is the key.** `t('Save')` looks up `"Save"`. There is no separate key namespace, a missing key renders its own English source, and one file is one language.
+
+**Which is why a key may be punctuation, and why a *description* of a string is never one.** `t(', ')` is the list separator that joins food names — "Dairy, Fruit and vegetables" — and it is a catalogue entry like any other, because the convention is not universal: Arabic sets `، `, and Chinese and Japanese often set `、` between nouns. It was written `t('List separator')`, which is a description of a string rather than the string, and since the English key **is** the English output that printed the literal words on screen: `DairyList separatorBakery and grainsList separatorFruit`. A key that cannot be rendered as-is in English is a key that has already failed in English.
 
 ```
 admin/locales/<lang>.json    read by Python, shipped as wheel package data

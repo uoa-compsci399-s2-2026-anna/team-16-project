@@ -267,23 +267,23 @@ function resultExplanation(body, id) {
 }
 
 const METRIC_EXPLANATIONS = {
-  co2e: '<p>Shows the estimated climate impact of the food waste in kilograms of carbon-dioxide equivalent (kg CO2e).</p><p><strong>Calculation:</strong><br>Food waste (kg) × [production emissions factor + waste-destination emissions factor] = kg CO2e.</p><p>The production factor represents emissions from producing the food. The destination factor represents the effect of how the waste is managed. Results for all waste destinations are then added together.</p>',
-  ch4: '<p>Shows the estimated methane released by the food waste in kilograms of methane (kg CH4).</p><p><strong>Calculation:</strong><br>Food waste (kg) × [production methane factor + waste-destination methane factor] = kg CH4.</p><p>Results for all waste destinations are then added together.</p>',
-  water: '<p>Shows the estimated water associated with the food waste in litres.</p><p><strong>Calculation:</strong><br>Food waste (kg) × [production water factor + waste-destination water factor] = litres of water.</p><p>Results for all waste destinations are then added together.</p>',
-  cost: '<p>Shows the estimated disposal cost and waste levy in New Zealand dollars. It does not include the purchase or retail value of the food.</p><p><strong>Calculation:</strong><br>Food waste (kg) × applicable waste-management cost per kg = cost in NZD.</p><p>Costs for all waste destinations are then added together.</p>',
+  co2e: '<p>Estimated greenhouse gas emissions from the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × [production factor + destination factor] = kg CO2e.</p>',
+  ch4: '<p>Estimated methane emissions from the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × [production factor + destination factor] = kg CH4.</p>',
+  water: '<p>Estimated water associated with the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × [production factor + destination factor] = litres.</p>',
+  cost: '<p>Estimated disposal cost and waste levy, excluding the food's purchase or retail value.</p><p><strong>Calculation:</strong> waste (kg) × waste-management cost per kg = NZD.</p>',
 }
 
 function metricExplanation(code, metric, definition) {
   const unit = metricUnit(metric, definition)
-  return METRIC_EXPLANATIONS[code] || `<p>Shows the estimated ${escapeHtml(definition?.name || code)} impact of the food waste in ${escapeHtml(unit)}.</p><p><strong>Calculation:</strong><br>Food waste (kg) × the applicable impact factor = ${escapeHtml(unit)}.</p><p>Results for all waste destinations are then added together.</p>`
+  return METRIC_EXPLANATIONS[code] || `<p>Estimated ${escapeHtml(definition?.name || code)} impact of the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × applicable impact factor = ${escapeHtml(unit)}.</p>`
 }
 
 function massExplanation() {
-  return '<p>Shows the total weight of food waste recorded across all waste destinations.</p><p><strong>Calculation:</strong><br>Add together the food-waste weight recorded for each destination.</p><p>Tonnes are calculated by dividing the total kilograms by 1,000.</p>'
+  return '<p>Total weight of food waste across all destinations.</p><p><strong>Calculation:</strong> add all recorded waste amounts. Tonnes = kilograms ÷ 1,000.</p>'
 }
 
 function shareExplanation() {
-  return '<p>Shows what percentage of the total food handled became waste.</p><p><strong>Calculation:</strong><br>Total food waste (kg) ÷ total food handled (kg) × 100 = percentage waste.</p><p>When there are multiple entries, the weights are added first. The individual percentages are not averaged.</p>'
+  return '<p>Percentage of the total food handled that became waste.</p><p><strong>Calculation:</strong> total waste (kg) ÷ total food handled (kg) × 100.</p>'
 }
 
 function summaryCards(totals, taxonomy) {

@@ -795,6 +795,20 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .saved-entry-card h3 { margin-bottom: 5px; }
 .saved-entry-card p { margin: 0; color: var(--muted); }
 .current-entry-heading { margin-top: 38px; }
+
+/* AN ENTRY THE API NAMED. `.has-error` above reaches inputs only - it sets a
+   border colour on `input, select` - and a problem that belongs to a whole entry
+   has no input anywhere on the form. So the mark has to sit on the block itself,
+   on the same inline-start edge the card already uses to carry its status.
+
+   The message inside the card is a child of the card's TEXT block, not a third
+   child of the card: `.saved-entry-card` is `display: flex` with
+   `justify-content: space-between`, so a sibling would sit in the row beside the
+   buttons, and giving the card `flex-wrap` to push it down would change how every
+   card behaves at narrow widths whether it has an error or not. */
+.saved-entry-card.has-error { border-inline-start-color: var(--error); }
+.current-entry-heading.has-error h2 { color: var(--error); }
+.duplicate-notice .text-button { margin-top: 10px; }
 .current-entry-heading span { color: var(--green-dark); font-weight: 700; }
 .add-entry-button { width: 100%; margin: 2px 0 24px; }
 

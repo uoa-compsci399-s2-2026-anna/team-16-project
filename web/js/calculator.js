@@ -278,12 +278,47 @@ function sectorStep() {
     }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: -1 })}</section>`
 }
 
+/**
+ * The saved entry the draft currently repeats, as a 1-based number, or `undefined`.
+ *
+ * The same `(sector, food_category)` pair `api/schemas.py` refuses and
+ * `uq_submission_entry` enforces. **A null food category counts**: "this sector,
+ * no breakdown" is as much a pair as any other, and two chains that both leave
+ * step 2 alone collide exactly like two that pick the same category.
+ *
+ * Only saved entries are searched, never the draft against itself.
+ */
+function draftRepeatsSavedEntry() {
+  const key = entry => `${entry.sector}\u0000${entry.foodCategory || ''}`
+  const draft = { sector: state.sector, foodCategory: state.foodCategory }
+  if (!state.sector) return undefined
+  const index = state.entries.findIndex(entry => key(entry) === key(draft))
+  return index === -1 ? undefined : index
+}
+
+/**
+ * Said at the point of choice, because the collision is knowable here and the
+ * alternative is building a whole chain to be refused at the end of it.
+ *
+ * **It does not block.** The constraint lives in the database and the API
+ * enforces it; this is a convenience, and a guard that refused to let the
+ * visitor continue would be a second enforcement in a place that cannot see the
+ * whole submission. Continuing lands on the review step with the entry marked -
+ * see `entryIndexOf`.
+ */
+function duplicateNotice() {
+  const index = draftRepeatsSavedEntry()
+  if (index === undefined) return ''
+  const number = index + 1
+  return `<aside class="disclaimer compact duplicate-notice" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('You have already entered this combination'))}</strong><p>${escapeHtml(t('Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.', { number }))}</p><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Open entry %(number)s', { number }))}</button></div></aside>`
+}
+
 function foodStep() {
   const categories = sorted(state.taxonomy.food_categories)
   return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} · ${escapeHtml(t('Optional'))}</p><h1 id="food-title">${escapeHtml(t('What type of food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Choose one category if you know it, or continue without selecting an option.'))}</p><fieldset class="choice-fieldset"><legend class="sr-only">${escapeHtml(t('Food type'))}</legend><div class="simple-choice-list">${categories.map(category => {
     const isSelected = state.foodCategory === category.code
     return `<label class="simple-choice ${isSelected ? 'selected' : ''}"><input id="food-category-${slug(category.code)}" type="radio" name="food-category" value="${escapeHtml(category.code)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(category.name)}</strong>${category.is_standard_mix ? `<small>${escapeHtml(t('Recommended if you do not separate food waste by category'))}</small>` : ''}</span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label>`
-  }).join('')}</div></fieldset>${state.foodCategory ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear optional selection'))}</button>` : ''}${stepNav({ step: 1, back: 0 })}</section>`
+  }).join('')}</div></fieldset>${state.foodCategory ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear optional selection'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: 0 })}</section>`
 }
 
 /**
@@ -538,10 +573,27 @@ function measuredAs(entry) {
   return `${formatNumber(entry.unitCount, 2)} × ${escapeHtml(preset?.label || entry.unitPreset || '')}`
 }
 
+/**
+ * The message against one whole entry, or `''`.
+ *
+ * Keyed on the bare `entries[N]` path §9 uses for a problem that belongs to no
+ * single field. `entryIndexOf` is what decides such a detail lands on this step;
+ * this is what puts it against the right entry once it is here, so that a banner
+ * naming "entry 2" does not leave the visitor counting cards.
+ */
+function entryProblem(index) {
+  return (state.fieldErrors || {})[`entries[${index}]`] || ''
+}
+
+function entryProblemHtml(index) {
+  const problem = entryProblem(index)
+  return problem ? `<p class="field-error entry-problem" role="alert">${escapeHtml(problem)}</p>` : ''
+}
+
 function entryCard(entry, index) {
   const sector = selected(state.taxonomy.sectors, entry.sector)
   const food = selected(state.taxonomy.food_categories, entry.foodCategory)
-  return `<article class="saved-entry-card"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3><p>${measuredAs(entry)} · ${escapeHtml(food?.name || t('Food type not provided'))}</p></div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
+  return `<article class="saved-entry-card ${entryProblem(index) ? 'has-error' : ''}"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3><p>${measuredAs(entry)} · ${escapeHtml(food?.name || t('Food type not provided'))}</p>${entryProblemHtml(index)}</div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
 }
 
 function reviewStep() {
@@ -560,7 +612,7 @@ function reviewStep() {
   return `<section class="content-section wide" aria-labelledby="review-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 5 }))}</p><h1 id="review-title">${escapeHtml(t('Review your information'))}</h1><p class="section-intro">${escapeHtml(t('Check this entry, or add another supply-chain entry before viewing the combined results.'))}</p>
     <div class="form-field time-frame-field"><label for="time-frame">${escapeHtml(t('What period do these figures cover?'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Optional — it only labels your figures, it never changes a result.'))}</p><select id="time-frame"><option value="" ${!state.timeFrame ? 'selected' : ''}>${escapeHtml(t('Not stated'))}</option><option value="one_week" ${state.timeFrame === 'one_week' ? 'selected' : ''}>${escapeHtml(t('One week'))}</option><option value="one_month" ${state.timeFrame === 'one_month' ? 'selected' : ''}>${escapeHtml(t('One month'))}</option><option value="one_quarter" ${state.timeFrame === 'one_quarter' ? 'selected' : ''}>${escapeHtml(t('One quarter'))}</option><option value="one_year" ${state.timeFrame === 'one_year' ? 'selected' : ''}>${escapeHtml(t('One year'))}</option></select></div>
     ${state.entries.length ? `<section class="saved-entries"><div class="section-heading-row"><h2>${escapeHtml(t('Added entries'))}</h2><span>${state.entries.length}</span></div>${state.entries.map(entryCard).join('')}</section>` : ''}
-    <div class="section-heading-row current-entry-heading"><h2>${escapeHtml(t('Current entry %(number)s', { number: state.entries.length + 1 }))}</h2><span>${escapeHtml(t('Ready to calculate'))}</span></div>
+    <div class="section-heading-row current-entry-heading ${entryProblem(state.entries.length) ? 'has-error' : ''}"><h2>${escapeHtml(t('Current entry %(number)s', { number: state.entries.length + 1 }))}</h2><span>${escapeHtml(t('Ready to calculate'))}</span></div>${entryProblemHtml(state.entries.length)}
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Supply-chain stage'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="0">${escapeHtml(t('Edit'))}</button></div><p>${escapeHtml(sector?.name || state.sector)}</p></article>
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Food category'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="1">${escapeHtml(t('Edit'))}</button></div><p>${escapeHtml(food?.name || t('Standard mix / not specified'))}</p></article>
     <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="2">${escapeHtml(t('Edit'))}</button></div><p><strong>${measuredAs(state)}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
@@ -833,7 +885,57 @@ function detailStep(detail) {
   const field = detail.field || ''
   const scalarKey = new RegExp(`^entries\\[${state.entries.length}\\]\\.(\\w+)$`).exec(field)?.[1]
   if (scalarKey && ENTRY_SCALAR_FIELD_STEP[scalarKey] !== undefined) return ENTRY_SCALAR_FIELD_STEP[scalarKey]
+  // A detail naming a *saved* entry has no input to highlight, which is why this
+  // function used to answer `undefined` for one and let `submitCalculation` fall
+  // through to its step-3 default. That default put a visitor refused for a
+  // duplicate entry on the destination step, whose fields were all valid, with
+  // nothing on screen belonging to the entry the API had named. The saved entry
+  // IS on screen - as its card on the review step - so send them there, and let
+  // `entryCard` carry the message against the card itself.
+  if (entryIndexOf(detail) !== undefined) return 4
   return draftFieldPaths().includes(field) ? 3 : undefined
+}
+
+/**
+ * The index of the entry a detail names *as a whole*, or `undefined`.
+ *
+ * §9's paths are rooted at the request body, where `entries[]` is
+ * `[...state.entries, draftEntry()]` - so index `state.entries.length` is the
+ * draft and every index below it is a saved entry.
+ *
+ * **Anchored at both ends, and that is the whole point.** `entries[1].qty_kg`
+ * names a field *inside* an entry and belongs to whichever step renders that
+ * field; a bare `entries[1]` names the entry itself, which has no input anywhere
+ * on the form. Both the saved entries and the draft are on the review step - the
+ * saved ones as cards, the draft as the "Current entry" blocks - so that is the
+ * one step where a whole-entry problem can be shown against the thing it is
+ * about. The draft is deliberately included: `duplicate_entry` flags the *later*
+ * of the two colliding entries, and with one saved chain plus a draft that later
+ * one IS the draft.
+ */
+function entryIndexOf(detail) {
+  const index = Number(/^entries\[(\d+)\]$/.exec(detail.field || '')?.[1])
+  return Number.isInteger(index) && index <= state.entries.length ? index : undefined
+}
+
+/**
+ * The entry a duplicate repeats, as the visitor's own 1-based entry number.
+ *
+ * Recomputed here rather than read out of the API's prose. §9's `message` for
+ * `duplicate_entry` names the other entry as `entries[0]` inside an English
+ * sentence, and parsing an index back out of that would tie this screen to that
+ * wording. The front end holds every entry, so it can find the match itself, on
+ * the same `(sector, food_category)` pair `api/schemas.py` keys on.
+ */
+function duplicateOf(index) {
+  const all = [...state.entries, draftEntry()]
+  const entry = all[index]
+  if (!entry) return undefined
+  // NUL-joined rather than concatenated: a sector code ending in the next
+  // field's first characters could otherwise collide with a different pair.
+  const key = other => `${other.sector}\u0000${other.foodCategory || ''}`
+  const first = all.findIndex(other => key(other) === key(entry))
+  return first === -1 || first === index ? undefined : first + 1
 }
 
 /**
@@ -849,15 +951,39 @@ function validationMessage(error) {
   const bound = new Set([...draftFieldPaths().filter(Boolean), ...scalarFieldPaths()])
   const unbound = (error.details || []).filter(detail => !bound.has(detail.field))
   if (!unbound.length) return t('Check the highlighted fields and try again.')
-  return [error.message || t('The calculation could not be completed.'), ...unbound.map(describeDetail)].join(' ')
+  // The envelope's `message` is the API's own English and never varies ("Request
+  // validation failed"), so it printed one untranslated sentence in front of
+  // details that are themselves translated. `publicError` gives every other error
+  // code a `t()` string; VALIDATION_ERROR was the one that leaked.
+  return [t('The calculation could not be completed.'), ...unbound.map(describeDetail)].join(' ')
 }
 
 // §9's path is rooted at the request body and starts `entries[N]`, where N is the
 // submission-order index. The user counts entries from one.
 function describeDetail(detail) {
   const entry = /^entries\[(\d+)\]/.exec(detail.field || '')
+  // An `issue` this screen understands is phrased here, in the visitor's own
+  // language and in their own terms. Falling through to `detail.message` prints
+  // the API's English verbatim, which is how a visitor reading the Chinese
+  // interface came to be shown "记录 2：has the same sector and food category as
+  // entries[0]" - half translated, and naming a path into the request body.
+  const known = detail.issue === 'duplicate_entry' ? duplicateEntryMessage(entry) : undefined
+  if (known) return known
   const message = detail.message || t('This value could not be accepted.')
   return entry ? t('Entry %(number)s: %(message)s', { number: Number(entry[1]) + 1, message }) : message
+}
+
+// Both wordings exist because `duplicateOf` can legitimately come back empty: the
+// API refused the pair, so something matched, but an entry edited between the
+// request and the response would leave nothing to point at. Naming a wrong entry
+// number is worse than naming none.
+function duplicateEntryMessage(entry) {
+  if (!entry) return undefined
+  const number = Number(entry[1]) + 1
+  const other = duplicateOf(Number(entry[1]))
+  return other === undefined
+    ? t('Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.', { number })
+    : t('Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.', { number, other })
 }
 
 function fieldErrorMap(error) {
@@ -870,7 +996,17 @@ function fieldErrorMap(error) {
   // describes the request as a whole, so standing it against each row printed "Request
   // validation failed" beside every highlighted input and discarded the only text that
   // said what was actually wrong with that row (§9).
-  return Object.fromEntries((error.details || []).map(detail => [detail.field, detail.message || t('This value could not be accepted.')]))
+  // An issue this screen phrases itself is stored phrased, so that whatever
+  // renders it - a destination row, an amount field, an entry card - shows the
+  // visitor's language rather than the API's English. Only `duplicate_entry`
+  // qualifies today, and it is the one detail whose key is a bare `entries[N]`,
+  // so no existing consumer of this map sees a changed value.
+  return Object.fromEntries((error.details || []).map(detail => [
+    detail.field,
+    (detail.issue === 'duplicate_entry' ? duplicateEntryMessage(/^entries\[(\d+)\]/.exec(detail.field || '')) : undefined)
+      || detail.message
+      || t('This value could not be accepted.'),
+  ]))
 }
 
 async function submitCalculation() {

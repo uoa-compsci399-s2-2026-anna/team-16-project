@@ -1045,23 +1045,32 @@ def clone_factor_set(
     )
     session.add(clone)
     session.flush()
-    copy_specs = (
-        #: `destination_id` is in this tuple because leaving it out is how O-7
-        #: comes back. Clone-edit-publish is the recommended staff workflow
-        #: (§5.2), so a clone that dropped the column would collapse every
-        #: `prevention` zero onto its general row on the first real factor set
-        #: — and the clone would still have the right row *count*, which is all
-        #: the older half of test_clone_is_deep asserted.
-        (FactorUpstream, ("sector_id", "food_category_id", "destination_id",
-                          "metric_id", "value_per_kg")),
-        (FactorDownstream, ("destination_id", "food_category_id", "metric_id", "value_per_kg")),
-        (Constant, ("code", "value", "unit", "note")),
-        (Formula, ("metric_id", "expression", "notes")),
-        (Equivalence, ("code", "name", "source_metric_id", "value_per_unit", "label_template", "sort_order", "active")),
-    )
-    for model, fields in copy_specs:
+    #: Every column except the two that identify the row, read off the mapper
+    #: rather than written out here.
+    #:
+    #: **This was a hand-written field list per model and it had already
+    #: drifted.** It named `destination_id` on purpose - the comment said, in
+    #: as many words, that leaving it out is how O-7 comes back - and then
+    #: silently missed `factor_downstream.sector_id`, which is the same class
+    #: of defect in the sector dimension, plus `source_note` and
+    #: `data_quality` on three tables. Six columns across three tables, added
+    #: to the models after the list was written and never added to the list.
+    #:
+    #: A list that has to be edited every time a column is added will be
+    #: missed again, and the thing that misses it is not visible: the clone
+    #: comes out with the right row COUNT, which is what
+    #: `test_clone_is_deep_and_publish_rollback_preserve_single_published`
+    #: asserted. `admin/factor_lifecycle.py::_clone_children` - the copy the
+    #: admin panel actually calls - has always done it by reflection, which is
+    #: why it never drifted.
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
         for row in session.scalars(select(model).where(model.factor_set_id == source_id)):
-            session.add(model(factor_set_id=clone.id, **{name: getattr(row, name) for name in fields}))
+            fields = {
+                column.name: getattr(row, column.name)
+                for column in row.__table__.columns
+                if column.name not in ("id", "factor_set_id")
+            }
+            session.add(model(factor_set_id=clone.id, **fields))
     write_audit(session, actor, "create", "factor_set", clone.id, None, _row_dict(clone))
     session.flush()
     return clone.id

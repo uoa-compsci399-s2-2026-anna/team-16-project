@@ -35,6 +35,10 @@ from admin.factor_models import (
     FactorUpstream, Formula,
 )
 from admin.models import utcnow
+#: The *second* implementation of the same operation — see
+#: `_CLONE_IMPLEMENTATIONS` below. Imported under a name that says which module
+#: it came from, because `clone_factor_set` is already bound above.
+from db.repository import clone_factor_set as _repository_clone_factor_set
 from tests.admin.conftest import _add_formula
 
 pytestmark = pytest.mark.db
@@ -158,6 +162,114 @@ def test_a_clone_copies_every_column_value(_committed_session, populated_set):
             if key not in ("id", "factor_set_id")
         }
         assert clone_fields == source_fields, f"{model.__tablename__} column mismatch"
+
+
+#: **There are two `clone_factor_set` functions and both hand-write
+#: `FactorSet(...)`.** `admin/factor_lifecycle.clone_factor_set` is the one the
+#: panel calls; `db/repository.clone_factor_set` is the one two of B's tests
+#: assert as correct. Their child-row copies are both reflection now, so no
+#: column of a child kind can drift out of either — but the *parent* row is
+#: still a hand-written constructor in each, naming `is_mock` and `notes` one
+#: by one, which is exactly the shape that dropped six child columns before it
+#: was repaired.
+#:
+#: Parametrised over both rather than tested once, because a flag carried by
+#: one and dropped by the other is invisible in production until a staff member
+#: takes the recommended clone → edit → publish path (§5.2) and the clone comes
+#: back with the switch off.
+_CLONE_IMPLEMENTATIONS = {
+    "admin.factor_lifecycle": clone_factor_set,
+    "db.repository": _repository_clone_factor_set,
+}
+
+#: Every column of `factor_set` that is a *setting* rather than a fact about
+#: one row's own history, and must therefore survive a clone. `status`,
+#: `published_at` and `published_by` are deliberately absent: they describe an
+#: event that happened to the source, not to a row that did not exist yet, and
+#: `test_a_clone_is_always_a_draft` pins them. `effective_from` is absent too —
+#: the two implementations legitimately disagree about it (the panel's clears
+#: it, the repository's carries it) and that disagreement is older than this
+#: list.
+#:
+#: Each value below is the OPPOSITE of the column default, so a constructor
+#: that drops the field produces the default and compares unequal. A source set
+#: sitting at the defaults cannot tell a copy from no copy at all — the fixture
+#: defect `tests/admin/conftest.py`'s `_make_set` docstring records, where two
+#: real corruption mutations survived the whole suite.
+_SET_LEVEL_SETTINGS = {
+    "is_mock": False,
+    "item_level_enabled": True,
+}
+
+
+@pytest.mark.parametrize("module", sorted(_CLONE_IMPLEMENTATIONS))
+def test_every_clone_constructor_carries_the_set_level_settings(
+    _committed_session, populated_set, module,
+):
+    """`item_level_enabled` (contract v1.54) releases step 2.5 of the
+    calculator. Miss it in either constructor and the recommended
+    clone-edit-publish workflow silently un-releases the step on the first real
+    factor set — the interface loses a question it was asking, no error, and
+    nothing on the factor-set screen says why.
+
+    `is_mock` is in the same list because it is the same shape and the
+    consequence is worse: a clone that dropped it would publish placeholder
+    numbers with the mandatory warning banner off.
+    """
+    session = _committed_session
+    for column, value in _SET_LEVEL_SETTINGS.items():
+        setattr(populated_set, column, value)
+    session.flush()
+
+    new_id = _CLONE_IMPLEMENTATIONS[module](
+        session, populated_set.id, f"e6-settings-{module}", actor="kim",
+    )
+    session.flush()
+
+    clone = session.get(FactorSet, new_id)
+    carried = {column: getattr(clone, column) for column in _SET_LEVEL_SETTINGS}
+    assert carried == _SET_LEVEL_SETTINGS, (
+        f"{module}.clone_factor_set dropped a factor_set setting. Its "
+        "FactorSet(...) constructor is hand-written, so a column added to the "
+        "model reaches it only if somebody edits it."
+    )
+
+
+def test_import_published_carries_the_set_level_settings(
+    _committed_session, taxonomy_for_factors, two_sets,
+):
+    """The THIRD hand-written set-level copy path, and the one the item-level
+    landing originally missed.
+
+    `import_published_into` does not build a `FactorSet(...)` - it mutates an
+    existing draft - so the parametrised constructor test above cannot reach
+    it. It had `target.is_mock = source.is_mock` and nothing else, so an import
+    from a published set that releases step 2.5 produced a draft that does not,
+    which is the same silent un-releasing the constructor test was written to
+    prevent, through a door that test does not open.
+
+    Both settings are set to the opposite of their column default on the
+    SOURCE, so a path that copies nothing produces the default and compares
+    unequal - the `_make_set` lesson about a fixture whose two sides are
+    indistinguishable.
+    """
+    session = _committed_session
+    live, draft = two_sets
+    for column, value in _SET_LEVEL_SETTINGS.items():
+        setattr(live, column, value)
+        setattr(draft, column, not value)
+    session.flush()
+
+    import_published_into(session, draft.id, actor="kim")
+    session.flush()
+
+    carried = {column: getattr(draft, column) for column in _SET_LEVEL_SETTINGS}
+    assert carried == _SET_LEVEL_SETTINGS, (
+        "import_published_into dropped a factor_set setting. It assigns them "
+        "by hand, so a column added to the model reaches it only if somebody "
+        "edits it - and it is the third such place, after the two "
+        "FactorSet(...) constructors."
+    )
 
 
 def test_clone_never_commits(_committed_session, populated_set):

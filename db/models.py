@@ -80,6 +80,7 @@ from admin.taxonomy_models import (  # noqa: E402
     Destination,
     DestinationGroup,
     FoodCategory,
+    FoodItem,
     Metric,
     Sector,
     UnitPreset,
@@ -97,6 +98,7 @@ __all__ = [
     "FactorSetStatus",
     "FactorUpstream",
     "FoodCategory",
+    "FoodItem",
     "Formula",
     "Metric",
     "Scenario",
@@ -242,17 +244,54 @@ class SubmissionEntry(Base):
     from `compare_metadata` in tests/test_migrations.py's `_include_object`
     for the reason documented there, and proven instead against
     `information_schema`.
+
+    **v1.54 gives the table a second nullable dimension**, `food_item_id`, and
+    everything above applies to it twice over. The declared UNIQUE becomes four
+    columns and the functional index gains a second `COALESCE` key part; the
+    two live in `alembic/versions/0017_food_item_level.py` on the migration
+    path. They must move together: an index that collapses one of a pair looks
+    right in every summary of it and has stopped enforcing half of what it was
+    written for — the defect v1.31 recorded on `factor_downstream`, and the
+    reason `tests/test_migrations.py` names each collapsed column rather than
+    counting them.
     """
 
     __tablename__ = "submission_entry"
     __table_args__ = (
         UniqueConstraint("submission_id", "sector_id", "food_category_id",
-                         name="uq_submission_entry"),
+                         "food_item_id", name="uq_submission_entry"),
+        #: **Two nullable key parts since v1.54, and both are collapsed.** The
+        #: pair is not interchangeable: drop `COALESCE(food_category_id, 0)`
+        #: and two "no breakdown" entries are legal again (the defect this
+        #: index was created for); drop `COALESCE(food_item_id, 0)` and one
+        #: visitor's Cheese can be stored twice. `factor_downstream` (§2.2)
+        #: records the same lesson in the sector dimension — collapsing one of
+        #: a pair leaves an index that exists, is unique, contains a COALESCE
+        #: and has stopped enforcing half of what it was written for.
         Index(
             "uq_submission_entry_generic",
             "submission_id", "sector_id",
             text("(COALESCE(food_category_id, 0))"),
+            text("(COALESCE(food_item_id, 0))"),
             unique=True,
+        ),
+        #: v1.54. An entry that names a food item must name its category too.
+        #:
+        #: `(food_category_id IS NULL AND food_item_id IS NOT NULL)` is the one
+        #: state that breaks `unspecified`: §5.4 builds `by_food_category` off
+        #: `food_category_id` and gives NULL its own bucket meaning *the user
+        #: did not break their waste down by type*. A row in that state would
+        #: be counted as "not broken down" while carrying the most specific
+        #: answer the calculator can take — the precise opposite of what
+        #: happened, and §5.4 forbids conflating the two outright.
+        #:
+        #: Invisible to `compare_metadata` (see the note on `Submission`
+        #: above), so it is proven behaviourally in
+        #: tests/db/test_food_item_schema.py and against `information_schema`
+        #: in tests/test_migrations.py.
+        CheckConstraint(
+            "food_item_id IS NULL OR food_category_id IS NOT NULL",
+            name="ck_submission_entry_item_has_category",
         ),
     )
 
@@ -272,6 +311,25 @@ class SubmissionEntry(Base):
     #: choice of the standard mix unreadable.
     food_category_id: Mapped[int | None] = mapped_column(
         ForeignKey("food_category.id"), nullable=True
+    )
+    #: v1.54. The specific food, when step 2.5 was released and the visitor
+    #: named one. NULL means they answered at the category level — which is a
+    #: real answer ("I know it was fruit, not which fruit") and not an absence.
+    #:
+    #: **Both columns are stored, never one standing in for the other.** The
+    #: rejected alternative was to reuse `food_category_id` as the placeholder
+    #: and let the item live alone. §5.4 is why it was rejected: NULL there
+    #: already means *the user did not break their waste down by type*, so
+    #: every submission that specified Apples would be filed into the
+    #: statistics page's "not broken down" bucket. Storing both keeps
+    #: `unspecified` with exactly one meaning, keeps `by_food_category` working
+    #: unchanged across both modes by rolling items up into their categories,
+    #: and records what the visitor actually said at both levels.
+    #:
+    #: The placeholder stays where it belongs: in the factor tables, where NULL
+    #: means "this dimension does not carry the numbers here".
+    food_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("food_item.id"), nullable=True
     )
     #: The order the user entered them, so `entries[]` in the §6.2 response
     #: can be paired with the rows on screen. Not id order: §5.3 rebuilds the
@@ -310,6 +368,11 @@ class SubmissionEntry(Base):
     submission: Mapped[Submission] = relationship(back_populates="entries")
     sector: Mapped[Sector] = relationship()
     food_category: Mapped[FoodCategory | None] = relationship()
+    #: Read direction only, on the same terms as `food_category` above. The
+    #: reverse — every entry ever recorded against one food — is a collection
+    #: that grows without bound and that a taxonomy details page would try to
+    #: render.
+    food_item: Mapped[FoodItem | None] = relationship()
     lines: Mapped[list["SubmissionLine"]] = relationship(
         back_populates="entry", cascade="all, delete-orphan"
     )
@@ -321,7 +384,11 @@ class SubmissionEntry(Base):
         #: nullable and means the user gave no breakdown, so say that rather
         #: than rendering a blank.
         category = self.food_category.code if self.food_category else "no category breakdown"
-        return f"{self.sector.code}/{category}"
+        #: v1.54: the item, when one was named. "processing/dairy" would
+        #: otherwise name both the category-level leaf and every item leaf
+        #: under it, which is exactly the distinction §5.4 turns on.
+        item = f"/{self.food_item.code}" if self.food_item else ""
+        return f"{self.sector.code}/{category}{item}"
 
 
 class SubmissionLine(Base):

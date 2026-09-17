@@ -1036,10 +1036,17 @@ def clone_factor_set(
     source = session.get(FactorSet, source_id)
     if source is None:
         raise FactorSetNotFoundError(f"Unknown factor set id: {source_id}")
+    #: The second of the two hand-written `FactorSet(...)` constructors - see
+    #: the same note in `admin/factor_lifecycle.clone_factor_set`, which is the
+    #: one the panel calls. A setting carried by one and dropped by the other
+    #: is invisible until a staff member clones, and then the clone comes back
+    #: with the switch off. `item_level_enabled` (v1.54) is carried here for
+    #: that reason; both are covered by one parametrised test.
     clone = FactorSet(
         version_label=new_label,
         status=FactorSetStatus.draft,
         is_mock=source.is_mock,
+        item_level_enabled=source.item_level_enabled,
         effective_from=source.effective_from,
         notes=source.notes,
     )

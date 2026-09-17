@@ -159,10 +159,26 @@ def clone_factor_set(session, source_id: int, new_label: str, actor: str) -> int
             "different label."
         )
 
+    #: **A hand-written constructor, and the column list has to be maintained.**
+    #: `_clone_children` above copies child rows by reflection precisely
+    #: because a hand-written field list drifts; this one cannot be, because
+    #: three of the columns (`status`, `published_at`, `published_by`) must
+    #: deliberately *not* be carried. So every column added to `FactorSet`
+    #: needs a decision here — and `db/repository.py`'s second
+    #: `clone_factor_set` needs the same one, or the two disagree about what a
+    #: clone is. `tests/admin/test_factor_lifecycle.py::
+    #: test_every_clone_constructor_carries_the_set_level_settings` runs both.
+    #:
+    #: `item_level_enabled` (v1.54) is carried. Dropping it would silently
+    #: un-release step 2.5 on the first real factor set the day staff take the
+    #: recommended clone → edit → publish path (§5.2): the calculator would
+    #: stop asking which food was wasted, with no error and nothing on the
+    #: factor-set screen saying why.
     clone = FactorSet(
         version_label=label,
         status=FactorSetStatus.draft,
         is_mock=source.is_mock,
+        item_level_enabled=source.item_level_enabled,
         effective_from=None,
         published_at=None,
         published_by=None,
@@ -546,7 +562,22 @@ def import_published_into(session: Session, factor_set_id: int, actor: str) -> N
     for model in CHILD_MODELS:
         _clone_children(session, model, source.id, target.id)
 
-    target.is_mock = source.is_mock
+    #: The set-level settings follow the data, and there are now two of them.
+    #: `is_mock` because the numbers that just arrived are the published set's
+    #: and the mandatory banner has to describe what is actually in the draft;
+    #: `item_level_enabled` for the same reason one step over - the draft now
+    #: holds whatever item-level rows the published set had, so the flag that
+    #: says "this set can release step 2.5" has to describe the new contents
+    #: rather than the ones that were just deleted.
+    #:
+    #: **This is the THIRD hand-written set-level copy in this codebase**, after
+    #: the two `FactorSet(...)` constructors in `clone_factor_set` here and in
+    #: `db/repository.py`. The first version of the item-level landing updated
+    #: the two constructors and missed this one, which is the identical defect
+    #: the landing existed to prevent. Anything added to `_SET_LEVEL_SETTINGS`
+    #: in tests/admin/test_factor_lifecycle.py has to reach all three.
+    for column in ("is_mock", "item_level_enabled"):
+        setattr(target, column, getattr(source, column))
     session.flush()
 
     try:

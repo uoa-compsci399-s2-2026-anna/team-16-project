@@ -141,14 +141,25 @@ def test_the_migration_chain_matches_the_models(migrated_engine):
         ),
         (
             "submission_entry", "uq_submission_entry_generic",
-            ("food_category_id",),
+            #: v1.54: a second nullable column, `food_item_id`, for exactly the
+            #: reason `factor_downstream` grew one in v1.31 — and the same
+            #: two-COALESCE rule applies. Collapsing only `food_item_id` would
+            #: let two "no category breakdown" entries back in; collapsing only
+            #: `food_category_id` would let one visitor's Cheese be stored
+            #: twice. Both, or the index has stopped doing half its job.
+            ("food_category_id", "food_item_id"),
             "one user's single 'no category breakdown' answer can be stored "
             "twice for the same sector, and §5.4's by_sector aggregation "
             "counts it twice in the public statistics",
         ),
         (
             "factor_upstream", "uq_factor_upstream_generic",
-            ("destination_id",),
+            #: v1.54: `food_item_id` joins `destination_id` here on the same
+            #: terms. An item row and the category row it refines must coexist
+            #: (that is the whole of the four-candidate lookup), so the item
+            #: column has to be a key part — and being nullable, it has to be
+            #: a COALESCE one.
+            ("destination_id", "food_item_id"),
             "a second generic upstream row inserts happily and the upstream "
             "fallback introduced for O-7 becomes nondeterministic — the same "
             "input returning a different net benefit run to run",
@@ -210,6 +221,64 @@ def test_the_chain_creates_the_functional_indexes_compare_metadata_cannot_see(
             f"{column} still compare distinct and it does not do its job. "
             f"Key parts: {rows}. Without it {consequence}."
         )
+
+
+@pytest.mark.db
+def test_the_head_revision_round_trips(database_url_root):
+    """`upgrade head` → `downgrade -1` → `upgrade head` lands on the same
+    schema the models declare.
+
+    **A downgrade nobody ran is a downgrade that does not work.** Every test
+    above builds the chain forwards only, so a `downgrade()` that drops the
+    wrong index, sequences two MySQL operations in an order errno 1553 refuses,
+    or simply forgets a column is invisible to all of them — and it is the half
+    of a revision that runs on the day a deployment has gone wrong and nobody
+    wants surprises.
+
+    Two of this revision's operations are the kind that only fail on the way
+    back: `uq_submission_entry` and `uq_factor_upstream` both lead with the
+    column MySQL is using to back a foreign key, so whichever of the two
+    same-prefixed indexes is dropped first, the other must already exist.
+    0009's upgrade documents that trap and sequences its downgrade as the
+    mirror image; nothing until now proved either half.
+
+    Its own scratch database rather than the `migrated_engine` fixture, so a
+    chain left half-downgraded by a failure here cannot reach another test.
+    """
+    root = create_engine(database_url_root, future=True)
+    with root.connect() as conn:
+        conn.execute(text("DROP DATABASE IF EXISTS kaicalc_roundtriptest"))
+        conn.execute(text("CREATE DATABASE kaicalc_roundtriptest"))
+        conn.commit()
+
+    url = database_url_root.rsplit("/", 1)[0] + "/kaicalc_roundtriptest"
+    cfg = Config("alembic.ini")
+    cfg.set_main_option("sqlalchemy.url", url.replace("%", "%%"))
+
+    engine = create_engine(url, future=True)
+    try:
+        command.upgrade(cfg, "head")
+        command.downgrade(cfg, "-1")
+        command.upgrade(cfg, "head")
+
+        with engine.connect() as conn:
+            ctx = MigrationContext.configure(
+                conn, opts={"include_object": _include_object}
+            )
+            difference = compare_metadata(ctx, Base.metadata)
+    finally:
+        engine.dispose()
+        with root.connect() as conn:
+            conn.execute(text("DROP DATABASE IF EXISTS kaicalc_roundtriptest"))
+            conn.commit()
+        root.dispose()
+
+    assert difference == [], (
+        "the head revision does not round-trip: after upgrade → downgrade → "
+        "upgrade the schema no longer matches the models. Each entry below is "
+        "something the downgrade removed and the upgrade did not put back, or "
+        "the reverse:\n" + "\n".join(repr(d) for d in difference)
+    )
 
 
 def test_the_chain_has_exactly_one_head_and_exactly_one_root():
@@ -297,6 +366,21 @@ def test_the_chain_creates_the_check_constraints_compare_metadata_cannot_see(
         f"is summed into. Found: {sorted(clauses)}"
     )
     assert "qty_kg" in clauses["ck_submission_line_qty"]
+
+    #: 0017's one CHECK (contract §2.3, v1.54). Same blind spot again:
+    #: tests/db/test_food_item_schema.py proves it behaviourally off the
+    #: create_all() schema and would stay green if the op.execute here were
+    #: dropped. `food_category_id IS NULL AND food_item_id IS NOT NULL` is the
+    #: state that would file the calculator's most specific answer into §5.4's
+    #: "not broken down by type" bucket.
+    assert "ck_submission_entry_item_has_category" in clauses, (
+        "alembic upgrade head did not create "
+        "ck_submission_entry_item_has_category. Without it an entry may name a "
+        "food item and no food category, which §5.4 forbids outright. "
+        f"Found: {sorted(clauses)}"
+    )
+    assert "food_item_id" in clauses["ck_submission_entry_item_has_category"]
+    assert "food_category_id" in clauses["ck_submission_entry_item_has_category"]
 
 
 @pytest.mark.db

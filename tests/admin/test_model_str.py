@@ -46,7 +46,8 @@ from admin.factor_models import (
 )
 from admin.models import AuditLog, Staff, StaffRecoveryCode, StaffTotpDevice
 from admin.taxonomy_models import (
-    Destination, DestinationGroup, FoodCategory, Metric, Sector, UnitPreset,
+    Destination, DestinationGroup, FoodCategory, FoodItem, Metric, Sector,
+    UnitPreset,
 )
 from db.base import Base
 from db.blocklist_models import IpBlock
@@ -118,6 +119,14 @@ _FACTORIES = {
         lambda: FoodCategory(id=9004, code="food_code", name="Food Name"),
         identifying=["food_code", "Food Name"],
         forbidden=["9004"],
+    ),
+    #: v1.54's global taxonomy table. Same three conventions as every other
+    #: §2.1 row - `code`, `name`, and no primary key on display.
+    FoodItem: _case(
+        lambda: FoodItem(id=9020, code="item_code", name="Item Name",
+                         food_category_id=1),
+        identifying=["item_code", "Item Name"],
+        forbidden=["9020"],
     ),
     Metric: _case(
         lambda: Metric(id=9005, code="metric_code", name="Metric Name", unit="kg"),

@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-11 (v1.52 draft)"
+date: "2026-09-17 (v1.53 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,34 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.53 — 2026-09-17 (Back returns the visitor where they came from, which needs one new `state` key and one confirmation; affects C, and D only as a reader of §7.2)
+
+Raised by the repository owner from the running calculator. On the review step they pressed *Add another supply-chain entry*, landed on step 1, changed their mind and pressed **Back** — and arrived at the introduction. `sectorStep` rendered `stepNav({ step: 0, back: -1 })` unconditionally, so step 1's Back has one destination whatever brought the visitor there. Nothing was lost by it (`go-step` and `start` only set `step`, so the entries and the draft survive and *Start calculator* returns to step 1 with everything intact) — it is a navigation dead end, not data loss.
+
+**It cannot be fixed by making the back target conditional on `state.entries.length`.** `add-entry` pushes the draft into `entries` and *then* empties the draft, so a Back that only changed `step` would return the visitor to a review step rendering an empty "Current entry N" with a Calculate button offering to submit it. Backing out of an add has to undo the add — and the same question applies to `edit-entry`, which has already removed an entry from the list and overwritten the draft with it by the time step 1 renders. Nor can the arrival be inferred afterwards: `state.entries.length` cannot tell an add from an edit from a walk backwards, and the displaced draft is destroyed before any inference could run.
+
+**And an undo that runs silently is a worse defect than the dead end it replaces.** The marker below survives a forward walk, so a visitor could press Add, build a whole second chain across four screens, walk Back to step 1 and press Back — losing all four screens without a word. The same journey *kept* the work if Continue happened to be pressed on the destination step, because the marker is cleared on arrival at review, and nothing on screen said which case you were in. Note the direction: the original bug lost nothing. So the undo is confirmed before it discards, rather than narrowed or dropped.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`state` gains one key, `returnTo`** — `null`, or `{from, step, entries?, draft?, kind?, number?, after?}`. It records how the visitor reached the step they are on when they did not walk there, and is written by the navigation that performs the jump, at the one moment the pre-jump state still exists. `from` is the screen index the marker is about; `step` is where Back goes; `entries` and `draft` are present only when the navigation itself *moved* something, so that backing out can put it back; `kind`, `number` and `after` are what the confirmation needs | §7.2 |
+| 2 | **All four form steps read it**, through `calculator.js`'s `backTarget(step)` — `state.returnTo.from === step ? state.returnTo.step : step - 1` — which each passes to `stepNav`'s `back`. `stepNav` itself still takes the number and does not read `state`: the same value can mean "one screen back" or "back to the review step you came from", and only the caller knows which. The results step keeps its literal `back: 4`; it is reached by calculating, never by a jump | §7.2, §7.3a |
+| 3 | **`from` is keyed on the origin step, never on the target.** Step 2's own Back emits the identical `data-action="go-step" data-step="0"` that step 1's Back does, and the duplicate notice's marker (`{from: 0, step: 1}`) collides with step 3's ordinary Back on the target alone; a marker keyed on the target would fire on a Back it was never written for and restore a snapshot over the entry the visitor is editing | §7.2 |
+| 4 | **The marker is cleared on the next arrival at the review step**, as well as by `resetCalculator` and by `start`. This is load-bearing and is the one way this revision could *introduce* data loss: a marker holds the entries and the draft as they were before the jump, so one that outlived the excursion would restore that snapshot over a chain built since | §7.2 |
+| 5 | **Backing out asks before it discards, and only when there is something to discard.** `returnTo.after` is a fingerprint of the entries and the draft *as the jump left them*; `goToStep` compares it with the same fingerprint of now, and calls `window.confirm` — `start-over`'s precedent — only when they differ. Declining returns without a `setState` at all. The fingerprint excludes line `id`s, which are re-minted on every load and are not input, and the submission-level `timeFrame` and `gwpHorizon`, which the restore does not touch | §7.2, §7.3a |
+| 6 | **All four review-step *Edit* links open an excursion, not only *Supply-chain stage*.** They are emitted from one `reviewEdit(step)` and carry `data-jump="review"` alongside `data-action="go-step"`. The attribute is required rather than decorative: review's own Back and the *Waste destinations / Edit* link both emit `data-step="3"`, so a rule inferred from the step numbers would make review's Back write a marker and the destination step's Back would bounce straight back to it, leaving the wizard impossible to walk out of | §7.3a |
+| 7 | **Two new user-facing strings**, the only ones this revision adds. An add and an edit destroy different things — a chain being started, versus alterations to a saved entry — so one generic "Discard your changes?" would be wrong for the first and vague for the second, which can name the entry number the visitor just clicked. Both end in the question so the browser's OK and Cancel map onto it: `Going back will discard the new supply-chain entry you have started. Go back anyway?` and `Going back will discard the changes you have made to entry %(number)s. Go back anyway?` | §7.3a, §7.7 |
+
+> **The twenty catalogues under `web/locales/` and their byte-identical copies under `api/assets/locales/` are behind this revision by exactly those two strings**, and `tests/web/test_i18n_web.py::test_every_source_string_is_translated` is red for all twenty until they land. That is the correct red: the test exists to catch a string that reaches a screen with no translation, and both of these do. It is a separate pass and it is not optional.
+>
+> **Nothing on the wire changes, so `tests/fixtures/*.json` is unaffected** — `state` is a browser object and never travels. The contract-change process's third step is a no-op for this revision, deliberately and not by omission.
+>
+> **`edit-entry` has two call sites as of this branch**, which is what forces a snapshot rather than a per-caller inverse: a saved entry's card on the review step, and the duplicate notice added to step 2 one commit earlier. The marker's `step` is read from `state.step` at click time — 4 from the card, 1 from the notice — so Back returns to whichever screen it was actually pressed on, and a third caller added later needs no new case.
+>
+> **A refused Calculate now writes a marker for whichever form step it lands the visitor on**, not only step 1. `submitCalculation` routes `UNKNOWN_CODE` to step 1 and a field-named `VALIDATION_ERROR` to the step that owns the field; all of them were reached from the review step and all of them had the same dead end behind them. A refusal that names no field lands on the review step itself and clears the marker instead of writing a Back to where the visitor already is. Nothing was moved, so none of these markers carries a snapshot and none of them asks anything.
+>
+> **A pre-existing defect this revision exposes but does not fix.** `edit-entry` destroys the in-progress draft today with no Back involved: the review step is only reachable with a complete draft, and pressing *Edit* on a saved card calls `loadEntry`, which overwrites it. Press Edit, walk forward to review, and the chain just built is gone. This revision makes Back the one way to recover it — the snapshot is the only surviving copy — and then deliberately drops that copy on arrival back at review. Fixing the forward path needs its own decision (most likely `edit-entry` from the review list should swap the draft into the entry's slot rather than discard it) and must not be smuggled into a navigation fix.
 
 ### v1.52 — 2026-09-11 (an equivalence carries the factor and basis it was converted with; affects A, B)
 
@@ -3171,7 +3199,7 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | Session | `token` — initialised from `sessionStorage.kaiCalculatorToken` at module load |
 | Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `current: [{id, destination, qtyInput}]` |
 | Multi-entry | `entries: []` — committed entries, same shape as the draft |
-| UI | `step` (−1 intro … 5 results), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
+| UI | `step` (−1 intro … 5 results), `returnTo` (`null` \| `{from, step, entries?, draft?, kind?, number?, after?}` — v1.53), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
 | Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
 | Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}`, `improvementChartExpanded`, `improvementResult`, `improvementLoading`, `improvementError` |
 
@@ -3182,6 +3210,18 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 > **Exhaustive again as of 2026-08-28.** `improvementMode` was missing above: item ⑧'s kilogram/percentage toggle reads it in `improvement.js` — `state.improvementMode || 'percentage'` — to decide only what the sliders and the number boxes *display*. `state.improvedAllocations` stays a percentage in every mode regardless of which one this holds, which is what keeps `improvementValidation`'s exactly-100 rule a percentage comparison at every tonnage; see §7.3a. `improvementChartExpanded` is the donut's enlarge modal, and holds nothing but whether that dialog is open.
 >
 > **Exhaustive again as of 2026-09-05.** `improvementMode`'s second value is now `'unit'`, not `'kilograms'`: the toggle no longer offers kilograms alone — a row may be shown in kilograms, tonnes, or any `unit_preset` the taxonomy carries — so the mode names what the panel is doing (displaying in *a* unit) rather than which one it is. `improvementRowUnits` is new and holds that per-row choice, keyed by destination `code`; a code absent from it defaults to `'kilograms'`, the unit every row was shown in before this selector existed. Like `improvementMode`, it is display-only — `state.improvedAllocations` stays a percentage regardless of what either key holds — see §7.3's `kgToUnitAmount`/`unitAmountToKg`.
+
+> **`returnTo` (v1.53) is the one key here that is about navigation rather than about the submission**, and it is the only state in the object that a *previous* screen wrote for a *later* one to read. Its shape and lifetime:
+>
+> - `from` — the screen index the marker is about. Back consults it as `state.returnTo.from === <this step>`, and the render side puts the Back button's `data-step` on the page from the same test (`backTarget`, §7.3a), so the two agree by construction. **Keyed on the origin, never on the target**: step 2's own Back emits the identical `data-action="go-step" data-step="0"` that step 1's Back does, and the duplicate notice's `{from: 0, step: 1}` collides with step 3's ordinary Back on the target alone — a marker keyed on the target would fire on a Back it was never written for, restoring a pre-edit snapshot over the entry being edited.
+> - `step` — where Back goes. `4` for a jump made from the review step (`add-entry`, a saved card's *Edit*, any of the four section *Edit* links, a refused Calculate routed to a form step) and `1` for one made from step 2's duplicate notice. It records where the visitor stood, never a constant.
+> - `entries` / `draft` — a snapshot of both, taken **before** the jump moved them, and present only when it did. `draft` is a `draftEntry()`, so `draftEntry` and the draft patch `loadEntry` applies must stay exact inverses key for key: a field added to one and not the other is a field that silently fails to come back. `entries` is a shallow copy of the array, which is safe only while nothing mutates an entry object in place.
+> - `kind` / `number` / `after` — what the Back this marker belongs to has to ask before it discards anything, and present only alongside `draft`. `kind` is `'add'` or `'edit'` and picks between the two strings in §7.3a; `number` is the entry number the visitor clicked, so an edit's question names the entry its button named. `after` is a fingerprint of the entries and the draft **as the jump left them** — the opposite end from `entries`/`draft` above, which record the state *before* it. The dialog fires on the difference between `after` and now, never on the difference between before and after: that difference is the jump itself, and reversing it is exactly what Back is for.
+> - **Lifetime.** Written by the jump, consumed by the Back it was written for, overwritten by the next jump, and cleared on any arrival at the review step, on `start`, and by `resetCalculator`. Nothing persists it — only the session token is stored — so a reload is always a first run on an empty form.
+>
+> **The marker survives a forward walk, and the confirmation is what makes that safe.** A visitor may press Add, build a whole second chain across four screens and walk Back to step 1 with the marker still live; backing out there is a real discard, so `goToStep` asks first — and only when `after` says there is something to discard, so pressing Add and immediately pressing Back is silent. Declining performs no `setState` at all: same step, same draft, same entries, marker still live. See §7.3a.
+>
+> **One slot, so the undo is one deep.** A jump made while a marker is live overwrites it: review → Add → choose a sector → step 2 → the duplicate notice's *Open entry N* replaces the add's marker with the edit's. Nothing is lost when that happens — the outer jump's own mutation stays applied — but the outer undo is gone and the visitor is back to walking out of the wizard. A stack would handle nesting, and is not worth its own pruning rules for a wizard with one legitimate excursion depth.
 
 **Still requirements, and still unmet:**
 
@@ -3497,6 +3537,14 @@ export const STEPS;
  *  Emits data-action="go-step" data-step="<back>" and data-action="<action>",
  *  plus "Step N of 6" and the step's name.
  *
+ *  `back` is whatever the caller passes and is NOT the step's own index minus
+ *  one: since v1.53 the four form steps pass calculator.js's backTarget(step),
+ *  which returns the screen the visitor was jumped from when state.returnTo
+ *  says they were jumped, and step - 1 otherwise. This function does not read
+ *  state and must not start: the same number can mean "one screen back" or
+ *  "back to the review step you came from", and only the caller knows which.
+ *  `null` still omits the button (the results step keeps a literal `back: 4`).
+ *
  *  Replaced `buttonRow(backStep, label, disabled, action)` at v1.23. */
 export function stepNav({step, back, backLabel = 'Back', label = 'Continue',
                          disabled = false, action = 'continue'});
@@ -3526,12 +3574,44 @@ export function renderChrome();
 /** Installs four delegated listeners on `main` (click / change / input /
  *  keydown) and stores the taxonomy-reload callback the UNKNOWN_CODE path uses. */
 export function bindCalculator(main, retryTaxonomy);
+
+// --- Module-private, and named here because §7.2's `returnTo` is meaningless
+// --- without them. v1.53.
+
+/** Where a step's Back goes: state.returnTo.step when the marker is about this
+ *  step, and step - 1 otherwise. All four form steps pass this to stepNav. */
+const backTarget = step;
+
+/** One review-step "Edit" link. Emits data-action="go-step" data-step="<step>"
+ *  AND data-jump="review", which is what makes it a jump rather than a step
+ *  backwards. The attribute is required, not decorative: review's own Back and
+ *  the "Waste destinations / Edit" link both emit data-step="3", so a rule
+ *  inferred from the numbers would make review's Back write a marker and the
+ *  destination step's Back would bounce straight back to review. */
+const reviewEdit = step;
+
+/** Every go-step. Backs out of a jump (restoring §7.2's snapshot), records a
+ *  new jump when `jumped`, or carries the marker forward untouched. Asks
+ *  window.confirm first whenever backing out would discard entry content
+ *  entered since the jump - see the two strings below. */
+function goToStep(step, jumped = false);
 ```
 
 `data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
 Module-private and worth knowing: `validateCurrentStep()` returns a display string or `''`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
+> **The Back confirmation (v1.53), and the one test that decides whether it appears.** Backing out of a jump restores §7.2's snapshot, and the marker survives a forward walk — so a visitor may press *Add another supply-chain entry*, build a whole second chain across four screens, walk Back to step 1 and press Back there, at which point the restore would throw all four screens away. `goToStep` therefore calls `window.confirm` first, following `start-over`'s precedent, and declining returns without a `setState` at all: same step, same draft, same entries, marker still live.
+>
+> The question is asked **when, and only when, the restore would discard something entered since the jump.** The test is `returnTo.after` — a fingerprint of the entries and the draft *as the jump left them* — compared with the same fingerprint of now. It cannot miss a loss, because every key `draftEntry()` carries plus each line's destination, amount and unit is in the fingerprint and the restore writes nothing else. It cannot invent one, because the only exclusions are line `id`s (re-minted on every load, never entered by anyone) and the submission-level `timeFrame` and `gwpHorizon`, which the restore does not touch — so pressing Add and immediately pressing Back is silent, which is the case that would otherwise train people to dismiss the dialog unread.
+>
+> **Two strings, because the two jumps destroy different things.** An add throws away a supply-chain entry that was being started and was never on the list; an edit throws away alterations to an entry that is on the list and goes back onto it unaltered. `returnTo.kind` picks between them and `returnTo.number` is the entry number printed on the card the visitor clicked, so the question names what the button named:
+>
+> - `Going back will discard the new supply-chain entry you have started. Go back anyway?`
+> - `Going back will discard the changes you have made to entry %(number)s. Go back anyway?`
+>
+> Both end in the question so that the browser's OK and Cancel map onto it without the dialog having to label them. They are the two strings §0.1's v1.53 entry sends to the twenty catalogues.
+>
 > **Every `is_prevention` destination is excluded from the destination entry step and included in the improvement panel.** That modelling is correct and must survive any refactor — a prevention destination is how the alternative scenario expresses waste avoided (§2.1), and offering one as a current-scenario destination would let a user claim to be already preventing what they are about to describe wasting. §6.2 answers 400 for it, so a form that offered it would be offering a refusal.
 >
 > **Read `destination.is_prevention` from §6.1, never the code.** `calculator.js`'s `entryDestinations` filtered `code !== 'prevention'` until v1.22 and therefore left every *other* prevention destination — §10.3's ReFED set brings its own, and the deployed stack offers it — on the current-waste list. The function is exported so `tests/web/test_entry_destinations.py` can run it under Node against a taxonomy it builds, the same seam `buildResultsReport` was pulled out for.

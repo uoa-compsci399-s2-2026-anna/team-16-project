@@ -267,6 +267,23 @@ function introduction() {
   </section>`
 }
 
+/**
+ * Where a step's Back goes: the screen the visitor actually came from when
+ * `state.returnTo` recorded a jump onto this step, and the previous screen otherwise.
+ *
+ * **All four form steps consult it**, because all four are reachable by a jump: the
+ * review step has an *Edit* link per section, and each one lands on a screen whose Back
+ * would otherwise walk the visitor out of the wizard rather than back to the review they
+ * pressed Edit on. Only `data-step="0"` had a marker at first, so *Food category / Edit*
+ * went to step 2, whose Back was hard-coded to step 1, whose Back then had nothing — two
+ * presses and the visitor was on the introduction, which is the original complaint
+ * arrived at by a different door.
+ *
+ * The results step keeps its own `back: 4` (`results.js`): it is reached by calculating,
+ * never by a jump, and `submitCalculation` clears the marker on the way there.
+ */
+const backTarget = step => (state.returnTo && state.returnTo.from === step ? state.returnTo.step : step - 1)
+
 function sectorStep() {
   const sectors = sorted(state.taxonomy.sectors)
   return `<section class="content-section" aria-labelledby="stage-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 1 }))}</p><h1 id="stage-title">${escapeHtml(t('Where in the food supply chain did this waste occur?'))}</h1><p class="section-intro" id="supply-chain-support">${escapeHtml(t('Choose the stage that best describes where the food waste was generated.'))}</p>
@@ -275,7 +292,7 @@ function sectorStep() {
       const expanded = state.expandedSectors.includes(sector.code)
       const id = `sector-${slug(sector.code)}`
       return `<div class="stage-card ${isSelected ? 'selected' : ''}"><label class="stage-select" for="${id}"><input id="${id}" name="sector" type="radio" value="${escapeHtml(sector.code)}" ${isSelected ? 'checked' : ''}><span class="stage-copy"><span class="stage-title">${escapeHtml(sector.name)}</span><span class="stage-description">${escapeHtml(sector.description || '')}</span></span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label><button class="details-button" type="button" data-action="toggle-sector" data-sector="${escapeHtml(sector.code)}" aria-expanded="${expanded}" aria-controls="${id}-details" aria-label="${escapeHtml(expanded ? t('Hide details for %(name)s', { name: sector.name }) : t('Show details for %(name)s', { name: sector.name }))}">${escapeHtml(t('Details'))} <span class="chevron ${expanded ? 'expanded' : ''}" aria-hidden="true">⌄</span></button><div class="stage-details" id="${id}-details" ${expanded ? '' : 'hidden'}><p>${escapeHtml(sector.details || sector.description || t('Additional details have not been supplied.'))}</p></div></div>`
-    }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: -1 })}</section>`
+    }).join('')}</div>${state.error ? `<p class="field-error" role="alert">${escapeHtml(state.error)}</p>` : ''}</fieldset>${stepNav({ step: 0, back: backTarget(0) })}</section>`
 }
 
 /**
@@ -318,7 +335,7 @@ function foodStep() {
   return `<section class="content-section" aria-labelledby="food-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 2 }))} · ${escapeHtml(t('Optional'))}</p><h1 id="food-title">${escapeHtml(t('What type of food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Choose one category if you know it, or continue without selecting an option.'))}</p><fieldset class="choice-fieldset"><legend class="sr-only">${escapeHtml(t('Food type'))}</legend><div class="simple-choice-list">${categories.map(category => {
     const isSelected = state.foodCategory === category.code
     return `<label class="simple-choice ${isSelected ? 'selected' : ''}"><input id="food-category-${slug(category.code)}" type="radio" name="food-category" value="${escapeHtml(category.code)}" ${isSelected ? 'checked' : ''}><span><strong>${escapeHtml(category.name)}</strong>${category.is_standard_mix ? `<small>${escapeHtml(t('Recommended if you do not separate food waste by category'))}</small>` : ''}</span>${isSelected ? `<span class="selected-label" aria-hidden="true">✓ ${escapeHtml(t('Selected'))}</span>` : ''}</label>`
-  }).join('')}</div></fieldset>${state.foodCategory ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear optional selection'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: 0 })}</section>`
+  }).join('')}</div></fieldset>${state.foodCategory ? `<button type="button" class="text-button" data-action="clear-food">${escapeHtml(t('Clear optional selection'))}</button>` : ''}${duplicateNotice()}${stepNav({ step: 1, back: backTarget(1) })}</section>`
 }
 
 /**
@@ -483,7 +500,7 @@ function amountStep() {
   const totalInputError = scalarError('total_input_kg')
   const totalValueError = scalarError('total_value_nzd')
   const wastedValueError = scalarError('wasted_value_nzd') || moneyContradictionError
-  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="form-panel amount-grid"><div class="mass-fields"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${amountFieldError ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field unit-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit" title="${escapeHtml(rowUnitLabel(unitSelectValue()))}">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="total-input">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(state.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(state.totalInputKg)}" ${totalInputError ? 'aria-invalid="true" aria-describedby="total-input-error"' : ''}>${totalInputError ? `<p class="field-error" id="total-input-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div></div><div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}" ${totalValueError ? 'aria-invalid="true" aria-describedby="total-value-error"' : ''}>${totalValueError ? `<p class="field-error" id="total-value-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}" ${wastedValueError ? 'aria-invalid="true" aria-describedby="wasted-value-error"' : ''}>${wastedValueError ? `<p class="field-error" id="wasted-value-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div></div>${stepNav({ step: 2, back: 1 })}</section>`
+  return `<section class="content-section" aria-labelledby="amount-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 3 }))}</p><h1 id="amount-title">${escapeHtml(t('How much food waste are you measuring?'))}</h1><p class="section-intro">${escapeHtml(t('Enter the total amount. You will allocate this total across destinations in the next step.'))}</p>${bannerError ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(bannerError)}</p>` : ''}<div class="form-panel amount-grid"><div class="mass-fields"><div class="form-field ${amountFieldError ? 'has-error' : ''}"><label for="${amountId}">${escapeHtml(amountLabel)} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(amountHint)}</p><input id="${amountId}" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(amountValue)}" ${amountFieldError ? 'aria-invalid="true" aria-describedby="amount-error"' : ''}>${amountFieldError ? `<p class="field-error" id="amount-error" role="alert">${escapeHtml(amountFieldError)}</p>` : ''}${container ? `<p class="container-total" id="container-total" aria-live="polite">${escapeHtml(containerTotalText())}</p>` : ''}</div><div class="form-field unit-field"><label for="total-unit">${escapeHtml(t('Unit'))} <span class="required">${escapeHtml(t('(required)'))}</span></label><p class="field-hint">${escapeHtml(t('Choose a weight, or the container you fill.'))}</p><select id="total-unit" title="${escapeHtml(rowUnitLabel(unitSelectValue()))}">${unitOptionsHtml(unitSelectValue())}</select></div><div class="form-field ${totalInputError ? 'has-error' : ''}"><label for="total-input">${escapeHtml(t('Total amount produced (%(unit)s)', { unit: unitLabel(state.totalUnit) }))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('So results can show waste as a share of production.'))}</p><input id="total-input" type="number" inputmode="decimal" min="0" step="0.001" value="${escapeHtml(state.totalInputKg)}" ${totalInputError ? 'aria-invalid="true" aria-describedby="total-input-error"' : ''}>${totalInputError ? `<p class="field-error" id="total-input-error" role="alert">${escapeHtml(totalInputError)}</p>` : ''}</div></div><div class="money-fields"><div class="form-field ${totalValueError ? 'has-error' : ''}"><label for="total-value">${escapeHtml(t('Value of production (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="total-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.totalValueNzd)}" ${totalValueError ? 'aria-invalid="true" aria-describedby="total-value-error"' : ''}>${totalValueError ? `<p class="field-error" id="total-value-error" role="alert">${escapeHtml(totalValueError)}</p>` : ''}</div><div class="form-field ${wastedValueError ? 'has-error' : ''}"><label for="wasted-value">${escapeHtml(t('Value of the waste (NZ$)'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('For statistics only — it never enters the emissions calculation.'))}</p><input id="wasted-value" type="number" inputmode="decimal" min="0" step="0.01" value="${escapeHtml(state.wastedValueNzd)}" ${wastedValueError ? 'aria-invalid="true" aria-describedby="wasted-value-error"' : ''}>${wastedValueError ? `<p class="field-error" id="wasted-value-error" role="alert">${escapeHtml(wastedValueError)}</p>` : ''}</div></div></div>${stepNav({ step: 2, back: backTarget(2) })}</section>`
 }
 
 /**
@@ -538,7 +555,7 @@ function destinationStep() {
   return `<section class="content-section wide" aria-labelledby="destination-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 4 }))}</p><h1 id="destination-title">${escapeHtml(t('Where did the food waste go?'))}</h1><p class="section-intro">${escapeHtml(t('Enter an amount for every applicable destination. The combined amount cannot exceed your total waste.'))}</p>
     <div class="allocation-summary ${summaryInvalid ? 'invalid' : ''}" id="current-summary" aria-live="polite"><div><span>${escapeHtml(t('Total waste'))}</span><strong>${formatNumber(total, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div><div><span>${escapeHtml(t('Allocated'))}</span><strong data-summary="allocated">${formatNumber(allocated, 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div><div><span>${escapeHtml(t('Remaining'))}</span><strong data-summary="remaining">${formatNumber(remainingAmount(total, allocated), 2)} ${escapeHtml(unitLabel(state.totalUnit))}</strong></div></div>
     <div class="destination-list">${destinationRows()}</div>
-    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: 2, disabled: !canContinue })}</section>`
+    <p class="field-error" id="allocation-error" role="alert">${escapeHtml(state.error || '')}</p>${stepNav({ step: 3, back: backTarget(3), disabled: !canContinue })}</section>`
 }
 
 function reviewLines(entry) {
@@ -596,6 +613,28 @@ function entryCard(entry, index) {
   return `<article class="saved-entry-card ${entryProblem(index) ? 'has-error' : ''}"><div><span class="eyebrow">${escapeHtml(t('Entry %(number)s', { number: index + 1 }))}</span><h3>${escapeHtml(sector?.name || entry.sector)}</h3><p>${measuredAs(entry)} · ${escapeHtml(food?.name || t('Food type not provided'))}</p>${entryProblemHtml(index)}</div><div class="card-actions"><button class="text-button" type="button" data-action="edit-entry" data-index="${index}">${escapeHtml(t('Edit'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button><button class="text-button danger" type="button" data-action="remove-entry" data-index="${index}">${escapeHtml(t('Remove'))}<span class="sr-only"> ${escapeHtml(t('entry %(number)s', { number: index + 1 }))}</span></button></div></article>`
 }
 
+/**
+ * One review-step *Edit* link, and the only place the four are defined.
+ *
+ * **`data-jump="review"` is what makes it a jump rather than a step backwards**, and
+ * the attribute exists because the two are otherwise indistinguishable: the review
+ * step's own Back emits `data-action="go-step" data-step="3"` and so does the
+ * *Waste destinations / Edit* link beside it. A rule of the form "any `go-step` leaving
+ * the review step for a lower step is a jump" would therefore make review's own Back
+ * write a marker, and the destination step's Back would then bounce straight back to
+ * review — the wizard could never be walked out of. `goToStep` reads the attribute
+ * instead of guessing, and the four links are emitted from here so a fifth section
+ * added to the review step cannot be added without it.
+ *
+ * `data-action` stays `go-step`: it is the same navigation, and every existing selector
+ * (`tests/web/test_step_navigation.py`, `test_step_one_back_navigation_browser.py`) is
+ * written against it.
+ *
+ * @param {number} step Zero-based index of the screen this section is answered on.
+ * @returns {string}
+ */
+const reviewEdit = step => `<button class="text-button" type="button" data-action="go-step" data-step="${step}" data-jump="review">${escapeHtml(t('Edit'))}</button>`
+
 function reviewStep() {
   const sector = selected(state.taxonomy.sectors, state.sector)
   const food = selected(state.taxonomy.food_categories, state.foodCategory)
@@ -613,10 +652,10 @@ function reviewStep() {
     <div class="form-field time-frame-field"><label for="time-frame">${escapeHtml(t('What period do these figures cover?'))} <span class="optional-tag">${escapeHtml(t('(optional)'))}</span></label><p class="field-hint">${escapeHtml(t('Optional — it only labels your figures, it never changes a result.'))}</p><select id="time-frame"><option value="" ${!state.timeFrame ? 'selected' : ''}>${escapeHtml(t('Not stated'))}</option><option value="one_week" ${state.timeFrame === 'one_week' ? 'selected' : ''}>${escapeHtml(t('One week'))}</option><option value="one_month" ${state.timeFrame === 'one_month' ? 'selected' : ''}>${escapeHtml(t('One month'))}</option><option value="one_quarter" ${state.timeFrame === 'one_quarter' ? 'selected' : ''}>${escapeHtml(t('One quarter'))}</option><option value="one_year" ${state.timeFrame === 'one_year' ? 'selected' : ''}>${escapeHtml(t('One year'))}</option></select></div>
     ${state.entries.length ? `<section class="saved-entries"><div class="section-heading-row"><h2>${escapeHtml(t('Added entries'))}</h2><span>${state.entries.length}</span></div>${state.entries.map(entryCard).join('')}</section>` : ''}
     <div class="section-heading-row current-entry-heading ${entryProblem(state.entries.length) ? 'has-error' : ''}"><h2>${escapeHtml(t('Current entry %(number)s', { number: state.entries.length + 1 }))}</h2><span>${escapeHtml(t('Ready to calculate'))}</span></div>${entryProblemHtml(state.entries.length)}
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Supply-chain stage'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="0">${escapeHtml(t('Edit'))}</button></div><p>${escapeHtml(sector?.name || state.sector)}</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Food category'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="1">${escapeHtml(t('Edit'))}</button></div><p>${escapeHtml(food?.name || t('Standard mix / not specified'))}</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="2">${escapeHtml(t('Edit'))}</button></div><p><strong>${measuredAs(state)}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
-    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste destinations'))}</h2><button class="text-button" type="button" data-action="go-step" data-step="3">${escapeHtml(t('Edit'))}</button></div>${reviewLines(draftEntry())}</article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Supply-chain stage'))}</h2>${reviewEdit(0)}</div><p>${escapeHtml(sector?.name || state.sector)}</p></article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Food category'))}</h2>${reviewEdit(1)}</div><p>${escapeHtml(food?.name || t('Standard mix / not specified'))}</p></article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste amount'))}</h2>${reviewEdit(2)}</div><p><strong>${measuredAs(state)}</strong> · ${formatNumber(totalKg, 3)} kg</p></article>
+    <article class="review-block"><div class="section-heading-row"><h2>${escapeHtml(t('Waste destinations'))}</h2>${reviewEdit(3)}</div>${reviewLines(draftEntry())}</article>
     <button class="button button-add add-entry-button" type="button" data-action="add-entry">+ ${escapeHtml(t('Add another supply-chain entry'))}</button>
     <aside class="disclaimer compact" aria-label="${escapeHtml(t('Important information'))}"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Estimate notice'))}</strong><p>${escapeHtml(estimateNotice)}</p></div></aside>
     ${state.error ? `<p class="field-error api-error ${state.errorCode ? `error-${slug(state.errorCode)}` : ''}" role="alert">${escapeHtml(state.error)}</p>` : ''}${stepNav({
@@ -1023,7 +1062,7 @@ async function submitCalculation() {
     const response = await calculate(submissionPayload(state, entries))
     const token = response.token || state.token
     if (token) sessionStorage.setItem('kaiCalculatorToken', token)
-    setState({ result: { ...response, entry_results: entryResultsFrom(entries, response) }, token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {} })
+    setState({ result: { ...response, entry_results: entryResultsFrom(entries, response) }, token, loading: false, step: 5, error: null, errorCode: null, fieldErrors: {}, returnTo: null })
   } catch (error) {
     const rateLimitedUntil = error.code === 'RATE_LIMITED' ? Date.now() + 60000 : state.rateLimitedUntil
     if (error.code === 'UNKNOWN_CODE' && reloadTaxonomy) await reloadTaxonomy({ preserveError: true })
@@ -1035,7 +1074,14 @@ async function submitCalculation() {
       ? (error.details || []).map(detailStep).find(step => step !== undefined)
       : undefined
     const errorStep = namedStep !== undefined ? namedStep : error.code === 'VALIDATION_ERROR' ? 3 : error.code === 'UNKNOWN_CODE' ? 0 : state.step
-    setState({ loading: false, error: publicError(error), errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep })
+    // A refusal is pressed on the review step and nowhere else, so a visitor it pushes
+    // back to a form step — `UNKNOWN_CODE`'s step 1, `VALIDATION_ERROR`'s step 4, or
+    // whichever step `detailStep` names for the field the server objected to — came from
+    // review just as surely as one who pressed *Edit*, and Back has to say so. Nothing was
+    // moved, so the marker carries no snapshot and backing out asks nothing. `errorStep`
+    // is the review step itself for every failure that does not name a field, and that
+    // one clears the marker rather than writing a Back that returns to where it already is.
+    setState({ loading: false, error: publicError(error), errorCode: error.code || 'UNKNOWN_ERROR', fieldErrors: fieldErrorMap(error), rateLimitedUntil, step: errorStep, returnTo: errorStep >= 0 && errorStep < 4 ? { from: errorStep, step: 4 } : null })
     // Clearing the deadline without clearing the banner re-enabled Calculate underneath a
     // paragraph still telling the user to wait 60 seconds — the button and the copy saying
     // opposite things, with the copy the more believable of the two. The banner only goes if
@@ -1103,12 +1149,96 @@ function updateLine(control) {
   if (continueButton) continueButton.disabled = Boolean(error)
 }
 
+/**
+ * One saved entry, as the draft — the patch and not the `setState`, so that the two
+ * things that put an entry back in the draft slot share one definition of what the draft
+ * slot *is*.
+ *
+ * `draftEntry` (`state.js`) and this are exact inverses, key for key. They have to stay
+ * that way: `returnTo.draft` is built by the first and restored by the second, so a field
+ * added to one and not the other is a field that silently fails to come back.
+ *
+ * The line ids are re-minted rather than carried over, exactly as this did when it was
+ * only `loadEntry`. Nothing keys on a line id across a render — `fieldErrors` uses the
+ * server's own paths and `lastChangedDestination` uses a destination code — so no
+ * assertion may be written against their identity either.
+ */
+const entryPatch = entry => ({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', totalInputKg: entry.totalInputKg || '', totalValueNzd: entry.totalValueNzd || '', wastedValueNzd: entry.wastedValueNzd || '', current: entry.current.map(line => ({ ...line, id: randomId() })), error: null, fieldErrors: {}, lastChangedDestination: null })
+
 function loadEntry(entry) {
-  setState({ sector: entry.sector, foodCategory: entry.foodCategory, totalAmount: entry.totalAmount, totalUnit: entry.totalUnit, measureMode: entry.measureMode || 'mass', unitPreset: entry.unitPreset || null, unitCount: entry.unitCount || '', totalInputKg: entry.totalInputKg || '', totalValueNzd: entry.totalValueNzd || '', wastedValueNzd: entry.wastedValueNzd || '', current: entry.current.map(line => ({ ...line, id: randomId() })), step: 0, error: null, fieldErrors: {}, lastChangedDestination: null })
+  setState({ ...entryPatch(entry), step: 0 })
 }
 
+/**
+ * An empty draft entry, as a `setState` patch.
+ *
+ * Named because two things need the same definition of "the visitor has entered nothing
+ * for this entry": `clearDraft` below, which writes it, and `movedSnapshot`'s `after`,
+ * which has to describe what the draft will look like the instant `add-entry` has
+ * cleared it. A second inline copy of the key list is a second thing to keep in step,
+ * and the one that drifted would make the confirmation dialog either never fire or
+ * always fire.
+ */
+const EMPTY_DRAFT = { sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', totalInputKg: '', totalValueNzd: '', wastedValueNzd: '', current: [] }
+
+/**
+ * Everything about an entry that the visitor typed, and nothing else, as a comparable
+ * value.
+ *
+ * **What it leaves out is the whole of its correctness.** Line `id`s are excluded
+ * because they are render bookkeeping, not input: `entryPatch` re-mints them on every
+ * load and `normaliseLines` may rebuild the list, so two drafts holding the identical
+ * figures routinely carry different ids. Including them would make the comparison below
+ * report "changed" for every restored entry, and the dialog would fire on a Back that
+ * discards nothing — the exact noise the owner ruled against.
+ *
+ * Every other key `draftEntry()` carries is in. The fallbacks mirror `entryPatch`'s, so
+ * a saved entry and the draft it becomes fingerprint identically; without them an entry
+ * written before a field existed would read as "changed" the moment it was opened.
+ *
+ * `state.timeFrame` and `state.gwpHorizon` are deliberately absent: they belong to the
+ * submission rather than to an entry, and the undo does not touch them, so a visitor who
+ * changed the period would otherwise be asked about an entry they never touched.
+ */
+const entryFingerprint = entry => [
+  entry.sector || null,
+  entry.foodCategory || null,
+  entry.totalAmount || '',
+  entry.totalUnit || 'kilograms',
+  entry.measureMode || 'mass',
+  entry.unitPreset || null,
+  entry.unitCount || '',
+  entry.totalInputKg || '',
+  entry.totalValueNzd || '',
+  entry.wastedValueNzd || '',
+  (entry.current || []).map(line => [line.destination, line.qtyInput || '', line.unit || null]),
+]
+
+/** The whole calculator's entry content — the saved list and the draft — as one string. */
+const contentSnapshot = (entries, draft) => JSON.stringify([entries.map(entryFingerprint), entryFingerprint(draft)])
+
+/** The same, read off `state` right now. */
+const currentSnapshot = () => contentSnapshot(state.entries, draftEntry())
+
+/**
+ * What a jump onto step 1 is about to move, captured *before* it moves it.
+ *
+ * Both callers destroy their own evidence: `add-entry` pushes the draft into `entries`
+ * and then empties it, and `edit-entry` filters an entry out and overwrites the draft
+ * with it. So this has to be evaluated first, at the call site, and not reconstructed
+ * afterwards — see the note on `returnTo` in `state.js`.
+ *
+ * @param {number} step The screen the visitor is standing on, and so the one Back returns
+ *   them to: 4 from the review step's Add and Edit buttons, 1 from step 2's duplicate
+ *   notice.
+ * @param {object} moved `kind` (`'add'` | `'edit'`), `number` for an edit, and `after` —
+ *   `contentSnapshot` of the state the jump is about to *install*, which the call site
+ *   has already computed and this function cannot see.
+ */
+const movedSnapshot = (step, moved) => ({ from: 0, step, entries: [...state.entries], draft: draftEntry(), ...moved })
+
 function clearDraft() {
-  setState({ sector: null, foodCategory: null, totalAmount: '', totalUnit: 'kilograms', measureMode: 'mass', unitPreset: null, unitCount: '', totalInputKg: '', totalValueNzd: '', wastedValueNzd: '', current: [], step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
+  setState({ ...EMPTY_DRAFT, step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
 export function render(main) {
@@ -1155,14 +1285,117 @@ export function renderChrome() {
   clearButton.hidden = !hasData()
 }
 
+/**
+ * Whether backing out of `marker` would throw away something the visitor entered after
+ * the jump that wrote it.
+ *
+ * **The test is: does the calculator's entry content still look exactly as the jump left
+ * it?** `marker.after` is a `contentSnapshot` taken of the state the jump installed —
+ * the emptied draft for an add, the opened entry for an edit — and this compares it with
+ * the same snapshot of now. Equal means every keystroke since the jump is either absent
+ * or was undone by hand, so the restore replaces the content with identical content and
+ * the visitor loses nothing. Different means the restore overwrites work.
+ *
+ * It cannot be wrong in either direction, and both directions matter:
+ *
+ *   * **It cannot miss a loss.** Every key `draftEntry()` carries is in the fingerprint,
+ *     as is each destination line's own destination, amount and unit, as is the saved
+ *     entry list. The restore writes exactly those and nothing else, so anything the
+ *     restore can overwrite is something the fingerprint reads.
+ *   * **It cannot invent one.** The only things excluded are line ids — re-minted on
+ *     every load and never entered by anyone — and the submission-level `timeFrame` and
+ *     `gwpHorizon`, which the restore does not touch. Pressing Add and immediately
+ *     pressing Back therefore asks nothing, which is the case that would otherwise train
+ *     people to dismiss the dialog unread.
+ *
+ * A marker with no `draft` (a review *Edit* link, a refused Calculate) restores nothing
+ * at all, so it never reaches here.
+ */
+const backingOutDiscardsWork = marker => currentSnapshot() !== marker.after
+
+/**
+ * What the visitor is asked before the undo runs.
+ *
+ * **Two messages, not one, because the two jumps destroy different things.** Backing out
+ * of an add throws away a supply-chain entry that was being started and was never on the
+ * list; backing out of an edit throws away alterations to an entry that is on the list
+ * and will go back onto it unaltered. "Discard your changes?" would be wrong for the
+ * first — there is nothing to change yet — and vague for the second, which can name the
+ * entry number printed on the card the visitor opened.
+ *
+ * `window.confirm` rather than a styled dialog, following `start-over` above it: there is
+ * no build step and no modal in this front end, the browser's own dialog is the one thing
+ * that reliably blocks the navigation until it is answered, and OK/Cancel map cleanly
+ * onto a question whose last words are "Go back anyway?".
+ */
+const discardPrompt = marker => (marker.kind === 'edit'
+  ? t('Going back will discard the changes you have made to entry %(number)s. Go back anyway?', { number: marker.number })
+  : t('Going back will discard the new supply-chain entry you have started. Go back anyway?'))
+
+/**
+ * Every `go-step`, including each step's own Back.
+ *
+ * Three things happen here, and two of them are about `state.returnTo`:
+ *
+ * 1. **Backing out of a jump undoes it.** When the marker is about the screen the visitor
+ *    is standing on (`from`) and this click is the Back it was written for (`step`), the
+ *    entries and the draft go back to what they were before the jump moved them, in the
+ *    same `setState` as the step change. Without the undo, returning to the review step
+ *    after an `add-entry` shows an empty "Current entry N" — the draft `clearDraft` just
+ *    emptied — with a Calculate button offering to submit it. That is the whole reason
+ *    this is not a one-line change to `sectorStep`'s `back:`.
+ *
+ *    **And it asks first, whenever it would discard anything.** The marker survives a
+ *    forward walk, so the visitor may have pressed Add, built a second chain across four
+ *    screens and walked back — and the undo would then throw all four away. It is not
+ *    narrowed to the press that immediately follows the jump, because the same journey
+ *    keeps the work if Continue happened to be pressed on the destination step (the
+ *    `continue` handler clears the marker on arrival at review) and loses it otherwise,
+ *    with nothing on screen saying which case you are in. Declining returns without a
+ *    `setState` at all: same step, same draft, same entries, marker still live.
+ *
+ *    A marker with no `draft` (a review *Edit* link, a refused Calculate) moved nothing,
+ *    so it reverts nothing and asks nothing: a sector changed while on step 1 is kept,
+ *    exactly as a field edited on steps 2-4 is kept when Back is pressed there.
+ *
+ * 2. **A review-step *Edit* link opens the same kind of excursion**, with nothing to put
+ *    back. `jumped` is the link's own `data-jump="review"` rather than anything inferred
+ *    from the step numbers, because review's Back and the *Waste destinations / Edit*
+ *    link both emit `data-step="3"` — see `reviewEdit`.
+ *
+ * Every other `go-step` carries the current marker forward untouched, which is what lets
+ * a visitor who pressed Add, chose a sector and continued to step 2 still walk Back to
+ * step 1 and back out of the add from there.
+ */
+function goToStep(step, jumped = false) {
+  const back = state.returnTo
+  // **`back.from === state.step` is the test that keeps a marker from firing on a
+  // different step's Back**, and it is killed by
+  // `test_a_marker_from_the_duplicate_notice_does_not_fire_on_another_steps_back`.
+  // The duplicate notice's `edit-entry` writes `{from: 0, step: 1}`; step 3's own Back
+  // emits `data-step="1"` too, because step 3's previous screen and this marker's
+  // destination are the same number for different reasons. Drop the origin test and
+  // walking that entry forward to step 3 and pressing Back restores the pre-edit
+  // snapshot over it. The same clause is what stops step 2's Back — identical
+  // `data-step="0"` to step 1's — from ping-ponging, and what would stop the results
+  // step's `back: 4` (`results.js`) from firing an `add-entry` marker, were
+  // `submitCalculation` not already clearing it.
+  if (back && back.from === state.step && back.step === step) {
+    if (back.draft && backingOutDiscardsWork(back) && !window.confirm(discardPrompt(back))) return
+    setState({ ...(back.draft ? { ...entryPatch(back.draft), entries: back.entries } : {}), step, returnTo: null, ...clearedError() })
+    return
+  }
+  setState({ step, returnTo: jumped ? { from: step, step: state.step } : state.returnTo, ...clearedError() })
+}
+
 export function bindCalculator(main, retryTaxonomy) {
   reloadTaxonomy = retryTaxonomy
   main.addEventListener('click', event => {
     const control = event.target.closest('[data-action]')
     if (!control) return
     const action = control.dataset.action
-    if (action === 'start') setState({ step: 0, ...clearedError() })
-    if (action === 'go-step') setState({ step: Number(control.dataset.step), ...clearedError() })
+    if (action === 'start') setState({ step: 0, returnTo: null, ...clearedError() })
+    if (action === 'go-step') goToStep(Number(control.dataset.step), control.dataset.jump === 'review')
     if (action === 'toggle-sector') {
       const code = control.dataset.sector
       setState({ expandedSectors: state.expandedSectors.includes(code) ? state.expandedSectors.filter(item => item !== code) : [...state.expandedSectors, code] })
@@ -1179,16 +1412,43 @@ export function bindCalculator(main, retryTaxonomy) {
       // earlier submit must not survive to mislabel this one.
       if (error) setState({ error, errorCode: null })
       else if (state.step === 2) setState({ step: 3, error: null, current: state.current.length ? normaliseLines(state.current) : entryDestinations().map(destination => createLine(destination.code)) })
-      else setState({ step: state.step + 1, error: null })
+      // **Arriving at the review step ends any excursion, and this line is load-bearing.**
+      // A marker holds the entries and the draft as they were before the jump that wrote
+      // it; once the visitor has reached review again they have built something that did
+      // not exist then. Without this, `add-entry` → build the new chain → review → Back
+      // four times to step 1 → Back would restore the pre-add snapshot *over* the chain
+      // just built, which is real data loss introduced by the fix rather than by the bug.
+      // `tests/web/test_step_one_back_navigation_browser.py` walks exactly that path.
+      else setState({ step: state.step + 1, error: null, returnTo: state.step === 3 ? null : state.returnTo })
     }
     if (action === 'add-entry') {
-      setState({ entries: [...state.entries, draftEntry()] })
+      // Before the push and before `clearDraft`, which between them destroy both halves
+      // of what Back would need to put back. `clearDraft` names a fixed key list that does
+      // not include `returnTo`, so the marker survives it.
+      //
+      // `after` is what the calculator will hold once this click has finished — the
+      // committed list and an empty draft — and it is stated here rather than read back
+      // afterwards so that recording it costs no extra render. It is what the Back on
+      // step 1 compares against to decide whether it has anything to ask about.
+      const entries = [...state.entries, draftEntry()]
+      const returnTo = movedSnapshot(4, { kind: 'add', after: contentSnapshot(entries, EMPTY_DRAFT) })
+      setState({ entries, returnTo })
       clearDraft()
     }
     if (action === 'edit-entry') {
       const index = Number(control.dataset.index)
       const entry = state.entries[index]
-      setState({ entries: state.entries.filter((_, entryIndex) => entryIndex !== index) })
+      // `state.step` is the whole of what distinguishes this action's two call sites: 4
+      // from a saved entry's card on the review step, 1 from step 2's duplicate notice.
+      // Read here, before `loadEntry` moves the visitor to step 1.
+      //
+      // `number` is the label the visitor just clicked — "Edit entry 2" on a card, "Open
+      // entry 2" in the duplicate notice — so the question Back may ask names the same
+      // entry the button did. The undo puts the entry back at its own index, so the
+      // number stays true for as long as the marker lives.
+      const entries = state.entries.filter((_, entryIndex) => entryIndex !== index)
+      const returnTo = movedSnapshot(state.step, { kind: 'edit', number: index + 1, after: contentSnapshot(entries, entry) })
+      setState({ entries, returnTo })
       loadEntry(entry)
     }
     if (action === 'remove-entry') {

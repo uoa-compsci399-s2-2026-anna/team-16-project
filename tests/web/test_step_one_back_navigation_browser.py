@@ -642,20 +642,30 @@ def test_an_edit_backed_out_of_immediately_asks_nothing(page):
     )
 
 
-def test_an_edit_changed_before_backing_out_asks_and_names_the_entry(page):
+def test_an_edit_changed_before_backing_out_asks_about_the_entry_that_was_opened(page):
     """Defect 1's second message. An add discards *a chain being started*; an
     edit discards *changes to a saved entry*. They are different losses and the
-    question says which, naming the entry number the visitor can see on the
-    card they opened.
+    question says which.
+
+    **It says which without naming a number, and this test used to require the
+    opposite.** It asserted "entry 1", which was the number on the button the
+    visitor pressed and, from the commit that made `edit-entry` a swap, no
+    longer the number of anything the question was about: the swap puts the
+    displaced chain into the opened entry's slot, so the card numbered 1 is a
+    *different* chain — visible, on the review step, under that number — while
+    the entry being asked about has left the list for the draft slot and has no
+    number at all. The assertions below are the same three claims with the
+    third corrected: it is about an edit, it is about the entry that was opened,
+    and it must not point at a card that is now somebody else.
 
     Declining here also has to be safe, so this test dismisses and then proves
     the change survived.
     """
     page.click('[data-action="start"]')
-    _pick_sector(page, 0)
+    opened = _pick_sector(page, 0)
     _build_chain(page, "1000")
     page.click('[data-action="add-entry"]')
-    _pick_sector(page, 1)
+    displaced = _pick_sector(page, 1)
     _build_chain(page, "2000")
 
     page.click('.saved-entry-card [data-action="edit-entry"]')
@@ -665,11 +675,17 @@ def test_an_edit_changed_before_backing_out_asks_and_names_the_entry(page):
     _back(page)
 
     assert seen, "a changed entry backed out of discards the change, so it has to ask"
-    assert "entry 1" in seen[0].lower(), (
-        f"the question names the entry the visitor opened, got {seen[0]!r}"
-    )
     assert "change" in seen[0].lower(), (
         f"an edit discards changes, not a new entry; got {seen[0]!r}"
+    )
+    assert "the entry you opened" in seen[0].lower(), (
+        f"the question is about the entry the visitor opened ({opened!r}), which the "
+        f"swap has moved off the list; got {seen[0]!r}"
+    )
+    assert "entry 1" not in seen[0].lower(), (
+        f"entry 1 is now the chain this click displaced ({displaced!r}), so naming that "
+        f"number points the visitor at the one card the question is not about; got "
+        f"{seen[0]!r}"
     )
     assert _screen(page) == "step 1 (supply-chain stage)", (
         f"declining leaves the visitor on step 1, got {_screen(page)}"

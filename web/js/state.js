@@ -76,7 +76,7 @@ export const state = {
   // -1 first; `render()` does.
   step: -1,
   // **How the visitor got to the step they are on, when they did not walk there** —
-  // `null`, or `{from, step, entries?, draft?, kind?, number?, after?}`. Written by the
+  // `null`, or `{from, step, entries?, draft?, kind?, after?}`. Written by the
   // navigation that performs the jump, read only by that step's own Back, cleared on the
   // next arrival at the review step and by `resetCalculator` below.
   //
@@ -94,11 +94,14 @@ export const state = {
   //   * `step` — where Back goes. It is `4` for a jump made from the review step and `1`
   //     for one made from step 2's duplicate notice; it records where the visitor stood,
   //     never a constant.
-  //   * `kind` / `number` / `after` — what the Back this marker belongs to has to ask
+  //   * `kind` / `after` — what the Back this marker belongs to has to ask
   //     before it discards anything. `kind` is `'add'` or `'edit'` and picks between two
   //     messages, because a chain being started and alterations to a saved entry are
-  //     different losses; `number` is the entry number the visitor clicked, so an edit's
-  //     question names the same entry the button did. `after` is a fingerprint of the
+  //     different losses. A third field, `number`, recorded the entry number the visitor
+  //     clicked so that an edit's question could name it; it is gone, because
+  //     `edit-entry` now puts the displaced draft at that same index and the number
+  //     therefore addresses a card the question is not about — see `discardPrompt` in
+  //     `calculator.js`. `after` is a fingerprint of the
   //     entries and the draft **as the jump left them**, and it is the whole of the test
   //     for whether the undo would throw anything away: equal to now means every
   //     keystroke since is absent and the restore is a no-op, so nothing is asked. It is
@@ -128,11 +131,18 @@ export const state = {
   // it. Nothing is lost when that happens — the outer jump's own mutation stays applied —
   // but the outer undo is gone, and the visitor is back to walking out of the wizard.
   //
-  // **The marker survives a forward walk, and the confirmation is why that is safe.**
-  // A visitor may press Add, build a whole second chain across four screens and walk
-  // Back to step 1 with the marker still live. Backing out there is a real discard, so
-  // `goToStep` (`calculator.js`) asks before it runs — and only when `after` says there
-  // is something to discard, so pressing Add and immediately pressing Back is silent.
+  // **A marker holding an undo survives a forward walk, and the confirmation is why that
+  // is safe.** A visitor may press Add, build a whole second chain across four screens
+  // and walk Back to step 1 with the marker still live. Backing out there is a real
+  // discard, so `goToStep` (`calculator.js`) asks before it runs — and only when `after`
+  // says there is something to discard, so pressing Add and immediately pressing Back is
+  // silent.
+  //
+  // **A marker holding no undo does not survive one**, and must not: a review *Edit*
+  // link's marker moved nothing, so it exists only to point one step's Back at the
+  // review step. Left live once that step had been walked past it aimed Back *forward*,
+  // and step 1 and the introduction became unreachable by any number of Back presses.
+  // `markerAfterLeaving` (`calculator.js`) is where the two are told apart, on `draft`.
   returnTo: null,
   expandedSectors: [],
   resultBreakdownTab: 'stage',

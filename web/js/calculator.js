@@ -281,8 +281,48 @@ function introduction() {
  *
  * The results step keeps its own `back: 4` (`results.js`): it is reached by calculating,
  * never by a jump, and `submitCalculation` clears the marker on the way there.
+ *
+ * **This only ever reads a marker that is still about where the visitor is standing** —
+ * see `markerAfterLeaving`, which is what makes that true. A marker left live after its
+ * own step had been walked past turned this into a loop: *Food category / Edit*,
+ * Continue, Back, and step 2's Back then went *forward* to the review step, with step 1
+ * and the introduction unreachable behind it.
  */
 const backTarget = step => (state.returnTo && state.returnTo.from === step ? state.returnTo.step : step - 1)
+
+/**
+ * `state.returnTo` as it stands once the visitor has left the step the marker is about
+ * by anything other than that step's own Back.
+ *
+ * **A marker that moved nothing is spent the moment its step is left.** A review *Edit*
+ * link's marker exists for one purpose: to give the screen it landed on a Back that
+ * returns to the review step it was pressed on. Walking forward from that screen ends
+ * the excursion — the visitor is in the wizard now, and `continue` will carry them to
+ * the review step by itself. Keeping the marker past that point made `backTarget` point
+ * the *wrong* step at review:
+ *
+ *     review -> Food category / Edit   {from: 1, step: 4}
+ *            -> Continue               step 3, marker carried
+ *            -> Back                   step 2, marker carried
+ *            -> Back                   the REVIEW step, not step 1
+ *
+ * and from there Back walked review -> 4 -> 3 -> 2 -> review, with step 1 and the
+ * introduction reachable by no sequence of Back presses at all. The same held for
+ * *Supply-chain stage / Edit* and *Waste amount / Edit*; *Waste destinations / Edit* was
+ * spared only because `continue` already drops every marker on the 3 -> 4 move.
+ *
+ * **A marker that moved something is not spent, and must not be dropped here.** An
+ * `add-entry` or `edit-entry` marker carries `draft`: it is an undo for a mutation that
+ * has already happened, and the whole of `test_step_one_back_navigation_browser.py` is
+ * written on its surviving a forward walk — press Add, choose a sector, continue to step
+ * 2, walk back to step 1, and backing out of the add still works from there. Those
+ * markers are dropped where they always were: by `continue` on the 3 -> 4 move, by
+ * `start`, and by `submitCalculation`.
+ */
+const markerAfterLeaving = () => {
+  const back = state.returnTo
+  return back && !back.draft && back.from === state.step ? null : back
+}
 
 function sectorStep() {
   const sectors = sorted(state.taxonomy.sectors)
@@ -1260,6 +1300,31 @@ const entryFingerprint = entry => [
 const sameContent = (one, other) => JSON.stringify(entryFingerprint(one)) === JSON.stringify(entryFingerprint(other))
 
 /**
+ * The same entry with every destination row nobody has filled in removed.
+ *
+ * **A blank row is not input; it is furniture.** `continue` on the step 3 -> 4 move
+ * builds one `createLine` row per destination the sector offers, with the destination
+ * fixed by the taxonomy and `qtyInput: ''`. The visitor chose none of them and typed
+ * nothing into them, so a draft holding thirteen of those and nothing else has had
+ * nothing entered into it — and must fingerprint as such, or `loadingGivesBackTheDraft`
+ * reads a walk as far as step 4 and back as work to be confirmed before it is lost.
+ *
+ * **A row is only dropped when its unit is the entry's own as well.** A visitor who set
+ * one row to tonnes and has not yet typed its figure made a choice the load would take
+ * away, and `rowUnit` in `destinationRows` reads `line.unit || state.totalUnit`, so
+ * "unset" and "set to the entry's unit" are the same row. Anything else stays.
+ *
+ * This is deliberately *not* folded into `entryFingerprint`. `backingOutDiscardsWork`
+ * compares two snapshots of the same shape taken at two moments, where a blank row is on
+ * both sides and cancels; here one side is `EMPTY_DRAFT`, which has no rows at all, and
+ * the asymmetry is the whole of the question.
+ */
+const withoutBlankLines = entry => ({
+  ...entry,
+  current: (entry.current || []).filter(line => line.qtyInput !== '' || (line.unit || entry.totalUnit) !== entry.totalUnit),
+})
+
+/**
  * Whether opening `entry` hands the draft slot back everything it currently holds — so
  * that overwriting the draft with it destroys nothing at all.
  *
@@ -1278,9 +1343,18 @@ const sameContent = (one, other) => JSON.stringify(entryFingerprint(one)) === JS
  * which is the difference between "nothing is lost" and "not much is lost". A sector
  * chosen on the review step's Edit-link excursion and then abandoned by pressing Edit
  * on some other card is a choice the load does not give back, so it is asked about.
+ *
+ * **Both comparisons are made against `withoutBlankLines`, and without it the second one
+ * could not match.** `EMPTY_DRAFT.current` is `[]`, but a draft that has been as far as
+ * step 4 holds one `createLine` row per destination — a destination the taxonomy chose
+ * and an amount nobody has typed. Reproduced: save one entry, start a second, walk to
+ * step 4, walk back to step 3, clear the amount, clear the category, and the duplicate
+ * notice's *Open entry 1* asked before discarding a draft that held nothing but the
+ * pair the opened entry was about to hand straight back. The identical journey stopped
+ * one screen short of step 4 asked nothing, which is the control that names the cause.
  */
 const loadingGivesBackTheDraft = entry => {
-  const draft = draftEntry()
+  const draft = withoutBlankLines(draftEntry())
   return sameContent(draft, EMPTY_DRAFT) || sameContent(draft, { ...EMPTY_DRAFT, sector: entry.sector, foodCategory: entry.foodCategory })
 }
 
@@ -1307,9 +1381,9 @@ const currentSnapshot = () => contentSnapshot(state.entries, draftEntry())
  * @param {number} step The screen the visitor is standing on, and so the one Back returns
  *   them to: 4 from the review step's Add and Edit buttons, 1 from step 2's duplicate
  *   notice.
- * @param {object} moved `kind` (`'add'` | `'edit'`), `number` for an edit, and `after` —
- *   `contentSnapshot` of the state the jump is about to *install*, which the call site
- *   has already computed and this function cannot see.
+ * @param {object} moved `kind` (`'add'` | `'edit'`) and `after` — `contentSnapshot` of
+ *   the state the jump is about to *install*, which the call site has already computed
+ *   and this function cannot see.
  */
 const movedSnapshot = (step, moved) => ({ from: 0, step, entries: [...state.entries], draft: draftEntry(), ...moved })
 
@@ -1396,8 +1470,17 @@ const backingOutDiscardsWork = marker => currentSnapshot() !== marker.after
  * of an add throws away a supply-chain entry that was being started and was never on the
  * list; backing out of an edit throws away alterations to an entry that is on the list
  * and will go back onto it unaltered. "Discard your changes?" would be wrong for the
- * first — there is nothing to change yet — and vague for the second, which can name the
- * entry number printed on the card the visitor opened.
+ * first — there is nothing to change yet.
+ *
+ * **The edit message names no number, and that is the point.** It used to say "entry
+ * %(number)s", `number` being the entry the visitor clicked — right about the button and
+ * wrong about the position from the moment `edit-entry` became a swap. The swap puts the
+ * displaced draft at the opened entry's index, so after "Edit entry 1" the card numbered
+ * 1 is a *different* chain, on screen, under that number, while the entry the question is
+ * actually about has left the list for the draft slot and has no number at all. A
+ * sentence that points at a card the visitor can see and means another one is worse than
+ * a sentence that points at no card: "the entry you opened" is true before the swap,
+ * after it, and after the second swap that trades the two back.
  *
  * `window.confirm` rather than a styled dialog, following `start-over` above it: there is
  * no build step and no modal in this front end, the browser's own dialog is the one thing
@@ -1405,7 +1488,7 @@ const backingOutDiscardsWork = marker => currentSnapshot() !== marker.after
  * onto a question whose last words are "Go back anyway?".
  */
 const discardPrompt = marker => (marker.kind === 'edit'
-  ? t('Going back will discard the changes you have made to entry %(number)s. Go back anyway?', { number: marker.number })
+  ? t('Going back will discard the changes you have made to the entry you opened. Go back anyway?')
   : t('Going back will discard the new supply-chain entry you have started. Go back anyway?'))
 
 /**
@@ -1439,9 +1522,15 @@ const discardPrompt = marker => (marker.kind === 'edit'
  *    from the step numbers, because review's Back and the *Waste destinations / Edit*
  *    link both emit `data-step="3"` — see `reviewEdit`.
  *
- * Every other `go-step` carries the current marker forward untouched, which is what lets
- * a visitor who pressed Add, chose a sector and continued to step 2 still walk Back to
- * step 1 and back out of the add from there.
+ * Every other `go-step` hands the marker to `markerAfterLeaving`, which keeps an undo —
+ * so a visitor who pressed Add, chose a sector and continued to step 2 can still walk
+ * Back to step 1 and back out of the add from there — and drops a review-*Edit*
+ * excursion whose own step has been walked past.
+ *
+ * @returns {boolean} False only when the visitor declined the discard, so that the
+ *   caller can treat the click as not having happened. Nothing moved, nothing rendered,
+ *   and nothing may scroll the page either: see the note on the scroll at the bottom of
+ *   `bindCalculator`.
  */
 function goToStep(step, jumped = false) {
   const back = state.returnTo
@@ -1457,11 +1546,12 @@ function goToStep(step, jumped = false) {
   // step's `back: 4` (`results.js`) from firing an `add-entry` marker, were
   // `submitCalculation` not already clearing it.
   if (back && back.from === state.step && back.step === step) {
-    if (back.draft && backingOutDiscardsWork(back) && !window.confirm(discardPrompt(back))) return
+    if (back.draft && backingOutDiscardsWork(back) && !window.confirm(discardPrompt(back))) return false
     setState({ ...(back.draft ? { ...entryPatch(back.draft), entries: back.entries } : {}), step, returnTo: null, ...clearedError() })
-    return
+    return true
   }
-  setState({ step, returnTo: jumped ? { from: step, step: state.step } : state.returnTo, ...clearedError() })
+  setState({ step, returnTo: jumped ? { from: step, step: state.step } : markerAfterLeaving(), ...clearedError() })
+  return true
 }
 
 export function bindCalculator(main, retryTaxonomy) {
@@ -1471,7 +1561,13 @@ export function bindCalculator(main, retryTaxonomy) {
     if (!control) return
     const action = control.dataset.action
     if (action === 'start') setState({ step: 0, returnTo: null, ...clearedError() })
-    if (action === 'go-step') goToStep(Number(control.dataset.step), control.dataset.jump === 'review')
+    // **A declined discard ends the click**, exactly as `edit-entry`'s own declined
+    // question below already did. `goToStep` returning early was not enough on its own:
+    // the scroll-to-top at the bottom of this listener runs on the *action name*, so
+    // Cancel left the screen, the draft and the saved list untouched and then threw the
+    // visitor to the top of the page anyway. Measured at 320x600: scrollY 327 -> 0 on a
+    // Back the visitor had just refused.
+    if (action === 'go-step' && !goToStep(Number(control.dataset.step), control.dataset.jump === 'review')) return
     if (action === 'toggle-sector') {
       const code = control.dataset.sector
       setState({ expandedSectors: state.expandedSectors.includes(code) ? state.expandedSectors.filter(item => item !== code) : [...state.expandedSectors, code] })
@@ -1487,7 +1583,12 @@ export function bindCalculator(main, retryTaxonomy) {
       // whether `errorCode` is still set from that response, and a leftover code from an
       // earlier submit must not survive to mislabel this one.
       if (error) setState({ error, errorCode: null })
-      else if (state.step === 2) setState({ step: 3, error: null, current: state.current.length ? normaliseLines(state.current) : entryDestinations().map(destination => createLine(destination.code)) })
+      // Step 3 -> 4 builds the destination rows, and it hands the marker to
+      // `markerAfterLeaving` exactly as the general branch below does: this is the one
+      // forward move with a patch of its own, and leaving `returnTo` out of it meant a
+      // *Waste amount / Edit* marker walked past its own step and aimed step 3's Back at
+      // the review step — the same loop, through the one door this branch owns.
+      else if (state.step === 2) setState({ step: 3, error: null, returnTo: markerAfterLeaving(), current: state.current.length ? normaliseLines(state.current) : entryDestinations().map(destination => createLine(destination.code)) })
       // **Arriving at the review step ends any excursion, and this line is load-bearing.**
       // A marker holds the entries and the draft as they were before the jump that wrote
       // it; once the visitor has reached review again they have built something that did
@@ -1495,7 +1596,11 @@ export function bindCalculator(main, retryTaxonomy) {
       // four times to step 1 → Back would restore the pre-add snapshot *over* the chain
       // just built, which is real data loss introduced by the fix rather than by the bug.
       // `tests/web/test_step_one_back_navigation_browser.py` walks exactly that path.
-      else setState({ step: state.step + 1, error: null, returnTo: state.step === 3 ? null : state.returnTo })
+      //
+      // Every other Continue hands the marker to `markerAfterLeaving`, which keeps an
+      // undo and discards a spent review-*Edit* excursion — see its own note for the
+      // Back loop that keeping one built.
+      else setState({ step: state.step + 1, error: null, returnTo: state.step === 3 ? null : markerAfterLeaving() })
     }
     if (action === 'add-entry') {
       // Before the push and before `clearDraft`, which between them destroy both halves
@@ -1534,9 +1639,12 @@ export function bindCalculator(main, retryTaxonomy) {
       // 1. A complete draft is a saved entry in everything but position, so it takes the
       //    position: `add-entry` promotes the identical object with no more ceremony than
       //    this. In place at `index` rather than appended, so only the two entries
-      //    actually involved change number — `fieldErrors['entries[N]']`, `entryIndexOf`
-      //    and `discardPrompt`'s `%(number)s` are all written against those numbers — and
-      //    so `back.entries` stays the plain inverse of the move.
+      //    actually involved change number — `fieldErrors['entries[N]']` and
+      //    `entryIndexOf` are both written against those numbers — and so `back.entries`
+      //    stays the plain inverse of the move. Appending instead leaves every entry
+      //    after `index` renumbered by a click that was about one card;
+      //    `test_edit_and_back_cleanup_browser.py` is what tells the two apart, and it
+      //    needs two saved entries to do it — with one, both produce the same array.
       const swap = draftIsComplete()
       // 2. An incomplete draft cannot go on the list; it is destroyed, as it always was.
       //    Silently only where the entry being loaded hands all of it straight back,
@@ -1553,10 +1661,11 @@ export function bindCalculator(main, retryTaxonomy) {
       // from a saved entry's card on the review step, 1 from step 2's duplicate notice.
       // Read here, before `loadEntry` moves the visitor to step 1.
       //
-      // `number` is the label the visitor just clicked — "Edit entry 2" on a card, "Open
-      // entry 2" in the duplicate notice — so the question Back may ask names the same
-      // entry the button did. The undo puts the entry back at its own index, so the
-      // number stays true for as long as the marker lives.
+      // **No entry number is recorded**, because there is no longer one to record. The
+      // marker used to carry `number` — the label on the button just pressed — for
+      // `discardPrompt` to name. The swap moved the displaced draft into that very
+      // position, so the number went on addressing a card and stopped addressing the
+      // entry the question was about; see `discardPrompt`.
       const displaced = draftEntry()
       const entries = swap
         ? state.entries.map((saved, entryIndex) => (entryIndex === index ? displaced : saved))
@@ -1564,7 +1673,7 @@ export function bindCalculator(main, retryTaxonomy) {
       // `after` is the content this click installs, whichever branch installed it — the
       // one value handed to both `contentSnapshot` and `setState`, so the two cannot
       // disagree about what the jump left behind.
-      const returnTo = movedSnapshot(state.step, { kind: 'edit', number: index + 1, after: contentSnapshot(entries, entry) })
+      const returnTo = movedSnapshot(state.step, { kind: 'edit', after: contentSnapshot(entries, entry) })
       setState({ entries, returnTo })
       loadEntry(entry)
     }

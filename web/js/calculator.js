@@ -818,9 +818,25 @@ function massContradictionValidation() {
   return t('Waste amount exceeds total amount produced by %(excess)s %(unit)s.', { excess: formatNumber(limitIn(wasteKg - producedKg, state.totalUnit), 2), unit: unitLabel(state.totalUnit) })
 }
 
-function validateCurrentStep() {
-  if (state.step === 0 && !state.sector) return t('Select where in the food supply chain the waste occurred.')
-  if (state.step === 2) {
+/**
+ * What is wrong with the draft as far as one step's own rules are concerned, or `''`.
+ *
+ * **Parameterised on the step rather than reading `state.step`, so that one other
+ * caller can ask about a step the visitor is not standing on.** `draftIsComplete`
+ * (below) asks all three of them at once, from step 1's duplicate notice as readily as
+ * from the review step, to decide whether the draft is something `state.entries` is
+ * allowed to hold. Writing that predicate out by hand instead would be a second copy of
+ * this list, and the note over `EMPTY_DRAFT` records what a second copy of a key list
+ * costs: the one that drifts is the one nobody notices has drifted.
+ *
+ * None of the four checks it delegates to reads `state.step` — `amountOnlyValidation`
+ * reads the measure mode and the amount fields, the two contradiction checks read their
+ * own pairs, and the step-3 block reads `state.current` — so asking about a step from
+ * another step answers about the draft, which is the question.
+ */
+function stepProblem(step) {
+  if (step === 0 && !state.sector) return t('Select where in the food supply chain the waste occurred.')
+  if (step === 2) {
     const amountError = amountOnlyValidation()
     if (amountError) return amountError
     const moneyError = moneyContradictionValidation()
@@ -828,7 +844,7 @@ function validateCurrentStep() {
     const massError = massContradictionValidation()
     if (massError) return massError
   }
-  if (state.step === 3) {
+  if (step === 3) {
     const total = totalNumber(state)
     const lines = state.current
     if (!lines.some(line => Number(line.qtyInput) > 0)) return t('Enter an amount for at least one waste destination.')
@@ -857,6 +873,32 @@ function validateCurrentStep() {
   }
   return ''
 }
+
+/** The same question about the screen the visitor is actually on. */
+const validateCurrentStep = () => stepProblem(state.step)
+
+/**
+ * The steps that stand between a new chain and the review step, and so the whole of
+ * what "complete" means for an entry. Step 2 (food category) is absent because it is
+ * optional — `foodStep` is headed so and `entryCard` prints "Food type not provided".
+ */
+const GATED_STEPS = [0, 2, 3]
+
+/**
+ * Whether the draft, right now, is something `state.entries` may hold.
+ *
+ * **The saved list is only ever allowed to contain complete entries**, and every
+ * consumer of it is written on that promise: `entryCard` prints a sector, an amount and
+ * a category for every row, `reviewStep` offers Calculate over all of them, and
+ * `submissionPayload` posts every row for the API — which refuses an entry with no
+ * sector or no destination lines outright. A row that fails here could only ever be
+ * repaired through the same button that created it.
+ *
+ * Note the return values are being used as a predicate, not as copy: `stepProblem(3)`
+ * asked of a draft standing on step 1 produces a real sentence about destinations that
+ * nothing shows to anybody.
+ */
+const draftIsComplete = () => GATED_STEPS.every(step => !stepProblem(step))
 
 // Items ④/⑤/⑦ and every destination row: the request body is built by
 // `submission.js`, because `improvement.js` builds one too and the two disagreed. See the
@@ -1214,6 +1256,34 @@ const entryFingerprint = entry => [
   (entry.current || []).map(line => [line.destination, line.qtyInput || '', line.unit || null]),
 ]
 
+/** Two entries holding the identical input, by the fingerprint above. */
+const sameContent = (one, other) => JSON.stringify(entryFingerprint(one)) === JSON.stringify(entryFingerprint(other))
+
+/**
+ * Whether opening `entry` hands the draft slot back everything it currently holds — so
+ * that overwriting the draft with it destroys nothing at all.
+ *
+ * **This is not a second definition of "complete"; it is a different question.**
+ * `draftIsComplete` asks whether the draft is fit to be *kept* as a saved entry.
+ * This asks whether there is anything to keep. Two shapes qualify:
+ *
+ *   * an untouched draft — nothing was entered, so nothing can be lost;
+ *   * a draft that is nothing but the `(sector, foodCategory)` pair the opened entry
+ *     already carries. **This is the whole of the duplicate notice's ordinary case**:
+ *     `draftRepeatsSavedEntry` matches on exactly that pair and nothing else, so an
+ *     "Open entry N" pressed after choosing a sector and a category loads an entry
+ *     whose first two answers are the two the visitor just gave.
+ *
+ * The comparison is against *the opened entry's* pair rather than the draft's own,
+ * which is the difference between "nothing is lost" and "not much is lost". A sector
+ * chosen on the review step's Edit-link excursion and then abandoned by pressing Edit
+ * on some other card is a choice the load does not give back, so it is asked about.
+ */
+const loadingGivesBackTheDraft = entry => {
+  const draft = draftEntry()
+  return sameContent(draft, EMPTY_DRAFT) || sameContent(draft, { ...EMPTY_DRAFT, sector: entry.sector, foodCategory: entry.foodCategory })
+}
+
 /** The whole calculator's entry content — the saved list and the draft — as one string. */
 const contentSnapshot = (entries, draft) => JSON.stringify([entries.map(entryFingerprint), entryFingerprint(draft)])
 
@@ -1224,9 +1294,15 @@ const currentSnapshot = () => contentSnapshot(state.entries, draftEntry())
  * What a jump onto step 1 is about to move, captured *before* it moves it.
  *
  * Both callers destroy their own evidence: `add-entry` pushes the draft into `entries`
- * and then empties it, and `edit-entry` filters an entry out and overwrites the draft
- * with it. So this has to be evaluated first, at the call site, and not reconstructed
- * afterwards — see the note on `returnTo` in `state.js`.
+ * and then empties it, and `edit-entry` replaces an entry (or removes it) and overwrites
+ * the draft with it. So this has to be evaluated first, at the call site, and not
+ * reconstructed afterwards — see the note on `returnTo` in `state.js`.
+ *
+ * **What it holds is an undo and never a sole copy.** `edit-entry` used to leave the
+ * displaced chain here and nowhere else, which made a marker that three handlers
+ * deliberately drop the only thing standing between a visitor and losing it. It now
+ * swaps a complete draft onto the saved list, where it is on screen and outlives every
+ * one of those drops.
  *
  * @param {number} step The screen the visitor is standing on, and so the one Back returns
  *   them to: 4 from the review step's Add and Edit buttons, 1 from step 2's duplicate
@@ -1435,9 +1511,44 @@ export function bindCalculator(main, retryTaxonomy) {
       setState({ entries, returnTo })
       clearDraft()
     }
+    // **Opening a saved entry trades places with the draft; it does not overwrite it.**
+    //
+    // This used to filter the entry out of the list and then `loadEntry` it, and
+    // `loadEntry` is a load: `entryPatch` overwrites every key of the draft. Whatever
+    // chain was being built went with it. Since the marker was added it survived in
+    // `state.returnTo.draft` — but that is a *navigation marker*, deliberately dropped
+    // by `continue` on the 3 -> 4 move, by `start` and by `submitCalculation`, so a
+    // visitor who walked forward instead of pressing Back lost the only copy, silently.
+    // The owner reproduced exactly that, twice: a complete second chain gone with no
+    // dialog and nothing on screen to say so. **Live data must not be the marker's to
+    // keep.** The marker now carries only the undo.
+    //
+    // Three cases, and the decision is a property of the draft, never of the door. Both
+    // doors can hold either kind: a complete chain reaches step 2's duplicate notice
+    // through the review step's *Food category / Edit* link, and an incomplete one
+    // reaches the review step through *Waste amount / Edit*, clearing the field and
+    // pressing Back — `goToStep` validates nothing.
     if (action === 'edit-entry') {
       const index = Number(control.dataset.index)
       const entry = state.entries[index]
+      // 1. A complete draft is a saved entry in everything but position, so it takes the
+      //    position: `add-entry` promotes the identical object with no more ceremony than
+      //    this. In place at `index` rather than appended, so only the two entries
+      //    actually involved change number — `fieldErrors['entries[N]']`, `entryIndexOf`
+      //    and `discardPrompt`'s `%(number)s` are all written against those numbers — and
+      //    so `back.entries` stays the plain inverse of the move.
+      const swap = draftIsComplete()
+      // 2. An incomplete draft cannot go on the list; it is destroyed, as it always was.
+      //    Silently only where the entry being loaded hands all of it straight back,
+      //    which is the duplicate notice's ordinary case and the reason that door does
+      //    not ask. 3. Otherwise a real figure would go, so the visitor is asked —
+      //    before any mutation, so Cancel leaves the screen, the draft and the list
+      //    exactly as they stood.
+      if (!swap && !loadingGivesBackTheDraft(entry) && !window.confirm(t('Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?', { number: index + 1 }))) return
+      // Everything below reads `state.entries` and `draftEntry()` as they are *now*, so
+      // it all has to be computed before the `setState` — `movedSnapshot` most of all,
+      // whose whole job is to capture what this click is about to move.
+      //
       // `state.step` is the whole of what distinguishes this action's two call sites: 4
       // from a saved entry's card on the review step, 1 from step 2's duplicate notice.
       // Read here, before `loadEntry` moves the visitor to step 1.
@@ -1446,7 +1557,13 @@ export function bindCalculator(main, retryTaxonomy) {
       // entry 2" in the duplicate notice — so the question Back may ask names the same
       // entry the button did. The undo puts the entry back at its own index, so the
       // number stays true for as long as the marker lives.
-      const entries = state.entries.filter((_, entryIndex) => entryIndex !== index)
+      const displaced = draftEntry()
+      const entries = swap
+        ? state.entries.map((saved, entryIndex) => (entryIndex === index ? displaced : saved))
+        : state.entries.filter((_, entryIndex) => entryIndex !== index)
+      // `after` is the content this click installs, whichever branch installed it — the
+      // one value handed to both `contentSnapshot` and `setState`, so the two cannot
+      // disagree about what the jump left behind.
       const returnTo = movedSnapshot(state.step, { kind: 'edit', number: index + 1, after: contentSnapshot(entries, entry) })
       setState({ entries, returnTo })
       loadEntry(entry)

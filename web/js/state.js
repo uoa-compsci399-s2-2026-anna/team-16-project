@@ -110,7 +110,17 @@ export const state = {
   //   * `entries` / `draft` — present only when the navigation itself *moved* something,
   //     so that backing out can put it back. A snapshot rather than a per-caller inverse,
   //     because `edit-entry` already has two call sites and the displaced draft cannot be
-  //     reconstructed from anything that survives. `entries` is a shallow copy; the entry
+  //     reconstructed from anything that survives.
+  //
+  //     **They are an undo, never the only copy of anything.** `edit-entry` once left the
+  //     chain it displaced here and nowhere else, so walking forward — where `continue`
+  //     drops the marker on the 3 -> 4 move, and `start` and `submitCalculation` drop it
+  //     too — destroyed a complete supply-chain entry with nothing shown. It now trades a
+  //     complete draft onto the saved list instead, where the visitor can see it and no
+  //     navigation can drop it. Anything added here has to hold that line: a marker may
+  //     be discarded at any moment, so what only it remembers is what the visitor loses.
+  //
+  //     `entries` is a shallow copy; the entry
   //     objects inside it are shared, which is safe only while nothing mutates an entry in
   //     place (today `calculator.js` replaces the array every time).
   //

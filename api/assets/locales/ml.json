@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "എൻട്രി %(number)s-നും എൻട്രി %(other)s-നും ഒരേ വിതരണ ശൃംഖല ഘട്ടവും ഭക്ഷ്യ വിഭാഗവുമാണുള്ളത്. രണ്ടും ഒന്നിപ്പിക്കുക, അല്ലെങ്കിൽ ഒന്ന് മാറ്റുക.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "നിങ്ങൾ ഇതിനകം നൽകിയ വിതരണ ശൃംഖല ഘട്ടവും ഭക്ഷ്യ വിഭാഗവും എൻട്രി %(number)s ആവർത്തിക്കുന്നു. രണ്ടും ഒന്നിപ്പിക്കുക, അല്ലെങ്കിൽ ഒന്ന് മാറ്റുക.",
     "Open entry %(number)s": "എൻട്രി %(number)s തുറക്കുക",
-    "You have already entered this combination": "ഈ സംയോജനം നിങ്ങൾ ഇതിനകം നൽകിയിട്ടുണ്ട്"
+    "You have already entered this combination": "ഈ സംയോജനം നിങ്ങൾ ഇതിനകം നൽകിയിട്ടുണ്ട്",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "പിന്നോട്ട് പോയാൽ, നിങ്ങൾ തുറന്ന എൻട്രിയിൽ വരുത്തിയ മാറ്റങ്ങൾ നഷ്ടപ്പെടും. എന്നിട്ടും പിന്നോട്ട് പോകണോ?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "പിന്നോട്ട് പോയാൽ, നിങ്ങൾ തുടങ്ങിയ പുതിയ വിതരണ ശൃംഖല എൻട്രി നഷ്ടപ്പെടും. എന്നിട്ടും പിന്നോട്ട് പോകണോ?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "എൻട്രി %(number)s തുറന്നാൽ, നിങ്ങൾ ഇവിടെ തുടങ്ങിയ, പൂർത്തിയാകാത്ത വിതരണ ശൃംഖല എൻട്രി നഷ്ടപ്പെടും. എന്നിട്ടും എൻട്രി %(number)s തുറക്കണോ?"
   }
 }

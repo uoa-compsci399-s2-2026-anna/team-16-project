@@ -367,6 +367,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "اندراج %(number)s کا سپلائی چین کا مرحلہ اور کھانے کا زمرہ اندراج %(other)s جیسا ہی ہے۔ دونوں کو ملا دیں، یا ان میں سے ایک کو تبدیل کریں۔",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "اندراج %(number)s ایسے سپلائی چین کے مرحلے اور کھانے کے زمرے کو دہراتا ہے جو آپ پہلے ہی درج کر چکے ہیں۔ دونوں کو ملا دیں، یا ان میں سے ایک کو تبدیل کریں۔",
     "Open entry %(number)s": "اندراج %(number)s کھولیں",
-    "You have already entered this combination": "آپ یہ مجموعہ پہلے ہی درج کر چکے ہیں"
+    "You have already entered this combination": "آپ یہ مجموعہ پہلے ہی درج کر چکے ہیں",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "واپس جانے سے آپ کی وہ تبدیلیاں ضائع ہو جائیں گی جو آپ نے کھولے گئے اندراج میں کی ہیں۔ کیا پھر بھی واپس جانا ہے؟",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "واپس جانے سے سپلائی چین کا وہ نیا اندراج ضائع ہو جائے گا جو آپ نے شروع کیا ہے۔ کیا پھر بھی واپس جانا ہے؟",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "اندراج %(number)s کھولنے سے سپلائی چین کا وہ نامکمل اندراج ضائع ہو جائے گا جو آپ نے یہاں شروع کیا ہے۔ کیا پھر بھی اندراج %(number)s کھولنا ہے؟"
   }
 }

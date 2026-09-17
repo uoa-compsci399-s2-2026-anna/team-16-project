@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "प्रविष्टि %(number)s और प्रविष्टि %(other)s का आपूर्ति-शृंखला चरण और खाद्य श्रेणी एक ही हैं। दोनों को मिलाएँ, या इनमें से एक को बदलें।",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "प्रविष्टि %(number)s में वही आपूर्ति-शृंखला चरण और खाद्य श्रेणी दोहराई गई है जो आप पहले ही दर्ज कर चुके हैं। दोनों को मिलाएँ, या इनमें से एक को बदलें।",
     "Open entry %(number)s": "प्रविष्टि %(number)s खोलें",
-    "You have already entered this combination": "यह संयोजन आप पहले ही दर्ज कर चुके हैं"
+    "You have already entered this combination": "यह संयोजन आप पहले ही दर्ज कर चुके हैं",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "पीछे जाने पर, आपने जो प्रविष्टि खोली है उसमें किए गए बदलाव हट जाएँगे। फिर भी पीछे जाएँ?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "पीछे जाने पर, आपने जो नई आपूर्ति-शृंखला प्रविष्टि शुरू की है वह हट जाएगी। फिर भी पीछे जाएँ?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "प्रविष्टि %(number)s खोलने पर, आपने यहाँ जो अधूरी आपूर्ति-शृंखला प्रविष्टि शुरू की है वह हट जाएगी। फिर भी प्रविष्टि %(number)s खोलें?"
   }
 }

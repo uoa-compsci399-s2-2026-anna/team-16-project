@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "入力 %(number)s は、サプライチェーン段階と食品カテゴリーが入力 %(other)s と同じです。2つをまとめるか、どちらかを変更してください。",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "入力 %(number)s は、すでに入力済みのサプライチェーン段階と食品カテゴリーと重複しています。2つをまとめるか、どちらかを変更してください。",
     "Open entry %(number)s": "入力 %(number)s を開く",
-    "You have already entered this combination": "この組み合わせはすでに入力されています"
+    "You have already entered this combination": "この組み合わせはすでに入力されています",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "戻ると、開いた入力に加えた変更は取り消されます。それでも戻りますか？",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "戻ると、作成途中の新しいサプライチェーンの入力は削除されます。それでも戻りますか？",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "入力 %(number)s を開くと、ここで作成途中のサプライチェーンの入力は未完成のため削除されます。それでも入力 %(number)s を開きますか？"
   }
 }

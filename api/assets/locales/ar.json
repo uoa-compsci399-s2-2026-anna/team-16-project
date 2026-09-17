@@ -367,6 +367,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "الإدخال %(number)s يطابق الإدخال %(other)s في مرحلة سلسلة الإمداد وفئة الطعام. ادمج الاثنين، أو غيّر أحدهما.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "الإدخال %(number)s يكرر مرحلة سلسلة إمداد وفئة طعام سبق أن أدخلتهما. ادمج الاثنين، أو غيّر أحدهما.",
     "Open entry %(number)s": "فتح الإدخال %(number)s",
-    "You have already entered this combination": "لقد أدخلت هذه التركيبة من قبل"
+    "You have already entered this combination": "لقد أدخلت هذه التركيبة من قبل",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "سيؤدي الرجوع إلى فقدان التغييرات التي أجريتها على الإدخال الذي فتحته. هل تريد الرجوع رغم ذلك؟",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "سيؤدي الرجوع إلى فقدان الإدخال الجديد لسلسلة الإمداد الذي بدأته. هل تريد الرجوع رغم ذلك؟",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "سيؤدي فتح الإدخال %(number)s إلى فقدان الإدخال غير المكتمل لسلسلة الإمداد الذي بدأته هنا. هل تريد فتح الإدخال %(number)s رغم ذلك؟"
   }
 }

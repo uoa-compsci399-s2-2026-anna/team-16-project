@@ -258,18 +258,48 @@ function moneyLines(totals) {
   return ['', t('The money'), ...lines]
 }
 
+// A pure hover tooltip: the pointer entering the `i` reveals it and leaving hides it, with
+// no click-to-latch state. The adjacent-sibling focus rule in CSS gives keyboard users the
+// same information when Tab puts a visible focus ring on the button.
+function resultExplanation(body, id) {
+  const tooltipId = `result-explanation-${id}`
+  return `<div class="result-explanation"><button class="result-explanation__trigger" type="button" aria-label="${escapeHtml(t('How this comparison was worked out'))}" aria-describedby="${escapeHtml(tooltipId)}">i</button><div class="result-explanation__body" id="${escapeHtml(tooltipId)}" role="tooltip">${body}</div></div>`
+}
+
+const METRIC_EXPLANATIONS = {
+  co2e: '<p>Shows the estimated climate impact of the food waste in kilograms of carbon-dioxide equivalent (kg CO2e).</p><p><strong>Calculation:</strong><br>Food waste (kg) × [production emissions factor + waste-destination emissions factor] = kg CO2e.</p><p>The production factor represents emissions from producing the food. The destination factor represents the effect of how the waste is managed. Results for all waste destinations are then added together.</p>',
+  ch4: '<p>Shows the estimated methane released by the food waste in kilograms of methane (kg CH4).</p><p><strong>Calculation:</strong><br>Food waste (kg) × [production methane factor + waste-destination methane factor] = kg CH4.</p><p>Results for all waste destinations are then added together.</p>',
+  water: '<p>Shows the estimated water associated with the food waste in litres.</p><p><strong>Calculation:</strong><br>Food waste (kg) × [production water factor + waste-destination water factor] = litres of water.</p><p>Results for all waste destinations are then added together.</p>',
+  cost: '<p>Shows the estimated disposal cost and waste levy in New Zealand dollars. It does not include the purchase or retail value of the food.</p><p><strong>Calculation:</strong><br>Food waste (kg) × applicable waste-management cost per kg = cost in NZD.</p><p>Costs for all waste destinations are then added together.</p>',
+}
+
+function metricExplanation(code, metric, definition) {
+  const unit = metricUnit(metric, definition)
+  return METRIC_EXPLANATIONS[code] || `<p>Shows the estimated ${escapeHtml(definition?.name || code)} impact of the food waste in ${escapeHtml(unit)}.</p><p><strong>Calculation:</strong><br>Food waste (kg) × the applicable impact factor = ${escapeHtml(unit)}.</p><p>Results for all waste destinations are then added together.</p>`
+}
+
+function massExplanation() {
+  return '<p>Shows the total weight of food waste recorded across all waste destinations.</p><p><strong>Calculation:</strong><br>Add together the food-waste weight recorded for each destination.</p><p>Tonnes are calculated by dividing the total kilograms by 1,000.</p>'
+}
+
+function shareExplanation() {
+  return '<p>Shows what percentage of the total food handled became waste.</p><p><strong>Calculation:</strong><br>Total food waste (kg) ÷ total food handled (kg) × 100 = percentage waste.</p><p>When there are multiple entries, the weights are added first. The individual percentages are not averaged.</p>'
+}
+
 function summaryCards(totals, taxonomy) {
   const metrics = totals.current?.metrics || {}
   const impactCards = Object.entries(metrics).filter(([code]) => code !== MASS_METRIC).map(([code, metric]) => {
     const definition = findByCode(taxonomy.metrics, code)
     const precision = Number(metric.display_precision ?? definition?.display_precision ?? 2)
     const total = number(metric.total)
-    return `<article class="result-card"><p class="result-label">${escapeHtml(definition?.name || code)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(metricUnit(metric, definition))}</p></article>`
+    const name = definition?.name || code
+    const unit = metricUnit(metric, definition)
+    return `<article class="result-card"><p class="result-label">${escapeHtml(name)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(unit)}</p>${resultExplanation(metricExplanation(code, metric, definition), code)}</article>`
   }).join('')
   const totalKg = number(totals.total_kg)
   const share = productionShareText(totals)
   const shareNote = share.note ? `<p class="result-note">${escapeHtml(share.note)}</p>` : ''
-  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p></article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}</article>`
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p>${resultExplanation(massExplanation(), 'mass')}</article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}${resultExplanation(shareExplanation(), 'production-share')}</article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and

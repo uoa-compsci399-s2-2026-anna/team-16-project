@@ -364,6 +364,11 @@
     "Per unit": "每單位",
     "Basis:": "依據：",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "換算係數由客戶提供；套用該係數的總量則來自暫定係數。",
-    "The basis for this conversion is not recorded yet.": "這項換算的依據尚未記錄。"
+    "The basis for this conversion is not recorded yet.": "這項換算的依據尚未記錄。",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "記錄 %(number)s 已經涵蓋了這個供應鏈環節和食物類別。每個組合只能填寫一次，請把這些數字併入記錄 %(number)s，或在這裡改選另一個食物類別。",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "記錄 %(number)s 與記錄 %(other)s 的供應鏈環節和食物類別相同。請把這兩筆合併，或更改一筆。",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "記錄 %(number)s 重複了您已經填寫過的供應鏈環節和食物類別。請把這兩筆合併，或更改一筆。",
+    "Open entry %(number)s": "開啟記錄 %(number)s",
+    "You have already entered this combination": "您已經填寫過這個組合"
   }
 }

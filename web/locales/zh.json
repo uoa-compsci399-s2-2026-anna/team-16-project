@@ -365,6 +365,11 @@
     "Per unit": "每单位",
     "Basis:": "依据：",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "换算系数由客户提供；应用该系数的总量则来自占位系数。",
-    "The basis for this conversion is not recorded yet.": "这项换算的依据尚未记录。"
+    "The basis for this conversion is not recorded yet.": "这项换算的依据尚未记录。",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "记录 %(number)s 已经涵盖了这个供应链环节和食物类别。每个组合只能填写一次，请把这些数字并入记录 %(number)s，或在这里改选另一个食物类别。",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "记录 %(number)s 与记录 %(other)s 的供应链环节和食物类别相同。请把这两条合并，或更改一条。",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "记录 %(number)s 重复了您已经填写过的供应链环节和食物类别。请把这两条合并，或更改一条。",
+    "Open entry %(number)s": "打开记录 %(number)s",
+    "You have already entered this combination": "您已经填写过这个组合"
   }
 }

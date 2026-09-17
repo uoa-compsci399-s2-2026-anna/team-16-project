@@ -361,6 +361,11 @@
     "Per unit": "એકમ દીઠ",
     "Basis:": "આધાર:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "રૂપાંતરણ પરિબળ ક્લાયન્ટ તરફથી આવે છે. જે કુલ રકમ પર તે લાગુ થાય છે તે કામચલાઉ પરિબળોમાંથી આવે છે.",
-    "The basis for this conversion is not recorded yet.": "આ રૂપાંતરણનો આધાર હજુ સુધી નોંધવામાં આવ્યો નથી."
+    "The basis for this conversion is not recorded yet.": "આ રૂપાંતરણનો આધાર હજુ સુધી નોંધવામાં આવ્યો નથી.",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "નોંધ %(number)s માં આ પુરવઠા-શૃંખલા તબક્કો અને ખોરાકની શ્રેણી પહેલેથી આવરી લેવાયાં છે. દરેક સંયોજન ફક્ત એક જ વાર દાખલ કરી શકાય છે, તેથી આ આંકડા નોંધ %(number)s માં ઉમેરો, અથવા અહીં બીજી શ્રેણી પસંદ કરો.",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "નોંધ %(number)s નો પુરવઠા-શૃંખલા તબક્કો અને ખોરાકની શ્રેણી નોંધ %(other)s જેવાં જ છે. બંનેને ભેગી કરો, અથવા તેમાંથી એક બદલો.",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "નોંધ %(number)s માં તમે પહેલેથી દાખલ કરેલા પુરવઠા-શૃંખલા તબક્કા અને ખોરાકની શ્રેણીનું પુનરાવર્તન થાય છે. બંનેને ભેગી કરો, અથવા તેમાંથી એક બદલો.",
+    "Open entry %(number)s": "નોંધ %(number)s ખોલો",
+    "You have already entered this combination": "તમે આ સંયોજન પહેલેથી દાખલ કરી ચૂક્યા છો"
   }
 }

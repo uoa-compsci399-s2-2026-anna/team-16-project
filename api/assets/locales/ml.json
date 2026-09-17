@@ -361,6 +361,11 @@
     "Per unit": "ഒരു യൂണിറ്റിന്",
     "Basis:": "ആധാരം:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "പരിവർത്തന ഘടകം ക്ലയന്റിൽ നിന്നാണ് ലഭിച്ചത്. ഇത് പ്രയോഗിക്കുന്ന ആകെത്തുക താൽക്കാലിക ഘടകങ്ങളിൽ നിന്നാണ്.",
-    "The basis for this conversion is not recorded yet.": "ഈ പരിവർത്തനത്തിന്റെ ആധാരം ഇതുവരെ രേഖപ്പെടുത്തിയിട്ടില്ല."
+    "The basis for this conversion is not recorded yet.": "ഈ പരിവർത്തനത്തിന്റെ ആധാരം ഇതുവരെ രേഖപ്പെടുത്തിയിട്ടില്ല.",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "എൻട്രി %(number)s ഈ വിതരണ ശൃംഖല ഘട്ടവും ഭക്ഷ്യ വിഭാഗവും ഇതിനകം ഉൾക്കൊള്ളുന്നു. ഓരോ സംയോജനവും ഒരിക്കൽ മാത്രമേ നൽകാനാകൂ, അതിനാൽ ഈ കണക്കുകൾ എൻട്രി %(number)s-ൽ ചേർക്കുക, അല്ലെങ്കിൽ ഇവിടെ മറ്റൊരു വിഭാഗം തിരഞ്ഞെടുക്കുക.",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "എൻട്രി %(number)s-നും എൻട്രി %(other)s-നും ഒരേ വിതരണ ശൃംഖല ഘട്ടവും ഭക്ഷ്യ വിഭാഗവുമാണുള്ളത്. രണ്ടും ഒന്നിപ്പിക്കുക, അല്ലെങ്കിൽ ഒന്ന് മാറ്റുക.",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "നിങ്ങൾ ഇതിനകം നൽകിയ വിതരണ ശൃംഖല ഘട്ടവും ഭക്ഷ്യ വിഭാഗവും എൻട്രി %(number)s ആവർത്തിക്കുന്നു. രണ്ടും ഒന്നിപ്പിക്കുക, അല്ലെങ്കിൽ ഒന്ന് മാറ്റുക.",
+    "Open entry %(number)s": "എൻട്രി %(number)s തുറക്കുക",
+    "You have already entered this combination": "ഈ സംയോജനം നിങ്ങൾ ഇതിനകം നൽകിയിട്ടുണ്ട്"
   }
 }

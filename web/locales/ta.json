@@ -361,6 +361,11 @@
     "Per unit": "ஒரு அலகுக்கு",
     "Basis:": "அடிப்படை:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "மாற்று காரணி வாடிக்கையாளரிடமிருந்து வருகிறது. இது பயன்படுத்தப்படும் மொத்த தொகை இடைநிலை காரணிகளிலிருந்து வருகிறது.",
-    "The basis for this conversion is not recorded yet.": "இந்த மாற்றத்திற்கான அடிப்படை இதுவரை பதிவு செய்யப்படவில்லை."
+    "The basis for this conversion is not recorded yet.": "இந்த மாற்றத்திற்கான அடிப்படை இதுவரை பதிவு செய்யப்படவில்லை.",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "பதிவு %(number)s இந்த விநியோகச் சங்கிலி நிலையையும் உணவு வகைப்பாட்டையும் ஏற்கெனவே உள்ளடக்கியுள்ளது. ஒவ்வொரு சேர்க்கையையும் ஒரு முறை மட்டுமே உள்ளிட முடியும், எனவே இந்த எண்களைப் பதிவு %(number)s-உடன் சேர்க்கவும், அல்லது இங்கே வேறு வகைப்பாட்டைத் தேர்ந்தெடுக்கவும்.",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "பதிவு %(number)s-க்கும் பதிவு %(other)s-க்கும் ஒரே விநியோகச் சங்கிலி நிலையும் உணவு வகைப்பாடும் உள்ளன. இரண்டையும் ஒன்றாக இணைக்கவும், அல்லது ஒன்றை மாற்றவும்.",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "நீங்கள் ஏற்கெனவே உள்ளிட்ட விநியோகச் சங்கிலி நிலையையும் உணவு வகைப்பாட்டையும் பதிவு %(number)s மீண்டும் கொண்டுள்ளது. இரண்டையும் ஒன்றாக இணைக்கவும், அல்லது ஒன்றை மாற்றவும்.",
+    "Open entry %(number)s": "பதிவு %(number)s-ஐத் திற",
+    "You have already entered this combination": "இந்தச் சேர்க்கையை நீங்கள் ஏற்கெனவே உள்ளிட்டுவிட்டீர்கள்"
   }
 }

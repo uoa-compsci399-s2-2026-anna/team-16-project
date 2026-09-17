@@ -361,6 +361,11 @@
     "Per unit": "प्रति इकाई",
     "Basis:": "आधार:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "रूपांतरण गुणांक क्लाइंट से मिलता है। जिस कुल राशि पर इसे लागू किया गया है, वह अस्थायी गुणांकों से मिलती है।",
-    "The basis for this conversion is not recorded yet.": "इस रूपांतरण का आधार अभी तक दर्ज नहीं किया गया है।"
+    "The basis for this conversion is not recorded yet.": "इस रूपांतरण का आधार अभी तक दर्ज नहीं किया गया है।",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "प्रविष्टि %(number)s में यह आपूर्ति-शृंखला चरण और खाद्य श्रेणी पहले से शामिल है। हर संयोजन केवल एक ही बार दर्ज किया जा सकता है, इसलिए इन आंकड़ों को प्रविष्टि %(number)s में जोड़ें, या यहाँ कोई दूसरी श्रेणी चुनें।",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "प्रविष्टि %(number)s और प्रविष्टि %(other)s का आपूर्ति-शृंखला चरण और खाद्य श्रेणी एक ही हैं। दोनों को मिलाएँ, या इनमें से एक को बदलें।",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "प्रविष्टि %(number)s में वही आपूर्ति-शृंखला चरण और खाद्य श्रेणी दोहराई गई है जो आप पहले ही दर्ज कर चुके हैं। दोनों को मिलाएँ, या इनमें से एक को बदलें।",
+    "Open entry %(number)s": "प्रविष्टि %(number)s खोलें",
+    "You have already entered this combination": "यह संयोजन आप पहले ही दर्ज कर चुके हैं"
   }
 }

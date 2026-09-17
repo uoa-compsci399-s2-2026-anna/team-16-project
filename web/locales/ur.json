@@ -362,6 +362,11 @@
     "Per unit": "فی یونٹ",
     "Basis:": "بنیاد:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "تبدیلی کا عنصر کلائنٹ کی طرف سے آتا ہے۔ جس کل رقم پر یہ لاگو ہوتا ہے وہ عارضی عناصر سے آتی ہے۔",
-    "The basis for this conversion is not recorded yet.": "اس تبدیلی کی بنیاد ابھی تک درج نہیں کی گئی۔"
+    "The basis for this conversion is not recorded yet.": "اس تبدیلی کی بنیاد ابھی تک درج نہیں کی گئی۔",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "اندراج %(number)s پہلے ہی اس سپلائی چین کے مرحلے اور کھانے کے زمرے کا احاطہ کرتا ہے۔ ہر مجموعہ صرف ایک بار درج کیا جا سکتا ہے، اس لیے یہ اعداد اس کے بجائے اندراج %(number)s میں شامل کریں، یا یہاں کوئی مختلف زمرہ منتخب کریں۔",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "اندراج %(number)s کا سپلائی چین کا مرحلہ اور کھانے کا زمرہ اندراج %(other)s جیسا ہی ہے۔ دونوں کو ملا دیں، یا ان میں سے ایک کو تبدیل کریں۔",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "اندراج %(number)s ایسے سپلائی چین کے مرحلے اور کھانے کے زمرے کو دہراتا ہے جو آپ پہلے ہی درج کر چکے ہیں۔ دونوں کو ملا دیں، یا ان میں سے ایک کو تبدیل کریں۔",
+    "Open entry %(number)s": "اندراج %(number)s کھولیں",
+    "You have already entered this combination": "آپ یہ مجموعہ پہلے ہی درج کر چکے ہیں"
   }
 }

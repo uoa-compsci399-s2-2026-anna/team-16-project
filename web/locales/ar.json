@@ -362,6 +362,11 @@
     "Per unit": "لكل وحدة",
     "Basis:": "الأساس:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "يأتي عامل التحويل من العميل، أمّا الإجمالي الذي يُطبَّق عليه فيأتي من عوامل مؤقتة.",
-    "The basis for this conversion is not recorded yet.": "لم يُسجَّل بعد أساس هذا التحويل."
+    "The basis for this conversion is not recorded yet.": "لم يُسجَّل بعد أساس هذا التحويل.",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "الإدخال %(number)s يغطي بالفعل مرحلة سلسلة الإمداد وفئة الطعام هاتين. لا يمكن إدخال أي تركيبة أكثر من مرة واحدة، لذا أضف هذه الأرقام إلى الإدخال %(number)s بدلاً من ذلك، أو اختر فئة مختلفة هنا.",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "الإدخال %(number)s يطابق الإدخال %(other)s في مرحلة سلسلة الإمداد وفئة الطعام. ادمج الاثنين، أو غيّر أحدهما.",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "الإدخال %(number)s يكرر مرحلة سلسلة إمداد وفئة طعام سبق أن أدخلتهما. ادمج الاثنين، أو غيّر أحدهما.",
+    "Open entry %(number)s": "فتح الإدخال %(number)s",
+    "You have already entered this combination": "لقد أدخلت هذه التركيبة من قبل"
   }
 }

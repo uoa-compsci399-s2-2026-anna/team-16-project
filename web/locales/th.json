@@ -361,6 +361,11 @@
     "Per unit": "ต่อหน่วย",
     "Basis:": "ที่มา:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "ค่าตัวคูณแปลงมาจากลูกค้า ส่วนยอดรวมที่นำค่านี้ไปใช้มาจากค่าตัวประกอบชั่วคราว",
-    "The basis for this conversion is not recorded yet.": "ยังไม่มีการบันทึกที่มาของการแปลงค่านี้"
+    "The basis for this conversion is not recorded yet.": "ยังไม่มีการบันทึกที่มาของการแปลงค่านี้",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "รายการที่ %(number)s ครอบคลุมขั้นตอนในห่วงโซ่อุปทานและหมวดหมู่อาหารนี้อยู่แล้ว แต่ละชุดค่าผสมกรอกได้เพียงครั้งเดียว จึงควรนำตัวเลขเหล่านี้ไปรวมกับรายการที่ %(number)s แทน หรือเลือกหมวดหมู่อื่นที่นี่",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "รายการที่ %(number)s มีขั้นตอนในห่วงโซ่อุปทานและหมวดหมู่อาหารเหมือนกับรายการที่ %(other)s กรุณารวมสองรายการเข้าด้วยกัน หรือเปลี่ยนรายการใดรายการหนึ่ง",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "รายการที่ %(number)s ซ้ำกับขั้นตอนในห่วงโซ่อุปทานและหมวดหมู่อาหารที่คุณกรอกไว้แล้ว กรุณารวมสองรายการเข้าด้วยกัน หรือเปลี่ยนรายการใดรายการหนึ่ง",
+    "Open entry %(number)s": "เปิดรายการที่ %(number)s",
+    "You have already entered this combination": "คุณกรอกชุดค่าผสมนี้ไว้แล้ว"
   }
 }

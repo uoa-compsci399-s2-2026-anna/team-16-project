@@ -361,6 +361,11 @@
     "Per unit": "За единицу",
     "Basis:": "Основание:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "Коэффициент пересчёта предоставлен клиентом. Итоговое значение, к которому он применяется, получено из условных коэффициентов.",
-    "The basis for this conversion is not recorded yet.": "Основание для этого пересчёта пока не указано."
+    "The basis for this conversion is not recorded yet.": "Основание для этого пересчёта пока не указано.",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "Запись %(number)s уже охватывает этот этап цепочки поставок и эту категорию продуктов. Каждое сочетание можно указать только один раз, поэтому добавьте эти цифры в запись %(number)s или выберите здесь другую категорию.",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "У записи %(number)s тот же этап цепочки поставок и та же категория продуктов, что и у записи %(other)s. Объедините их или измените одну из них.",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "Запись %(number)s повторяет этап цепочки поставок и категорию продуктов, которые вы уже указали. Объедините их или измените одну из них.",
+    "Open entry %(number)s": "Открыть запись %(number)s",
+    "You have already entered this combination": "Вы уже указали это сочетание"
   }
 }

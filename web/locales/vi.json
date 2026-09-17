@@ -361,6 +361,11 @@
     "Per unit": "Trên mỗi đơn vị",
     "Basis:": "Căn cứ:",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "Hệ số quy đổi do khách hàng cung cấp. Tổng số mà hệ số này được áp dụng vào lấy từ các hệ số tạm.",
-    "The basis for this conversion is not recorded yet.": "Căn cứ của phép quy đổi này chưa được ghi lại."
+    "The basis for this conversion is not recorded yet.": "Căn cứ của phép quy đổi này chưa được ghi lại.",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "Mục %(number)s đã bao gồm giai đoạn chuỗi cung ứng và nhóm thực phẩm này. Mỗi tổ hợp chỉ được nhập một lần, vì vậy hãy cộng các số liệu này vào mục %(number)s, hoặc chọn nhóm thực phẩm khác ở đây.",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "Mục %(number)s có cùng giai đoạn chuỗi cung ứng và nhóm thực phẩm với mục %(other)s. Hãy gộp hai mục lại, hoặc thay đổi một trong hai.",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "Mục %(number)s lặp lại giai đoạn chuỗi cung ứng và nhóm thực phẩm mà bạn đã nhập. Hãy gộp hai mục lại, hoặc thay đổi một trong hai.",
+    "Open entry %(number)s": "Mở mục %(number)s",
+    "You have already entered this combination": "Bạn đã nhập tổ hợp này rồi"
   }
 }

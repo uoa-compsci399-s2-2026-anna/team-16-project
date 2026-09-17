@@ -361,6 +361,11 @@
     "Per unit": "単位あたり",
     "Basis:": "根拠：",
     "The conversion factor comes from the client. The total it is applied to comes from placeholder factors.": "換算係数はクライアントから提供されたものです。それが適用される合計値は仮の係数によるものです。",
-    "The basis for this conversion is not recorded yet.": "この換算の根拠はまだ記録されていません。"
+    "The basis for this conversion is not recorded yet.": "この換算の根拠はまだ記録されていません。",
+    "Entry %(number)s already covers this supply-chain stage and food category. Each combination can only be entered once, so add these figures to entry %(number)s instead, or choose a different category here.": "入力 %(number)s がすでにこのサプライチェーン段階と食品カテゴリーを扱っています。同じ組み合わせは一度しか入力できないため、これらの数値は入力 %(number)s にまとめるか、ここで別の食品カテゴリーを選んでください。",
+    "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "入力 %(number)s は、サプライチェーン段階と食品カテゴリーが入力 %(other)s と同じです。2つをまとめるか、どちらかを変更してください。",
+    "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "入力 %(number)s は、すでに入力済みのサプライチェーン段階と食品カテゴリーと重複しています。2つをまとめるか、どちらかを変更してください。",
+    "Open entry %(number)s": "入力 %(number)s を開く",
+    "You have already entered this combination": "この組み合わせはすでに入力されています"
   }
 }

@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "รายการที่ %(number)s มีขั้นตอนในห่วงโซ่อุปทานและหมวดหมู่อาหารเหมือนกับรายการที่ %(other)s กรุณารวมสองรายการเข้าด้วยกัน หรือเปลี่ยนรายการใดรายการหนึ่ง",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "รายการที่ %(number)s ซ้ำกับขั้นตอนในห่วงโซ่อุปทานและหมวดหมู่อาหารที่คุณกรอกไว้แล้ว กรุณารวมสองรายการเข้าด้วยกัน หรือเปลี่ยนรายการใดรายการหนึ่ง",
     "Open entry %(number)s": "เปิดรายการที่ %(number)s",
-    "You have already entered this combination": "คุณกรอกชุดค่าผสมนี้ไว้แล้ว"
+    "You have already entered this combination": "คุณกรอกชุดค่าผสมนี้ไว้แล้ว",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "การย้อนกลับจะทิ้งการเปลี่ยนแปลงที่คุณทำไว้ในรายการที่คุณเปิด ต้องการย้อนกลับหรือไม่",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "การย้อนกลับจะทิ้งรายการห่วงโซ่อุปทานใหม่ที่คุณเริ่มไว้ ต้องการย้อนกลับหรือไม่",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "การเปิดรายการที่ %(number)s จะทิ้งรายการห่วงโซ่อุปทานที่คุณเริ่มไว้ที่นี่ซึ่งยังไม่เสร็จ ต้องการเปิดรายการที่ %(number)s หรือไม่"
   }
 }

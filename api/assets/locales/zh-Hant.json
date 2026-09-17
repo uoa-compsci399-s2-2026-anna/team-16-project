@@ -369,6 +369,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "記錄 %(number)s 與記錄 %(other)s 的供應鏈環節和食物類別相同。請把這兩筆合併，或更改一筆。",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "記錄 %(number)s 重複了您已經填寫過的供應鏈環節和食物類別。請把這兩筆合併，或更改一筆。",
     "Open entry %(number)s": "開啟記錄 %(number)s",
-    "You have already entered this combination": "您已經填寫過這個組合"
+    "You have already entered this combination": "您已經填寫過這個組合",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "返回會放棄您對開啟的那筆記錄的更改。仍要返回嗎？",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "返回會放棄您已開始填寫的這筆新的供應鏈記錄。仍要返回嗎？",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "開啟記錄 %(number)s 會放棄您在這裡已開始填寫、但尚未完成的供應鏈記錄。仍要開啟記錄 %(number)s 嗎？"
   }
 }

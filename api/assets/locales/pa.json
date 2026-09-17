@@ -368,6 +368,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "ਐਂਟਰੀ %(number)s ਦਾ ਸਪਲਾਈ-ਚੇਨ ਪੜਾਅ ਅਤੇ ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਐਂਟਰੀ %(other)s ਵਾਲੇ ਹੀ ਹਨ। ਦੋਵਾਂ ਨੂੰ ਇੱਕ ਕਰੋ, ਜਾਂ ਇਹਨਾਂ ਵਿੱਚੋਂ ਇੱਕ ਬਦਲੋ।",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "ਐਂਟਰੀ %(number)s ਵਿੱਚ ਉਹੀ ਸਪਲਾਈ-ਚੇਨ ਪੜਾਅ ਅਤੇ ਭੋਜਨ ਸ਼੍ਰੇਣੀ ਦੁਹਰਾਈ ਗਈ ਹੈ ਜੋ ਤੁਸੀਂ ਪਹਿਲਾਂ ਹੀ ਭਰ ਚੁੱਕੇ ਹੋ। ਦੋਵਾਂ ਨੂੰ ਇੱਕ ਕਰੋ, ਜਾਂ ਇਹਨਾਂ ਵਿੱਚੋਂ ਇੱਕ ਬਦਲੋ।",
     "Open entry %(number)s": "ਐਂਟਰੀ %(number)s ਖੋਲ੍ਹੋ",
-    "You have already entered this combination": "ਤੁਸੀਂ ਇਹ ਸੁਮੇਲ ਪਹਿਲਾਂ ਹੀ ਭਰ ਚੁੱਕੇ ਹੋ"
+    "You have already entered this combination": "ਤੁਸੀਂ ਇਹ ਸੁਮੇਲ ਪਹਿਲਾਂ ਹੀ ਭਰ ਚੁੱਕੇ ਹੋ",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "ਪਿੱਛੇ ਜਾਣ ਨਾਲ, ਤੁਸੀਂ ਖੋਲ੍ਹੀ ਹੋਈ ਐਂਟਰੀ ਵਿੱਚ ਕੀਤੇ ਬਦਲਾਅ ਰੱਦ ਹੋ ਜਾਣਗੇ। ਫਿਰ ਵੀ ਪਿੱਛੇ ਜਾਣਾ ਹੈ?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "ਪਿੱਛੇ ਜਾਣ ਨਾਲ, ਤੁਸੀਂ ਜੋ ਨਵੀਂ ਸਪਲਾਈ-ਚੇਨ ਐਂਟਰੀ ਸ਼ੁਰੂ ਕੀਤੀ ਹੈ ਉਹ ਰੱਦ ਹੋ ਜਾਵੇਗੀ। ਫਿਰ ਵੀ ਪਿੱਛੇ ਜਾਣਾ ਹੈ?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "ਐਂਟਰੀ %(number)s ਖੋਲ੍ਹਣ ਨਾਲ, ਤੁਸੀਂ ਇੱਥੇ ਜੋ ਅਧੂਰੀ ਸਪਲਾਈ-ਚੇਨ ਐਂਟਰੀ ਸ਼ੁਰੂ ਕੀਤੀ ਹੈ ਉਹ ਰੱਦ ਹੋ ਜਾਵੇਗੀ। ਫਿਰ ਵੀ ਐਂਟਰੀ %(number)s ਖੋਲ੍ਹਣੀ ਹੈ?"
   }
 }

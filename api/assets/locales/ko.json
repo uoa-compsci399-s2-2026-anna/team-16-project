@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "항목 %(number)s의 공급망 단계와 음식 분류가 항목 %(other)s에 입력한 것과 같습니다. 두 항목을 합치거나 둘 중 하나를 변경하세요.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "항목 %(number)s에 이미 입력한 공급망 단계와 음식 분류가 다시 사용되었습니다. 두 항목을 합치거나 둘 중 하나를 변경하세요.",
     "Open entry %(number)s": "항목 %(number)s 열기",
-    "You have already entered this combination": "이미 입력한 조합입니다"
+    "You have already entered this combination": "이미 입력한 조합입니다",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "뒤로 가면 방금 연 항목에 적용한 변경 내용이 사라집니다. 그래도 뒤로 갈까요?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "뒤로 가면 새로 작성하기 시작한 공급망 항목이 사라집니다. 그래도 뒤로 갈까요?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "항목 %(number)s 열기를 선택하면 여기에서 작성 중인, 아직 완성되지 않은 공급망 항목이 사라집니다. 그래도 항목 %(number)s 열기를 선택할까요?"
   }
 }

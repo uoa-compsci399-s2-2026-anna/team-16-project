@@ -75,6 +75,75 @@ export const state = {
   // returns here. Anything that renders by index into `screens` must therefore guard
   // -1 first; `render()` does.
   step: -1,
+  // **How the visitor got to the step they are on, when they did not walk there** —
+  // `null`, or `{from, step, entries?, draft?, kind?, after?}`. Written by the
+  // navigation that performs the jump, read only by that step's own Back, cleared on the
+  // next arrival at the review step and by `resetCalculator` below.
+  //
+  // It cannot be derived. `state.entries.length` cannot tell an add from an edit from a
+  // walk backwards, and by the time step 1 renders the evidence is already gone:
+  // `add-entry` has pushed the draft into `entries` and emptied it, and `edit-entry` has
+  // removed an entry and overwritten the draft with it. So the jump records what it is
+  // about to move, at the one moment that is still knowable.
+  //
+  //   * `from` — the screen index this marker is about. It is what keeps the marker from
+  //     firing on a *different* step's Back: the food step's Back emits the same
+  //     `data-action="go-step" data-step="0"` that step 1's own Back does, and a marker
+  //     keyed on the target rather than on the origin would ping-pong between the two
+  //     with the introduction unreachable.
+  //   * `step` — where Back goes. It is `4` for a jump made from the review step and `1`
+  //     for one made from step 2's duplicate notice; it records where the visitor stood,
+  //     never a constant.
+  //   * `kind` / `after` — what the Back this marker belongs to has to ask
+  //     before it discards anything. `kind` is `'add'` or `'edit'` and picks between two
+  //     messages, because a chain being started and alterations to a saved entry are
+  //     different losses. A third field, `number`, recorded the entry number the visitor
+  //     clicked so that an edit's question could name it; it is gone, because
+  //     `edit-entry` now puts the displaced draft at that same index and the number
+  //     therefore addresses a card the question is not about — see `discardPrompt` in
+  //     `calculator.js`. `after` is a fingerprint of the
+  //     entries and the draft **as the jump left them**, and it is the whole of the test
+  //     for whether the undo would throw anything away: equal to now means every
+  //     keystroke since is absent and the restore is a no-op, so nothing is asked. It is
+  //     a separate field from `entries`/`draft` above because those record the state
+  //     *before* the jump and this one records the state *after* it — the dialog fires on
+  //     the difference between `after` and now, never on the difference between before
+  //     and after, which is the jump itself and is exactly what Back exists to reverse.
+  //     Present only alongside `draft`; a marker that moved nothing never asks.
+  //   * `entries` / `draft` — present only when the navigation itself *moved* something,
+  //     so that backing out can put it back. A snapshot rather than a per-caller inverse,
+  //     because `edit-entry` already has two call sites and the displaced draft cannot be
+  //     reconstructed from anything that survives.
+  //
+  //     **They are an undo, never the only copy of anything.** `edit-entry` once left the
+  //     chain it displaced here and nowhere else, so walking forward — where `continue`
+  //     drops the marker on the 3 -> 4 move, and `start` and `submitCalculation` drop it
+  //     too — destroyed a complete supply-chain entry with nothing shown. It now trades a
+  //     complete draft onto the saved list instead, where the visitor can see it and no
+  //     navigation can drop it. Anything added here has to hold that line: a marker may
+  //     be discarded at any moment, so what only it remembers is what the visitor loses.
+  //
+  //     `entries` is a shallow copy; the entry
+  //     objects inside it are shared, which is safe only while nothing mutates an entry in
+  //     place (today `calculator.js` replaces the array every time).
+  //
+  // **One slot, so the undo is one deep.** A jump made while a marker is live overwrites
+  // it. Nothing is lost when that happens — the outer jump's own mutation stays applied —
+  // but the outer undo is gone, and the visitor is back to walking out of the wizard.
+  //
+  // **A marker holding an undo survives a forward walk, and the confirmation is why that
+  // is safe.** A visitor may press Add, build a whole second chain across four screens
+  // and walk Back to step 1 with the marker still live. Backing out there is a real
+  // discard, so `goToStep` (`calculator.js`) asks before it runs — and only when `after`
+  // says there is something to discard, so pressing Add and immediately pressing Back is
+  // silent.
+  //
+  // **A marker holding no undo does not survive one**, and must not: a review *Edit*
+  // link's marker moved nothing, so it exists only to point one step's Back at the
+  // review step. Left live once that step had been walked past it aimed Back *forward*,
+  // and step 1 and the introduction became unreachable by any number of Back presses.
+  // `markerAfterLeaving` (`calculator.js`) is where the two are told apart, on `draft`.
+  returnTo: null,
   expandedSectors: [],
   resultBreakdownTab: 'stage',
   lastChangedDestination: null,
@@ -210,6 +279,9 @@ export function resetCalculator() {
     fieldErrors: {},
     rateLimitedUntil: 0,
     step: -1,
+    // Cleared with everything else, and it has to be: a marker that outlived Clear would
+    // let Back resurrect entries the visitor had just deleted.
+    returnTo: null,
     expandedSectors: [],
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,

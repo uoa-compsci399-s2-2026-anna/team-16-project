@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "У записи %(number)s тот же этап цепочки поставок и та же категория продуктов, что и у записи %(other)s. Объедините их или измените одну из них.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "Запись %(number)s повторяет этап цепочки поставок и категорию продуктов, которые вы уже указали. Объедините их или измените одну из них.",
     "Open entry %(number)s": "Открыть запись %(number)s",
-    "You have already entered this combination": "Вы уже указали это сочетание"
+    "You have already entered this combination": "Вы уже указали это сочетание",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Если вернуться назад, изменения, внесённые в открытую вами запись, будут отменены. Всё равно вернуться назад?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Если вернуться назад, начатая вами новая запись по цепочке поставок будет удалена. Всё равно вернуться назад?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "Если открыть запись %(number)s, начатая здесь незавершённая запись по цепочке поставок будет удалена. Всё равно открыть запись %(number)s?"
   }
 }

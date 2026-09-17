@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "பதிவு %(number)s-க்கும் பதிவு %(other)s-க்கும் ஒரே விநியோகச் சங்கிலி நிலையும் உணவு வகைப்பாடும் உள்ளன. இரண்டையும் ஒன்றாக இணைக்கவும், அல்லது ஒன்றை மாற்றவும்.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "நீங்கள் ஏற்கெனவே உள்ளிட்ட விநியோகச் சங்கிலி நிலையையும் உணவு வகைப்பாட்டையும் பதிவு %(number)s மீண்டும் கொண்டுள்ளது. இரண்டையும் ஒன்றாக இணைக்கவும், அல்லது ஒன்றை மாற்றவும்.",
     "Open entry %(number)s": "பதிவு %(number)s-ஐத் திற",
-    "You have already entered this combination": "இந்தச் சேர்க்கையை நீங்கள் ஏற்கெனவே உள்ளிட்டுவிட்டீர்கள்"
+    "You have already entered this combination": "இந்தச் சேர்க்கையை நீங்கள் ஏற்கெனவே உள்ளிட்டுவிட்டீர்கள்",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "பின்செல்வது, நீங்கள் திறந்த பதிவில் செய்த மாற்றங்களை நீக்கிவிடும். இருப்பினும் பின்செல்லவா?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "பின்செல்வது, நீங்கள் தொடங்கிய புதிய விநியோகச் சங்கிலி பதிவை நீக்கிவிடும். இருப்பினும் பின்செல்லவா?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "பதிவு %(number)s-ஐத் திறப்பது, நீங்கள் இங்கே தொடங்கிய, இன்னும் முழுமையடையாத விநியோகச் சங்கிலி பதிவை நீக்கிவிடும். இருப்பினும் பதிவு %(number)s-ஐத் திறக்கவா?"
   }
 }

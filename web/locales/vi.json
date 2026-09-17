@@ -366,6 +366,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "Mục %(number)s có cùng giai đoạn chuỗi cung ứng và nhóm thực phẩm với mục %(other)s. Hãy gộp hai mục lại, hoặc thay đổi một trong hai.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "Mục %(number)s lặp lại giai đoạn chuỗi cung ứng và nhóm thực phẩm mà bạn đã nhập. Hãy gộp hai mục lại, hoặc thay đổi một trong hai.",
     "Open entry %(number)s": "Mở mục %(number)s",
-    "You have already entered this combination": "Bạn đã nhập tổ hợp này rồi"
+    "You have already entered this combination": "Bạn đã nhập tổ hợp này rồi",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Quay lại sẽ bỏ những thay đổi bạn đã thực hiện cho mục bạn đã mở. Bạn vẫn muốn quay lại?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Quay lại sẽ bỏ mục chuỗi cung ứng mới mà bạn đã bắt đầu nhập. Bạn vẫn muốn quay lại?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "Mở mục %(number)s sẽ bỏ mục chuỗi cung ứng bạn đã bắt đầu nhập ở đây, vì mục đó chưa hoàn tất. Bạn vẫn muốn mở mục %(number)s?"
   }
 }

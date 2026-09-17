@@ -367,6 +367,9 @@
     "Entry %(number)s has the same supply-chain stage and food category as entry %(other)s. Combine the two, or change one of them.": "Pareho ang yugto ng daloy ng suplay at kategorya ng pagkain ng tala %(number)s at ng tala %(other)s. Pagsamahin ang dalawa, o baguhin ang isa sa mga ito.",
     "Entry %(number)s repeats a supply-chain stage and food category you have already entered. Combine the two, or change one of them.": "Inuulit ng tala %(number)s ang yugto ng daloy ng suplay at kategorya ng pagkaing nailagay mo na. Pagsamahin ang dalawa, o baguhin ang isa sa mga ito.",
     "Open entry %(number)s": "Buksan ang tala %(number)s",
-    "You have already entered this combination": "Nailagay mo na ang kombinasyong ito"
+    "You have already entered this combination": "Nailagay mo na ang kombinasyong ito",
+    "Going back will discard the changes you have made to the entry you opened. Go back anyway?": "Kapag bumalik ka, mawawala ang mga pagbabagong ginawa mo sa talang binuksan mo. Bumalik pa rin?",
+    "Going back will discard the new supply-chain entry you have started. Go back anyway?": "Kapag bumalik ka, mawawala ang bagong tala sa daloy ng suplay na sinimulan mo. Bumalik pa rin?",
+    "Opening entry %(number)s will discard the supply-chain entry you have started here, which is not finished. Open entry %(number)s anyway?": "Kapag binuksan mo ang tala %(number)s, mawawala ang tala sa daloy ng suplay na sinimulan mo rito, na hindi pa tapos. Buksan pa rin ang tala %(number)s?"
   }
 }

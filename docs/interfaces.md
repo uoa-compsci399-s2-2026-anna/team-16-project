@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-17 (v1.54 draft)"
+date: "2026-09-17 (v1.55 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,33 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.55 — 2026-09-17 (a supply-chain entry forks into one entry per food type, across steps 2, 3, 4 and the improvement panel; affects C and D, and A and B not at all)
+
+Stage 2 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order, with owner decision 6 (§10) folded in: **step 4 forks too, and so does the improvement panel.** It is numbered v1.55 rather than "v1.54 part one", which is already this document's name for the schema landing that merged first — a revision identity that names two different changes cannot be checked in either direction.
+
+**`web/`, and two lines of `api/pdf_render.py` (row 7).** No table, no migration, no route, no engine change, and **no request or response shape changes**: a chain that names several food categories sends one `entries[]` element per category, which is what §6.2 has always accepted. `MAX_ENTRIES` is unchanged at 20 and now counts leaves rather than chains, which the form restates client-side so a twenty-first leaf is refused at the tick rather than as a 400 two screens later. `tests/fixtures/*.json` are therefore untouched, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
+
+**The translatable surface**, counted rather than estimated, because §7.7.1 makes the English source string the key and a reworded sentence orphans every translation of it. Against `web/locales/*.json` as they stand, the fork adds **35** keys and retires **11**; `tests/web/test_i18n_web.py` is therefore red for twenty locales until the translation pass runs, which is known, separate work.
+
+Four of the 35 belong to this revision specifically, and each closes a defect rather than adding a feature:
+
+* **`', '`** — the list separator. It was `t('List separator')`, which is a *description* of a string and not the string, so the review step rendered `DairyList separatorBakery and grainsList separatorFruit`. §7.7.1's rule is that the English key IS the English output, and `", "` is as overridable by a catalogue as any other key.
+* **`This entry will be calculated as %(leaves)s food-type entries.`** — `t()` has no plural machinery, so the singular is its own key. One chain naming three foods, which is the commonest forked case, read *These 1 entries will be calculated as 3 food-type entries.*
+* **`%(food)s: %(message)s`** — the improvement panel's validation message names the food when there is more than one; "allocations must total 100%" pointing at no particular card is unactionable on a five-column panel.
+* **`Redistribute each food type's own waste across different destinations. Each food type's total must remain unchanged.`** — the panel's intro. "The current waste amount" reads as one pool being split between foods, which is not what a forked panel's sliders do.
+
+Three of the 11 retirements are `leafDisplayName` absorbing them: `Standard mix / not specified`, `Food type not provided` and `Not provided`.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **The draft is a CHAIN and the wire carries LEAVES.** `foodCategory` (singular) is replaced by `foodCategories`, `foodUnspecified` and `foodItems`; the eight amount/unit/scalar keys and `current` move into `leafFigures`, keyed by the leaf's own identity. `entryLeaves`, `leafKey`, `leafFigures` and `leafDisplayName` are exported from `state.js` — the only module `calculator.js`, `submission.js`, `improvement.js` and `results.js` can all import without closing a cycle | §7.2 |
+| 2 | **`state.errorAt`** — `{leaf, field}`, replacing "compare `state.error` against the string each validator returns". Two leaves produce the byte-identical "Waste amount must be greater than zero.", so string identity cannot decide which card to highlight | §7.2 |
+| 3 | **`improvedAllocations` is one allocation PER LEAF**, an array in submission order, and `improvementChartExpanded` is `null`-or-an-index rather than a boolean. One submission-wide split applied to every leaf's own mass made *Match the current allocation* stop being an identity on a forked chain | §7.2 |
+| 4 | **`leafDisplayName(leaf, taxonomy)` is the only thing that names a leaf**, read by steps 3 and 4, the review step, the saved-entry card, the results page and the text export. One leaf had four names, and a NULL `food_category` and the `standard_mix` category rendered byte-identical on the results page | §7.2 |
+| 5 | **`submissionLeaves(chains)`** — the one crossing from chains to `entries[]`; and **`submissionPayload`'s `alternativeFor` is now `(leaf, index)`**, because the improvement panel selects a leaf's own allocation by its position in the submission | §7.3b |
+| 6 | **`draftLinePaths()` replaces `draftFieldPaths()`'s description**, keyed by line `id` and rooted at each row's own leaf's request index. The draft now occupies a *range* of `entries[]` indices, so the old root `entries[state.entries.length]` bound every leaf's rows to the first leaf | §7.3a |
+| 7 | **The PDF stops printing an absent `food_category` as the standard mix.** The engine still resolves a NULL category to the standard mix, but the two are now separate *answers* a visitor gives with separate checkboxes and they are distinguishable on the wire — the standard mix sends its own `code`, "I do not know" sends `null` — so substituting printed them byte-identically. An unstated food type prints as `ABSENT`, the document's existing convention, and **no new catalogue string is involved**: `Catalogue.gettext` raises rather than falling back to English, so a new string on this path would refuse to render the document in every language that had not translated it yet | §6.2.3 |
 
 ### v1.54 part one — 2026-09-17 (the schema learns the food item level, and nothing else changes; affects B and E, and A, C and D only as advance notice)
 
@@ -3244,11 +3271,22 @@ export function subscribe(fn);
 export function resetCalculator();
 
 /**
- * The entry being typed, as a saved entry: every key the visitor filled in and
- * nothing derived — `sector`, `foodCategory`, `totalAmount`, `totalUnit`,
- * `measureMode`, `unitPreset`, `unitCount`, `totalInputKg`, `totalValueNzd`,
- * `wastedValueNzd`, and `current` copied row by row so a later edit of the draft
- * cannot reach into an entry already committed to `state.entries`.
+ * The **chain** being typed, as a saved chain: every key the visitor filled in and
+ * nothing derived — `sector`, `foodCategories`, `foodUnspecified`, `foodItems`,
+ * `totalUnit`, and `leafFigures`, a map from each leaf's own key to the nine figures
+ * that leaf carries (`totalAmount`, `totalUnit`, `measureMode`, `unitPreset`,
+ * `unitCount`, `totalInputKg`, `totalValueNzd`, `wastedValueNzd`, `current`), copied
+ * row by row so a later edit of the draft cannot reach into a chain already committed
+ * to `state.entries`.
+ *
+ * **It returns one chain, never an array of leaves.** `state.entries` holds what the
+ * visitor built and can Edit or Remove as a unit; the fan-out to `entries[]` happens at
+ * exactly one place on the way to the wire, `submissionLeaves` (§7.3b).
+ *
+ * **It prunes `leafFigures` to `entryLeaves()`.** A category ticked, filled and then
+ * unticked leaves a record behind; unpruned it is fingerprinted, makes the back-out
+ * confirmation fire on a Back that discards nothing, and is silently restored on a
+ * re-tick.
  *
  * **It lives here rather than in `calculator.js` because two modules build
  * submissions.** It was private to `calculator.js`, and `improvement.js` carried
@@ -3262,6 +3300,61 @@ export function resetCalculator();
 export function draftEntry();
 
 /**
+ * **The leaf rule, and the only definition of it.**
+ *
+ * > A chain's leaves are: every ticked food item; plus every selected category with no
+ * > item ticked; plus one category-less leaf when the chain names no category at all —
+ * > either because nothing is ticked, or because "I do not know" is. The leaves are the
+ * > chain's entries. Every element of the request body's `entries[]` is a leaf, and
+ * > nothing else is.
+ *
+ * It lives in `state.js` because four modules must agree about it — `calculator.js`
+ * (steps 2, 3, 4, the review step, the duplicate notice, the validation router),
+ * `submission.js` (the request body), `improvement.js` (`submissionEntries`,
+ * `improvedLines`, `currentAllocationPercentages`) and `results.js` (labelling a
+ * breakdown row) — and this is the only module all four can import without closing a
+ * cycle: it imports nothing at all.
+ *
+ * Order is the visitor's **ticking order**, not `sort_order`, so step 3's cards and
+ * step 4's columns appear in the order they were created and do not reshuffle when a
+ * category is added.
+ *
+ * @param {object} chain
+ * @returns {Array<{foodCategory: string|null, foodItem: string|null}>} in selection order
+ */
+export function entryLeaves(chain);
+
+/** One leaf's identity as a map key: `${foodCategory || ''}\u0000${foodItem || ''}`. */
+export const leafKey;
+
+/** One leaf's nine figures off a chain, defaulted and deep-copied. */
+export function leafFigures(chain, leaf);
+
+/**
+ * **A leaf's name, and the only place one is decided.**
+ *
+ * The item's name, or the category's, or — for a leaf that names no food — the words §5.4
+ * gives that answer, `Not broken down by type`. Six surfaces show a leaf by name (steps 3
+ * and 4, the review step, the saved-entry card, the results page and the text export), and
+ * while each decided for itself there were two defects at once: **one leaf had four
+ * names**, and **two different leaves could render byte-identical** — `results.js`
+ * returned `Standard mix / not specified` both for a NULL `food_category` and for the
+ * `standard_mix` category, which step 2 offers as two separate boxes because §5.4 requires
+ * them to be two separate answers. A visitor ticking both got two indistinguishable rows
+ * carrying different numbers.
+ *
+ * It takes the taxonomy rather than reading `state`, so `results.js` can name a leaf from
+ * a paired response's own `food_category`. It is in `state.js` for the reason
+ * `entryLeaves` is, and it is why this module imports `i18n.js` — the only import it has,
+ * and safe because `i18n.js` imports nothing at all.
+ *
+ * @param {{foodCategory: string|null, foodItem: string|null}} leaf
+ * @param {object} taxonomy  §6.1's response
+ * @returns {string}
+ */
+export function leafDisplayName(leaf, taxonomy);
+
+/**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
  * preserve request order. Each paired `response` is one entry's `current` /
  * `alternative` / `net_benefit` plus the submission-level `factor_set`,
@@ -3272,7 +3365,14 @@ export function draftEntry();
  * cross-entry figures from `result.totals` (§7.6.1) and per-entry figures from
  * `result.entry_results` — never a sum over the latter.
  *
- * @param {Array<object>} entries   Draft entries, in the order they were sent
+ * **What it must be handed is LEAVES, never chains.** One chain now carries several
+ * `entries[]`, and this pairs purely by index — hand it the chain array while the
+ * request carried leaves and every figure on the results page, in the text export and
+ * in the PDF is attached to the wrong entry, with no error and no warning anywhere.
+ * `submitCalculation` builds the leaf array with the same `submissionLeaves` call the
+ * request body was built from, for exactly that reason.
+ *
+ * @param {Array<object>} entries   The submission's LEAVES, in the order they were sent
  * @param {object} response         The §6.2 response
  * @returns {Array<{entry: object, response: object}>}
  */
@@ -3285,11 +3385,39 @@ Keys, grouped. **This is C's shape and the contract has adopted it**; the previo
 | --- | --- |
 | Server data | `taxonomy`, `result` |
 | Session | `token` — initialised from `sessionStorage.kaiCalculatorToken` at module load |
-| Draft entry | `sector`, `foodCategory`, `gwpHorizon`, `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit` (`'kilograms'` \| `'tonnes'`), `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `current: [{id, destination, qtyInput}]` |
-| Multi-entry | `entries: []` — committed entries, same shape as the draft |
+| Draft chain | `sector`, `gwpHorizon`, `foodCategories: []` (category `code`s in ticking order), `foodUnspecified` (the explicit "I do not know" answer), `foodItems: {categoryCode: [itemCode]}` (reserved for step 2.5; nothing writes it yet), `totalUnit` (`'kilograms'` \| `'tonnes'` — narrowed to the unit the chain's *combined* figures are stated in, fixed at the 3 → 4 move and never re-derived) |
+| Per leaf | `leafFigures: {leafKey: leafRecord}`, where a leaf record is `measureMode` (`'mass'` \| `'container'`), `totalAmount` (raw string), `totalUnit`, `unitPreset` (a `unit_preset` code, or null), `unitCount` (raw string), `totalInputKg`, `totalValueNzd`, `wastedValueNzd` and `current: [{id, destination, qtyInput, unit}]` — the nine keys that were flat on this object before the fork, one set per leaf. A keyed map and not an array, so unticking the middle category cannot slide the third category's figures onto the second |
+| Multi-entry | `entries: []` — committed **chains**, same shape as the draft |
 | UI | `step` (−1 intro … 5 results), `returnTo` (`null` \| `{from, step, entries?, draft?, kind?, after?}` — v1.53), `expandedSectors`, `resultBreakdownTab` (`'stage'` \| `'destination'` \| `'food'`), `lastChangedDestination` |
-| Status | `loading`, `error`, `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
-| Improvement | `improvementOpen`, `improvedAllocations: {destinationCode: percentString}`, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}`, `improvementChartExpanded`, `improvementResult`, `improvementLoading`, `improvementError` |
+| Status | `loading`, `error`, `errorAt` (`null` \| `{leaf, field}` — which leaf and which field a client-side message belongs to; string identity cannot survive N leaves, because two leaves produce the byte-identical sentence), `errorCode`, `fieldErrors: {fieldPath: message}`, `rateLimitedUntil` (epoch ms) |
+| Improvement | `improvementOpen`, `improvedAllocations: [{destinationCode: percentString}]` — **one allocation per leaf, in submission order**, `improvementMode` (`'percentage'` \| `'unit'`), `improvementRowUnits: {destinationCode: 'kilograms' \| 'tonnes' \| 'preset:<code>'}` (a display choice, panel-wide), `improvementChartExpanded` (`null`, or the index of the leaf whose donut is expanded — **not a boolean**, because leaf 0 is a real answer), `improvementResult`, `improvementLoading`, `improvementError` |
+
+> **The fork (2026-09-17).** A supply-chain chain may name several food categories,
+> each with its own amount **and its own destination allocation**. The three per-entry
+> scalars fork with them: `engine/calculate.py:369` sums every entry's `total_input_kg`
+> as the production-share denominator, so copying one chain's figure onto every leaf
+> divides the share by N, and `:506` derives `value_per_kg` per entry, so it overstates
+> `saving_nzd` by roughly N; attaching them to leaf 0 alone makes `_across_entries`
+> report "incomplete" forever. The allocation forks rather than being divided pro-rata
+> because the request body already carries one `current[]` per entry — a shared split
+> would have to be *derived* into each leaf as `row_kg × leaf_kg ÷ chain_kg`, and
+> three-decimal `qty_kg` rounding can then leave the leaves' lines not summing to the
+> figure the visitor typed, which `improvement.js`'s per-entry mass-conservation check
+> compares. **The request and response shapes are unchanged**; `MAX_ENTRIES` is
+> unchanged at 20 and now counts leaves, which step 2 restates client-side — and so does
+> *Add another supply-chain entry*, from the same function, because the ceiling has two
+> doors and a rule with two statements of it is two rules.
+>
+> **The improvement panel forks with them** (owner decision 6). `improvedAllocations` is
+> one destination-to-percentage map per leaf, in submission order, and every one of that
+> module's three inputs — the seeded shares, `improvedLines`'s base mass and the
+> mass-conservation check — is taken per leaf. One submission-wide split applied to every
+> leaf's own mass made *Match the current allocation* stop being an identity the moment a
+> chain forked: 100 kg of dairy sent entirely to landfill and 200 kg of fruit sent entirely
+> to animal feed came back as one 33/67 pair applied to both, which describes neither and
+> matches neither Current column. The identity is an array and not a map keyed by the leaf's
+> name, because two chains may legitimately carry the same sector and the same food — the
+> duplicate notice warns about that and does not forbid it.
 
 > **Two of her decisions are better than what this section used to require, and are now the requirement.** A line is `{id, destination, qtyInput}`, not `{destination, qtyKg, …}`: the `id` is a stable identity that survives a full re-render, which matters because `render()` replaces `main.innerHTML` wholesale; and `qtyInput` holds the **raw string the user typed**, so no rounding happens until the value is converted for the API. The old `qtyKg` shape rounds on every keystroke, which is precisely the premature-decimal hazard §1.2 exists to avoid.
 
@@ -3701,7 +3829,7 @@ const loadingGivesBackTheDraft = entry;
 
 `data-action` vocabulary handled by the click delegate: `start`, `go-step`, `toggle-sector`, `clear-food`, `continue`, `add-entry`, `edit-entry`, `remove-entry`, `calculate`, `start-over`, `download-results`, `download-pdf`, `breakdown-tab`, `explore-improvements`, `reset-improvement`, `cancel-improvement`, `compare-improvement`, `expand-improvement-chart`, `close-improvement-chart`, `retry`, `view-methodology`.
 
-Module-private and worth knowing: `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftFieldPaths()` produces the §9 `field` path for each row of the draft entry, aligned with `state.current` and `null` for a row the request will not carry; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
+Module-private and worth knowing: `stepProblem(step)` returns a display string or `''` for one step's own rules, parameterised on the step so a caller may ask about a step the visitor is not standing on, and `validateCurrentStep()` is `stepProblem(state.step)`; `buildLines(entry)` produces `[{destination, qty_kg}]` filtered to `qty_kg > 0`; `draftLinePaths()` produces the §9 `field` path for each destination row of the draft, **keyed by the row's own line `id`** and rooted at that row's leaf's position in the submission, and `draftFieldPaths()` is its values; `publicError(error)` maps a §9 code to user copy; `validationMessage(error)` and `describeDetail(detail)` build the 400 banner from the details that no row on screen can display; `fieldErrorMap(error)` turns `details[]` into `{fieldPath: message}`; `blocked()` and `clearedError()` implement §9.2's rule that `BLOCKED` is terminal; `submitCalculation()` issues the request.
 
 > **The Back confirmation (v1.53), and the one test that decides whether it appears.** Backing out of a jump restores §7.2's snapshot, and the marker survives a forward walk — so a visitor may press *Add another supply-chain entry*, build a whole second chain across four screens, walk Back to step 1 and press Back there, at which point the restore would throw all four screens away. `goToStep` therefore calls `window.confirm` first, following `start-over`'s precedent, and declining returns without a `setState` at all: same step, same draft, same entries, marker still live.
 >
@@ -3726,7 +3854,7 @@ Module-private and worth knowing: `stepProblem(step)` returns a display string o
 >
 > **Read `destination.is_prevention` from §6.1, never the code.** `calculator.js`'s `entryDestinations` filtered `code !== 'prevention'` until v1.22 and therefore left every *other* prevention destination — §10.3's ReFED set brings its own, and the deployed stack offers it — on the current-waste list. The function is exported so `tests/web/test_entry_destinations.py` can run it under Node against a taxonomy it builds, the same seam `buildResultsReport` was pulled out for.
 >
-> **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftFieldPaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies and roots it at `entries[state.entries.length]`, because the draft entry travels last.
+> **The three silent failures this module used to have are fixed, and the shape of them is worth keeping.** `fieldErrorMap` keyed on the raw `details[].field` string while the render loop looked up `current[<index>].qty_kg` — §9's format is `entries[0].current[1].qty_kg`, so it never bound; the index was the position in `state.current`, which includes blank rows, while `buildLines` filters them out before sending, so the request index and the render index differed whenever any destination was left empty, which is the normal case; and `fieldErrorMap` stored the **envelope's** `message` against every field, so even a correctly bound row would have read "Request validation failed" while the server's own per-field prose was discarded. All three are silent by construction: no error, no console warning, only the generic banner. `draftLinePaths()` exists to make the first two impossible to reintroduce independently — it derives the path from the same filter `buildLines` applies, and roots each row at the request index of **the leaf that row belongs to**. **Since v1.55 the draft occupies a RANGE of request indices, not one**: a chain with three food categories is three `entries[]` elements, so `entries[state.entries.length]` — the old root, correct while a draft was one entry — would have bound every leaf's rows to the first of them. The base is `savedLeafCount()`, the leaves of every chain already committed, plus the leaf's own position in the draft. It is keyed by line `id` rather than returned as a parallel array because the cells are rendered leaf by leaf and a flat index across the matrix would have to be re-derived at every call site.
 >
 > **`api/errors.py::bracket_path` is the server half of that agreement** and `tests/api/test_api_entries.py` asserts the exact string, so both ends of the `field` format are pinned by a test in one tree.
 
@@ -3883,6 +4011,35 @@ that assembles its own entry object is the defect above returning.
 
 ```js
 /**
+ * **Every chain's leaves, in submission order — THE one place a chain becomes several
+ * entries.**
+ *
+ * A chain is what the visitor built and can Edit or Remove as a unit; a leaf is what
+ * the API receives. `state.entries` holds chains, `entries[]` on the wire holds leaves,
+ * and this is the only crossing between the two. All three request builders go through
+ * it — Calculate, Compare Impact and `submissionPayload` itself — so a caller that
+ * forgets cannot produce a wrong body.
+ *
+ * Each leaf comes back already shaped as the flat entry `entryPayload` consumes: the
+ * chain's `sector`, the leaf's own nine figures (including its own `current`
+ * allocation, because step 4 forks too), and its `foodCategory` / `foodItem`.
+ *
+ * **`foodItem` is carried and not sent.** `EntryPayload` is `extra="forbid"`, so an
+ * unknown key is a 400 rather than an ignored field; the item dimension reaches the
+ * request shape at a later stage. It travels on the leaf so `results.js`, the review
+ * step and the duplicate notice can label it.
+ *
+ * **A leaf is not a chain.** Fanning an already-flattened entry out a second time gives
+ * "one category-less leaf" with no `leafFigures`, so every entry becomes blank with
+ * `current: []` and the API answers 400 for a submission that was complete. That is a
+ * programming error and is thrown, not absorbed.
+ *
+ * @param {Array<object>} chains  every supply-chain CHAIN, in submission order
+ * @returns {Array<object>}  one flat entry per leaf, in request order
+ */
+export function submissionLeaves(chains);
+
+/**
  * The `current` scenario's lines. Each row converts with its own `unit` through
  * `rowKgString` (§7.3), falling back to the entry's `totalUnit` for a row saved
  * before rows carried one. A blank row and a row whose preset has left the
@@ -3919,14 +4076,23 @@ export function entryPayload(entry, presets, alternative);
  * inside the entries because it is one period for the whole submission, asked once
  * on the review step.
  *
+ * **Chains in, leaves out.** The fan-out happens here rather than at the three call
+ * sites, so `alternativeFor` is invoked with a LEAF — which is what `improvement.js`
+ * needs: `improvedLines` takes the leaf's own current mass as its base, and the server
+ * checks mass conservation per entry.
+ *
  * @param {object} state
- * @param {Array<object>} entries  every entry, in submission order — the order §6.2
- *                                 preserves in `entries[]` of the response
- * @param {(entry: object) => Array|null} [alternativeFor]  the improved scenario for
- *   an entry. The default is no alternative, which is what Calculate sends;
- *   `improvement.js` passes its allocation of the entry's own current mass.
+ * @param {Array<object>} chains  every supply-chain CHAIN, in submission order; this
+ *                                function forks them into the leaves §6.2 preserves
+ *                                the order of in `entries[]` of the response
+ * @param {(leaf: object, index: number) => Array|null} [alternativeFor]  the improved
+ *   scenario for a leaf, and that leaf's own position in the submission. The default is no
+ *   alternative, which is what Calculate sends; `improvement.js` passes its allocation of
+ *   the leaf's own current mass, and uses the **index** to select which of its per-leaf
+ *   allocations that is — a leaf's name is not an identity here, because two chains may
+ *   name the same sector and the same food, while its position in `entries[]` is.
  */
-export function submissionPayload(state, entries, alternativeFor);
+export function submissionPayload(state, chains, alternativeFor);
 
 /**
  * §6.2.3, v1.49. The `POST /api/v1/export/pdf` request body — `api/export.py`'s
@@ -3954,11 +4120,22 @@ export function exportPayload(state, locale);
 > `.toFixed()` on a mass anywhere else in `web/` is a defect on sight applies here like
 > anywhere else.
 
-> **`submissionEntries(state)` in `improvement.js` mixes its argument with the module
-> singleton**: it returns `[...state.entries, draftEntry()]`, and `draftEntry` reads
+> **`submissionEntries(state)` in `improvement.js` returns LEAVES, and mixes its argument
+> with the module singleton.** Since v1.55 its body is
+> `submissionLeaves([...state.entries, draftEntry()])` — so what comes back is the flat
+> `entries[]` the request carries, one element per food type, and not the chains the visitor
+> built. Every consumer in that module depends on it: the seeded percentages are taken over
+> the lines the payload actually carries, `improvedLines` takes each leaf's own current mass
+> as its base, and `improvementValidation` checks mass conservation per entry exactly as the
+> server does. Handed chains instead, the panel would seed its sliders from allocations that
+> are not in the request and compare an alternative against a current scenario the server
+> never saw.
+>
+> The mixing is the part that is merely recorded rather than fixed: `draftEntry` reads
 > `state.js`'s own object rather than the parameter. Equivalent today, because every caller
-> passes that same singleton. It is recorded because the parameter no longer fully determines
-> the result, and a future caller with a constructed state would get the singleton's draft.
+> passes that same singleton. It is written down because the parameter no longer fully
+> determines the result, and a future caller with a constructed state would get the
+> singleton's draft.
 
 ## 7.4 `charts.js` (written by D)
 

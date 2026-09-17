@@ -5,19 +5,21 @@ from types import SimpleNamespace
 from datetime import timedelta
 
 import pytest
-from sqlalchemy import delete, func, select
+from sqlalchemy import delete, func, select, String, Text
 
 from db.errors import FactorSetStateError
 from db.models import (
     AuditLog,
     Constant,
     Destination,
+    Equivalence,
     DestinationGroup,
     FactorDownstream,
     FactorSet,
     FactorSetStatus,
     FactorUpstream,
     FoodCategory,
+    Formula,
     Metric,
     Scenario,
     Sector,
@@ -902,6 +904,77 @@ def test_clone_is_deep_and_publish_rollback_preserve_single_published(seeded_ses
     assert get_published_factor_set_id(seeded_session) == published_id
     assert seeded_session.get(FactorSet, clone_id).status == FactorSetStatus.archived
     assert seeded_session.scalar(select(func.count()).select_from(AuditLog)) >= 5
+
+
+
+def test_clone_copies_every_column_of_every_child_row(seeded_session):
+    """The generic form of the assertion above, which the specific one could
+    not give: no column of any child kind may be dropped by the clone.
+
+    **This is written generically on purpose.** The specific
+    `destination_id` check beside it was added after that one column was
+    dropped, and it fixed that one column. The hand-written field list it was
+    guarding then went on to miss `factor_downstream.sector_id` - the same
+    O-7 shape in the sector dimension - plus `source_note` and `data_quality`
+    on three tables, because nothing here was watching the other columns. A
+    check that names a column has to be rewritten every time a column is
+    added; this one does not.
+
+    Compared as whole rows rather than per column, and sorted by the full
+    tuple, because two rows of one kind can differ in a single field and a
+    per-column comparison of unordered sets would not notice which row it
+    came from.
+    """
+    published_id = get_published_factor_set_id(seeded_session)
+
+    #: **Mark every optional column before cloning, or this test passes for the
+    #: wrong reason.** The seed leaves `source_note` and `data_quality` NULL on
+    #: every row, so a clone that drops them copies None onto None and compares
+    #: equal - verified: dropping both from the clone left this test green
+    #: until these three lines existed. It is the same defect the factor-set
+    #: import review recorded, where a fixture built both sets from identical
+    #: literals and two real corruption mutations survived the whole suite.
+    #:
+    #: Foreign keys are left alone - an invented id would not resolve - and are
+    #: covered instead by the seed's own variation across `destination_id`.
+    marked = 0
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
+        for index, row in enumerate(seeded_session.scalars(
+            select(model).where(model.factor_set_id == published_id)
+        )):
+            for column in model.__table__.columns:
+                if column.name in ("id", "factor_set_id") or column.foreign_keys:
+                    continue
+                if column.nullable and isinstance(column.type, (String, Text)):
+                    setattr(row, column.name, f"{model.__tablename__}-{index}")
+                    marked += 1
+    assert marked, "nothing optional was marked, so this test cannot see a dropped column"
+    seeded_session.flush()
+
+    clone_id = clone_factor_set(seeded_session, published_id, "FIDELITY-v1", "alice")
+    seeded_session.flush()
+
+    for model in (FactorUpstream, FactorDownstream, Constant, Formula, Equivalence):
+        carried = [
+            column.name for column in model.__table__.columns
+            if column.name not in ("id", "factor_set_id")
+        ]
+        assert carried, f"{model.__tablename__} has no columns worth cloning"
+
+        def rows(factor_set_id):
+            return sorted(
+                tuple(str(getattr(row, name)) for name in carried)
+                for row in seeded_session.scalars(
+                    select(model).where(model.factor_set_id == factor_set_id)
+                )
+            )
+
+        source_rows, clone_rows = rows(published_id), rows(clone_id)
+        assert source_rows, f"the published set has no {model.__tablename__} rows to clone"
+        assert clone_rows == source_rows, (
+            f"{model.__tablename__} did not survive the clone intact across "
+            f"{carried}: {source_rows} != {clone_rows}"
+        )
 
 
 def test_expired_token_creates_a_new_submission_and_preserves_history(seeded_session):

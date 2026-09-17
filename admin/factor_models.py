@@ -20,7 +20,7 @@ from sqlalchemy import (
 )
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
-from admin.taxonomy_models import Destination, FoodCategory, Metric, Sector
+from admin.taxonomy_models import Destination, FoodCategory, FoodItem, Metric, Sector
 from db.base import BIGINT_PK, Base
 
 
@@ -52,6 +52,27 @@ class FactorSet(Base):
     #: vouched for cannot be published silently as real data.
     is_mock: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                           server_default="1")
+    #: v1.54. Releases step 2.5 of the calculator — the screen that asks which
+    #: *food* was wasted, not only which category.
+    #:
+    #: **It never reaches the engine.** Not a `FactorBundle` field, not a
+    #: `bundle.json` key, not an argument to `calculate`. That is what keeps
+    #: reproducibility free: a submission stamps its `factor_set_id`, and if the
+    #: flag were an engine input then flipping it would change what a stored
+    #: calculation recomputes to. It releases a question the interface asks; it
+    #: is not a factor. `tests/test_item_level_inertness.py` is the guard.
+    #:
+    #: **On the set rather than global** so that it is versioned and audited
+    #: like everything else here. It is emphatically *not* how the two levels
+    #: are separated: one set holds item rows and category rows together
+    #: (spec §3.5), because the client cannot be asked to maintain two.
+    #:
+    #: FALSE by default: a set nobody has authored item factors for must not
+    #: claim item-level precision, and the guard that will refuse the flag on a
+    #: set with no item-level rows is a later landing.
+    item_level_enabled: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False, server_default="0"
+    )
     effective_from: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     published_at: Mapped[datetime | None] = mapped_column(DateTime, nullable=True)
     published_by: Mapped[str | None] = mapped_column(String(128), nullable=True)
@@ -104,10 +125,16 @@ class FactorUpstream(Base):
     __tablename__ = "factor_upstream"
     __table_args__ = (
         UniqueConstraint("factor_set_id", "sector_id", "food_category_id",
-                         "destination_id", "metric_id", name="uq_factor_upstream"),
+                         "food_item_id", "destination_id", "metric_id",
+                         name="uq_factor_upstream"),
+        #: **Two nullable key parts since v1.54, and both must be collapsed.**
+        #: `factor_downstream` below records what happens when only one of a
+        #: pair is: the index exists, is unique, contains a COALESCE, and has
+        #: silently stopped enforcing half of what it was written for.
         Index(
             "uq_factor_upstream_generic",
             "factor_set_id", "sector_id", "food_category_id",
+            text("(COALESCE(food_item_id, 0))"),
             text("(COALESCE(destination_id, 0))"),
             "metric_id",
             unique=True,
@@ -125,6 +152,25 @@ class FactorUpstream(Base):
     food_category_id: Mapped[int] = mapped_column(
         ForeignKey("food_category.id"), nullable=False
     )
+    #: v1.54. NULL means "every food item in this category" — the category
+    #: average, which is the normal row and what the whole table held until
+    #: this column existed. A row that names an item carries **both** columns:
+    #: `food_category_id` stays NOT NULL, so an item factor is always reachable
+    #: through the category it refines.
+    #:
+    #: **There is no silent-zero trap here**, and that is what separates this
+    #: dimension from the one O-7 closed. An item with no row of its own falls
+    #: through to its category's row — a defined, meaningful average — so a set
+    #: carrying item factors for twenty foods and category factors for
+    #: everything else is coherent, and the switch needs no full-coverage
+    #: guard.
+    #:
+    #: `factor_downstream` gains no item dimension: the destination split is
+    #: shared across the leaves a chain forks into (design decision 1), and
+    #: downstream already varies by `(destination, sector, food_category)`.
+    food_item_id: Mapped[int | None] = mapped_column(
+        ForeignKey("food_item.id"), nullable=True
+    )
     #: NULL means "every destination for this (sector, food_category, metric)".
     #: See the class docstring: this column is what makes `prevention` a real
     #: 100% offset rather than a downstream-only one.
@@ -139,6 +185,7 @@ class FactorUpstream(Base):
     factor_set: Mapped[FactorSet] = relationship()
     sector: Mapped[Sector] = relationship()
     food_category: Mapped[FoodCategory] = relationship()
+    food_item: Mapped[FoodItem | None] = relationship()
     destination: Mapped[Destination | None] = relationship()
     metric: Mapped[Metric] = relationship()
 
@@ -148,9 +195,13 @@ class FactorUpstream(Base):
         #: constraint above is keyed on. `destination` is nullable ("every
         #: destination"), and a row that overrides one - `prevention` at zero
         #: - must be distinguishable from the general row in a select box,
-        #: which is the whole reason the column exists.
+        #: which is the whole reason the column exists. `food_item` (v1.54) is
+        #: nullable on exactly the same terms and shown on exactly the same
+        #: argument: "processing/dairy — co2e" would otherwise name both the
+        #: category average and every item that refines it.
+        item = f"/{self.food_item.code}" if self.food_item else ""
         scope = f" → {self.destination.code}" if self.destination else ""
-        return (f"{self.sector.code}/{self.food_category.code}{scope}"
+        return (f"{self.sector.code}/{self.food_category.code}{item}{scope}"
                 f" — {self.metric.code}")
 
 

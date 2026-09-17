@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-17 (v1.53 draft)"
+date: "2026-09-17 (v1.54 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,29 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.54 part one — 2026-09-17 (the schema learns the food item level, and nothing else changes; affects B and E, and A, C and D only as advance notice)
+
+Stage 3 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. The calculator will gain a step 2.5 that asks which *food* was wasted — "cheese", not "dairy" — and this revision builds everywhere that answer has to be able to live. **It is deliberately inert.** With no `food_item` rows and `item_level_enabled` false on every set, every figure, every response and every screen is what it was before: proven by the golden suite (43 cases, unchanged) and by `POST /api/v1/calculate` against the deployed stack returning a byte-identical 18,672-byte body across the migration, same SHA-256.
+
+**§6 is untouched.** The request and response shapes do not learn the item until v1.54 part two. So is `tests/fixtures/*.json`: nothing on the wire changes, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`food_item` — a new global taxonomy table**, `(id, code, name, food_category_id NOT NULL, sort_order, active)`, beside `food_category` and following every one of §2.1's conventions. **It is not a child of the factor set and `CHILD_MODELS` stays at five** | §2.1 |
+| 2 | **`factor_upstream.food_item_id`** — nullable FK, meaning "every food item in this category". `food_category_id` stays NOT NULL, so an item row carries **both**. `factor_downstream` gains no item dimension | §2.2 |
+| 3 | **`factor_set.item_level_enabled`** — BOOLEAN NOT NULL DEFAULT FALSE. It *releases* step 2.5 and **never reaches the engine** | §2.2 |
+| 4 | **`submission_entry.food_item_id`** — nullable FK; the UNIQUE becomes four columns; the functional index gains a second `COALESCE` key part; and a CHECK refuses an entry that names an item without its category | §2.3 |
+
+> **Why `food_item` is global taxonomy and not a sixth child of the factor set.** §6.1 already states the rule — *a factor set brings factors, not a vocabulary* — and reproducibility is what makes it load-bearing. `submission_entry.food_category_id` points at a global row no lifecycle operation touches, which is why a 2026 submission still renders "dairy" in 2029. Every `factor_set_id` in this schema carries `ON DELETE CASCADE`, so a set-scoped item table would make `submission_entry.food_item_id` a pointer into one version's private vocabulary and deleting a spoiled draft would take the meaning of a stored submission with it. The item's **numbers** are a different matter and live in `factor_upstream`, which is already a child — so `admin/factor_lifecycle.CHILD_MODELS` stays at five, both five-way assertions stand, and `_clone_children`'s reflection carries the new column with no edit at all.
+>
+> **One factor set holds both levels, and the flag is not how they are separated.** Item rows and category rows sit together in the same set. Publishing set A versus set B must never be how step 2.5 is turned on: the client cannot be asked to maintain two. The flag lives on the set so that it is versioned and audited like everything else there.
+>
+> **`item_level_enabled` is not a `FactorBundle` field, not a `bundle.json` key, and not an argument to `calculate`.** That is what keeps reproducibility free: a submission stamps its `factor_set_id`, and a flag that were an engine input would change what a stored calculation recomputes to when it is flipped. It releases a question the interface asks; it is not a factor. `tests/test_item_level_inertness.py` reads the source of `engine/` and every golden `bundle.json` and fails if the name appears in either.
+>
+> **Both clone paths carry the flag, and there are two of them.** `admin/factor_lifecycle.clone_factor_set` is the one the panel calls; `db/repository.clone_factor_set` is the one two of B's tests assert as correct. Both hand-write their `FactorSet(...)`, naming `is_mock`, `effective_from` and `notes` one column at a time — the shape that dropped six child columns before the child copies were made reflective. A flag carried by one and dropped by the other is invisible until a staff member takes the recommended clone → edit → publish path (§5.2) and the clone comes back with step 2.5 silently un-released. One parametrised test runs both.
+>
+> **The item is *not* seeded.** Mapping the client's ~20 foods onto our categories is a data-authoring task with client-facing consequences — seven of their rows (Eggs, Fats, Sauces/Spreads/Dips, Herbs/Spices, Snack Foods and desserts, Sweeteners, Other Food Types) have no New Zealand category at all — and it gets its own review. An empty table is what makes this revision inert.
 
 ### v1.53 — 2026-09-17 (Back returns the visitor where they came from, and opening a saved entry stops destroying the one being built; affects C, and D only as a reader of §7.2 and §7.7.9)
 
@@ -1032,6 +1055,27 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 > the engine as a missing one. Two rows may hold `is_standard_mix = TRUE` at
 > once as long as only one of them is `active`.
 
+### `food_item`
+
+A named food *within* a category — "cheese", not "dairy". The vocabulary step 2.5 of the calculator offers, added in v1.54.
+
+| Column | Type | Constraints | Notes |
+| --- | --- | --- | --- |
+| `id` | INT | PK, AI | |
+| `code` | VARCHAR(64) | UNIQUE, NOT NULL | Cross-layer identifier, as everywhere in §2.1 |
+| `name` | VARCHAR(128) | NOT NULL | |
+| `food_category_id` | INT | FK, **NOT NULL** | Every item belongs to exactly one category |
+| `sort_order` | INT | NOT NULL, DEFAULT 0 | |
+| `active` | BOOLEAN | NOT NULL, DEFAULT TRUE | |
+
+> **This table is global taxonomy, not a child of the factor set, and that is a decision rather than a convenience.** §6.1: *a factor set brings factors, not a vocabulary.* `submission_entry.food_category_id` points at a global row no lifecycle operation touches, which is what lets a 2026 submission still render "dairy" in 2029. Every `factor_set_id` in this schema carries `ON DELETE CASCADE`, so a set-scoped item table would make `submission_entry.food_item_id` a pointer into one version's private vocabulary — and deleting a spoiled draft would take the meaning of a stored submission with it. The item's *numbers* live in `factor_upstream` (§2.2), which is already a child of the set, so `CHILD_MODELS` stays at five and a clone carries the new column by reflection.
+
+> **`food_category_id` is NOT NULL, and the parent is load-bearing.** An item with no upstream row of its own falls back to its category's row — a defined, meaningful average — which is the whole of what makes partial item coverage safe (§2.2's upstream lookup order). An orphan item would have nothing to fall back to and would silently price at zero.
+
+> **Nothing seeds this table.** Mapping the client's ~20 foods onto our categories is a data-authoring task with client-facing consequences and gets its own review; seven of their rows have no New Zealand category at all. An empty table is what keeps v1.54 part one inert, and it is why the `is_mock` banner is still the only thing on screen qualifying these numbers.
+
+> **The transparency cost, recorded rather than solved.** A result computed from the Fruit average while the visitor selected *Feijoas* looks item-specific and is not. The results page should say which figures fell back; that is a later revision, and it is the same class of honesty the mandatory placeholder banner exists for.
+
 ### `metric`
 
 | Column | Type | Constraints | Notes |
@@ -1075,6 +1119,7 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `version_label` | VARCHAR(128) | UNIQUE, NOT NULL | `MOCK-v0 — PLACEHOLDER` / `2026-Q3` |
 | `status` | ENUM | NOT NULL | `draft` / `published` / `archived` |
 | `is_mock` | BOOLEAN | NOT NULL, DEFAULT TRUE | Triggers the site-wide warning banner. **Not on any edit form** — see below |
+| `item_level_enabled` | BOOLEAN | NOT NULL, DEFAULT FALSE | v1.54. *Releases* step 2.5 of the calculator. **Never reaches the engine** — see below |
 | `effective_from` | DATETIME | NULL | |
 | `published_at` | DATETIME | NULL | |
 | `published_by` | VARCHAR(128) | NULL | Staff username |
@@ -1128,6 +1173,14 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 > the column default and cannot be created unflagged. "Nothing is published as
 > real data by omission" is structural rather than a habit.
 >
+> **`item_level_enabled` (v1.54) releases step 2.5 and is not an engine input.** Not a `FactorBundle` field, not a `bundle.json` key, not an argument to `calculate`. That is what keeps reproducibility free: every submission stamps its `factor_set_id`, and a flag that reached the engine would change what a stored calculation recomputes to the moment somebody flipped it. It releases a question the interface asks; it is not a factor.
+>
+> **It is on the set, and it is *not* how the two levels are separated.** One set holds item rows and category rows together — publishing set A versus set B must never be how step 2.5 is turned on, because the client cannot be asked to maintain two. The flag lives here so that it is versioned and audited like everything else in this table, and so that the factor-set screen can show staff what they are releasing beside it.
+>
+> **The guard is soft and is a later revision: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is 19 items × 6 sectors × 5 metrics = 570 rows and is unreachable from any data that will exist. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
+>
+> **Both `clone_factor_set` implementations must carry it**, `admin/factor_lifecycle.py`'s and `db/repository.py`'s. Each hand-writes its `FactorSet(...)` and names `is_mock`, `effective_from` and `notes` one column at a time. Miss it in either and the recommended clone → edit → publish workflow (§5.2) silently un-releases step 2.5 on the first real factor set: the calculator stops asking which food was wasted, with no error and nothing on the factor-set screen saying why.
+
 > **The published set's `is_mock` is never served from a warm bundle cache.**
 > §5.2's `load_factor_bundle` re-reads this one column on every hit. It is the
 > only field of a published set that legitimately moves while it stays
@@ -1144,14 +1197,35 @@ Always UTC, ISO 8601 with a timezone designator: `2026-07-31T09:15:00Z`. The fro
 | `id` | BIGINT | PK, AI | |
 | `factor_set_id` | INT | FK, NOT NULL | |
 | `sector_id` | INT | FK, NOT NULL | |
-| `food_category_id` | INT | FK, NOT NULL | |
+| `food_category_id` | INT | FK, NOT NULL | Stays NOT NULL. An item row carries **both** this and `food_item_id` |
+| `food_item_id` | INT | FK, **NULL** | v1.54. **NULL means the row applies to every food item in that category** — the category average, and the normal row |
 | `destination_id` | INT | FK, **NULL** | **NULL means the row applies to every destination for that `(sector, food_category, metric)`** |
 | `metric_id` | INT | FK, NOT NULL | |
 | `value_per_kg` | DECIMAL(20,10) | NOT NULL | |
 | `source_note` | TEXT | NULL | Where this number came from |
 | `data_quality` | VARCHAR(32) | NULL | Free text, e.g. `measured` / `modelled` / `proxy-AU` |
 
-UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `destination_id`, `metric_id`)
+UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `food_item_id`, `destination_id`, `metric_id`)
+
+#### The upstream lookup order (v1.54)
+
+Two nullable dimensions means four rows may legally exist for one `(sector, food_category, metric)`, and exactly one of them must win:
+
+| # | Row | Meaning |
+| --- | --- | --- |
+| 1 | (`food_item`, `destination`) | this food, at this destination |
+| 2 | (NULL, `destination`) | every food in this category, here |
+| 3 | (`food_item`, NULL) | this food, at every destination |
+| 4 | (NULL, NULL) | the category average, everywhere |
+| 5 | — | zero |
+
+**Steps 2 and 3 each name one dimension, and the destination wins.** Same shape as the downstream order below, and the tie is broken for a stated reason: **item-first silently re-opens O-7.** The prevention offset is stored as a category-level, destination-specific row at zero. Give one item a generic row, order item-first, and a line moved to `prevention` picks up that item's generic factor instead of the zero — the exact defect measured at 456.000 → 96.000, 78.9% of the benefit, reappearing the moment the client supplies a single item factor. Destination-first means the existing category-level prevention zero covers every item under it automatically.
+
+**There is no silent-zero trap here.** An item with no row of its own falls through to candidate 4, the category average — a defined, meaningful number, and the nine category factors *are* the averages of those same foods. That is what separates this dimension from the one O-7 closed, and it is why the `item_level_enabled` guard can be soft.
+
+**The engine implements this in `FactorBundle.upstream(sector, food_cat, food_item, destination, metric)`** — the item inserted after the category it refines, mirroring this table's own column order. Landing separately, as stage 4.
+
+**`factor_downstream` gains no item dimension.** The destination split is shared across the leaves one chain forks into, and downstream already varies by `(destination, sector, food_category)`.
 
 > **The nullable `destination_id` exists so that `prevention` can be a real 100% offset — open item O-7, closed in v1.8.** NULL is the normal case and almost every row carries it: producing a kilogram of dairy costs what it costs whatever later becomes of it. Lookup order: exact match on `destination_id` first, then fall back to the NULL row, then treat as zero — the same three-step `factor_downstream` uses for `food_category_id`, and the same one `FactorBundle.downstream()` already implements.
 >
@@ -1162,6 +1236,8 @@ UNIQUE(`factor_set_id`, `sector_id`, `food_category_id`, `destination_id`, `metr
 > **This UNIQUE has the same defect `factor_downstream`'s does, for the same reason, and needs the same functional index.** MySQL treats NULLs as distinct in a unique key, so the constraint above permits unlimited duplicate rows for the generic case — and here the generic rows are not the exception, they are almost the whole table. Two of them and the fallback lookup picks one nondeterministically: the same input returning a different net benefit run to run, with nothing in the logs. A unique index over `COALESCE(destination_id, 0)` is what enforces it, and it must be written by hand — autogenerate detected this one as a plain four-column index with the expression silently dropped. Test it by inserting the second generic row and asserting `IntegrityError`, against **MySQL**; on SQLite it proves nothing.
 >
 > Third instance of the trap, after `factor_downstream` (below) and `submission_entry` (§2.3). Raised by B on the first; found twice more by looking for it.
+>
+> **v1.54: `food_item_id` is a second nullable key part, and `uq_factor_upstream_generic` must collapse BOTH.** Collapsing only one leaves the other's duplicates legal and produces an index that exists, is unique, contains a `COALESCE` and has silently stopped enforcing half of what it was written for — the exact defect v1.31 recorded when `factor_downstream` gained `sector_id`. The index becomes `(factor_set_id, sector_id, food_category_id, (COALESCE(food_item_id, 0)), (COALESCE(destination_id, 0)), metric_id)`, and the migration test names each collapsed column against `information_schema` rather than counting them.
 
 ### `factor_downstream`
 
@@ -1378,14 +1454,25 @@ One `(sector, food_category)` pair within a submission. A food business has wast
 | `submission_id` | BIGINT | FK, NOT NULL, ON DELETE CASCADE | |
 | `sector_id` | INT | FK, NOT NULL | |
 | `food_category_id` | INT | FK, NULL | Null when the user did not break waste down by type |
+| `food_item_id` | INT | FK, NULL | v1.54. The specific food, when step 2.5 was released and the visitor named one. Null means they answered at the category level, which is an answer and not an absence |
 | `sort_order` | INT | NOT NULL, DEFAULT 0 | Preserves the order the user entered them, so `entries[]` in the §6.2 response can be paired with the rows on screen |
 | `total_input_kg` | DECIMAL(16,3) | NULL | v1.48. What this stage put through in the period, so waste can be stated as a share of production. NULL is "not stated" and is **not** zero |
 | `total_value_nzd` | DECIMAL(14,2) | NULL | v1.48, **statistics only** (§4.5). The value of what this stage put through |
 | `wasted_value_nzd` | DECIMAL(14,2) | NULL | v1.48, **statistics only** (§4.5). The value of what it wasted |
 
-UNIQUE(`submission_id`, `sector_id`, `food_category_id`)
+UNIQUE(`submission_id`, `sector_id`, `food_category_id`, `food_item_id`)
 
-> The uniqueness constraint has the same MySQL NULL caveat as `factor_downstream` (§2.2): a nullable column in a UNIQUE key does not prevent duplicates, because NULLs compare distinct. Use a functional index over `COALESCE(food_category_id, 0)`.
+CHECK `ck_submission_entry_item_has_category`: `food_item_id IS NULL OR food_category_id IS NOT NULL`
+
+> The uniqueness constraint has the same MySQL NULL caveat as `factor_downstream` (§2.2): a nullable column in a UNIQUE key does not prevent duplicates, because NULLs compare distinct. Use a functional index over `COALESCE(food_category_id, 0)` — and since v1.54 over `COALESCE(food_item_id, 0)` as well. **Both, not one.** Drop the category's key part and two "no breakdown" entries are legal again, which is the defect the index was created for; drop the item's and one visitor's Cheese can be stored twice. §5.4 aggregates per entry, so either way one answer is counted twice in the public statistics.
+
+> **An entry that names a food item stores BOTH columns** (v1.54). The rejected alternative was to let `food_category_id` stand in as a placeholder and store the item alone. §5.4 is why it was rejected: NULL there already means *the user did not break their waste down by type*, and §5.4 gives that its own `unspecified` bucket and explicitly forbids resolving it to `standard_mix`. Reusing it for *the user gave a finer breakdown* would file every submission that specified Apples into the statistics page's "not broken down by type" bucket — the precise opposite of what happened. The CHECK above is what makes that state unreachable rather than merely discouraged.
+>
+> Storing both is also what keeps §5.4 working unchanged across both modes: `by_food_category` rolls items up into their categories without knowing the item level exists, `unspecified` keeps its one meaning, and a submission records what the visitor actually said at both levels. The placeholder stays where it belongs — in the factor tables, where NULL means "this dimension does not carry the numbers here".
+>
+> **What forking does to the statistics is open and is not settled by this revision.** §5.4 aggregates per entry, deliberately: "one submission with three entries is three observations". Once an entry is a *leaf* rather than a chain, one chain becomes N observations — `by_sector` shares become biased toward whoever ticked more boxes, `by_food_category` shares become biased by how many items a category has, and the suppression threshold weakens, because a bucket reaches 5 with fewer real submissions behind it. That last one is a privacy regression, not a cosmetic one, and it has to be answered before step 2.5 reaches the public.
+>
+> **§5.6's anonymity promise needs revisiting too.** A named food is materially more identifying than a category: "processing / cheese / 40 t" narrows the population of New Zealand businesses far more than "processing / dairy" does. `web/methodology.html` currently promises that "the sector, food category and quantities entered into the calculator are recorded anonymously"; that sentence becomes incomplete the day an item is stored.
 
 > **The three v1.48 columns are all nullable, and NULL is a claim about what the visitor said rather than about the food.** Zero would say this stage put nothing through, or that its food was worth nothing; NULL says nobody stated it. §4.5 depends on the distinction — every field of the money block is absent unless everything it derives from was present — so a repository or an adapter that defaults any of these to zero on the way in produces a figure the visitor never implied.
 >

@@ -1,9 +1,13 @@
 """The taxonomy tables. Contract §2.1.
 
 Separate from admin/models.py, which owns staff accounts and the audit log:
-these six are the vocabulary the calculator is defined in, edited by staff
+these seven are the vocabulary the calculator is defined in, edited by staff
 through the panel, and read by the engine on every calculation. They change
 for entirely different reasons.
+
+Six until v1.54, which added `food_item`. It has no admin screen yet - the
+panel still registers six taxonomy views - and nothing seeds it; see its own
+docstring.
 
 Every one of them carries `code` (the cross-layer identifier — the API and
 the front end use it, never the primary key) and `active` (the panel does
@@ -136,6 +140,60 @@ class FoodCategory(Base):
                                             server_default="0")
     active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
                                          server_default="1")
+
+    def __str__(self) -> str:
+        return f"{self.code} — {self.name}"
+
+
+class FoodItem(Base):
+    """Contract §2.1 (v1.54). A named food *within* a category — "cheese", not
+    "dairy". The vocabulary step 2.5 of the calculator offers.
+
+    **Global taxonomy, not a child of the factor set**, and the distinction is
+    load-bearing. §6.1 states the rule — *a factor set brings factors, not a
+    vocabulary* — and reproducibility is why. `submission_entry.food_category_id`
+    already points at a global row no lifecycle operation touches, which is what
+    lets a 2026 submission still render "dairy" in 2029. Every `factor_set_id`
+    in the schema carries `ondelete="CASCADE"`, so a set-scoped item row would
+    make `submission_entry.food_item_id` a pointer into one version's private
+    vocabulary and deleting a spoiled draft would take the meaning of a stored
+    submission with it.
+
+    The item's **numbers** are a different matter and live where every other
+    number does: `factor_upstream` gains a nullable `food_item_id` and is
+    already a child of the set. So `admin/factor_lifecycle.CHILD_MODELS` stays
+    at five and `_clone_children`'s reflection carries the new column with no
+    edit at all.
+
+    `food_category_id` is NOT NULL: every item belongs to exactly one category,
+    and that parent is what an item with no factor row of its own falls back to
+    — a defined, meaningful average rather than a silent zero.
+
+    Nothing seeds this table. Mapping the client's ~20 foods onto our
+    categories is a data-authoring task with client-facing consequences (seven
+    of their rows have no New Zealand category at all) and gets its own review;
+    an empty table is what keeps this revision inert.
+    """
+
+    __tablename__ = "food_item"
+
+    id: Mapped[int] = mapped_column(primary_key=True, autoincrement=True)
+    code: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    food_category_id: Mapped[int] = mapped_column(
+        ForeignKey("food_category.id"), nullable=False
+    )
+    sort_order: Mapped[int] = mapped_column(Integer, nullable=False, default=0,
+                                            server_default="0")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True,
+                                         server_default="1")
+
+    #: Read direction only, like `UnitPreset.food_category` above and for the
+    #: same reason: the panel groups items by category name, and `code` is the
+    #: cross-layer identifier, so a primary key must never be what a human is
+    #: asked to read or choose. No `back_populates` — the reverse collection
+    #: would be rendered on `FoodCategoryAdmin`'s details page.
+    food_category: Mapped["FoodCategory"] = relationship()
 
     def __str__(self) -> str:
         return f"{self.code} — {self.name}"

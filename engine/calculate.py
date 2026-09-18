@@ -205,8 +205,19 @@ def calculate_scenario(
             upstream = bundle.upstream(
                 sector_code,
                 food_category,
-                # v1.8's fourth dimension. Outside a per-line loop this
-                # argument cannot exist, which is why the two fixes are one.
+                # v1.54's dimension, and `None` here is not a placeholder: an
+                # entry has no food item to name yet. §3's `EntryInput` carries
+                # a sector and a food category and nothing finer, so this is
+                # the only value the engine *can* pass, and it is the value
+                # that makes the dimension inert -- the chain falls to the
+                # category rows every existing bundle carries, which is the
+                # answer it gave before the slot existed. The argument is
+                # positional and required so that a caller left at the
+                # pre-v1.54 signature raises TypeError rather than silently
+                # reading the destination out of the item slot.
+                None,
+                # v1.8's dimension. Outside a per-line loop this argument
+                # cannot exist, which is why the two fixes are one.
                 scenario_line.destination_code,
                 spec.code,
             )

@@ -536,8 +536,14 @@ def test_case_03_fails_if_the_upstream_destination_dimension_is_removed(monkeypa
     case = GOLDEN / "case_03_prevention_whole_offset"
     bundle, request = _load(case)
 
-    def blind_to_destination(self, sector, food_cat, destination, metric):
-        return self.upstream_factors.get((sector, food_cat, None, metric), Decimal("0"))
+    def blind_to_destination(self, sector, food_cat, food_item, destination, metric):
+        # v1.54 signature, v1.8 behaviour: the destination argument is
+        # accepted and ignored, which is what removing the column would
+        # amount to. The item slot is carried so the stub can stand in for
+        # the real method; no golden case names an item.
+        return self.upstream_factors.get(
+            (sector, food_cat, food_item, None, metric), Decimal("0")
+        )
 
     monkeypatch.setattr(FactorBundle, "upstream", blind_to_destination)
 

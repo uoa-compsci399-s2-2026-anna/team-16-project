@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-17 (v1.54 draft)"
+date: "2026-09-18 (v1.56 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,28 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.56 — 2026-09-18 (the engine learns the item dimension; affects A, and B only as advance notice)
+
+> **Why v1.56 and not "v1.54 stage 4".** "v1.54 part one" is already this
+> document's name for the schema landing that merged first, and a revision
+> identity naming two different changes cannot be checked in either direction.
+> v1.55 is taken by the multi-select landing, which is stage 2 of the same order
+> and was opened first; this is stage 4. Whichever of the two merges second
+> renumbers, which is one line.
+
+Stage 4 of the same landing order, and **inert by data** on the same terms as stage 3: no `food_item` row is seeded, so every bundle in the tree has an empty item vocabulary and every lookup in it falls to the category rows it has always used. Proven rather than asserted, and by a method a reader can repeat: extract the pre-change tree with `git archive`, run the thirteen golden cases and the three canonical `POST /calculate` requests through both trees, and compare the outputs rather than the pass counts. They are identical, and not one `expected.json` changed. The byte count and hash of one reviewer's scratch file are deliberately not quoted here: a number nobody else can reproduce reads as evidence without being any.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`FactorBundle.upstream()` gains a `food_item` parameter** — `upstream(sector, food_cat, food_item, destination, metric)` — with §2.2's four-step order documented on it. The key gains a slot in the same position, so `upstream_factors` is keyed on `(sector, food_category, food_item \| None, destination \| None, metric)` | §4.1 |
+| 2 | **`FactorBundle.upstream_with_basis()`** — the same chain, returning an `UpstreamBasis` enum beside the value. Groundwork for the fallback disclosure (landing step 7); nothing calls it yet | §4.1 |
+| 3 | **`FactorBundle.resolve_food_item()` and `has_food_item()`** — the engine refuses an item the bundle does not know, and an item whose parent is not the `food_category` it arrived with. `submission_entry` permits that pair at the database; this is what refuses it | §4.1 |
+| 4 | **§10.2 gains an optional `food_items` section and an optional `upstream[].food_item` key**, and `validate()` gains three checks | §4.1, §10.2 |
+
+> **`item_level_enabled` still never reaches the engine**, and stage 4 changes nothing about that: not a `FactorBundle` field, not a `bundle.json` key, not an argument to `calculate`. `tests/test_item_level_inertness.py` is unchanged and still passes.
+>
+> **§6 and `tests/fixtures/*.json` are untouched.** The wire does not learn the item until v1.54 part two, so the contract-change process's third step is again a no-op by intent.
 
 ### v1.54 part one — 2026-09-17 (the schema learns the food item level, and nothing else changes; affects B and E, and A, C and D only as advance notice)
 
@@ -1821,14 +1843,40 @@ class FactorBundle:
     is_mock: bool
     metrics: tuple[MetricSpec, ...]         # active only, sorted by sort_order
 
-    def upstream(self, sector: str, food_cat: str, destination: str,
-                 metric: str) -> Decimal:
-        """Exact match on destination first; then fall back to the generic row
-        (destination NULL); then Decimal('0'). The generic row is the normal
-        case — the destination-specific one exists so `prevention` can be a
-        real 100% offset (§2.2, open item O-7). Same three-step shape as
-        downstream() below, and (destination, None, metric)-style misses must
-        be *looked up*, not assumed absent."""
+    def upstream(self, sector: str, food_cat: str, food_item: str | None,
+                 destination: str | None, metric: str) -> Decimal:
+        """Four steps, in order (v1.54), then Decimal('0'):
+
+            1. (item, destination)   2. (NULL, destination)
+            3. (item, NULL)          4. (NULL, NULL)
+
+        Both middle dimensions are nullable on `factor_upstream` (§2.2), so
+        all four may exist at once and exactly one must win. Steps 2 and 3
+        name one dimension each: **the destination wins**, and §2.2 carries
+        the reason — item-first re-opens O-7, because the prevention offset is
+        a shape-2 row at zero. `food_item` is a positional argument in the
+        middle rather than an optional one at the end, so a caller left at the
+        pre-v1.54 signature raises TypeError instead of silently reading the
+        destination out of the item slot.
+
+        When `food_item` or `destination` is itself None the candidates
+        coincide, so the later steps must be **looked up**, not assumed absent
+        — the same caveat downstream() carries. An item with no row of its own
+        reaches step 4, the category average: a defined number, not zero."""
+
+    def upstream_with_basis(self, sector: str, food_cat: str,
+                            food_item: str | None, destination: str | None,
+                            metric: str) -> tuple[Decimal, UpstreamBasis]:
+        """v1.54. The same chain, returning which of the four rows answered.
+
+        `UpstreamBasis` is an enum — ITEM_AT_DESTINATION,
+        CATEGORY_AT_DESTINATION, ITEM_EVERY_DESTINATION,
+        CATEGORY_EVERY_DESTINATION, ABSENT — with an `is_item_level` property.
+        It backs the fallback disclosure ("this figure is the Fruit average,
+        not Feijoas"), so it is a **value a caller branches on**, never a
+        sentence: the copy is the front end's and is translated. The member is
+        read off the winning row, not off the arguments, so a lookup that
+        named no item is never reported as item-level."""
 
     def downstream(self, destination: str, sector: str | None,
                    food_cat: str | None, metric: str) -> Decimal:
@@ -1860,7 +1908,24 @@ class FactorBundle:
     def has_destination(self, code: str) -> bool: ...
     def has_sector(self, code: str) -> bool: ...
     def has_food_category(self, code: str) -> bool: ...
+    def has_food_item(self, code: str) -> bool: ...
     def standard_mix_code(self) -> str: ...
+
+    def resolve_food_item(self, food_item: str | None,
+                          food_cat: str) -> str | None:
+        """v1.54. None passes through; a code is checked against the bundle's
+        item vocabulary and against its parent category. Raises
+        UnknownCodeError for an item this bundle does not know, and for one
+        whose parent is not the food_category it arrived with.
+
+        **The engine is what refuses an incoherent pair.** `submission_entry`
+        carries two independent foreign keys and a CHECK that only refuses an
+        item without a category, so `(fruit, cheese)` is storable at the
+        database. The lookup would otherwise fall past candidates 1 and 3 and
+        price cheese as the fruit average — a wrong answer that looks right.
+
+        None is never resolved to a stand-in the way a null food_category is
+        resolved to `standard_mix` (§6.2): there is no standard food."""
 
     def is_prevention_destination(self, code: str) -> bool:
         """v1.48. Whether this destination carries the prevention role
@@ -1889,7 +1954,11 @@ class FactorBundle:
         raise — the API layer decides how to present the problems.
 
         Checks: every upstream row's sector / food_category / metric exists
-        in this bundle and its destination is null or exists; every
+        in this bundle, its destination is null or exists, and (v1.54) its
+        food_item is null or exists *and* belongs to that row's own
+        food_category — a row filed under the wrong parent is unreachable,
+        because a lookup only ever builds the key with the item's real
+        category; every `food_items` row's parent category exists; every
         downstream row's destination / metric exists
         and its sector and food_category are each null or exist; every
         destination.group exists; exactly one food_category has
@@ -5017,6 +5086,11 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
       "display_unit": "kg CO2e", "display_precision": 1, "sort_order": 1 }
   ],
 
+  "food_items": [
+    { "code": "cheese", "name": "Cheese", "food_category": "dairy",
+      "sort_order": 1 }
+  ],
+
   "constants": [
     { "code": "GWP_CH4_100", "value": "28.0000000000", "unit": "", "note": "" }
   ],
@@ -5027,7 +5101,9 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
     { "sector": "processing", "food_category": "dairy", "destination": null,
       "metric": "co2e", "value_per_kg": "1.9000000000" },
     { "sector": "processing", "food_category": "dairy", "destination": "prevention",
-      "metric": "co2e", "value_per_kg": "0.0000000000" }
+      "metric": "co2e", "value_per_kg": "0.0000000000" },
+    { "sector": "processing", "food_category": "dairy", "food_item": "cheese",
+      "destination": null, "metric": "co2e", "value_per_kg": "2.7000000000" }
   ],
   "downstream": [
     { "destination": "landfill", "sector": null, "food_category": "dairy",
@@ -5066,7 +5142,11 @@ It is a **complete, self-contained snapshot** — the taxonomy as well as the fa
 
 `destinations[].is_prevention` (v1.48) is **optional and defaults to `false`**, on the same terms as `food_categories[].is_standard_mix`: a row that omits the key is not a prevention destination, so **no bundle written before v1.48 needs rewriting**. It backs `FactorBundle.is_prevention_destination()` (§4.1), whose only engine caller is §4.5's saving. `db/repository.build_bundle_data` — the one projection this shape and §6.3's export are both built from — now selects it; **§6.3's export is unaffected**, because it drops the taxonomy sections and `destinations` is one of them. A bundle whose prevention row omits the key still computes every metric correctly and gets the money saving wrong, which is why the key is named here rather than left to be inferred from the taxonomy.
 
-`upstream[].destination` may be `null` on exactly the same terms, meaning the row applies to every destination for that `(sector, food_category, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
+`food_items` (v1.54) is the item vocabulary, and it is the one **optional section**: every bundle written before v1.54 omits it — the thirteen golden cases, `build_bundle_data`'s output, and the `GET /factors` response a staff member pastes into the dry-run box — and all of them must still load. A bundle with no `food_items` knows no items, so every lookup in it falls to the category rows it has always used, which is what makes the engine's item dimension inert by data. The engine reads `code` and `food_category` from each row, and the parent is **required**, because it is both the fallback a food without its own factor row lands on and the thing `resolve_food_item()` checks a request against. `name` and `sort_order` travel with it unread, exactly as they do on `food_categories` and `destinations`: the bundle is `build_bundle_data`'s whole taxonomy, and the engine takes the columns it computes with.
+
+`upstream[].food_item` (v1.54) may be a code or `null`, meaning the row applies to every food in that category — the category average, and the normal row. Unlike every other nullable key in this shape it is **optional as well as nullable**: an absent key and `null` mean the same thing. That is a compatibility judgement rather than a change of principle. `downstream[].sector` and `upstream[].destination` are mandatory-with-null because they have been part of every bundle since the revision that added them, so a row missing one is a row that *lost* it; `food_item` is absent from every row of every bundle in the tree and those rows mean by their silence exactly what `null` means. Requiring it would refuse all thirteen golden cases. A value that is neither a string nor `null` is still a malformed row, and what the strict form would have caught — a producer that emits item rows and drops the key on some of them — is caught instead by `validate()`, which reports an upstream row naming an item this bundle does not know **and** one whose item belongs to a different category.
+
+`upstream[].destination` may be `null` on exactly the same terms as the downstream keys, meaning the row applies to every destination for that `(sector, food_category, food_item, metric)` — and here `null` is the *usual* value rather than the exception. The non-null rows are what make `prevention` a real 100% offset (§2.2, open item O-7): a `prevention` row at zero for every general row. `from_json()` must treat a missing `destination` key as a malformed row rather than as `null`, for the same reason §10.2 requires `null` to survive the round trip on the downstream side — a bundle whose generic rows have silently lost their key computes a plausible, wrong answer instead of raising.
 
 ## 10.3 The ReFED Comparison Fixture (owner: A)
 

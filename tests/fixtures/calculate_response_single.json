@@ -143,6 +143,7 @@
     {
       "sector": "consumer_hospitality",
       "food_category": null,
+      "food_item": null,
       "current": {
         "total_kg": "370.750",
         "metrics": {

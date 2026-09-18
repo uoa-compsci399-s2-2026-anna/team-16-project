@@ -51,6 +51,34 @@ IDENTICAL_BY_DESIGN = {
     "nl": {"Code", "Sector"},
 }
 
+#: Sentences that explain a table by naming the labels printed in it, each
+#: with the cell labels it names. `methodology.js` prints both scope columns
+#: of a factor table and then a sentence saying which scope wins; a reader
+#: looking for `All destinations` in that sentence has to find the same words
+#: the cell shows them.
+#:
+#: **This is a real failure, not a hypothetical one.** Seven of the twenty
+#: catalogues coined a second term for `All destinations` when the upstream
+#: sentence was translated for v1.58 -- Japanese explained a column headed
+#: 廃棄先 in terms of 行き先 -- which reads as two different scopes rather
+#: than one explained. The v1.31 sentence beside it had the property in all
+#: twenty, so nothing was catching the difference.
+SCOPE_SENTENCES = {
+    (
+        "A destination of All destinations, or a food of All foods in this "
+        "category, is a row that applies wherever no more specific row exists. "
+        "Where a row naming a destination and a row naming only a food could "
+        "both apply, the one naming a destination is used."
+    ): ("All destinations", "All foods in this category"),
+    (
+        "A sector of All sectors, or a food category of All food categories, is "
+        "a row that applies wherever no more specific row exists. Where a row "
+        "naming a sector and a row naming only a food category could both "
+        "apply, the one naming a sector is used. Negative values are retained "
+        "because they represent published offsets."
+    ): ("All sectors", "All food categories"),
+}
+
 LANGUAGES = i18n_keys.catalogue_languages()
 SOURCE = i18n_keys.source_strings()
 
@@ -226,6 +254,51 @@ def test_the_client_s_name_and_the_units_are_never_translated(language):
                     f"{language}: {literal!r} did not survive {source!r} -> "
                     f"{translated!r}"
                 )
+
+
+@pytest.mark.parametrize("language", LANGUAGES)
+def test_a_sentence_explaining_a_cell_uses_that_cell_s_words(language):
+    """The scope sentences on the methodology page (§7) tell a reader which of
+    two optional scopes wins. That only works if the sentence names the scope
+    in the words the table cell actually prints -- `t("All destinations")` in
+    the cell and a synonym in the sentence describes a column the reader
+    cannot see, in a language nobody on this team reads.
+
+    English cannot fail this: the sentence is written from the labels. Every
+    other catalogue can, and seven did.
+    """
+    strings = i18n_keys.catalogue(language)["strings"]
+    for sentence, labels in SCOPE_SENTENCES.items():
+        if sentence not in strings:
+            continue
+        translated = strings[sentence]
+        for label in labels:
+            assert label in strings, (
+                f"{language}: {label!r} is a cell label the sentence explains "
+                f"and the catalogue has no entry for it"
+            )
+            assert strings[label] in translated, (
+                f"{language}: the sentence explains a cell reading "
+                f"{strings[label]!r} without using those words -- {translated!r}"
+            )
+
+
+def test_every_scope_sentence_and_its_labels_are_strings_the_page_asks_for():
+    """The guard above skips a sentence a catalogue does not carry, which is
+    how it stays quiet for a catalogue written before the sentence existed --
+    and also how it would stay quiet forever if the English were reworded and
+    `SCOPE_SENTENCES` were left behind. This is the half that notices.
+    """
+    for sentence, labels in SCOPE_SENTENCES.items():
+        assert sentence in SOURCE, (
+            "SCOPE_SENTENCES names a sentence the front end no longer asks "
+            f"for: {sentence!r}"
+        )
+        for label in labels:
+            assert label in SOURCE, (
+                f"SCOPE_SENTENCES names a cell label the front end no longer "
+                f"asks for: {label!r}"
+            )
 
 
 @pytest.mark.parametrize("language", LANGUAGES)

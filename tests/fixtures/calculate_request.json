@@ -6,6 +6,7 @@
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
       "total_input_kg": "10000.000",
       "total_value_nzd": "45000.00",
       "wasted_value_nzd": "6750.00",
@@ -21,6 +22,7 @@
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "food_item": null,
       "total_value_nzd": "5000.00",
       "wasted_value_nzd": "4000.00",
       "current": [

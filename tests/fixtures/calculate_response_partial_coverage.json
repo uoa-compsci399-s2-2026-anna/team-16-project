@@ -344,6 +344,7 @@
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
       "current": {
         "total_kg": "1500.000",
         "metrics": {
@@ -600,6 +601,7 @@
     {
       "sector": "primary_production",
       "food_category": "vegetables",
+      "food_item": null,
       "current": {
         "total_kg": "800.000",
         "metrics": {

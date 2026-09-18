@@ -331,6 +331,209 @@ def test_a_change_to_is_mock_is_not_served_from_a_warm_cache(
     assert after["is_mock"] is becomes
 
 
+def test_a_new_food_item_is_not_hidden_behind_a_warm_cache(seeded_session):
+    """v1.58. `food_item` is the **second** thing that can move under a warm
+    slot, and the first one that is not a field of the factor set at all.
+
+    §2.1 makes the vocabulary global — a factor set brings factors, not a
+    vocabulary — so a staff member adds a food to a set nobody republishes and
+    nothing invalidates anything. The panel and the API are separate services
+    (`docker/compose.yaml`), so the panel's own `invalidate_factor_bundle`
+    cannot reach the API's slot, and this cache has no expiry.
+
+    **The symptom is a form that offers a choice the calculator then refuses.**
+    §6.1 reads the vocabulary from the database and §6.2 resolves a named food
+    against the *bundle*: without this re-check, a food added at 10am is on
+    the form at 10am and answers `VALIDATION_ERROR: unknown food_item` for
+    every visitor who picks it until the API process restarts. Measured on the
+    running stack.
+
+    Asserted on the vocabulary the bundle was built with rather than on object
+    identity alone: a version that rebuilt on every hit would pass an identity
+    check while quietly throwing the cache away.
+    """
+    from db.models import FoodItem
+
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+    dairy = seeded_session.scalar(select(FoodCategory).where(FoodCategory.code == "dairy"))
+
+    def factory(data):
+        return {"food_items": [row["code"] for row in data["food_items"]]}
+
+    first = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert first["food_items"] == []
+    #: Warm: nothing moved, so the cache is doing its job.
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    ) is first
+
+    cheese = FoodItem(code="cheese", name="Cheese", food_category_id=dairy.id)
+    seeded_session.add(cheese)
+    seeded_session.flush()
+
+    after = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert after["food_items"] == ["cheese"], (
+        "a food added to the global vocabulary is invisible to the engine "
+        "until the process restarts, while the form already offers it"
+    )
+
+    #: Retiring one moves it the other way, and `active` is how a taxonomy row
+    #: leaves service everywhere else in this schema.
+    cheese.active = False
+    seeded_session.flush()
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    )["food_items"] == []
+
+    #: A rename is in the fingerprint too: it is what the results page and the
+    #: PDF print, so a stale one is a document naming a food by a name the
+    #: taxonomy no longer uses.
+    cheese.active = True
+    seeded_session.flush()
+    load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+
+    def naming_factory(data):
+        return {"names": [row["name"] for row in data["food_items"]]}
+
+    before_rename = load_factor_bundle(
+        seeded_session, published_id, bundle_factory=naming_factory
+    )
+    cheese.name = "Cheddar"
+    seeded_session.flush()
+    renamed = load_factor_bundle(
+        seeded_session, published_id, bundle_factory=naming_factory
+    )
+    assert renamed is not before_rename
+    assert renamed["names"] == ["Cheddar"]
+
+
+def test_a_warm_cache_hit_costs_two_queries_and_composes_nothing(seeded_session):
+    """v1.58. The two live re-reads are what a cache hit costs, and this is
+    the only thing that says so.
+
+    `load_factor_bundle`'s docstring has claimed a price since v1.4 -- one
+    primary-key SELECT of one boolean, against a bundle of some 900 factor
+    rows -- and v1.58 added a second query to it without anything measuring
+    either. A claim in prose is not a claim a later change has to keep.
+
+    **The number is pinned rather than bounded** because both directions are
+    defects. Three would mean a third live check nobody accounted for, or a
+    fingerprint that grew a join. Fewer would mean one of the two re-reads
+    stopped happening, which is a stale bundle served from a warm slot -- the
+    condition the two tests above exist for, and one that shows up here as a
+    cheaper cache rather than as a wrong answer.
+
+    Counted at the cursor, so a query issued anywhere -- lazy load, identity
+    map miss, a helper called for its side effect -- is counted whether or not
+    this module wrote it.
+    """
+    from sqlalchemy import event
+
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+
+    composes: list[int] = []
+
+    def factory(data):
+        composes.append(1)
+        return {"composed": len(composes)}
+
+    statements: list[str] = []
+    bind = seeded_session.get_bind()
+
+    def record(conn, cursor, statement, parameters, context, executemany):
+        statements.append(statement)
+
+    warm = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert composes == [1]
+
+    event.listen(bind, "before_cursor_execute", record)
+    try:
+        again = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    finally:
+        event.remove(bind, "before_cursor_execute", record)
+
+    assert again is warm
+    assert composes == [1], "a hit composed the bundle again"
+    assert len(statements) == 2, (
+        "a warm hit is one is_mock SELECT and one vocabulary SELECT; "
+        f"this run issued {len(statements)}: {statements}"
+    )
+    #: Named, not just counted: two queries of the right shape is the claim.
+    assert any("factor_set" in q for q in statements)
+    assert any("food_item" in q for q in statements)
+
+
+def test_a_write_during_the_compose_does_not_get_stamped_onto_the_old_bundle(
+    seeded_session,
+):
+    """v1.58. The fingerprint is read **before** `build_bundle_data`, and
+    this is the window that says why.
+
+    Composing a bundle reads some 900 factor rows, so it is not
+    instantaneous, and the vocabulary it is fingerprinted against is
+    global §2.1 taxonomy that any staff member can write at any moment.
+    A fingerprint taken *after* the compose therefore describes a database
+    the bundle in hand may already be behind -- and stamping it on the slot
+    makes every later hit compare new against new, match, and hand back the
+    stale bundle. This cache has no expiry, so 'later' means for the life
+    of the process: the exact failure the fingerprint was added to prevent,
+    reintroduced by the order it was taken in.
+
+    The factory is where the window is opened, because the factory is the
+    one thing this test can put *inside* the compose. Writing the food from
+    there is the same event as another connection writing it while these
+    rows are being read.
+
+    **The assertion is that the next call rebuilds**, not that it returns
+    the newer bundle immediately -- the request already in flight is
+    entitled to the answer it composed. Being wrong the other way is the
+    cheap direction: one needless rebuild against a wrong answer served
+    until somebody restarts the process.
+    """
+    from db.models import FoodItem
+
+    published_id = get_published_factor_set_id(seeded_session)
+    invalidate_factor_bundle()
+    dairy = seeded_session.scalar(
+        select(FoodCategory).where(FoodCategory.code == "dairy")
+    )
+    writes: list[str] = []
+
+    def factory(data):
+        #: The concurrent write, landing once, while the bundle is being
+        #: composed from rows read before it.
+        if not writes:
+            writes.append("cheese")
+            seeded_session.add(
+                FoodItem(code="cheese", name="Cheese", food_category_id=dairy.id)
+            )
+            seeded_session.flush()
+        return {"food_items": [row["code"] for row in data["food_items"]]}
+
+    first = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert first["food_items"] == [], (
+        "the compose read the vocabulary before the write landed, which is "
+        "what makes this the interesting case"
+    )
+
+    second = load_factor_bundle(seeded_session, published_id, bundle_factory=factory)
+    assert second is not first, (
+        "the slot was stamped with a fingerprint taken after the compose, so "
+        "it matches the database and the stale bundle is served for the life "
+        "of the process"
+    )
+    assert second["food_items"] == ["cheese"]
+
+    #: And it settles: nothing moved during the second compose, so the
+    #: third call is a hit. A version that rebuilt every time would pass
+    #: the assertion above for the wrong reason.
+    assert load_factor_bundle(
+        seeded_session, published_id, bundle_factory=factory
+    ) is second
+
+
 def test_the_bundle_carries_each_upstream_rows_destination(seeded_session):
     """Contract §10.2 (v1.8): every `upstream[]` row publishes a `destination`,
     `null` for the generic row that applies to every destination.

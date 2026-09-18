@@ -137,7 +137,15 @@ async def test_taxonomy_contract(app):
         response = await client.get("/api/v1/taxonomy")
     assert response.status_code == 200
     body = response.json()
-    assert body["factor_set"] == {"version_label": "MOCK-v0", "is_mock": True}
+    #: v1.58 added the third key. Asserted as a whole dict rather than by
+    #: membership: `item_level_enabled` is what releases step 2.5 on the front
+    #: end, and a key quietly dropped from this block is a feature switch that
+    #: stops reaching the browser with nothing failing.
+    assert body["factor_set"] == {
+        "version_label": "MOCK-v0",
+        "is_mock": True,
+        "item_level_enabled": False,
+    }
     #: Ordered by sort_order, so `prevention` (5) leads and `landfill` (110)
     #: trails. Asserted as a property rather than as `destinations[0]`, which
     #: only held while the seed carried a single destination.

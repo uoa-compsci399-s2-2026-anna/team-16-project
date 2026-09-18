@@ -228,7 +228,12 @@ function renderFactors(payload) {
   fragment.append(makeCollectionSection(
     'upstream-heading',
     t('Upstream factors'),
-    t('A destination of All destinations means that the row applies unless a destination-specific upstream factor is available.'),
+    // Two optional scopes since v1.58, and the order between them is not
+    // something a reader can infer from the rows -- both "All destinations"
+    // and "All foods in this category" appear in the same table and neither
+    // column says which gives way. The sentence has to, exactly as the
+    // downstream table's does.
+    t('A destination of All destinations, or a food of All foods in this category, is a row that applies wherever no more specific row exists. Where a row naming a destination and a row naming only a food could both apply, the one naming a destination is used.'),
     payload?.upstream,
     t('No upstream factors were returned.'),
     {
@@ -236,6 +241,7 @@ function renderFactors(payload) {
       columns: [
         { label: t('Sector'), value: row => recorded(row?.sector), code: true },
         { label: t('Food category'), value: row => recorded(row?.food_category, t('All food categories')), code: true },
+        { label: t('Food'), value: row => recorded(row?.food_item, t('All foods in this category')), code: true },
         { label: t('Destination'), value: row => recorded(row?.destination, t('All destinations')), code: true },
         { label: t('Metric'), value: row => recorded(row?.metric), code: true },
         { label: t('Value per kg'), value: row => recorded(row?.value_per_kg) },

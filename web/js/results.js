@@ -258,32 +258,69 @@ function moneyLines(totals) {
   return ['', t('The money'), ...lines]
 }
 
-// A pure hover tooltip: the pointer entering the `i` reveals it and leaving hides it, with
-// no click-to-latch state. The adjacent-sibling focus rule in CSS gives keyboard users the
-// same information when Tab puts a visible focus ring on the button.
-function resultExplanation(body, id) {
+/**
+ * A summary card's explanation: the `i`, and the panel it reveals.
+ *
+ * A pure hover tooltip -- the pointer entering the `i` reveals it and leaving hides it,
+ * with no click-to-latch state. The adjacent-sibling focus rule in CSS gives keyboard
+ * users the same panel when Tab puts a visible focus ring on the button.
+ *
+ * **`label` is a parameter and not a constant.** It was `How this comparison was worked
+ * out` on every card, which is the equivalences' own string (see `equivalences` below):
+ * a screen reader announced "how this comparison was worked out" for *Total food waste*
+ * and *Percentage waste*, neither of which is a comparison.
+ *
+ * `body` is assembled from `t()` output and interpolated taxonomy names, each escaped at
+ * the point it is built -- see the three builders below.
+ */
+function resultExplanation(body, id, label) {
   const tooltipId = `result-explanation-${id}`
-  return `<div class="result-explanation"><button class="result-explanation__trigger" type="button" aria-label="${escapeHtml(t('How this comparison was worked out'))}" aria-describedby="${escapeHtml(tooltipId)}">i</button><div class="result-explanation__body" id="${escapeHtml(tooltipId)}" role="tooltip">${body}</div></div>`
+  return `<div class="result-explanation"><button class="result-explanation__trigger" type="button" aria-label="${escapeHtml(label)}" aria-describedby="${escapeHtml(tooltipId)}">i</button><div class="result-explanation__body" id="${escapeHtml(tooltipId)}" role="tooltip">${body}</div></div>`
 }
 
-const METRIC_EXPLANATIONS = {
-  co2e: '<p>Estimated greenhouse gas emissions from the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × [production factor + destination factor] = kg CO2e.</p>',
-  ch4: '<p>Estimated methane emissions from the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × [production factor + destination factor] = kg CH4.</p>',
-  water: '<p>Estimated water associated with the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × [production factor + destination factor] = litres.</p>',
-  cost: '<p>Estimated disposal cost and waste levy, excluding the food's purchase or retail value.</p><p><strong>Calculation:</strong> waste (kg) × waste-management cost per kg = NZD.</p>',
-}
-
-function metricExplanation(code, metric, definition) {
+/**
+ * One metric's explanation, and **it does not restate the formula.**
+ *
+ * The first draft carried a per-code table -- `{co2e, ch4, water, cost}` -- each entry
+ * spelling out `waste (kg) × [production factor + destination factor]`. Two things are
+ * wrong with that and both are named by the contract:
+ *
+ * * §7.6 rule 5: *iterate over metrics; never hard-code their codes.* A metric a staff
+ *   member adds gets no explanation, or an untranslated fallback, and nothing says so.
+ * * **The expression lives in the `metric` row**, and staff edit it through the admin
+ *   panel. A formula copied into a call site is a second copy that goes stale silently:
+ *   the tooltip keeps asserting a calculation the engine has stopped performing, and no
+ *   test in the tree compares the two.
+ *
+ * What is said instead is the engine's own invariant, which the contract fixes and staff
+ * cannot edit away: *a formula computes one line, and the engine sums the lines.* That is
+ * true of every metric, including one added tomorrow. The published formulas and factors
+ * are on the methodology page, which is where a reader who wants the expression should
+ * be sent -- §6.3 publishes them there precisely so this page does not have to.
+ */
+function metricExplanation(metric, definition, code) {
+  const name = definition?.name || code
   const unit = metricUnit(metric, definition)
-  return METRIC_EXPLANATIONS[code] || `<p>Estimated ${escapeHtml(definition?.name || code)} impact of the wasted food.</p><p><strong>Calculation:</strong> waste (kg) × applicable impact factor = ${escapeHtml(unit)}.</p>`
+  return `<p>${escapeHtml(t('%(metric)s from the food you entered, in %(unit)s.', { metric: name, unit }))}</p>`
+    + `<p>${escapeHtml(t('Each amount you entered is multiplied by the factors published for its food type and its destination, and the results are added together. The published factors and formulas are on the methodology page.'))}</p>`
 }
 
 function massExplanation() {
-  return '<p>Total weight of food waste across all destinations.</p><p><strong>Calculation:</strong> add all recorded waste amounts. Tonnes = kilograms ÷ 1,000.</p>'
+  return `<p>${escapeHtml(t('The total weight of the food waste you entered, added across every destination.'))}</p>`
 }
 
+/**
+ * The share's explanation, and the one card where the placeholder banner does not apply.
+ *
+ * §4.6: this figure is `current.total_kg ÷ total_input_kg` -- two masses the visitor
+ * typed, with no factor anywhere in the division. Every other number on this page is
+ * `qty_kg × a factor` and the factor set is mock (O-1). A reader who distrusts this one
+ * *because of* the banner is distrusting the number the banner was never about, so the
+ * card says so itself.
+ */
 function shareExplanation() {
-  return '<p>Percentage of the total food handled that became waste.</p><p><strong>Calculation:</strong> total waste (kg) ÷ total food handled (kg) × 100.</p>'
+  return `<p>${escapeHtml(t('The waste you entered as a percentage of the food you said you handled.'))}</p>`
+    + `<p>${escapeHtml(t('This is a ratio of two figures you typed, so the placeholder factors do not affect it.'))}</p>`
 }
 
 function summaryCards(totals, taxonomy) {
@@ -294,12 +331,12 @@ function summaryCards(totals, taxonomy) {
     const total = number(metric.total)
     const name = definition?.name || code
     const unit = metricUnit(metric, definition)
-    return `<article class="result-card"><p class="result-label">${escapeHtml(name)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(unit)}</p>${resultExplanation(metricExplanation(code, metric, definition), code)}</article>`
+    return `<article class="result-card"><p class="result-label">${escapeHtml(name)}</p><p class="result-value${negativeClass(total)}">${formatNumber(total, precision)} ${escapeHtml(unit)}</p>${resultExplanation(metricExplanation(metric, definition, code), code, t('How this figure was worked out'))}</article>`
   }).join('')
   const totalKg = number(totals.total_kg)
   const share = productionShareText(totals)
   const shareNote = share.note ? `<p class="result-note">${escapeHtml(share.note)}</p>` : ''
-  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p>${resultExplanation(massExplanation(), 'mass')}</article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}${resultExplanation(shareExplanation(), 'production-share')}</article>`
+  return `<article class="result-card primary-result"><p class="result-label">${escapeHtml(t('Total food waste'))}</p><p class="result-value">${formatNumber(totalKg, 2)} kg</p><p class="result-note">${formatNumber(kgToTonnes(totals.total_kg), 3)} ${escapeHtml(t('tonnes'))}</p>${resultExplanation(massExplanation(), 'mass', t('How this figure was worked out'))}</article>${impactCards}<article class="result-card"><p class="result-label">${escapeHtml(t('Percentage waste'))}</p><p class="result-value">${escapeHtml(share.value)}</p>${shareNote}${resultExplanation(shareExplanation(), 'production-share', t('How this figure was worked out'))}</article>`
 }
 
 // §3: `label` is `label_template` with the equivalence's own value already interpolated and

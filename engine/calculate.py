@@ -60,6 +60,7 @@ from engine.types import (
     EntryInput,
     EntryResult,
     EquivalenceResult,
+    ItemBasis,
     MetricResult,
     MoneyResult,
     ScenarioLine,
@@ -163,6 +164,12 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
                 # Echoed as sent too, and here there is nothing to resolve:
                 # `None` is not a stand-in for anything (§3, `EntryInput`).
                 food_item_code=entry.food_item_code,
+                #: v1.59. Computed from the two scenarios just evaluated,
+                #: not from the request: the request says which food was
+                #: asked for and only the rows say which rows answered.
+                item_basis=_item_basis(
+                    entry.food_item_code, (current, alternative)
+                ),
                 current=current,
                 alternative=alternative,
                 net_benefit=benefit,
@@ -237,7 +244,13 @@ def calculate_scenario(
         rows: list[BreakdownRow] = []
         total = Decimal("0")
         for scenario_line in lines:
-            upstream = bundle.upstream(
+            #: v1.59. `upstream_with_basis` rather than `upstream`: the
+            #: same chain and the same value, plus which of §2.2's four
+            #: candidate rows answered. Read here rather than recomputed
+            #: anywhere later -- the basis is a property of a lookup, and a
+            #: second site that tried to work out which row *would* have won
+            #: would be a second copy of the precedence order.
+            upstream, upstream_basis = bundle.upstream_with_basis(
                 sector_code,
                 food_category,
                 # v1.54's dimension, carried by §3's `EntryInput` since
@@ -296,6 +309,10 @@ def calculate_scenario(
                     # whose metric has no row would otherwise put a bare
                     # `"0"` on the wire beside its neighbour's
                     # `"1.9000000000"`.
+                    #: v1.59, and never `None` here: an entry-level row
+                    #: was priced by exactly one candidate, which is the
+                    #: whole claim the disclosure rests on.
+                    upstream_basis=upstream_basis,
                     upstream=upstream.quantize(METRIC_SCALE),
                     downstream=downstream.quantize(METRIC_SCALE),
                     value=value.quantize(METRIC_SCALE),
@@ -715,6 +732,54 @@ def _share_percent(part: Decimal | None, whole: Decimal | None) -> Decimal | Non
     return (part / whole * 100).quantize(SHARE_SCALE, rounding=ROUND_HALF_UP)
 
 
+def _item_basis(
+    food_item_code: str | None, scenarios: tuple[ScenarioResult | None, ...]
+) -> ItemBasis:
+    """§4.2, v1.59. One entry's rows rolled up into the handle its
+    disclosure branches on.
+
+    **Both scenarios, not just `current`.** Both sets of figures are on the
+    results page and in both exports, and a disclosure that described only
+    the current scenario would sit above an alternative it does not cover.
+
+    **Every metric, not just one.** A set can price a food for `co2e` and not
+    for `cost`, which is `MIXED` -- and the surface that wants to know *which*
+    metric reads the rows, which is what they are on the wire for.
+
+    An entry that named no food is `NOT_APPLICABLE` without looking at a row:
+    there is no claim to make, and a member describing a fallback that did
+    not happen would be a sentence shown to a visitor who never chose a food.
+    An entry that named one and produced **no rows at all** is
+    `NOT_APPLICABLE` too, for the opposite reason: nothing was priced, so
+    every other member would be a claim about a figure that does not exist.
+    (§6.2 requires at least one line per scenario, so this is a guard
+    rather than a case -- but a roll-up that returned `CATEGORY` for an empty
+    entry would put the disclosure on a result with nothing in it.)
+    """
+    if food_item_code is None:
+        return ItemBasis.NOT_APPLICABLE
+    item_rows = 0
+    total_rows = 0
+    for scenario in scenarios:
+        if scenario is None:
+            continue
+        for metric in scenario.metrics.values():
+            for row in metric.by_destination:
+                total_rows += 1
+                #: Asked of the member rather than compared against a list
+                #: here: which members are item rows is knowledge that
+                #: belongs beside the lookup chain that produces them.
+                if row.upstream_basis is not None and row.upstream_basis.is_item_level:
+                    item_rows += 1
+    if total_rows == 0:
+        return ItemBasis.NOT_APPLICABLE
+    if item_rows == 0:
+        return ItemBasis.CATEGORY
+    if item_rows == total_rows:
+        return ItemBasis.ITEM
+    return ItemBasis.MIXED
+
+
 def _roll_up(
     scenarios: tuple[ScenarioResult, ...], bundle: FactorBundle
 ) -> ScenarioResult:
@@ -758,6 +823,15 @@ def _roll_up(
                         upstream=ZERO_RATE,
                         downstream=ZERO_RATE,
                         value=value,
+                        # v1.59, `None` for the reason the two rates above
+                        # are zero: this row is a sum across entries, and
+                        # two entries sharing a destination can have been
+                        # priced from different candidate rows. A member
+                        # here would name one of them and describe neither.
+                        # `None` is not a fifth member of the enum for the
+                        # same reason `ZERO_RATE` is not a rate: it says
+                        # the question does not apply to this row.
+                        upstream_basis=None,
                     )
                     for destination_code, (qty, value) in bucket_for_metric.items()
                 ),

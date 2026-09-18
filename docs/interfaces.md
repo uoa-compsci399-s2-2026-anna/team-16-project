@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-18 (v1.58 draft)"
+date: "2026-09-18 (v1.59 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,41 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.59 — 2026-09-18 (the answer says which row priced it; affects A, B, C and D)
+
+> **`UpstreamBasis` has existed since v1.56 and nothing read it.** Its own
+> docstring names what it is for — *the fallback disclosure the interface will
+> render* — while `engine/calculate.py` called `bundle.upstream()`, took the
+> value and dropped the basis on the floor. A dimension is not disclosed by an
+> enum nobody calls.
+
+Stage 7 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. v1.58 let a request name a food and priced the entry at it; **this is the revision that tells the visitor when it could not.** A food with no factor rows of its own is priced at its category's average — a defined, meaningful number, which is exactly why it is dangerous: nothing about the figure looks like a fallback, and the visitor asked a more specific question than the number answers.
+
+**What a caller that has not changed sees.** Every request shape is unchanged; no request field is added. Three keys are added to responses and every existing figure is byte-identical — replayed through the built app before and after and compared key by key.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`BreakdownRow` gains `upstream_basis`** — which of §2.2's four candidate rows produced this line's `upstream`, or `absent` where none did. Per line and per metric, because that is the granularity at which the answer varies: the destination outranks the item, so one entry's `prevention` line is category-priced while its `landfill` line is not. **Required, not defaulted**: every member is a claim about a figure that was produced, so there is no safe value to assume | §3, §4.2 |
+| 2 | **`null` on a totals-level row**, where `upstream` and `downstream` are already zero and for the same reason: a row summed across entries was priced by no single candidate, and naming one of them would describe neither | §3, §6.2 |
+| 3 | **`EntryResult` gains `item_basis`** — `item`, `mixed`, `category` or `not_applicable`, rolled up from every `BreakdownRow.upstream_basis` in **both** scenarios. Defaulted to `not_applicable`, which is the only honest value for a caller that predates the field: such a caller cannot have named a food | §3, §4.2 |
+| 4 | **Only `category` is disclosed.** `ItemBasis.is_disclosed` states it once, so three surfaces do not each decide. `mixed` is the ordinary state, not an alarm — see the callout below | §3, §7 |
+| 5 | **`POST /calculate` carries both on the wire** — `entries[].item_basis` and `by_destination[].upstream_basis`, present on every entry and every row | §6.2 |
+| 6 | **The results page, its plain-text export and the PDF all render the same sentence**, from the same field, worded from the same two catalogue keys. `tests/api/test_pdf_render.py` asserts the PDF's two constants are strings the front end also renders, so a reword on one side fails rather than producing two accounts of one submission | §7, §6.2.3 |
+| 7 | **The privacy promise names the food.** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` now read *the sector, food category, the specific food where you name one, and the quantities entered*. Worded so that it is true on both sides of landing step 8, and closing the note v1.58 left open in §2.3 | §7, §2.3 |
+| 8 | **The golden harness stops dropping fields.** `render()` claimed to drop nothing and had been dropping v1.58's `EntryResult.food_item_code` since it was added — invisibly, because the field is `None` in all thirteen cases and a key missing from both documents is missing from the comparison too. `test_render_drops_no_field` now checks the projection against `dataclasses.fields` | §10.1 |
+
+> **`mixed` is the ordinary state and must not raise the sentence.** O-7's prevention offset is stored as a **category-level, destination-specific** row (§2.2 candidate 2), and the destination outranks the item — so *every* entry that moves mass to `prevention` has at least one category-priced line, however well the published set prices its food. A disclosure raised on `mixed` would fire on nearly every submission that uses the calculator's headline feature, and a caveat that fires on everything is read as furniture. The member is still carried, because a surface that wants to be precise about one metric reads the rows.
+>
+> **The roll-up is the engine's, not each surface's.** Three places render this sentence — `web/js/results.js` on screen, the same module's text export, and `api/pdf_render.py` — in two languages, across a process boundary. Three roll-ups is one submission described three ways, and the difference would appear only for a visitor who read the page and then opened the file. `engine/calculate.py::_item_basis` computes it once, the golden suite pins it, and the surfaces branch.
+>
+> **The basis is read off the winning key, never off the arguments.** A lookup that named no item cannot be answered by an item row and a lookup that named no destination cannot be answered by a here-only row, so the member describes the row that actually priced the line — which is what keeps it truthful in the two degenerate cases where the four candidate keys coincide.
+>
+> **The thirteen `expected.json` files were not regenerated from the engine.** `tests/golden/test_golden.py` says it in as many words — *a runner with a `--regenerate` flag is a runner that certifies whatever the engine currently does* — so each basis was derived from that case's own `bundle.json` by a reader written against §2.2's prose, and the comparison is between two independent derivations. No pre-existing leaf moved in any of the thirteen; that was checked mechanically, in both directions.
+>
+> **A mutation test had been silently disarmed by this change and the suite caught it.** `test_case_03_fails_if_the_upstream_destination_dimension_is_removed` monkeypatches `FactorBundle.upstream`, and `calculate_scenario` now calls `upstream_with_basis` — so the patch landed on a method the engine had stopped calling and case_03 passed 456.000 straight through, green and evidence of nothing. It patches the method the engine calls. Written down because the next person to add a lookup method inherits the same trap.
+>
+> **Nothing visitor-facing moves yet.** `item_level_enabled` is `false` on every set that exists and `admin/seed.py` seeds no `food_item`, so no entry can carry a food through the form and `item_basis` is `not_applicable` on every response a visitor can produce. This is what makes landing step 8 possible to build; it is not step 8.
 
 ### v1.58 — 2026-09-18 (the wire learns the food item; affects B, C, D and A, and E as the author of the vocabulary)
 
@@ -1581,7 +1616,7 @@ CHECK `ck_submission_entry_item_has_category`: `food_item_id IS NULL OR food_cat
 >
 > **What forking does to the statistics is open and is not settled by this revision.** §5.4 aggregates per entry, deliberately: "one submission with three entries is three observations". Once an entry is a *leaf* rather than a chain, one chain becomes N observations — `by_sector` shares become biased toward whoever ticked more boxes, `by_food_category` shares become biased by how many items a category has, and the suppression threshold weakens, because a bucket reaches 5 with fewer real submissions behind it. That last one is a privacy regression, not a cosmetic one, and it has to be answered before step 2.5 reaches the public.
 >
-> **§5.6's anonymity promise needs revisiting too.** A named food is materially more identifying than a category: "processing / cheese / 40 t" narrows the population of New Zealand businesses far more than "processing / dairy" does. `web/methodology.html` currently promises that "the sector, food category and quantities entered into the calculator are recorded anonymously"; that sentence becomes incomplete the day an item is stored.
+> **~~The anonymity promise needs revisiting too.~~ Closed in v1.59.** A named food is materially more identifying than a category: "processing / cheese / 40 t" narrows the population of New Zealand businesses far more than "processing / dairy" does. The promise lived in four pages' copy rather than in a numbered section of this document, which is part of why it went unnoticed: `home.html`, `index.html`, `methodology.html` and `stats.html` each enumerated *the sector, food category and quantities*. Both enumerating sentences now name the food, worded *where you name one* so that they are true before landing step 8 as well as after it.
 
 > **The three v1.48 columns are all nullable, and NULL is a claim about what the visitor said rather than about the food.** Zero would say this stage put nothing through, or that its food was worth nothing; NULL says nobody stated it. §4.5 depends on the distinction — every field of the money block is absent unless everything it derives from was present — so a repository or an adapter that defaults any of these to zero on the way in produces a figure the visitor never implied.
 >
@@ -1760,6 +1795,28 @@ class CalculationRequest:
 
 # ---------- Output ----------
 
+class UpstreamBasis(Enum):
+    """Which of """ + S + """2.2's four candidate rows answered an upstream lookup.
+    v1.56; carried on the wire from v1.59."""
+    ITEM_AT_DESTINATION = "item_at_destination"
+    CATEGORY_AT_DESTINATION = "category_at_destination"   # outranks the one below
+    ITEM_EVERY_DESTINATION = "item_every_destination"
+    CATEGORY_EVERY_DESTINATION = "category_every_destination"
+    ABSENT = "absent"                                     # no row; Decimal('0')
+
+    @property
+    def is_item_level(self) -> bool: ...                  # the first and third
+
+class ItemBasis(Enum):
+    """One entry's rows rolled up. v1.59."""
+    ITEM = "item"                       # every lookup that could use the food did
+    MIXED = "mixed"                     # some did, some fell to the category
+    CATEGORY = "category"               # a food was named and NOT ONE figure is its
+    NOT_APPLICABLE = "not_applicable"   # no food was named
+
+    @property
+    def is_disclosed(self) -> bool: ...  # CATEGORY alone -- see the note below
+
 @dataclass(frozen=True)
 class BreakdownRow:
     destination_code: str
@@ -1767,6 +1824,12 @@ class BreakdownRow:
     upstream: Decimal               # per kg
     downstream: Decimal             # per kg, may be negative
     value: Decimal                  # this line's contribution to the metric total
+    # v1.59. Which of §2.2's four candidates produced `upstream`, or
+    # ABSENT where none did. None at the TOTALS level, where a row summed
+    # across entries was priced by no single row -- the same objection that
+    # leaves the two rates at zero there. Required, not defaulted: every
+    # member is a claim about a figure that was produced.
+    upstream_basis: UpstreamBasis | None
 
 @dataclass(frozen=True)
 class MetricResult:
@@ -1803,6 +1866,12 @@ class EntryResult:
     # resolves the code for the lookup and the result reports what the
     # request carried, so §6.2's response pairs with the row on screen.
     food_item_code: str | None = None
+    # v1.59. Whether this entry's figures were priced at the food it named,
+    # rolled up from every BreakdownRow.upstream_basis in BOTH scenarios.
+    # Defaulted, unlike the row's field above, because there is exactly one
+    # honest value for a caller that predates it: such a caller cannot have
+    # named a food.
+    item_basis: ItemBasis = ItemBasis.NOT_APPLICABLE
     # v1.50, §4.6. This entry's own current mass over its own total_input_kg,
     # 2 places. None whenever THIS entry supplied no production total --
     # permanent and independent of its neighbours, so an entry that answered
@@ -1883,6 +1952,10 @@ class CalculationResult:
 **Seven rules govern these types. Each is forced by §6.2 and none of them is A's to choose.**
 
 1. **`entries` preserves request order.** §6.2 states it, and `submission_entry.sort_order` (§2.3) exists to persist it. It is what lets C pair a result with the row the user typed.
+2b. **The fallback disclosure is the engine's to decide and the interface's to word (v1.59).** `UpstreamBasis` is a value and never a sentence: a human-readable string assembled in `engine/` would have to be assembled in English, which is neither where the copy lives nor where the twenty catalogues are. `ItemBasis` is the roll-up three surfaces branch on — the results page, its plain-text export and `§6.2.3`'s PDF — computed once so that one submission is not described three ways.
+
+    **Only `CATEGORY` asks for copy, and `is_disclosed` is where that is stated.** `MIXED` is the ordinary state: O-7's prevention offset is a category-level, destination-specific row, and the destination outranks the item, so every entry that moves mass to `prevention` has a category-priced line however well the set prices its food. A disclosure raised on `MIXED` fires on nearly every submission that uses the calculator's headline feature.
+
 2. **`by_destination` is populated per entry, and at the totals level it is populated per metric with the additive fields only (amended in v1.48).** This rule used to say the tuple was empty at the totals level, on the grounds that "a cross-entry destination breakdown has no single correct aggregation rule". **Half of that reasoning was right and is kept; half of it was wrong and is what changed.**
 
     - **`qty_kg` and `value` are additive, so they roll up.** A mass is a mass, and `value` is a summand of the metric total the engine already computes by summing (§4.3) — so the cross-entry partition is built from the same summation as the total, and it **cannot drift from it structurally**: there is no request that makes the rows partition a different quantity than the one `total` describes. That is a narrower claim than "the rows always add up to `total`" on the wire, and the narrower claim is the true one. `BreakdownRow.value` is quantised **per line**, to `METRIC_SCALE` (§1.2's ten places); `MetricResult.total` is `quantize(Σ unquantised line values)` — one rounding at the end, not one per line. When a formula's result does not terminate at ten places (`qty_kg * upstream / 3` is `case_09`'s shipped example of exactly this), each stored `value` differs from its true, unrounded figure by up to half of `METRIC_SCALE` — on the order of `5 × 10⁻¹¹`, a unit in the last place per line — and the rows can then sum to a figure a few `10⁻¹⁰`s away from `total`, at the entry level and, because the totals-level roll-up sums already-rounded entry figures without rounding again, at the totals level too. Every shipped formula today is multiplicative and terminates exactly at ten places, which is why nothing in the tree exhibits this yet — but `case_09` is proof staff can author a division, and a consumer charting a rolled-up breakdown against this guarantee should plan for it. It is a caveat worth carrying rather than a defect worth fixing: quantising every line to one fixed, wire-legible scale (§1.2) is what lets `by_destination` and `total` both be plain decimal strings at all, and the price is a gap of `5 × 10⁻¹¹` per affected line — invisible next to any `display_precision` a chart will ever round to.
@@ -2099,6 +2172,15 @@ def calculate(req: CalculationRequest, bundle: FactorBundle) -> CalculationResul
       Pure. The same (req, bundle) always yields the same result.
     """
 ```
+
+**The fallback disclosure is rolled up here and nowhere else (v1.59).** `calculate_scenario` calls `FactorBundle.upstream_with_basis` rather than `upstream`, keeps the member beside the value and puts it on each `BreakdownRow`; `_item_basis` then folds every row of **both** scenarios into the entry's `item_basis` (§3).
+
+- **Both scenarios**, because both sets of figures are on the results page and in both exports, and a claim that described only `current` would sit above an alternative it does not cover.
+- **Every metric**, because a set can price a food for `co2e` and not for `cost` — which is `MIXED`, and the surface that wants to know *which* metric reads the rows.
+- **An entry that named no food, or produced no rows, is `NOT_APPLICABLE`** — the first because there is nothing to disclose, the second because every other member would be a claim about a figure that does not exist.
+- **The totals-level rows carry `None`**, for the reason their two rate fields carry zero: a row summed across entries was priced by no single candidate.
+
+It is here rather than in each surface for the same reason `totals` is: three roll-ups, in two languages, across a process boundary, is one submission described three ways — and the golden suite can only pin the one that is in the engine.
 
 **`totals` is computed by the engine, not summed in the API adapter. This is a ruling, and it is not open.**
 
@@ -2918,6 +3000,8 @@ Called once on page load to build every dropdown and input row.
 | `entries` | array | Yes | At least one entry |
 | `entries[].sector` | string | Yes | Must exist in the taxonomy |
 | `entries[].food_category` | string \| null | No | Null is treated as `standard_mix` |
+| `entries[].item_basis` | string | — | **v1.59**, response only. Whether this entry's figures were priced at the food it named: `item`, `mixed`, `category` or `not_applicable`. Rolled up by the engine from every `by_destination[].upstream_basis` in **both** scenarios (§3, §4.2), never by a consumer. **Only `category` is a disclosure** — it means a food was named and not one figure came from it, and it is the case §7's *"this is the Dairy average, not Butter"* sentence exists for. `mixed` is ordinary: O-7's prevention offset is a category-level row, so any entry that moves mass to `prevention` has a category-priced line however well the set prices its food. `not_applicable` is every entry that named no food, which is every entry today |
+| `…by_destination[].upstream_basis` | string \| null | — | **v1.59**, response only. Which of §2.2's four candidate rows produced that line's `upstream`: `item_at_destination`, `category_at_destination`, `item_every_destination`, `category_every_destination`, or `absent` where no row answered and the rate is a documented zero. Per line and per metric, because the destination outranks the item and one entry's `prevention` line is therefore category-priced while its `landfill` line is not. **`null` on a totals-level row**, where `upstream` and `downstream` are already zero and for the same reason: a row summed across entries was priced by no single row |
 | `entries[].food_item` | string \| null | No | **v1.58**, response field from the same revision. The named food *within* `food_category` — "cheese", not "dairy". **Absent and `null` are the same thing**, and that thing is "named a category and no food", which is every request that existed before v1.58. Unlike `food_category`, null is **not** resolved to a stand-in: there is no standard food. Must name a food the published set's vocabulary carries, and must name the category that food belongs to; a request that names a food and no category at all is refused. Stored in `submission_entry.food_item_id` beside its category (§5.3), echoed on the response entry, and the fifth slot of §2.2's upstream lookup |
 | `entries[].total_input_kg` | decimal-string \| null | No | **v1.48**, response field since **v1.50**. What this stage put through in the period. `>= 0`, at most 3 decimal places, `<= 16` digits. *At most*, not exactly: `"50000"` and `"50000.000"` are the same figure and both are accepted, so trailing zeros are not required — `calculate_request.json` shows the padded spelling because it is one valid example, not the mandated one. Stored (§2.3); feeds `entries[].production_share_percent` and, when every entry supplies one, `totals.production_share_percent` — see §4.6 |
 | `entries[].total_value_nzd` | decimal-string \| null | No | **v1.48.** `>= 0`, at most 2 decimal places, `<= 14` digits. Feeds §4.5's money block and nothing else |
@@ -3048,7 +3132,7 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
           "by_destination": [
             { "destination": "landfill", "qty_kg": "1200.000",
               "upstream": "0.0000000000", "downstream": "0.0000000000",
-              "value": "3468.0000000000" }
+              "value": "3468.0000000000", "upstream_basis": null }
           ]
         }
       },
@@ -3081,6 +3165,8 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
     {
       "sector": "processing",
       "food_category": "dairy",
+      "food_item": null,
+      "item_basis": "not_applicable",
       "current": {
         "total_kg": "1500.000",
         "metrics": {
@@ -3091,7 +3177,8 @@ Because every dry-run request carries its own data, concurrent staff dry runs ar
             "by_destination": [
               { "destination": "landfill", "qty_kg": "1200.000",
                 "upstream": "1.9000000000", "downstream": "0.9900000000",
-                "value": "3468.0000000000" }
+                "value": "3468.0000000000",
+                "upstream_basis": "category_every_destination" }
             ]
           }
         },
@@ -3238,6 +3325,8 @@ No `token`, no `dry_run`: both are refused by `extra="forbid"` if sent, rather t
 `Content-Type: application/pdf`, `Content-Disposition: attachment; filename="kai-commitment-impact-calculator.pdf"`. One fixed filename regardless of what the request contains — the same reason `GET /factors?format=csv` (§6.3) answers a fixed archive name: nothing in a request body is safe to place in that header unescaped.
 
 **The document renders in the resolved locale, and one thing inside it never does.** The chrome — headings, unit labels, the mock-data warning banner, and the running header and footer on every page — is drawn from the same catalogues that serve the page, a byte-identical copy of `web/locales/*.json` under `api/assets/locales/` (a hash-comparison test holds the two in step). A Tamil-reading visitor therefore reads the document in Tamil. **The taxonomy names printed inside it — sector, food category and destination labels — are staff-typed database rows, supplied by `db/repository.get_taxonomy`, and are never translated in any locale: they are printed exactly as staff typed them.** Unlike the page, a missing catalogue key is not silently rendered in its English source here — `api/i18n.py`'s `Catalogue.gettext` raises rather than falling back, because a document read later by someone who cannot ask a follow-up is the one place a silently half-English render is worse than a failed request.
+
+**The fallback disclosure travels with the document (v1.59).** When an entry's `item_basis` is `category` the PDF carries the same caveat the screen and the plain-text export carry, in the same words, from §7.3c's two catalogue keys — because this is the copy most likely to be read months later by somebody who was not in the room, and a figure that is not as specific as the question it answers has to say so on its face. It sits beside the placeholder warning and is independent of it: a real factor set can still price a food only at its category. `_CATEGORY_AVERAGE_FLAG` and `_CATEGORY_AVERAGE_BODY` are this module's own constants and `tests/api/test_pdf_render.py` asserts they are strings the front end also renders, so a reword on one surface fails rather than producing two accounts of one submission.
 
 **The placeholder-data warning is mandatory here on the same terms as everywhere else (§2.2).** `render_export_pdf` reads `result.is_mock` unconditionally — there is no parameter, keyword or locale that suppresses it — and the renderer re-reads its own rendered output and refuses to produce a document that is missing the banner, rather than shipping one silently without it.
 
@@ -4112,6 +4201,24 @@ No exports. Uses top-level `await` to call `getFactors()`, then writes the facto
 > **The upstream table carries a `Food` column (v1.58)**, rendering `All foods in this category` where `upstream[].food_item` is absent — and absent is the shape §6.3 sends, not `null`, so the cell is written off a missing key rather than a null one. It is not optional for the reason the `Sector` column below is not: with a set that prices `cheese` apart from `dairy`, omitting it prints two rows identical in every visible column and differing only in the number, which is the figure published without its basis that §2.2's provenance columns exist to prevent. **And the intro sentence has to state the order**, because this table now shows *two* optional scopes — `All destinations` and `All foods in this category` — and §4.1 resolves a destination-only row ahead of a food-only one, which no reader can infer from the rows themselves.
 
 > **The downstream table carries a `Sector` column (v1.31)**, rendering `All sectors` where `downstream[].sector` is `null`, beside the `All food categories` the food column already renders. It is not optional: with a set that prices by sector, omitting it prints rows that are identical in every visible column and differ only in the number — the figure published without its basis that §2.2's provenance columns exist to prevent. The sentence above the table states §4.1's order as well, because the two columns each show a scope and neither can say which one gives way.
+
+## 7.3c The fallback disclosure (v1.59, written by C and D; mirrored by B in the PDF)
+
+**One sentence, three surfaces, one field.** The results page, its plain-text export and §6.2.3's PDF each render the same caveat when a visitor named a food the published set does not price: *"%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category's rather than its own."*
+
+The decision is `entries[].item_basis` and nothing else. **No surface may work it out from the rows** — a roll-up performed in `results.js`, again in its export and again in `api/pdf_render.py` is one submission described three ways, and the difference would surface only for a visitor who read the page and then opened the file. §3's `is_disclosed` is the branch: `category` alone.
+
+| Surface | Where it sits |
+| --- | --- |
+| Screen | An `aside.disclaimer`, beside the placeholder banner and **independent of it** — a real factor set can still price a food only at its category, and a placeholder one can price a food individually |
+| Text export | The same lines, beside the placeholder notice |
+| PDF | The same, from `api/pdf_render.py`'s `_CATEGORY_AVERAGE_FLAG` and `_CATEGORY_AVERAGE_BODY`, which `tests/api/test_pdf_render.py` asserts are strings the front end also renders. The two copies exist because the surfaces share no code; that test is what stops them becoming two sentences |
+
+**One line per food, deduplicated, and no plural form.** Two entries naming the same food are one caveat — the reader is being told a fact about the factor set, not about a row of their own table — and a sentence per food is why no catalogue needs a plural rule here.
+
+**The food is named from the taxonomy, never from the code alone.** §6.1's `food_items[]` supplies the display name and the parent category; a retired row falls back to the code rather than to a blank, because a caveat that names nothing is a caveat about an unnamed thing.
+
+**The privacy copy names the food too (v1.59).** Both enumerating sentences on `home.html`, `index.html`, `methodology.html` and `stats.html` read *the sector, food category, the specific food where you name one, and the quantities entered*. `submission_entry.food_item_id` has been written since v1.58, so the old enumeration was already incomplete; the clause is worded *where you name one* so that it is true before landing step 8 as well as after it. `tests/web/test_consent_copy.py`'s predicate is over the copy rather than over a list of sentences, so the reworded pair is still selected by it.
 
 ## 7.3b `submission.js` — the one builder of the calculate request (written by C)
 
@@ -5209,6 +5316,10 @@ tests/golden/
     request.json    a fixed request             <- §3 CalculationRequest, as JSON
     expected.json   the expected full CalculationResult   <- §3, as JSON
 ```
+
+> **Every field of `EntryResult` and `BreakdownRow` reaches `expected.json`, and since v1.59 that is checked rather than trusted.** The harness's `render()` is hand-written and its docstring said it dropped nothing, while it had been dropping v1.58's `food_item_code` since the day that field existed — invisibly, because the value is `None` in all thirteen cases and a key absent from *both* documents is absent from the comparison too. The suite went on passing with the newest thing in the engine outside it. `test_render_drops_no_field` compares the projection against `dataclasses.fields`, so a field added to either type is pinned the day it exists.
+>
+> **And nothing regenerates these files.** v1.59 added a key to every breakdown row of all thirteen; each value was derived from that case's own `bundle.json` by a reader written against §2.2's prose, so the comparison stayed between two independent derivations rather than becoming the engine agreeing with itself.
 
 Every change to the engine must leave all golden cases passing. This suite is the only evidence that the calculator computes correctly, and it is what the team can present at handover. `tests/golden/test_golden.py` discovers `case_*/`, loads the three files, calls `calculate()` and compares.
 

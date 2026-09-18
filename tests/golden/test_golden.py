@@ -53,12 +53,14 @@ from pathlib import Path
 
 import pytest
 
-from engine.bundle import FactorBundle
+from engine.bundle import FactorBundle, UpstreamBasis
 from engine.calculate import calculate
 from engine.types import (
+    BreakdownRow,
     CalculationRequest,
     CalculationResult,
     EntryInput,
+    EntryResult,
     EquivalenceResult,
     ScenarioLine,
 )
@@ -282,6 +284,10 @@ def _breakdown_rows(rows) -> list[dict]:
             "upstream": _decimal(row.upstream),
             "downstream": _decimal(row.downstream),
             "value": _decimal(row.value),
+            #: v1.59. `None` on a totals-level row, where no single
+            #: candidate answered -- the same reason `upstream` and
+            #: `downstream` are zero there.
+            "upstream_basis": _basis(row.upstream_basis),
         }
         for row in rows
     ]
@@ -321,6 +327,16 @@ def _scenario(scenario) -> dict | None:
         "metrics": {code: _metric(metric) for code, metric in scenario.metrics.items()},
         "equivalences": [_equivalence(equivalence) for equivalence in scenario.equivalences],
     }
+
+
+def _basis(basis) -> str | None:
+    """v1.59. The enum's own `value`, and `None` left as `None`.
+
+    `str(member)` would render `ItemBasis.CATEGORY`, which is a Python
+    repr rather than the contract's token, and a case file carrying it would
+    pin the class name into the golden suite.
+    """
+    return None if basis is None else basis.value
 
 
 def _benefit(benefit) -> dict | None:
@@ -378,6 +394,15 @@ def render(result: CalculationResult) -> dict:
             {
                 "sector_code": entry.sector_code,
                 "food_category_code": entry.food_category_code,
+                #: v1.58's field, absent from this function until v1.59 --
+                #: which is the defect `test_render_drops_no_field` below
+                #: now makes impossible. Nothing moved numerically, because
+                #: no golden case names a food, and that is precisely why
+                #: nothing caught it: a dropped key whose value is `None` in
+                #: every case is invisible to a comparison of what is there.
+                "food_item_code": entry.food_item_code,
+                #: v1.59.
+                "item_basis": _basis(entry.item_basis),
                 "current": _scenario(entry.current),
                 "alternative": _scenario(entry.alternative),
                 "net_benefit": _benefit(entry.net_benefit),
@@ -467,6 +492,61 @@ def test_golden_case(case: Path):
 # ------------------------------------------------- the suite's own guardrails
 
 
+@pytest.mark.parametrize("case", _cases(), ids=lambda path: path.name)
+def test_render_drops_no_field(case: Path):
+    """`render()` says it drops nothing, and until v1.59 it dropped
+    `EntryResult.food_item_code`.
+
+    This file's whole claim rests on one sentence -- *this suite is the only
+    evidence that the calculator computes correctly* -- and a hand-written
+    projection quietly narrows what that evidence covers. The dropped field
+    was v1.58's, added to the dataclass and never added here, and **no case
+    changed when it was added**, because it is `None` in all thirteen: a key
+    that is missing from both documents is missing from the comparison too.
+    The suite went on passing while the newest thing in the engine was
+    outside it.
+
+    So the projection is checked against the dataclasses instead of trusted.
+    Every field of `EntryResult` and of `BreakdownRow` must appear in the
+    rendered document; a field added to either is pinned the day it exists,
+    which is the guarantee `_equivalence` above already gets by deriving its
+    keys and the one the rest of `render()` could not get without listing
+    them (the entry's `current`/`alternative` are reshaped, not copied).
+    """
+    bundle, request = _load(case)
+    document = render(calculate(request, bundle))
+
+    entry_fields = {f.name for f in dataclasses.fields(EntryResult)}
+    for entry in document["entries"]:
+        missing = sorted(entry_fields - set(entry))
+        assert not missing, (
+            f"{case.name}: render() drops {missing} from every entry. A field "
+            "on EntryResult that never reaches expected.json is a field the "
+            "golden suite does not certify."
+        )
+
+    row_fields = {f.name for f in dataclasses.fields(BreakdownRow)}
+    for scope in ("totals", *range(len(document["entries"]))):
+        scenarios = (
+            (document["totals"]["current"], document["totals"]["alternative"])
+            if scope == "totals"
+            else (
+                document["entries"][scope]["current"],
+                document["entries"][scope]["alternative"],
+            )
+        )
+        for scenario in scenarios:
+            if scenario is None:
+                continue
+            for code, metric in scenario["metrics"].items():
+                for row in metric["by_destination"]:
+                    missing = sorted(row_fields - set(row))
+                    assert not missing, (
+                        f"{case.name}: render() drops {missing} from the "
+                        f"{scope}/{code} breakdown rows."
+                    )
+
+
 def test_the_suite_is_not_empty():
     """A discovery bug turns this whole file into zero assertions, and a run
     of zero golden cases is green. `_cases()` is a glob, so this is the only
@@ -541,11 +621,19 @@ def test_case_03_fails_if_the_upstream_destination_dimension_is_removed(monkeypa
         # accepted and ignored, which is what removing the column would
         # amount to. The item slot is carried so the stub can stand in for
         # the real method; no golden case names an item.
-        return self.upstream_factors.get(
-            (sector, food_cat, food_item, None, metric), Decimal("0")
-        )
+        key = (sector, food_cat, food_item, None, metric)
+        if key in self.upstream_factors:
+            return self.upstream_factors[key], UpstreamBasis.CATEGORY_EVERY_DESTINATION
+        return Decimal("0"), UpstreamBasis.ABSENT
 
-    monkeypatch.setattr(FactorBundle, "upstream", blind_to_destination)
+    #: **`upstream_with_basis`, not `upstream` (v1.59).** It was `upstream`
+    #: until this revision and the patch then landed on the method the engine
+    #: had stopped calling: `calculate_scenario` reads the basis beside the
+    #: value now, so a stub on `upstream` is applied to nothing and this test
+    #: passes 456.000 straight through -- green, and evidence of nothing. The
+    #: suite caught it, which is what it is for; it is written down because
+    #: the next person to add a lookup method inherits the same trap.
+    monkeypatch.setattr(FactorBundle, "upstream_with_basis", blind_to_destination)
 
     result = calculate(request, bundle)
     differences = _diff(_read(case, "expected.json"), render(result))

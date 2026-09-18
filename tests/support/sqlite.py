@@ -54,6 +54,7 @@ from db.models import (
     UnitPreset,
 )
 from db.repository import invalidate_factor_bundle
+from engine.types import ItemBasis, UpstreamBasis
 
 
 class FakeBundle:
@@ -151,6 +152,10 @@ def _scenario_result(lines, *, with_breakdown, rolled_up=False):
                 upstream=Decimal("0.0000000000"),
                 downstream=Decimal("0.0000000000"),
                 value=merged[code],
+                #: v1.59, `None` for the same reason the rates above are
+                #: zero: a totals-level row is a sum across entries and was
+                #: priced by no single candidate row.
+                upstream_basis=None,
             )
             for code in order
         )
@@ -162,6 +167,12 @@ def _scenario_result(lines, *, with_breakdown, rolled_up=False):
                 upstream=Decimal("0.0000000000"),
                 downstream=Decimal("0.0000000000"),
                 value=line.qty_kg,
+                #: v1.59. `ABSENT` is the truthful member for this fake and
+                #: not a placeholder: it carries no factors at all (its
+                #: `co2e` value *is* the mass), so no candidate row answered,
+                #: which is exactly what §2.2's fifth step means. A member
+                #: naming a row would claim a lookup this adapter never did.
+                upstream_basis=UpstreamBasis.ABSENT,
             )
             for line in lines
         )
@@ -287,6 +298,17 @@ class FakeEngineAdapter:
                 sector_code=entry.sector_code,
                 food_category_code=entry.food_category_code,
                 food_item_code=entry.food_item_code,
+                #: v1.59. Rolled up the way `engine.calculate._item_basis`
+                #: rolls it up, over this fake's own rows: none of them is
+                #: item-level (see `ABSENT` above), so an entry that named a
+                #: food is `CATEGORY` -- which is the honest answer for an
+                #: adapter that priced nothing at that food -- and one that
+                #: named none is `NOT_APPLICABLE`.
+                item_basis=(
+                    ItemBasis.NOT_APPLICABLE
+                    if entry.food_item_code is None
+                    else ItemBasis.CATEGORY
+                ),
                 current=_scenario_result(entry.current, with_breakdown=True),
                 alternative=_scenario_result(entry.alternative, with_breakdown=True)
                 if entry.alternative is not None

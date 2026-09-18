@@ -16,6 +16,7 @@ callers outside `engine/` import it from there.
 
 from dataclasses import dataclass
 from decimal import Decimal
+from enum import Enum
 
 # ---------- Input ----------
 
@@ -85,6 +86,92 @@ class CalculationRequest:
 # ---------- Output ----------
 
 
+class UpstreamBasis(Enum):
+    """Which of §2.2's four candidate rows answered an upstream lookup.
+
+    Returned by `FactorBundle.upstream_with_basis()` beside the value. The
+    fallback disclosure the interface will render -- *"this figure is the
+    Fruit average, not Feijoas"* -- has to be able to **branch** on which row
+    was used, and on nothing else: a human-readable string assembled here
+    would have to be assembled in English, in the engine, which is neither
+    where the copy lives nor where the twenty locale files are. So this is a
+    value, and the sentence is the caller's.
+
+    The member is derived from the *winning row's own shape* rather than from
+    what the caller asked for, which is what keeps it truthful in the two
+    degenerate cases: a lookup with `food_item=None` can only ever be answered
+    by a category row, and a lookup with `destination=None` can only ever be
+    answered by an every-destination row. See `upstream_with_basis()`.
+    """
+
+    #: This food, at this destination -- §2.2 candidate 1.
+    ITEM_AT_DESTINATION = "item_at_destination"
+    #: Every food in this category, here -- candidate 2. **Outranks candidate
+    #: 3**, and the prevention zero is stored in this shape.
+    CATEGORY_AT_DESTINATION = "category_at_destination"
+    #: This food, at every destination -- candidate 3.
+    ITEM_EVERY_DESTINATION = "item_every_destination"
+    #: The category average, everywhere -- candidate 4, and the normal row.
+    CATEGORY_EVERY_DESTINATION = "category_every_destination"
+    #: No row at all: `Decimal('0')`, §4.1's documented fall-through.
+    ABSENT = "absent"
+
+    @property
+    def is_item_level(self) -> bool:
+        """Whether the figure was refined by the named food.
+
+        This is the branch the disclosure needs: *false* while an item was
+        asked for is exactly the case that has to say "the category average,
+        not this food". It is a property of the basis rather than a fifth
+        thing for a caller to work out from the member name, because "which
+        members are item rows" is knowledge that belongs beside the chain.
+        """
+        return self in (
+            UpstreamBasis.ITEM_AT_DESTINATION,
+            UpstreamBasis.ITEM_EVERY_DESTINATION,
+        )
+
+
+class ItemBasis(Enum):
+    """Whether an entry's figures were priced at the food it named. v1.59.
+
+    One value per entry, rolled up from every `BreakdownRow.upstream_basis`
+    in both of its scenarios. The per-row member is the truth and this is the
+    sentence's handle: a results page, a plain-text export and a PDF all have
+    to tell one story about one submission, and three surfaces each rolling
+    the rows up in their own language is three chances to tell it differently.
+    Rolled up in the engine, where the golden suite can pin it.
+
+    **Only `CATEGORY` asks for copy.** `MIXED` is the ordinary state, not an
+    alarm: the prevention offset is stored as a category-level,
+    destination-specific row (§2.2 candidate 2, the shape that closes O-7),
+    so *every* entry that moves mass to `prevention` has at least one
+    category-priced line however well the set prices its food. A disclosure
+    raised on `MIXED` would fire on a row that is deliberately category-level
+    and teach a reader to ignore it. The member is still carried, because a
+    surface that wants to be precise about one metric can read the rows.
+    """
+
+    #: Every lookup that could have used the named food did. Rarer than it
+    #: sounds, for the prevention reason above.
+    ITEM = "item"
+    #: Some lookups used the food and some fell to its category.
+    MIXED = "mixed"
+    #: A food was named and **not one figure came from it** -- this is the
+    #: disclosure: *"this is the Fruit average, not Feijoas"*.
+    CATEGORY = "category"
+    #: No food was named, so there is nothing to disclose. Every entry
+    #: written before v1.58 is this, and every entry today.
+    NOT_APPLICABLE = "not_applicable"
+
+    @property
+    def is_disclosed(self) -> bool:
+        """Whether a surface must say something. See the class note: this is
+        `CATEGORY` alone, and it is a property here rather than a comparison
+        at three call sites so that the rule is stated once."""
+        return self is ItemBasis.CATEGORY
+
+
 @dataclass(frozen=True)
 class BreakdownRow:
     destination_code: str
@@ -92,6 +179,21 @@ class BreakdownRow:
     upstream: Decimal  # per kg
     downstream: Decimal  # per kg, may be negative
     value: Decimal  # this line's contribution to the metric total
+    #: v1.59. Which of §2.2's four candidate rows produced `upstream`
+    #: above -- the disclosure's evidence, per line and per metric, because
+    #: that is the granularity at which the answer actually varies: the
+    #: destination outranks the item, so one entry's `prevention` line is
+    #: category-priced while its `landfill` line is not.
+    #:
+    #: **`None` at the totals level, and required rather than defaulted.**
+    #: `_roll_up` sums rows across entries, and two entries sharing a
+    #: destination can have been priced from different rows -- the same
+    #: objection that leaves `upstream` and `downstream` at `ZERO_RATE`
+    #: there. `None` says *no single row answered this*, which is the honest
+    #: value and not the same as any member. It is required so that a
+    #: construction site that forgot it raises instead of quietly claiming
+    #: the totals-level answer for an entry-level row.
+    upstream_basis: UpstreamBasis | None
 
 
 @dataclass(frozen=True)
@@ -161,6 +263,19 @@ class EntryResult:
     #: the request carried, so §6.2's response can be paired with the row on
     #: the visitor's screen.
     food_item_code: str | None = None
+    #: v1.59. Whether this entry's figures were priced at the food it named,
+    #: rolled up from every `BreakdownRow.upstream_basis` in both scenarios.
+    #: `ItemBasis` has the rule; the short version is that only `CATEGORY`
+    #: asks a surface to say anything.
+    #:
+    #: **Defaulted, unlike `BreakdownRow.upstream_basis` beside it**, and the
+    #: two are defaulted or not for the same reason rather than by accident.
+    #: There is exactly one honest value for a caller that predates this
+    #: field -- `NOT_APPLICABLE`, because such a caller cannot have named a
+    #: food -- so the default is the answer rather than a stand-in for one.
+    #: A `BreakdownRow` has no such value: every member is a claim about a
+    #: figure that was produced, so there is nothing safe to assume.
+    item_basis: ItemBasis = ItemBasis.NOT_APPLICABLE
     #: This entry's own current mass as a percentage of the `total_input_kg`
     #: it supplied, two places. `None` when this entry supplied no production
     #: total -- absent, never zero, because "0% of what this site handles"

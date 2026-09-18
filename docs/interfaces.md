@@ -1,7 +1,7 @@
 ---
 title: "Kai Commitment Impact Calculator — Interface and Data Contract"
 subtitle: "Single source of truth for five-way parallel development"
-date: "2026-09-18 (v1.56 draft)"
+date: "2026-09-18 (v1.57 draft)"
 ---
 
 # 0. How to Use This Document
@@ -24,6 +24,43 @@ This document defines **what every person's code receives and what it returns.**
 | §9 Error codes | B | Global and uniform |
 
 ## 0.1 Change Log
+
+### v1.57 — 2026-09-18 (staff can author the item level, and the bundle carries it; affects B and E, and A as the consumer of §10.2)
+
+> **Why v1.57, and why it may not ship without v1.56.** "v1.54 part one" already
+> names the schema landing that merged first, and a revision identity naming two
+> different changes cannot be checked in either direction. v1.55 belongs to the
+> multi-select landing, v1.56 to the engine's item dimension — and this revision
+> **depends on v1.56 rather than merely following it.** The projection below emits
+> `upstream[].food_item`; an engine keyed on four slots ignores it, so an item row
+> and the category row it refines collide and one silently overwrites the other.
+> Measured on a running stack before this branch was rebased: authoring one
+> item-level factor and publishing changed the answer to a request that named no
+> food at all. This document's revisions are ordered, and these two are the first
+> pair where the order is load-bearing rather than tidy.
+
+
+Stage 5 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. Part one put `food_item` in the schema; **nothing could write to it and nothing could read it out.** This revision gives staff the screens and gives the bundle the projection. **It is inert on the same terms as part one**: with no `food_item` row anywhere and `item_level_enabled` false on every set, `food_items` is an empty array, `food_item` is `null` on every upstream row, and every figure, response and screen is what it was.
+
+**§6 is still untouched, and so is §6.3.** The request and response shapes do not learn the item, and the `GET /factors` export does not either: `db/repository.get_factor_export` strips `food_item` from the `upstream[]` rows it publishes, so `tests/fixtures/factors.json` is unchanged and the third step of the contract-change process is again a deliberate no-op. The cost is stated rather than hidden — from the first authored item row that export carries two rows that look identical and price differently, and `web/js/methodology.js` renders them. Publishing the item there belongs to the landing that gives the item a public name to print.
+
+| # | Change | Section |
+| --- | --- | --- |
+| 1 | **`bundle.json` gains `food_items` and `upstream[].food_item`**, produced by `db/repository.build_bundle_data`. `food_items` is the **optional** thirteenth key — every bundle written before v1.54 omits it, and the thirteen golden cases must go on loading | §10.2 |
+| 2 | **`food_item` — a seventh taxonomy screen**, `FoodItemAdmin`, both roles like the six around it. No delete; `active` is how a food leaves service | §8.1, §8.3 |
+| 3 | **`FactorUpstreamAdmin` offers `food_item`** on `column_list`, `column_details_list` and `form_columns`, as an optional select beside `food_category` | §8.1 |
+| 4 | **`item_level_enabled` is on the factor-set form**, with the soft guard of §2.2 refusing it on a set that prices no food individually, and the factor-set list showing "item-level factors for N of M foods" beside it | §2.2, §8.2 |
+| 5 | **A second publish-time guard, `refuse_item_rows_without_category_fallback`** — an item row whose `(sector, food_category, metric)` has no `(NULL item, NULL destination)` row of its own is refused | §5.2 |
+| 6 | **`GET /taxonomy`'s coverage filter learns items** (`_covered_by`), under the parent-covered rule: an item is offered when its own rows exist **or** when its parent category is covered | §5.1 |
+| 7 | **`/admin/try` learns the food item**, so the staff releasing step 2.5 can exercise it. The key is **omitted** from the request body when no food is chosen, because §6's entry model is `extra="forbid"` and does not know it until part three | §8.2 |
+
+> **The projection is the half that could produce a wrong number, and it would produce it silently.** A staff member authors an item factor, the row is written and audited, and a `build_bundle_data` that never mentions it hands the engine the category average — the line is priced at the average while the screen says the food was named. `food_items` being *optional* in `FactorBundle.from_json` is what makes the omission load cleanly instead of raising. `tests/db/test_food_item_projection.py` pins both halves so that dropping either fails on its own.
+>
+> **The parent-covered rule is not §5.1's rule, and the difference is the fallback.** A destination nothing prices is priced at zero, and offering it is the silent zero §5.1 exists to stop offering. An item nothing prices is offered its category's average — a defined, meaningful number, and the nine category factors *are* the averages of those same foods. Requiring an item to carry rows of its own would hide almost the whole vocabulary the day step 2.5 is released, to prevent something that cannot happen.
+>
+> **The second publish guard is the one stage 4 could not enforce.** §2.2's upstream chain has no silent-zero trap *as long as the data carries a category row to fall back to*, and that is a property of the data rather than of the chain — so it can only be checked where the data is. A `(sector, food_category, metric)` whose only upstream rows name a food answers for that food and sends every other food in the category, and the visitor who named no food at all, to `Decimal('0')`. That is O-7's shape exactly: right for one food while every other figure on the same page is right, arriving with no error and nothing in the log. The fallback has to be the `(NULL item, NULL destination)` row specifically — a category row that names a destination is candidate 2 and answers only there, which is what the `prevention` override is.
+>
+> **The flag guard runs after an import as well as at publish, and there it is checking something else.** `import_published_into` deletes the target draft's rows and re-copies the published set's by reflection. A flag that survives that with no item row under it means the copy lost the item dimension — a set claiming to price foods individually and pricing none.
 
 ### v1.56 — 2026-09-18 (the engine learns the item dimension; affects A, and B only as advance notice)
 
@@ -51,7 +88,7 @@ Stage 4 of the same landing order, and **inert by data** on the same terms as st
 
 Stage 3 of `.superpowers/sdd/2026-09-17-food-granularity/design.md`'s landing order. The calculator will gain a step 2.5 that asks which *food* was wasted — "cheese", not "dairy" — and this revision builds everywhere that answer has to be able to live. **It is deliberately inert.** With no `food_item` rows and `item_level_enabled` false on every set, every figure, every response and every screen is what it was before: proven by the golden suite (43 cases, unchanged) and by `POST /api/v1/calculate` against the deployed stack returning a byte-identical 18,672-byte body across the migration, same SHA-256.
 
-**§6 is untouched.** The request and response shapes do not learn the item until v1.54 part two. So is `tests/fixtures/*.json`: nothing on the wire changes, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
+**§6 is untouched.** The request and response shapes do not learn the item until a later part of v1.54 (part two does not touch them either). So is `tests/fixtures/*.json`: nothing on the wire changes, and the contract-change process's third step is a no-op for this revision by intent rather than by omission.
 
 | # | Change | Section |
 | --- | --- | --- |
@@ -1199,7 +1236,7 @@ A named food *within* a category — "cheese", not "dairy". The vocabulary step 
 >
 > **It is on the set, and it is *not* how the two levels are separated.** One set holds item rows and category rows together — publishing set A versus set B must never be how step 2.5 is turned on, because the client cannot be asked to maintain two. The flag lives here so that it is versioned and audited like everything else in this table, and so that the factor-set screen can show staff what they are releasing beside it.
 >
-> **The guard is soft and is a later revision: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is 19 items × 6 sectors × 5 metrics = 570 rows and is unreachable from any data that will exist. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
+> **The guard is soft, and it landed in part two: at least one `factor_upstream` row in the set with `food_item_id IS NOT NULL`.** Full coverage is 19 items × 6 sectors × 5 metrics = 570 rows and is unreachable from any data that will exist. One item row is enough to be coherent, because every item without one falls back to its category's average — see §2.2's upstream lookup order. This is not the `destination_id` case O-7 closed: there the fallback was zero, here it is a defined number.
 >
 > **Both `clone_factor_set` implementations must carry it**, `admin/factor_lifecycle.py`'s and `db/repository.py`'s. Each hand-writes its `FactorSet(...)` and names `is_mock`, `effective_from` and `notes` one column at a time. Miss it in either and the recommended clone → edit → publish workflow (§5.2) silently un-releases step 2.5 on the first real factor set: the calculator stops asking which food was wasted, with no error and nothing on the factor-set screen saying why.
 
@@ -4443,7 +4480,7 @@ Built on `sqladmin`, mounted at `/admin`, authentication required.
 
 ## 8.1 Models Exposed for Direct CRUD
 
-**Taxonomy and factors — eleven, from v0.1:** `sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream`
+**Taxonomy and factors — twelve:** eleven from v0.1 — `sector`, `food_category`, `destination`, `destination_group`, `metric`, `unit_preset`, `constant`, `formula`, `equivalence`, `factor_upstream`, `factor_downstream` — and `food_item` from v1.54 part two. `food_item` follows the taxonomy pattern exactly: no delete, `active` is how a row leaves service, and both roles, decided on the same grounds as `food_category` beside it (§8.3 reserves the administrator floor for account management, the blocklist and the audit trail — capabilities about who may use the system, not about what it says).
 
 **Comparison scenarios — two, added v0.10 (§2.2a):** `comparison_scenario`, `comparison_scenario_line`. Edited under their own "Comparison" category. Unlike the taxonomy tables these may be **deleted** through the panel: a scenario is a staff member's own saved test case and is referenced by nothing else in the schema.
 

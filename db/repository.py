@@ -32,6 +32,7 @@ from db.models import (
     FactorSetStatus,
     FactorUpstream,
     FoodCategory,
+    FoodItem,
     Formula,
     Metric,
     Scenario,
@@ -188,6 +189,29 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
     * a **food category** appears as ``factor_upstream.food_category_id`` or as
       a non-NULL ``factor_downstream.food_category_id``.
 
+    ``food_items`` (v1.54) is the **one dimension whose rule is not that**, and
+    the difference is deliberate rather than an oversight. An item is covered
+    when its own rows exist **or when its parent category is covered** — call
+    it parent-covered — because §2.2's upstream chain falls a food with no row
+    of its own through to the category average, which is a defined, meaningful
+    number: the nine category factors *are* the averages of these same foods.
+    The other four dimensions have no such fallback. A destination nothing
+    prices is priced at ``Decimal('0')``, and offering it is the silent zero
+    this whole function exists to stop offering; an item nothing prices is
+    offered its category's average and the figure is as good as the one the
+    visitor would have got by naming the category instead. Requiring an item to
+    carry rows of its own would therefore hide almost the whole vocabulary from
+    the moment step 2.5 is released — 19 items x 6 sectors x 5 metrics = 570
+    rows is full coverage, and no data that will exist comes close — while the
+    thing it would be protecting against cannot happen.
+
+    The union is not redundant in one case, which is why it is a union. An item
+    row carries a NOT NULL ``food_category_id``, so an item priced under its own
+    parent is parent-covered anyway; what the first clause catches on its own is
+    a row filed under a category the item does not belong to, which the schema
+    permits (``submission_entry``'s CHECK says only that an item may not arrive
+    without a category) and which the engine reports rather than prices.
+
     ``factor_upstream.destination_id`` is read as well as
     ``factor_downstream``'s because O-7 (v1.8) made it nullable and NULL means
     "every destination". The two published shapes need both halves: a New
@@ -214,6 +238,7 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
         select(
             FactorUpstream.sector_id,
             FactorUpstream.food_category_id,
+            FactorUpstream.food_item_id,
             FactorUpstream.destination_id,
         )
         .where(FactorUpstream.factor_set_id == factor_set_id)
@@ -228,16 +253,32 @@ def _covered_by(session: Session, factor_set_id: int) -> dict[str, set[int]]:
         .where(FactorDownstream.factor_set_id == factor_set_id)
         .distinct()
     ).all()
-    sectors = {sector_id for sector_id, _, _ in upstream}
-    foods = {food_id for _, food_id, _ in upstream}
-    destinations = {dest_id for _, _, dest_id in upstream if dest_id is not None}
+    sectors = {sector_id for sector_id, _, _, _ in upstream}
+    foods = {food_id for _, food_id, _, _ in upstream}
+    items = {item_id for _, _, item_id, _ in upstream if item_id is not None}
+    destinations = {dest_id for _, _, _, dest_id in upstream if dest_id is not None}
     for dest_id, sector_id, food_id in downstream:
         destinations.add(dest_id)
         if sector_id is not None:
             sectors.add(sector_id)
         if food_id is not None:
             foods.add(food_id)
-    return {"sectors": sectors, "food_categories": foods, "destinations": destinations}
+    #: The parent-covered half, and the only query in this function that reads
+    #: a taxonomy table rather than a factor one — because the rule itself is
+    #: about the taxonomy's shape (which category a food belongs to), not about
+    #: what any factor set priced. See this function's docstring.
+    if foods:
+        items |= set(
+            session.scalars(
+                select(FoodItem.id).where(FoodItem.food_category_id.in_(foods))
+            )
+        )
+    return {
+        "sectors": sectors,
+        "food_categories": foods,
+        "food_items": items,
+        "destinations": destinations,
+    }
 
 
 def get_taxonomy(session: Session) -> TaxonomySnapshot:
@@ -529,11 +570,16 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
     #: inner join here would publish only the `prevention` overrides and drop
     #: every general row — the exact inverse of the bug O-7 closed, and just as
     #: silent. `factor_downstream` outer-joins FoodCategory for the same reason.
+    #: `FoodItem` is outer-joined for the same reason as `Destination` one line
+    #: below it, and the consequence of getting it wrong is the same shape: an
+    #: inner join would publish only the item-level rows and silently drop
+    #: every category row, which is every row in every database today.
     upstream = session.execute(
-        select(FactorUpstream, Sector.code, FoodCategory.code, Destination.code,
-               Metric.code)
+        select(FactorUpstream, Sector.code, FoodCategory.code, FoodItem.code,
+               Destination.code, Metric.code)
         .join(Sector, FactorUpstream.sector_id == Sector.id)
         .join(FoodCategory, FactorUpstream.food_category_id == FoodCategory.id)
+        .outerjoin(FoodItem, FactorUpstream.food_item_id == FoodItem.id)
         .outerjoin(Destination, FactorUpstream.destination_id == Destination.id)
         .join(Metric, FactorUpstream.metric_id == Metric.id)
         .where(FactorUpstream.factor_set_id == factor_set_id)
@@ -584,6 +630,20 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
             {
                 "sector": sector,
                 "food_category": food,
+                #: §2.2/§10.2 (v1.54): `null` is a legal value meaning "every
+                #: food item in this category" — the category average, which is
+                #: the normal row and what this table held until the column
+                #: existed. **The key has to be here even though it is null on
+                #: every row in every database today**, because the failure it
+                #: prevents is silent in a way none of the others are: an item
+                #: factor a staff member has authored, written and audited
+                #: reaches an engine that never sees it, the line is priced at
+                #: the category average, and the screen says the food was
+                #: named. `food_items` right below is optional in
+                #: `FactorBundle.from_json` so that pre-v1.54 bundles load,
+                #: which is precisely what would let the omission pass for a
+                #: healthy bundle.
+                "food_item": item,
                 #: §2.2/§10.2 (v1.8): `null` is a legal value meaning "every
                 #: destination", not a missing field, and must survive both
                 #: directions of the round trip — §4.1's lookup order is exact
@@ -594,7 +654,7 @@ def build_bundle_data(session: Session, factor_set_id: int) -> dict[str, Any]:
                 "source_note": x.source_note,
                 "data_quality": x.data_quality,
             }
-            for x, sector, food, destination, metric in upstream
+            for x, sector, food, item, destination, metric in upstream
         ],
         "downstream": [
             {
@@ -642,6 +702,19 @@ def get_taxonomy_for_bundle(session: Session) -> dict[str, list[dict[str, Any]]]
         .where(FoodCategory.active.is_(True))
         .order_by(FoodCategory.sort_order, FoodCategory.code)
     ).all()
+    #: v1.54's vocabulary section. Inner-joined to `FoodCategory` because
+    #: `food_item.food_category_id` is NOT NULL and the parent is not
+    #: decoration: it is both the row a food with no factor of its own falls
+    #: back to and what the engine checks a named food against, so an item
+    #: whose category could not be resolved is an item that can be neither
+    #: priced nor refused. Empty in every database today, which is what makes
+    #: this landing inert.
+    items = session.execute(
+        select(FoodItem, FoodCategory.code)
+        .join(FoodCategory, FoodItem.food_category_id == FoodCategory.id)
+        .where(FoodItem.active.is_(True))
+        .order_by(FoodItem.sort_order, FoodItem.code)
+    ).all()
     metrics = session.scalars(
         select(Metric).where(Metric.active.is_(True)).order_by(Metric.sort_order, Metric.code)
     ).all()
@@ -664,6 +737,18 @@ def get_taxonomy_for_bundle(session: Session) -> dict[str, list[dict[str, Any]]]
                 "sort_order": x.sort_order,
             }
             for x in foods
+        ],
+        #: §10.2's optional thirteenth key (v1.54). `food_category` is the
+        #: parent code, not an id: `code` is the cross-layer identifier and no
+        #: primary key reaches the engine.
+        "food_items": [
+            {
+                "code": x.code,
+                "name": x.name,
+                "food_category": food_code,
+                "sort_order": x.sort_order,
+            }
+            for x, food_code in items
         ],
         "destination_groups": [
             {"code": x.code, "name": x.name, "is_waste": x.is_waste, "sort_order": x.sort_order}
@@ -961,6 +1046,170 @@ def refuse_nonzero_prevention_factors(session: Session, factor_set_id: int) -> N
     )
 
 
+def count_item_level_upstream(session: Session, factor_set_id: int) -> int:
+    """How many of this set's upstream rows name a food item. §2.2 (v1.54)."""
+    return session.scalar(
+        select(func.count())
+        .select_from(FactorUpstream)
+        .where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.food_item_id.is_not(None),
+        )
+    ) or 0
+
+
+def item_level_coverage(session: Session, factor_set_id: int) -> tuple[int, int]:
+    """`(foods this set prices individually, foods in the vocabulary)`.
+
+    What the factor-set screen shows beside `item_level_enabled`, because
+    releasing step 2.5 is a judgement about how much of the vocabulary actually
+    carries numbers and a boolean cannot carry that. "3 of 19" and "19 of 19"
+    are both legal (the guard is soft, §3.5) and they are not the same decision.
+
+    Counts **distinct foods**, not rows: one food priced for five metrics
+    across six sectors is thirty rows and one food, and the number a staff
+    member is weighing is how many of the foods on the new screen will be
+    answered with something better than their category's average.
+
+    The denominator is the **active** vocabulary, matching what the calculator
+    would offer; a retired item is not a gap in coverage. Both halves are zero
+    in every database today.
+    """
+    priced = session.scalar(
+        select(func.count(distinct(FactorUpstream.food_item_id))).where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.food_item_id.is_not(None),
+        )
+    ) or 0
+    total = session.scalar(
+        select(func.count()).select_from(FoodItem).where(FoodItem.active.is_(True))
+    ) or 0
+    return priced, total
+
+
+def refuse_item_level_without_item_rows(session: Session, factor_set_id: int) -> None:
+    """`item_level_enabled` on a set that prices no food individually. §3.5.
+
+    The flag releases step 2.5 — the screen that asks *which food*, not only
+    which category. On a set with no item-level rows every answer to that
+    question is priced at the food's category average, so the calculator asks a
+    more specific question than its numbers can answer and returns a figure
+    that looks more authoritative for it. Under a mock factor set, which is the
+    only kind that exists today, that is a reputational risk for the client
+    rather than a modelling one, and it is the exact thing §2.2's mandatory
+    placeholder banner is already struggling to say.
+
+    **Soft, and deliberately so.** One item row is enough. Full coverage is 19
+    items x 6 sectors x 5 metrics = 570 rows and is unreachable from any data
+    that will exist, and a partly-covered set is coherent because everything
+    else falls back to the category average — see `_covered_by`. A guard
+    demanding more would make the flag unusable and would be arguing with
+    §2.2's own fallback.
+
+    Run at publish and after an import, where `revalidate_formulas` already
+    runs. After an import it is doing a second job worth naming: the target's
+    rows were just deleted and re-copied from the published set, so a flag that
+    survives with no item rows under it means **the copy lost the item
+    dimension** — the silent hybrid this landing exists to prevent.
+    """
+    factor_set = session.get(FactorSet, factor_set_id)
+    if factor_set is None or not factor_set.item_level_enabled:
+        return
+    if count_item_level_upstream(session, factor_set_id) > 0:
+        return
+    raise FactorSetStateError(
+        f"'{factor_set.version_label}' has item-level detail switched on but "
+        "carries no upstream factor that names a food item, so every food on "
+        "that screen would be priced at its category's average while the "
+        "screen asked a more specific question. Add at least one upstream "
+        "factor with a food item, or switch item-level detail off."
+    )
+
+
+def find_item_rows_without_category_fallback(
+    session: Session, factor_set_id: int
+) -> list[tuple[str, str, str]]:
+    """Which `(sector, food_category, metric)` tuples price a food but not the
+    category it belongs to. §2.2 (v1.54).
+
+    **This is the one silent zero the item dimension can still produce**, and
+    the engine cannot refuse it: §2.2's chain has no silent-zero trap *as long
+    as the data has a category row to fall back on*, and that is a property of
+    the data, not of the chain. A tuple whose only upstream rows name a food
+    answers candidates 1 and 3 for that food and nothing at all for any other
+    food in the same category, or for a visitor who named the category and no
+    food — those fall past candidates 2 and 4 to `Decimal('0')`.
+
+    That is the O-7 failure shape exactly, and worse than the original for the
+    same reason O-7's own guard records: wrong for one food while every other
+    figure on the same results page is right, arriving with no error, no
+    warning and nothing in the log.
+
+    **The fallback is the `(NULL item, NULL destination)` row specifically**,
+    not any category-level row. A category row that names a destination is
+    §2.2's candidate 2 and answers only *at that destination* — the `prevention`
+    override is exactly that shape — so a set whose only category row for the
+    tuple is the zero override still drops every other destination to zero.
+
+    Returns **codes, not ids** (§1.1) and sorted, so a caller can put them
+    straight into a message a staff member has to act on. Empty is the healthy
+    state, and is what every set with no item rows returns — which is all of
+    them today.
+    """
+    fallback = (
+        select(
+            FactorUpstream.sector_id,
+            FactorUpstream.food_category_id,
+            FactorUpstream.metric_id,
+        )
+        .where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.food_item_id.is_(None),
+            FactorUpstream.destination_id.is_(None),
+        )
+        .subquery()
+    )
+    rows = session.execute(
+        select(Sector.code, FoodCategory.code, Metric.code)
+        #: Explicit left side, for the reason `find_missing_prevention_upstream`
+        #: gives above: every selected column belongs to a joined table.
+        .select_from(FactorUpstream)
+        .join(Sector, FactorUpstream.sector_id == Sector.id)
+        .join(FoodCategory, FactorUpstream.food_category_id == FoodCategory.id)
+        .join(Metric, FactorUpstream.metric_id == Metric.id)
+        .outerjoin(
+            fallback,
+            (FactorUpstream.sector_id == fallback.c.sector_id)
+            & (FactorUpstream.food_category_id == fallback.c.food_category_id)
+            & (FactorUpstream.metric_id == fallback.c.metric_id),
+        )
+        .where(
+            FactorUpstream.factor_set_id == factor_set_id,
+            FactorUpstream.food_item_id.is_not(None),
+            fallback.c.sector_id.is_(None),
+        )
+        .distinct()
+    ).all()
+    return sorted((sector, food, metric) for sector, food, metric in rows)
+
+
+def refuse_item_rows_without_category_fallback(
+    session: Session, factor_set_id: int
+) -> None:
+    missing = find_item_rows_without_category_fallback(session, factor_set_id)
+    if not missing:
+        return
+    listed = ", ".join(f"{sector}/{food}/{metric}" for sector, food, metric in missing)
+    raise FactorSetStateError(
+        f"{len(missing)} combinations carry a factor for a food item but no "
+        "factor for the food category it belongs to, so every other food in "
+        "that category — and anyone who named the category and no food — would "
+        f"be priced at 0 rather than at an average: {listed}. Add an upstream "
+        "factor for each of those, leaving both the food item and the "
+        "destination blank, then publish."
+    )
+
+
 def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None:
     """Contract §5.2, plus the O-7 completeness check of §2.2.
 
@@ -979,6 +1228,12 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
     """
     _refuse_incomplete_prevention(session, factor_set_id)
     refuse_nonzero_prevention_factors(session, factor_set_id)
+    #: v1.54's two, scoped exactly as the two above and for the same reason:
+    #: publish only, never `rollback_to` below, because rollback is the "put
+    #: the calculator back to a state that worked" operation and refusing an
+    #: emergency rollback over a completeness rule is the worse failure.
+    refuse_item_level_without_item_rows(session, factor_set_id)
+    refuse_item_rows_without_category_fallback(session, factor_set_id)
     _transition_factor_set(
         session,
         factor_set_id,
@@ -1499,7 +1754,25 @@ def get_factor_export(
         },
         "constants": data["constants"],
         "formulas": data["formulas"],
-        "upstream": data["upstream"],
+        #: **`food_item` is stripped, and the `food_items` section is not
+        #: carried at all.** §6.3 is a *public* document — `tests/api/
+        #: test_api.py` compares its key set against `tests/fixtures/
+        #: factors.json` exactly, and `web/js/methodology.js` renders these
+        #: rows to visitors — so publishing the item dimension here is a
+        #: contract change, and it is contract v1.54 part two's (the API
+        #: landing), not this one's. This landing's whole claim is that it
+        #: changes no visitor-facing response.
+        #:
+        #: **The known cost, stated rather than hidden**: from the moment a
+        #: staff member authors the first item-level row, this export carries
+        #: two rows that look identical and price differently, because the only
+        #: thing telling them apart is the key being removed here. That is the
+        #: hole the design's §6 names against `methodology.js`, and it belongs
+        #: to the landing that gives the item a public name to print.
+        "upstream": [
+            {key: value for key, value in row.items() if key != "food_item"}
+            for row in data["upstream"]
+        ],
         "downstream": data["downstream"],
         "equivalences": data["equivalences"],
     }

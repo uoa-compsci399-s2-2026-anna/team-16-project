@@ -50,6 +50,8 @@ from db.errors import FactorSetStateError
 from db.repository import (
     find_missing_prevention_upstream,
     prevention_destination_codes,
+    refuse_item_level_without_item_rows,
+    refuse_item_rows_without_category_fallback,
     refuse_nonzero_prevention_factors,
 )
 
@@ -314,6 +316,32 @@ def publish_factor_set(session: Session, factor_set_id: int, actor: str) -> None
         refuse_nonzero_prevention_factors(session, factor_set_id)
     except FactorSetStateError as exc:
         raise LifecycleError(str(exc)) from exc
+
+    # v1.54's two item-level guards, in this same place and imported from
+    # db/repository.py for the same reason the two above are: this is the copy
+    # the panel calls, the query belongs in the only module that touches the
+    # database, and two copies of a rule drift.
+    #
+    # The second one is the guard PR #100 could not enforce and named for this
+    # landing. §2.2's upstream chain has no silent-zero trap *as long as the
+    # data has a category row to fall back to*, which is a property of the data
+    # rather than of the chain, so it can only be checked where the data is —
+    # here, at the single transactional choke point, not in the engine and not
+    # on the upstream-factor form (which cannot see a row the staff member has
+    # not written yet).
+    #
+    # Scoped to publish, not `rollback_to` below, exactly as the prevention
+    # pair is and for the reason given above them: rollback restores a state
+    # that worked, and refusing an emergency rollback over a completeness rule
+    # is the worse failure.
+    for guard in (
+        refuse_item_level_without_item_rows,
+        refuse_item_rows_without_category_fallback,
+    ):
+        try:
+            guard(session, factor_set_id)
+        except FactorSetStateError as exc:
+            raise LifecycleError(str(exc)) from exc
 
     changes: list[tuple[FactorSet, dict, str]] = []
 
@@ -583,6 +611,19 @@ def import_published_into(session: Session, factor_set_id: int, actor: str) -> N
     try:
         revalidate_formulas(session, target.id)
     except TaxonomyInvariantError as exc:
+        raise LifecycleError(str(exc)) from exc
+
+    #: v1.54. Here the flag guard is doing a second job, and it is the job this
+    #: landing is most worried about: the target's own rows were just deleted
+    #: and re-copied from the published set by reflection, so a flag that
+    #: arrives `true` with no item-level row under it means **the copy lost the
+    #: item dimension**. That is the silent hybrid — a set that claims to price
+    #: foods individually and prices none — and `_clone_children`'s reflection
+    #: is exactly the kind of machinery that stops carrying a column without
+    #: anybody editing it.
+    try:
+        refuse_item_level_without_item_rows(session, target.id)
+    except FactorSetStateError as exc:
         raise LifecycleError(str(exc)) from exc
 
     written = count_child_rows(session, target.id)

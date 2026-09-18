@@ -299,19 +299,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     admin.add_view(SubmissionAdmin)
 
-    # The six taxonomy views of contract §8.1 landed in E-4 (this block). All
+    # The taxonomy views of contract §8.1 landed in E-4 (this block) as six;
+    # `FoodItemAdmin` (v1.54 part two) makes seven. All
     # six of E-5's factor views - factor_set, factor_upstream,
     # factor_downstream, constant, formula, equivalence - are registered just
     # below. The submission view this comment used to call "still to come" is
     # the line above. All inherit AuditedModelView, so each arrives already
     # audited.
     from admin.taxonomy_views import (
-        DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin, MetricAdmin,
-        SectorAdmin, UnitPresetAdmin,
+        DestinationAdmin, DestinationGroupAdmin, FoodCategoryAdmin,
+        FoodItemAdmin, MetricAdmin, SectorAdmin, UnitPresetAdmin,
     )
 
-    for view in (SectorAdmin, FoodCategoryAdmin, DestinationGroupAdmin,
-                 DestinationAdmin, MetricAdmin, UnitPresetAdmin):
+    #: `FoodItemAdmin` (v1.54) sits immediately after `FoodCategoryAdmin`
+    #: because it is that table's refinement: a food item's only required field
+    #: is the category it belongs to, and a staff member authoring one is
+    #: looking at the category list one line above.
+    for view in (SectorAdmin, FoodCategoryAdmin, FoodItemAdmin,
+                 DestinationGroupAdmin, DestinationAdmin, MetricAdmin,
+                 UnitPresetAdmin):
         admin.add_view(view)
 
     from admin.factor_views import (

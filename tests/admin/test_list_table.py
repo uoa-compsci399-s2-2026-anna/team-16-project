@@ -137,12 +137,14 @@ def test_the_sweep_covers_every_list_screen(list_identities):
 
     ``test_every_list_page_carries_the_scrollport_rules`` asserts that a list
     of failures is empty, and the cheapest way for that to be true is for the
-    fixture to have found no screens at all. Eighteen is the same count
+    fixture to have found no screens at all. Nineteen is the same count
     ``tests/admin/test_role_matrix.py`` holds the panel to, and this asserts
     it independently so that a view lost from the registry fails both.
+    (Eighteen until v1.54 part two added ``food_item``, §8.1's twelfth
+    taxonomy-and-factors table.)
     """
-    assert len(list_identities) == 18, (
-        f"expected eighteen list screens, found {len(list_identities)}: "
+    assert len(list_identities) == 19, (
+        f"expected nineteen list screens, found {len(list_identities)}: "
         f"{list_identities}"
     )
     assert "audit-log" in list_identities, (

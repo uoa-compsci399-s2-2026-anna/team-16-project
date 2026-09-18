@@ -3,9 +3,14 @@ import json
 from decimal import Decimal
 from pathlib import Path
 
-from engine.bundle import FactorBundle
+from engine.bundle import (
+    FOOD_ITEMS_KEY,
+    REQUIRED_KEYS,
+    FactorBundle,
+    UpstreamBasis,
+)
 import pytest
-from engine.errors import BundleFormatError, UnknownConstantError
+from engine.errors import BundleFormatError, UnknownCodeError, UnknownConstantError
 from engine.types import MetricSpec, EquivalenceSpec
 
 constants = {
@@ -15,8 +20,15 @@ upstream_factors = {
     # v1.8 §4.1: the key gained a destination dimension (open item O-7).
     # `None` is the generic row; the `prevention` row at zero is what makes
     # a prevented line a real 100% offset.
-    ("processing", "dairy", None, "co2e") : Decimal("1.9"),
-    ("processing", "dairy", "prevention", "co2e") : Decimal("0")
+    #
+    # v1.54 §4.1: and a food_item dimension *before* the destination, keyed as
+    # `(sector, food_category, food_item | None, destination | None, metric)`.
+    # Both rows here are category rows -- `None` in the item slot -- which is
+    # what every bundle in the tree carries and why the dimension is inert.
+    # See `test_the_upstream_lookup_matrix_*` below for the order between the
+    # two nullable slots.
+    ("processing", "dairy", None, None, "co2e") : Decimal("1.9"),
+    ("processing", "dairy", None, "prevention", "co2e") : Decimal("0")
 }
 downstream_factors = {
     # v1.31 §4.1: the key gained a sector dimension between the destination
@@ -52,20 +64,20 @@ equivalence_specs = (
 bundle = FactorBundle(upstream_factors, downstream_factors, constants, formulas, destinations, sectors, categories, standard_mix, version_label, is_mock, (metric,), equivalence_specs)
 
 def test_upstream():
-    assert bundle.upstream("processing", "dairy", "landfill", "co2e") == Decimal("1.9")
-    assert bundle.upstream("processing", "bakery", "landfill", "co2e") == Decimal("0")
+    assert bundle.upstream("processing", "dairy", None, "landfill", "co2e") == Decimal("1.9")
+    assert bundle.upstream("processing", "bakery", None, "landfill", "co2e") == Decimal("0")
 
 
 def test_upstream_falls_back_to_the_generic_row_then_to_zero():
     """§4.1's three steps, in order: exact destination, generic row, zero."""
     # Exact wins over the generic row -- this is O-7's whole point.
-    assert bundle.upstream("processing", "dairy", "prevention", "co2e") == Decimal("0")
+    assert bundle.upstream("processing", "dairy", None, "prevention", "co2e") == Decimal("0")
     # A destination with no row of its own falls through to the generic row.
-    assert bundle.upstream("processing", "dairy", "compost", "co2e") == Decimal("1.9")
+    assert bundle.upstream("processing", "dairy", None, "compost", "co2e") == Decimal("1.9")
     # `None` asks for the generic row directly.
-    assert bundle.upstream("processing", "dairy", None, "co2e") == Decimal("1.9")
+    assert bundle.upstream("processing", "dairy", None, None, "co2e") == Decimal("1.9")
     # Neither present.
-    assert bundle.upstream("processing", "dairy", "compost", "water") == Decimal("0")
+    assert bundle.upstream("processing", "dairy", None, "compost", "water") == Decimal("0")
 
 def test_downstream():
     assert bundle.downstream("landfill", "processing", "dairy", "co2e") == Decimal("0.99")
@@ -179,7 +191,7 @@ def test_every_canonical_number_round_trips_at_full_scale():
     compare equal, so the scale is asserted through `str()`."""
     loaded = FactorBundle.from_json(canonical_bundle_json())
 
-    assert str(loaded.upstream("primary_production", "vegetables", "landfill", "co2e")) == (
+    assert str(loaded.upstream("primary_production", "vegetables", None, "landfill", "co2e")) == (
         "0.4500000000"
     )
     assert str(loaded.constant("GWP_CH4_20")) == "84.0000000000"
@@ -230,8 +242,8 @@ def test_the_canonical_prevention_upstream_rows_survive_as_a_whole_offset():
         ("consumer_hospitality", "standard_mix"),
     ):
         for metric in ("co2e", "water"):
-            assert loaded.upstream(sector, food, "prevention", metric) == Decimal("0")
-            assert loaded.upstream(sector, food, "landfill", metric) > Decimal("0")
+            assert loaded.upstream(sector, food, None, "prevention", metric) == Decimal("0")
+            assert loaded.upstream(sector, food, None, "landfill", metric) > Decimal("0")
 
 
 def test_source_note_and_data_quality_are_accepted_and_ignored():
@@ -534,7 +546,7 @@ def test_validate_reports_a_duplicate_factor_row():
 
     assert len(problems) == 1
     assert "more than once" in problems[0]
-    assert loaded.upstream("processing", "dairy", None, "co2e") == Decimal("9.99")
+    assert loaded.upstream("processing", "dairy", None, None, "co2e") == Decimal("9.99")
 
 
 def test_validate_never_raises_on_a_bundle_that_is_wrong_in_every_way():
@@ -821,3 +833,627 @@ def test_validate_reports_a_downstream_row_naming_a_sector_that_is_absent():
     assert len(problems) == 1
     assert "prcoessing" in problems[0]
     assert "sector" in problems[0]
+
+
+# ==========================================================================
+# The two-dimensional upstream lookup (contract v1.54, SS2.2, SS4.1)
+# ==========================================================================
+#
+# `factor_upstream` has two nullable dimensions since v1.54, so four rows may
+# legally exist for one (sector, food_category, metric) and exactly one of
+# them must win:
+#
+#     1. (item, destination)   -- this food, at this destination
+#     2. (NULL, destination)   -- every food in this category, here
+#     3. (item, NULL)          -- this food, at every destination
+#     4. (NULL, NULL)          -- the category average, everywhere
+#     5. Decimal('0')
+#
+# Steps 2 and 3 both name one dimension, so specificity cannot separate them.
+# **The destination wins**, because item-first re-opens O-7: the prevention
+# offset is a shape-2 row at zero, and an item's shape-3 row placed above it
+# would price a prevented line at the item's ordinary factor.
+# `test_an_item_generic_row_does_not_outrank_the_prevention_zero` below is
+# that consequence stated as a test, in the same terms SS2.2 measured.
+#
+# **Every cell is asserted on the value, not on the presence of a value** --
+# the same discipline the downstream matrix above is written to, and for the
+# same reason: a wrong precedence here returns a plausible number rather than
+# an error, so "a row came back" would pass under all twenty-four orderings.
+
+#: One value per candidate row, chosen so that no two are equal and no sum or
+#: difference of two equals a third.
+ITEM_HERE = Decimal("111.0000000000")            # (item, destination)
+CATEGORY_HERE = Decimal("222.0000000000")        # (NULL, destination)
+ITEM_EVERYWHERE = Decimal("333.0000000000")      # (item, NULL)
+CATEGORY_EVERYWHERE = Decimal("444.0000000000")  # (NULL, NULL)
+
+#: The four rows keyed exactly as `FactorBundle.upstream_factors` is.
+ALL_FOUR_UPSTREAM = {
+    ("processing", "dairy", "cheese", "landfill", "co2e"): ITEM_HERE,
+    ("processing", "dairy", None, "landfill", "co2e"): CATEGORY_HERE,
+    ("processing", "dairy", "cheese", None, "co2e"): ITEM_EVERYWHERE,
+    ("processing", "dairy", None, None, "co2e"): CATEGORY_EVERYWHERE,
+}
+
+
+def _item_matrix_bundle(present, *, items=None):
+    """A bundle carrying only the named subset of the four candidate rows.
+
+    Built by hand rather than through `from_json` so that the test is about
+    the lookup and nothing else; the loader has its own tests below.
+    """
+    return FactorBundle(
+        upstream_factors={key: ALL_FOUR_UPSTREAM[key] for key in present},
+        downstream_factors={},
+        constants={},
+        formulas={},
+        destinations={"landfill", "compost", "prevention"},
+        sectors={"processing", "retail"},
+        food_categories={"dairy", "fruit"},
+        standard_mix="standard_mix",
+        version_label="ITEM-MATRIX",
+        is_mock=True,
+        metrics=(MetricSpec("co2e", "kg CO2e", 1),),
+        equivalence_specs=(),
+        food_item_category_of=(
+            {"cheese": "dairy", "butter": "dairy", "feijoa": "fruit"}
+            if items is None else items
+        ),
+    )
+
+
+#: Every subset of the four rows, paired with what a lookup for
+#: (processing, dairy, cheese, landfill, co2e) must return from it. Sixteen
+#: cases: the full power set, so no combination is left to an assumption. The
+#: empty set is the documented fall to zero.
+FULL_UPSTREAM_MATRIX = [
+    ((), Decimal("0")),
+
+    # One row present: whichever one it is, it applies.
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),), ITEM_HERE),
+    ((("processing", "dairy", None, "landfill", "co2e"),), CATEGORY_HERE),
+    ((("processing", "dairy", "cheese", None, "co2e"),), ITEM_EVERYWHERE),
+    ((("processing", "dairy", None, None, "co2e"),), CATEGORY_EVERYWHERE),
+
+    # Two rows present. The pair that matters is the third of these: a row
+    # naming only the item against a row naming only the destination, neither
+    # more specific than the other by any count of stated dimensions.
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),
+      ("processing", "dairy", None, "landfill", "co2e")), ITEM_HERE),
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),
+      ("processing", "dairy", "cheese", None, "co2e")), ITEM_HERE),
+    ((("processing", "dairy", None, "landfill", "co2e"),
+      ("processing", "dairy", "cheese", None, "co2e")), CATEGORY_HERE),
+    ((("processing", "dairy", None, "landfill", "co2e"),
+      ("processing", "dairy", None, None, "co2e")), CATEGORY_HERE),
+    ((("processing", "dairy", "cheese", None, "co2e"),
+      ("processing", "dairy", None, None, "co2e")), ITEM_EVERYWHERE),
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),
+      ("processing", "dairy", None, None, "co2e")), ITEM_HERE),
+
+    # Three rows present.
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),
+      ("processing", "dairy", None, "landfill", "co2e"),
+      ("processing", "dairy", "cheese", None, "co2e")), ITEM_HERE),
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),
+      ("processing", "dairy", None, "landfill", "co2e"),
+      ("processing", "dairy", None, None, "co2e")), ITEM_HERE),
+    ((("processing", "dairy", "cheese", "landfill", "co2e"),
+      ("processing", "dairy", "cheese", None, "co2e"),
+      ("processing", "dairy", None, None, "co2e")), ITEM_HERE),
+    ((("processing", "dairy", None, "landfill", "co2e"),
+      ("processing", "dairy", "cheese", None, "co2e"),
+      ("processing", "dairy", None, None, "co2e")), CATEGORY_HERE),
+
+    # All four.
+    (tuple(ALL_FOUR_UPSTREAM), ITEM_HERE),
+]
+
+
+@pytest.mark.parametrize("present,expected", FULL_UPSTREAM_MATRIX,
+                         ids=lambda x: None)
+def test_the_upstream_lookup_matrix_returns_the_right_row(present, expected):
+    """All sixteen subsets of the four candidate rows, by value."""
+    bundle = _item_matrix_bundle(present)
+
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == expected
+
+
+def test_the_destination_beats_the_item_when_only_one_of_each_exists():
+    """The precedence decision itself, stated once on its own.
+
+    Called out separately from the matrix above because it is the only cell
+    where the answer was chosen rather than derived, and because a reader
+    coming to this file after a wrong number in the field will look for it by
+    name.
+    """
+    bundle = _item_matrix_bundle((
+        ("processing", "dairy", None, "landfill", "co2e"),
+        ("processing", "dairy", "cheese", None, "co2e"),
+    ))
+
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == CATEGORY_HERE
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) != ITEM_EVERYWHERE
+
+
+def test_an_item_generic_row_does_not_outrank_the_prevention_zero():
+    """**Why the destination wins, in the shape SS2.2 measured.**
+
+    The prevention offset is a category-level, destination-specific row at
+    zero -- candidate 2. Cheese has an ordinary generic factor -- candidate 3.
+    Order the item first and a line moved to `prevention` is priced at 21.0
+    per kg instead of 0, which is O-7 exactly: the benefit understated,
+    one-directionally, on the client's "wasting less" story. Nothing else in
+    the tree would fail -- `find_missing_prevention_upstream` and
+    `refuse_nonzero_prevention_factors` both look at rows, and every row here
+    is correct.
+    """
+    bundle = FactorBundle(
+        upstream_factors={
+            # The category's prevention zero -- one row, covering every food
+            # under dairy, and no item-level prevention row anywhere.
+            ("processing", "dairy", None, "prevention", "co2e"): Decimal("0"),
+            ("processing", "dairy", None, None, "co2e"): Decimal("19.0"),
+            # Cheese is heavier than the dairy average and says so.
+            ("processing", "dairy", "cheese", None, "co2e"): Decimal("21.0"),
+        },
+        downstream_factors={},
+        constants={},
+        formulas={},
+        destinations={"landfill", "prevention"},
+        sectors={"processing"},
+        food_categories={"dairy"},
+        standard_mix="standard_mix",
+        version_label="O7",
+        is_mock=True,
+        metrics=(MetricSpec("co2e", "kg CO2e", 1),),
+        equivalence_specs=(),
+        food_item_category_of={"cheese": "dairy"},
+    )
+
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", "prevention", "co2e"
+    ) == Decimal("0")
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == Decimal("21.0")
+
+
+def test_a_different_item_falls_past_the_item_row_to_the_category_row():
+    """The other half of the same decision: an item row applies to *its* item
+    and to no other. Without this, a suite could pass with a lookup that
+    ignored the item value and always preferred the item slot."""
+    bundle = _item_matrix_bundle((
+        ("processing", "dairy", "cheese", None, "co2e"),
+        ("processing", "dairy", None, None, "co2e"),
+    ))
+
+    assert bundle.upstream(
+        "processing", "dairy", "butter", "landfill", "co2e"
+    ) == CATEGORY_EVERYWHERE
+
+
+def test_a_different_destination_falls_past_the_here_row_to_the_generic_row():
+    """And the mirror for the destination slot."""
+    bundle = _item_matrix_bundle((
+        ("processing", "dairy", "cheese", "landfill", "co2e"),
+        ("processing", "dairy", "cheese", None, "co2e"),
+    ))
+
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", "compost", "co2e"
+    ) == ITEM_EVERYWHERE
+
+
+def test_asking_for_the_category_rows_directly_does_not_skip_them():
+    """SS4.1: when `food_item` is None, candidate 1 *is* candidate 2 and
+    candidate 3 *is* candidate 4; when `destination` is None, candidate 1 *is*
+    candidate 3. So the later steps must be looked up, not assumed absent."""
+    bundle = _item_matrix_bundle(tuple(ALL_FOUR_UPSTREAM))
+
+    assert bundle.upstream(
+        "processing", "dairy", None, "landfill", "co2e"
+    ) == CATEGORY_HERE
+    assert bundle.upstream(
+        "processing", "dairy", None, None, "co2e"
+    ) == CATEGORY_EVERYWHERE
+    assert bundle.upstream(
+        "processing", "dairy", "cheese", None, "co2e"
+    ) == ITEM_EVERYWHERE
+
+
+def test_an_item_with_no_row_of_its_own_gets_the_category_average_not_zero():
+    """The claim that makes the destination-first tie affordable. An item the
+    factor set says nothing about is the *normal* state -- one item row
+    releases the level and the other eighteen foods have none -- and it must
+    answer with the category average, which is a defined, meaningful number
+    and is literally the average of those same foods."""
+    bundle = _item_matrix_bundle((
+        ("processing", "dairy", None, None, "co2e"),
+    ))
+
+    assert bundle.upstream(
+        "processing", "dairy", "butter", "landfill", "co2e"
+    ) == CATEGORY_EVERYWHERE
+    assert bundle.upstream(
+        "processing", "dairy", "butter", "landfill", "co2e"
+    ) != Decimal("0")
+
+
+# ---------- upstream_with_basis (groundwork for the disclosure) ----------
+
+
+@pytest.mark.parametrize("present,expected", FULL_UPSTREAM_MATRIX,
+                         ids=lambda x: None)
+def test_the_basis_lookup_agrees_with_the_value_lookup_everywhere(present, expected):
+    """One chain, two entry points, and they may never disagree.
+
+    The same sixteen subsets the matrix above asserts by value: whatever
+    `upstream()` returns, `upstream_with_basis()` must return the same number.
+    A second copy of the candidate list is the way this drifts.
+    """
+    bundle = _item_matrix_bundle(present)
+
+    value, _ = bundle.upstream_with_basis(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    )
+
+    assert value == expected
+    assert value == bundle.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    )
+
+
+@pytest.mark.parametrize("row,expected_value,expected_basis", [
+    (("processing", "dairy", "cheese", "landfill", "co2e"),
+     ITEM_HERE, UpstreamBasis.ITEM_AT_DESTINATION),
+    (("processing", "dairy", None, "landfill", "co2e"),
+     CATEGORY_HERE, UpstreamBasis.CATEGORY_AT_DESTINATION),
+    (("processing", "dairy", "cheese", None, "co2e"),
+     ITEM_EVERYWHERE, UpstreamBasis.ITEM_EVERY_DESTINATION),
+    (("processing", "dairy", None, None, "co2e"),
+     CATEGORY_EVERYWHERE, UpstreamBasis.CATEGORY_EVERY_DESTINATION),
+])
+def test_each_candidate_names_itself(row, expected_value, expected_basis):
+    """Each of the four rows, alone, reports which one it is.
+
+    Asserted by member and not merely by "something came back": the fallback
+    disclosure branches on this, so a basis that named the wrong row would
+    print "this figure is the Dairy average" over a figure that is cheese's
+    own -- or, worse, stay silent over one that is not.
+    """
+    bundle = _item_matrix_bundle((row,))
+
+    assert bundle.upstream_with_basis(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == (expected_value, expected_basis)
+
+
+def test_the_basis_of_nothing_at_all_is_absent():
+    bundle = _item_matrix_bundle(())
+
+    assert bundle.upstream_with_basis(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == (Decimal("0"), UpstreamBasis.ABSENT)
+
+
+def test_a_lookup_that_named_no_item_is_never_reported_as_item_level():
+    """The degenerate case the basis has to survive. With `food_item=None`
+    candidate 1 and candidate 2 are the *same key*, so a basis taken from the
+    candidate's position in the list rather than from the winning row would
+    label a category row `ITEM_AT_DESTINATION` -- and step 7 would suppress a
+    disclosure it owes the reader."""
+    bundle = _item_matrix_bundle(tuple(ALL_FOUR_UPSTREAM))
+
+    _, basis = bundle.upstream_with_basis(
+        "processing", "dairy", None, "landfill", "co2e"
+    )
+
+    assert basis is UpstreamBasis.CATEGORY_AT_DESTINATION
+    assert not basis.is_item_level
+
+
+def test_a_lookup_that_named_no_destination_is_never_reported_as_here_only():
+    """The same degeneracy in the other slot: with `destination=None`,
+    candidate 1 is candidate 3."""
+    bundle = _item_matrix_bundle(tuple(ALL_FOUR_UPSTREAM))
+
+    _, basis = bundle.upstream_with_basis(
+        "processing", "dairy", "cheese", None, "co2e"
+    )
+
+    assert basis is UpstreamBasis.ITEM_EVERY_DESTINATION
+    assert basis.is_item_level
+
+
+def test_the_disclosure_branch_is_a_value_and_not_a_sentence():
+    """What landing step 7 will read. The engine says *which row*; the
+    sentence ("this figure is the Fruit average, not Feijoas") is the
+    caller's, because it is copy and it is translated."""
+    bundle = _item_matrix_bundle((
+        ("processing", "dairy", None, None, "co2e"),
+    ))
+
+    _, basis = bundle.upstream_with_basis(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    )
+
+    assert isinstance(basis, UpstreamBasis)
+    assert basis is UpstreamBasis.CATEGORY_EVERY_DESTINATION
+    # The branch itself: an item was named and the figure does not refine it.
+    assert not basis.is_item_level
+
+
+@pytest.mark.parametrize("member,is_item", [
+    (UpstreamBasis.ITEM_AT_DESTINATION, True),
+    (UpstreamBasis.ITEM_EVERY_DESTINATION, True),
+    (UpstreamBasis.CATEGORY_AT_DESTINATION, False),
+    (UpstreamBasis.CATEGORY_EVERY_DESTINATION, False),
+    (UpstreamBasis.ABSENT, False),
+])
+def test_is_item_level_covers_every_member(member, is_item):
+    """Including ABSENT, which is the one a membership test written as "not a
+    category row" would get wrong: no row at all refines no food."""
+    assert member.is_item_level is is_item
+
+
+# ---------- resolution: the engine refuses what the database permits ----------
+
+
+def test_resolving_no_item_is_not_an_error_and_stays_none():
+    """Every visitor who was not asked step 2.5 arrives this way, and it is an
+    answer rather than an absence. It is deliberately *not* resolved to a
+    stand-in the way a null food_category is resolved to `standard_mix`:
+    there is no standard food."""
+    bundle = _item_matrix_bundle(())
+
+    assert bundle.resolve_food_item(None, "dairy") is None
+
+
+def test_resolving_a_known_item_returns_its_code():
+    bundle = _item_matrix_bundle(())
+
+    assert bundle.resolve_food_item("cheese", "dairy") == "cheese"
+
+
+def test_an_unknown_item_is_refused_rather_than_falling_back():
+    """SS6. The chain falls back; the vocabulary does not. An item code this
+    bundle has never heard of is a caller defect, and letting it fall through
+    to the category average would return a plausible number for a food that
+    does not exist."""
+    bundle = _item_matrix_bundle(())
+
+    with pytest.raises(UnknownCodeError) as excinfo:
+        bundle.resolve_food_item("moon_cheese", "dairy")
+
+    assert "moon_cheese" in str(excinfo.value)
+
+
+def test_an_item_from_another_category_is_refused():
+    """`submission_entry` permits `(fruit, cheese)`: two independent foreign
+    keys and a CHECK that only refuses an item arriving without a category.
+    The engine is what refuses the pair, and it has to, because the lookup
+    would otherwise fall past candidates 1 and 3 and price cheese as the fruit
+    average -- a wrong answer that looks right."""
+    bundle = _item_matrix_bundle(())
+
+    with pytest.raises(UnknownCodeError) as excinfo:
+        bundle.resolve_food_item("cheese", "fruit")
+
+    message = str(excinfo.value)
+    assert "cheese" in message
+    assert "dairy" in message and "fruit" in message
+
+
+def test_has_food_item():
+    bundle = _item_matrix_bundle(())
+
+    assert bundle.has_food_item("cheese") is True
+    assert bundle.has_food_item("moon_cheese") is False
+
+
+def test_a_bundle_with_no_item_vocabulary_knows_no_items():
+    """Which is every bundle written before v1.54, and the state this landing
+    leaves the deployed system in."""
+    bundle = _item_matrix_bundle((), items={})
+
+    assert bundle.has_food_item("cheese") is False
+    assert bundle.resolve_food_item(None, "dairy") is None
+    with pytest.raises(UnknownCodeError):
+        bundle.resolve_food_item("cheese", "dairy")
+
+
+# ---------- the food_items section of bundle.json (SS10.2) ----------
+
+
+def test_food_items_is_not_a_required_key():
+    """It must never join `REQUIRED_KEYS`: every bundle in the tree omits it
+    -- thirteen golden cases, `build_bundle_data`'s output, and the
+    `GET /factors` response a staff member pastes into the dry-run box -- and
+    all of them must still load."""
+    assert FOOD_ITEMS_KEY not in REQUIRED_KEYS
+
+
+def test_a_bundle_with_no_food_items_section_loads_and_validates_clean():
+    data = _minimal()
+    assert FOOD_ITEMS_KEY not in data
+
+    loaded = FactorBundle.from_json(data)
+
+    assert loaded.validate() == []
+    assert loaded.food_item_category_of == {}
+    assert loaded.upstream(
+        "processing", "dairy", None, "landfill", "co2e"
+    ) == Decimal("1.9000000000")
+
+
+def test_an_upstream_row_that_omits_food_item_is_the_category_row():
+    """Absence and `null` mean the same thing here, which is why the key is
+    optional and `destination` beside it is not. Asserted **by value**: the
+    row has to answer a lookup that names an item, through candidate 4."""
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dairy",
+         "sort_order": 1},
+    ]
+
+    loaded = FactorBundle.from_json(data)
+
+    assert loaded.validate() == []
+    assert loaded.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == Decimal("1.9000000000")
+
+
+def test_the_item_dimension_round_trips_through_from_json_in_both_states():
+    """SS10.2: `food_item` is a key whose value may be a code or null, and both
+    forms must survive the loader. A loader that dropped the field entirely
+    would still pass every matrix test above, because those build the dict
+    directly."""
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dairy"},
+    ]
+    data["upstream"] = [
+        {"sector": "processing", "food_category": "dairy", "food_item": None,
+         "destination": None, "metric": "co2e", "value_per_kg": "1.9000000000"},
+        {"sector": "processing", "food_category": "dairy", "food_item": "cheese",
+         "destination": None, "metric": "co2e", "value_per_kg": "2.7000000000"},
+    ]
+
+    loaded = FactorBundle.from_json(data)
+
+    assert loaded.validate() == []
+    assert loaded.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == Decimal("2.7000000000")
+    assert loaded.upstream(
+        "processing", "dairy", None, "landfill", "co2e"
+    ) == Decimal("1.9000000000")
+    assert loaded.upstream(
+        "processing", "dairy", "butter", "landfill", "co2e"
+    ) == Decimal("1.9000000000")
+
+
+def test_two_upstream_rows_differing_only_in_food_item_are_not_duplicates():
+    """The item is part of the key, so these are two rows and not one. If the
+    loader built its key without the item slot one would silently overwrite
+    the other -- the later row winning, which is precisely the failure the
+    duplicate check exists to name. Both values are asserted too, because
+    asserting the absence of a problem is weak on its own."""
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dairy"},
+    ]
+    data["upstream"] = [
+        {"sector": "processing", "food_category": "dairy", "food_item": "cheese",
+         "destination": None, "metric": "co2e", "value_per_kg": "2.7000000000"},
+        {"sector": "processing", "food_category": "dairy", "food_item": None,
+         "destination": None, "metric": "co2e", "value_per_kg": "1.9000000000"},
+    ]
+
+    loaded = FactorBundle.from_json(data)
+
+    assert loaded.validate() == []
+    assert loaded.upstream(
+        "processing", "dairy", "cheese", "landfill", "co2e"
+    ) == Decimal("2.7000000000")
+    assert loaded.upstream(
+        "processing", "dairy", None, "landfill", "co2e"
+    ) == Decimal("1.9000000000")
+
+
+def test_a_duplicate_food_item_code_is_reported():
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dairy"},
+        {"code": "cheese", "name": "Cheddar", "food_category": "dairy"},
+    ]
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "cheese" in problems[0]
+    assert "more than once" in problems[0]
+
+
+def test_a_food_item_row_missing_its_category_is_malformed():
+    """`food_item.food_category_id` is NOT NULL, and for a reason: the parent
+    is both the fallback and the thing a request is checked against."""
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [{"code": "cheese", "name": "Cheese"}]
+
+    with pytest.raises(BundleFormatError) as excinfo:
+        FactorBundle.from_json(data)
+
+    assert "food_category" in str(excinfo.value)
+
+
+def test_a_food_item_key_that_is_neither_a_code_nor_null_is_malformed():
+    """Optional does not mean unchecked."""
+    data = _minimal()
+    data["upstream"][0]["food_item"] = 7
+
+    with pytest.raises(BundleFormatError) as excinfo:
+        FactorBundle.from_json(data)
+
+    assert "food_item" in str(excinfo.value)
+
+
+def test_validate_reports_an_upstream_row_naming_an_item_that_is_absent():
+    """Silent in the same way a dangling destination is: the row does not
+    raise, it is simply never reached, and its author sees a factor they wrote
+    having no effect."""
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dairy"},
+    ]
+    data["upstream"][0]["food_item"] = "chesee"
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "chesee" in problems[0]
+    assert "food_item" in problems[0]
+
+
+def test_validate_reports_an_upstream_row_whose_item_is_from_another_category():
+    """The factor-table half of what `resolve_food_item()` refuses on a
+    request: a row priced for cheese but filed under fruit is unreachable,
+    because a lookup only ever builds the key with the item's real parent."""
+    data = _minimal()
+    data["food_categories"].append(
+        {"code": "fruit", "name": "Fruit", "is_standard_mix": False, "sort_order": 2}
+    )
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dairy"},
+    ]
+    data["upstream"].append(
+        {"sector": "processing", "food_category": "fruit", "food_item": "cheese",
+         "destination": None, "metric": "co2e", "value_per_kg": "2.7000000000"}
+    )
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "cheese" in problems[0] and "dairy" in problems[0]
+    assert "no lookup can reach this row" in problems[0]
+
+
+def test_validate_reports_a_food_item_whose_category_is_absent():
+    data = _minimal()
+    data[FOOD_ITEMS_KEY] = [
+        {"code": "cheese", "name": "Cheese", "food_category": "dariy"},
+    ]
+
+    problems = FactorBundle.from_json(data).validate()
+
+    assert len(problems) == 1
+    assert "cheese" in problems[0] and "dariy" in problems[0]

@@ -391,7 +391,7 @@ def test_prevention_is_a_complete_offset(bundle: FactorBundle) -> None:
     """The offset must come from the factors, not from a special case."""
     for metric in COMPARABLE:
         assert bundle.upstream(
-            OUR_SECTOR, OUR_FOOD_CATEGORY, "refed_prevention", metric
+            OUR_SECTOR, OUR_FOOD_CATEGORY, None, "refed_prevention", metric
         ) == Decimal("0")
         assert bundle.downstream(
             "refed_prevention", OUR_SECTOR, OUR_FOOD_CATEGORY, metric
@@ -505,7 +505,7 @@ def test_an_unpublished_pair_prices_at_zero_rather_than_borrowing(
     """
     for destination in ("refed_landfill", "refed_composting", "refed_donations"):
         assert bundle.downstream(destination, sector, food, metric) == Decimal("0")
-        assert bundle.upstream(sector, food, destination, metric) == Decimal("0")
+        assert bundle.upstream(sector, food, None, destination, metric) == Decimal("0")
 
 
 # --------------------------------------------------------------------------

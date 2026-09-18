@@ -278,6 +278,21 @@ class _Taxonomy:
         self.sectors = _names(getattr(taxonomy, "sectors", ()))
         self.food_categories = _names(getattr(taxonomy, "food_categories", ()))
         self.destinations = _names(getattr(taxonomy, "destinations", ()))
+        #: v1.59, for the fallback disclosure. `getattr` with a default
+        #: for the reason every line here uses one: this class is handed
+        #: whatever the caller has, and a snapshot that predates the
+        #: vocabulary is a snapshot with no foods rather than an error.
+        self.food_items = _names(getattr(taxonomy, "food_items", ()))
+        #: A food's parent, so the disclosure can name the category the
+        #: figure actually came from. Read off the vocabulary rather than
+        #: off the entry: the entry carries the category the visitor
+        #: chose, and those are the same today only because §6.2 refuses
+        #: a food whose parent is not the category it arrived with.
+        self.item_parents = {
+            row.code: getattr(row, "food_category", None)
+            for row in (getattr(taxonomy, "food_items", ()) or ())
+        }
+
         self.metrics = _names(getattr(taxonomy, "metrics", ()))
         self.metric_units = {
             row.code: (getattr(row, "display_unit", None) or row.unit)
@@ -317,6 +332,9 @@ class _Taxonomy:
 
     def destination(self, code: str | None) -> str:
         return self._look_up(self.destinations, code)
+
+    def food_item(self, code: str | None) -> str:
+        return self._look_up(self.food_items, code)
 
     def metric(self, code: str | None) -> str:
         return self._look_up(self.metrics, code)
@@ -405,6 +423,18 @@ _LABELS = {
 #: "has not been recorded yet" to "is not recorded yet" so a test's
 #: contiguous `not recorded` substring match holds; this copies that wording,
 #: not the plan's).
+#: v1.59's fallback disclosure, word for word the two keys `web/js/results.js`
+#: renders on screen and in the text export. Copied rather than shared because
+#: the two surfaces have no code in common -- and pinned by
+#: `tests/api/test_pdf_render.py`, so a reword on one side fails rather than
+#: quietly producing a PDF that says something the screen did not.
+_CATEGORY_AVERAGE_FLAG = "Food category average"
+_CATEGORY_AVERAGE_BODY = (
+    "%(food)s is priced at the %(category)s average. The published factor set "
+    "carries no factors for this food, so the figures here are its category's "
+    "rather than its own."
+)
+
 _EQUIVALENCE_BASIS_MISSING = "The basis for this conversion is not recorded yet."
 
 #: The standing caveat `web/js/results.js::equivalenceBasis` prints beside
@@ -766,6 +796,36 @@ def build_context(
     names = _Taxonomy(taxonomy)
     totals = result.totals
 
+    #: v1.59, and the same list the screen shows, built from the same
+    #: field. `EntryResult.item_basis` is rolled up in `engine/calculate.py`
+    #: over every breakdown row of both scenarios; this reads it and does not
+    #: recompute it, because the results page, its text export and this
+    #: document have to tell one story about one submission and three
+    #: roll-ups in two languages is three chances not to.
+    #:
+    #: Only `category` is disclosed -- `mixed` is the ordinary state, since
+    #: the prevention offset is a category-level row (""" + S + """2.2) and every entry
+    #: that moves mass to prevention therefore has a category-priced line.
+    #:
+    #: One line per food, deduplicated: two entries naming the same food are
+    #: one caveat, and the reader is being told a fact about the factor set
+    #: rather than about a row of their own table.
+    category_averages = []
+    seen_items: set[str] = set()
+    for entry in result.entries:
+        code = getattr(entry, "food_item_code", None)
+        basis = getattr(getattr(entry, "item_basis", None), "value", None)
+        if basis != "category" or code is None or code in seen_items:
+            continue
+        seen_items.add(code)
+        parent = names.item_parents.get(code) or entry.food_category_code
+        category_averages.append(
+            translate(_CATEGORY_AVERAGE_BODY) % {
+                "food": names.food_item(code),
+                "category": names.food_category(parent),
+            }
+        )
+
     entries = []
     for entry in result.entries:
         entries.append(
@@ -785,6 +845,10 @@ def build_context(
         "title": translate(_TITLE),
         "subtitle": translate(_SUBTITLE),
         "is_mock": bool(result.is_mock),
+        #: v1.59. Present and empty when nothing fell back, so the
+        #: template's `{% if %}` is the only place the decision is made.
+        "category_average_flag": translate(_CATEGORY_AVERAGE_FLAG),
+        "category_averages": category_averages,
         "mock_flag": translate(MOCK_WARNING_FLAG),
         "mock_body": translate(MOCK_WARNING_BODY),
         "factor_set_version": result.factor_set_version,

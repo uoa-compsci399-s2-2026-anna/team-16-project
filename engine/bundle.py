@@ -26,7 +26,14 @@ from enum import Enum
 from typing import Any
 
 from engine.errors import BundleFormatError, UnknownCodeError, UnknownConstantError
-from engine.types import EquivalenceSpec, MetricSpec
+#: `UpstreamBasis` is defined in `engine/types.py` and re-exported here.
+#: It lives there because §3's `BreakdownRow` carries one, and this module
+#: already imports that one -- defining it here and importing it there
+#: would be a cycle. The re-export is not decoration: this is the module
+#: whose lookup chain produces the value, so `from engine.bundle import
+#: UpstreamBasis` is the import every existing caller wrote and the one a
+#: reader of `upstream_with_basis` will reach for.
+from engine.types import EquivalenceSpec, MetricSpec, UpstreamBasis
 
 #: §4.1. Returned by `formula()` for a metric with no row of its own, and
 #: byte-for-byte the string the contract prints -- `admin/expressions.py` and
@@ -71,52 +78,6 @@ REQUIRED_KEYS = (
 #: name; a test that spelled the string itself would keep passing if the
 #: section were ever renamed.
 FOOD_ITEMS_KEY = "food_items"
-
-
-class UpstreamBasis(Enum):
-    """Which of §2.2's four candidate rows answered an upstream lookup.
-
-    Returned by `FactorBundle.upstream_with_basis()` beside the value. The
-    fallback disclosure the interface will render -- *"this figure is the
-    Fruit average, not Feijoas"* -- has to be able to **branch** on which row
-    was used, and on nothing else: a human-readable string assembled here
-    would have to be assembled in English, in the engine, which is neither
-    where the copy lives nor where the twenty locale files are. So this is a
-    value, and the sentence is the caller's.
-
-    The member is derived from the *winning row's own shape* rather than from
-    what the caller asked for, which is what keeps it truthful in the two
-    degenerate cases: a lookup with `food_item=None` can only ever be answered
-    by a category row, and a lookup with `destination=None` can only ever be
-    answered by an every-destination row. See `upstream_with_basis()`.
-    """
-
-    #: This food, at this destination -- §2.2 candidate 1.
-    ITEM_AT_DESTINATION = "item_at_destination"
-    #: Every food in this category, here -- candidate 2. **Outranks candidate
-    #: 3**, and the prevention zero is stored in this shape.
-    CATEGORY_AT_DESTINATION = "category_at_destination"
-    #: This food, at every destination -- candidate 3.
-    ITEM_EVERY_DESTINATION = "item_every_destination"
-    #: The category average, everywhere -- candidate 4, and the normal row.
-    CATEGORY_EVERY_DESTINATION = "category_every_destination"
-    #: No row at all: `Decimal('0')`, §4.1's documented fall-through.
-    ABSENT = "absent"
-
-    @property
-    def is_item_level(self) -> bool:
-        """Whether the figure was refined by the named food.
-
-        This is the branch the disclosure needs: *false* while an item was
-        asked for is exactly the case that has to say "the category average,
-        not this food". It is a property of the basis rather than a fifth
-        thing for a caller to work out from the member name, because "which
-        members are item rows" is knowledge that belongs beside the chain.
-        """
-        return self in (
-            UpstreamBasis.ITEM_AT_DESTINATION,
-            UpstreamBasis.ITEM_EVERY_DESTINATION,
-        )
 
 
 @dataclass

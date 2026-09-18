@@ -292,6 +292,12 @@ def _entry(entry: Any) -> dict[str, Any]:
         # sometimes would make "named no food" indistinguishable from "this
         # response predates the dimension".
         "food_item": entry.food_item_code,
+        # v1.59. This entry's rows rolled up into the one handle a surface
+        # branches on, computed in the engine so that the results page, the
+        # plain-text export and the PDF read the same value rather than each
+        # rolling the rows up in its own language. `not_applicable` on every
+        # entry that names no food, which is every entry today.
+        "item_basis": entry.item_basis,
         "current": _scenario(entry.current),
         "alternative": _scenario(entry.alternative),
         "net_benefit": _net_benefit(entry.net_benefit),
@@ -342,6 +348,14 @@ def _metric(metric: Any) -> dict[str, Any]:
                 "upstream": row.upstream,
                 "downstream": row.downstream,
                 "value": row.value,
+                # v1.59. Which of §2.2's four candidate rows priced this
+                # line, or `null` on a totals-level row, where a sum across
+                # entries was priced by no single row -- the same reason
+                # `upstream` and `downstream` are zero there. Passed through
+                # as the member; `api/serialization.wire` renders an Enum as
+                # its `value`, so the token on the wire is the contract's and
+                # not a Python repr.
+                "upstream_basis": row.upstream_basis,
             }
             for row in metric.by_destination
         ]

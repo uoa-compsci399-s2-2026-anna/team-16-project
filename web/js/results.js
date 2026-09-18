@@ -737,6 +737,11 @@ export function buildResultsReport(state) {
   // data is the more damaging half of the same bug. The factor version replaces it as the
   // line that says which numbers these are, so a real export is not left saying nothing.
   const notice = state.result?.factor_set?.is_mock ? [t(DEMONSTRATION_NOTICE)] : []
+  // Contract v1.59, printed beside `notice` rather than inside each entry's
+  // block: one food appears once however many entries named it, which is the
+  // same list the screen shows, from the same function.
+  const averaged = categoryAverageLines(state, '')
+  const averagedBlock = averaged.length ? ['', t('Food category average'), ...averaged] : []
   // The export leaves the browser and is read by somebody who did not choose the
   // language it was written in, so a machine-translated interface has to say so on
   // the file as well as on the screen it came from.
@@ -765,6 +770,7 @@ export function buildResultsReport(state) {
     ...entryLines,
     `${t('Factor version')}: ${state.result?.factor_set?.version_label || t('Not supplied')}`,
     ...notice,
+    ...averagedBlock,
     `${t('Percentage waste')}: ${share.value}${share.note ? `. ${share.note}` : ''}`,
     ...translationNotice,
   ].join('\n')
@@ -1019,6 +1025,55 @@ export async function contributeCalculation(state, toPublicMessage = error => er
   }
 }
 
+/**
+ * The foods whose figures came from their category's average, once each.
+ *
+ * **The engine decides this, not the browser.** `item_basis` is
+ * `EntryResult.item_basis` (contract v1.59), rolled up in `engine/calculate.py`
+ * from every breakdown row of both scenarios. Working it out here would mean
+ * the results page, this file's text export and `api/pdf_render.py` each
+ * reimplementing the same roll-up, in two languages, for one submission --
+ * and the rule is that the screen and both exports tell one story.
+ *
+ * Only `'category'` is disclosed. `'mixed'` is the ordinary state rather than
+ * an alarm: `prevention` factors are stored as category-level rows (contract
+ * §2.2, the shape that closes O-7), so every entry that moves mass to
+ * prevention has a category-priced line however well the set prices its food.
+ * A notice raised on `'mixed'` would fire on a row that is deliberately
+ * category-level, and a notice that fires on everything is read as furniture.
+ *
+ * @param {object} state
+ * @returns {Array<{food: string, category: string}>}
+ */
+function categoryAverageFoods(state) {
+  const seen = new Set()
+  const out = []
+  for (const { response } of state.result?.entry_results || []) {
+    // Both conditions, and neither implies the other: an entry that named no
+    // food is `not_applicable` and has nothing to disclose, and a response
+    // that predates v1.59 carries no `item_basis` at all.
+    if (response?.item_basis !== 'category' || !response?.food_item) continue
+    if (seen.has(response.food_item)) continue
+    seen.add(response.food_item)
+    const item = findByCode(state.taxonomy?.food_items || [], response.food_item)
+    const category = findByCode(state.taxonomy?.food_categories || [], item?.food_category ?? response.food_category)
+    out.push({
+      // The code is the fallback, never a blank: a taxonomy row can be
+      // retired after a submission named it (contract §5.2), and a notice
+      // that named nothing would be a caveat about an unnamed thing.
+      food: item?.name || response.food_item,
+      category: category?.name || response.food_category || t('its food category'),
+    })
+  }
+  return out
+}
+
+/** The same sentences, as the lines both exports print. */
+function categoryAverageLines(state, prefix) {
+  return categoryAverageFoods(state).map(({ food, category }) =>
+    `${prefix}${t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category })}`)
+}
+
 export function renderResults(state) {
   const result = state.result
   const entryResults = result?.entry_results || []
@@ -1030,6 +1085,15 @@ export function renderResults(state) {
   const totals = result.totals || {}
   const mock = result.factor_set?.is_mock
   const warning = mock ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Placeholder data'))}</strong><p>${escapeHtml(t(DEMONSTRATION_NOTICE))}</p></div></aside>` : ''
+  // Contract v1.59. The same shape as the placeholder banner above and for a
+  // related reason -- both say *this number is not what it looks like* -- but
+  // independent of it: a real factor set can still price a food only at its
+  // category, and a placeholder one can price a food individually. One line
+  // per food, so no plural form is needed in twenty catalogues.
+  const averaged = categoryAverageFoods(state)
+  const averagedNotice = averaged.length
+    ? `<aside class="disclaimer" role="status"><span class="info-icon" aria-hidden="true">i</span><div><strong>${escapeHtml(t('Food category average'))}</strong>${averaged.map(({ food, category }) => `<p>${escapeHtml(t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category }))}</p>`).join('')}</div></aside>`
+    : ''
   const version = result.factor_set?.version_label || t('Not supplied')
   // `stepNav` is the LAST child of this section and has to stay there: it is
   // `position: sticky; bottom: 0`, which pins only while its containing block
@@ -1041,7 +1105,7 @@ export function renderResults(state) {
   // header's home button already offers it.
   return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
-      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}
+      : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}${averagedNotice}
     <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
     <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}

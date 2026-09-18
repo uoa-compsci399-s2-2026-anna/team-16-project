@@ -36,6 +36,8 @@ import pytest
 from api import pdf_render
 from api.pdf_render import (
     MOCK_WARNING_FLAG,
+    _CATEGORY_AVERAGE_BODY,
+    _CATEGORY_AVERAGE_FLAG,
     MockWarningMissingError,
     build_context,
     render_html,
@@ -51,6 +53,7 @@ from db.types import (
     TaxonomySnapshot,
 )
 from engine.types import (
+    UpstreamBasis,
     DATA_COMPLETE,
     DATA_INCOMPLETE,
     DATA_NOT_SUPPLIED,
@@ -118,6 +121,11 @@ def _row(destination: str, qty: str, value: str) -> BreakdownRow:
         upstream=Decimal("2.5"),
         downstream=Decimal("-0.4"),
         value=Decimal(value),
+        #: v1.59. An entry-level row, so a member rather than `None`. The
+        #: PDF does not print the basis per line -- it prints the entry's
+        #: roll-up -- but the field is required on the dataclass precisely so
+        #: that a builder cannot leave the question unanswered.
+        upstream_basis=UpstreamBasis.CATEGORY_EVERY_DESTINATION,
     )
 
 
@@ -1334,6 +1342,35 @@ def test_the_script_faces_are_embedded_in_the_pdf(locale, face):
         assert sibling not in joined, (
             f"{locale} is partly set in {sibling} - the per-language font "
             "ordering in results.css is not doing its job"
+        )
+
+
+def test_the_pdf_and_the_screen_word_the_fallback_disclosure_identically():
+    """Contract v1.59. The same sentence reaches a visitor three ways -- the
+    results page, its plain-text export and this document -- and the three
+    have no code in common: two of them are `web/js/results.js` and the third
+    is `api/pdf_render.py`, in a different language, in a different package.
+
+    **Two copies of a sentence is two sentences the day one is reworded.**
+    The screen's copy is the catalogue key `results.js` passes to `t()`; this
+    module's copy is a module-level constant. They are the same string or a
+    visitor who reads the caveat on screen and then opens the PDF meets a
+    differently-worded one -- and, because `api/i18n` raises on a key no
+    catalogue carries, the PDF would fail outright rather than drift, which
+    is a better failure but still a failure this catches first.
+
+    Asserted against the FRONT END's extracted keys, not against the
+    catalogues: a key both sides had wrong in the same way would sit in every
+    catalogue and agree with itself.
+    """
+    from tests.web import i18n_keys
+
+    rendered = i18n_keys.source_strings()
+    for constant in (_CATEGORY_AVERAGE_FLAG, _CATEGORY_AVERAGE_BODY):
+        assert constant in rendered, (
+            f"{constant!r} is a string this document prints and nothing in "
+            "web/js or web/*.html renders, so the PDF says something the "
+            "screen does not"
         )
 
 

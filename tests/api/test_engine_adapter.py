@@ -101,6 +101,12 @@ def _result_with_equivalence(**kwargs):
     entry = SimpleNamespace(
         sector_code="processing",
         food_category_code="dairy",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        food_item_code=None,
         current=scenario,
         alternative=None,
         net_benefit=None,
@@ -167,6 +173,12 @@ def _result(*, with_alternative=True):
     entry = SimpleNamespace(
         sector_code="processing",
         food_category_code="dairy",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        food_item_code=None,
         current=current,
         alternative=alternative,
         net_benefit=net_benefit,
@@ -197,6 +209,12 @@ def _result(*, with_alternative=True):
     second_entry = SimpleNamespace(
         sector_code="primary_production",
         food_category_code="vegetables",
+        #: v1.58. Present on every stand-in for an `EntryResult`, because
+        #: `_entry()` reads it unguarded: a real result always carries it (the
+        #: dataclass field is defaulted, not optional), and a `getattr`
+        #: fallback in the mapping would hide an engine that stopped setting
+        #: it behind a `null` on the wire.
+        food_item_code=None,
         current=second_current,
         alternative=second_alternative,
         net_benefit=second_net,

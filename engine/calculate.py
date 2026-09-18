@@ -133,6 +133,7 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
             entry.food_category_code,
             bundle,
             request.gwp_horizon,
+            food_item_code=entry.food_item_code,
         )
         alternative = None
         benefit = None
@@ -143,6 +144,12 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
                 entry.food_category_code,
                 bundle,
                 request.gwp_horizon,
+                # The same food in both scenarios, for the same reason the
+                # sector and the category are: an entry's two scenarios
+                # describe one point in the supply chain (§3), and a
+                # per-scenario food would make an unrepresentable state
+                # representable.
+                food_item_code=entry.food_item_code,
             )
             benefit = net_benefit(current, alternative)
         entries.append(
@@ -153,6 +160,9 @@ def calculate(request: CalculationRequest, bundle: FactorBundle) -> CalculationR
                 # else -- §5.4 keeps `unspecified` and `standard_mix` distinct
                 # on purpose, and resolving here would erase the difference.
                 food_category_code=entry.food_category_code,
+                # Echoed as sent too, and here there is nothing to resolve:
+                # `None` is not a stand-in for anything (§3, `EntryInput`).
+                food_item_code=entry.food_item_code,
                 current=current,
                 alternative=alternative,
                 net_benefit=benefit,
@@ -177,6 +187,8 @@ def calculate_scenario(
     food_category_code: str | None,
     bundle: FactorBundle,
     gwp_horizon: int,
+    *,
+    food_item_code: str | None = None,
 ) -> ScenarioResult:
     """Evaluate one scenario of one entry. Internal to the engine (§4.2): no
     caller outside `engine/` may depend on this signature.
@@ -184,8 +196,31 @@ def calculate_scenario(
     Sector and food category are passed alongside the lines because they live
     on the entry, not on the scenario -- an entry's `current` and
     `alternative` describe the same point in the supply chain (§3).
+    `food_item_code` (v1.58) is on the entry for the same reason.
+
+    **Keyword-only and defaulted**, unlike `bundle.upstream`'s item slot,
+    which is positional and required. The two are opposite deliberately:
+    `upstream()` is the lookup key, and a caller left at the pre-v1.54
+    signature must raise `TypeError` rather than read the destination out of
+    the item slot -- whereas this function's fifth positional argument is
+    already `gwp_horizon`, and a food silently landing there would be worse
+    than one left out. Left out, the scenario prices at its category's
+    factors, which is what every scenario evaluated before v1.58 did.
     """
     food_category = _resolve_food_category(food_category_code, bundle)
+    #: Raises for a food this bundle has never heard of, and for a food whose
+    #: parent is not the category it arrived with. `submission_entry` holds the
+    #: two as independent foreign keys and its CHECK constraint says only that
+    #: an item may not arrive *without* a category, so `(vegetables, cheese)`
+    #: is storable and the engine is what refuses it -- otherwise the lookup
+    #: falls quietly through candidates 1 and 3 and prices cheese at the
+    #: vegetables average, which is a wrong answer that looks right.
+    #:
+    #: Resolved once here rather than inside the per-line loop below: the food
+    #: is a property of the entry, not of a line, and a refusal that depended
+    #: on which destinations a scenario happened to use would be a refusal
+    #: nobody could reproduce.
+    food_item = bundle.resolve_food_item(food_item_code, food_category)
     if not bundle.has_sector(sector_code):
         raise UnknownCodeError(f"unknown sector: {sector_code!r}")
     for scenario_line in lines:
@@ -205,17 +240,16 @@ def calculate_scenario(
             upstream = bundle.upstream(
                 sector_code,
                 food_category,
-                # v1.54's dimension, and `None` here is not a placeholder: an
-                # entry has no food item to name yet. §3's `EntryInput` carries
-                # a sector and a food category and nothing finer, so this is
-                # the only value the engine *can* pass, and it is the value
-                # that makes the dimension inert -- the chain falls to the
-                # category rows every existing bundle carries, which is the
-                # answer it gave before the slot existed. The argument is
-                # positional and required so that a caller left at the
-                # pre-v1.54 signature raises TypeError rather than silently
-                # reading the destination out of the item slot.
-                None,
+                # v1.54's dimension, carried by §3's `EntryInput` since
+                # v1.58 and resolved above. `None` -- every request that names
+                # no food, which is every request written before v1.58 -- makes
+                # the chain fall to the category rows every existing bundle
+                # carries, which is the answer it gave before the slot
+                # existed. The argument is positional and required so that a
+                # caller left at the pre-v1.54 signature raises TypeError
+                # rather than silently reading the destination out of the item
+                # slot.
+                food_item,
                 # v1.8's dimension. Outside a per-line loop this argument
                 # cannot exist, which is why the two fixes are one.
                 scenario_line.destination_code,

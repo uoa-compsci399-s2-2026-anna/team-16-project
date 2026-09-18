@@ -48,6 +48,7 @@ from db.types import (
     DestinationGroupSpec,
     DestinationSpec,
     FoodCategorySpec,
+    FoodItemSpec,
     MetricSpec,
     PublicStats,
     SectorSpec,
@@ -114,12 +115,13 @@ REDACTED_FIELDS = {
     "initial_password_enc",
 }
 
-#: `factor_set_id -> (is_mock as it was when the bundle was built, bundle)`.
-#: The flag rides alongside the bundle rather than being read off it because
-#: `load_factor_bundle`'s `bundle_factory` is injectable and what it returns
-#: is not this module's to introspect. See `load_factor_bundle` for why this
-#: one field is re-checked on every hit when nothing else in the bundle is.
-_bundle_cache: dict[int, tuple[bool, Any]] = {}
+#: `factor_set_id -> (is_mock, item vocabulary, bundle)` -- the first two as
+#: they were when the bundle was built. Both ride alongside the bundle rather
+#: than being read off it because `load_factor_bundle`'s `bundle_factory` is
+#: injectable and what it returns is not this module's to introspect. See
+#: `load_factor_bundle` for why these two are re-checked on every hit when
+#: nothing else in the bundle is.
+_bundle_cache: dict[int, tuple[bool, tuple, Any]] = {}
 _cache_lock = threading.RLock()
 
 
@@ -371,6 +373,16 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         .where(FoodCategory.active.is_(True))
         .order_by(FoodCategory.sort_order, FoodCategory.code)
     ).all()
+    #: v1.58. The item vocabulary, inner-joined to its parent because
+    #: `food_item.food_category_id` is NOT NULL and the parent code is what the
+    #: front end groups step 2.5 by. Same order as every other section,
+    #: `sort_order` then `code`.
+    items = session.execute(
+        select(FoodItem, FoodCategory.code)
+        .join(FoodCategory, FoodItem.food_category_id == FoodCategory.id)
+        .where(FoodItem.active.is_(True), FoodCategory.active.is_(True))
+        .order_by(FoodItem.sort_order, FoodItem.code)
+    ).all()
     #: Still counted over every **active** row, not over the narrowed list. It
     #: is §2.1's invariant about the table -- "exactly one active row must be
     #: standard_mix" -- and a published set that happens to price none of the
@@ -424,6 +436,25 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
     #: consumer that was reading both lists correctly.
     visible_groups = {group_code for _, group_code in destinations}
     groups = [x for x in groups if x.code in visible_groups]
+    #: v1.58, and the one line in this block whose rule is **not** "the
+    #: published set has a factor row for it". `_covered_by` has computed the
+    #: parent-covered union since v1.57 and this is its first reader: a food is
+    #: offered when it has rows of its own **or when its parent category is
+    #: covered**, because an unpriced food falls through to the category
+    #: average -- a defined number, and §2.1's categories *are* the averages
+    #: of these same foods. Every other dimension falls through to
+    #: `Decimal("0")`, which is the silent zero this whole block exists to
+    #: stop offering.
+    #:
+    #: Filtered a second time against the food categories that actually
+    #: survived, rather than by `covered["food_items"]` alone: an item under a
+    #: category the caller cannot choose is a food step 2.5 would offer under
+    #: a heading step 2 does not have.
+    surviving_foods = {x.code for x in foods}
+    items = [
+        (x, food_code) for x, food_code in items
+        if x.id in covered["food_items"] and food_code in surviving_foods
+    ]
     #: A preset naming a food category the caller can no longer choose is a
     #: unit conversion for a row that is not on the form. `food_code` is NULL
     #: for a preset that applies to every category, and those always stay.
@@ -437,6 +468,10 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         food_categories=tuple(
             FoodCategorySpec(x.code, x.name, x.is_standard_mix, x.sort_order)
             for x in foods
+        ),
+        food_items=tuple(
+            FoodItemSpec(x.code, x.name, food_code, x.sort_order)
+            for x, food_code in items
         ),
         destination_groups=tuple(
             DestinationGroupSpec(x.code, x.name, x.is_waste, x.sort_order)
@@ -466,6 +501,7 @@ def get_taxonomy(session: Session) -> TaxonomySnapshot:
         ),
         factor_set_version=published.version_label,
         factor_set_is_mock=published.is_mock,
+        factor_set_item_level_enabled=published.item_level_enabled,
     )
 
 
@@ -512,6 +548,15 @@ def get_taxonomy_for_naming(session: Session) -> TaxonomySnapshot:
         .where(FoodCategory.active.is_(True))
         .order_by(FoodCategory.sort_order, FoodCategory.code)
     ).all()
+    #: Unnarrowed, like every other list this function returns: its one caller
+    #: turns a `code` a computed result already carries into a name, so a food
+    #: the published set has stopped pricing must still be nameable.
+    items = session.execute(
+        select(FoodItem, FoodCategory.code)
+        .join(FoodCategory, FoodItem.food_category_id == FoodCategory.id)
+        .where(FoodItem.active.is_(True), FoodCategory.active.is_(True))
+        .order_by(FoodItem.sort_order, FoodItem.code)
+    ).all()
     metrics = session.scalars(
         select(Metric).where(Metric.active.is_(True)).order_by(Metric.sort_order, Metric.code)
     ).all()
@@ -526,6 +571,10 @@ def get_taxonomy_for_naming(session: Session) -> TaxonomySnapshot:
         food_categories=tuple(
             FoodCategorySpec(x.code, x.name, x.is_standard_mix, x.sort_order)
             for x in foods
+        ),
+        food_items=tuple(
+            FoodItemSpec(x.code, x.name, food_code, x.sort_order)
+            for x, food_code in items
         ),
         destination_groups=tuple(
             DestinationGroupSpec(x.code, x.name, x.is_waste, x.sort_order)
@@ -552,6 +601,7 @@ def get_taxonomy_for_naming(session: Session) -> TaxonomySnapshot:
         unit_presets=(),
         factor_set_version=published.version_label,
         factor_set_is_mock=published.is_mock,
+        factor_set_item_level_enabled=published.item_level_enabled,
     )
 
 
@@ -798,6 +848,47 @@ def _live_is_mock(session: Session, factor_set_id: int) -> bool | None:
     )
 
 
+def _live_item_vocabulary(session: Session) -> tuple:
+    """The `food_item` rows as they reach a bundle, right now. v1.58.
+
+    **The second thing that can move under a warm cache slot, and until v1.58
+    there was only one.** `food_item` is *global taxonomy* (§2.1) -- a factor
+    set brings factors, not a vocabulary -- so unlike every factor row in a
+    published set it is not immutable in place: a staff member can add a food
+    at any moment, to a set nobody republishes. `invalidate_factor_bundle` is a
+    module-level dict in one process and `docker/compose.yaml` runs the panel
+    and the API as two services, so the panel clearing its own slot reaches
+    nothing; that is the same reasoning `is_mock` is re-read for, and it
+    applies here for the same reason.
+
+    **What goes wrong without it is visible rather than subtle, which is why it
+    is worth a query.** §6.1 offers the vocabulary from the database and
+    §6.2 resolves a named food against the *bundle*: add a food and the form
+    offers it immediately while every calculation naming it answers
+    `VALIDATION_ERROR: unknown food_item` until the API process is restarted.
+    Measured on the running stack before this function existed.
+
+    Every column `build_bundle_data` publishes is in the fingerprint, not just
+    the primary keys: a rename changes what the results page prints, and
+    re-parenting a food changes which pairs `resolve_food_item` accepts. The
+    row count is bounded by design -- the client's list is about twenty foods
+    -- so this is one small `SELECT` beside the one-boolean `SELECT`
+    `_live_is_mock` already costs.
+    """
+    return tuple(
+        session.execute(
+            select(
+                FoodItem.code,
+                FoodItem.name,
+                FoodItem.food_category_id,
+                FoodItem.sort_order,
+            )
+            .where(FoodItem.active.is_(True))
+            .order_by(FoodItem.sort_order, FoodItem.code)
+        ).all()
+    )
+
+
 def load_factor_bundle(
     session: Session,
     factor_set_id: int | None = None,
@@ -820,12 +911,16 @@ def load_factor_bundle(
     repository hook into all eleven admin views; a draft is dry-run by one
     person at a time, so there is no load argument on the other side.
 
-    **`is_mock` is re-read on every cache hit, and nothing else is.** The
-    flag is the only field of a published bundle that legitimately moves
-    while that set stays published (§2.2: staff publish the real factors,
-    verify them live for a day or two, then clear the flag through
-    FactorSetAdmin's confirmed action). Every other field is immutable in
-    place, which is what makes caching the rest of the bundle safe at all.
+    **`is_mock` and the item vocabulary are re-read on every cache hit, and
+    nothing else is.** The flag is one of two things in a published bundle
+    that legitimately move while that set stays published (§2.2: staff
+    publish the real factors, verify them live for a day or two, then clear
+    the flag through FactorSetAdmin's confirmed action). The other, since
+    v1.58, is `food_item` -- **global taxonomy, not a child of the set**, so
+    nothing about publishing pins it. Every other field is immutable in place,
+    which is what makes caching the rest of the bundle safe at all. See
+    `_live_item_vocabulary` for what goes wrong without the second check, and
+    for why the two are checked here rather than hooked into the panel.
 
     Nothing else can carry that change across: `invalidate_factor_bundle` is
     a module-level dict in one process, and docker/compose.yaml runs the
@@ -847,13 +942,39 @@ def load_factor_bundle(
     with _cache_lock:
         cached = _bundle_cache.get(factor_set_id)
     if cached is not None:
-        cached_is_mock, bundle = cached
-        if _live_is_mock(session, factor_set_id) == cached_is_mock:
+        cached_is_mock, cached_vocabulary, bundle = cached
+        if (
+            _live_is_mock(session, factor_set_id) == cached_is_mock
+            and _live_item_vocabulary(session) == cached_vocabulary
+        ):
             return bundle
-        # The flag moved under a warm slot. Drop it and rebuild below rather
-        # than patch the cached bundle: `bundle_factory` is injectable and
-        # what it returns is not this module's to reach into.
+        # The flag or the vocabulary moved under a warm slot. Drop it and
+        # rebuild below rather than patch the cached bundle: `bundle_factory`
+        # is injectable and what it returns is not this module's to reach into.
         invalidate_factor_bundle(factor_set_id)
+    #: **Read before the bundle is composed, and stamped on the slot
+    #: afterwards.** The two orderings are not equivalent and only this one is
+    #: safe. Read *after* the compose and a write that lands in between -- a
+    #: staff member adding a food, or clearing `is_mock`, while this request
+    #: is assembling some 900 factor rows -- is stamped onto a bundle that
+    #: predates it, so every later hit compares the new state against a
+    #: fingerprint that already says "new" and returns the stale bundle. With
+    #: no expiry on this cache that is for the life of the process, which is
+    #: the failure this fingerprint exists to prevent, reintroduced by the
+    #: order in which it was taken.
+    #:
+    #: Read *before*, a write in the same window makes the fingerprint stale
+    #: instead, and the next hit rebuilds once for nothing. That is the
+    #: direction to be wrong in: a needless rebuild costs one request the
+    #: work this cache saves, and a wrongly-validated slot costs every
+    #: request a wrong answer until somebody restarts the process.
+    #:
+    #: Taken on the draft path too, where it is two small queries spent on a
+    #: slot that will not be cached (only a published set is). Deciding first
+    #: would cost a query of its own to learn the status, and the draft path
+    #: is one staff member dry-running one set -- the side to be wasteful on.
+    fingerprint = (_live_is_mock(session, factor_set_id),
+                   _live_item_vocabulary(session))
     bundle = factory(build_bundle_data(session, factor_set_id))
     #: **Reported here, never raised here.** `validate()` returns problems and
     #: does not raise; `publish_factor_set` refuses a set that has any, which is
@@ -889,9 +1010,14 @@ def load_factor_bundle(
     if factor_set is None or factor_set.status is not FactorSetStatus.published:
         return bundle
     with _cache_lock:
+        #: `fingerprint`, not `factor_set.is_mock` and a second vocabulary
+        #: query: both would be read *after* the compose above. See the note
+        #: at the read. `setdefault` keeps whichever bundle won the race
+        #: between two threads composing at once -- they are equivalent, and
+        #: the loser's is simply dropped.
         return _bundle_cache.setdefault(
-            factor_set_id, (factor_set.is_mock, bundle)
-        )[1]
+            factor_set_id, (*fingerprint, bundle)
+        )[2]
 
 
 def _row_dict(row: Any) -> dict[str, Any]:
@@ -1508,6 +1634,24 @@ def upsert_submission(
             if entry.food_category_code
             else None
         )
+        #: v1.58. The named food, stored **beside** its category and never
+        #: instead of it (design §3.4). `food_category_id IS NULL` already
+        #: means *the visitor did not break their waste down by type*, and
+        #: §5.4 forbids conflating that with a finer answer -- which is also
+        #: what `ck_submission_entry_item_has_category` says at the schema, and
+        #: what keeps `by_food_category` rolling items up into their parents
+        #: with no change to the aggregation at all.
+        #:
+        #: `getattr` rather than an attribute access, for the reason the three
+        #: money fields above are defaulted on `EntryInput`: `req` is a §3
+        #: `CalculationRequest` and this function is called with hand-built
+        #: ones in the suite. A request object that predates the slot means
+        #: "named no food", which is exactly what `None` here stores.
+        food_item_id = (
+            _resolve_id(session, FoodItem, entry.food_item_code)
+            if getattr(entry, "food_item_code", None)
+            else None
+        )
         lines = [
             SubmissionLine(
                 scenario=scenario_name,
@@ -1529,6 +1673,9 @@ def upsert_submission(
                 #: Stored as NULL: resolving it to standard_mix here would
                 #: report a composition the user never claimed (§5.4).
                 food_category_id=food_category_id,
+                #: v1.58. NULL means the visitor named a category and no food,
+                #: which is every submission written before this revision.
+                food_item_id=food_item_id,
                 #: §2.3. Request order, so §6.2's entries[] can be paired with
                 #: the rows on the user's screen; id order cannot be relied on
                 #: because the rebuild above reassigns ids.

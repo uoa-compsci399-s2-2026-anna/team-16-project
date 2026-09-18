@@ -46,6 +46,21 @@ class EntryInput:
     food_category_code: str | None  # None -> use standard_mix
     current: tuple[ScenarioLine, ...]
     alternative: tuple[ScenarioLine, ...] | None
+    #: v1.58. The named food *within* `food_category_code` — "cheese", not
+    #: "dairy" — and the fifth slot of `FactorBundle.upstream`'s key.
+    #:
+    #: **`None` is not a placeholder and is never resolved to a stand-in**,
+    #: the way `food_category_code=None` is resolved to `standard_mix`. There
+    #: is no standard food, and inventing one would put a number against a
+    #: food the visitor never named. `None` means "the category", which is
+    #: what every request written before v1.58 means and what the lookup
+    #: chain answers with the category average.
+    #:
+    #: Defaulted, so every caller that predates the slot — the golden
+    #: suite's `request_from_json`, `tests/support`'s fake, any hand-built
+    #: request — keeps producing exactly the request it produced before. That
+    #: is what makes this dimension inert by data rather than by a flag.
+    food_item_code: str | None = None
     #: v1.48. All three optional, all three carried rather than computed
     #: with here: `calculate` derives the money block from them (§4.5) and
     #: nothing else in the engine reads them.
@@ -141,6 +156,11 @@ class EntryResult:
     current: ScenarioResult
     alternative: ScenarioResult | None
     net_benefit: dict[str, Decimal] | None  # key = metric_code
+    #: v1.58. Echoed as sent, exactly as `food_category_code` above is: the
+    #: engine resolves the code for the *lookup* and the result reports what
+    #: the request carried, so §6.2's response can be paired with the row on
+    #: the visitor's screen.
+    food_item_code: str | None = None
     #: This entry's own current mass as a percentage of the `total_input_kg`
     #: it supplied, two places. `None` when this entry supplied no production
     #: total -- absent, never zero, because "0% of what this site handles"

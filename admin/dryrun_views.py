@@ -129,16 +129,17 @@ def _request_body(form) -> dict:
         # CalculateRefused/CalculateUnavailable as a third, undesigned
         # failure mode.
         gwp_horizon = 100
-    #: v1.54, and **the key is omitted rather than sent as null when no food
-    #: was chosen.** `api/schemas.py` sets `extra="forbid"` on the entry model,
-    #: so an unknown key is a 422 for every dry run on the panel — and the
-    #: entry model does not know `food_item` until contract v1.54 part two
-    #: lands with the API. Omitting it means this form goes on sending byte-for
-    #: -byte the request it sent before while no food item exists to choose,
-    #: which is every deployment today; the moment one is chosen, the request
-    #: is the one the API will accept once that landing is in, and until then
-    #: the refusal is a plain validation message naming the field rather than
-    #: anything silent.
+    #: v1.54, and **the key is still omitted rather than sent as null when no
+    #: food was chosen.** It was omitted originally because `api/schemas.py`
+    #: sets `extra="forbid"` on the entry model and that model did not know
+    #: `food_item` yet, so sending the key was a 422 for every dry run on the
+    #: panel. **v1.58 landed the field and a chosen food now reaches the API**,
+    #: so that reason is spent — but the omission is kept, because absent and
+    #: `null` mean the same thing to §6.2 and a form that sends nothing when
+    #: nothing was chosen sends byte-for-byte the request it has always sent.
+    #: The panel is the one caller staff use to tune a formula; a request that
+    #: differs from the pre-v1.58 one in a way nobody chose is a difference
+    #: they would have to rule out first.
     entry = {
         "sector": form.get("sector"),
         "food_category": form.get("food_category") or None,

@@ -196,6 +196,10 @@ def _taxonomy(
     return TaxonomySnapshot(
         sectors=(SectorSpec("wholesale_retail", sector_name, None, 30),),
         food_categories=(FoodCategorySpec("fruit", "Fruit", False, 10),),
+        #: v1.58. Empty, and deliberately: `_Taxonomy` names a food item the
+        #: same way it names a category, so a renderer that only worked when
+        #: the vocabulary was populated would work in no deployment today.
+        food_items=(),
         destination_groups=(DestinationGroupSpec("disposal", "Disposal", True, 30),),
         destinations=(
             DestinationSpec("landfill", destination_name, "disposal", None, 30, False),
@@ -206,6 +210,7 @@ def _taxonomy(
         unit_presets=(),
         factor_set_version="MOCK-v0",
         factor_set_is_mock=True,
+        factor_set_item_level_enabled=False,
     )
 
 
@@ -729,12 +734,14 @@ def test_an_absent_food_category_names_the_standard_mix():
         food_categories=(
             FoodCategorySpec("standard_mix", "Mixed food waste", True, 5),
         ),
+        food_items=taxonomy.food_items,
         destination_groups=taxonomy.destination_groups,
         destinations=taxonomy.destinations,
         metrics=taxonomy.metrics,
         unit_presets=(),
         factor_set_version="MOCK-v0",
         factor_set_is_mock=True,
+        factor_set_item_level_enabled=False,
     )
     result = _result()
     entry = result.entries[0]

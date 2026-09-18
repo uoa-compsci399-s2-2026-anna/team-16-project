@@ -1046,7 +1046,16 @@ function entryIndexOf(detail) {
  * `duplicate_entry` names the other entry as `entries[0]` inside an English
  * sentence, and parsing an index back out of that would tie this screen to that
  * wording. The front end holds every entry, so it can find the match itself, on
- * the same `(sector, food_category)` pair `api/schemas.py` keys on.
+ * the same key `api/schemas.py` keys on, as far as this screen can produce it.
+ *
+ * **The API's key is a triple since v1.58** — `(sector, food_category,
+ * food_item)` — and this is a pair, which is correct here and will not stay
+ * correct. Nothing on this form can name a food yet: step 2.5 is a later
+ * landing, so every entry this function sees carries a food of `null` and a
+ * pair and a triple agree on all of them. The day the form can name one, this
+ * key has to gain it or the screen will warn about a duplicate the API accepts
+ * — `dairy/cheese` beside `dairy/butter`, which is the pair step 2.5 exists to
+ * produce.
  */
 function duplicateOf(index) {
   const all = [...state.entries, draftEntry()]

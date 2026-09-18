@@ -256,17 +256,39 @@ def test_two_chains_of_different_leaf_counts_flatten_in_submission_order(tmp_pat
 
 
 @node
-def test_the_item_dimension_is_carried_but_not_sent(tmp_path):
-    """`EntryPayload` is a Pydantic model with `extra="forbid"`, so an unknown key is
-    a 400 rather than an ignored field. `foodItem` travels on the leaf so the review
-    step and the results page can label it, and stops at the payload boundary."""
+def test_the_item_dimension_is_carried_and_now_sent(tmp_path):
+    """`foodItem` travels on the leaf so the review step and the results page can
+    label it, and **reaches the request body**.
+
+    It was carried and deliberately withheld until contract v1.58: `EntryPayload`
+    is a Pydantic model with `extra="forbid"`, so an unknown key was a 400 rather
+    than an ignored field, and this test asserted the withholding. v1.58 gave the
+    model a `food_item`, which inverted it -- the assertion that used to protect
+    the boundary would now hold the front end one revision behind the API it
+    talks to.
+    """
     chain = _chain("processing", ["dairy"], {
         _key("dairy", "cheese"): _leaf(totalAmount="10", current=[{"id": "a", "destination": "landfill", "qtyInput": "10"}]),
     })
     chain["foodItems"] = {"dairy": ["cheese"]}
     result = fork(tmp_path, [chain])
     assert [leaf["foodItem"] for leaf in result["leaves"]] == ["cheese"]
-    assert "food_item" not in result["body"]["entries"][0], result["body"]["entries"][0]
+    assert result["body"]["entries"][0]["food_item"] == "cheese"
+
+
+@node
+def test_a_leaf_that_names_no_food_sends_null_rather_than_omitting_the_key(tmp_path):
+    """§6.2: absent and `null` mean the same thing to the API, and that thing is
+    "named a category and no food". Sending `null` explicitly is the shape that
+    cannot be mistaken for a client written before the field existed -- and it is
+    what every leaf sends today, because nothing can name a food until step 2.5.
+    """
+    chain = _chain("processing", ["dairy"], {
+        _key("dairy", None): _leaf(totalAmount="10", current=[{"id": "a", "destination": "landfill", "qtyInput": "10"}]),
+    })
+    entry = fork(tmp_path, [chain])["body"]["entries"][0]
+    assert "food_item" in entry, entry
+    assert entry["food_item"] is None
 
 
 # ----------------------------------------------------------------- one definition

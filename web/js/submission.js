@@ -62,10 +62,11 @@ export function submissionLeaves(chains) {
       sector: chain.sector,
       ...(chain.leafFigures ? leafFigures(chain, leaf) : { ...EMPTY_LEAF }),
       foodCategory: leaf.foodCategory,
-    // Carried so `results.js`, the review step and the duplicate notice can label a
-    // leaf, and deliberately NOT sent: `EntryPayload` is a Pydantic model with
-    // `extra="forbid"`, so an unknown key is a 400 rather than an ignored field. The
-    // item dimension reaches the request shape at `design.md` §7 stage 6.
+    // Labels the leaf on `results.js`, the review step and the duplicate notice --
+    // and **is sent**, since contract v1.58 gave `EntryPayload` a `food_item`.
+    // It was carried and deliberately withheld before that landing, because
+    // `EntryPayload` is a Pydantic model with `extra="forbid"` and an unknown key
+    // is a 400 rather than an ignored field.
       foodItem: leaf.foodItem,
       leafKey: leafKey(leaf),
     }))
@@ -130,6 +131,12 @@ export function entryPayload(entry, presets, alternative = null) {
   return {
     sector: entry.sector,
     food_category: entry.foodCategory || null,
+    // The named food within `food_category`, contract v1.58. `|| null` rather than
+    // the value as held, for the reason `food_category` beside it uses one: a leaf
+    // that names no food carries `null`, and §6.2 says absent and null mean the
+    // same thing -- so sending `null` explicitly is the shape that cannot be
+    // mistaken for a client that predates the field.
+    food_item: entry.foodItem || null,
     current: requestLines(entry, presets),
     alternative,
     total_input_kg: optionalKgString(entry.totalInputKg, entry.totalUnit),

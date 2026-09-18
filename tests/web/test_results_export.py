@@ -2753,6 +2753,73 @@ EQUIVALENT_BASIS_WIDTHS = (320, 390, 700, 938, 1278)
 
 
 @pytest.mark.browser
+def test_the_equivalence_icons_share_one_baseline_where_the_cards_are_a_row(browser):
+    """Above the breakpoint the three cards stretch to the tallest, so a "?" laid
+    out after its own text sits at whatever height that text ended -- measured at
+    700px as 21, 165 and 93px from each card's bottom, three icons on three
+    different lines. They are pinned to the card's foot instead.
+
+    **This test exists because the change that did it had nothing to detect its
+    removal.** The assertion beside it checks the icon's INLINE placement and is
+    load-bearing -- flipping `text-align: end` to `start` fails eight of its ten
+    parametrisations -- but nothing looked at the vertical, so reverting the two
+    lines that do this left the suite green.
+
+    Asserted at 700px only: below 650px the grid is a single column, every card
+    sizes to its own content, and there is no misalignment to fix. Asserting a
+    shared baseline there would pin a coincidence.
+    """
+    #: Three equivalences whose **labels** differ in length, and the labels are
+    #: what matters: the `source_note` sits inside a collapsed `<details>`, so
+    #: varying it changes no card's height and the test passes whatever the
+    #: stylesheet does. Measured that the wrong way round first -- three
+    #: different notes, three identical heights, green under mutation.
+    response = _equivalence_response(source_note=_VEHICLE_SOURCE_NOTE)
+    template = response["totals"]["current"]["equivalences"][0]
+    response["totals"]["current"]["equivalences"] = [
+        dict(template, code="short", name="Short", label="One short line"),
+        dict(template, code="medium", name="Medium",
+             label="A label of a middling length that takes up about two lines here"),
+        dict(template, code="long", name="Long",
+             label="A deliberately long label that wraps onto several lines so that this "
+                   "card is taller than both of the others beside it in the same row"),
+    ]
+
+    context = browser.new_context(viewport={"width": 700, "height": 900}, locale="en-NZ")
+    try:
+        page = context.new_page()
+        page.route(
+            "**/api/v1/calculate*",
+            lambda route: route.fulfill(
+                status=200, content_type="application/json", body=json.dumps(response),
+            ),
+        )
+        try:
+            page.goto(CALCULATOR_URL, wait_until="networkidle", timeout=15000)
+        except Exception as error:  # pragma: no cover - environment guard
+            pytest.skip(f"the front end is not being served at {CALCULATOR_URL}: {error}")
+        page.wait_for_selector('[data-action="start"]', timeout=10000)
+        _submit_two_entries(page)
+        page.wait_for_selector(".equivalent-grid article")
+
+        gaps = page.evaluate(
+            """() => [...document.querySelectorAll('.equivalent-grid article')].map(card => {
+              const basis = card.querySelector('.equivalent-basis')
+              if (!basis) return null
+              return Math.round(card.getBoundingClientRect().bottom
+                                - basis.getBoundingClientRect().bottom)
+            })"""
+        )
+        assert len(gaps) >= 2 and None not in gaps, gaps
+        assert len(set(gaps)) == 1, (
+            "the equivalence explanations do not sit at the same height in their "
+            f"cards, so they are following their own text rather than the card: {gaps}"
+        )
+    finally:
+        context.close()
+
+
+@pytest.mark.browser
 @pytest.mark.parametrize("width", EQUIVALENT_BASIS_WIDTHS)
 @pytest.mark.parametrize("language", ("de", "ar"))
 def test_the_equivalence_explanation_does_not_overflow(browser, language, width):

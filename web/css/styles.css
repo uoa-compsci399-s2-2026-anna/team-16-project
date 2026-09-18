@@ -1295,6 +1295,14 @@ tbody th { font-weight: 700; }
 .improvement-row-unit { max-width: 100%; min-width: 0; font: inherit; }
 .improvement-total { margin-top: 18px; padding: 16px 18px; display: flex; flex-wrap: wrap; justify-content: space-between; gap: 8px 20px; border-radius: 12px; background: rgba(255, 255, 255, 0.8); }
 .improvement-total-mass { color: var(--muted); font-size: 0.9rem; }
+/* One food's editor, when the chain forked. A single-leaf panel renders no wrapper at
+   all, so none of this applies to the commonest journey. Logical properties throughout,
+   per the house rule. */
+.improvement-leaf { margin-block-start: 26px; padding-block-start: 20px; border-block-start: 1px solid rgba(0, 50, 35, 0.12); }
+.improvement-leaf:first-of-type { margin-block-start: 8px; padding-block-start: 0; border-block-start: 0; }
+.improvement-leaf__heading { margin-block: 0; font-size: 1.05rem; }
+.improvement-leaf .improvement-editor { margin-block-start: 14px; }
+.improvement-submission-mass { margin-block-start: 18px; color: var(--muted); font-size: 0.9rem; text-align: end; }
 .improvement-total.invalid { color: var(--error); background: rgba(135, 0, 90, 0.06); }
 .improvement-actions { margin-top: 22px; display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 12px; }
 .comparison-results { background: #fff; }
@@ -1347,6 +1355,107 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
    buttons side by side — rather than stacking the buttons, which is what `.navigation-buttons`
    did. Stacked, the bar is 124px of a 700px screen; side by side it is a measured 109px
    including the label, against the 232px the old indicator band and button row cost together. */
+/* ------------------------------------------------------------------ the fork
+   One supply-chain chain may name several food categories. Each is a LEAF: its own
+   amount, its own optional figures and its own destination allocation.
+
+   **A chain with ONE leaf renders exactly the markup it did before the fork** - no card,
+   no legend, no matrix - so everything below applies only where there is genuinely more
+   than one of something on screen. That is why none of these selectors touches
+   `.form-panel.amount-grid` or `.destination-list`, which are the one-leaf case.
+
+   Logical properties throughout: twenty locales, two of them right-to-left. */
+
+.choice-count { margin: 0 0 12px; font-weight: 700; color: var(--muted); }
+.choice-ceiling { margin: 12px 0 0; }
+.simple-choice--unspecified { border-style: dashed; }
+.simple-choice input:disabled { cursor: not-allowed; opacity: 0.45; }
+.simple-choice:has(input:disabled) { opacity: 0.55; }
+
+.duplicate-notice__list { margin: 6px 0 0; padding: 0; list-style: none; display: grid; gap: 10px; }
+.duplicate-notice__list p { margin: 0 0 4px; }
+
+/* Step 3: one card per leaf. Each card is today's panel, so every existing rule - the
+   650px two-column split, the block-flow stacking below it - applies unchanged per card. */
+.leaf-panel-list { display: grid; gap: 16px; }
+.leaf-panel { margin: 0; }
+.leaf-panel > legend {
+  padding-inline: 10px;
+  font-family: var(--font-heading, inherit);
+  font-weight: 700;
+  color: var(--kale, #003223);
+}
+/* The three optional scalars behind a disclosure. §7.6.3 requires that advancing never
+   need scrolling, measured rather than assumed, and three full panels cannot hold that at
+   390x700. The required pair - amount and unit - stays always visible; the disclosure is
+   rendered open when the leaf already carries any of the three, so an entry re-opened by
+   `edit-entry` never hides a figure the visitor typed. */
+.leaf-extras { margin-block-start: 6px; }
+.leaf-extras > summary { cursor: pointer; font-weight: 700; color: var(--green-dark); }
+.leaf-extras > summary::marker { color: var(--green-dark); }
+.leaf-extras .field-hint { margin-block: 4px 0; }
+.leaf-extras .money-fields { margin-block-start: 4px; }
+
+.combined-total {
+  margin: 16px 0 0;
+  padding: 14px 16px;
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px 18px;
+  border: 1px solid rgba(40, 200, 130, 0.5);
+  border-radius: 14px;
+  background: #e9faf3;
+}
+.combined-total span { color: var(--muted); font-weight: 700; }
+
+/* Step 4, narrow: per-leaf stacked blocks. The shared side labels and column heads are
+   the matrix's furniture and are not drawn here; each cell carries its own label instead,
+   which is the `.destination-row` markup as it already was. */
+/* **The two layouts are one set of rules with a switch, not two sets of rules.**
+   Every declaration that differs between the matrix and the per-leaf blocks is written
+   once, in the `min-width: 650px` block near the end of this file, as
+   `var(--name, <matrix value>)`. Standing the matrix down is then a matter of setting
+   those custom properties to the block layout's values on `.allocation-matrix` - they
+   inherit, so one rule reaches the row labels, the column heads, the cells and the
+   summary - and the "stand down" list can be applied under whatever media-and-count
+   condition is needed without any layout rule being written a second time. A second copy
+   of a layout is a second place for it to drift. */
+.allocation-matrix { display: var(--matrix-display, block); }
+.matrix-row-label, .matrix-column-head { display: none; }
+.leaf-group {
+  margin-block: 20px;
+  border: 1px solid rgba(0, 50, 35, 0.12);
+  border-radius: 16px;
+  background: #fff;
+  overflow: hidden;
+}
+.leaf-group__heading {
+  margin: 0;
+  padding: 14px 17px;
+  font-size: 1rem;
+  border-bottom: 1px solid rgba(0, 50, 35, 0.09);
+  background: rgba(40, 200, 130, 0.07);
+}
+.allocation-matrix .allocation-summary {
+  position: static;
+  margin: 0;
+  border-radius: 0;
+  border-inline: 0;
+  border-block-start: 0;
+  box-shadow: none;
+}
+.allocation-matrix .destination-row:last-child { border-bottom: 0; }
+.allocation-matrix input, .allocation-matrix select { min-inline-size: 0; }
+
+.entry-card__leaves { margin: 8px 0 0; padding: 0; list-style: none; display: grid; gap: 4px; }
+.entry-card__leaves li { display: flex; justify-content: space-between; gap: 14px; color: var(--muted); }
+.review-leaf { margin-block-start: 14px; }
+.review-leaf:first-child { margin-block-start: 0; }
+.review-leaf h3 { margin: 0 0 2px; font-size: 1rem; }
+.review-leaf p { margin: 0; }
+.leaf-count-note { margin: 12px 0 0; color: var(--muted); }
+
 @media (max-width: 649px) {
   :root { --step-nav-height: 109px; }
   .step-nav { grid-template-columns: auto minmax(0, 1fr); padding: 10px 12px; gap: 8px 10px; }
@@ -2297,3 +2406,150 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .methodology-page th,
   .methodology-page td { padding: 11px 13px; }
 }
+
+/* ------------------------------------------------- step 4 as a matrix, above 650px
+   Destinations down the side, leaves across the top - **and only above the breakpoint.**
+   It cannot be a matrix at every width and that is arithmetic rather than preference:
+   320px less the gutters is 288px, a destination label needs about 90px, and the ~198px
+   left over is 66px per column at three leaves and 40px at five.
+   `tests/web/test_horizontal_overflow.py` measures document `scrollWidth` against
+   `clientWidth` at 320 and 390 in a real browser and is a hard gate.
+
+   ONE DOM, two layouts. The cells are rendered leaf by leaf, each carrying its own
+   `--row` / `--col`; `display: contents` on the leaf group lets them join the outer grid
+   here, and below the breakpoint the group is an ordinary block again. A second copy of
+   the inputs would mean two elements holding one figure. */
+@media (min-width: 650px) {
+  .allocation-matrix {
+    display: var(--matrix-display, grid);
+    /* Bounded, not `max-content`: a long destination name would otherwise set the label
+       column to its own full width and take the space the leaf columns need.
+
+       **The leaf columns have a real minimum, and 104px is measured rather than chosen.**
+       They were `minmax(0, 1fr)`, which lets a column shrink below its own content - and
+       at 650px with five leaves they resolved to 67.22px against an input content box of
+       65px, so an amount typed into a cell was cut off and the visitor could not read
+       back the number they had just entered. A cell showing `1234.56` needs 96px of
+       content box (measured in the shipped font), plus the input's own 2.53px of border,
+       so 104px is that with a little air. A minimum the container cannot honour would push
+       the document sideways instead, which `test_horizontal_overflow.py` forbids - so the
+       stand-down block below keeps the matrix off wherever this minimum does not fit. */
+    grid-template-columns: minmax(84px, 18ch) repeat(var(--leaf-count, 1), minmax(104px, 1fr));
+    column-gap: 14px;
+    align-items: start;
+  }
+  .leaf-group { display: var(--leaf-group-display, contents); }
+  .leaf-group__heading { display: var(--leaf-heading-display, none); }
+  .matrix-row-label {
+    display: var(--matrix-label-display, block);
+    grid-row: var(--row);
+    grid-column: 1;
+    align-self: center;
+    padding-block: 17px;
+    font-weight: 700;
+    line-height: 1.35;
+  }
+  .matrix-column-head {
+    display: var(--matrix-head-display, grid);
+    gap: 2px;
+    grid-row: 1;
+    grid-column: var(--col);
+    padding-block-end: 8px;
+    font-weight: 700;
+    line-height: 1.3;
+    border-bottom: 1px solid rgba(0, 50, 35, 0.12);
+  }
+  .matrix-column-head small { color: var(--muted); font-weight: 400; }
+  .allocation-matrix .allocation-summary {
+    grid-row: 2;
+    grid-column: var(--col);
+    position: var(--summary-position, sticky);
+    top: 10px;
+    margin-block: var(--summary-margin-block, 10px);
+    padding: var(--summary-padding, 10px);
+    grid-template-columns: var(--summary-columns, minmax(0, 1fr));
+    border-radius: var(--summary-radius, 12px);
+    border: var(--summary-border, 1px solid rgba(40, 200, 130, 0.5));
+    border-block-end: var(--summary-border-block-end, 1px solid rgba(40, 200, 130, 0.5));
+  }
+  .allocation-matrix .destination-row {
+    grid-row: var(--row);
+    grid-column: var(--col);
+    grid-template-columns: var(--row-columns, minmax(0, 1fr));
+    gap: var(--row-gap, 6px);
+    padding: var(--row-padding, 10px 0);
+  }
+  /* The name is down the side once, shared by every column. The input keeps its own
+     `aria-label` ("Landfill amount in kilograms"), so nothing loses its accessible name
+     by the label being hidden. */
+  .allocation-matrix .destination-row > label { display: var(--cell-label-display, none); }
+  .allocation-matrix .amount-with-unit { grid-template-columns: var(--amount-unit-columns, minmax(0, 1fr)); gap: var(--amount-unit-gap, 6px); }
+  /* One leaf card lays its three mass fields across the card rather than stacking them,
+     so a three-leaf stack is roughly the height of one panel plus two short rows. */
+  .leaf-panel .mass-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 150px) minmax(0, 1fr); align-items: start; gap: 0 18px; }
+  .leaf-panel .unit-field select { inline-size: 100%; }
+  .leaf-panel .money-fields { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); align-items: start; gap: 0 18px; }
+}
+
+/* ------------------------------------------- the matrix stands down where it will not fit
+   **Arithmetic, and measured.** A matrix column has to hold a cell that can show its own
+   number: 104px (see `grid-template-columns` above). One label column of at least 84px, one
+   14px gap per leaf and 104px per leaf is what the container must have, and the container is
+   `.main-content`'s 900px - or `.wide`'s 1000px above 1020px, past which extra viewport buys
+   the grid nothing and the leaf count alone decides.
+
+   So there are two conditions, and the same stand-down list serves both. Written as custom
+   properties on `.allocation-matrix` rather than as a second copy of the block layout: they
+   inherit to the row labels, the column heads, the cells and the summary, so one rule turns
+   the whole grid off and no layout declaration exists twice.
+
+   The `:not(...)` specificity (0,2,0) beats the matrix block's (0,1,0) whatever the source
+   order, so this cannot be defeated by moving a rule. */
+@media (max-width: 1019.98px) {
+  /* Five leaves or more, before `.wide` widens the container. */
+  .allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"]) {
+    --matrix-display: block;
+    --leaf-group-display: block;
+    --leaf-heading-display: block;
+    --matrix-label-display: none;
+    --matrix-head-display: none;
+    --cell-label-display: grid;
+    --summary-position: static;
+    --summary-margin-block: 0;
+    --summary-padding: 16px;
+    --summary-columns: repeat(3, minmax(0, 1fr));
+    --summary-radius: 0;
+    --summary-border: 0;
+    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
+    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
+    --row-gap: 24px;
+    --row-padding: 17px 20px;
+    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
+    --amount-unit-gap: 10px;
+  }
+}
+/* Eight leaves or more is never a matrix at any width: 84 + 8x14 + 8x104 is 1028px against
+   a container that stops at 1000px, so the grid could only fit by making a cell too narrow
+   to read - and a form of eight columns of number inputs is past the point of being
+   fillable in any case. `MAX_ENTRIES` allows twenty leaves, so this is reachable. */
+.allocation-matrix:not([data-leaf-count="1"], [data-leaf-count="2"], [data-leaf-count="3"], [data-leaf-count="4"], [data-leaf-count="5"], [data-leaf-count="6"], [data-leaf-count="7"]) {
+    --matrix-display: block;
+    --leaf-group-display: block;
+    --leaf-heading-display: block;
+    --matrix-label-display: none;
+    --matrix-head-display: none;
+    --cell-label-display: grid;
+    --summary-position: static;
+    --summary-margin-block: 0;
+    --summary-padding: 16px;
+    --summary-columns: repeat(3, minmax(0, 1fr));
+    --summary-radius: 0;
+    --summary-border: 0;
+    --summary-border-block-end: 1px solid rgba(40, 200, 130, 0.5);
+    --row-columns: minmax(220px, 1fr) minmax(260px, 0.8fr);
+    --row-gap: 24px;
+    --row-padding: 17px 20px;
+    --amount-unit-columns: minmax(0, 1fr) minmax(120px, 45%);
+    --amount-unit-gap: 10px;
+}
+

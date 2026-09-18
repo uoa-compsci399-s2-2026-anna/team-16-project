@@ -35,6 +35,7 @@ import pytest
 
 from api import pdf_render
 from api.pdf_render import (
+    ABSENT,
     MOCK_WARNING_FLAG,
     MockWarningMissingError,
     build_context,
@@ -717,12 +718,22 @@ def test_names_come_from_the_taxonomy_and_are_never_translated():
         assert any(row["name"] == MACRON_NAME for row in context["destinations"])
 
 
-def test_an_absent_food_category_names_the_standard_mix():
-    """§6.2: `food_category is None` means "use the standard mix", and the
-    engine resolves it that way but reports the code back as `None`. Printing
-    the field verbatim would tell a reader the food type was unknown when in
-    fact it was the standard mix - which is the kind of quiet mis-statement a
-    document read six months later cannot be corrected on."""
+def test_an_absent_food_category_is_not_printed_as_the_standard_mix():
+    """**They are two answers now, and the document may not print them alike.**
+
+    This assertion was the other way round: the engine resolves a NULL category
+    to the standard mix, so the document substituted the standard-mix row's name
+    for `None`. Contract v1.55's multi-select makes the two separate answers a
+    visitor gives with separate checkboxes - §5.4 requires it - and they are
+    distinguishable on the wire, because the standard mix sends its own `code`
+    while "I do not know, or my waste is not broken down by type" sends `null`.
+    Substituting printed them byte-identically, so a submission that ticked both
+    produced two rows a reader could not tell apart carrying different figures.
+
+    `ABSENT` rather than a new sentence, because `Catalogue.gettext` raises on a
+    missing key: a new string on this path would refuse to render the document
+    in every language that had not translated it yet.
+    """
     taxonomy = _taxonomy()
     mixed = TaxonomySnapshot(
         sectors=taxonomy.sectors,
@@ -754,7 +765,15 @@ def test_an_absent_food_category_names_the_standard_mix():
         ),
     )
     context = build_context(unspecified, mixed, "en")
-    assert context["entries"][0]["food_category"] == "Mixed food waste"
+    assert context["entries"][0]["food_category"] != "Mixed food waste", (
+        "a submission that ticked BOTH the standard mix and \"I do not know\" "
+        "prints two rows a reader cannot tell apart"
+    )
+    assert context["entries"][0]["food_category"] == ABSENT, (
+        f"an unstated food type prints as "
+        f"{context['entries'][0]['food_category']!r}; the document's own "
+        f"convention for a field the submission did not state is ABSENT"
+    )
 
 
 def test_an_unknown_code_prints_as_itself():

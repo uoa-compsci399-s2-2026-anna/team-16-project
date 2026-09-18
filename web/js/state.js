@@ -1,39 +1,66 @@
+// **The one import this module has, and why it is safe.** `state.js` is the module every
+// other one may import (see `entryLeaves`), which is only true while it imports nothing
+// that imports it back. `i18n.js` imports nothing at all, so `t` closes no cycle - and
+// `leafDisplayName` below needs it, because a leaf's name is the one piece of state that
+// is also a sentence.
+import { t } from './i18n.js'
+
 const storedToken = sessionStorage.getItem('kaiCalculatorToken')
 
 export const state = {
   taxonomy: null,
   token: storedToken,
   sector: null,
-  foodCategory: null,
-  gwpHorizon: 100,
-  totalAmount: '',
-  totalUnit: 'kilograms',
-  // §7.3's container input. `measureMode` says which of the two step-3 fields is
-  // authoritative; `unitPreset` is a `taxonomy.unit_presets` code and `unitCount` is the
-  // raw string the visitor typed, held raw for the same reason `qtyInput` is — nothing
-  // rounds until `units.js` converts it for the API.
+  // **The fork.** One supply-chain chain may name several food categories, and each
+  // one carries its own amount AND its own destination allocation — see
+  // `entryLeaves` below, which is the single definition of what a leaf is.
   //
-  // **`measureMode: 'container'` implies `totalUnit: 'kilograms'`, and `calculator.js`
-  // maintains that.** `totalUnit` is the unit step 4 allocates in, and a destination row
-  // reading "0.37 wheelie bins" is not a thing anyone can enter; containers estimate the
-  // total and the total is then a mass.
-  measureMode: 'mass',
-  unitPreset: null,
-  unitCount: '',
-  // Item ④: the site's production total for the period, in `totalUnit` - the
-  // same unit the waste amount above it is in, never a second unit of its
-  // own. Optional and carried raw, like `totalAmount`; §6.2's engine never
-  // reads it, it travels only so the results page can state waste as a share
-  // of production.
-  totalInputKg: '',
-  // Item ⑤: what the stage's production was worth, and what the wasted portion
-  // was worth, both in New Zealand dollars. Statistics only - §6.2's engine
-  // never reads either, and cost price versus retail price is the client's own
-  // question, not this calculator's. Optional and carried raw, like
-  // `totalInputKg` above; an empty string must reach the API as absent, never
-  // as zero, so nothing here ever defaults to `'0'`.
-  totalValueNzd: '',
-  wastedValueNzd: '',
+  //   * `foodCategories` — category `code`s, **in ticking order**, which is the order
+  //     steps 3 and 4 iterate. `[]` means the optional step was not answered.
+  //   * `foodUnspecified` — the explicit "I do not know / not broken down by type"
+  //     answer. A separate boolean rather than a `null` member of `foodCategories`:
+  //     a `null` inside an array of codes is one `.filter(Boolean)` from silently
+  //     disappearing, and `escapeHtml(null)` renders the string `"null"`.
+  //   * `foodItems` — reserved for step 2.5 (`design.md` §3), category code -> item
+  //     codes. `entryLeaves` already reads it, so the leaf rule does not move when
+  //     the item level lands; nothing writes it yet.
+  foodCategories: [],
+  foodUnspecified: false,
+  foodItems: {},
+  gwpHorizon: 100,
+  // **Narrowed by the fork to "the unit the chain's combined figures are stated in".**
+  // Every amount the visitor types now belongs to a leaf and is measured in that
+  // leaf's own `totalUnit` (inside `leafFigures`), so this is no longer the unit
+  // anything is entered in. It is fixed at the 3 -> 4 move to the leaves' common mass
+  // unit when they share one and `'kilograms'` otherwise, and nothing re-derives it
+  // afterwards — a chain unit that changed under a row already saved with an explicit
+  // `unit` would reinterpret that row, which is exactly the hazard the note on
+  // `current` below documents.
+  totalUnit: 'kilograms',
+  // **Every per-leaf figure, keyed by the leaf's own identity.** `leafKey(leaf)` ->
+  // `{totalAmount, totalUnit, measureMode, unitPreset, unitCount, totalInputKg,
+  // totalValueNzd, wastedValueNzd, current}` — the nine keys that were flat on this
+  // object before the fork, one set per leaf.
+  //
+  // **A keyed map and not an array.** The leaf list is derived from
+  // `foodCategories`/`foodItems`, so an array would have to be reindexed on every tick
+  // and untick, and unticking the middle category would slide the third category's
+  // money figures onto the second. A map keyed by the leaf's own identity cannot do
+  // that.
+  //
+  // **The three scalars fork too, and that is not a style choice.**
+  // `engine/calculate.py:369` sums every entry's `total_input_kg` as the
+  // production-share denominator, so copying one chain's figure onto every leaf
+  // divides the share by N; `:506` derives `value_per_kg` per entry, so it overstates
+  // `saving_nzd` by roughly N. Attaching them to leaf 0 alone makes `_across_entries`
+  // (`:410`, "Partial coverage is not absence") report "incomplete" forever.
+  //
+  // **`current` is in here too, because step 4 forks as well** (`design.md` §10). The
+  // request body already carries one `current[]` per entry, so a per-leaf allocation
+  // is the shape the contract expects; a shared split would have to be *derived* into
+  // each entry pro-rata, and three-decimal `qty_kg` rounding can then leave the leaves'
+  // lines not summing to the figure the visitor typed.
+  leafFigures: {},
   // Item ⑦: the span the whole submission's figures cover - one value for
   // every entry, not one per supply-chain stage, so it lives beside the
   // review of the whole submission rather than inside the per-entry loop.
@@ -60,11 +87,23 @@ export const state = {
   // for the draft in `state.current`, and `entry.totalUnit` for a saved entry in
   // `state.entries` — the unit that row's figures were actually typed against — so a visitor
   // whose entry predates this change is never silently reinterpreted into a different unit.
-  current: [],
+  //
+  // **Since the fork this list lives inside `leafFigures[key].current`, one per leaf**,
+  // and the "entry's own total unit" it falls back to is that leaf's. Everything else in
+  // this note is unchanged.
   entries: [],
   result: null,
   loading: true,
   error: null,
+  // **Where `error` belongs, when it belongs to one leaf's field.** `{leaf, field}` or
+  // `null`. Before the fork `amountStep` decided which input a client-side message was
+  // about by comparing `state.error` against the string each validator returns; with N
+  // leaves two of them produce the byte-identical sentence ("Waste amount must be
+  // greater than zero.") and the highlight landed on whichever card was asked first.
+  // String identity cannot survive N leaves, so the place is recorded beside the
+  // sentence instead of inferred from it. `leaf` is a `leafKey`; `field` is one of
+  // `amount`, `wastedValue`, `allocation`.
+  errorAt: null,
   errorCode: null,
   fieldErrors: {},
   rateLimitedUntil: 0,
@@ -148,8 +187,21 @@ export const state = {
   resultBreakdownTab: 'stage',
   lastChangedDestination: null,
   improvementOpen: false,
-  improvedAllocations: {},
-  improvementChartExpanded: false,
+  // **One allocation PER LEAF, in submission order** (`design.md` §10, owner decision
+  // 6). It was one submission-wide `{destinationCode: percentString}` map applied to
+  // every leaf's own mass, which made *Match the current allocation* stop being an
+  // identity the moment a chain forked: 100 kg of dairy sent entirely to landfill and
+  // 200 kg of fruit sent entirely to animal feed came back as one 33/67 split applied
+  // to both, describing neither. An array and not a map keyed by the leaf's name,
+  // because two chains may legitimately carry the same sector and the same food — the
+  // duplicate notice warns about it and does not forbid it — so position in the
+  // submission is the only identity a leaf has here, and it is the same position
+  // `entries[]` and `entry_results[]` use.
+  improvedAllocations: [],
+  // `null` is closed and an index is the leaf whose donut is expanded. Not a boolean:
+  // the panel forks, so there is one chart per food, and leaf 0 is a real answer that a
+  // boolean would read as closed.
+  improvementChartExpanded: null,
   // Item ⑧'s toggle. `improvedAllocations` stays percentages in every mode — see the note
   // on `updateImprovementInput` in `improvement.js` — so this only ever decides which unit
   // the sliders and boxes *display*, never what they store. `'percentage'` or `'unit'`;
@@ -205,23 +257,158 @@ export const state = {
  *
  * @returns {object}
  */
-export const draftEntry = () => ({
-  sector: state.sector,
-  foodCategory: state.foodCategory,
-  totalAmount: state.totalAmount,
-  totalUnit: state.totalUnit,
-  measureMode: state.measureMode,
-  unitPreset: state.unitPreset,
-  unitCount: state.unitCount,
-  totalInputKg: state.totalInputKg,
-  totalValueNzd: state.totalValueNzd,
-  wastedValueNzd: state.wastedValueNzd,
-  current: state.current.map(line => ({ ...line })),
-})
+export const draftEntry = () => {
+  const chain = {
+    sector: state.sector,
+    foodCategories: [...(state.foodCategories || [])],
+    foodUnspecified: Boolean(state.foodUnspecified),
+    foodItems: Object.fromEntries((state.foodCategories || []).map(code => [code, [...((state.foodItems || {})[code] || [])]])),
+    totalUnit: state.totalUnit,
+    leafFigures: {},
+  }
+  // **Pruned to the leaves this chain actually has**, so figures typed for a category
+  // that was later unticked can never be sent, fingerprinted, or silently restored.
+  // Without it a ticked-filled-unticked category leaves a ghost in `leafFigures` that
+  // `entryFingerprint` still reads, which makes the back-out confirmation fire on a
+  // Back that discards nothing — and re-ticking the category brings its old money
+  // figures back with no trace of where they came from.
+  // Read off `state`, never off `chain`: `chain.leafFigures` is the empty object this
+  // loop is filling, so reading from it would hand every leaf a blank record and the
+  // draft would reach the wire with nothing in it.
+  for (const leaf of entryLeaves(chain)) chain.leafFigures[leafKey(leaf)] = leafFigures(state, leaf)
+  return chain
+}
+
+/**
+ * **The leaf rule, and the only definition of it.**
+ *
+ * > A chain's leaves are: every ticked food item; plus every selected category with no
+ * > item ticked; plus one category-less leaf when the chain names no category at all —
+ * > either because nothing is ticked, or because "I do not know" is. The leaves are the
+ * > chain's entries. Every element of the request body's `entries[]` is a leaf, and
+ * > nothing else is.
+ *
+ * **It lives here and not in `calculator.js` because four modules must agree about it**
+ * — `calculator.js` (steps 2, 3, 4, the review step, the duplicate notice, the
+ * validation router), `submission.js` (the request body), `improvement.js`
+ * (`submissionEntries`, `improvedLines`, `currentAllocationPercentages`) and
+ * `results.js` (labelling a breakdown row) — and this is the only module all four can
+ * import without closing a cycle: it imports nothing at all, while `calculator.js`
+ * already imports `improvement.js` and `results.js`, which is why `publicError` has to
+ * be *passed* into `compareImprovement` rather than imported.
+ *
+ * It also belongs beside `draftEntry()` because it is the rule that says which of
+ * `leafFigures`'s keys are real; `draftEntry()` calls it to prune, and nothing else may
+ * decide that question.
+ *
+ * @param {object} chain
+ * @returns {Array<{foodCategory: string|null, foodItem: string|null}>} in selection order
+ */
+export function entryLeaves(chain) {
+  const leaves = []
+  for (const category of (chain?.foodCategories || [])) {
+    const items = (chain?.foodItems || {})[category] || []
+    if (items.length) for (const item of items) leaves.push({ foodCategory: category, foodItem: item })
+    else leaves.push({ foodCategory: category, foodItem: null })
+  }
+  if (!leaves.length || chain?.foodUnspecified) leaves.push({ foodCategory: null, foodItem: null })
+  return leaves
+}
+
+/**
+ * A leaf's identity, as a map key.
+ *
+ * NUL-joined rather than concatenated, the same convention `draftRepeatsSavedEntry` and
+ * `duplicateOf` already use in `calculator.js`: a category code ending in the next
+ * field's first characters could otherwise collide with a different pair. The sector is
+ * deliberately absent — it is a property of the chain, not of the leaf.
+ */
+export const leafKey = leaf => `${leaf?.foodCategory || ''}\u0000${leaf?.foodItem || ''}`
+
+/**
+ * **A leaf's name, and the only place one is decided.**
+ *
+ * Step 3's legend, step 4's column head, the review step, the saved-entry card, the
+ * results page's stage tab, the text export and the PDF all show a leaf by name, and
+ * before this they disagreed in two ways that are both defects:
+ *
+ * * **Two leaves could render byte-identical.** `results.js` returned
+ *   `Standard mix / not specified` both for a NULL `food_category` and for the
+ *   `standard_mix` category, so a visitor who ticked *both* the standard mix and
+ *   "I do not know" - which §5.4 requires to be two separate answers, and which step 2
+ *   offers as two separate boxes - got two indistinguishable rows carrying different
+ *   numbers.
+ * * **One leaf had four names.** `Not broken down by type` on steps 3, 4 and the
+ *   review step, `Food type not provided` on the saved-entry card, `Not provided` in
+ *   the text export and `Standard mix / not specified` on the results page.
+ *
+ * So the name is computed here, once, from the leaf and the taxonomy, and every surface
+ * reads it. The standard mix keeps its own taxonomy name, because it is a category the
+ * visitor chose; the category-less leaf gets the words §5.4 gives it, because "the
+ * visitor did not break their waste down by type" is a different answer and may not
+ * borrow another one's words.
+ *
+ * It lives beside `entryLeaves` for the same reason that does: `calculator.js`,
+ * `results.js` and `submission.js` must all agree, and this module is the only one all
+ * three can import without closing a cycle. `i18n.js` imports nothing either, so
+ * importing `t` here adds no edge to the graph.
+ *
+ * @param {{foodCategory: string|null, foodItem: string|null}} leaf
+ * @param {object} taxonomy §6.1's response
+ * @returns {string}
+ */
+export function leafDisplayName(leaf, taxonomy) {
+  const find = (rows, code) => (rows || []).find(row => row.code === code)
+  if (leaf?.foodItem) {
+    const item = find(taxonomy?.food_items, leaf.foodItem)
+    if (item) return item.name
+  }
+  if (leaf?.foodCategory) {
+    const category = find(taxonomy?.food_categories, leaf.foodCategory)
+    return category?.name || leaf.foodCategory
+  }
+  return t('Not broken down by type')
+}
+
+/**
+ * The nine per-leaf figures, with every key present.
+ *
+ * Every consumer — `units.js`'s `entryTotal`/`containerKg`, `calculator.js`'s
+ * `measuredAs`, `submission.js`'s `entryPayload` — reads these names off whatever object
+ * it is handed, so a leaf record keeps exactly the names the chain-level state carried
+ * before the fork and nothing downstream had to learn a second vocabulary.
+ */
+export const EMPTY_LEAF = {
+  totalAmount: '',
+  totalUnit: 'kilograms',
+  measureMode: 'mass',
+  unitPreset: null,
+  unitCount: '',
+  totalInputKg: '',
+  totalValueNzd: '',
+  wastedValueNzd: '',
+  current: [],
+}
+
+/** One leaf's figures off a chain, defaulted and deep-copied. */
+export function leafFigures(chain, leaf) {
+  const held = (chain?.leafFigures || {})[leafKey(leaf)] || {}
+  return { ...EMPTY_LEAF, ...held, current: (held.current || []).map(line => ({ ...line })) }
+}
+
+/** The same, read off `state` — the draft's own figures for one leaf. */
+export const draftLeafFigures = leaf => leafFigures(state, leaf)
 
 /**
  * Pairs the entries the user typed with the per-entry results §6.2 returns, which
- * preserve request order. Each paired `response` is the shape the rendering modules
+ * preserve request order.
+ *
+ * **What it must be handed is LEAVES, never chains.** Since the fork one chain becomes
+ * several `entries[]`, and this pairs purely by index — hand it the chain array while
+ * the request carried leaves and every figure on the results page, in the text export
+ * and in the PDF is attached to the wrong entry, with no error and no warning anywhere.
+ * `submitCalculation` (`calculator.js`) builds the leaf array with the same
+ * `submissionLeaves` call the request body was built from, for exactly that reason. Each paired `response` is the shape the rendering modules
  * already consume — one entry's `current` / `alternative` / `net_benefit`, plus the
  * submission-level `factor_set` they read `is_mock` and `version_label` from.
  *
@@ -261,20 +448,16 @@ export function resetCalculator() {
   setState({
     token: null,
     sector: null,
-    foodCategory: null,
-    totalAmount: '',
+    foodCategories: [],
+    foodUnspecified: false,
+    foodItems: {},
     totalUnit: 'kilograms',
-    measureMode: 'mass',
-    unitPreset: null,
-    unitCount: '',
-    totalInputKg: '',
-    totalValueNzd: '',
-    wastedValueNzd: '',
+    leafFigures: {},
     timeFrame: '',
-    current: [],
     entries: [],
     result: null,
     error: null,
+    errorAt: null,
     errorCode: null,
     fieldErrors: {},
     rateLimitedUntil: 0,
@@ -286,8 +469,8 @@ export function resetCalculator() {
     resultBreakdownTab: 'stage',
     lastChangedDestination: null,
     improvementOpen: false,
-    improvedAllocations: {},
-    improvementChartExpanded: false,
+    improvedAllocations: [],
+    improvementChartExpanded: null,
     improvementMode: 'percentage',
     improvementRowUnits: {},
     improvementResult: null,

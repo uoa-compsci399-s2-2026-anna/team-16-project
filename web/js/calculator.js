@@ -497,7 +497,7 @@ function amountStep() {
   const amountLabel = container ? t('How many containers?') : t('Waste amount')
   const amountHint = container
     ? t('Use up to two decimal places — enter 0.5 for a half-full container.')
-    : t('Use up to two decimal places.')
+    : t('Enter the amount in %(unit)s. Use up to two decimal places.', { unit: unitLabel(state.totalUnit) })
   const amountValue = container ? state.unitCount : state.totalAmount
   // `state.error` is reused for three different things on this step now, and each
   // belongs beside a different field. `amountOnlyValidation` and
@@ -1391,6 +1391,80 @@ function clearDraft() {
   setState({ ...EMPTY_DRAFT, step: 0, error: null, fieldErrors: {}, expandedSectors: [], lastChangedDestination: null })
 }
 
+/**
+ * Reorder the amount-step fields after the existing field markup is rendered.
+ * The controls keep their original ids and delegated event handlers; this only
+ * changes their visual/source order and the optional-field helper presentation.
+ */
+function arrangeAmountForm(main) {
+  const panel = main.querySelector('.amount-grid')
+  if (!panel) return
+
+  const fieldFor = selector => panel.querySelector(selector)?.closest('.form-field')
+  const unitField = fieldFor('#total-unit')
+  const amountField = fieldFor('#total-waste, #unit-count')
+  const totalInputField = fieldFor('#total-input')
+  const totalValueField = fieldFor('#total-value')
+  const wastedValueField = fieldFor('#wasted-value')
+  if (!unitField || !amountField || !totalInputField || !totalValueField || !wastedValueField) return
+
+  const amountHint = amountField.querySelector('.field-hint')
+  if (amountHint) {
+    amountHint.textContent = state.measureMode === 'container'
+      ? t('Enter the number of containers. Use up to two decimal places.')
+      : t('Enter the amount in %(unit)s. Use up to two decimal places.', { unit: unitLabel(state.totalUnit) })
+  }
+  const totalInputHint = totalInputField.querySelector('.field-hint')
+  if (totalInputHint) {
+    totalInputHint.classList.add('field-hint-primary')
+    totalInputHint.replaceChildren()
+    const primary = document.createElement('span')
+    primary.textContent = t('How much product did you produce in total?')
+    const secondary = document.createElement('span')
+    secondary.className = 'field-hint-secondary'
+    secondary.textContent = t('Used to calculate waste as a percentage of total production.')
+    totalInputHint.append(primary, secondary)
+  }
+  const totalValueHint = totalValueField.querySelector('.field-hint')
+  const wastedValueHint = wastedValueField.querySelector('.field-hint')
+  totalValueHint?.remove()
+  wastedValueHint?.remove()
+  const addHelper = (field, message) => {
+    const helper = document.createElement('p')
+    helper.className = 'field-hint'
+    helper.textContent = message
+    field.insertBefore(helper, field.querySelector('input'))
+  }
+  addHelper(totalValueField, t('What is the total value of all products produced?'))
+  addHelper(wastedValueField, t('What is the estimated value of the food that was wasted?'))
+  totalValueField.querySelector('input')?.setAttribute('placeholder', t('e.g. 50,000'))
+  wastedValueField.querySelector('input')?.setAttribute('placeholder', t('e.g. 1,200'))
+  totalInputField.classList.add('amount-total-input-field')
+  totalValueField.classList.add('amount-total-value-field')
+  wastedValueField.classList.add('amount-wasted-value-field')
+  amountField.classList.add('amount-waste-field')
+
+  const optionalHeading = document.createElement('div')
+  optionalHeading.className = 'additional-information-heading'
+  const title = document.createElement('h2')
+  title.id = 'additional-information-title'
+  title.textContent = t('Additional information (optional)')
+  const description = document.createElement('p')
+  description.textContent = t('These optional fields help provide more useful statistics and do not affect the emissions calculation.')
+  optionalHeading.append(title, description)
+
+  panel.replaceChildren(unitField, amountField, optionalHeading, totalInputField, totalValueField, wastedValueField)
+  if (window.matchMedia('(min-width: 650px)').matches) {
+    const alignHints = selectors => {
+      const hints = selectors.map(selector => panel.querySelector(selector)?.querySelector('.field-hint')).filter(Boolean)
+      const height = Math.max(...hints.map(hint => hint.getBoundingClientRect().height))
+      hints.forEach(hint => { hint.style.minHeight = `${height}px` })
+    }
+    alignHints(['.unit-field', '.amount-waste-field'])
+    alignHints(['.amount-total-input-field', '.amount-total-value-field'])
+  }
+}
+
 export function render(main) {
   main.className = `main-content${state.step === -1 ? ' introduction-main' : ''}`
   if (state.loading && !state.taxonomy) {
@@ -1405,6 +1479,7 @@ export function render(main) {
   }
   const screens = [sectorStep, foodStep, amountStep, destinationStep, reviewStep]
   main.innerHTML = state.step === -1 ? introduction() : state.step === 5 ? renderResults(state) : screens[state.step]()
+  if (state.step === 2) arrangeAmountForm(main)
 }
 
 /**

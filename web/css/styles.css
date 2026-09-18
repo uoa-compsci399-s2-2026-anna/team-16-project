@@ -668,6 +668,14 @@ input:focus-visible, select:focus-visible { border-color: var(--focus); box-shad
 .simple-choice small { color: var(--muted); line-height: 1.45; }
 
 .amount-grid { gap: 0 20px; }
+.additional-information-heading {
+  grid-column: 1 / -1;
+  margin: 25px 0 0;
+  padding-top: 20px;
+  border-top: 1px solid rgba(0, 50, 35, 0.12);
+}
+.additional-information-heading h2 { margin-bottom: 8px; }
+.additional-information-heading p { margin: 0; color: var(--muted); font-size: 0.92rem; }
 /* Two vertical groups, not a grid of equal cells - `.mass-fields` holds the
    three fields the unit governs (waste amount, unit, total produced) and
    `.money-fields` the two that may be left empty (see `amountStep()`'s own
@@ -1377,6 +1385,12 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
      from; the closed control may still truncate a long container label
      (`title` on the select carries the full text - see `amountStep()`). */
   .unit-field select { inline-size: 50%; overflow: hidden; white-space: nowrap; text-overflow: ellipsis; }
+  /* Required fields share the same full-width control size in the two-column row. */
+  .amount-grid .unit-field select { inline-size: 100%; }
+  /* Keep controls on the same baseline when one helper wraps to two lines. */
+  .amount-grid > .form-field label { min-height: 1.5em; }
+  .amount-grid > .form-field .field-hint { min-height: 3.3em; }
+  .amount-grid > .form-field .field-hint-secondary { display: block; margin-top: 2px; }
 }
 
 /* No margin override here any more - `.money-fields .form-field` used to be

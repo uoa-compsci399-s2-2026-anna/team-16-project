@@ -1019,15 +1019,39 @@ export async function contributeCalculation(state, toPublicMessage = error => er
   }
 }
 
-function resultsFloatingNavigation() {
-  const navigationLabel = t('Site navigation')
+/**
+ * The results page's section jump list, which lives in the page's **gutter**.
+ *
+ * The request behind it: at a wide viewport this page is still a ~960px column, so
+ * there is a band of empty page either side of it, and the page itself is long enough
+ * that reaching a section means scrolling for a while. The list goes in that band.
+ *
+ * **It is not site navigation and no longer says it is.** The label was
+ * `t('Site navigation')`, which is the site drawer's own string (`index.html`), so a
+ * screen reader's landmark list showed two `<nav>` elements with one indistinguishable
+ * name -- in every language, since both read the same key.
+ *
+ * **Where it is and when it exists are decided in CSS, not here**, because both depend
+ * on the viewport and this function runs once per render with no idea of it. The
+ * stylesheet shows it only where the gutter is wide enough to hold it without covering
+ * the column, and opens it by default there. `data-open` is written **only** once the
+ * visitor has toggled it, so the attribute's absence means "the stylesheet decides".
+ */
+function resultsFloatingNavigation(state) {
+  const label = t('Sections on this page')
   const links = [
     ['#impact-summary', t('Impact summary')],
     ['#improvement-section', t('Explore Improvements')],
     ['#tangible-equivalents', t('Tangible equivalents')],
     ['#breakdown-section', t('Breakdown by category')],
-  ].map(([href, label]) => `<li><a href="${href}">${escapeHtml(label)}</a></li>`).join('')
-  return `<nav class="results-floating-nav" aria-label="${escapeHtml(navigationLabel)}"><button class="results-floating-nav__handle" type="button" data-action="toggle-results-nav" aria-expanded="false" aria-controls="results-floating-nav-menu" aria-label="${escapeHtml(navigationLabel)}" title="${escapeHtml(navigationLabel)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
+  ].map(([href, text]) => `<li><a href="${href}">${escapeHtml(text)}</a></li>`).join('')
+  //: Absent until the visitor decides, so the CSS default stands. `aria-expanded`
+  //: follows the same value: stating `false` while the stylesheet has the panel open
+  //: is the contradiction a screen-reader user meets first.
+  const toggled = state?.resultsNavOpen
+  const openAttribute = toggled === undefined ? '' : ` data-open="${toggled}"`
+  const expanded = toggled === undefined ? '' : ` aria-expanded="${toggled}"`
+  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
 }
 
 export function renderResults(state) {
@@ -1050,7 +1074,7 @@ export function renderResults(state) {
   // and "Download results" moved into it; "Start a new calculation" did not,
   // because it is a confirm-guarded reset rather than a step action, and the
   // header's home button already offers it.
-  return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation()}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
+  return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
       : t('Results returned by the calculation service for %(count)s supply-chain entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}
     <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>

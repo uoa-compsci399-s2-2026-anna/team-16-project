@@ -1686,14 +1686,16 @@ export function bindCalculator(main, retryTaxonomy) {
     if (action === 'download-results') downloadResults(state)
     if (action === 'download-pdf') downloadPdf(state)
     if (action === 'breakdown-tab') setState({ resultBreakdownTab: control.dataset.tab })
+    // Through `setState`, not by writing the DOM. `render()` replaces
+    // `main.innerHTML` on every state change, so the element's own
+    // `data-open` was erased by any unrelated update -- opening the menu and
+    // then switching a breakdown tab closed it again.
+    //
+    // `undefined` means the stylesheet's viewport-dependent default is still
+    // in force, and the first toggle has to invert *that*: where the nav is
+    // shown at all the default is open, so the first press closes it.
     if (action === 'toggle-results-nav') {
-      const navigation = control.closest('.results-floating-nav')
-      const isOpen = navigation?.dataset.open !== 'true'
-      if (navigation) {
-        navigation.dataset.open = String(isOpen)
-        control.setAttribute('aria-expanded', String(isOpen))
-        if (!isOpen) control.blur()
-      }
+      setState({ resultsNavOpen: state.resultsNavOpen === undefined ? false : !state.resultsNavOpen })
     }
     if (action === 'explore-improvements') openImprovement(state)
     if (action === 'reset-improvement') resetImprovement(state)

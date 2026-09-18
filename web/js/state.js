@@ -6,6 +6,18 @@ export const state = {
   sector: null,
   foodCategory: null,
   gwpHorizon: 100,
+  // Whether the visitor has toggled the results page's section nav, and
+  // `undefined` while they have not -- which is the usual case and means "let
+  // the stylesheet decide". The default is viewport-dependent (open where
+  // there is a gutter to put it in, absent where there is not) and CSS is
+  // what knows the viewport; a boolean default here would have to guess at
+  // render time and would be wrong on the first paint after a resize.
+  //
+  // It lives on `state` rather than on the element because `render()` does
+  // `main.innerHTML = ...` on every `setState`: the DOM copy was wiped by any
+  // unrelated change, so opening the menu and then switching a breakdown tab
+  // closed it.
+  resultsNavOpen: undefined,
   totalAmount: '',
   totalUnit: 'kilograms',
   // §7.3's container input. `measureMode` says which of the two step-3 fields is

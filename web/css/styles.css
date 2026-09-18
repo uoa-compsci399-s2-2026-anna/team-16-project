@@ -1179,13 +1179,51 @@ tbody th { font-weight: 700; }
 .explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
 .results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
-.results-floating-nav {
-  --results-floating-nav-handle-size: 52px;
-  position: fixed;
-  z-index: 30;
-  inset-inline-end: 18px;
-  top: 50%;
-  translate: 0 -50%;
+/* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.
+   ========================================================================
+   It was `inset-inline-end: 18px` — pinned to the viewport's own edge, which
+   is the content column's edge as soon as the column stops being narrower
+   than the screen. Measured with `document.elementFromPoint` inside the
+   buttons' own boxes: at 390px it took the taps for *Download results*,
+   *Start a new calculation* and *Match the current allocation*; at 320px the
+   same; at 768px *Compare Impact* and *Download PDF*; and with the
+   improvement panel open, all eleven destination inputs at 320 and 390. Only
+   1278px was clean.
+
+   `test_horizontal_overflow.py` cannot see any of that. A `position: fixed`
+   box is outside document scrollable overflow, so `scrollWidth` does not
+   move: pushing this element 400px past a 375px viewport still measures zero.
+   Verified by mutation, and by the control (`min-inline-size: 2000px` on
+   `.results-grid`) which does report 1665px.
+
+   So it is positioned against the COLUMN instead. `.main-content` is 900px
+   centred and `.wide` opens to 1000px at >=960px, so the results column is
+   ~960px wide: half of it is 480px, and the handle needs 52 + 18 beyond that.
+   `inset-inline-start: 50%` plus `margin-inline-start` is the pair that does
+   this in both directions -- `translate` is physical and would put the panel
+   on the wrong side in Arabic and Urdu.
+
+   **50%, never 100vw.** For a fixed box, percentages resolve against the
+   initial containing block, which excludes the scrollbar; `100vw` includes it,
+   and that is the single most common cause of overflow in this stylesheet
+   (see the note above `test_horizontal_overflow.py`'s PATHS).
+
+   The gate is 1100px: 960 of column plus 70 either side. Below it there is no
+   gutter, so there is nowhere to float that is not on top of the page, and
+   the nav is not rendered at all rather than shrunk into the content. */
+.results-floating-nav { display: none; }
+
+@media (min-width: 1100px) {
+  .results-floating-nav {
+    --results-floating-nav-handle-size: 52px;
+    display: block;
+    position: fixed;
+    z-index: 30;
+    inset-inline-start: 50%;
+    margin-inline-start: calc(480px + 18px);
+    top: 50%;
+    translate: 0 -50%;
+  }
 }
 .results-floating-nav__handle {
   inline-size: var(--results-floating-nav-handle-size);
@@ -1220,7 +1258,13 @@ tbody th { font-weight: 700; }
   translate: 8px -50%;
   transition: opacity 140ms ease, visibility 140ms ease, translate 140ms ease;
 }
-.results-floating-nav:hover .results-floating-nav__panel,
+/* Open by default where the nav exists at all: the request was that the list
+   is *there* when there is room for it, not that it has to be summoned. A
+   visitor who closes it gets `data-open="false"`, which wins over this.
+   `:hover` no longer opens it -- the panel could be visible while the button
+   still reported `aria-expanded="false"`, and a state a screen reader
+   contradicts is worse than one that needs a click. */
+.results-floating-nav:not([data-open="false"]) .results-floating-nav__panel,
 .results-floating-nav:focus-within .results-floating-nav__panel,
 .results-floating-nav[data-open="true"] .results-floating-nav__panel {
   opacity: 1;
@@ -1525,8 +1569,6 @@ footer::after { content: ''; position: absolute; right: -34px; bottom: -36px; wi
   .result-section-heading { gap: 11px; }
   .result-actions { flex-direction: column; }
   .download-actions { flex-direction: column; margin-inline-start: 0; }
-  .results-floating-nav { inset-inline-end: 12px; --results-floating-nav-handle-size: 48px; }
-  .results-floating-nav__panel { inline-size: min(244px, calc(100vw - 80px)); }
   .explore-improvements, .improvement-scenario, .comparison-results { padding: 19px; }
   .improvement-editor { grid-template-columns: 1fr; }
   .improvement-allocation-row { grid-template-columns: 1fr; gap: 10px; }

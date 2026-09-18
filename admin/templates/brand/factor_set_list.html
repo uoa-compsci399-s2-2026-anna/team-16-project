@@ -57,5 +57,46 @@
     </div>
   </div>
 </div>
+{#- Item-level coverage (v1.54). Rendered only once the food-item vocabulary
+    has rows in it: with no foods at all — the state of every deployment until
+    somebody authors them — "item-level factors for 0 of 0 foods" beside every
+    set is a card that says nothing and takes up the space above the list where
+    what is published belongs.
+
+    Shown for every draft and the published set, not only the published one,
+    because the set being decided about is the draft being prepared. `enabled`
+    and the count are deliberately printed together: the flag is a boolean and
+    the judgement behind it is not. #}
+{% if item_coverage and item_coverage[0].total %}
+<div class="col-12">
+  <div class="card">
+    <div class="card-status-start" style="background: #005AE6;"></div>
+    <div class="card-body">
+      <h3 class="card-title">{{ _("Item-level detail") }}</h3>
+      <p class="muted">
+        {{ _("Asking a visitor which food, rather than only which category. A food with no factors of its own is priced at its category's average, so a set need not price every food — but the more it prices, the more the extra question is worth asking.") }}
+      </p>
+      <ul>
+        {% for row in item_coverage %}
+        <li>
+          {#- Two whole sentences rather than one with an "on"/"off" word
+              slotted in: a bare adverb is the classic string nobody can
+              translate, because the word that fits depends on the sentence it
+              lands in. -#}
+          <strong>{{ row.version_label }}</strong> ({{ row.status }}) —
+          {% if row.enabled %}
+            {{ _("On, with item-level factors for %(priced)s of %(total)s foods.",
+                 priced=row.priced, total=row.total) }}
+          {% else %}
+            {{ _("Off, with item-level factors for %(priced)s of %(total)s foods.",
+                 priced=row.priced, total=row.total) }}
+          {% endif %}
+        </li>
+        {% endfor %}
+      </ul>
+    </div>
+  </div>
+</div>
+{% endif %}
 {{ super() }}
 {% endblock %}

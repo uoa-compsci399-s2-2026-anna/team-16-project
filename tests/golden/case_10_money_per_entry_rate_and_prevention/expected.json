@@ -17,7 +17,8 @@
               "qty_kg": "2700.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "6063.0000000000"
+              "value": "6063.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -32,7 +33,8 @@
               "qty_kg": "2700.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "2700.0000000000"
+              "value": "2700.0000000000",
+              "upstream_basis": null
             }
           ]
         }
@@ -64,14 +66,16 @@
               "qty_kg": "2000.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "4736.0000000000"
+              "value": "4736.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "700.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -86,14 +90,16 @@
               "qty_kg": "2000.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "2000.0000000000"
+              "value": "2000.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "700.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "700.0000000000"
+              "value": "700.0000000000",
+              "upstream_basis": null
             }
           ]
         }
@@ -148,7 +154,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "3468.0000000000"
+                "value": "3468.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -163,7 +170,8 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1200.0000000000"
+                "value": "1200.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -183,7 +191,9 @@
       },
       "alternative": null,
       "net_benefit": null,
-      "production_share_percent": null
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     },
     {
       "sector_code": "primary_production",
@@ -202,7 +212,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.7000000000",
-                "value": "1150.0000000000"
+                "value": "1150.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -217,7 +228,8 @@
                 "qty_kg": "1000.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1000.0000000000"
+                "value": "1000.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -249,14 +261,16 @@
                 "qty_kg": "600.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.7000000000",
-                "value": "690.0000000000"
+                "value": "690.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination_code": "prevention",
                 "qty_kg": "400.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "category_at_destination"
               }
             ]
           },
@@ -271,14 +285,16 @@
                 "qty_kg": "600.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "600.0000000000"
+                "value": "600.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "prevention",
                 "qty_kg": "400.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "400.0000000000"
+                "value": "400.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -300,7 +316,9 @@
         "co2e": "460.0000000000",
         "mass": "0.0000000000"
       },
-      "production_share_percent": null
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     },
     {
       "sector_code": "processing",
@@ -319,7 +337,8 @@
                 "qty_kg": "500.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "1445.0000000000"
+                "value": "1445.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -334,7 +353,8 @@
                 "qty_kg": "500.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "500.0000000000"
+                "value": "500.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -366,14 +386,16 @@
                 "qty_kg": "200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "578.0000000000"
+                "value": "578.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination_code": "prevention",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "category_at_destination"
               }
             ]
           },
@@ -388,14 +410,16 @@
                 "qty_kg": "200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "200.0000000000"
+                "value": "200.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "prevention",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "300.0000000000"
+                "value": "300.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -417,7 +441,9 @@
         "co2e": "867.0000000000",
         "mass": "0.0000000000"
       },
-      "production_share_percent": null
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     }
   ]
 }

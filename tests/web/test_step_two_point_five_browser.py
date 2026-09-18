@@ -1,0 +1,296 @@
+"""Step 2.5 in a real browser, against a stack whose factor set prices foods.
+
+`spec.md` §3.3's panel is unreachable unless four things line up, and they live
+in four files with no test in common: the vocabulary `admin/seed.py` creates,
+the `item_level_enabled` switch on the published set, §6.1's parent-covered
+filter deciding which foods reach `GET /taxonomy`, and the panel itself. Every
+other test in this repository holds one of those still and asserts about the
+others. This one drives the whole chain.
+
+**It needs a stack whose published set releases the item level.** The shipped
+`docker/mock-factors.json` does, so a fresh `docker compose up` is enough -- but
+a deployment seeded before that file grew its item rows keeps the set it has,
+and there the panel is correctly absent. The fixture skips rather than fails in
+that case, and says which of the two it found: a skip that could not tell them
+apart would hide the landing regressing.
+
+Run against an isolated stack rather than the developer's own::
+
+    KAICALC_WEB_PORT=18090 docker compose -p kaicalc-e2e -f docker/compose.yaml up -d --build
+    KAICALC_WEB_URL=http://localhost:18090 pytest tests/web/test_step_two_point_five_browser.py
+"""
+
+from __future__ import annotations
+
+import json
+import os
+
+import pytest
+
+pytestmark = pytest.mark.browser
+
+pytest.importorskip(
+    "playwright.sync_api",
+    reason="playwright is required to drive step 2.5",
+)
+
+ROOT = os.environ.get("KAICALC_WEB_URL", "http://localhost:18080").rstrip("/")
+BASE = ROOT + "/index.html"
+
+
+@pytest.fixture(scope="module")
+def taxonomy():
+    """What the stack under test actually publishes.
+
+    Read once, over HTTP, so the tests below assert against the deployment's own
+    vocabulary rather than against `admin/seed.py` -- which is the whole point:
+    §6.1 filters the vocabulary against the published set, and a test that read
+    the seed would assert about foods the visitor is never offered.
+    """
+    import urllib.request
+
+    try:
+        with urllib.request.urlopen(f"{ROOT}/api/v1/taxonomy", timeout=15) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except Exception as error:  # pragma: no cover - environment guard
+        pytest.skip(f"no calculator is being served at {ROOT}: {error}")
+
+
+@pytest.fixture(scope="module")
+def released(taxonomy):
+    """The two conditions, reported apart.
+
+    A stack with the switch off and a stack with an empty vocabulary are two
+    different states, and only one of them is a landing that regressed.
+    """
+    if not taxonomy["factor_set"].get("item_level_enabled"):
+        pytest.skip(
+            "the published factor set has item_level_enabled false, so step 2.5 "
+            "is correctly absent; seed a fresh database to exercise it"
+        )
+    if not taxonomy.get("food_items"):
+        pytest.skip(
+            "the published factor set releases the item level but §6.1 offers no "
+            "food under any category it prices"
+        )
+    return taxonomy
+
+
+@pytest.fixture
+def page(browser, released):
+    context = browser.new_context(viewport={"width": 1278, "height": 983}, locale="en-NZ")
+    opened = context.new_page()
+    try:
+        opened.goto(BASE + "?lang=en", wait_until="networkidle", timeout=15000)
+    except Exception as error:  # pragma: no cover - environment guard
+        context.close()
+        pytest.skip(f"the front end is not being served at {BASE}: {error}")
+    opened.wait_for_selector('[data-action="start"]', timeout=10000)
+    yield opened
+    context.close()
+
+
+def _category_with_foods(taxonomy):
+    """A category the published set prices AND that has foods offered under it."""
+    offered = {item["food_category"] for item in taxonomy["food_items"]}
+    for category in taxonomy["food_categories"]:
+        if category["code"] in offered:
+            return category
+    pytest.skip("no offered food's category is itself offered")
+
+
+def _to_food_step(page):
+    page.click('[data-action="start"]')
+    page.wait_for_selector('input[name="sector"]')
+    page.evaluate("document.querySelectorAll('input[name=sector]')[0].click()")
+    page.wait_for_timeout(80)
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_selector('input[name="food-category"]')
+
+
+def _tick_category(page, code):
+    page.click(f'input[name="food-category"][value="{code}"]')
+    page.wait_for_timeout(80)
+
+
+def _continue(page):
+    page.click('.step-nav [data-action="continue"]')
+    page.wait_for_timeout(200)
+
+
+# --------------------------------------------------------------------------
+
+
+def test_continuing_from_a_chosen_category_opens_the_food_panel(page, released):
+    """The panel is reached by Continue, not by a step number: it is step 2's
+    second panel (`spec.md` §3.3), so `state.step` does not move."""
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+
+    page.wait_for_selector('input[name="food-item"]', timeout=5000)
+    assert page.locator("#item-title").count() == 1
+
+
+def test_the_panel_groups_the_foods_under_the_category_that_was_chosen(page, released):
+    """One group per chosen category, the category's own name as its legend,
+    and only the foods §6.1 offers under it."""
+    category = _category_with_foods(released)
+    expected = sorted(
+        item["name"] for item in released["food_items"]
+        if item["food_category"] == category["code"]
+    )
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+
+    legends = page.evaluate(
+        "() => [...document.querySelectorAll('.item-group legend')].map(e => e.innerText.trim())"
+    )
+    assert legends == [category["name"]], legends
+    shown = sorted(page.evaluate(
+        "() => [...document.querySelectorAll('.item-group .simple-choice strong')]"
+        ".map(e => e.innerText.trim())"
+    ))
+    assert shown == expected, shown
+
+
+def test_the_step_number_does_not_advance_into_the_food_panel(page, released):
+    """§3.3: step 2.5 refines step 2. The position label and the progress bar
+    say the same thing on both panels, because the visitor has not left the
+    step -- and making it a seventh step would have made "step 3 of 7" untrue
+    wherever the panel is absent."""
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    before = page.inner_text(".step-nav-label")
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+
+    assert page.inner_text(".step-nav-label") == before
+
+
+def test_back_returns_to_the_categories_with_the_ticks_intact(page, released):
+    """A panel change, not a step change: the categories are still ticked,
+    because Back here undoes the Continue that opened the panel and nothing
+    else."""
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+
+    page.click('.step-nav [data-action="back-to-categories"]')
+    page.wait_for_selector('input[name="food-category"]', timeout=5000)
+    assert page.is_checked(f'input[name="food-category"][value="{category["code"]}"]')
+
+
+def test_ticking_two_foods_forks_the_chain_into_two_named_leaves(page, released):
+    """The leaf rule, seen from the screen: each ticked food is a leaf, so step
+    3 asks for an amount per food and names each one."""
+    category = _category_with_foods(released)
+    foods = [item for item in released["food_items"]
+             if item["food_category"] == category["code"]][:2]
+    if len(foods) < 2:
+        pytest.skip("this deployment offers fewer than two foods under one category")
+
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+    for food in foods:
+        page.click(f'input[name="food-item"][value="{food["code"]}"]')
+        page.wait_for_timeout(60)
+    _continue(page)
+
+    page.wait_for_selector("[data-leaf-field=amount]", timeout=5000)
+    legends = page.evaluate(
+        "() => [...document.querySelectorAll('.leaf-panel legend')].map(e => e.innerText.trim())"
+    )
+    assert len(legends) == 2, legends
+    for food in foods:
+        assert any(food["name"] in legend for legend in legends), (food["name"], legends)
+
+
+def test_a_category_with_no_food_ticked_stays_one_category_level_leaf(page, released):
+    """*I know it was dairy, but not which dairy.* Continuing through the panel
+    without ticking anything leaves exactly the leaf step 2 produced, named for
+    the category."""
+    category = _category_with_foods(released)
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+    _continue(page)
+
+    page.wait_for_selector("[data-leaf-field=amount], #total-waste", timeout=5000)
+    legends = page.evaluate(
+        "() => [...document.querySelectorAll('.leaf-panel legend')].map(e => e.innerText.trim())"
+    )
+    assert len(legends) <= 1, legends
+    if legends:
+        assert category["name"] in legends[0], legends
+
+
+def test_the_named_food_reaches_the_request_and_changes_the_figure(page, released):
+    """The end of the chain, and the only test that walks all of it.
+
+    Two foods under one category become two entries, each carrying its own
+    `food_item` on the wire (contract v1.58) -- and the two figures differ,
+    because the published set prices those foods apart. Equal figures would
+    mean the dimension was wired and inert, which is what every landing before
+    this one deliberately was.
+    """
+    category = _category_with_foods(released)
+    foods = [item for item in released["food_items"]
+             if item["food_category"] == category["code"]][:2]
+    if len(foods) < 2:
+        pytest.skip("this deployment offers fewer than two foods under one category")
+
+    sent = []
+    page.on("request", lambda r: sent.append(r.post_data)
+            if r.method == "POST" and r.url.endswith("/calculate") else None)
+
+    _to_food_step(page)
+    _tick_category(page, category["code"])
+    _continue(page)
+    page.wait_for_selector('input[name="food-item"]')
+    for food in foods:
+        page.click(f'input[name="food-item"][value="{food["code"]}"]')
+        page.wait_for_timeout(60)
+    _continue(page)
+
+    page.wait_for_selector('[data-leaf-field="amount"]')
+    fields = page.evaluate(
+        "() => [...document.querySelectorAll('[data-leaf-field=amount]')].map(e => e.id)")
+    assert len(fields) == 2, fields
+    for field in fields:
+        page.fill(f"#{field}", "1000")
+        page.wait_for_timeout(50)
+    _continue(page)
+
+    page.wait_for_selector('[data-line-field="amount"]')
+    first_row = page.evaluate(
+        """() => {
+          const byLeaf = {};
+          for (const input of document.querySelectorAll('[data-line-field=amount]')) {
+            (byLeaf[input.dataset.leaf] ||= []).push(input.id);
+          }
+          return Object.values(byLeaf).map(ids => ids[0]);
+        } """)
+    assert len(first_row) == 2, first_row
+    for field in first_row:
+        page.fill(f"#{field}", "1000")
+        page.wait_for_timeout(70)
+    _continue(page)
+
+    page.wait_for_selector('[data-action="calculate"]')
+    page.click('[data-action="calculate"]')
+    page.wait_for_selector("#results-title", timeout=30000)
+
+    assert sent, "no calculate request was sent"
+    entries = json.loads(sent[-1])["entries"]
+    assert [entry["food_item"] for entry in entries] == [food["code"] for food in foods], entries
+    assert all(entry["food_category"] == category["code"] for entry in entries), entries

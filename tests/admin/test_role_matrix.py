@@ -134,11 +134,22 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     ("GET", "/admin/getting-started", "the first-run walkthrough"),
     ("GET", "/admin/security", "the signed-in account's own security screen"),
     ("GET", "/admin/try", "dry run, §8.3"),
-    # The six taxonomy screens, and their two bulk actions on one of them.
+    # The seven taxonomy screens, and their two bulk actions on each.
     ("GET", "/admin/destination-group/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/destination/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/sector/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/food-category/list", "taxonomy CRUD, §8.3"),
+    # v1.54's screen, and the decision is made on the same grounds as the six
+    # around it rather than on what the item level is *for*. §8.3 reserves the
+    # administrator floor for account management, the blocklist and the audit
+    # trail — capabilities about who may use the system. `food_item` is a
+    # vocabulary table a staff member types into, `active` rather than delete,
+    # nothing identifying, every write already audited: the same kind of row as
+    # `food_category` directly above. The act with outward consequence is
+    # switching `item_level_enabled` on and publishing that set, which lives on
+    # the factor-set screen — itself both roles by §8.3 decision 4 — so a floor
+    # here would gate the typing and leave the releasing open.
+    ("GET", "/admin/food-item/list", "taxonomy CRUD, §8.3 — see FoodItemAdmin"),
     ("GET", "/admin/metric/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/unit-preset/list", "taxonomy CRUD, §8.3"),
     ("GET", "/admin/destination-group/action/activate", "taxonomy bulk action, §8.3"),
@@ -149,6 +160,8 @@ _BOTH_ROLES: list[tuple[str, str, str]] = [
     ("GET", "/admin/sector/action/deactivate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/food-category/action/activate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/food-category/action/deactivate", "taxonomy bulk action, §8.3"),
+    ("GET", "/admin/food-item/action/activate", "taxonomy bulk action, §8.3"),
+    ("GET", "/admin/food-item/action/deactivate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/metric/action/activate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/metric/action/deactivate", "taxonomy bulk action, §8.3"),
     ("GET", "/admin/unit-preset/action/activate", "taxonomy bulk action, §8.3"),
@@ -438,7 +451,7 @@ async def test_every_custom_admin_route_has_a_decided_role(admin_app):
 
 
 async def test_every_registered_model_view_has_a_decided_role(admin_app):
-    """The per-view half: eighteen `ModelView`s, one decision each.
+    """The per-view half: nineteen `ModelView`s, one decision each.
 
     `ModelView.is_accessible` defaults to "allow access for everyone", so a
     view registered with no override is open to `staff` silently. Reaching the
@@ -453,8 +466,8 @@ async def test_every_registered_model_view_has_a_decided_role(admin_app):
     identities = {
         view.identity for view in admin._views if hasattr(view, "model")
     }
-    assert len(identities) == 18, (
-        f"expected eighteen model views, found {len(identities)}: "
+    assert len(identities) == 19, (
+        f"expected nineteen model views, found {len(identities)}: "
         f"{sorted(identities)}"
     )
 

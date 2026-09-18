@@ -38,7 +38,7 @@ from admin.calc_client import CalculateRefused, CalculateUnavailable
 from admin.comparison_models import ComparisonScenario
 from admin.factor_models import FactorSet, FactorSetStatus
 from admin.runtime import get_runtime
-from admin.taxonomy_models import Destination, FoodCategory, Sector
+from admin.taxonomy_models import Destination, FoodCategory, FoodItem, Sector
 from admin import i18n as admin_i18n
 
 templates = Jinja2Templates(directory=str(Path(__file__).parent / "templates"))
@@ -73,10 +73,27 @@ def _form_context(db) -> dict:
         select(Destination).where(Destination.active.is_(True))
         .order_by(Destination.sort_order)
     ).scalars().all()
+    #: v1.54. The vocabulary step 2.5 offers, so that the staff releasing that
+    #: step can test it here rather than only on the public calculator. Every
+    #: item carries its parent category's code, because the two travel together
+    #: in the request and an item filed under a different category is refused —
+    #: the form uses it to hide items that do not belong to the chosen
+    #: category. Empty in every deployment today, which is what keeps this form
+    #: sending exactly the request body it sent before.
+    food_items = db.execute(
+        select(FoodItem, FoodCategory.code)
+        .join(FoodCategory, FoodItem.food_category_id == FoodCategory.id)
+        .where(FoodItem.active.is_(True))
+        .order_by(FoodItem.sort_order, FoodItem.code)
+    ).all()
     return {
         "factor_sets": factor_sets,
         "sectors": sectors,
         "food_categories": food_categories,
+        "food_items": [
+            {"code": item.code, "name": item.name, "food_category": food_code}
+            for item, food_code in food_items
+        ],
         "destinations": destinations,
     }
 
@@ -112,13 +129,30 @@ def _request_body(form) -> dict:
         # CalculateRefused/CalculateUnavailable as a third, undesigned
         # failure mode.
         gwp_horizon = 100
+    #: v1.54, and **the key is still omitted rather than sent as null when no
+    #: food was chosen.** It was omitted originally because `api/schemas.py`
+    #: sets `extra="forbid"` on the entry model and that model did not know
+    #: `food_item` yet, so sending the key was a 422 for every dry run on the
+    #: panel. **v1.58 landed the field and a chosen food now reaches the API**,
+    #: so that reason is spent — but the omission is kept, because absent and
+    #: `null` mean the same thing to §6.2 and a form that sends nothing when
+    #: nothing was chosen sends byte-for-byte the request it has always sent.
+    #: The panel is the one caller staff use to tune a formula; a request that
+    #: differs from the pre-v1.58 one in a way nobody chose is a difference
+    #: they would have to rule out first.
+    entry = {
+        "sector": form.get("sector"),
+        "food_category": form.get("food_category") or None,
+    }
+    food_item = form.get("food_item") or None
+    if food_item is not None:
+        entry["food_item"] = food_item
     return {
         "token": None,
         "gwp_horizon": gwp_horizon,
         "entries": [
             {
-                "sector": form.get("sector"),
-                "food_category": form.get("food_category") or None,
+                **entry,
                 "current": [
                     {
                         "destination": form.get("destination"),

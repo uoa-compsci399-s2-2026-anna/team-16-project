@@ -105,3 +105,50 @@ def test_every_field_section_6_3_publishes_on_a_downstream_row_reaches_the_page(
     fails by name rather than by a count that somebody adjusts.
     """
     assert f"row?.{field}" in section("downstream-heading")
+
+
+def test_the_upstream_table_publishes_the_food_of_every_row():
+    """v1.58, and the gap #102 named as this landing's.
+
+    §6.3 carries `upstream[].food_item` on the rows that have one — the export
+    was changed for this page specifically. Without the column, a set that
+    prices cheese at 3.4 and dairy at 1.9 publishes two rows identical in
+    sector, food category, destination and metric, differing only in the
+    number: the reader is shown a factor table that contradicts itself and
+    given nothing to resolve it with.
+    """
+    upstream = section("upstream-heading")
+
+    assert "row?.food_item" in upstream, (
+        "the published upstream table does not say which food a row applies "
+        "to; an item-level row and the category row it refines print as two "
+        "identical rows with different values"
+    )
+    assert "t('All foods in this category')" in upstream, (
+        "a row that applies to every food in its category would render as an "
+        "empty cell, which reads as missing data rather than as a scope. "
+        "§6.3 omits `food_item` entirely on those rows, so the fallback is "
+        "doing real work here rather than guarding a theoretical null"
+    )
+    #: Ordered as `factor_upstream`'s own columns are, and as the export
+    #: orders them: sector, then the category, then the food that refines it.
+    assert upstream.index("row?.sector") < upstream.index("row?.food_category")
+    assert upstream.index("row?.food_category") < upstream.index("row?.food_item")
+    assert upstream.index("row?.food_item") < upstream.index("row?.destination")
+
+
+def test_the_upstream_table_states_which_of_its_two_scopes_wins():
+    """The same rule the downstream table's intro carries, for the pair design
+    §2 settled — and settled *against* the specific one, which is the reason
+    it cannot be left to "the most specific wins".
+
+    A food's generic row and its category's prevention-specific row can both
+    apply to a prevented line. Item-first re-opens O-7: the line picks up the
+    food's generic factor instead of the category's zero, and the offset stops
+    being whole. Destination-first is the rule, and a reader cannot infer it
+    from two columns that each say "all".
+    """
+    upstream = section("upstream-heading")
+
+    assert "naming a destination and a row naming only a food" in upstream
+    assert "the one naming a destination is used" in upstream

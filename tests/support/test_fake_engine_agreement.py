@@ -227,6 +227,14 @@ def _fake_request(entries):
             SimpleNamespace(
                 sector=entry["sector"],
                 food_category=entry["food_category"],
+                #: v1.58. Every case in this corpus names no food, which is
+                #: the state every request in existence is in; the field has
+                #: to be present because `make_request` reads it, and the two
+                #: implementations have to agree that absent means the
+                #: category. The pair that actually exercises a named food is
+                #: `test_the_fake_and_the_engine_refuse_the_same_foods` below,
+                #: which is where the two `resolve_food_item` copies meet.
+                food_item=entry.get("food_item"),
                 current=tuple(
                     SimpleNamespace(destination=code, qty_kg=Decimal(qty))
                     for code, qty in entry["current"]
@@ -393,3 +401,82 @@ def test_the_corpus_reaches_all_three_states_of_the_production_share():
     assert "not_supplied" in states.values(), (
         "no case leaves the production share unanswered"
     )
+
+
+# --------------------------------------------------------------------- v1.58
+# `resolve_food_item` is the one rule this file's two implementations each
+# hold a copy of. `FakeBundle` (tests/support/sqlite.py) re-types
+# `engine/bundle.py`'s six lines so that the API suite can refuse a food
+# without a real engine behind it; `DefaultEngineAdapter.food_item_problems`
+# is shared, so what can drift is the bundle's answer and nothing else.
+#
+# This is the same situation `_money` and `_roll_up` are in above, and it gets
+# the same treatment: one corpus, both implementations, one assertion that
+# they agree. The corpus is exhaustive rather than illustrative -- four
+# states, and there are only four.
+
+#: A vocabulary the two bundles are given identically. `cheese` under `dairy`,
+#: `carrots` under `vegetables`, and no factor row for either: an item with no
+#: row of its own is the ordinary state and is priced at its category, which
+#: is not what this corpus is about.
+_ITEM_VOCABULARY = [
+    {"code": "cheese", "name": "Cheese", "food_category": "dairy", "sort_order": 1},
+    {"code": "carrots", "name": "Carrots", "food_category": "vegetables",
+     "sort_order": 2},
+]
+
+#: `(food_item, food_category)`, and what each pair means.
+_ITEM_CASES = [
+    ("named no food", None, "dairy"),
+    ("a declared food under its own parent", "cheese", "dairy"),
+    ("a food nobody declared", "unicorn_steak", "dairy"),
+    ("a declared food under someone else's parent", "cheese", "vegetables"),
+]
+
+
+def _item_bundles():
+    data = json.loads(json.dumps(BUNDLE_DATA))
+    data["food_items"] = json.loads(json.dumps(_ITEM_VOCABULARY))
+    from tests.support.sqlite import FakeBundle
+
+    return FactorBundle.from_json(data), FakeBundle(data)
+
+
+def _resolution(bundle, food_item, food_category):
+    """The answer as a comparable value: the code, or the refusal's text.
+
+    The message is compared as well as the fact of the refusal, because the
+    API puts it straight into `details[].message` -- a fake that refused the
+    same pairs with different words would let the API suite agree with a
+    sentence no deployment ever sends.
+    """
+    try:
+        return ("resolved", bundle.resolve_food_item(food_item, food_category))
+    except Exception as exc:
+        return ("refused", type(exc).__name__, str(exc))
+
+
+@pytest.mark.parametrize(
+    "food_item,food_category",
+    [pytest.param(*case[1:], id=case[0]) for case in _ITEM_CASES],
+)
+def test_the_fake_and_the_engine_resolve_a_named_food_the_same_way(
+    food_item, food_category
+):
+    real, fake = _item_bundles()
+
+    assert _resolution(real, food_item, food_category) == _resolution(
+        fake, food_item, food_category
+    )
+
+
+def test_the_item_corpus_reaches_every_state_there_is():
+    """A corpus that only ever named no food would agree with an
+    implementation that refused nothing at all."""
+    real, _ = _item_bundles()
+    outcomes = {
+        _resolution(real, item, category)[0] for _, item, category in _ITEM_CASES
+    }
+    assert outcomes == {"resolved", "refused"}
+    assert real.has_food_item("cheese")
+    assert not real.has_food_item("unicorn_steak")

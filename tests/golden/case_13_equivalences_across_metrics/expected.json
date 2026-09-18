@@ -17,21 +17,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "3468.0000000000"
+              "value": "3468.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "525.0000000000"
+              "value": "525.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "456.0000000000"
+              "value": "456.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -46,21 +49,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "32.4000000000"
+              "value": "32.4000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -75,21 +81,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1224000.0000000000"
+              "value": "1224000.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "306000.0000000000"
+              "value": "306000.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "257600.0000000000"
+              "value": "257600.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -104,21 +113,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "72.0000000000"
+              "value": "72.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -133,21 +145,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1200.0000000000"
+              "value": "1200.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "300.0000000000"
+              "value": "300.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "not_harvested",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "800.0000000000"
+              "value": "800.0000000000",
+              "upstream_basis": null
             }
           ]
         }
@@ -199,21 +214,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "2364.0000000000"
+              "value": "2364.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "525.0000000000"
+              "value": "525.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -228,21 +246,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1.2000000000"
+              "value": "1.2000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -257,21 +278,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1224000.0000000000"
+              "value": "1224000.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "306000.0000000000"
+              "value": "306000.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -286,21 +310,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "54.0000000000"
+              "value": "54.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0000000000"
+              "value": "0.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -315,21 +342,24 @@
               "qty_kg": "1200.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "1200.0000000000"
+              "value": "1200.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "animal_feed",
               "qty_kg": "300.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "300.0000000000"
+              "value": "300.0000000000",
+              "upstream_basis": null
             },
             {
               "destination_code": "prevention",
               "qty_kg": "800.000",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "800.0000000000"
+              "value": "800.0000000000",
+              "upstream_basis": null
             }
           ]
         }
@@ -402,14 +432,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.9900000000",
-                "value": "3468.0000000000"
+                "value": "3468.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1.9000000000",
                 "downstream": "-0.1500000000",
-                "value": "525.0000000000"
+                "value": "525.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -424,14 +456,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0270000000",
-                "value": "32.4000000000"
+                "value": "32.4000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -446,14 +480,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1224000.0000000000"
+                "value": "1224000.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "306000.0000000000"
+                "value": "306000.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -468,14 +504,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0600000000",
-                "value": "72.0000000000"
+                "value": "72.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -490,14 +528,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1200.0000000000"
+                "value": "1200.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "300.0000000000"
+                "value": "300.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -549,14 +589,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1.9000000000",
                 "downstream": "0.0700000000",
-                "value": "2364.0000000000"
+                "value": "2364.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1.9000000000",
                 "downstream": "-0.1500000000",
-                "value": "525.0000000000"
+                "value": "525.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -571,14 +613,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0010000000",
-                "value": "1.2000000000"
+                "value": "1.2000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -593,14 +637,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1224000.0000000000"
+                "value": "1224000.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "1020.0000000000",
                 "downstream": "0.0000000000",
-                "value": "306000.0000000000"
+                "value": "306000.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -615,14 +661,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0450000000",
-                "value": "54.0000000000"
+                "value": "54.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -637,14 +685,16 @@
                 "qty_kg": "1200.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "1200.0000000000"
+                "value": "1200.0000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination_code": "animal_feed",
                 "qty_kg": "300.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "300.0000000000"
+                "value": "300.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -689,7 +739,9 @@
         "cost": "18.0000000000",
         "mass": "0.0000000000"
       },
-      "production_share_percent": null
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     },
     {
       "sector_code": "primary_production",
@@ -708,7 +760,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.4500000000",
                 "downstream": "0.1200000000",
-                "value": "456.0000000000"
+                "value": "456.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -723,7 +776,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -738,7 +792,8 @@
                 "qty_kg": "800.000",
                 "upstream": "322.0000000000",
                 "downstream": "0.0000000000",
-                "value": "257600.0000000000"
+                "value": "257600.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -753,7 +808,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -768,7 +824,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -820,7 +877,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "category_at_destination"
               }
             ]
           },
@@ -835,7 +893,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -850,7 +909,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "category_at_destination"
               }
             ]
           },
@@ -865,7 +925,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "0.0000000000"
+                "value": "0.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -880,7 +941,8 @@
                 "qty_kg": "800.000",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "800.0000000000"
+                "value": "800.0000000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -925,7 +987,9 @@
         "cost": "0.0000000000",
         "mass": "0.0000000000"
       },
-      "production_share_percent": null
+      "production_share_percent": null,
+      "food_item_code": null,
+      "item_basis": "not_applicable"
     }
   ]
 }

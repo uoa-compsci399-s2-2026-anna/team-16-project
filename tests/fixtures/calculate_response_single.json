@@ -18,14 +18,16 @@
               "qty_kg": "250.500",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "826.6500000000"
+              "value": "826.6500000000",
+              "upstream_basis": null
             },
             {
               "destination": "compost",
               "qty_kg": "120.250",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "337.9025000000"
+              "value": "337.9025000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -39,14 +41,16 @@
               "qty_kg": "250.500",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "6.7635000000"
+              "value": "6.7635000000",
+              "upstream_basis": null
             },
             {
               "destination": "compost",
               "qty_kg": "120.250",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "0.0240500000"
+              "value": "0.0240500000",
+              "upstream_basis": null
             }
           ]
         },
@@ -60,14 +64,16 @@
               "qty_kg": "250.500",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "160320.0000000000"
+              "value": "160320.0000000000",
+              "upstream_basis": null
             },
             {
               "destination": "compost",
               "qty_kg": "120.250",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "76960.0000000000"
+              "value": "76960.0000000000",
+              "upstream_basis": null
             }
           ]
         },
@@ -81,14 +87,16 @@
               "qty_kg": "250.500",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "15.0300000000"
+              "value": "15.0300000000",
+              "upstream_basis": null
             },
             {
               "destination": "compost",
               "qty_kg": "120.250",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "4.2087500000"
+              "value": "4.2087500000",
+              "upstream_basis": null
             }
           ]
         },
@@ -102,14 +110,16 @@
               "qty_kg": "250.500",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "250.5000000000"
+              "value": "250.5000000000",
+              "upstream_basis": null
             },
             {
               "destination": "compost",
               "qty_kg": "120.250",
               "upstream": "0.0000000000",
               "downstream": "0.0000000000",
-              "value": "120.2500000000"
+              "value": "120.2500000000",
+              "upstream_basis": null
             }
           ]
         }
@@ -143,6 +153,7 @@
     {
       "sector": "consumer_hospitality",
       "food_category": null,
+      "food_item": null,
       "current": {
         "total_kg": "370.750",
         "metrics": {
@@ -156,14 +167,16 @@
                 "qty_kg": "250.500",
                 "upstream": "2.6000000000",
                 "downstream": "0.7000000000",
-                "value": "826.6500000000"
+                "value": "826.6500000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination": "compost",
                 "qty_kg": "120.250",
                 "upstream": "2.6000000000",
                 "downstream": "0.2100000000",
-                "value": "337.9025000000"
+                "value": "337.9025000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -177,14 +190,16 @@
                 "qty_kg": "250.500",
                 "upstream": "0.0000000000",
                 "downstream": "0.0270000000",
-                "value": "6.7635000000"
+                "value": "6.7635000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "compost",
                 "qty_kg": "120.250",
                 "upstream": "0.0000000000",
                 "downstream": "0.0002000000",
-                "value": "0.0240500000"
+                "value": "0.0240500000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -198,14 +213,16 @@
                 "qty_kg": "250.500",
                 "upstream": "640.0000000000",
                 "downstream": "0.0000000000",
-                "value": "160320.0000000000"
+                "value": "160320.0000000000",
+                "upstream_basis": "category_every_destination"
               },
               {
                 "destination": "compost",
                 "qty_kg": "120.250",
                 "upstream": "640.0000000000",
                 "downstream": "0.0000000000",
-                "value": "76960.0000000000"
+                "value": "76960.0000000000",
+                "upstream_basis": "category_every_destination"
               }
             ]
           },
@@ -219,14 +236,16 @@
                 "qty_kg": "250.500",
                 "upstream": "0.0000000000",
                 "downstream": "0.0600000000",
-                "value": "15.0300000000"
+                "value": "15.0300000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "compost",
                 "qty_kg": "120.250",
                 "upstream": "0.0000000000",
                 "downstream": "0.0350000000",
-                "value": "4.2087500000"
+                "value": "4.2087500000",
+                "upstream_basis": "absent"
               }
             ]
           },
@@ -240,14 +259,16 @@
                 "qty_kg": "250.500",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "250.5000000000"
+                "value": "250.5000000000",
+                "upstream_basis": "absent"
               },
               {
                 "destination": "compost",
                 "qty_kg": "120.250",
                 "upstream": "0.0000000000",
                 "downstream": "0.0000000000",
-                "value": "120.2500000000"
+                "value": "120.2500000000",
+                "upstream_basis": "absent"
               }
             ]
           }
@@ -267,7 +288,8 @@
       },
       "alternative": null,
       "net_benefit": null,
-      "production_share_percent": null
+      "production_share_percent": null,
+      "item_basis": "not_applicable"
     }
   ],
   "factor_source": "published",

@@ -239,8 +239,11 @@ const { containerPresets } = await import(process.argv[2])
 const { state } = await import(process.argv[3])
 const input = JSON.parse(readFileSync(process.argv[4], 'utf8'))
 state.taxonomy = { unit_presets: input.presets }
-state.foodCategory = input.foodCategory
-writeFileSync(process.argv[5], JSON.stringify(containerPresets().map(p => p.code)), 'utf8')
+// **The category of the CONTROL the list is offered on, not of the chain.** Since the
+// fork a chain may name several categories at once, so there is no one chain category to
+// filter against; a leaf's own unit select passes that leaf's category, and a step-4
+// destination row - shared by no single food - passes nothing.
+writeFileSync(process.argv[5], JSON.stringify(containerPresets(input.foodCategory).map(p => p.code)), 'utf8')
 """
 
 #: Two generic containers and two that are only true of one food each.
@@ -294,6 +297,24 @@ def test_a_preset_naming_a_category_appears_only_for_that_category(tmp_path):
     assert offered(tmp_path, "vegetables") == [
         "wheelie_bin_240l", "bucket_20l_full", "spud_bin_vegetables",
     ]
+
+
+@node
+def test_a_control_that_belongs_to_no_one_food_is_offered_the_generic_ones_only(tmp_path):
+    """**The rule the fork made necessary, stated as a test.**
+
+    Before the fork there was one food category per chain and one list. Now a leaf's
+    own unit select on step 3 is about one food and gets that food's presets, while a
+    step-4 destination row belongs to a leaf whose category may be any of several - and
+    a container measured against one food is a density that is not true of the others.
+    `containerPresets()` with no argument is that control's list, and it must hold
+    nothing but the NULL-category presets.
+
+    The union rule - offer every selected category's presets everywhere - is the wrong
+    answer for exactly this reason, and it would also let a visitor pick the dairy crate
+    for the bakery leaf.
+    """
+    assert offered(tmp_path, None) == ["wheelie_bin_240l", "bucket_20l_full"]
 
 
 @node

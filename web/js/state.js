@@ -11,6 +11,19 @@ export const state = {
   taxonomy: null,
   token: storedToken,
   sector: null,
+  gwpHorizon: 100,
+  // Whether the visitor has toggled the results page's section nav, and
+  // `undefined` while they have not -- which is the usual case and means "let
+  // the stylesheet decide". The default is viewport-dependent (open where
+  // there is a gutter to put it in, absent where there is not) and CSS is
+  // what knows the viewport; a boolean default here would have to guess at
+  // render time and would be wrong on the first paint after a resize.
+  //
+  // It lives on `state` rather than on the element because `render()` does
+  // `main.innerHTML = ...` on every `setState`: the DOM copy was wiped by any
+  // unrelated change, so opening the menu and then switching a breakdown tab
+  // closed it.
+  resultsNavOpen: undefined,
   // **The fork.** One supply-chain chain may name several food categories, and each
   // one carries its own amount AND its own destination allocation — see
   // `entryLeaves` below, which is the single definition of what a leaf is.

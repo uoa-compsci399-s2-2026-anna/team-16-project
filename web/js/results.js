@@ -626,7 +626,7 @@ function breakdownSection(state, entryResults) {
     const columns = metricColumns(current.sections)
     panel = `${current.note ? `<p class="breakdown-note">${escapeHtml(current.note)}</p>` : ''}${current.sections.map(section => breakdownTable(section, t(TAB_LABELS[active]), state.taxonomy, scale, columns)).join('')}`
   }
-  return `<section class="results-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
+  return `<section class="results-section" id="breakdown-section" aria-labelledby="breakdown-title"><div class="result-section-heading"><span class="section-number">03</span><div><h2 id="breakdown-title">${escapeHtml(t('Breakdown by category'))}</h2><p>${escapeHtml(t('Explore how the recorded waste is distributed.'))}</p></div></div><div class="breakdown-tabs" role="tablist" aria-label="${escapeHtml(t('Waste breakdown'))}">${Object.entries(TAB_LABELS).map(([key, label]) => `<button id="breakdown-tab-${key}" type="button" role="tab" data-action="breakdown-tab" data-tab="${key}" aria-selected="${active === key}" aria-controls="breakdown-panel-${key}" tabindex="${active === key ? 0 : -1}">${escapeHtml(t(label))}</button>`).join('')}</div><div id="breakdown-panel-${active}" class="breakdown-panel" role="tabpanel" aria-labelledby="breakdown-tab-${active}" tabindex="0">${panel}</div></section>`
 }
 
 // One metric, worded the way the summary card words it: the taxonomy's name, the figure at
@@ -1167,6 +1167,40 @@ function categoryAverageLines(state, prefix) {
   return categoryAverageFoods(state).map(({ food, category }) =>
     `${prefix}${t('%(food)s is priced at the %(category)s average. The published factor set carries no factors for this food, so the figures here are its category\'s rather than its own.', { food, category })}`)
 }
+/**
+ * The results page's section jump list, which lives in the page's **gutter**.
+ *
+ * The request behind it: at a wide viewport this page is still a ~960px column, so
+ * there is a band of empty page either side of it, and the page itself is long enough
+ * that reaching a section means scrolling for a while. The list goes in that band.
+ *
+ * **It is not site navigation and no longer says it is.** The label was
+ * `t('Site navigation')`, which is the site drawer's own string (`index.html`), so a
+ * screen reader's landmark list showed two `<nav>` elements with one indistinguishable
+ * name -- in every language, since both read the same key.
+ *
+ * **Where it is and when it exists are decided in CSS, not here**, because both depend
+ * on the viewport and this function runs once per render with no idea of it. The
+ * stylesheet shows it only where the gutter is wide enough to hold it without covering
+ * the column, and opens it by default there. `data-open` is written **only** once the
+ * visitor has toggled it, so the attribute's absence means "the stylesheet decides".
+ */
+function resultsFloatingNavigation(state) {
+  const label = t('Sections on this page')
+  const links = [
+    ['#impact-summary', t('Impact summary')],
+    ['#improvement-section', t('Explore Improvements')],
+    ['#tangible-equivalents', t('Tangible equivalents')],
+    ['#breakdown-section', t('Breakdown by category')],
+  ].map(([href, text]) => `<li><a href="${href}">${escapeHtml(text)}</a></li>`).join('')
+  //: Absent until the visitor decides, so the CSS default stands. `aria-expanded`
+  //: follows the same value: stating `false` while the stylesheet has the panel open
+  //: is the contradiction a screen-reader user meets first.
+  const toggled = state?.resultsNavOpen
+  const openAttribute = toggled === undefined ? '' : ` data-open="${toggled}"`
+  const expanded = toggled === undefined ? '' : ` aria-expanded="${toggled}"`
+  return `<nav class="results-floating-nav"${openAttribute} aria-label="${escapeHtml(label)}"><button class="results-floating-nav__handle" type="button" data-action="toggle-results-nav" aria-controls="results-floating-nav-menu"${expanded} aria-label="${escapeHtml(label)}" title="${escapeHtml(label)}"><span aria-hidden="true">⋮</span></button><div class="results-floating-nav__panel" id="results-floating-nav-menu"><ul class="results-floating-nav__links">${links}</ul></div></nav>`
+}
 
 export function renderResults(state) {
   const result = state.result
@@ -1197,7 +1231,7 @@ export function renderResults(state) {
   // and "Download results" moved into it; "Start a new calculation" did not,
   // because it is a confirm-guarded reset rather than a step action, and the
   // header's home button already offers it.
-  return `<section class="content-section wide results-page" aria-labelledby="results-title"><p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
+  return `<section class="content-section wide results-page" aria-labelledby="results-title">${resultsFloatingNavigation(state)}<p class="eyebrow">${escapeHtml(t('Step %(step)s', { step: 6 }))}</p><h1 id="results-title">${escapeHtml(t('Your estimated impact'))}</h1><p class="section-intro">${escapeHtml(entryResults.length === 1
       ? t('Results returned by the calculation service for one supply-chain entry.')
       // **`count` is entries, and an entry is a leaf.** A single forked chain is one
       // supply-chain entry rendered as several, so the old wording — "for 3 supply-chain
@@ -1205,12 +1239,11 @@ export function renderResults(state) {
       // true. The noun is dropped rather than replaced with a second count nobody asked
       // for; the review step is where the two numbers are reconciled.
       : t('Results returned by the calculation service for %(count)s entries.', { count: entryResults.length }))}</p>${resultsPeriod(state.timeFrame)}${warning}${averagedNotice}
-    <section class="results-section" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
-    <section class="results-section" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
+    <section class="results-section" id="impact-summary" aria-labelledby="summary-title"><div class="result-section-heading"><span class="section-number">01</span><div><h2 id="summary-title">${escapeHtml(t('Impact summary'))}</h2><p>${escapeHtml(t('A high-level view of the recorded food waste.'))}</p></div></div><div class="results-grid">${summaryCards(totals, state.taxonomy)}</div>${moneySummary(totals)}</section>
+    <section class="results-section" id="tangible-equivalents" aria-labelledby="equivalents-title"><div class="result-section-heading"><span class="section-number">02</span><div><h2 id="equivalents-title">${escapeHtml(t('Tangible equivalents'))}</h2><p>${escapeHtml(t('Plain-language comparisons appear when supplied by the calculation service.'))}</p></div></div>${equivalences(totals, mock)}</section>
     ${breakdownSection(state, entryResults)}
     <section class="methodology-compact" id="results-methodology" aria-labelledby="results-methodology-title"><h2 id="results-methodology-title">${escapeHtml(t('Methodology & Limitations'))}</h2><p>${escapeHtml(t('Results are estimates. Impact calculations are supplied by the calculation API; the front end performs unit conversion only.'))}</p><p>${escapeHtml(t('Factor version'))}: ${escapeHtml(version)}.</p><details><summary>${escapeHtml(t('View methodology'))}</summary><div><p>${escapeHtml(t('Data sources and calculation factors are maintained and approved by Kai Commitment.'))}</p><p>${escapeHtml(t('Waste as a share of food handled is a ratio of the two masses you typed, not a factor-based figure, so the placeholder data above does not affect it.'))}</p></div></details></section>
     <div class="result-actions"><button class="button button-secondary" type="button" data-action="start-over">${escapeHtml(t('Start a new calculation'))}</button><div class="download-actions"><button class="button button-primary" type="button" data-action="download-results">${escapeHtml(t('Download results'))}</button><button class="button button-primary" type="button" data-action="download-pdf" ${state.pdfExporting ? 'disabled' : ''}>${escapeHtml(t('Download PDF'))}</button></div>${state.pdfError ? `<p class="field-error" role="alert">${escapeHtml(state.pdfError)}</p>` : ''}</div>
-    ${ImprovementScenario(state)}
     ${ComparisonResults(state)}
     ${contributeBlock(state)}
     ${stepNav({ step: 5, back: 4, backLabel: t('Edit your data'), action: null })}

@@ -1200,6 +1200,114 @@ tbody th { font-weight: 700; }
 .explore-improvements { text-align: center; }
 .explore-improvements p, .improvement-scenario > p { max-width: 720px; margin-inline: auto; color: var(--muted); }
 .improvement-scenario { background: rgba(230, 190, 255, 0.12); }
+.results-page > :where(#impact-summary, #improvement-section, #tangible-equivalents, #breakdown-section, #results-methodology) { scroll-margin-top: 24px; }
+/* THE SECTION NAV LIVES IN THE PAGE'S GUTTER, AND ONLY WHERE THERE IS ONE.
+   ========================================================================
+   It was `inset-inline-end: 18px` — pinned to the viewport's own edge, which
+   is the content column's edge as soon as the column stops being narrower
+   than the screen. Measured with `document.elementFromPoint` inside the
+   buttons' own boxes: at 390px it took the taps for *Download results*,
+   *Start a new calculation* and *Match the current allocation*; at 320px the
+   same; at 768px *Compare Impact* and *Download PDF*; and with the
+   improvement panel open, all eleven destination inputs at 320 and 390. Only
+   1278px was clean.
+
+   `test_horizontal_overflow.py` cannot see any of that. A `position: fixed`
+   box is outside document scrollable overflow, so `scrollWidth` does not
+   move: pushing this element 400px past a 375px viewport still measures zero.
+   Verified by mutation, and by the control (`min-inline-size: 2000px` on
+   `.results-grid`) which does report 1665px.
+
+   So it is positioned against the COLUMN instead. `.main-content` is 900px
+   centred and `.wide` opens to 1000px at >=960px, so the results column is
+   ~960px wide: half of it is 480px, and the handle needs 52 + 18 beyond that.
+   `inset-inline-start: 50%` plus `margin-inline-start` is the pair that does
+   this in both directions -- `translate` is physical and would put the panel
+   on the wrong side in Arabic and Urdu.
+
+   **50%, never 100vw.** For a fixed box, percentages resolve against the
+   initial containing block, which excludes the scrollbar; `100vw` includes it,
+   and that is the single most common cause of overflow in this stylesheet
+   (see the note above `test_horizontal_overflow.py`'s PATHS).
+
+   The gate is 1100px: 960 of column plus 70 either side. Below it there is no
+   gutter, so there is nowhere to float that is not on top of the page, and
+   the nav is not rendered at all rather than shrunk into the content. */
+.results-floating-nav { display: none; }
+
+@media (min-width: 1100px) {
+  .results-floating-nav {
+    --results-floating-nav-handle-size: 52px;
+    display: block;
+    position: fixed;
+    z-index: 30;
+    inset-inline-start: 50%;
+    margin-inline-start: calc(480px + 18px);
+    top: 50%;
+    translate: 0 -50%;
+  }
+}
+.results-floating-nav__handle {
+  inline-size: var(--results-floating-nav-handle-size);
+  block-size: var(--results-floating-nav-handle-size);
+  display: grid;
+  place-items: center;
+  border: 0;
+  border-radius: 50%;
+  color: var(--kai-white);
+  background: var(--kai-orange);
+  box-shadow: 0 5px 16px rgba(0, 50, 35, 0.28);
+  font-size: 1.35rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.results-floating-nav__handle:hover { translate: -2px 0; }
+.results-floating-nav[data-open="true"] .results-floating-nav__handle { background: var(--kai-kale); }
+.results-floating-nav__panel {
+  position: absolute;
+  inset-inline-end: var(--results-floating-nav-handle-size);
+  top: 50%;
+  inline-size: min(252px, calc(100vw - 86px));
+  min-inline-size: 0;
+  padding: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  border-radius: 16px;
+  background: var(--kai-kale);
+  box-shadow: 0 14px 36px rgba(0, 50, 35, 0.28);
+  opacity: 0;
+  visibility: hidden;
+  pointer-events: none;
+  translate: 8px -50%;
+  transition: opacity 140ms ease, visibility 140ms ease, translate 140ms ease;
+}
+/* Open by default where the nav exists at all: the request was that the list
+   is *there* when there is room for it, not that it has to be summoned. A
+   visitor who closes it gets `data-open="false"`, which wins over this.
+   `:hover` no longer opens it -- the panel could be visible while the button
+   still reported `aria-expanded="false"`, and a state a screen reader
+   contradicts is worse than one that needs a click. */
+.results-floating-nav:not([data-open="false"]) .results-floating-nav__panel,
+.results-floating-nav:focus-within .results-floating-nav__panel,
+.results-floating-nav[data-open="true"] .results-floating-nav__panel {
+  opacity: 1;
+  visibility: visible;
+  pointer-events: auto;
+  translate: 0 -50%;
+}
+.results-floating-nav__links { display: grid; gap: 3px; margin: 0; padding: 0; list-style: none; }
+.results-floating-nav__links a {
+  min-block-size: 44px;
+  display: flex;
+  align-items: center;
+  padding-inline: 12px;
+  border-radius: 10px;
+  color: var(--kai-white);
+  font-weight: 700;
+  line-height: 1.3;
+  overflow-wrap: anywhere;
+  text-decoration: none;
+}
+.results-floating-nav__links a:hover { color: var(--kai-kale); background: var(--kai-pea); }
 .improvement-mode-field { max-width: 220px; margin: 20px auto 0; }
 /* **The list column's own minimum has to cover what the row inside it actually needs,
    not merely look plausible on its own.** The row's `:has()` floor below reserves 260px
